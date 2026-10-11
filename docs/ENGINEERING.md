@@ -298,11 +298,18 @@ no self-hosted GitHub Actions runner in this pipeline).
   its infrastructure, and the policies in
   [`clusters/onprem/policies/`](../clusters/onprem/policies/kustomization.yaml)
   run there in audit mode for now (ADR-0057). CI's `manifests` job runs the same
-  policy files with the Kyverno CLI over each environment's rendered chart and
-  each Flux Kustomization path, so a change the cluster would refuse fails its
-  pull request; it also requires each policy to refuse its negative fixtures in
+  policy files with the Kyverno CLI over each environment's rendered chart, each
+  Flux Kustomization path and each infrastructure `HelmRelease` rendered with
+  its values, so a change the cluster would refuse fails its pull request; it
+  also requires each policy to refuse its negative fixtures in
   `fixtures/<policy>/`. Adding a policy is its file, its entry in the
   Kustomization and its fixtures, with no change to CI.
+- **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
+  a tag pushed again never changes what runs, except those whose signatures are
+  verified instead (`augustad`'s and Flux's) and `kube-system`'s, which come
+  with k3s's version (ADR-0057). The infrastructure's `HelmRelease`s pin their
+  charts' images in their values; a chart upgrade moves the digests with its
+  version, as the comment on `kube-prometheus-stack`'s release says how.
 
 ## Developer Environment
 

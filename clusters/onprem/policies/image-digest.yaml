@@ -1,0 +1,40 @@
+# Every image runs by digest (ADR-0057), so a tag pushed again never changes
+# what runs: a container's image names its digest, <image>:<tag>@sha256:<...>.
+# The images whose signatures are verified instead are exempt: augustad, which
+# CI signs, and Flux's, which its publishers sign. kube-system, whose images
+# come with k3s's pinned version, is exempt too, as it is from Kyverno's
+# webhooks.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: image-digest
+spec:
+  # Reported, not refused, until the cluster's policies are enforced.
+  validationActions:
+    - Audit
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: outside-kube-system
+      expression: request.namespace != "kube-system"
+  variables:
+    - name: containers
+      expression: >-
+        object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([])
+    # The repositories whose images are signature-verified rather than pinned.
+    - name: signed
+      expression: '["ghcr.io/sergioffpc/augustad:", "ghcr.io/fluxcd/"]'
+  validations:
+    - expression: |-
+        variables.containers.all(container,
+          container.image.contains("@sha256:") ||
+          variables.signed.exists(prefix, container.image.startsWith(prefix)))
+      messageExpression: |-
+        "every image must be pinned by digest (<image>:<tag>@sha256:<digest>): " +
+        variables.containers
+          .filter(container, !container.image.contains("@sha256:"))
+          .map(container, container.image).join(", ")

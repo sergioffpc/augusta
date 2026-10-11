@@ -707,9 +707,37 @@ jobs:
               -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
+      - name: Validate the infrastructure's releases
+        # Each HelmRelease the infrastructure path applies (Kyverno, the
+        # monitoring stack), rendered from its chart repository with its own
+        # values, as Flux renders it, against the schemas both steps above
+        # generated. Each render is kept for the policy check below, so what
+        # these charts run (their images, their Secrets) is held to the
+        # cluster's policies as augustad's is.
+        shell: bash
+        run: |
+          infrastructure=(clusters/onprem/infrastructure/*.yaml)
+          for name in $(yq --no-doc 'select(.kind == "HelmRelease") | .metadata.name' "${infrastructure[@]}"); do
+            release=$(yq ea --no-doc "select(.kind == \"HelmRelease\" and .metadata.name == \"$name\")" "${infrastructure[@]}")
+            repo=$(yq '.spec.chart.spec.sourceRef.name' <<< "$release")
+            namespace=$(yq '.spec.targetNamespace' <<< "$release")
+            echo "$name, from $repo into $namespace"
+            rendered="$RUNNER_TEMP/rendered/release-$name.yaml"
+            yq '.spec.values // {}' <<< "$release" \
+              | helm template "$(yq '.spec.releaseName' <<< "$release")" "$(yq '.spec.chart.spec.chart' <<< "$release")" \
+                --repo "$(yq ea --no-doc "select(.kind == \"HelmRepository\" and .metadata.name == \"$repo\") | .spec.url" "${infrastructure[@]}")" \
+                --version "$(yq '.spec.chart.spec.version' <<< "$release")" \
+                --namespace "$namespace" --values - \
+              > "$rendered"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location "$RUNNER_TEMP/crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              -schema-location "$RUNNER_TEMP/monitoring-crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              "$rendered"
+          done
       - name: Check the rendered manifests against the cluster's policies
         # The policies Flux applies (clusters/onprem/policies) over every
-        # manifest the two steps above rendered: what the cluster would report,
+        # manifest the steps above rendered: what the cluster would report,
         # or once its policies are enforced refuse, fails here before it
         # merges. A violation of a policy the cluster only audits still fails,
         # since --audit-warn is left off.
