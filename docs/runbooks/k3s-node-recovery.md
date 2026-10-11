@@ -489,7 +489,16 @@ kubectl -n monitoring get pods
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
-  (pinned in `infrastructure/monitoring.yaml`).
+  (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
+  dashboard, offers no way to edit or save one, shows no login form, and refuses
+  `admin`/`admin`, there being no admin user: posting them to its login
+  answers 401.
+
+    ```bash
+    curl -i -X POST -H 'Content-Type: application/json' \
+      -d '{"user":"admin","password":"admin"}' http://<node>:30300/login
+    ```
+
 - After a rebuild, the node also passes
   [Verify the hardening](#verify-the-hardening).
 
