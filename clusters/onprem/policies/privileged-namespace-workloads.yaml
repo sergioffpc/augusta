@@ -1,0 +1,92 @@
+# The namespaces Pod Security leaves privileged (ADR-0057) run only the pods
+# they exist for: monitoring-node, node-exporter alone; kube-system, what k3s
+# itself deploys there (its packaged manifests, the Helm jobs that install
+# Traefik, ServiceLB's pods and local-path-provisioner's helper pods). Any
+# other pod there could take the Node, as the namespace's level no longer
+# stops it.
+#
+# A pod is known by the repository of every image it runs, not by its labels:
+# anyone who can create a pod can label it, but a pod that names a known image
+# runs only that image's program. The repository is normalised as the runtime
+# does (docker.io/ for a bare name, library/ for an official one), so the
+# registry a manifest spells out or leaves implied makes no difference; tag
+# and digest are ignored, so an upgrade needs no change here.
+#
+# Kyverno's webhooks skip kube-system, so its pods are judged by the
+# background scan (clusters/onprem/infrastructure/kyverno.yaml), and those of
+# monitoring-node at admission too.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: privileged-namespace-workloads
+spec:
+  # Reported, not refused, until the cluster's policies are enforced.
+  validationActions:
+    - Audit
+  # Pods only: Kyverno's autogen adds the same rule for every pod
+  # controller, so a Deployment's or DaemonSet's template is judged before
+  # its pods exist (fixtures/: unknown-deployment-in-kube-system.yaml).
+  # Matching pods/ephemeralcontainers too would turn autogen off, so a
+  # container `kubectl debug` adds is reported by the background scan, not
+  # at admission.
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: in-a-privileged-namespace
+      expression: |-
+        has(object.metadata.namespace) &&
+        object.metadata.namespace in ["kube-system", "monitoring-node"]
+  variables:
+    # Each privileged namespace's known image repositories. k3s's are its
+    # release's image list (scripts/airgap/image-list.txt in k3s's repository,
+    # at K3S_VERSION in scripts/bootstrap-node.sh), but its pause image, which
+    # no pod names; node-exporter's is kube-prometheus-stack's
+    # (clusters/onprem/infrastructure/monitoring.yaml).
+    - name: knownRepositories
+      expression: |-
+        {
+          "kube-system": [
+            "docker.io/rancher/klipper-helm",
+            "docker.io/rancher/klipper-lb",
+            "docker.io/rancher/local-path-provisioner",
+            "docker.io/rancher/mirrored-coredns-coredns",
+            "docker.io/rancher/mirrored-library-busybox",
+            "docker.io/rancher/mirrored-library-traefik",
+            "docker.io/rancher/mirrored-metrics-server"
+          ],
+          "monitoring-node": [
+            "quay.io/prometheus/node-exporter"
+          ]
+        }
+    - name: images
+      expression: |-
+        object.spec.containers.map(c, c.image) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+    # Each image without its digest, then without its tag: a colon after the
+    # last slash starts the tag, one before it ends a registry's host.
+    - name: withoutDigests
+      expression: variables.images.map(i, i.split("@")[0])
+    - name: repositories
+      expression: |-
+        variables.withoutDigests.map(n, n.lastIndexOf(":") > n.lastIndexOf("/") ?
+          n.substring(0, n.lastIndexOf(":")) : n)
+    # The first component names a registry only if it has a dot or a port, or
+    # is localhost; otherwise the image is Docker Hub's.
+    - name: normalised
+      expression: |-
+        variables.repositories.map(r,
+          !r.contains("/") ? "docker.io/library/" + r :
+          r.split("/")[0].matches("[.:]") || r.split("/")[0] == "localhost" ? r :
+          "docker.io/" + r)
+    - name: unknown
+      expression: variables.normalised.filter(r, !(r in variables.knownRepositories[object.metadata.namespace]))
+  validations:
+    - expression: size(variables.unknown) == 0
+      messageExpression: |-
+        object.metadata.namespace + " is privileged and runs only its known pods, not " +
+        variables.unknown.join(", ")

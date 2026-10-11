@@ -89,20 +89,18 @@ spec:
         - name: config
           configMap:
             name: {{ include "augustad.serverName" $server }}
-        # Only this server's pack version, which must already be published:
-        # until it is, the pod waits in ContainerCreating, its events naming
-        # the missing folder.
+        # Only this server's pack version, from its PersistentVolume
+        # (volumes.yaml), which must already be published: until it is, the
+        # pod waits in ContainerCreating, its events naming the missing folder.
         - name: pack
-          hostPath:
-            path: {{ include "augustad.packFolder" $server }}
-            type: Directory
+          persistentVolumeClaim:
+            claimName: {{ include "augustad.packClaim" $server }}
+            readOnly: true
         {{- if $.Values.captures.hostPath }}
-        # The whole capture volume, which node setup creates: augustad creates
-        # its own folder in it (augustad.captureFolder). Until it exists the pod
-        # waits in ContainerCreating, as for a missing pack.
+        # The capture directory, from its PersistentVolume (volumes.yaml). Until
+        # it exists the pod waits in ContainerCreating, as for a missing pack.
         - name: captures
-          hostPath:
-            path: {{ $.Values.captures.hostPath }}
-            type: Directory
+          persistentVolumeClaim:
+            claimName: {{ include "augustad.capturesClaim" $server }}
         {{- end }}
 {{- end }}

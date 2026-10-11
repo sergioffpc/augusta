@@ -1,5 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Flux's namespace enforces the restricted Pod Security Standard (ADR-0057),
+# which its controllers meet as flux install generates them; the generated
+# Namespace only warns.
+patches:
+  - target:
+      kind: Namespace
+      name: flux-system
+    patch: |-
+      - op: add
+        path: /metadata/labels/pod-security.kubernetes.io~1enforce
+        value: restricted
+      - op: add
+        path: /metadata/labels/pod-security.kubernetes.io~1audit
+        value: restricted
 resources:
   - gotk-components.yaml
   - trusted-signers.yaml

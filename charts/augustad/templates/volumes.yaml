@@ -1,0 +1,80 @@
+{{/* A folder of the Node as a local PersistentVolume and the claim bound to
+     it, so no server needs a hostPath volume, which restricted forbids
+     (ADR-0057). Takes the server's dict plus the claim ("claim"), the folder
+     ("path"), the access mode ("accessMode") and what it holds ("component").
+     Each is reserved for the other, with no storage class for a provisioner to
+     act on. Retained and kept by Helm: nothing deletes the Node's folder, and a
+     server reverted to a previous pack version takes up its claim again, even
+     while the old pod still runs from it (docs/runbooks/k3s-node-recovery.md,
+     Volumes). */}}
+{{- define "augustad.localVolume" -}}
+{{- $volume := include "augustad.volumeForClaim" (dict "root" .root "claim" .claim) }}
+{{- /* A local volume's size is not enforced: it only has to cover the
+       claim's request. */}}
+{{- $size := "1Gi" }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $volume }}
+  labels:
+    {{- include "augustad.labels" .root | nindent 4 }}
+    scenario: {{ .scenario }}
+    app.kubernetes.io/component: {{ .component }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  capacity:
+    storage: {{ $size }}
+  accessModes: [{{ .accessMode }}]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  volumeMode: Filesystem
+  claimRef:
+    namespace: {{ .root.Release.Namespace }}
+    name: {{ .claim }}
+  local:
+    path: {{ .path }}
+  # The k3s server, the single-node cluster's one Node, as k3s labels it: no
+  # Node name or label of the runbook's to keep. A second server Node would
+  # need a label of its own.
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: In
+              values: ["true"]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .claim }}
+  labels:
+    {{- include "augustad.labels" .root | nindent 4 }}
+    scenario: {{ .scenario }}
+    app.kubernetes.io/component: {{ .component }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .accessMode }}]
+  storageClassName: ""
+  volumeName: {{ $volume }}
+  resources:
+    requests:
+      storage: {{ $size }}
+{{- end -}}
+
+{{- range $scenario, $_ := .Values.servers }}
+{{- $server := dict "root" $ "scenario" $scenario }}
+{{- /* Only this server's pack version, which must already be published. */}}
+{{- $pack := dict "claim" (include "augustad.packClaim" $server) "path" (include "augustad.packFolder" $server) }}
+{{- include "augustad.localVolume" (merge $pack (dict "accessMode" "ReadOnlyMany" "component" "pack") $server) }}
+{{- if $.Values.captures.hostPath }}
+{{- /* The whole capture directory, which node setup creates: augustad
+       creates its own folder in it (augustad.captureFolder). Read-write by
+       one Node, which a rollout's old and new pods share. */}}
+{{- $captures := dict "claim" (include "augustad.capturesClaim" $server) "path" $.Values.captures.hostPath }}
+{{- include "augustad.localVolume" (merge $captures (dict "accessMode" "ReadWriteOnce" "component" "captures") $server) }}
+{{- end }}
+{{- end }}
