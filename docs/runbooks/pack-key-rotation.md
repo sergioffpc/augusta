@@ -47,9 +47,9 @@ and `signing.pub` from it
 
 `augusta-publish` writes exactly this, and never over a folder that exists,
 owned by `augusta-publish:augusta`, the version's folder `0550` and its files
-`0440`: only the servers' group reads it, and once written no one but root
-changes it ([The server's user](k3s-node-recovery.md#the-servers-user)). The
-server mounts the folder as a `local` PersistentVolume
+`0440`: only the servers' group reads it, and once written the publish key
+cannot change it ([The server's user](k3s-node-recovery.md#the-servers-user)).
+The server mounts the folder as a `local` PersistentVolume
 ([Volumes](k3s-node-recovery.md#volumes)): until the folder is there, the pod
 waits in `ContainerCreating` and its `FailedMount` event names the missing path.
 A pack that does not verify against `signing.pub` makes the server exit at

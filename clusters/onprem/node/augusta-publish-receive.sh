@@ -13,13 +13,15 @@
 #                               prints them; exits 3 when it does not exist.
 #   receive <folder> <name>     stdin into <name>, server.pack or signing.pub,
 #                               in the folder's staging place beside it.
-#   commit <folder> <name>=<sha256>...
+#   commit <folder> server.pack=<sha256> signing.pub=<sha256>
 #                               the staging place, holding exactly those files
 #                               with those digests, made read-only and renamed
 #                               into the folder.
 #
 # A folder that exists is never written again: receive and commit refuse it,
 # and commit leaves it 0550 with its files 0440, read-only to this user too.
+# The user owns them and could change their modes back, but its key runs
+# nothing but this.
 # The volume's setgid group, the servers' (k3s-node-recovery.md, The server's
 # user), passes to everything created in it. Exits 2 for anything else asked,
 # 1 when a command fails.
@@ -73,6 +75,7 @@ staging_of() {
   echo "${PACKS}/${1%/*}/.${1#*/}.partial"
 }
 
+# Exits 1 when a folder is published already.
 # Arguments:
 #   A folder.
 refuse_published() {
@@ -84,6 +87,9 @@ refuse_published() {
 
 # Arguments:
 #   A folder.
+# Outputs:
+#   The SHA-256 of each file in it, as sha256sum prints them. Exits 3 when it
+#   does not exist.
 digests() {
   local folder="${PACKS}/$1"
   if [[ ! -d "${folder}" ]]; then
@@ -103,6 +109,8 @@ receive() {
   cat >"${staging}/$2"
 }
 
+# Publishes a folder from its staging place, or exits 1 and removes the
+# staging place when that does not hold exactly the files named.
 # Arguments:
 #   A folder, then <name>=<sha256> for each file it holds.
 commit() {
@@ -123,13 +131,21 @@ commit() {
     rm -rf -- "${staging}"
     exit 1
   fi
+  # Read-only before it is renamed into place, which within one folder needs
+  # no write permission on it: never writable once published.
   chmod 0440 -- "${staging}"/*
+  chmod 0550 -- "${staging}"
   mv -T -- "${staging}" "${PACKS}/${folder}"
-  chmod 0550 -- "${PACKS}/${folder}"
 }
 
+# Runs the command the client asked for, or exits 2.
+# Globals:
+#   SSH_ORIGINAL_COMMAND, the command, which sshd sets.
 main() {
-  local words name pair
+  local words names=() given pair
+  if [[ "${SSH_ORIGINAL_COMMAND:-}" == *$'\n'* ]]; then
+    refuse "one command per connection, on one line."
+  fi
   # Split on blanks, never expanded: no word is a glob or a variable here.
   read -r -a words <<<"${SSH_ORIGINAL_COMMAND:-}"
   case "${words[0]:-} ${#words[@]}" in
@@ -142,15 +158,19 @@ main() {
       check_name "${words[2]}"
       receive "${words[1]}" "${words[2]}"
       ;;
-    commit\ [3-9])
+    "commit 4")
       check_folder "${words[1]}"
       for pair in "${words[@]:2}"; do
-        name="${pair%%=*}"
-        check_name "${name}"
+        names+=("${pair%%=*}")
         if [[ ! "${pair#*=}" =~ ${DIGEST_PATTERN} ]]; then
-          refuse "not a SHA-256 for ${name}: ${pair#*=}"
+          refuse "not a SHA-256 for ${pair%%=*}: ${pair#*=}"
         fi
       done
+      # Every file a pack folder holds, each once.
+      given="$(printf '%s\n' "${names[@]}" | sort)"
+      if [[ "${given}" != "$(printf '%s\n' "${NAMES[@]}" | sort)" ]]; then
+        refuse "a commit names ${NAMES[*]}, not: ${names[*]}"
+      fi
       commit "${words[@]:1}"
       ;;
     *)
@@ -160,4 +180,4 @@ main() {
   esac
 }
 
-main
+main "$@"

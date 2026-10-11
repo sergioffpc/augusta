@@ -137,13 +137,10 @@ create_server_user() {
   fi
 }
 
-# Creates the publish user, its forced command, and its key when given one.
+# Creates the publish user and its forced command.
 # Globals:
 #   DOWNLOADS
-# Arguments:
-#   The publish key's public key file, or nothing.
 create_publish_user() {
-  local keys="${PUBLISH_HOME}/.ssh/authorized_keys"
   if ! getent passwd "${PUBLISH_USER}" >/dev/null; then
     # A shell: sshd runs the forced command with it. The key never gets one.
     as_root useradd --system --user-group --no-create-home \
@@ -152,10 +149,22 @@ create_publish_user() {
   install_node_file "${RECEIVER_FILE}" "${RECEIVER}" 0755
   as_root install -d -o root -g root -m 0755 "${PUBLISH_HOME}" \
     "${PUBLISH_HOME}/.ssh"
+}
+
+# Writes the publish user's one key, restricted to its forced command, in place
+# of the node's, when given one.
+# Globals:
+#   DOWNLOADS
+# Arguments:
+#   The publish key's public key file, or nothing.
+write_publish_key() {
+  local keys="${PUBLISH_HOME}/.ssh/authorized_keys"
   if [[ -n "${1:-}" ]]; then
+    # One key, with no options of its own: they would come after this one's.
     if [[ "$(grep -c . "$1")" -ne 1 ]] \
+      || ! grep -qE '^(ssh-|sk-|ecdsa-)' "$1" \
       || ! ssh-keygen -l -f "$1" >/dev/null; then
-      log "$1 is not one public key."
+      log "$1 is not one public key, as ssh-keygen writes it."
       exit 1
     fi
     # restrict: no shell, PTY, port, agent or X11 forwarding; the command is
@@ -189,7 +198,7 @@ create_pack_volume() {
   # The publish user's, read by the servers' group alone: the scenarios'
   # folders take new versions, and inherit the group (setgid); a version's
   # folder and files are read-only, as publishing leaves them. Its staging
-  # folders (.<version>.partial) are left to it.
+  # folders (.<version>.partial) keep their modes.
   as_root chown -R "${PUBLISH_USER}:${SERVER_USER}" "${packs}"
   as_root find "${packs}" -mindepth 1 -maxdepth 1 -type d -exec chmod 2750 {} +
   as_root find "${packs}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
@@ -511,7 +520,8 @@ main() {
   install_packages
   download_node_config
   create_server_user
-  create_publish_user "${publish_key}"
+  create_publish_user
+  write_publish_key "${publish_key}"
   create_pack_volume "${packs}"
   create_capture_filesystem
   configure_firewall "${admins[@]}"

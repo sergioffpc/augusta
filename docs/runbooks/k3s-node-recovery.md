@@ -116,14 +116,17 @@ forwarding (`restrict`). That command writes a new `<scenario>/<packVersion>/`
 folder and leaves it read-only, and never writes one that exists. The user's
 home and `authorized_keys` are root's, so neither the user nor its key can add
 another key. A stolen publish key can add a pack, never replace one a server
-runs.
+runs; a pack it adds runs only once a `HelmRelease` names its version. The user
+owns its packs and could make them writable again, but its key runs nothing
+else, and nothing else logs in as it.
 
 The key is the publisher's, whoever holds the pack signing key (ADR-0026), and
 not their login key. Make it hardware-backed where you have a FIDO2 security
-key, as for [SSH](#ssh), or an `ed25519` key with a passphrase. A publish makes
-up to five connections, each needing the key (a touch, for a FIDO2 key). Give it
-to the node with `--publish-key`, which replaces the key the node had: the same
-command rotates it.
+key, as for [SSH](#ssh), or an `ed25519` key with a passphrase, used from one of
+[the maintainer's addresses](#the-firewall). A publish makes up to five
+connections, each needing the key (a touch, for a FIDO2 key). Give it to the
+node with `--publish-key`, which replaces the key the node had: the same command
+rotates it.
 
 ```sh
 ssh-keygen -t ed25519-sk -C "<you>@augusta-publish" -f ~/.ssh/augusta_publish
@@ -912,7 +915,8 @@ ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<p
 
 - The first gets no shell: it prints `only digests, receive and commit` and
   exits `2`. The second fails with `remote port forwarding failed`. The third,
-  for any published version, fails with `Permission denied`.
+  for any published version, fails with `Permission denied`: the folder is
+  read-only to the publish user.
 - [Updates](#updates)' checks show `Debian-Security` alone, and
   [The audit trail](#the-audit-trail)'s show the login just made, from that
   address.

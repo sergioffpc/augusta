@@ -31,7 +31,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Protocol
+from typing import IO, Protocol
 
 from augusta_pack.assets_root import default_assets_root
 from augusta_pack.keys import read_public_key
@@ -199,7 +199,10 @@ class SshNode:
         )
 
     def _ssh(
-        self, command: str, check: bool = True, stdin=subprocess.DEVNULL
+        self,
+        command: str,
+        check: bool = True,
+        stdin: int | IO[bytes] = subprocess.DEVNULL,
     ) -> subprocess.CompletedProcess:
         args = ["ssh", self._host, command]
         try:

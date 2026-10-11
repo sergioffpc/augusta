@@ -335,6 +335,11 @@ def test_a_commit_naming_fewer_files_than_were_received_writes_nothing(
         f"commit firebase/{VERSION} server.pack=nothex",
         f"commit firebase/{VERSION} ../x={sha256(b'')}",
         f"digests firebase/{VERSION} extra",
+        f"digests firebase/{VERSION}\nreceive firebase/{VERSION} server.pack",
+        f"commit firebase/{VERSION} server.pack={sha256(b'')} "
+        f"server.pack={sha256(b'')}",
+        f"commit firebase/{VERSION} server.pack={sha256(b'')} "
+        f"../x={sha256(b'')}",
     ],
 )
 def test_the_forced_command_refuses_anything_but_publishing(
