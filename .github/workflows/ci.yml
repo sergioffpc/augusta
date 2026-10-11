@@ -56,7 +56,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/swarm/|tools/composer/examples/|tools/pack/cpp/|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/swarm/|tools/composer/examples/|tools/pack/cpp/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -261,8 +261,19 @@ jobs:
           nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
           "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
           "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/uv.lock
+      - name: Install the Agents' package
+        # The interpreter the Agents' module is built against, and pytest: the
+        # agent group alone, not the cooker's USD tooling.
+        working-directory: tools
+        run: uv sync --locked --no-default-groups --group agent
       - name: Configure
-        run: cmake --preset windows
+        # PYTHON_EXECUTABLE named, so a sync that left no interpreter stops the
+        # configure instead of leaving the module out (cmake/AugustaAgentPython.cmake).
+        run: cmake --preset windows "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
         # Configure downloads the prebuilt Falcor published for this Falcor
         # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
         # request that changes Falcor, or before that workflow has published it -
@@ -329,6 +340,9 @@ jobs:
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
+      - name: Test the Agents' package (pytest)
+        working-directory: tools/agent
+        run: uv run --locked --no-default-groups --group agent pytest
   server:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -357,8 +371,16 @@ jobs:
         with:
           # The same distro version as the clang the presets compile with.
           extra-packages: clang-tidy
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/uv.lock
+      - name: Install the Agents' package
+        # As the client job does.
+        working-directory: tools
+        run: uv sync --locked --no-default-groups --group agent
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Lint
         # Both checks run, and the step fails if either does, so one run shows
@@ -374,14 +396,14 @@ jobs:
         # whole list took most of the job. One file per invocation also
         # keeps a stray Windows-only file to its own error, where a multi-file
         # invocation cascades it onto every file after it.
-        # The C++ tools (tools/swarm) are built with them, so
+        # The C++ tools (tools/swarm, tools/agent) are built with them, so
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the Windows-only
         # client tests are the client job's.
         run: |
           status=0
-          find src tools/swarm -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
+          find src tools/swarm tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
@@ -390,6 +412,9 @@ jobs:
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
         run: ctest --preset linux --parallel "$(nproc)"
+      - name: Test the Agents' package (pytest)
+        working-directory: tools/agent
+        run: uv run --locked --no-default-groups --group agent pytest
   tools:
     needs: changes
     if: needs.changes.outputs.run_tools == 'true'

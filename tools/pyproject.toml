@@ -1,6 +1,8 @@
 # The one Python environment every tool under tools/ shares: `uv sync` here
-# creates tools/.venv, with the cooker installed editable, its test runner, and
-# what the documentation site is built with (ADR-0046).
+# creates tools/.venv, with the cooker and the Agents' package installed
+# editable, their test runner, and what the documentation site is built with
+# (ADR-0046). The agent group alone is what the C++ CI jobs sync: the
+# interpreter the root build builds the Agents' module against, and pytest.
 [project]
 name = "augusta-tools"
 version = "0.1.0"
@@ -8,7 +10,8 @@ requires-python = ">=3.12,<3.13"
 dependencies = []
 
 [dependency-groups]
-dev = ["pack", "pytest>=8"]
+dev = ["augusta-agent", "pack", "pytest>=8"]
+agent = ["augusta-agent", "pytest>=8"]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.7"]
 
 [tool.uv]
@@ -16,7 +19,8 @@ package = false
 default-groups = ["dev", "docs"]
 
 [tool.uv.workspace]
-members = ["pack"]
+members = ["agent", "pack"]
 
 [tool.uv.sources]
+augusta-agent = { workspace = true }
 pack = { workspace = true }

@@ -71,6 +71,11 @@ __pycache__/
 tools/pack/src/pack/*.pyd
 tools/pack/src/pack/*.so
 tools/pack/src/pack/*.dll
+# Likewise the Agents' _native module (tools/agent/native), which the root
+# build writes into its package with the DLLs it needs on Windows.
+tools/agent/src/augusta_agent/*.pyd
+tools/agent/src/augusta_agent/*.so
+tools/agent/src/augusta_agent/*.dll
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
 # templates in config/ are named *.example.yaml and stay tracked. A Parameters

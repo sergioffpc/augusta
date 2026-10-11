@@ -2,8 +2,9 @@
 
 This directory contains every tool, apart from the runtime in `src/`: `pack`
 cooks authored content into signed runtime packs, `composer` sets up the
-optional USD authoring application and its launcher (both Windows), `swarm`
-builds `augusta-swarm`, which fills a server with Scripted players for load and
+optional USD authoring application and its launcher (both Windows), `agent` is
+the `augusta_agent` package a Python script controls Agents with, `swarm` builds
+`augusta-swarm`, which fills a server with Scripted players for load and
 end-to-end tests. Each tool's tests live beside it. `docs` is not a tool of its
 own: it holds how the documentation site is built (ADR-0046).
 
@@ -11,17 +12,19 @@ own: it holds how the documentation site is built (ADR-0046).
 | ------------------------ | ---------------------------------------------------------------------------- |
 | [`pack/`](pack/)         | Python asset cooker, signing utilities, and native cooking modules.          |
 | [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher.       |
+| [`agent/`](agent/)       | `augusta_agent`: Agents, players a Python script controls through Intents.   |
 | [`swarm/`](swarm/)       | `augusta-swarm`: the Scripted players, a server's worth of headless clients. |
 | [`docs/`](docs/)         | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`.    |
 
 ## Python environment
 
 The Python tools share one environment: [`pyproject.toml`](pyproject.toml) here
-is a uv workspace with `pack` as its member and one lock, `uv.lock`. `uv sync`,
-run from this directory, creates `tools/.venv` with the cooker installed
-editable, pytest, and MkDocs (the `docs` group, which `make docs` runs alone).
-The editor uses it as the workspace's interpreter. Run `uv sync` here, not in a
-member, where it would sync that member alone and drop the rest.
+is a uv workspace with `pack` and `agent` as its members and one lock,
+`uv.lock`. `uv sync`, run from this directory, creates `tools/.venv` with the
+cooker and `augusta_agent` installed editable, pytest, and MkDocs (the `docs`
+group, which `make docs` runs alone). The editor uses it as the workspace's
+interpreter. Run `uv sync` here, not in a member, where it would sync that
+member alone and drop the rest.
 
 ## Composer
 
@@ -471,6 +474,33 @@ regenerate them from `tools/pack` and commit the result:
 $golden = "..\..\tests\fixtures\example-packs"
 uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $golden\test.key `
   --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
+```
+
+## Agent
+
+`augusta_agent` (ADR-0052) is a Python package a script imports to connect
+Agents (see [CONTEXT.md](../CONTEXT.md)) to a server and tell each what to do;
+the Harness carries it out every tick. Its native part, `augusta_agent._native`,
+is built by the root build with `AUGUSTA_TOOLS`, against the interpreter of
+`tools/.venv`, into [`agent/src/augusta_agent/`](agent/src/augusta_agent/): run
+`uv sync` here first, or the configure leaves the module out with a warning.
+`-DPYTHON_EXECUTABLE=<python>` names another Python 3.12.
+
+```sh
+uv sync
+cmake --preset linux
+cmake --build --preset linux
+uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
+  --pack <client.pack> --public-key <pack.pub>
+```
+
+[`agent/examples/raw_hold.py`](agent/examples/raw_hold.py) is the smallest
+script: one Agent holding one Raw Command. The package's tests, in
+[`agent/tests/`](agent/tests/), play against a server in their own process:
+
+```sh
+cd agent
+uv run pytest
 ```
 
 ## Swarm
