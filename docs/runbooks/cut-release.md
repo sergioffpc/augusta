@@ -170,14 +170,18 @@ gh release view vX.Y.Z
 gh release download vX.Y.Z --dir release-vX.Y.Z
 gh attestation verify release-vX.Y.Z/augustac-windows-x64.exe --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-x64 --repo sergioffpc/augusta
+gh attestation verify release-vX.Y.Z/augustad-linux-arm64 --repo sergioffpc/augusta
 gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> --repo sergioffpc/augusta
+docker buildx imagetools inspect ghcr.io/sergioffpc/augustad:sha-<12>  # amd64 + arm64
 git log --oneline -1 origin/develop      # the back-merge
 flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 ```
 
 - The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.exe`,
-  `augustad-linux-x64` and their `.spdx.json` SBOMs, and its notes are the
-  changelog section.
+  `augustad-linux-x64`, `augustad-linux-arm64` and their `.spdx.json` SBOMs, and
+  its notes are the changelog section.
+- `sha-<12>` is an index with a `linux/amd64` and a `linux/arm64` manifest:
+  `main`'s `container-index` job ran.
 - The attestations verify. `<12>` is the first 12 characters of the tagged merge
   commit: the image a release runs is the one CI published for it on `main`.
 - `develop` contains the release

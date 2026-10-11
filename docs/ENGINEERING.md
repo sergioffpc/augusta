@@ -76,8 +76,9 @@ decisions already made in ARCHITECTURE.md:
        Windows + Linux + sanitizers build
     2. Build + test the client on a Windows runner (MSVC), with the server's
        development-only Windows x64 build (NFR-04)
-    3. Build + test the server on a Linux runner (clang, ADR-0008), its
-       production platform, Linux x86-64 (NFR-04), plus `clang-tidy` (Google
+    3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
+       x86-64, one of its two production platforms: Linux arm64 is built only
+       for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google
        style checks profile). It and the sanitizers job run the tests one per
        core of the runner (`ctest --parallel "$(nproc)"`), so they follow the
        runner's size: each test listens on a port of its own (`:0`) and names
@@ -103,7 +104,12 @@ decisions already made in ARCHITECTURE.md:
        wrote (every stage but `rootfs`, ADR-0054, is a cache hit), scans it
        again, and only then pushes it with its `-debuginfo` image and
        attestations - so a published image is always a scanned one, of a commit
-       whose tests passed
+       whose tests passed. On a push to `main` alone, whose image is the one a
+       release runs, `container-publish-arm64` builds, scans and pushes the
+       arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
+       its own debug info and attestations, and `container-index` then makes
+       `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
+       architectures (NFR-04)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
@@ -166,11 +172,14 @@ decisions already made in ARCHITECTURE.md:
   SLSA build provenance, naming the commit and the workflow run, and an SPDX
   SBOM. Each is attested where it is built, so the image is attested by CI on
   the push that publishes it, and the image a release runs (`sha-<12>` of its
-  tag's commit) needs nothing more from the release. An executable's SBOM,
-  attached to the Release, lists the vcpkg ports it was built with, taken from
-  vcpkg's own per-port SPDX documents (`scripts/vcpkg-sbom.py`), plus the
-  submodules it uses, by commit: syft finds nothing in a statically linked C++
-  binary. The image's SBOM is syft's, of its Ubuntu packages. Verified with:
+  tag's commit) needs nothing more from the release. On `main` each
+  architecture's image is attested, and the index of both gets its own
+  provenance; a release attests `augustad-linux-x64` and `augustad-linux-arm64`
+  alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
+  was built with, taken from vcpkg's own per-port SPDX documents
+  (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
+  nothing in a statically linked C++ binary. The image's SBOM is syft's, of its
+  Ubuntu packages. Verified with:
 
     ```sh
     gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
@@ -257,9 +266,10 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Crash dumps:** a crashing server logs its stack and leaves a kernel core
   dump. The k3s node must run `systemd-coredump` as its core handler, which
   keeps the dump (`coredumpctl`). A cluster core is read with the debug info CI
-  publishes beside each image as its `sha-<12>-debuginfo` tag; a release's
-  `augustad-linux-x64.debug` reads only that release binary, which no image runs
-  (ADR-0047).
+  publishes beside each image as its `sha-<12>-debuginfo` tag (on `main`, an
+  index whose manifest for the node's architecture is pulled); a release's
+  `augustad-linux-<arch>.debug` reads only that release binary, which no image
+  runs (ADR-0047).
 - **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
   of the `augustac-windows-x64.exe` beside it, which reads a crash of that
   client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the

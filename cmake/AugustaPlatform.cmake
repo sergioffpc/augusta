@@ -1,6 +1,6 @@
 # The server's platform-support contract (NFR-04): augustad runs in production
-# on Linux x86-64 and builds on Windows x64 (ADR-0047) and Linux arm64 - the dev
-# container's on an arm64 host - for development only. Any other target -
+# on Linux x86-64 and Linux arm64, and builds on Windows x64 (ADR-0047) for
+# development only. Any other target -
 # another OS, another architecture, a 32-bit toolchain - is refused when the
 # build is configured, so it can't compile by accident and pass for supported.
 #
@@ -28,7 +28,7 @@ function(augusta_server_platform_support out_var system processor pointer_size)
         set(support development)
       endif()
     elseif(processor MATCHES "^(aarch64|arm64)$" AND system STREQUAL "Linux")
-      set(support development)
+      set(support production)
     endif()
   endif()
   set(${out_var} ${support} PARENT_SCOPE)
@@ -38,7 +38,7 @@ function(_augusta_refuse_server_platform target)
   message(
     FATAL_ERROR
     "augustad does not support ${target}. Supported server platforms: Linux "
-    "x86-64 (production), and Windows x64 and Linux arm64 (development only) - "
+    "x86-64 and Linux arm64 (production), and Windows x64 (development only) - "
     "see docs/REQUIREMENTS.md NFR-04."
   )
 endfunction()

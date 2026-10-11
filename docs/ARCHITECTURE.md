@@ -42,8 +42,8 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux x86-64 in production (Windows x64 and
-  Linux arm64 builds for development only, NFR-04), headless.
+  via NVIDIA Falcor (D3D12). Server: Linux x86-64 and Linux arm64 in production
+  (Windows x64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
   [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
@@ -458,10 +458,10 @@ How each piece reaches the node or the player:
 ```
 
 - **Server code:** a merge to `develop` or `main` is all a deploy takes. CI
-  builds the image from that commit and pushes it to GHCR as `sha-<12>`; Flux
-  pulls the branch, and its `HelmRelease` upgrades the chart, which runs the
-  image of the chart's own commit. No CI runner reaches the cluster; Flux only
-  pulls.
+  builds the image from that commit and pushes it to GHCR as `sha-<12>` (on
+  `main`, an index of its amd64 and arm64 images); Flux pulls the branch, and
+  its `HelmRelease` upgrades the chart, which runs the image of the chart's own
+  commit. No CI runner reaches the cluster; Flux only pulls.
 - **Server packs:** cooked and signed on the developer's machine, never in CI.
   `augusta-publish` copies a server pack and its `signing.pub` to the node, in a
   new folder named by its version, which changes nothing that runs. A pull

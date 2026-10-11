@@ -332,6 +332,9 @@ jobs:
     # nothing rebuilt. Each SBOM gets its dependencies' CPEs first
     # (scripts/sbom-cpes.py), which grype matches against the NVD; no
     # database has advisories for the vcpkg purls the SBOM names them by.
+    # augustad-linux-arm64's SBOM names the same ports at the same versions as
+    # augustad-linux-x64's (one vcpkg manifest and baseline), so x64's covers
+    # both.
     runs-on: ubuntu-26.04
     permissions:
       contents: read

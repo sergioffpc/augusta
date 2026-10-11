@@ -1,6 +1,6 @@
 name: Restore the vcpkg binary cache
 description: >
-  Restores into .vcpkg-bincache the newest vcpkg binary cache any Linux job saved (see save-vcpkg-cache), and records what it restored for save-vcpkg-cache to compare against. The directory exists afterwards even when nothing was restored, so a job can always hand it on.
+  Restores into .vcpkg-bincache the newest vcpkg binary cache any Linux job saved (see save-vcpkg-cache), and records what it restored, and under which prefix, for save-vcpkg-cache. The directory exists afterwards even when nothing was restored, so a job can always hand it on.
 
 runs:
   using: composite
@@ -18,13 +18,27 @@ runs:
     # never matches - as when Ubuntu updates g++ and the runner image and the
     # image's cached apt layer hold different builds of it, until both catch up. The key's "clang" predates that being written down: it
     # stays, as renaming it would drop every entry already saved.
+    #
+    # An arm64 runner's packages (the release's and main's arm64 builds) never
+    # match an x64 job's ABI hashes, so they get a prefix of their own:
+    # sharing x64's, an arm64 save would be the newest entry every x64 job
+    # restores, and miss on.
+    - name: Name the vcpkg cache
+      id: prefix
+      shell: bash
+      run: |
+        if [ "$RUNNER_ARCH" = ARM64 ]; then
+          echo "value=vcpkg-bincache-linux-arm64-" >> "$GITHUB_OUTPUT"
+        else
+          echo "value=vcpkg-bincache-linux-clang-" >> "$GITHUB_OUTPUT"
+        fi
     - name: Restore vcpkg binaries
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .vcpkg-bincache
-        key: vcpkg-bincache-linux-clang-restore-${{ github.run_id }}
+        key: ${{ steps.prefix.outputs.value }}restore-${{ github.run_id }}
         restore-keys: |
-          vcpkg-bincache-linux-clang-
+          ${{ steps.prefix.outputs.value }}
     - name: Record the restored vcpkg binaries
       # What save-vcpkg-cache compares against, to save only when this job
       # added a package.
@@ -32,3 +46,4 @@ runs:
       run: |
         mkdir -p .vcpkg-bincache
         echo "VCPKG_BINCACHE_RESTORED=$(find .vcpkg-bincache -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
+        echo "VCPKG_BINCACHE_PREFIX=${{ steps.prefix.outputs.value }}" >> "$GITHUB_ENV"
