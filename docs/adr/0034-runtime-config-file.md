@@ -30,8 +30,8 @@ startup through `std::expected` rather than throwing (ADR-0033). Each
 executable's keys live on its own side of the split: `augusta_client_config`
 (client-only, since its keymap names client Input's keys and controls) and
 `augusta_server_config` (server-only), so the headless server never links or
-includes client Input. A tool with a settings file of its own reads it under the
-same rules through the module's schema functions (`ReadConfigValues`,
+includes client Input. A tool that needs a settings file of its own reads it
+under the same rules through the module's schema functions (`ReadConfigValues`,
 `RequirePath`, ...), but declares its keys and their meaning itself, next to it:
 the module holds no key of a tool.
 

@@ -245,15 +245,14 @@ under it. It meets US-21, US-23, US-24, NFR-09, NFR-13 and NFR-14.
 
 - Intents in `augusta_harness`: movement, aim and trigger channels, plus Raw,
   carried out every tick under the Runner
-- `tools/agent`: the netcode and Match loop tests over a fixture of Intents, in
-  place of M10's fixed behaviour
+- `tools/agent`: the netcode and Match loop tests over a fixture of Intents
 - Python in the root build under `AUGUSTA_TOOLS`, and the pybind11 module over
   the Harness
 - The `augusta_agent` package (asyncio), its pytest smoke test against an
   in-process server, and the `load_test.py` and `raw_hold.py` examples
 
 **Exercises:** US-23, ADR-0052, ADR-0005, ADR-0013 **Exit criteria:**
-`load_test.py` is the load test and passes against `develop`
+`load_test.py` plays a server through its Match ends against `develop`
 
 ### M13 — Client-side Metrics (S)
 

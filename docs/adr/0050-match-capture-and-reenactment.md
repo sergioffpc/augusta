@@ -255,7 +255,7 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
   judged at one extreme of Lag compensation.
 - **Captured players as Agents, headless**: rejected - augustac shows the Match
   as the captured player saw it, which is half of what bringing back a
-  playtest's problem is for; Agents stay a script's.
+  playtest's problem is for; Reenactment stays augustac's.
 - **One augustac playing every player of a capture**: rejected - only one of
   them could be seen, and one process would no longer stand for one client.
 - **Ordering the processes' joins, so `assign_spawns` places each where it

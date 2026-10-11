@@ -52,17 +52,17 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   a shared CI runner, so it is checked by hand on the r630 cluster before each
   release; once Flux runs the `develop` release (ADR-0026), it becomes a CronJob
   of 8 Harness clients in that namespace.
-- **The load test is built with everything else, and run by hand.**
-  `load_test.py` (`tools/agent/examples`, ADR-0052) runs the scenario's Player
-  count of Agents against a server, and exits non-zero unless every one sees the
-  Match ends it was asked for before a timeout. The C++ tools build together or
-  not at all, with the CMake option `AUGUSTA_TOOLS`, on by default: every build,
-  pull requests included, compiles and lints the Agents' module and runs its C++
-  tests, the whole Match loop against an in-process `server::Host` among them,
-  but not the netcode tests below, which every test preset leaves out and only
-  the nightly runs. The script itself is run by hand, against a local `augustad`
-  or the r630 cluster's. The server image turns the option off: it builds
-  `augustad` alone.
+- **The load test's module is built with everything else, and the load test run
+  by hand.** `load_test.py` (`tools/agent/examples`, ADR-0052) runs the
+  scenario's Player count of Agents against a server, and exits non-zero unless
+  every one sees the Match ends it was asked for before a timeout. The C++ tools
+  build together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by
+  default: every build, pull requests included, compiles and lints the Agents'
+  module and runs its C++ tests, the whole Match loop against an in-process
+  `server::Host` among them, but not the netcode tests below, which every test
+  preset leaves out and only the nightly runs. The script itself is run by hand,
+  against a local `augustad` or the r630 cluster's. The server image turns the
+  option off: it builds `augustad` alone.
 - **Netcode under an impaired link, nightly.** Prediction and reconciliation
   (ADR-0004) and lag compensation (ADR-0044) are only proven under bad network
   conditions, and a whole run of Agents under them takes minutes of real time.

@@ -515,7 +515,8 @@ client pack cooked with the server's and the key it is signed with.
 script: one Agent holding one Raw Command.
 
 ```sh
-uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015   --pack <client.pack> --public-key <pack.pub>
+uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
+  --pack <client.pack> --public-key <pack.pub>
 ```
 
 [`agent/examples/load_test.py`](agent/examples/load_test.py) is the load test
@@ -525,9 +526,11 @@ one has seen `--matches` Match ends, then exits 0; it exits 1 as soon as one
 fails or `--timeout` passes, and prints every Agent's stats either way. Every
 random choice comes from `--seed`. The scenario's Player count must be 2 or
 more: a Match of one ends only when its player dies, which nothing in it causes.
+The example scenario's is 1, so a single player can run it alone.
 
 ```sh
-uv run python agent/examples/load_test.py --server 127.0.0.1:27015   --pack <client.pack> --public-key <pack.pub> --matches 3
+uv run python agent/examples/load_test.py --server 127.0.0.1:27015 \
+  --pack <client.pack> --public-key <pack.pub> --matches 3
 ```
 
 Its link fault options (`--latency-ms`, `--jitter-mean-ms`, `--jitter-max-ms`,
@@ -537,7 +540,8 @@ impaired link on every packet the script sends; `--help` lists them all.
 ### Running the Agent tests
 
 The package's tests, in [`agent/tests/`](agent/tests/), play against a server in
-their own process, the example scenario's packs, after the build above:
+their own process with the example scenario's packs; run them after the build
+above:
 
 ```sh
 cd agent

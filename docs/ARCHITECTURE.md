@@ -71,9 +71,8 @@ IP:port.
   local prediction
 - Dedicated server executable (Linux in production, Windows for development
   only - NFR-04): headless, authoritative simulation
-- Agents (`tools/agent`, Windows and Linux): players with no one at the
-  keyboard, a Python script's, such as the load test's server's worth of them
-  (ADR-0013, ADR-0052)
+- Agents (`tools/agent`, Windows and Linux): players a Python script controls,
+  such as the load test's (ADR-0013, ADR-0052)
 - Communication: GameNetworkingSockets over UDP, encrypted (AES-GCM-256) but
   unauthenticated
 
