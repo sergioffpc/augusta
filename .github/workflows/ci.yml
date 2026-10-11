@@ -607,11 +607,14 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
-        # chart of the branch its GitRepository tracks: staging runs main's
-        # chart, whose values can trail develop's until a release. The branch
-        # this run's commit lands on (the pull request's base, or the pushed
-        # branch) is checked out already; the other one is fetched. bash for
-        # pipefail - a render that fails leaves kubeconform nothing to reject.
+        # chart of the ref its GitRepository follows: develop's branch, or
+        # staging's latest release tag (ADR-0056), whose chart's values can
+        # trail develop's until the next release. The branch this run's commit
+        # lands on (the pull request's base, or the pushed branch) is checked
+        # out already; any other ref is fetched. staging's tag is the newest
+        # vX.Y.Z by version, as Flux's semver "*" picks it (no pre-releases).
+        # bash for pipefail - a render that fails leaves kubeconform nothing
+        # to reject.
         # Its ServiceMonitor and PrometheusRule are checked against the CRDs
         # of the kube-prometheus-stack version the cluster installs
         # (clusters/onprem/infrastructure), so a stack upgrade brings its
@@ -637,16 +640,20 @@ jobs:
           for release in clusters/onprem/apps/*.yaml; do
             grep -q '^kind: HelmRelease$' "$release" || continue
             source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
-            branch=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch" clusters/onprem/apps/sources.yaml)
+            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // \"\"" clusters/onprem/apps/sources.yaml)
+            if [ -z "$ref" ]; then
+              ref=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            fi
             chart=charts/augustad
-            if [ "$branch" != "$TARGET_BRANCH" ]; then
-              tree="$RUNNER_TEMP/branches/$branch"
+            if [ "$ref" != "$TARGET_BRANCH" ]; then
+              tree="$RUNNER_TEMP/refs/$ref"
               mkdir -p "$tree"
-              git fetch --quiet --depth=1 origin "$branch"
+              git fetch --quiet --depth=1 origin "$ref"
               git archive FETCH_HEAD charts/augustad | tar -x -C "$tree"
               chart="$tree/charts/augustad"
             fi
-            echo "$release, with $branch's chart"
+            echo "$release, with $ref's chart"
             yq '.spec.values' "$release" \
               | helm template augustad "$chart" --values - \
               | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \

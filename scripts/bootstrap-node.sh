@@ -164,6 +164,9 @@ install_flux() {
   kubectl wait --for=condition=Established crd --all --timeout=2m
   kubectl -n flux-system wait --for=condition=Available deployment --all \
     --timeout=5m
+  # The keys the flux-system GitRepository verifies develop's HEAD against
+  # (ADR-0056): without them no revision verifies, and Flux applies nothing.
+  curl -fsSL "${MANIFESTS}/trusted-signers.yaml" | kubectl apply -f -
   curl -fsSL "${MANIFESTS}/gotk-sync.yaml" | kubectl apply -f -
 }
 
