@@ -57,7 +57,10 @@ readonly MANIFESTS=https://raw.githubusercontent.com/sergioffpc/augusta/develop/
 # configuration" lists, kept in step with it.
 readonly NODE_CONFIG=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/node
 readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
-readonly SYSCTL_FILE=90-kubelet.conf
+# The kernel parameters, loaded in this order. The kubelet's is last and sorts
+# last in /etc/sysctl.d, so no other file can override what
+# protect-kernel-defaults requires.
+readonly SYSCTL_FILES=(90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)
@@ -235,7 +238,7 @@ download_node_config() {
   readonly DOWNLOADS
   # shellcheck disable=SC2064 # DOWNLOADS is set once, here
   trap "rm -rf -- '${DOWNLOADS}'" EXIT
-  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}" "${OS_FILES[@]}" \
+  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILES[@]}" "${OS_FILES[@]}" \
     "${RECEIVER_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${DOWNLOADS}/${file}"
   done
@@ -397,10 +400,19 @@ configure_audit() {
   as_root augenrules --load
 }
 
+# Writes the kernel parameters and applies them at once: protect-kernel-defaults
+# stops a kubelet that starts without its own.
+configure_kernel() {
+  local file
+  as_root install -d -o root -g root -m 0755 /etc/sysctl.d
+  for file in "${SYSCTL_FILES[@]}"; do
+    install_node_file "${file}" "/etc/sysctl.d/${file}" 0644
+    as_root sysctl --quiet --load "/etc/sysctl.d/${file}"
+  done
+}
+
 # Writes k3s's configuration, its audit policy and admission configuration
-# (clusters/onprem/node/), and the kernel parameters its kubelet needs, which
-# are applied at once: protect-kernel-defaults stops a kubelet that starts
-# without them.
+# (clusters/onprem/node/).
 configure_k3s() {
   local changed="" file
   # A node installed before its configuration was in the repository runs
@@ -413,14 +425,6 @@ configure_k3s() {
       "running node."
     exit 1
   fi
-
-  if differs "${DOWNLOADS}/${SYSCTL_FILE}" "/etc/sysctl.d/${SYSCTL_FILE}"; then
-    changed=yes
-  fi
-  as_root install -d -o root -g root -m 0755 /etc/sysctl.d
-  as_root install -o root -g root -m 0644 "${DOWNLOADS}/${SYSCTL_FILE}" \
-    /etc/sysctl.d
-  as_root sysctl --quiet --load "/etc/sysctl.d/${SYSCTL_FILE}"
 
   as_root install -d -o root -g root -m 0755 /etc/rancher/k3s
   for file in "${K3S_CONFIG_FILES[@]}"; do
@@ -528,6 +532,7 @@ main() {
   configure_ssh
   configure_updates
   configure_audit
+  configure_kernel
   configure_k3s
   install_k3s
   install_flux
