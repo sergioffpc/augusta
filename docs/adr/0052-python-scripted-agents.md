@@ -111,7 +111,7 @@ does not orchestrate across processes.
 **It is built with the engine, in `tools/agent`.** The bindings and the Python
 package live in `tools/agent/`, a member of the `tools/` uv workspace. The root
 build builds `_native` under `AUGUSTA_TOOLS`, with pybind11 from vcpkg, against
-the Python 3.12 of `tools/.venv` (`PYTHON_EXECUTABLE`), as `tools/pack/cpp`
+the Python 3.12 of `tools/.venv` (`PYTHON_EXECUTABLE`), as `tools/pack/native`
 does; it writes the module into the package's source directory, installed
 editable, and builds no wheel. A module that links the engine's static libraries
 must be position-independent on Linux, so `AUGUSTA_TOOLS` turns on
@@ -143,13 +143,13 @@ and a smoke test plays one Match of two Agents against an in-process
   and `ScriptedPlayer` - is removed, and its tests move to `tools/agent/tests/`.
 - **The C++ jobs of CI need Python.** The Windows and Linux builds set up uv and
   run `uv sync` before configuring, since `AUGUSTA_TOOLS` is on by default. The
-  `tools` job keeps building `tools/pack/cpp`, which stays a separate project.
+  `tools` job keeps building `tools/pack/native`, which stays a separate
+  project.
 - **The Linux build with tools is position-independent.** Code that will be
   linked into a shared object can be slightly slower; augustad from the server
   image is not affected, since it builds with `AUGUSTA_TOOLS` off.
 - **The module is tied to Python 3.12**, the ABI it is built against, as the
-  cooker's native modules are. Moving the tools to another Python means a
-  rebuild.
+  cooker's native module is. Moving the tools to another Python means a rebuild.
 - **An Intent's behaviour is C++.** A script that needs a behaviour no Intent
   offers composes it from the channels at its own rate, or the catalogue grows.
 - **An Agent's aim is only as fresh as the Intent.** `Raw` and `Look` do not
@@ -173,7 +173,7 @@ and a smoke test plays one Match of two Agents against an in-process
   already depends on.
 - **The bindings in `src/modules/harness`**: rejected - augustac links the
   Harness, and the client must not need Python to build.
-- **The bindings as a separate CMake project, as `tools/pack/cpp` is**:
+- **The bindings as a separate CMake project, as `tools/pack/native` is**:
   rejected - `_native` links the engine's own static libraries, which must be
   built with the same flags and dependencies, by the same build.
 - **Keeping augusta-swarm's YAML for the load test**: rejected - a script

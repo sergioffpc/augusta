@@ -24,7 +24,7 @@ spec:
       reconcileStrategy: Revision
       sourceRef:
         kind: GitRepository
-        name: augusta-main
+        name: augusta-release
   values:
     # staging's node ports (charts/augustad values.yaml), apart from
     # develop's on the same node.

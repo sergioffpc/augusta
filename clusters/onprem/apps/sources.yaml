@@ -1,14 +1,24 @@
+# What each Environment runs, verified before Flux reconciles it (ADR-0056).
+# staging runs the latest release: the newest v* tag by semver, not main, so a
+# merge to main changes nothing until its tag is cut. Pre-release tags are not
+# matched. Its signature is the maintainer's alone.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: augusta-main
+  name: augusta-release
   namespace: flux-system
 spec:
   interval: 1m
   ref:
-    branch: main
+    semver: "*"
+  verify:
+    mode: Tag
+    secretRef:
+      name: trusted-signers-release
   url: https://github.com/sergioffpc/augusta
 ---
+# develop's HEAD is signed by the maintainer, or by GitHub's web-flow key for a
+# pull request merged on GitHub.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -18,4 +28,8 @@ spec:
   interval: 1m
   ref:
     branch: develop
+  verify:
+    mode: HEAD
+    secretRef:
+      name: trusted-signers-develop
   url: https://github.com/sergioffpc/augusta

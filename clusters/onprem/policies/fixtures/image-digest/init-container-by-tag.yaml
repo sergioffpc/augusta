@@ -1,0 +1,13 @@
+# A pod whose own container is pinned but whose init container is not.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: loki-0
+  namespace: monitoring
+spec:
+  initContainers:
+    - name: chown
+      image: docker.io/library/busybox:1.38.0
+  containers:
+    - name: loki
+      image: docker.io/grafana/loki:3.6.11@sha256:44148ad243c07957113baea950ee5ba9b0c8eff8d7e38ff3cc1c0af705790945

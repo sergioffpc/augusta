@@ -5,11 +5,11 @@ optimize.py) -> usd-validation-nvidia (ADR-0015, also called via its own Python
 API - see validate.py) -> cook_scenario (bake to one signed client/server pack
 pair, ADR-0031/ADR-0032/ADR-0041 - see cook.py), run once per stage the scenario
 composes. cook_scenario is pure Python too: it walks each USD stage via pxr
-directly and calls the small native _meshoptimizer/_textconv bindings only for
-the two pieces with no Python equivalent - no subprocess/CLI binary anywhere in
-this pipeline. A validation failure aborts before cooking, so no pack is written
-if any composed stage didn't pass cleanup/validation, unless --skip-validation
-is given. Every script the manifest names goes into the server pack (ADR-0031,
+directly and calls the small native module, _native, only for the two pieces
+with no Python equivalent - no subprocess/CLI binary anywhere in this pipeline.
+A validation failure aborts before cooking, so no pack is written if any
+composed stage didn't pass cleanup/validation, unless --skip-validation is
+given. Every script the manifest names goes into the server pack (ADR-0031,
 ADR-0039), and the mono PCM WAV sound it names for each of the client's cues
 into the client pack (ADR-0020).
 
@@ -33,17 +33,17 @@ import tempfile
 import time
 import uuid
 
-from pack.assets_root import default_assets_root
-from pack.cook import cook_scenario
-from pack.cook import CookError
-from pack.keys import read_private_key
-from pack.optimize import optimize_stage
-from pack.optimize import OptimizeError
-from pack.progress import Progress
-from pack.scenario import resolve_scenario
-from pack.scenario import ScenarioError
-from pack.validate import validate_stage
-from pack.validate import ValidationError
+from augusta_pack.assets_root import default_assets_root
+from augusta_pack.cook import cook_scenario
+from augusta_pack.cook import CookError
+from augusta_pack.keys import read_private_key
+from augusta_pack.optimize import optimize_stage
+from augusta_pack.optimize import OptimizeError
+from augusta_pack.progress import Progress
+from augusta_pack.scenario import resolve_scenario
+from augusta_pack.scenario import ScenarioError
+from augusta_pack.validate import validate_stage
+from augusta_pack.validate import ValidationError
 
 
 def main(argv: list[str] | None = None) -> int:

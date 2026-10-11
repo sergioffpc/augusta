@@ -1,13 +1,13 @@
+#include "mesh.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
 #include <meshoptimizer.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 
-namespace py = pybind11;
+namespace augusta::pack {
 
 namespace {
 
@@ -18,17 +18,13 @@ constexpr int kQuantizationMantissaBits = 12;
 
 }  // namespace
 
-// Runs the meshoptimizer pass ADR-0016 calls for: weld coincident
-// vertices, simplify within a tight error budget, optimize vertex cache/
-// fetch order, then quantize positions. points is a flat
-// x0,y0,z0,x1,y1,z1,... buffer (3 floats per vertex); indices is a flat
-// triangle-list index buffer. Returns the optimized (points, indices),
-// each possibly shorter than the input.
-py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> indices) {
+Mesh OptimizeMesh(Mesh mesh) {
+  std::vector<float>& points = mesh.points;
+  std::vector<std::uint32_t>& indices = mesh.indices;
   const std::size_t vertex_count = points.size() / 3;
   const std::size_t index_count = indices.size();
   if (vertex_count == 0 || index_count == 0) {
-    return py::make_tuple(std::move(points), std::move(indices));
+    return mesh;
   }
 
   // Weld vertices that share the exact same position first - every later
@@ -73,14 +69,7 @@ py::tuple OptimizeMesh(std::vector<float> points, std::vector<std::uint32_t> ind
     component = meshopt_quantizeFloat(component, kQuantizationMantissaBits);
   }
 
-  return py::make_tuple(std::move(points), std::move(indices));
+  return mesh;
 }
 
-PYBIND11_MODULE(_meshoptimizer, m) {
-  m.doc() =
-      "Thin bindings over meshoptimizer (ADR-0016), called from pack.cook - weld/simplify/"
-      "optimize-cache/optimize-fetch/quantize.";
-  m.def("optimize_mesh", &OptimizeMesh, py::arg("points"), py::arg("indices"),
-        "points: flat [x0,y0,z0,x1,y1,z1,...] float list. indices: flat triangle-list uint32 list. Returns "
-        "(points, indices) after welding/simplifying/reordering/quantizing.");
-}
+}  // namespace augusta::pack
