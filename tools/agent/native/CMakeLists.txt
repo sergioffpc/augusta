@@ -4,7 +4,7 @@
 # environment's Python (the root CMakeLists.txt).
 
 # An Agent on its Session and Runner (see agent.h): no Python in it.
-add_library(augusta_agent_core STATIC agent.cpp)
+add_library(augusta_agent_core STATIC agent.cpp report.cpp)
 target_include_directories(augusta_agent_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_core

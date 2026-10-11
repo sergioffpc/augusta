@@ -153,7 +153,8 @@ class RunnerTest : public ::testing::Test {
 };
 
 TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
-  const Runner runner(session_, RunnerHooks{.next_command = Walking, .on_tick = {}, .on_network_round = {}});
+  const Runner runner(session_,
+                      RunnerHooks{.next_command = Walking, .on_tick = {}, .on_network_round = {}, .on_failure = {}});
   ASSERT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView()).has_value(); }));
   const float start = OwnPosition(*session_.GetServerView())->x;
 
@@ -166,7 +167,8 @@ TEST_F(RunnerTest, MovesThePlayerOnTheServerByTheCommandsItsSourceGives) {
 TEST_F(RunnerTest, MovesThePlayerByTheIntentsAnExecutorCarriesOut) {
   augusta::harness::IntentExecutor executor;
   const auto from_intents = [&] { return executor.NextCommand(*session_.GetServerView(), {}); };
-  const Runner runner(session_, RunnerHooks{.next_command = from_intents, .on_tick = {}, .on_network_round = {}});
+  const Runner runner(
+      session_, RunnerHooks{.next_command = from_intents, .on_tick = {}, .on_network_round = {}, .on_failure = {}});
   ASSERT_TRUE(ServeUntil([&] { return OwnPosition(*session_.GetServerView()).has_value(); }));
   const float start = OwnPosition(*session_.GetServerView())->x;
 
@@ -185,7 +187,8 @@ TEST_F(RunnerTest, ASourceWithNoCommandSkipsTheTickAndSendsNothing) {
   std::atomic<int> ticks = 0;
   const Runner runner(session_, RunnerHooks{.next_command = [] { return std::optional<Command>{}; },
                                             .on_tick = [&](const PredictedTick& /*tick*/) { ++ticks; },
-                                            .on_network_round = {}});
+                                            .on_network_round = {},
+                                            .on_failure = {}});
   ASSERT_TRUE(ServeUntil([&] { return session_.GetAuthoritativeState().has_value(); }));
   const int ticks_in_match = ticks.load();
 
@@ -205,7 +208,8 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
                                                   const std::lock_guard<std::mutex> lock(mutex);
                                                   ticks.push_back(tick);
                                                 },
-                                            .on_network_round = [&] { ++network_rounds; }});
+                                            .on_network_round = [&] { ++network_rounds; },
+                                            .on_failure = {}});
 
   ASSERT_TRUE(ServeUntil([&] {
     const std::lock_guard<std::mutex> lock(mutex);
@@ -226,7 +230,8 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
 TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredictionThread) {
   const Runner runner(session_, RunnerHooks{.next_command = []() -> Command { throw std::runtime_error("no input"); },
                                             .on_tick = {},
-                                            .on_network_round = {}});
+                                            .on_network_round = {},
+                                            .on_failure = {}});
 
   ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
 
@@ -234,6 +239,39 @@ TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredic
   EXPECT_EQ(failure.code, augusta::failure::Code::kWorkerFailed);
   EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "prediction");
   EXPECT_EQ(failure.detail, "no input");
+}
+
+TEST_F(RunnerTest, TellsItsHooksOfTheFirstCauseOnceOnTheThreadThatStoppedOnIt) {
+  std::mutex mutex;
+  std::vector<augusta::failure::Failure> told;
+  std::thread::id told_on;
+  std::thread::id network_thread;
+  const Runner runner(session_, RunnerHooks{.next_command = [] { return Command{}; },
+                                            .on_tick = {},
+                                            .on_network_round =
+                                                [&] {
+                                                  {
+                                                    const std::scoped_lock lock(mutex);
+                                                    network_thread = std::this_thread::get_id();
+                                                  }
+                                                  throw std::runtime_error("link down");
+                                                },
+                                            .on_failure =
+                                                [&](const augusta::failure::Failure& failure) {
+                                                  const std::scoped_lock lock(mutex);
+                                                  told.push_back(failure);
+                                                  told_on = std::this_thread::get_id();
+                                                }});
+
+  ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
+  // Long enough for the other thread to stop too, which is no second cause.
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  const std::scoped_lock lock(mutex);
+  ASSERT_EQ(told.size(), 1U);
+  EXPECT_EQ(told[0].detail, "link down");
+  EXPECT_EQ(ContextOf(told[0], augusta::supervisor::kThreadContextKey), "network");
+  EXPECT_EQ(told_on, network_thread);
 }
 
 // Once the Network I/O thread fails, the Prediction thread finishes at most
@@ -260,7 +298,8 @@ TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAre
                                                     if (fail_next_round) {
                                                       throw std::runtime_error("link down");
                                                     }
-                                                  }});
+                                                  },
+                                              .on_failure = {}});
     running = &runner;
     ASSERT_TRUE(ServeUntil([&] { return ticks >= kTickRate / 4; }));
 
@@ -288,8 +327,9 @@ TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvaria
   Session session(SessionConfig{.server = host_.ListenEndpoint(),
                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},
                   WorldWithFloor());
-  const Runner runner(session,
-                      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}});
+  const Runner runner(
+      session,
+      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}, .on_failure = {}});
 
   ASSERT_TRUE(ServeUntil([&] { return runner.Failure().has_value(); }));
 

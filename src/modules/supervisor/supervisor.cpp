@@ -17,6 +17,8 @@ namespace augusta::supervisor {
 
 Supervisor::Supervisor(failure::Faults& faults) : faults_(&faults) {}
 
+Supervisor::Supervisor(OnFirstCause on_first_cause) : on_first_cause_(std::move(on_first_cause)) {}
+
 Supervisor::~Supervisor() { StopAndJoin(); }
 
 void Supervisor::Spawn(std::string_view thread, std::function<WorkerResult()> body) {
@@ -98,6 +100,9 @@ void Supervisor::RecordFailure(std::string_view thread, failure::Failure failure
   // consequence of that one.
   if (first) {
     LE("subsystem=supervisor event=worker_failed {}", failure::DescribeFailure(failure));
+    if (on_first_cause_) {
+      on_first_cause_(failure);
+    }
   } else {
     LW("subsystem=supervisor event=worker_failed_after_first_cause {}", failure::DescribeFailure(failure));
   }

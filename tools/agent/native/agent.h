@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_AGENT_AGENT_H_
 #define AUGUSTA_AGENT_AGENT_H_
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -18,6 +19,7 @@
 #include "augusta/map.h"
 #include "augusta/physics.h"
 #include "augusta/runner.h"
+#include "report.h"
 
 /// \file
 /// An Agent (CONTEXT.md, ADR-0052): a player with no one at the keyboard, on a
@@ -54,14 +56,26 @@ struct AgentView {
   physics::BodyState own{};
 };
 
-/// One Agent, connecting from construction until destruction. It reports Ready
-/// for every Roster it is sent: it has nothing to load to draw anyone. Its
-/// calls are safe from any thread and never wait for a tick.
+/// When an Agent reports Ready.
+enum class Readiness : std::uint8_t {
+  /// For every Roster it is sent: it has nothing to load to draw anyone.
+  kForEveryRoster,
+  /// Only when told to (Agent::Ready), as a test of the Lobby needs.
+  kWhenTold,
+};
+
+/// One Agent, connecting from construction until destruction. It reports to
+/// its sink, from the Runner's threads, every Shot, Hit confirmation, Death,
+/// Match start and Match end it is told of, in the order they arrived, every
+/// ending of an Intent it was given, and its failure, once. Its calls are safe
+/// from any thread and never wait for a tick.
 class Agent {
  public:
-  /// Connects to server as character, predicting against pack's Map. Throws
-  /// std::runtime_error if physics rejects a mesh of the Map.
-  Agent(const std::string& server, const LoadedPack& pack, const std::string& character);
+  /// Connects to server as character, predicting against pack's Map, and
+  /// reports to report. Throws std::runtime_error if physics rejects a mesh
+  /// of the Map.
+  Agent(const std::string& server, const LoadedPack& pack, const std::string& character, Readiness readiness,
+        ReportSink report);
 
   /// Not copyable or movable: the Runner's threads hold references to it.
   Agent(const Agent&) = delete;
@@ -70,30 +84,44 @@ class Agent {
   Agent& operator=(Agent&&) = delete;
   ~Agent() = default;
 
-  /// Holds command on every channel (IntentExecutor::SetRaw).
-  void SetRaw(const command::Command& command);
+  /// Holds command on every channel (IntentExecutor::SetRaw), and returns the
+  /// number its ending is reported under (IntentEnded).
+  std::uint64_t SetRaw(const command::Command& command);
+
+  /// Reports Ready for the newest Roster, as kForEveryRoster does for each;
+  /// sends nothing outside the Lobby.
+  void Ready();
 
   /// What it has been told so far, and its body as of its last Tick: a copy,
   /// which nothing changes once taken.
   [[nodiscard]] AgentView View() const;
 
-  /// Why the Agent stopped playing, as the sentence augustac would show, or
-  /// nullopt while it has not.
-  [[nodiscard]] std::optional<std::string> Failure() const;
-
  private:
   [[nodiscard]] physics::BodyState OwnBody() const;
-  // Reports Ready for a Roster it has not yet. The Runner's Network I/O
-  // thread, each round.
-  void ReportReadyForNewRoster();
+  // What the Network I/O thread does after each round.
+  void AfterNetworkRound();
+  // Reports Ready for a Roster it has not yet.
+  void ReportReadyForNewRoster(const harness::ServerView& view);
+  // Reports the events view tells of that it has not yet.
+  void ReportEvents(const harness::ServerView& view);
+  // Reports the failure described, unless one has been.
+  void ReportFailure(std::string description);
 
+  const Readiness readiness_;
+  const ReportSink report_;
   harness::Session session_;
   harness::IntentExecutor intents_;
   // Written on the Prediction thread each Tick, read by View on any.
   mutable std::mutex own_mutex_;
   physics::BodyState own_{};
+  std::atomic<std::uint64_t> next_intent_{0};
+  std::atomic<bool> failure_reported_{false};
   // The Network I/O thread's only.
   std::optional<std::uint32_t> ready_version_;
+  // The count of Matches started as of the last Match start, and of the
+  // Match whose end, it has reported.
+  std::uint32_t started_reported_ = 0;
+  std::uint32_t ended_reported_ = 0;
   // Last, so its threads are joined before anything they use goes.
   std::optional<harness::Runner> runner_;
 };

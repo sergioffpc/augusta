@@ -55,6 +55,7 @@ class Player {
                       .next_command = [this] { return script_.NextCommand(*session_.GetServerView(), predicted_own_); },
                       .on_tick = [this](const harness::PredictedTick& tick) { Tally(tick); },
                       .on_network_round = {},
+                      .on_failure = {},
                   });
   }
 

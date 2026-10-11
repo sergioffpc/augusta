@@ -78,7 +78,8 @@ tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::dura
 
 }  // namespace
 
-Runner::Runner(Session& session, RunnerHooks hooks) : session_(session), hooks_(std::move(hooks)) {
+Runner::Runner(Session& session, RunnerHooks hooks)
+    : session_(session), hooks_(std::move(hooks)), workers_(hooks_.on_failure) {
   workers_.Spawn("prediction", [this] { return PredictionThreadMain(); });
   workers_.Spawn("network", [this] { return NetworkThreadMain(); });
 }

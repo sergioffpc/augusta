@@ -1,7 +1,7 @@
 """The smallest Agent: one, holding one Raw Command, until interrupted.
 
 Connects an Agent to a server, holds a Command that walks it forward, and
-prints where the server has it every second until Ctrl+C or a failure.
+prints every event it is told of, with where it is, until Ctrl+C or a failure.
 
 Usage (from tools/, after `uv sync` and a build with AUGUSTA_TOOLS):
     uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
@@ -9,10 +9,24 @@ Usage (from tools/, after `uv sync` and a build with AUGUSTA_TOOLS):
 """
 
 import argparse
+import asyncio
 import sys
-import time
 
 import augusta_agent
+
+
+async def hold(args: argparse.Namespace, pack: augusta_agent.Pack) -> int:
+    """Plays one Agent until it fails; returns the process's exit code."""
+    with augusta_agent.Agent(args.server, pack, args.character) as agent:
+        agent.set_raw(augusta_agent.Command(move=(0.0, 0.0, -1.0)))
+        try:
+            while True:
+                event = await agent.next_event()
+                position = agent.view().own.position
+                print(f"{type(event).__name__}: at {position}")
+        except augusta_agent.AgentFailed as failed:
+            print(failed, file=sys.stderr)
+            return 1
 
 
 def main() -> int:
@@ -32,17 +46,10 @@ def main() -> int:
         print(error, file=sys.stderr)
         return 1
 
-    with augusta_agent.Agent(args.server, pack, args.character) as agent:
-        agent.set_raw(augusta_agent.Command(move=(0.0, 0.0, -1.0)))
-        try:
-            while agent.failure is None:
-                view = agent.view()
-                print(f"{view.phase.name}: at {view.own.position}")
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            return 0
-        print(agent.failure, file=sys.stderr)
-        return 1
+    try:
+        return asyncio.run(hold(args, pack))
+    except KeyboardInterrupt:
+        return 0
 
 
 if __name__ == "__main__":

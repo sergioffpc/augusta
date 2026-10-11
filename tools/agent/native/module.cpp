@@ -1,16 +1,21 @@
 // augusta_agent._native: the pybind11 bindings of an Agent (agent.h) and of
 // the test-only in-process server (testing_server.h), wrapped by the
-// augusta_agent package. Every value a script reads is a copy: nothing it
-// holds changes under it.
+// augusta_agent package, and the dispatch thread that hands Agents' Reports
+// (report.h) to it. Every value a script reads is a copy: nothing it holds
+// changes under it.
 
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <pybind11/pybind11.h>
@@ -18,13 +23,16 @@
 #include <pybind11/stl/filesystem.h>
 
 #include "agent.h"
+#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/intent.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
+#include "report.h"
 #include "testing_server.h"
 
 namespace py = pybind11;
@@ -32,15 +40,28 @@ namespace py = pybind11;
 namespace {
 
 using augusta::agent::Agent;
+using augusta::agent::AgentFailure;
 using augusta::agent::AgentView;
+using augusta::agent::IntentEnded;
 using augusta::agent::LoadedPack;
+using augusta::agent::Readiness;
+using augusta::agent::Report;
+using augusta::agent::ReportQueue;
+using augusta::agent::ReportSink;
+using augusta::ballistics::BodyPart;
 using augusta::command::Command;
 using augusta::harness::AuthoritativeState;
+using augusta::harness::Death;
 using augusta::harness::EntityBody;
+using augusta::harness::HitConfirmation;
+using augusta::harness::IntentEnding;
 using augusta::harness::Lobby;
+using augusta::harness::MatchEnd;
 using augusta::harness::MatchPlayer;
+using augusta::harness::MatchStart;
 using augusta::harness::Phase;
 using augusta::harness::RosterEntry;
+using augusta::harness::Shot;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
@@ -103,6 +124,130 @@ void DefContextManager(Class& bound) {
       .def("__exit__", [](Closable<T>& self, const py::args&) { self.Close(); });
 }
 
+// The process's one ReportQueue, and the one dispatch thread that waits on it
+// with the GIL released and calls, with it held, the receiver each Agent
+// registered with every Report the Agent put: the Runner's threads put them
+// and never touch Python. Started at import, stopped at exit before the
+// interpreter finalizes (PYBIND11_MODULE), and never destroyed, as an Agent
+// a script never closed may still put Reports after.
+class Dispatch {
+ public:
+  static Dispatch& Get() {
+    static auto* const kDispatch = new Dispatch();
+    return *kDispatch;
+  }
+
+  // Calls receiver with every Report the Agent numbered as returned puts on
+  // the sink For gives it, until Unregister. GIL held.
+  std::uint64_t Register(py::object receiver) {
+    const std::uint64_t agent = next_agent_++;
+    receivers_.emplace(agent, std::move(receiver));
+    return agent;
+  }
+
+  // Drops the Agent's Reports from now on, those waiting among them. GIL held.
+  void Unregister(std::uint64_t agent) { receivers_.erase(agent); }
+
+  // Where the Agent agent puts its Reports.
+  ReportSink For(std::uint64_t agent) {
+    return [this, agent](Report report) { queue_.Put(agent, std::move(report)); };
+  }
+
+  // Drops every receiver and Report, and joins the thread. GIL held, which it
+  // lets go of while it joins.
+  void Stop() {
+    receivers_.clear();
+    queue_.Close();
+    const py::gil_scoped_release release;
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+
+ private:
+  Dispatch() : thread_([this] { Run(); }) {}
+
+  void Run() {
+    for (std::vector<augusta::agent::AddressedReport> reports = queue_.TakeAll(); !reports.empty();
+         reports = queue_.TakeAll()) {
+      const py::gil_scoped_acquire gil;
+      for (augusta::agent::AddressedReport& addressed : reports) {
+        Deliver(addressed);
+      }
+    }
+  }
+
+  // GIL held. A receiver that raises is the script's bug, told as Python
+  // tells an exception no one can catch; the next Report is still delivered.
+  void Deliver(augusta::agent::AddressedReport& addressed) {
+    const auto found = receivers_.find(addressed.agent);
+    if (found == receivers_.end()) {
+      return;
+    }
+    // Its own reference: the receiver may unregister itself.
+    const py::object receiver = found->second;
+    try {
+      receiver(std::visit([](auto& report) { return py::cast(std::move(report)); }, addressed.report));
+    } catch (py::error_already_set& error) {
+      error.discard_as_unraisable("augusta_agent: delivering a Report");
+    } catch (const std::exception& error) {
+      LE("subsystem=agent event=report_dropped reason=\"{}\"", error.what());
+    }
+  }
+
+  ReportQueue queue_;
+  // GIL-guarded, as next_agent_ is.
+  std::unordered_map<std::uint64_t, py::object> receivers_;
+  std::uint64_t next_agent_ = 0;
+  // Last, so it starts once the rest is there.
+  std::thread thread_;
+};
+
+// An Agent and its receiver, which the script may close before Python lets
+// it go: closing stops its Reports and destroys it, joining its threads,
+// after which its calls raise.
+class AgentHandle {
+ public:
+  AgentHandle(const std::string& server, const LoadedPack& pack, const std::string& character, Readiness readiness,
+              py::object receiver)
+      : number_(Dispatch::Get().Register(std::move(receiver))) {
+    try {
+      agent_ = std::make_unique<Agent>(server, pack, character, readiness, Dispatch::Get().For(number_));
+    } catch (...) {
+      Dispatch::Get().Unregister(number_);
+      throw;
+    }
+  }
+
+  AgentHandle(const AgentHandle&) = delete;
+  AgentHandle& operator=(const AgentHandle&) = delete;
+  AgentHandle(AgentHandle&&) = delete;
+  AgentHandle& operator=(AgentHandle&&) = delete;
+  ~AgentHandle() { Close(); }
+
+  Agent& Get() {
+    if (!agent_) {
+      throw std::runtime_error("closed");
+    }
+    return *agent_;
+  }
+
+  // GIL held, which it lets go of while the Agent's threads are joined.
+  void Close() {
+    if (!agent_) {
+      return;
+    }
+    Dispatch::Get().Unregister(number_);
+    std::unique_ptr<Agent> closing = std::move(agent_);
+    const py::gil_scoped_release release;
+    closing.reset();
+  }
+
+ private:
+  std::uint64_t number_;
+  std::unique_ptr<Agent> agent_;
+};
+
 // Who is in the Lobby.
 void BindLobby(py::module_& module) {
   py::class_<RosterEntry>(module, "RosterEntry")
@@ -134,6 +279,7 @@ void BindMatch(py::module_& module) {
 
   py::class_<AuthoritativeState>(module, "AuthoritativeState")
       .def_readonly("tick", &AuthoritativeState::tick)
+      .def_readonly("acknowledged_sequence", &AuthoritativeState::acknowledged_sequence)
       .def_property_readonly("bodies", [](const AuthoritativeState& state) { return ToPyTuple(state.bodies); })
       .def_readonly("health", &AuthoritativeState::health);
 }
@@ -175,6 +321,55 @@ void BindView(py::module_& module) {
                              })
       .def_property_readonly("authoritative", [](const AgentView& view) { return view.server->authoritative; })
       .def_readonly("own", &AgentView::own);
+}
+
+// What an Agent's script awaits (Agent.next_event), and what else it is told.
+void BindReports(py::module_& module) {
+  py::enum_<BodyPart>(module, "BodyPart")
+      .value("HEAD", BodyPart::kHead)
+      .value("TORSO", BodyPart::kTorso)
+      .value("LIMB", BodyPart::kLimb);
+
+  py::class_<Shot>(module, "Shot")
+      .def_property_readonly("shooter", [](const Shot& shot) { return Number(shot.shooter); })
+      .def_readonly("tick", &Shot::tick)
+      .def_property_readonly("origin", [](const Shot& shot) { return ToTuple(shot.origin); })
+      .def_readonly("yaw", &Shot::yaw)
+      .def_readonly("pitch", &Shot::pitch);
+
+  py::class_<HitConfirmation>(module, "HitConfirmation")
+      .def_property_readonly("target", [](const HitConfirmation& hit) { return Number(hit.target); })
+      .def_readonly("damage", &HitConfirmation::damage)
+      .def_readonly("part", &HitConfirmation::part);
+
+  py::class_<Death>(module, "Death")
+      .def_property_readonly("victim", [](const Death& death) { return Number(death.victim); })
+      .def_property_readonly("killer", [](const Death& death) { return Number(death.killer); })
+      .def_readonly("yaw", &Death::yaw)
+      .def_readonly("pitch", &Death::pitch)
+      .def_readonly("part", &Death::part);
+
+  py::class_<MatchStart>(module, "MatchStart")
+      .def_property_readonly("players", [](const MatchStart& start) { return ToPyTuple(start.players); })
+      .def_readonly("first_tick", &MatchStart::first_tick);
+
+  py::class_<MatchEnd>(module, "MatchEnd")
+      .def_property_readonly("winner", [](const MatchEnd& end) -> std::optional<std::uint32_t> {
+        if (!end.winner.has_value()) {
+          return std::nullopt;
+        }
+        return Number(*end.winner);
+      });
+
+  py::enum_<IntentEnding>(module, "IntentEnding")
+      .value("REPLACED", IntentEnding::kReplaced)
+      .value("DONE", IntentEnding::kDone);
+
+  py::class_<IntentEnded>(module, "IntentEnded")
+      .def_readonly("intent", &IntentEnded::intent)
+      .def_readonly("ending", &IntentEnded::ending);
+
+  py::class_<AgentFailure>(module, "AgentFailure").def_readonly("description", &AgentFailure::description);
 }
 
 void BindCommand(py::module_& module) {
@@ -226,18 +421,20 @@ void BindAgent(py::module_& module) {
       },
       py::arg("path"), py::arg("public_key"));
 
-  using AgentHandle = Closable<Agent>;
-  py::class_<AgentHandle> agent(module, "Agent");
-  agent
-      .def(py::init([](const std::string& server, const LoadedPack& pack, const std::string& character) {
-             return AgentHandle(std::make_unique<Agent>(server, pack, character));
+  py::class_<AgentHandle>(module, "Agent")
+      .def(py::init([](const std::string& server, const LoadedPack& pack, const std::string& character, bool auto_ready,
+                       py::object receiver) {
+             return std::make_unique<AgentHandle>(server, pack, character,
+                                                  auto_ready ? Readiness::kForEveryRoster : Readiness::kWhenTold,
+                                                  std::move(receiver));
            }),
-           py::arg("server"), py::arg("pack"), py::arg("character"))
+           py::arg("server"), py::arg("pack"), py::arg("character"), py::arg("auto_ready"), py::arg("receiver"))
       .def(
-          "set_raw", [](AgentHandle& self, const Command& command) { self.Get().SetRaw(command); }, py::arg("command"))
+          "set_raw", [](AgentHandle& self, const Command& command) { return self.Get().SetRaw(command); },
+          py::arg("command"))
+      .def("ready", [](AgentHandle& self) { self.Get().Ready(); })
       .def("view", [](AgentHandle& self) { return self.Get().View(); })
-      .def_property_readonly("failure", [](AgentHandle& self) { return self.Get().Failure(); });
-  DefContextManager<Agent>(agent);
+      .def("close", &AgentHandle::Close);
 }
 
 void BindTesting(py::module_& module) {
@@ -264,8 +461,13 @@ PYBIND11_MODULE(_native, module) {
   if (const auto initialized = augusta::networking::Init(); !initialized) {
     throw std::runtime_error(augusta::failure::DescribeFailure(initialized.error()));
   }
+  // Stopped before the interpreter finalizes, while the GIL it takes is
+  // still there to take.
+  Dispatch::Get();
+  py::module_::import("atexit").attr("register")(py::cpp_function([] { Dispatch::Get().Stop(); }));
   BindCommand(module);
   BindView(module);
+  BindReports(module);
   BindAgent(module);
   BindTesting(module);
 }

@@ -47,10 +47,17 @@ enum class State : std::uint8_t {
   kStopped,
 };
 
+/// Told a Supervisor's first cause, once, on the thread that recorded it: the
+/// failing worker's, or Spawn's caller's for a worker that could not be
+/// started. Must return at once: the worker's stop waits for it.
+using OnFirstCause = std::function<void(const failure::Failure&)>;
+
 /// Owns a runtime's worker threads, its stop request and its first cause.
 class Supervisor {
  public:
   Supervisor() = default;
+  /// Tells on_first_cause of the first cause, if it is not empty.
+  explicit Supervisor(OnFirstCause on_first_cause);
   /// Asks faults at each worker's creation and before its body runs, so a test
   /// can make either fail; faults must outlive the Supervisor.
   explicit Supervisor(failure::Faults& faults);
@@ -105,6 +112,7 @@ class Supervisor {
 
   // Null outside tests.
   failure::Faults* faults_ = nullptr;
+  OnFirstCause on_first_cause_;
   std::atomic<State> state_{State::kRunning};
   static_assert(std::atomic<State>::is_always_lock_free, "RequestStop must be safe from a signal handler");
   mutable std::mutex failure_mutex_;
