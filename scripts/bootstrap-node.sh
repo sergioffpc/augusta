@@ -4,7 +4,8 @@
 # and the tools that read a core, the server's user, the publish user and its
 # key, the asset-pack volume and the capture filesystem
 # (docs/runbooks/k3s-node-recovery.md), the OS's hardening (a firewall, SSH by
-# key only, unattended security updates, an audit trail), k3s at the cluster's
+# key only, unattended security updates, an audit trail), the kernel's
+# hardening and tuning (no swap, the NIC's rings), k3s at the cluster's
 # release with its hardened configuration (clusters/onprem/node/, ADR-0057),
 # the servers' seccomp profile,
 # and Flux from the repository's own manifests, which then installs everything
@@ -58,10 +59,14 @@ readonly MANIFESTS=https://raw.githubusercontent.com/sergioffpc/augusta/develop/
 # configuration" lists, kept in step with it.
 readonly NODE_CONFIG=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/node
 readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
-readonly SYSCTL_FILE=90-kubelet.conf
+# The kernel parameters, loaded in this order. The kubelet's is last, and sorts
+# after ours in /etc/sysctl.d, so none of ours can override what
+# protect-kernel-defaults requires.
+readonly SYSCTL_FILES=(80-hardening.conf 81-tuning.conf 90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
-  unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)
+  unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules
+  10-augusta-ixgbe.link grub.cfg)
 # The servers' seccomp profile, from the same place, where the kubelet reads a
 # pod's Localhost profile: under its root directory, k3s's /var/lib/kubelet,
 # at the localhostProfile the chart names (ADR-0057).
@@ -124,6 +129,7 @@ install_packages() {
     curl \
     e2fsprogs \
     gdb \
+    irqbalance \
     nftables \
     openssh-server \
     podman \
@@ -241,7 +247,7 @@ download_node_config() {
   readonly DOWNLOADS
   # shellcheck disable=SC2064 # DOWNLOADS is set once, here
   trap "rm -rf -- '${DOWNLOADS}'" EXIT
-  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}" "${OS_FILES[@]}" \
+  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILES[@]}" "${OS_FILES[@]}" \
     "${RECEIVER_FILE}" "${SECCOMP_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${DOWNLOADS}/${file}"
   done
@@ -403,10 +409,78 @@ configure_audit() {
   as_root augenrules --load
 }
 
+# Writes the kernel parameters and applies them at once: protect-kernel-defaults
+# stops a kubelet that starts without its own.
+# Globals:
+#   DOWNLOADS, SYSCTL_FILES
+configure_kernel() {
+  local file
+  as_root install -d -o root -g root -m 0755 /etc/sysctl.d
+  for file in "${SYSCTL_FILES[@]}"; do
+    install_node_file "${file}" "/etc/sysctl.d/${file}" 0644
+    as_root sysctl --quiet --load "/etc/sysctl.d/${file}"
+  done
+}
+
+# Turns swap off for good (ADR-0057): none active, none in /etc/fstab, and no
+# resume from one at boot. Its volume is left: removing it is the runbook's
+# step, by hand (k3s-node-recovery.md, No swap).
+# Globals:
+#   DOWNLOADS
+disable_swap() {
+  local resume=/etc/initramfs-tools/conf.d/resume
+  if [[ -n "$(as_root swapon --show --noheadings)" ]]; then
+    as_root swapoff --all
+  fi
+  # A line whose third field is swap, unless commented out.
+  sed -E '/^[[:space:]]*[^#[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+swap([[:space:]]|$)/d' \
+    /etc/fstab >"${DOWNLOADS}/fstab"
+  if differs "${DOWNLOADS}/fstab" /etc/fstab; then
+    as_root install -o root -g root -m 0644 "${DOWNLOADS}/fstab" /etc/fstab
+    as_root systemctl daemon-reload
+  fi
+  # none, not the file removed: without it, initramfs-tools picks a swap device
+  # to resume from by itself.
+  if [[ "$(as_root cat "${resume}" 2>/dev/null)" != RESUME=none ]]; then
+    echo RESUME=none | as_root tee "${resume}" >/dev/null
+    as_root update-initramfs -u
+  fi
+}
+
+# Gives transparent huge pages only to the processes that ask for them: at once,
+# and from the kernel's command line at the next boot.
+# Globals:
+#   DOWNLOADS
+configure_huge_pages() {
+  local drop_in=/etc/default/grub.d/augusta.cfg
+  if differs "${DOWNLOADS}/grub.cfg" "${drop_in}"; then
+    install_node_file grub.cfg "${drop_in}" 0644
+    as_root update-grub
+    log "the kernel's command line changed; it takes effect when the node" \
+      "next reboots."
+  fi
+  echo madvise \
+    | as_root tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+}
+
+# Sizes the 10 GbE ports' rings, from the next boot on: applying them now would
+# reset the port this session may run over. Spreads the NIC's interrupts
+# across the CPUs.
+# Globals:
+#   DOWNLOADS
+configure_nic() {
+  local link=/etc/systemd/network/10-augusta-ixgbe.link
+  if differs "${DOWNLOADS}/10-augusta-ixgbe.link" "${link}"; then
+    install_node_file 10-augusta-ixgbe.link "${link}" 0644
+    # The initramfs's udev names the ports too, from its own copy.
+    as_root update-initramfs -u
+    log "the NIC's rings changed; they take effect when the node next reboots."
+  fi
+  as_root systemctl enable --quiet --now irqbalance
+}
+
 # Writes k3s's configuration, its audit policy and admission configuration
-# (clusters/onprem/node/), and the kernel parameters its kubelet needs, which
-# are applied at once: protect-kernel-defaults stops a kubelet that starts
-# without them.
+# (clusters/onprem/node/).
 configure_k3s() {
   local changed="" file
   # A node installed before its configuration was in the repository runs
@@ -419,14 +493,6 @@ configure_k3s() {
       "running node."
     exit 1
   fi
-
-  if differs "${DOWNLOADS}/${SYSCTL_FILE}" "/etc/sysctl.d/${SYSCTL_FILE}"; then
-    changed=yes
-  fi
-  as_root install -d -o root -g root -m 0755 /etc/sysctl.d
-  as_root install -o root -g root -m 0644 "${DOWNLOADS}/${SYSCTL_FILE}" \
-    /etc/sysctl.d
-  as_root sysctl --quiet --load "/etc/sysctl.d/${SYSCTL_FILE}"
 
   as_root install -d -o root -g root -m 0755 /etc/rancher/k3s
   for file in "${K3S_CONFIG_FILES[@]}"; do
@@ -547,6 +613,10 @@ main() {
   configure_ssh
   configure_updates
   configure_audit
+  configure_kernel
+  disable_swap
+  configure_huge_pages
+  configure_nic
   configure_k3s
   install_seccomp_profile
   install_k3s

@@ -26,6 +26,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to the node's firewall, SSH, update or audit policy has merged, the
   maintainer's addresses change, or a game port range is to face the internet:
   [The node's OS](#the-nodes-os).
+- A security alert fires, a security event is to be looked up, or the latest
+  `kube-bench` report is wanted:
+  [Security logs and alerts](#security-logs-and-alerts).
 
 ## What the cluster holds
 
@@ -230,14 +233,18 @@ credential (ADR-0057). Its configuration is in
 [`clusters/onprem/node/`](../../clusters/onprem/node), beside k3s's, and
 `scripts/bootstrap-node.sh` writes it on every run, before k3s's:
 
-| In the repository              | On the node                                                  | What it sets                                                                   |
-| ------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                 |
-| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                      |
-| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                         |
-| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed. |
-| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                       |
-| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                           |
+| In the repository              | On the node                                                  | What it sets                                                                       |
+| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                     |
+| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                          |
+| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                             |
+| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed.     |
+| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                           |
+| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                               |
+| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                             |
+| `81-tuning.conf`               | `/etc/sysctl.d/81-tuning.conf`                               | [The kernel](#the-kernel)'s tuning: socket buffers, writeback, free memory, TCP.   |
+| `10-augusta-ixgbe.link`        | `/etc/systemd/network/10-augusta-ixgbe.link`                 | The 10 GbE ports' rings, from the next boot ([The kernel](#the-kernel)).           |
+| `grub.cfg`                     | `/etc/default/grub.d/augusta.cfg`                            | The kernel's command line: huge pages on request only ([The kernel](#the-kernel)). |
 
 To change any of it, merge the change to `develop`, then run the bootstrap on
 the node, which writes what changed and reloads the service that reads it:
@@ -366,6 +373,83 @@ sudo ausearch -i -k k3s-config -ts today
 ```
 
 The log is `/var/log/audit/audit.log`, rotated by auditd.
+
+### The kernel
+
+**Its hardening** denies a process that escapes a server's container the
+footholds Debian leaves open (ADR-0057): kernel addresses are hidden, only root
+can ptrace, no kernel loads without a reboot, an unprivileged process gets no
+user namespace, and the Node neither sends ICMP redirects nor takes IPv6 ones.
+Two things work differently for it:
+
+- podman, which takes a crashed server's binary out of its image (ADR-0047),
+  runs under `sudo`: rootless, it cannot make its user namespace.
+- `kexec_load_disabled` holds until the next reboot. A crash kernel (kdump)
+  needs its line removed from `80-hardening.conf` and a reboot.
+
+**Its tuning** suits a 10 GbE Node running UDP servers: socket buffers the
+servers' networking library asks for, writeback bounded in bytes rather than a
+share of the RAM, and a soft lockup that reboots the Node rather than hangs it.
+`81-tuning.conf` says why each value. `kernel.numa_balancing` keeps Debian's
+default until measured: a fixed load of agents (ADR-0052) with it at `1`, then
+`0`, comparing the share of late ticks and the tick duration's p99 and p99.9.
+During the first, `numa_pages_migrated` and `numa_hint_faults` in `/proc/vmstat`
+near zero mean balancing leaves the servers alone, and turning it off gains
+nothing.
+
+**Transparent huge pages** go only to a process that asks for them (`madvise`,
+not Debian's `always`), so khugepaged's compaction never stalls a server that
+did not. The bootstrap sets it at once and on the kernel's command line, which
+takes over from the next boot.
+
+**The NIC** queues line-rate bursts in its largest rings (4096 packets, from
+512), and `irqbalance` spreads its interrupts across the CPUs. udev sizes the
+rings at boot only: changing one resets the port, which would cut the SSH
+session of a bootstrap applying it, so the bootstrap says when one waits for a
+reboot. The link file names the ports as systemd's default does, which it
+replaces for them.
+
+The bootstrap applies the kernel parameters at once. To see what the kernel
+runs:
+
+```sh
+ssh <node>
+for f in /etc/sysctl.d/{80,81,90}-*.conf; do
+  sudo sysctl $(grep -E '^[a-z][^=*]*=' "$f" | cut -d = -f 1)
+done
+sudo sysctl -a 2>/dev/null | grep -E '\.(send|accept)_redirects ='
+```
+
+Each key reads back the value its file sets, and every interface's redirects are
+`0`.
+
+### No swap
+
+The Node has no swap (ADR-0057): a server killed for memory restarts, a Node
+swapping slows every Match on it, and the kubelet keeps pods out of swap anyway.
+The bootstrap turns swap off, removes it from `/etc/fstab`, and sets the
+initramfs to resume from nothing (`RESUME=none`), rebuilding it. It never
+removes a volume.
+
+**Installing Debian**, partition by hand with LVM: `/boot` and the EFI partition
+as the guided layout makes them, one volume group, and the root volume taking
+all of it, with no swap volume. Then there is nothing to remove.
+
+**On a Node installed with swap**, give its volume back to the root once, after
+a bootstrap run, which has turned it off and left nothing to resume from it:
+
+```sh
+ssh <node>
+swapon --show                                   # nothing
+cat /etc/initramfs-tools/conf.d/resume          # RESUME=none
+sudo lvs                                        # the swap volume, e.g. vg0/swap_1
+sudo lvremove vg0/swap_1
+sudo lvextend --resizefs --extents +100%FREE vg0/root
+df -h /
+```
+
+The root filesystem, ext4, grows while mounted. Then reboot once, at a time that
+cuts no Match, to see the Node start with neither.
 
 ## Cluster access
 
@@ -503,6 +587,122 @@ sudo k3s kubectl -n flux-system delete networkpolicy --all
 ```
 
 Flux fetches the fix and applies its NetworkPolicies again with it.
+
+## Security logs and alerts
+
+Every security event on the node and the cluster is in Loki, and the important
+ones alert (ADR-0057, ADR-0053). Grafana's **Security** dashboard shows each
+source, with a search box over all of them:
+
+| Source                                       | In Loki                                           | Collected by                                                                             |
+| -------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| SSH logins, `sudo`, `su`                     | `{job="node/auth"}`                               | `alloy-node`, from the journal's auth facilities (Debian 13 keeps no `auth.log`).        |
+| auditd                                       | `{job="node/auditd"}`                             | `alloy-node`, from `/var/log/audit/audit.log`.                                           |
+| The API server's audit log                   | `{job="node/kube-audit"}`                         | `alloy-node`, from `/var/lib/rancher/k3s/server/logs/audit.log`, without request bodies. |
+| Kyverno's policy violations, Flux's warnings | `{job="kubernetes/events"}`                       | `alloy`, every Kubernetes event.                                                         |
+| `kube-bench`                                 | `{namespace="monitoring-node", app="kube-bench"}` | `alloy`, the daily CronJob's pod log.                                                    |
+
+`alloy-node` runs in `monitoring-node`, one pod on the node, and keeps where it
+has read up to in `/var/lib/alloy-node` on the node. The alerts are Loki rules
+([`security-alerts.yaml`](../../clusters/onprem/infrastructure/security-alerts.yaml)),
+in Alertmanager beside Prometheus's, each firing for five minutes after its
+event:
+
+| Alert                          | Fires on                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `NodeSSHLogin`                 | A login sshd accepts.                                                          |
+| `ClusterAdminUsed`             | A request by `system:admin`, k3s's own kubeconfig: any **cluster-admin** step. |
+| `KyvernoPolicyViolation`       | A failed policy result, at admission or in the background scan.                |
+| `FluxSourceVerificationFailed` | A `GitRepository` revision failing its signature check (ADR-0056).             |
+
+A **cluster-admin** step raises `ClusterAdminUsed` by design: the alert is the
+record that it happened.
+
+### kube-bench on a schedule
+
+The CronJob `monitoring-node/kube-bench` runs
+[Verify the hardening](#verify-the-hardening)'s `kube-bench` once a day, at
+12:00 UTC, with the same profile but for its `policies` section (manual, and its
+`kubectl` would be cluster-admin's). The last run's pod stays, so its report is
+also one command away:
+
+```sh
+kubectl -n monitoring-node logs -l app.kubernetes.io/name=kube-bench --tail=-1
+```
+
+To run it now, a **cluster-admin** step on the node:
+
+```sh
+sudo k3s kubectl -n monitoring-node create job kube-bench-now --from=cronjob/kube-bench
+sudo k3s kubectl -n monitoring-node wait --for=condition=Complete job/kube-bench-now --timeout=5m
+sudo k3s kubectl -n monitoring-node logs job/kube-bench-now | grep -E '^\[(FAIL|WARN)\]'
+sudo k3s kubectl -n monitoring-node delete job kube-bench-now
+```
+
+Every `FAIL` and `WARN` is in
+[`cis-exceptions.md`](../../clusters/onprem/node/cis-exceptions.md), as for the
+manual run.
+
+### Check the alerts
+
+After a rebuild, or a change to the alerts or the collectors. Alertmanager
+answers only inside the cluster, and the day-to-day kubeconfig cannot
+port-forward, so forward it from the node, a **cluster-admin** step, and leave
+it open:
+
+```sh
+ssh -L 9093:127.0.0.1:9093 <node> \
+  "sudo k3s kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093"
+```
+
+Then, at <http://127.0.0.1:9093>, within a couple of minutes of each step:
+
+1. `NodeSSHLogin` and `ClusterAdminUsed` fire: the SSH login and the
+   port-forward above.
+2. A policy violation, reported as the cluster's policies are still in audit
+   mode: a pod `monitoring-node` does not know, as **cluster-admin** on the
+   node, removed at once.
+
+    ```sh
+    sudo k3s kubectl -n monitoring-node run policy-probe \
+      --image=docker.io/library/busybox:1.37.0 --restart=Never -- true
+    sudo k3s kubectl -n monitoring-node delete pod policy-probe
+    ```
+
+    `KyvernoPolicyViolation` fires for `Pod monitoring-node/policy-probe`.
+
+3. A source failing verification: a throwaway `GitRepository` following
+   `develop` but trusting the release's signer alone, which a merge GitHub
+   signed (`web-flow`) fails. As **cluster-admin** on the node; if `develop`'s
+   head is a commit of yours, run it after the next merge.
+
+    ```sh
+    sudo k3s kubectl apply -f - <<'YAML'
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: verify-probe
+      namespace: flux-system
+    spec:
+      interval: 1m
+      url: https://github.com/sergioffpc/augusta
+      ref:
+        branch: develop
+      verify:
+        mode: HEAD
+        secretRef:
+          name: trusted-signers-release
+    YAML
+    ```
+
+    Once `FluxSourceVerificationFailed` fires for `verify-probe`, remove it:
+
+    ```sh
+    sudo k3s kubectl -n flux-system delete gitrepository verify-probe
+    ```
+
+4. Each source has lines on Grafana's **Security** dashboard, `kube-bench`'s
+   after its first run.
 
 ## Volumes
 
@@ -927,7 +1127,8 @@ On the node, after a rebuild, a configuration change or an upgrade:
     ssh <node> "sudo /usr/local/bin/k3s-uninstall.sh"
     ```
 
-    On a reinstalled OS there is nothing to remove; skip this step.
+    On a reinstalled OS there is nothing to remove; skip this step. Install it
+    without swap ([No swap](#no-swap)).
 
 3. Run the node's bootstrap, giving it the packs copied in step 1. It sets up
    the server's user, the publish user, the pack volume (unpacking the archive
@@ -1018,9 +1219,10 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 - Each server's Service is on the node port its `HelmRelease` pins, in its
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).
-- node-exporter, alone in `monitoring-node`, is `Running`. `flux-system`,
-  `kyverno` and `monitoring` enforce the `restricted` Pod Security level;
-  `kube-system` and `monitoring-node`, `privileged` (ADR-0057).
+- node-exporter and `alloy-node` are `Running` in `monitoring-node`, beside
+  `kube-bench`'s last pod, if it has run. `flux-system`, `kyverno` and
+  `monitoring` enforce the `restricted` Pod Security level; `kube-system` and
+  `monitoring-node`, `privileged` (ADR-0057).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
   dashboard, offers no way to edit or save one, shows no login form, and refuses
@@ -1033,7 +1235,8 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
     ```
 
 - After a rebuild, the node also passes
-  [Verify the hardening](#verify-the-hardening).
+  [Verify the hardening](#verify-the-hardening) and
+  [Check the alerts](#check-the-alerts).
 - Each namespace's NetworkPolicies hold:
   [Verify the isolation](#verify-the-isolation).
 

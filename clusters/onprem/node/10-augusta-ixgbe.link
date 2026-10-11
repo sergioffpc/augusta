@@ -1,0 +1,22 @@
+# The Node's 10 GbE ports, by driver rather than name or address, so a moved
+# cable or a new card of the same kind keeps it:
+# /etc/systemd/network/10-augusta-ixgbe.link, installed by
+# scripts/bootstrap-node.sh.
+#
+# udev applies the first .link file that matches a port and no other, so this
+# one repeats the naming of systemd's 99-default.link, which it replaces for
+# these ports: without it they would lose their names (eno1).
+#
+# udev applies it at boot only. Changing a ring resets the port, and with it the
+# SSH session that would apply it.
+[Match]
+Driver=ixgbe
+
+[Link]
+NamePolicy=keep kernel database onboard slot path
+AlternativeNamesPolicy=database onboard slot path mac
+MACAddressPolicy=persistent
+# The driver's largest rings (512 by default), so a line-rate burst waits in
+# them rather than drops before the kernel reads it.
+RxBufferSize=4096
+TxBufferSize=4096

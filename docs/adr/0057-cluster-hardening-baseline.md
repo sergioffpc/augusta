@@ -15,14 +15,15 @@ Security Standard** wherever a workload can meet it.
 **Admission: Pod Security Admission, then Kyverno, the same policies in CI.**
 PSA enforces each namespace's level from inside the API server: `restricted` for
 `develop`, `staging`, `flux-system`, `kyverno` and `monitoring`; `privileged`
-only for `kube-system` and a `monitoring-node` namespace holding node-exporter
-alone. Kyverno adds what PSA cannot: `augustad`, Flux and Kyverno images must
-carry a valid cosign signature (`augustad`'s, keyless, from this repository's CI
-workflow), every other image must be pinned by digest, the `privileged`
-namespaces admit only their known pods, and node ports stay in their
-Environment's range. Its webhooks fail closed, except for `kube-system` and
-`kyverno`, so Kyverno can always start; PSA still holds when it is down. CI runs
-the same policies over the rendered manifests (`kyverno apply`), so a pull
+only for `kube-system` and a `monitoring-node` namespace holding only what reads
+the Node itself: node-exporter, the collector of its security logs and
+`kube-bench`. Kyverno adds what PSA cannot: `augustad`, Flux and Kyverno images
+must carry a valid cosign signature (`augustad`'s, keyless, from this
+repository's CI workflow), every other image must be pinned by digest, the
+`privileged` namespaces admit only their known pods, and node ports stay in
+their Environment's range. Its webhooks fail closed, except for `kube-system`
+and `kyverno`, so Kyverno can always start; PSA still holds when it is down. CI
+runs the same policies over the rendered manifests (`kyverno apply`), so a pull
 request that breaks them fails before it merges.
 
 **Packs and captures are local PersistentVolumes, not `hostPath`.** `baseline`,
@@ -51,6 +52,21 @@ out. It runs in a user namespace (`hostUsers: false`), so its UID maps to no one
 on the Node, under a seccomp profile of the syscalls it makes rather than
 `RuntimeDefault`.
 
+**A process that escapes it lands on a hardened kernel.** The Node's kernel
+parameters hide kernel addresses (`kptr_restrict`), leave ptrace to root
+(`ptrace_scope=2`), refuse to load a kernel without a reboot
+(`kexec_load_disabled`), give no user namespace to an unprivileged process
+(`unprivileged_userns_clone=0`), blind BPF's JIT, send no ICMP redirect and take
+no IPv6 one, and drop a packet whose source no interface could reach back (loose
+`rp_filter`, as strict drops flannel's VXLAN). `augustad`'s user namespace is
+the container runtime's, made as root, so it still has one; podman on the Node,
+which reads a crashed server's image (ADR-0047), runs under `sudo`.
+
+**The Node has no swap.** A server killed for memory restarts, and a Match is
+already allowed to be cut (ADR-0026); a Node that swaps slows every Match on it
+instead, and holds a copy of memory on disk. The kubelet keeps pods out of swap
+anyway, so it served only the Node's own processes.
+
 Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
 let its controllers reach anywhere. A Kyverno policy refuses a pod in a
 namespace with no default deny, or with a rule that lets everything in or out.
@@ -58,6 +74,16 @@ NetworkPolicies name addresses, not hosts: what must reach GitHub, GHCR, the
 Helm repositories or Sigstore (Flux's source-controller, Kyverno's image
 verification) reaches HTTPS on the internet, never the LAN or the cluster; the
 API server, a process of the Node, is reached by its port.
+
+**Security events are searchable, and the important ones alert.** Loki keeps,
+beside every pod's log (ADR-0053), the API server's audit log, the Node's logins
+and `sudo` (its journal's auth facilities) and auditd's log, Kyverno's policy
+violations and Flux's failed signature checks (as the Kubernetes events both
+write), and a daily `kube-bench` run's report. The audit log reaches Loki
+without request or response bodies, which hold Secrets' contents and stay in the
+Node's root-only copy. An SSH login to the Node, a request by k3s's
+cluster-admin identity, a policy violation and a source failing verification
+each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
 
 ## Considered Options
 
@@ -76,6 +102,8 @@ API server, a process of the Node, is reached by its port.
   uses.
 - **Runtime detection (Falco, Tetragon)**: deferred until a game port faces the
   internet.
+- **Swap kept, with `vm.swappiness` low**: rejected. It still lets a Node that
+  runs out of memory slow down rather than kill, for no process that needs it.
 
 ## Consequences
 
@@ -85,7 +113,14 @@ API server, a process of the Node, is reached by its port.
   ready.
 - An upstream chart upgrade can fail admission until its images' digests are
   updated with it.
-- The node-exporter moves out of `monitoring` into `monitoring-node`.
+- The node-exporter moves out of `monitoring` into `monitoring-node`, where the
+  security logs' collector and `kube-bench` join it, both reading the Node's
+  root-only files as root.
+- Loki, which anything in the cluster can read, holds who did what to the
+  cluster and the Node, though no Secret's contents.
+- kexec stays refused until the Node reboots, even with its parameter removed,
+  so a crash kernel (kdump) needs both. A rootless container on the Node does
+  not start.
 - Kyverno admits any Sigstore bundle the identity made for the image's digest,
   so CI's own provenance and SBOM attestations satisfy the policy as its cosign
   signature does: admission proves an image came from this repository's CI
