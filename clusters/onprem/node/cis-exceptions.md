@@ -80,4 +80,7 @@ and [`audit-policy.yaml`](audit-policy.yaml):
 - 1.2.27, 1.2.28 (secrets encryption at rest, `aescbc`).
 - 1.3.1 (`terminated-pod-gc-threshold`).
 - 4.2.5 (`streaming-connection-idle-timeout`), 4.2.12 (the kubelet's TLS
-  ciphers), 4.2.13 (`pod-max-pids`), 4.2.14 (`seccomp-default`).
+  ciphers), 4.2.13 (`pod-max-pids`), 4.2.14 (`seccomp-default`). 4.2.12 stays
+  `WARN`: `kube-bench` reads the kubelet's flags from k3s's journal line, which
+  ends in a `"`, so the last cipher it reads carries that quote and is not in
+  the benchmark's list. Every cipher `config.yaml` sets is in it.

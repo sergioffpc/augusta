@@ -26,7 +26,7 @@ from pathlib import Path
 import blake3
 import nacl.bindings
 
-from pack.wire import ByteWriter
+from augusta_pack.wire import ByteWriter
 
 # Pragmatic sanity limits (wire_format.h/assets.cpp) - narrowing
 # guards, not just validation: every limit here is comfortably under

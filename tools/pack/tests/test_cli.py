@@ -4,11 +4,11 @@ Runs usd-optimize, validation and the cook into a signed client/server pack
 pair.
 """
 
+from augusta_pack import cli
+from augusta_pack import keys
+from augusta_pack import pack
 from conftest import EXAMPLES_ROOT
 from conftest import read_pack_contents
-from pack import cli
-from pack import keys
-from pack import pack
 
 
 def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):

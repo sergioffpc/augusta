@@ -9,8 +9,8 @@ from pathlib import Path
 import struct
 import wave
 
-from pack import keys
-from pack import reader
+from augusta_pack import keys
+from augusta_pack import reader
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

@@ -59,7 +59,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/cpp/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -449,7 +449,7 @@ jobs:
         with:
           lfs: true
       - name: Fetch vcpkg
-        # Only vcpkg: the native modules build against no other submodule,
+        # Only vcpkg: the native module builds against no other submodule,
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
@@ -478,12 +478,12 @@ jobs:
         if: runner.os == 'Linux'
         # The local files provider, as the server job does (see there why not
         # the NuGet feed) - but a cache of its own, not setup-linux-build's:
-        # tools/pack/cpp's manifest isn't the root one every job sharing that
+        # tools/pack/native's manifest isn't the root one every job sharing that
         # cache installs, and save-vcpkg-cache drops whatever the root build
         # didn't install.
         run: |
           echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
-          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/cpp/vcpkg.json') }}" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}" >> "$GITHUB_ENV"
       - name: Restore and save vcpkg binaries
         if: runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -500,15 +500,15 @@ jobs:
       - name: Install the cooker
         working-directory: tools
         run: uv sync --locked
-      - name: Build the native modules
-        # Into tools/pack/src/pack, against the venv's own interpreter, as
-        # tools/pack/scripts/bootstrap.sh does - a mixed-slash path from cygpath
-        # on Windows, as is on Linux.
+      - name: Build the native module
+        # Into tools/pack/src/augusta_pack, against the venv's own interpreter,
+        # as tools/pack/scripts/bootstrap.sh does - a mixed-slash path from
+        # cygpath on Windows, as is on Linux.
         run: |
           python="$PWD/${{ matrix.python }}"
           [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
-          cmake --preset ${{ matrix.preset }} -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$python"
-          cmake --build tools/pack/cpp/build/x64-${{ matrix.preset }}
+          cmake --preset ${{ matrix.preset }} -S tools/pack/native "-DPYTHON_EXECUTABLE=$python"
+          cmake --build tools/pack/native/build/x64-${{ matrix.preset }}
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
@@ -633,11 +633,16 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
-        # chart of the branch its GitRepository tracks: staging runs main's
-        # chart, whose values can trail develop's until a release. The branch
-        # this run's commit lands on (the pull request's base, or the pushed
-        # branch) is checked out already; the other one is fetched. bash for
-        # pipefail - a render that fails leaves kubeconform nothing to reject.
+        # chart of the ref its GitRepository follows: develop's branch, or
+        # staging's latest release tag (ADR-0056), whose chart's values can
+        # trail develop's until the next release. The branch this run's commit
+        # lands on (the pull request's base, or the pushed branch) is checked
+        # out already; any other ref is fetched. staging's tag is the newest
+        # vX.Y.Z by version, as Flux's semver "*" picks it (no pre-releases);
+        # Flux would also take a tag spelt otherwise (1.2.3, v1.3), which
+        # releases never are (cut-release.md).
+        # bash for pipefail - a render that fails leaves kubeconform nothing
+        # to reject.
         # Its ServiceMonitor and PrometheusRule are checked against the CRDs
         # of the kube-prometheus-stack version the cluster installs
         # (clusters/onprem/infrastructure), so a stack upgrade brings its
@@ -665,16 +670,20 @@ jobs:
           for release in clusters/onprem/apps/*.yaml; do
             grep -q '^kind: HelmRelease$' "$release" || continue
             source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
-            branch=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch" clusters/onprem/apps/sources.yaml)
+            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // \"\"" clusters/onprem/apps/sources.yaml)
+            if [ -z "$ref" ]; then
+              ref=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' \
+                | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            fi
             chart=charts/augustad
-            if [ "$branch" != "$TARGET_BRANCH" ]; then
-              tree="$RUNNER_TEMP/branches/$branch"
+            if [ "$ref" != "$TARGET_BRANCH" ]; then
+              tree="$RUNNER_TEMP/refs/$ref"
               mkdir -p "$tree"
-              git fetch --quiet --depth=1 origin "$branch"
+              git fetch --quiet --depth=1 origin "$ref"
               git archive FETCH_HEAD charts/augustad | tar -x -C "$tree"
               chart="$tree/charts/augustad"
             fi
-            echo "$release, with $branch's chart"
+            echo "$release, with $ref's chart"
             namespace=$(yq '.spec.targetNamespace' "$release")
             rendered="$RUNNER_TEMP/rendered/$namespace.yaml"
             yq '.spec.values' "$release" \
@@ -717,9 +726,37 @@ jobs:
               -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
+      - name: Validate the infrastructure's releases
+        # Each HelmRelease the infrastructure path applies (Kyverno, the
+        # monitoring stack), rendered from its chart repository with its own
+        # values, as Flux renders it, against the schemas both steps above
+        # generated. Each render is kept for the policy check below, so what
+        # these charts run (their images, their Secrets) is held to the
+        # cluster's policies as augustad's is.
+        shell: bash
+        run: |
+          infrastructure=(clusters/onprem/infrastructure/*.yaml)
+          for name in $(yq --no-doc 'select(.kind == "HelmRelease") | .metadata.name' "${infrastructure[@]}"); do
+            release=$(yq ea --no-doc "select(.kind == \"HelmRelease\" and .metadata.name == \"$name\")" "${infrastructure[@]}")
+            repo=$(yq '.spec.chart.spec.sourceRef.name' <<< "$release")
+            namespace=$(yq '.spec.targetNamespace' <<< "$release")
+            echo "$name, from $repo into $namespace"
+            rendered="$RUNNER_TEMP/rendered/release-$name.yaml"
+            yq '.spec.values // {}' <<< "$release" \
+              | helm template "$(yq '.spec.releaseName' <<< "$release")" "$(yq '.spec.chart.spec.chart' <<< "$release")" \
+                --repo "$(yq ea --no-doc "select(.kind == \"HelmRepository\" and .metadata.name == \"$repo\") | .spec.url" "${infrastructure[@]}")" \
+                --version "$(yq '.spec.chart.spec.version' <<< "$release")" \
+                --namespace "$namespace" --values - \
+              > "$rendered"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
+              -schema-location default \
+              -schema-location "$RUNNER_TEMP/crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              -schema-location "$RUNNER_TEMP/monitoring-crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              "$rendered"
+          done
       - name: Check the rendered manifests against the cluster's policies
         # The policies Flux applies (clusters/onprem/policies) over every
-        # manifest the two steps above rendered: what the cluster would report,
+        # manifest the steps above rendered: what the cluster would report,
         # or once its policies are enforced refuse, fails here before it
         # merges. A violation of a policy the cluster only audits still fails,
         # since --audit-warn is left off.
