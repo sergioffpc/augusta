@@ -1,0 +1,42 @@
+# Every Environment takes the node's ports only from its own range, so
+# Environments sharing the node never collide on one: each Service it exposes
+# on the node pins every node port in that range, as the augustad chart
+# requires of a server once its HelmRelease sets service.nodePortRange
+# (clusters/onprem/apps). A Service left for Kubernetes to assign one is
+# refused, since it could be handed any port of the node's 30000-32767.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: node-port-range
+spec:
+  # Reported, not refused, until the cluster's policies are enforced.
+  validationActions:
+    - Audit
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+  matchConditions:
+    - name: exposed-on-the-node
+      expression: >-
+        has(object.spec.type) && object.spec.type in ["NodePort", "LoadBalancer"]
+  variables:
+    # Each Environment's namespace, and its first and last node port: the
+    # service.nodePortRange its HelmRelease sets.
+    - name: ranges
+      expression: '{"develop": [30700, 30799], "staging": [30800, 30899]}'
+    # The Service's Environment's range. Variables are evaluated only when
+    # used, so a Service outside every Environment never looks it up.
+    - name: range
+      expression: variables.ranges[object.metadata.namespace]
+  validations:
+    - expression: |-
+        !(object.metadata.namespace in variables.ranges) ||
+        object.spec.ports.all(port, has(port.nodePort) &&
+          port.nodePort >= variables.range[0] && port.nodePort <= variables.range[1])
+      messageExpression: |-
+        "every node port of a Service in " + object.metadata.namespace +
+        " must be pinned in its range, " +
+        string(variables.range[0]) + "-" + string(variables.range[1])

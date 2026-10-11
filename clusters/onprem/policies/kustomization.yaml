@@ -1,0 +1,10 @@
+# Kyverno's policies (ADR-0057), which Flux applies to the cluster and CI's
+# manifests job runs over every rendered manifest. A policy is a file here,
+# listed below, and at least one negative fixture: a manifest it must refuse,
+# in fixtures/<the policy's metadata.name>/, one per file. CI fails a policy
+# with no fixture, or one that admits any of its fixtures, so a new policy
+# needs nothing in CI.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - node-port-range.yaml
