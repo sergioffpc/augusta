@@ -233,17 +233,18 @@ credential (ADR-0057). Its configuration is in
 [`clusters/onprem/node/`](../../clusters/onprem/node), beside k3s's, and
 `scripts/bootstrap-node.sh` writes it on every run, before k3s's:
 
-| In the repository              | On the node                                                  | What it sets                                                                     |
-| ------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                   |
-| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                        |
-| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                           |
-| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed.   |
-| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                         |
-| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                             |
-| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                           |
-| `81-tuning.conf`               | `/etc/sysctl.d/81-tuning.conf`                               | [The kernel](#the-kernel)'s tuning: socket buffers, writeback, free memory, TCP. |
-| `10-augusta-ixgbe.link`        | `/etc/systemd/network/10-augusta-ixgbe.link`                 | The 10 GbE ports' rings, from the next boot ([The kernel](#the-kernel)).         |
+| In the repository              | On the node                                                  | What it sets                                                                       |
+| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                     |
+| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                          |
+| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                             |
+| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed.     |
+| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                           |
+| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                               |
+| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                             |
+| `81-tuning.conf`               | `/etc/sysctl.d/81-tuning.conf`                               | [The kernel](#the-kernel)'s tuning: socket buffers, writeback, free memory, TCP.   |
+| `10-augusta-ixgbe.link`        | `/etc/systemd/network/10-augusta-ixgbe.link`                 | The 10 GbE ports' rings, from the next boot ([The kernel](#the-kernel)).           |
+| `grub.cfg`                     | `/etc/default/grub.d/augusta.cfg`                            | The kernel's command line: huge pages on request only ([The kernel](#the-kernel)). |
 
 To change any of it, merge the change to `develop`, then run the bootstrap on
 the node, which writes what changed and reloads the service that reads it:
@@ -393,6 +394,11 @@ share of the RAM, and a soft lockup that reboots the Node rather than hangs it.
 default until measured: a fixed load of agents (ADR-0052) with it at `1`, then
 `0`, comparing the share of late ticks and the tick duration's p99, and
 `numa_pages_migrated` in `/proc/vmstat` during the first.
+
+**Transparent huge pages** go only to a process that asks for them (`madvise`,
+not Debian's `always`), so khugepaged's compaction never stalls a server that
+did not. The bootstrap sets it at once and on the kernel's command line, which
+takes over from the next boot.
 
 **The NIC** queues line-rate bursts in its largest rings (4096 packets, from
 512), and `irqbalance` spreads its interrupts across the CPUs. udev sizes the

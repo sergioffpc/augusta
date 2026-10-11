@@ -64,7 +64,7 @@ readonly SYSCTL_FILES=(80-hardening.conf 81-tuning.conf 90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules
-  10-augusta-ixgbe.link)
+  10-augusta-ixgbe.link grub.cfg)
 # The publish key's forced command, from the same place.
 readonly RECEIVER_FILE=augusta-publish-receive.sh
 readonly RECEIVER=/usr/local/bin/augusta-publish-receive
@@ -413,6 +413,20 @@ configure_kernel() {
   done
 }
 
+# Gives transparent huge pages only to the processes that ask for them: at once,
+# and from the kernel's command line at the next boot.
+configure_huge_pages() {
+  local drop_in=/etc/default/grub.d/augusta.cfg
+  if differs "${DOWNLOADS}/grub.cfg" "${drop_in}"; then
+    install_node_file grub.cfg "${drop_in}" 0644
+    as_root update-grub
+    log "the kernel's command line changed; it takes effect when the node" \
+      "next reboots."
+  fi
+  echo madvise \
+    | as_root tee /sys/kernel/mm/transparent_hugepage/enabled >/dev/null
+}
+
 # Sizes the 10 GbE ports' rings, from the next boot on: applying them now would
 # reset the port this session may run over. Spreads the NIC's interrupts
 # across the CPUs.
@@ -549,6 +563,7 @@ main() {
   configure_updates
   configure_audit
   configure_kernel
+  configure_huge_pages
   configure_nic
   configure_k3s
   install_k3s
