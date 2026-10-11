@@ -290,8 +290,13 @@ kubectl -n monitoring get pods
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
   dashboard, offers no way to edit or save one, shows no login form, and refuses
-  `admin`/`admin`: `curl -u admin:admin http://<node>:30300/api/admin/settings`
-  answers 401 or 403, never 200.
+  `admin`/`admin`, there being no admin user: posting them to its login
+  answers 401.
+
+    ```bash
+    curl -i -X POST -H 'Content-Type: application/json' \
+      -d '{"user":"admin","password":"admin"}' http://<node>:30300/login
+    ```
 
 ## Rollback / abort
 
