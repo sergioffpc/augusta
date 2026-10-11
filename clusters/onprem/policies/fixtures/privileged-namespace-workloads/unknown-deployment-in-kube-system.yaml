@@ -1,0 +1,19 @@
+# A Deployment in kube-system whose image is none of k3s's: refused through
+# the rule Kyverno generates for the pod controllers, not only for bare pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debug
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: debug
+  template:
+    metadata:
+      labels:
+        app: debug
+    spec:
+      containers:
+        - name: coredns
+          image: docker.io/coredns/coredns:1.14.6

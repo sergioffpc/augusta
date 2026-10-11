@@ -78,3 +78,11 @@ spec:
     test:
       image:
         tag: v1.19.1@sha256:31bb42ce7f5b2e27c1cf633aeff4f0cad1f5bb63761e2cb09f0e25cdd26572bf
+    # The chart filters kube-system out of everything Kyverno does. Taken out
+    # of that filter, kube-system is in the background scan, which reports a
+    # pod there that is not k3s's (privileged-namespace-workloads); the
+    # chart's webhooks still skip it (its default config.webhooks), so no
+    # request there waits on Kyverno.
+    config:
+      resourceFiltersExcludeNamespaces:
+        - kube-system

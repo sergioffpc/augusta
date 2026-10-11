@@ -1,0 +1,18 @@
+# k3s's own namespace, labelled privileged so its level is written down rather
+# than left to the API server's default (ADR-0057): its pods are k3s's, among
+# them ServiceLB's, which bind the Node's ports, and local-path-provisioner's
+# helpers, which make volumes on its disk. What runs here is confined to those
+# by clusters/onprem/policies/privileged-namespace-workloads.yaml.
+#
+# k3s creates the namespace and Flux only labels it: never pruned, as removing
+# this file must not delete it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
