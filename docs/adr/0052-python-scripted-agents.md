@@ -149,8 +149,7 @@ and a smoke test plays one Match of two Agents against an in-process
   linked into a shared object can be slightly slower; augustad from the server
   image is not affected, since it builds with `AUGUSTA_TOOLS` off.
 - **The module is tied to Python 3.12**, the ABI it is built against, as the
-  cooker's native modules are. Moving the tools to another Python means a
-  rebuild.
+  cooker's native module is. Moving the tools to another Python means a rebuild.
 - **An Intent's behaviour is C++.** A script that needs a behaviour no Intent
   offers composes it from the channels at its own rate, or the catalogue grows.
 - **An Agent's aim is only as fresh as the Intent.** `Raw` and `Look` do not

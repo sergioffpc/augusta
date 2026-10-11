@@ -89,7 +89,7 @@ decisions already made in ARCHITECTURE.md:
        after merge, since the PR already validated it
     5. Compile with a strict warning set, treated as errors
     6. the `tools` job, when `tools/` changed: on a Windows runner, build the
-       asset cooker's native modules and run its pytest suite, which also
+       asset cooker's native module and run its pytest suite, which also
        requires that cooking the example scenario still gives the golden packs
        in `tests/fixtures/example-packs/` byte for byte; the C++ tests in 2 and
        3 load those same packs — the contract between the Python writer and the
@@ -368,10 +368,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   ADR-0009, isn't worth the purity.)
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
-  `_textconv` wraps, builds for) builds the pack environment under a
-  caller-chosen assets root (ADR-0030): a uv-managed Python environment with
-  `tools/pack` installed editable, its native modules, signing keys and sample
-  authoring content.
+  `_native` wraps, builds for) builds the pack environment under a caller-chosen
+  assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
+  installed editable, its native module, signing keys and sample authoring
+  content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's

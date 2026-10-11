@@ -5,9 +5,8 @@ or more characters (ADR-0041) - and bakes them into one signed client/server
 pack pair (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
 pip-installed usd-optimize build optimize.py already uses, rather than linking a
 second, independently-built OpenUSD - see ADR-0030 for why those can't coexist
-in one process), and calls the small native _meshoptimizer/_textconv bindings
-only for the two pieces with no Python equivalent (mesh optimization, texture
-compression).
+in one process), and calls the small native module, _native, only for the two
+pieces with no Python equivalent (mesh optimization, texture compression).
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ from pxr import UsdGeom
 from pxr import UsdPhysics
 from pxr import UsdShade
 
-from augusta_pack import _meshoptimizer
-from augusta_pack import _textconv
+from augusta_pack import _native
 from augusta_pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
 from augusta_pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
 from augusta_pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
@@ -188,7 +186,7 @@ def _cook_texture(
     texture_path = _resolve_texture_file_path(asset_path, stage_path)
     texture_format = _read_texture_format(prim)
     try:
-        dds_bytes = _textconv.compress_texture(
+        dds_bytes = _native.compress_texture(
             texture_path, _TEXTURE_FORMAT_NAMES[texture_format]
         )
     except RuntimeError as error:
@@ -339,7 +337,7 @@ def _optimize_mesh(mesh: MeshData) -> MeshData:
     if not mesh.points or not mesh.indices:
         return mesh
     flat_points = [component for point in mesh.points for component in point]
-    optimized_points, optimized_indices = _meshoptimizer.optimize_mesh(
+    optimized_points, optimized_indices = _native.optimize_mesh(
         flat_points, mesh.indices
     )
     points = [

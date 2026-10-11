@@ -63,14 +63,15 @@ scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize ->
    spawn points and textures, then packs, BLAKE3-hashes and Ed25519-signs the
    result. ADR-0031, ADR-0032.
 
-The whole pipeline is pure Python except for two small pybind11 modules in
-[pack/native/](pack/native/): `_meshoptimizer` (ADR-0016) and `_textconv`
-(ADR-0017). They have no USD dependency on purpose; see ADR-0030 for why.
+The whole pipeline is pure Python except for one small pybind11 module in
+[pack/native/](pack/native/), `_native`: the mesh pass (ADR-0016) and the
+texture compression (ADR-0017). It has no USD dependency on purpose; see
+ADR-0030 for why.
 
 ### Setup
 
 The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
-environment, native modules, a signing key and content directories). The cooker
+environment, native module, a signing key and content directories). The cooker
 runs on Windows and Linux, the platforms vcpkg's DirectXTex port builds for, and
 cooks the same bytes on both. From Git Bash on Windows, or a Linux shell (the
 dev container included), after the repository's own `scripts/bootstrap.sh`:
@@ -402,13 +403,13 @@ to stderr and exits `1`.
 | `pack/src/augusta_pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
 | `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/server/capture.cpp`)                                                                                                                                                                                                                                          |
 | `pack/src/augusta_pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
-| `pack/native/`                             | Standalone CMake/vcpkg project for the two native modules. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                     |
+| `pack/native/`                             | Standalone CMake/vcpkg project for the native module. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                          |
 | `composer/`                                | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
 | `pack/tests/`                              | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
 | `composer/examples/authoring/`             | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
 | `pack/scripts/bootstrap.sh`                | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
 
-### Rebuilding the native modules
+### Rebuilding the native module
 
 The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
 `.so` (Linux) files exist. To rebuild after changing `native/`, delete them from
@@ -433,7 +434,7 @@ interpreter that imports it.
 
 The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
 shared environment, `tools/.venv` (see Python environment above), not the assets
-root's venv. They need the native modules built into `src/augusta_pack/` (above)
+root's venv. They need the native module built into `src/augusta_pack/` (above)
 against that environment's interpreter:
 
 ```powershell

@@ -180,7 +180,7 @@ jobs:
       - name: Install the cooker
         working-directory: tools
         run: uv sync --locked
-      - name: Build the native modules
+      - name: Build the native module
         run: |
           cmake --preset windows -S tools/pack/native "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
           cmake --build tools/pack/native/build/x64-windows

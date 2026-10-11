@@ -44,21 +44,21 @@ same pip-installed `pxr` build (`Usd.Stage.Traverse`,
 `UsdGeom`/`UsdPhysics`/`UsdShade`), reading
 mesh/collider/hitbox/spawn-point/texture data exactly as the original C++ walker
 did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python
-equivalent and stay native, as small independent pybind11 extension modules
-built from `tools/pack/native/` (`_meshoptimizer`, wrapping the vertex
-weld/simplify/reorder/quantize pass, ADR-0016; `_textconv`, wrapping stb_image's
-PNG/JPEG load and DirectXTex's BC7/BC5/BC4 compression + DDS encode, ADR-0017) —
-both stateless, taking/returning plain bytes, with **no USD dependency of their
-own**. That last point is load-bearing, not incidental: an earlier version of
-this cooker was itself a C++ program linking vcpkg's own OpenUSD build directly,
-called from Python via a third pybind11 module. It crashed on import with a
-DLL-name collision
-(`ImportError: DLL load failed... procedure could not be found`) the moment a
-process had already loaded usd-optimize's independently-built `pxr` and then
-tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs, only
-one can resolve per process. Moving the stage walk itself into Python (so there
-is only ever one OpenUSD build in the process) is what actually fixed it, not
-anything about pybind11 or subprocess boundaries.
+equivalent and stay native, in one small pybind11 extension module,
+`augusta_pack._native`, built from `tools/pack/native/` (`optimize_mesh`,
+wrapping meshoptimizer's vertex weld/simplify/reorder/quantize pass, ADR-0016;
+`compress_texture`, wrapping stb_image's PNG/JPEG load and DirectXTex's
+BC7/BC5/BC4 compression + DDS encode, ADR-0017) — both stateless,
+taking/returning plain bytes, with **no USD dependency of their own**. That last
+point is load-bearing, not incidental: an earlier version of this cooker was
+itself a C++ program linking vcpkg's own OpenUSD build directly, called from
+Python via a third pybind11 module. It crashed on import with a DLL-name
+collision (`ImportError: DLL load failed... procedure could not be found`) the
+moment a process had already loaded usd-optimize's independently-built `pxr` and
+then tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs,
+only one can resolve per process. Moving the stage walk itself into Python (so
+there is only ever one OpenUSD build in the process) is what actually fixed it,
+not anything about pybind11 or subprocess boundaries.
 
 Packing, hashing, and signing (`augusta_pack.pack`) also moved to pure Python
 rather than reusing `augusta_assets`' C++ implementation over a binding — that

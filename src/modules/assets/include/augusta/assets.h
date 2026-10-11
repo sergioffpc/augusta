@@ -140,7 +140,7 @@ std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene);
 /// to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
 /// BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
 /// augusta_assets has no DirectXTex/D3D dependency of its own - only the
-/// offline cooker's native modules (tools/pack/native) link DirectXTex.
+/// offline cooker's native module (tools/pack/native) links DirectXTex.
 enum class TextureFormat : std::uint8_t {
   kBC7,
   kBC5,

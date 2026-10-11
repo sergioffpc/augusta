@@ -448,7 +448,7 @@ jobs:
         with:
           lfs: true
       - name: Fetch vcpkg
-        # Only vcpkg: the native modules build against no other submodule,
+        # Only vcpkg: the native module builds against no other submodule,
         # and third_party/falcor is large.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
@@ -499,7 +499,7 @@ jobs:
       - name: Install the cooker
         working-directory: tools
         run: uv sync --locked
-      - name: Build the native modules
+      - name: Build the native module
         # Into tools/pack/src/augusta_pack, against the venv's own interpreter,
         # as tools/pack/scripts/bootstrap.sh does - a mixed-slash path from
         # cygpath on Windows, as is on Linux.

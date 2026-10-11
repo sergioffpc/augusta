@@ -1,6 +1,6 @@
 # Finds the Python the Agents' module (tools/agent, ADR-0052) is built against:
 # the tools environment's interpreter, Python 3.12, which `uv sync` in tools/
-# creates (tools/README.md), as the cooker's native modules are built against
+# creates (tools/README.md), as the cooker's native module is built against
 # it (tools/pack/native). PYTHON_EXECUTABLE names another.
 #
 # Usage: augusta_find_agent_python(<out>), before project(). Sets <out> to the
