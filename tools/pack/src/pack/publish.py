@@ -18,7 +18,8 @@ distributes it. Publishing does not deploy: an environment serves the new
 pack once its HelmRelease names the printed version (clusters/onprem/apps/).
 
 The node is reached with the OpenSSH client (ssh, scp) on PATH, as a user
-that can sudo without a password: the volume belongs to root.
+that can sudo without a password: the volume belongs to root, and only the
+server's group reads it.
 """
 
 import argparse
@@ -39,6 +40,10 @@ VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
 PUBLIC_KEY_NAME = "signing.pub"
 VERSION_LENGTH = 12
+# The server image's group (ADR-0054), which the node has too
+# (docs/runbooks/k3s-node-recovery.md): its servers read the packs, and nothing
+# but root writes them.
+SERVER_GROUP = "augusta"
 
 # What the chart can name a server by (charts/augustad): a DNS label short
 # enough for augustad-<scenario>-metrics to stay one.
@@ -160,11 +165,12 @@ class SshNode:
     def digests(self, directory: str) -> dict[str, str] | None:
         """See Node.digests."""
         folder = shlex.quote(directory)
-        result = self._ssh(
+        # As root: the server's group alone reads the volume.
+        script = (
             f"test -d {folder} || exit {self._MISSING}; cd {folder} && "
-            f"sha256sum -- *",
-            check=False,
+            f"sha256sum -- *"
         )
+        result = self._ssh(f"sudo sh -c {shlex.quote(script)}", check=False)
         if result.returncode == self._MISSING:
             return None
         if result.returncode != 0:
@@ -189,14 +195,20 @@ class SshNode:
             # Assembled beside its final place, then renamed into it: a
             # failed copy never leaves a folder a server could be pointed at.
             staging = f"{directory}.partial"
+            # The scenario's folder too, which the first publish of a scenario
+            # creates.
+            scenario = directory.rsplit("/", 1)[0]
+            group = shlex.quote(SERVER_GROUP)
             installs = " && ".join(
-                f"sudo install -m 0644 {shlex.quote(f'{upload}/{name}')} "
+                f"sudo install -g {group} -m 0640 "
+                f"{shlex.quote(f'{upload}/{name}')} "
                 f"{shlex.quote(f'{staging}/{name}')}"
                 for name in files
             )
             self._ssh(
-                f"sudo rm -rf {shlex.quote(staging)} && sudo install -d -m "
-                f"0755 {shlex.quote(staging)} && {installs} && sudo mv -T "
+                f"sudo rm -rf {shlex.quote(staging)} && sudo install -d -g "
+                f"{group} -m 0750 {shlex.quote(scenario)} "
+                f"{shlex.quote(staging)} && {installs} && sudo mv -T "
                 f"{shlex.quote(staging)} {shlex.quote(directory)} || "
                 f"{{ sudo rm -rf {shlex.quote(staging)}; exit 1; }}"
             )

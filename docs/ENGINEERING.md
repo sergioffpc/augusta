@@ -268,14 +268,17 @@ no self-hosted GitHub Actions runner in this pipeline).
   changes core dumps, which the kernel pipes to the node's `systemd-coredump`,
   or `kubectl debug --target=augustad`: its ephemeral container has its own root
   filesystem and `securityContext`, and reads the server's files through
-  `/proc/<pid>/root/` as the same user.
+  `/proc/<pid>/root/` as the same user. The node has that user too, `augusta`
+  (ADR-0054): the asset packs are `root:augusta`, readable by its group alone,
+  and the capture volume is its own
+  ([The server's user](runbooks/k3s-node-recovery.md#the-servers-user)).
 - **Match captures:** an environment turns them on in its Helm values
   (`captures.hostPath`, `develop` only), and each of its servers then captures
   every Match (ADR-0050) into `<hostPath>/<namespace>/<scenario>/` on the node,
   a folder of its own, since capture names are unique only within one server.
-  `<hostPath>` is `/srv/augusta/captures`, owned by 65532, a 4 GiB ext4 image
-  loop-mounted there, so a full one stops captures and never fills the node. Its
-  size holds every capturing server's retention cap
+  `<hostPath>` is `/srv/augusta/captures`, owned by `augusta`, a 4 GiB ext4
+  image loop-mounted there, so a full one stops captures and never fills the
+  node. Its size holds every capturing server's retention cap
   (`captures.retention.maxMiB`, #461) plus slack. Node setup:
   [The capture filesystem](runbooks/k3s-node-recovery.md#the-capture-filesystem).
 

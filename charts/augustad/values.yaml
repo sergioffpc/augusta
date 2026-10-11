@@ -65,7 +65,7 @@ assetPacks:
 # its own into, under <hostPath>/<namespace>/<scenario>/, since a capture's
 # name is unique only within its server. Left empty, the default, nothing is
 # captured and nothing is mounted. The directory must already exist, owned by
-# the server's user, 65532, on a filesystem of its own of fixed size, so a full
+# the server's user, augusta (65532), on a filesystem of its own of fixed size, so a full
 # one stops captures and never fills the node
 # (docs/runbooks/k3s-node-recovery.md). augustad creates the subdirectories
 # itself.

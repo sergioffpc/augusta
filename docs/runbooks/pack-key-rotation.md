@@ -45,7 +45,9 @@ and `signing.pub` from it
                           # renamed to signing.pub whatever its name was locally
 ```
 
-`augusta-publish` writes exactly this, and never over a folder that exists. The
+`augusta-publish` writes exactly this, and never over a folder that exists,
+owned by `root:augusta`, folders `0750` and files `0640`: only the servers'
+group reads it ([The server's user](k3s-node-recovery.md#the-servers-user)). The
 volume is a `hostPath` of type `Directory`: until the folder is there, the pod
 waits in `ContainerCreating` and its events name the missing path. A pack that
 does not verify against `signing.pub` makes the server exit at startup, and the
