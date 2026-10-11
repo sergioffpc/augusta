@@ -58,8 +58,8 @@ readonly MANIFESTS=https://raw.githubusercontent.com/sergioffpc/augusta/develop/
 # configuration" lists, kept in step with it.
 readonly NODE_CONFIG=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/node
 readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
-# The kernel parameters, loaded in this order. The kubelet's is last and sorts
-# last in /etc/sysctl.d, so no other file can override what
+# The kernel parameters, loaded in this order. The kubelet's is last, and sorts
+# after ours in /etc/sysctl.d, so none of ours can override what
 # protect-kernel-defaults requires.
 readonly SYSCTL_FILES=(80-hardening.conf 81-tuning.conf 90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
@@ -405,6 +405,8 @@ configure_audit() {
 
 # Writes the kernel parameters and applies them at once: protect-kernel-defaults
 # stops a kubelet that starts without its own.
+# Globals:
+#   DOWNLOADS, SYSCTL_FILES
 configure_kernel() {
   local file
   as_root install -d -o root -g root -m 0755 /etc/sysctl.d
@@ -417,15 +419,18 @@ configure_kernel() {
 # Turns swap off for good (ADR-0057): none active, none in /etc/fstab, and no
 # resume from one at boot. Its volume is left: removing it is the runbook's
 # step, by hand (k3s-node-recovery.md, No swap).
+# Globals:
+#   DOWNLOADS
 disable_swap() {
   local resume=/etc/initramfs-tools/conf.d/resume
   if [[ -n "$(as_root swapon --show --noheadings)" ]]; then
     as_root swapoff --all
   fi
-  if awk '!/^[[:space:]]*#/ && $3 == "swap" { found = 1 } END { exit !found }' \
-    /etc/fstab; then
-    as_root sed -i -E '/^[[:space:]]*[^#[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+swap[[:space:]]/d' \
-      /etc/fstab
+  # A line whose third field is swap, unless commented out.
+  sed -E '/^[[:space:]]*[^#[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+swap([[:space:]]|$)/d' \
+    /etc/fstab >"${DOWNLOADS}/fstab"
+  if differs "${DOWNLOADS}/fstab" /etc/fstab; then
+    as_root install -o root -g root -m 0644 "${DOWNLOADS}/fstab" /etc/fstab
     as_root systemctl daemon-reload
   fi
   # none, not the file removed: without it, initramfs-tools picks a swap device
@@ -438,6 +443,8 @@ disable_swap() {
 
 # Gives transparent huge pages only to the processes that ask for them: at once,
 # and from the kernel's command line at the next boot.
+# Globals:
+#   DOWNLOADS
 configure_huge_pages() {
   local drop_in=/etc/default/grub.d/augusta.cfg
   if differs "${DOWNLOADS}/grub.cfg" "${drop_in}"; then
@@ -453,6 +460,8 @@ configure_huge_pages() {
 # Sizes the 10 GbE ports' rings, from the next boot on: applying them now would
 # reset the port this session may run over. Spreads the NIC's interrupts
 # across the CPUs.
+# Globals:
+#   DOWNLOADS
 configure_nic() {
   local link=/etc/systemd/network/10-augusta-ixgbe.link
   if differs "${DOWNLOADS}/10-augusta-ixgbe.link" "${link}"; then

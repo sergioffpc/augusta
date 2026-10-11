@@ -392,8 +392,10 @@ servers' networking library asks for, writeback bounded in bytes rather than a
 share of the RAM, and a soft lockup that reboots the Node rather than hangs it.
 `81-tuning.conf` says why each value. `kernel.numa_balancing` keeps Debian's
 default until measured: a fixed load of agents (ADR-0052) with it at `1`, then
-`0`, comparing the share of late ticks and the tick duration's p99, and
-`numa_pages_migrated` in `/proc/vmstat` during the first.
+`0`, comparing the share of late ticks and the tick duration's p99 and p99.9.
+During the first, `numa_pages_migrated` and `numa_hint_faults` in `/proc/vmstat`
+near zero mean balancing leaves the servers alone, and turning it off gains
+nothing.
 
 **Transparent huge pages** go only to a process that asks for them (`madvise`,
 not Debian's `always`), so khugepaged's compaction never stalls a server that
@@ -411,10 +413,15 @@ The bootstrap applies the kernel parameters at once. To see what the kernel
 runs:
 
 ```sh
-ssh <node> 'for f in /etc/sysctl.d/[0-9]*.conf; do sudo sysctl $(grep -o "^[a-z][^=]*" "$f"); done'
+ssh <node>
+for f in /etc/sysctl.d/{80,81,90}-*.conf; do
+  sudo sysctl $(grep -E '^[a-z][^=*]*=' "$f" | cut -d = -f 1)
+done
+sudo sysctl -a 2>/dev/null | grep -E '\.(send|accept)_redirects ='
 ```
 
-Each key reads back the value its file sets.
+Each key reads back the value its file sets, and every interface's redirects are
+`0`.
 
 ### No swap
 
