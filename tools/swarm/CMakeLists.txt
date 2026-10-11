@@ -15,7 +15,7 @@ target_include_directories(augusta_swarm_scripted_player PUBLIC ${CMAKE_CURRENT_
 target_link_libraries(
   augusta_swarm_scripted_player
   PUBLIC augusta_command augusta_harness augusta_physics
-  PRIVATE augusta_input augusta_math augusta_weapon
+  PRIVATE augusta_math
 )
 augusta_set_module_scope(augusta_swarm_scripted_player CLIENT_ONLY)
 

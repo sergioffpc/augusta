@@ -2,27 +2,29 @@
 #define AUGUSTA_SWARM_SCRIPTED_PLAYER_H_
 
 #include <cstdint>
+#include <optional>
 #include <random>
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
+#include "augusta/intent.h"
 #include "augusta/physics.h"
 
 /// \file
 /// The Scripted player (CONTEXT.md): what plays in a person's place, deciding
-/// each tick's Command from the Server view and its own prediction, so a load or end-to-end test
-/// can fill a server with no one at the keyboard. It decides only: augusta-swarm
-/// (main.cpp) hands each one's Commands to a harness::Runner, which predicts
-/// and sends them like any client's.
+/// what to do from the Server view and its own prediction, so a load or
+/// end-to-end test can fill a server with no one at the keyboard. It decides
+/// only, and carries its decisions out through Intents (augusta/intent.h), as
+/// an Agent's script does: augusta-swarm (main.cpp) hands each one's Commands
+/// to a harness::Runner, which predicts and sends them like any client's.
 ///
 /// In a Match it wanders, a leg at a time: a random heading, sprint and stance
-/// for one to three seconds, never more than a few metres from where the Match
-/// spawned it, since it knows nothing of the Map's edges. It aims at the nearest living other player, as
-/// the newest Authoritative State places them, from where its own prediction
-/// places its own body, as a client aims, and fires at it in short
-/// Bursts, releasing the trigger between them so the Recoil offset recovers.
-/// It reloads once its magazine is empty. Every random choice comes from its
-/// seed, so the same seed makes the same choices from the same Server views.
+/// for one to three seconds (Move), never more than a few metres from where the
+/// Match spawned it, since it knows nothing of the Map's edges: strayed, it
+/// heads back there (MoveTo). It aims at the nearest living other player
+/// (AimAt) and fires at it in Bursts (FireBursts), reloading once its magazine
+/// is empty. Every random choice comes from its seed, so the same seed makes
+/// the same choices from the same Server views.
 namespace augusta::swarm {
 
 class ScriptedPlayer {
@@ -44,20 +46,30 @@ class ScriptedPlayer {
     int ticks_left = 0;
   };
 
-  // A new leg of tick_rate_hz-tick seconds, once the one under way is done.
+  // Starts over, with no leg under way, once a new Match has started.
+  void StartMatchIfNew(std::uint32_t matches_started);
+  // Sets a new leg of tick_rate_hz-tick seconds moving, once the one under way is done.
   void StartLegIfDone(std::uint8_t tick_rate_hz);
-  // Turns the leg under way straight back toward where the Match spawned this
-  // player, if own has strayed beyond its leash, and ends it there.
+  // Heads own straight back toward where the Match spawned this player, if it
+  // has strayed beyond its leash, until it is back there.
   void HeadBackIfStrayed(const harness::ServerView& view, const physics::BodyState& own);
+  // Aims and fires at the nearest living other player, or holds fire if there is none.
+  void TakeOnNearest(const harness::ServerView& view, harness::EntityId own_entity, const physics::BodyState& own);
 
   // The standard fixes mt19937's sequence, unlike its distributions', so every
   // platform draws the same numbers from the same seed; the draws are mapped
   // onto choices by hand for the same reason.
   std::mt19937 random_;
   Leg leg_;
-  // How many ticks the trigger has cycled since there was last nothing to fire
-  // at or no round to fire: where in its Burst-and-release cycle the next tick is.
-  int trigger_ticks_ = 0;
+  // The Match its decisions are for (ServerView::matches_started).
+  std::uint32_t match_ = 0;
+  // What its Intents carry out, so it sets each only when it changes: setting
+  // one again would start it over.
+  bool heading_back_ = false;
+  std::optional<harness::EntityId> aimed_at_;
+  bool firing_ = false;
+  // Last, so it is gone before the state its Intents' endings write to.
+  harness::IntentExecutor intents_;
 };
 
 }  // namespace augusta::swarm

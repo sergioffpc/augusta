@@ -9,25 +9,13 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/input.h"
+#include "augusta/intent.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "augusta/weapon.h"
 
 namespace augusta::swarm {
 
 namespace {
-
-// Where a body's eye and torso are, as a fraction of its height in its stance:
-// estimates, but near enough to aim by at the ranges a Map holds. The Shot
-// itself leaves from the character's real eye (ADR-0040).
-constexpr float kEyeHeightFraction = 0.9F;
-constexpr float kTorsoHeightFraction = 0.6F;
-
-// The trigger is held this many ticks, then released this many: a short Burst,
-// then enough rest for the Recoil offset to come back down.
-constexpr int kBurstTicks = 6;
-constexpr int kReleaseTicks = 18;
 
 // How far it may stray from where the Match spawned it, in metres, before it
 // heads back: it knows nothing of the Map's edges, and this keeps it on any Map
@@ -58,20 +46,14 @@ physics::Stance StanceFor(std::uint32_t draw) {
   return physics::Stance::kProne;
 }
 
-std::optional<physics::BodyState> BodyOf(const harness::AuthoritativeState& state, harness::EntityId entity) {
-  const auto found = std::ranges::find(state.bodies, entity, &harness::EntityBody::entity);
-  return found == state.bodies.end() ? std::nullopt : std::optional(found->body);
+bool HasBody(const harness::AuthoritativeState& state, harness::EntityId entity) {
+  return std::ranges::contains(state.bodies, entity, &harness::EntityBody::entity);
 }
 
-// The point at height_fraction of body's height in its stance, above its feet.
-math::Vec3 PointUp(const physics::BodyState& body, float height_fraction) {
-  return body.position + math::Vec3(0.0F, physics::StanceHeight(body.stance) * height_fraction, 0.0F);
-}
-
-// The body of the living player nearest own, other than own, or nullopt if there is none.
-std::optional<physics::BodyState> NearestTarget(const harness::ServerView& view, harness::EntityId own,
-                                                const physics::BodyState& own_body) {
-  std::optional<physics::BodyState> nearest;
+// The living player nearest own, other than own, or nullopt if there is none.
+std::optional<harness::EntityId> NearestTarget(const harness::ServerView& view, harness::EntityId own,
+                                               const physics::BodyState& own_body) {
+  std::optional<harness::EntityId> nearest;
   float nearest_distance = std::numeric_limits<float>::max();
   for (const harness::EntityBody& other : view.authoritative->bodies) {
     if (other.entity == own || std::ranges::contains(view.dead, other.entity)) {
@@ -79,7 +61,7 @@ std::optional<physics::BodyState> NearestTarget(const harness::ServerView& view,
     }
     const float distance = math::Length(other.body.position - own_body.position);
     if (distance < nearest_distance) {
-      nearest = other.body;
+      nearest = other.entity;
       nearest_distance = distance;
     }
   }
@@ -96,27 +78,22 @@ std::optional<math::Vec3> OwnSpawn(const harness::ServerView& view) {
   return found == players.end() ? std::nullopt : std::optional(found->spawn);
 }
 
-struct View {
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-};
-
-// The view that looks from from toward to (command::Command's conventions:
-// yaw 0 looks down -Z and turns left as it grows, pitch looks up as it grows),
-// its pitch short of straight up or down as a player's is.
-View LookAt(const math::Vec3& from, const math::Vec3& to) {
-  const math::Vec3 toward = to - from;
-  const float pitch = std::atan2(toward.y, std::hypot(toward.x, toward.z));
-  return View{.yaw = std::atan2(-toward.x, -toward.z),
-              .pitch = std::clamp(pitch, -input::kMaxLookPitch, input::kMaxLookPitch)};
-}
-
 }  // namespace
 
 ScriptedPlayer::ScriptedPlayer(std::uint32_t seed) : random_(seed) {}
 
+void ScriptedPlayer::StartMatchIfNew(std::uint32_t matches_started) {
+  if (matches_started == match_) {
+    return;
+  }
+  // The last Match's leg and way back lead nowhere in this one.
+  match_ = matches_started;
+  leg_.ticks_left = 0;
+  heading_back_ = false;
+}
+
 void ScriptedPlayer::StartLegIfDone(std::uint8_t tick_rate_hz) {
-  if (leg_.ticks_left > 0) {
+  if (heading_back_ || leg_.ticks_left > 0) {
     return;
   }
   const double turn = static_cast<double>(random_()) / kDrawRange;
@@ -125,6 +102,8 @@ void ScriptedPlayer::StartLegIfDone(std::uint8_t tick_rate_hz) {
   leg_.stance = StanceFor(random_() % kOutOf);
   const std::uint32_t seconds = kMinLegSeconds + (random_() % kLegSecondsChoices);
   leg_.ticks_left = static_cast<int>(seconds * tick_rate_hz);
+  intents_.SetMovement(
+      harness::Move{.direction = command::ViewDirection(leg_.yaw, 0.0F), .sprint = leg_.sprint, .stance = leg_.stance});
 }
 
 void ScriptedPlayer::HeadBackIfStrayed(const harness::ServerView& view, const physics::BodyState& own) {
@@ -133,55 +112,64 @@ void ScriptedPlayer::HeadBackIfStrayed(const harness::ServerView& view, const ph
     return;
   }
   const math::Vec3 away = own.position - *spawn;
-  if (std::hypot(away.x, away.z) <= kLeashM) {
+  const bool strayed = std::hypot(away.x, away.z) > kLeashM;
+  if (heading_back_) {
+    // Back within reach, the next leg is drawn as any other.
+    heading_back_ = strayed;
     return;
   }
-  // Straight back, for the rest of this tick's leg: the next leg, drawn once
-  // it is back within reach, picks a new heading as any other.
-  leg_.yaw = LookAt(own.position, *spawn).yaw;
+  if (!strayed) {
+    return;
+  }
+  // Ending the leg under way, until it is back within reach or can get no nearer.
+  intents_.SetMovement(harness::MoveTo{.point = *spawn, .sprint = leg_.sprint, .stance = leg_.stance},
+                       [this](harness::IntentEnding ending) {
+                         if (ending != harness::IntentEnding::kReplaced) {
+                           heading_back_ = false;
+                         }
+                       });
+  heading_back_ = true;
   leg_.ticks_left = 0;
 }
 
-command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, const physics::BodyState& own) {
-  if (!view.OwnAlive() || !view.authoritative.has_value()) {
-    return command::Command{};
-  }
-  // OwnAlive holds only once the server has admitted this player and named its body.
-  const harness::EntityId own_entity = *view.OwnEntity();
-  if (!BodyOf(*view.authoritative, own_entity).has_value()) {
-    return command::Command{};
-  }
-
-  StartLegIfDone(view.accepted->tick_rate_hz);
-  --leg_.ticks_left;
-  HeadBackIfStrayed(view, own);
-  command::Command command;
-  command.movement = physics::MovementInput{
-      .direction = command::ViewDirection(leg_.yaw, 0.0F), .sprint = leg_.sprint, .desired_stance = leg_.stance};
-  command.yaw = leg_.yaw;
-  // A Scripted player sees the other players where the newest state puts them.
-  command.seen_tick = view.authoritative->tick;
-
-  const std::optional<physics::BodyState> target = NearestTarget(view, own_entity, own);
+void ScriptedPlayer::TakeOnNearest(const harness::ServerView& view, harness::EntityId own_entity,
+                                   const physics::BodyState& own) {
+  const std::optional<harness::EntityId> target = NearestTarget(view, own_entity, own);
   if (!target.has_value()) {
-    trigger_ticks_ = 0;
-    return command;
+    if (firing_) {
+      intents_.ClearTrigger();
+      firing_ = false;
+    }
+    return;
   }
-  // From where its prediction puts it, as a client aims from where it shows its
-  // own player: the newest state's is a round trip behind.
-  const View aim = LookAt(PointUp(own, kEyeHeightFraction), PointUp(*target, kTorsoHeightFraction));
-  command.yaw = aim.yaw;
-  command.pitch = aim.pitch;
+  if (aimed_at_ != target) {
+    intents_.SetAim(harness::AimAt{.target = *target}, [this](harness::IntentEnding ending) {
+      if (ending != harness::IntentEnding::kReplaced) {
+        aimed_at_.reset();
+      }
+    });
+    aimed_at_ = target;
+  }
+  if (!firing_) {
+    intents_.SetTrigger(harness::FireBursts{});
+    firing_ = true;
+  }
+}
 
-  const weapon::State& rifle = view.authoritative->rifle;
-  if (rifle.rounds == 0) {
-    command.reload = rifle.reload_remaining <= 0.0F;
-    trigger_ticks_ = 0;
-    return command;
+command::Command ScriptedPlayer::NextCommand(const harness::ServerView& view, const physics::BodyState& own) {
+  // Outside a Match and once dead, its Intents wait, holding nothing.
+  if (view.OwnAlive() && view.authoritative.has_value()) {
+    // OwnAlive holds only once the server has admitted this player and named its body.
+    const harness::EntityId own_entity = *view.OwnEntity();
+    if (HasBody(*view.authoritative, own_entity)) {
+      StartMatchIfNew(view.matches_started);
+      StartLegIfDone(view.accepted->tick_rate_hz);
+      --leg_.ticks_left;
+      HeadBackIfStrayed(view, own);
+      TakeOnNearest(view, own_entity, own);
+    }
   }
-  command.fire = trigger_ticks_ % (kBurstTicks + kReleaseTicks) < kBurstTicks;
-  ++trigger_ticks_;
-  return command;
+  return intents_.NextCommand(view, own);
 }
 
 }  // namespace augusta::swarm

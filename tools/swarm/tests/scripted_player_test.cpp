@@ -154,6 +154,19 @@ TEST(ScriptedPlayerTest, AimsPastADeadPlayerAtTheNearestLivingOne) {
   EXPECT_NEAR(aim.z, 0.0F, 1e-3F);
 }
 
+TEST(ScriptedPlayerTest, OnceItsTargetDiesItAimsAtTheNearestLivingOne) {
+  ScriptedPlayer player(kSeed);
+  ServerView view = InMatch(Vec3(0.0F), {{kFar, Vec3(30.0F, 0.0F, 0.0F)}, {kNear, Vec3(0.0F, 0.0F, -10.0F)}});
+  static_cast<void>(Next(player, view));
+  view.dead = {kNear};
+
+  const Command command = Next(player, view);
+
+  const Vec3 aim = Horizontal(ViewDirection(command.yaw, command.pitch));
+  EXPECT_NEAR(aim.x, 1.0F, 1e-3F);
+  EXPECT_NEAR(aim.z, 0.0F, 1e-3F);
+}
+
 TEST(ScriptedPlayerTest, AimsUpAtAPlayerAboveItAndDownAtOneBelow) {
   ScriptedPlayer above(kSeed);
   ScriptedPlayer below(kSeed);
