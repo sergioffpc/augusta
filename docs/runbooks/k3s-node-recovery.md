@@ -12,6 +12,10 @@ it from the repository. The cluster's design is ADR-0026
   or Flux's controllers are not running: **Recover** (part A).
 - k3s will not start after part A, its datastore is corrupt, or the node's OS or
   disk was replaced: **Rebuild** (part B).
+- An environment's `HelmRelease` sets `captures.hostPath` and its pod waits in
+  `ContainerCreating`, its events naming `/srv/augusta/captures`: set up
+  [The capture filesystem](#the-capture-filesystem) on the node. A change that
+  turns captures on needs it before it merges.
 
 ## What the cluster holds
 
