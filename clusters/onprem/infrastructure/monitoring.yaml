@@ -190,9 +190,12 @@ spec:
           labelValue: "1"
           searchNamespace: ALL
           skipReload: true
+        # The data sources' sidecar runs as an init container alone, which
+        # must list them once and exit: watching, Grafana would never start.
         datasources:
           skipReload: true
           initDatasources: true
+          watchMethod: LIST
       # The logs (ADR-0053), beside the chart's own Prometheus data source.
       additionalDataSources:
         - name: Loki
