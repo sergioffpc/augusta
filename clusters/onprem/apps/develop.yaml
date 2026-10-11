@@ -36,7 +36,7 @@ spec:
     # augusta-publish printed for it.
     servers:
       firebase:
-        packVersion: "9d0c7edd5b34"
+        packVersion: "073cb2bb854f"
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
         nodePort: 30700
