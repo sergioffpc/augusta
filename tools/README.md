@@ -494,6 +494,15 @@ uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
   --pack <client.pack> --public-key <pack.pub>
 ```
 
+A script runs its Agents in an asyncio loop: it awaits each Agent's events
+(`await agent.next_event()`: Shot, Hit confirmation, Death, Match start, Match
+end) and how each Intent it set ended, and never a tick, so a script that takes
+seconds to decide still has its Agents send a Command every tick. An Agent that
+is refused, cannot reach the server or loses its connection fails every pending
+await with `AgentFailed`, carrying the sentence `augustac` would show, and sets
+`agent.failure`; there is no reconnecting. Each Agent reports Ready for every
+Roster unless made with `auto_ready=False`, when `agent.ready()` reports it.
+
 [`agent/examples/raw_hold.py`](agent/examples/raw_hold.py) is the smallest
 script: one Agent holding one Raw Command. The package's tests, in
 [`agent/tests/`](agent/tests/), play against a server in their own process:

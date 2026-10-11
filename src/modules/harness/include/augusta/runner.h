@@ -48,6 +48,10 @@ struct RunnerHooks {
   /// Each round of network work, once it is done. Network I/O thread, so the
   /// Session's Network I/O calls (GetConnectionStats) are safe; may be empty.
   std::function<void()> on_network_round;
+  /// Once, with the first cause a thread stopped on (Runner::Failure), on that
+  /// thread, or on the constructor's if a thread could not be started. Must
+  /// return at once; may be empty.
+  std::function<void(const failure::Failure&)> on_failure;
 };
 
 /// The Prediction and Network I/O threads one Session runs on.

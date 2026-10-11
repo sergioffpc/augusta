@@ -478,6 +478,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
                           .next_command = [&impl] { return impl.NextCommand(); },
                           .on_tick = [&impl](const harness::PredictedTick& tick) { impl.PublishTick(tick); },
                           .on_network_round = [&impl] { impl.SampleNetworkStats(); },
+                          .on_failure = {},
                       });
   const RunnerJoiner joiner{.runner = impl.runner};
 

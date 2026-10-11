@@ -326,8 +326,9 @@ TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRun
 // escalates it, so the thread named is either; the failure is the same.
 TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFailure) {
   session_faults_.Arm(Site::kTransportReceive, "connection handle gone", Faults::kEveryTime);
-  const Runner runner(session_,
-                      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}});
+  const Runner runner(
+      session_,
+      RunnerHooks{.next_command = [] { return Command{}; }, .on_tick = {}, .on_network_round = {}, .on_failure = {}});
 
   ASSERT_TRUE(PollUntil([&] { host_.PumpNetwork(std::chrono::steady_clock::now()); },
                         [&] { return runner.Failure().has_value(); }));
