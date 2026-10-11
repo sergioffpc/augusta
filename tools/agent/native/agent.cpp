@@ -19,6 +19,7 @@
 #include "augusta/harness.h"
 #include "augusta/intent.h"
 #include "augusta/map.h"
+#include "augusta/netcode_stats.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/runner.h"
@@ -71,23 +72,48 @@ Agent::Agent(const std::string& server, const LoadedPack& pack, const std::strin
       session_,
       harness::RunnerHooks{
           .next_command = [this] { return intents_.NextCommand(*session_.GetServerView(), OwnBody()); },
-          .on_tick =
-              [this](const harness::PredictedTick& tick) {
-                const std::scoped_lock lock(own_mutex_);
-                own_ = tick.state.local_body;
-              },
+          .on_tick = [this](const harness::PredictedTick& tick) { AfterTick(tick); },
           .on_network_round = [this] { AfterNetworkRound(); },
           .on_failure = [this](const failure::Failure& failure) { ReportFailure(failure::DescribeFailure(failure)); },
       });
 }
 
-std::uint64_t Agent::SetRaw(const command::Command& command) {
+Agent::NumberedIntent Agent::NextIntent() {
   const std::uint64_t intent = next_intent_.fetch_add(1);
-  intents_.SetRaw(command, [this, intent](harness::IntentEnding ending) {
-    report_(IntentEnded{.intent = intent, .ending = ending});
-  });
-  return intent;
+  return {.number = intent, .on_ended = [this, intent](harness::IntentEnding ending) {
+            report_(IntentEnded{.intent = intent, .ending = ending});
+          }};
 }
+
+std::uint64_t Agent::SetMovement(harness::MovementIntent intent) {
+  auto [number, on_ended] = NextIntent();
+  intents_.SetMovement(std::move(intent), std::move(on_ended));
+  return number;
+}
+
+std::uint64_t Agent::SetAim(harness::AimIntent intent) {
+  auto [number, on_ended] = NextIntent();
+  intents_.SetAim(std::move(intent), std::move(on_ended));
+  return number;
+}
+
+std::uint64_t Agent::SetTrigger(harness::TriggerIntent intent) {
+  auto [number, on_ended] = NextIntent();
+  intents_.SetTrigger(std::move(intent), std::move(on_ended));
+  return number;
+}
+
+std::uint64_t Agent::SetRaw(const command::Command& command) {
+  auto [number, on_ended] = NextIntent();
+  intents_.SetRaw(command, std::move(on_ended));
+  return number;
+}
+
+void Agent::ClearMovement() { intents_.ClearMovement(); }
+
+void Agent::ClearAim() { intents_.ClearAim(); }
+
+void Agent::ClearTrigger() { intents_.ClearTrigger(); }
 
 void Agent::Ready() {
   const std::shared_ptr<const harness::ServerView> view = session_.GetServerView();
@@ -98,12 +124,31 @@ void Agent::Ready() {
 
 AgentView Agent::View() const { return AgentView{.server = session_.GetServerView(), .own = OwnBody()}; }
 
+AgentStats Agent::Stats() const {
+  const std::scoped_lock lock(stats_mutex_);
+  return AgentStats{.netcode = tally_.Stats(), .connection = connection_};
+}
+
 physics::BodyState Agent::OwnBody() const {
   const std::scoped_lock lock(own_mutex_);
   return own_;
 }
 
+void Agent::AfterTick(const harness::PredictedTick& tick) {
+  {
+    const std::scoped_lock lock(own_mutex_);
+    own_ = tick.state.local_body;
+  }
+  const bool in_match = session_.GetPhase() == harness::Phase::kMatch;
+  const std::scoped_lock lock(stats_mutex_);
+  tally_.RecordTick(tick.state, in_match);
+}
+
 void Agent::AfterNetworkRound() {
+  if (auto connection = session_.GetConnectionStats(); connection.has_value()) {
+    const std::scoped_lock lock(stats_mutex_);
+    connection_ = connection;
+  }
   const std::shared_ptr<const harness::ServerView> view = session_.GetServerView();
   if (readiness_ == Readiness::kForEveryRoster) {
     ReportReadyForNewRoster(*view);
@@ -132,7 +177,12 @@ void Agent::ReportEvents(const harness::ServerView& view) {
   for (harness::Shot& shot : session_.TakeShots(view)) {
     report_(shot);
   }
-  for (harness::HitConfirmation& hit : session_.TakeHitConfirmations(view)) {
+  std::vector<harness::HitConfirmation> hits = session_.TakeHitConfirmations(view);
+  {
+    const std::scoped_lock lock(stats_mutex_);
+    tally_.RecordHitConfirmations(hits.size());
+  }
+  for (harness::HitConfirmation& hit : hits) {
     report_(hit);
   }
   for (harness::Death& death : session_.TakeDeaths(view)) {

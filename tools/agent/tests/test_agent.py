@@ -7,9 +7,9 @@ import sys
 import time
 
 import augusta_agent
-from augusta_agent._testing import Server
 from conftest import CHARACTER
 from conftest import EXAMPLE_PACKS
+from conftest import serving
 import pytest
 
 TIMEOUT_S = 30.0
@@ -23,14 +23,6 @@ RELEASE_S = 0.3
 BURSTS_PER_RELOAD = 4
 # How often a script that polls a view looks again.
 POLL_S = 0.01
-
-
-def serving(player_count: int) -> Server:
-    return Server(
-        EXAMPLE_PACKS / "server.pack",
-        EXAMPLE_PACKS / "test.pub",
-        player_count=player_count,
-    )
 
 
 async def wait_until(
@@ -296,6 +288,109 @@ def test_a_raw_intent_ends_replaced_when_another_is_set(client_pack):
     asyncio.run(scenario())
 
 
+def test_a_move_to_ends_arrived_at_its_point(client_pack):
+    async def scenario():
+        with (
+            serving(player_count=1) as server,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as agent,
+        ):
+            start = await next_event_of_type(agent, augusta_agent.MatchStart)
+            own = agent.view().own_entity
+            spawn = next(p.spawn for p in start.players if p.entity == own)
+            point = (spawn[0], spawn[1], spawn[2] - 2.0)
+
+            moving = agent.set_movement(augusta_agent.MoveTo(point))
+
+            async with asyncio.timeout(TIMEOUT_S):
+                assert await moving == augusta_agent.IntentEnding.ARRIVED
+            position = agent.view().own.position
+            assert (
+                math.hypot(position[0] - point[0], position[2] - point[2]) < 1.0
+            )
+
+    asyncio.run(scenario())
+
+
+def test_an_aim_at_ends_target_gone_once_its_target_dies(client_pack):
+    async def scenario():
+        with (
+            serving(player_count=2) as server,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as shooter,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as target,
+        ):
+            start = await next_event_of_type(shooter, augusta_agent.MatchStart)
+            await next_event_of_type(target, augusta_agent.MatchStart)
+            victim = target.view().own_entity
+
+            aiming = shooter.set_aim(augusta_agent.AimAt(victim))
+            shooter.set_trigger(augusta_agent.FireBursts())
+
+            async with asyncio.timeout(TIMEOUT_S):
+                assert await aiming == augusta_agent.IntentEnding.TARGET_GONE
+                death = await next_event_of_type(shooter, augusta_agent.Death)
+            assert death.victim == victim
+            assert victim in {p.entity for p in start.players}
+
+    asyncio.run(scenario())
+
+
+def test_clearing_a_channel_ends_its_intent_replaced_and_no_other(
+    client_pack,
+):
+    async def scenario():
+        with (
+            serving(player_count=1) as server,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as agent,
+        ):
+            moving = agent.set_movement(augusta_agent.Move((0.0, 0.0, -1.0)))
+            looking = agent.set_aim(augusta_agent.Look(0.5, 0.0))
+            firing = agent.set_trigger(augusta_agent.HoldFire())
+
+            agent.clear_trigger()
+
+            async with asyncio.timeout(TIMEOUT_S):
+                assert await firing == augusta_agent.IntentEnding.REPLACED
+            assert not moving.done()
+            assert not looking.done()
+
+    asyncio.run(scenario())
+
+
+def test_an_agent_has_stats_after_a_match(client_pack):
+    async def scenario():
+        with (
+            serving(player_count=2) as server,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as first,
+            augusta_agent.Agent(
+                server.address, client_pack, CHARACTER
+            ) as second,
+        ):
+            await asyncio.gather(
+                shoot_until_the_match_ends(first),
+                shoot_until_the_match_ends(second),
+            )
+            stats = [agent.stats() for agent in (first, second)]
+
+        for agent_stats in stats:
+            assert agent_stats.netcode.match_ticks > 0
+            assert agent_stats.connection is not None
+            assert agent_stats.connection.ping_ms >= 0
+        assert sum(s.netcode.rounds_fired for s in stats) > 0
+        assert sum(s.netcode.hit_confirmations for s in stats) > 0
+
+    asyncio.run(scenario())
+
+
 def test_an_unknown_character_fails_every_await_with_the_refusal(client_pack):
     async def scenario():
         with (
@@ -313,6 +408,8 @@ def test_an_unknown_character_fails_every_await_with_the_refusal(client_pack):
                     await holding
                 with pytest.raises(augusta_agent.AgentFailed):
                     await agent.set_raw(augusta_agent.Command())
+                with pytest.raises(augusta_agent.AgentFailed):
+                    await agent.set_trigger(augusta_agent.Reload())
 
             assert agent.failure == str(failed.value)
 

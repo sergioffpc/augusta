@@ -17,6 +17,8 @@
 #include "augusta/harness.h"
 #include "augusta/intent.h"
 #include "augusta/map.h"
+#include "augusta/netcode_stats.h"
+#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/runner.h"
 #include "report.h"
@@ -56,6 +58,14 @@ struct AgentView {
   physics::BodyState own{};
 };
 
+/// What an Agent's prediction and fire have come to so far, and its link.
+struct AgentStats {
+  harness::NetcodeStats netcode;
+  /// As of its last round of network work while connected; nullopt before it
+  /// first connected. Its max_jitter_us is that round's.
+  std::optional<networking::ConnectionStats> connection;
+};
+
 /// When an Agent reports Ready.
 enum class Readiness : std::uint8_t {
   /// For every Roster it is sent: it has nothing to load to draw anyone.
@@ -84,9 +94,18 @@ class Agent {
   Agent& operator=(Agent&&) = delete;
   ~Agent() = default;
 
-  /// Holds command on every channel (IntentExecutor::SetRaw), and returns the
-  /// number its ending is reported under (IntentEnded).
+  /// Each sets its channel's Intent (IntentExecutor), and returns the number
+  /// its ending is reported under (IntentEnded).
+  std::uint64_t SetMovement(harness::MovementIntent intent);
+  std::uint64_t SetAim(harness::AimIntent intent);
+  std::uint64_t SetTrigger(harness::TriggerIntent intent);
+  /// Holds command on every channel (IntentExecutor::SetRaw).
   std::uint64_t SetRaw(const command::Command& command);
+
+  /// Each empties its channel, ending its Intent Replaced.
+  void ClearMovement();
+  void ClearAim();
+  void ClearTrigger();
 
   /// Reports Ready for the newest Roster, as kForEveryRoster does for each;
   /// sends nothing outside the Lobby.
@@ -96,8 +115,19 @@ class Agent {
   /// which nothing changes once taken.
   [[nodiscard]] AgentView View() const;
 
+  /// What its prediction and fire have come to so far, and its link.
+  [[nodiscard]] AgentStats Stats() const;
+
  private:
+  // An Intent's number, and what reports its ending under it.
+  struct NumberedIntent {
+    std::uint64_t number = 0;
+    harness::OnIntentEnded on_ended;
+  };
+  NumberedIntent NextIntent();
   [[nodiscard]] physics::BodyState OwnBody() const;
+  // What the Prediction thread does after each Tick.
+  void AfterTick(const harness::PredictedTick& tick);
   // What the Network I/O thread does after each round.
   void AfterNetworkRound();
   // Reports Ready for a Roster it has not yet.
@@ -114,6 +144,10 @@ class Agent {
   // Written on the Prediction thread each Tick, read by View on any.
   mutable std::mutex own_mutex_;
   physics::BodyState own_{};
+  // Added to on the Prediction and Network I/O threads, read by Stats on any.
+  mutable std::mutex stats_mutex_;
+  harness::NetcodeTally tally_;
+  std::optional<networking::ConnectionStats> connection_;
   std::atomic<std::uint64_t> next_intent_{0};
   std::atomic<bool> failure_reported_{false};
   // The Network I/O thread's only.

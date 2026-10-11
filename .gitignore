@@ -76,6 +76,8 @@ tools/pack/src/pack/*.dll
 tools/agent/src/augusta_agent/*.pyd
 tools/agent/src/augusta_agent/*.so
 tools/agent/src/augusta_agent/*.dll
+tools/agent/src/augusta_agent/*.pdb
+tools/agent/src/augusta_agent/*.ilk
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
 # templates in config/ are named *.example.yaml and stay tracked. A Parameters
