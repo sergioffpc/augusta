@@ -9,8 +9,9 @@
 # Both run the image as the chart runs it (its user, every capability dropped,
 # a read-only root, no new privileges), serving the example scenario's pack,
 # with its metrics endpoint scraped, while Agents play two full Matches against
-# it and it captures them, keeping one capture alone, so retention deletes the
-# other; then stop it as the kubelet does, with SIGTERM.
+# it, one each (scripts/augustad-seccomp-matches.py: the scenario is one
+# player's), and it captures them, keeping one capture alone, so retention
+# deletes the other; then stop it as the kubelet does, with SIGTERM.
 #
 #   check   Runs it under the profile. Fails when the server does not start,
 #           finish the Matches, write a capture or exit 0 on SIGTERM: a
@@ -127,7 +128,7 @@ play() {
     log "the server never answered /livez"
     status=1
   elif ! (cd "${TOP}/tools" && uv run --no-sync python \
-    agent/examples/load_test.py --server "127.0.0.1:${GAME_PORT}" \
+    ../scripts/augustad-seccomp-matches.py --server "127.0.0.1:${GAME_PORT}" \
     --pack "${PACKS}/client.pack" --public-key "${PACKS}/test.pub" \
     --matches "${MATCHES}" >/dev/null); then
     log "the Agents did not finish ${MATCHES} Matches"
