@@ -4,7 +4,8 @@
 # and the tools that read a core, the server's user, the publish user and its
 # key, the asset-pack volume and the capture filesystem
 # (docs/runbooks/k3s-node-recovery.md), the OS's hardening (a firewall, SSH by
-# key only, unattended security updates, an audit trail), k3s at the cluster's
+# key only, unattended security updates, an audit trail), the kernel's
+# hardening and tuning (no swap, the NIC's rings), k3s at the cluster's
 # release with its hardened configuration (clusters/onprem/node/, ADR-0057),
 # and Flux from the repository's own manifests, which then installs everything
 # else (clusters/onprem/). Each step is skipped when the node already has it,
@@ -413,6 +414,28 @@ configure_kernel() {
   done
 }
 
+# Turns swap off for good (ADR-0057): none active, none in /etc/fstab, and no
+# resume from one at boot. Its volume is left: removing it is the runbook's
+# step, by hand (k3s-node-recovery.md, No swap).
+disable_swap() {
+  local resume=/etc/initramfs-tools/conf.d/resume
+  if [[ -n "$(as_root swapon --show --noheadings)" ]]; then
+    as_root swapoff --all
+  fi
+  if awk '!/^[[:space:]]*#/ && $3 == "swap" { found = 1 } END { exit !found }' \
+    /etc/fstab; then
+    as_root sed -i -E '/^[[:space:]]*[^#[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+swap[[:space:]]/d' \
+      /etc/fstab
+    as_root systemctl daemon-reload
+  fi
+  # none, not the file removed: without it, initramfs-tools picks a swap device
+  # to resume from by itself.
+  if [[ "$(as_root cat "${resume}" 2>/dev/null)" != RESUME=none ]]; then
+    echo RESUME=none | as_root tee "${resume}" >/dev/null
+    as_root update-initramfs -u
+  fi
+}
+
 # Gives transparent huge pages only to the processes that ask for them: at once,
 # and from the kernel's command line at the next boot.
 configure_huge_pages() {
@@ -563,6 +586,7 @@ main() {
   configure_updates
   configure_audit
   configure_kernel
+  disable_swap
   configure_huge_pages
   configure_nic
   configure_k3s

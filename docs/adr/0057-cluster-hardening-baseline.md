@@ -62,6 +62,11 @@ no IPv6 one, and drop a packet whose source no interface could reach back (loose
 the container runtime's, made as root, so it still has one; podman on the Node,
 which reads a crashed server's image (ADR-0047), runs under `sudo`.
 
+**The Node has no swap.** A server killed for memory restarts, and a Match is
+already allowed to be cut (ADR-0026); a Node that swaps slows every Match on it
+instead, and holds a copy of memory on disk. The kubelet keeps pods out of swap
+anyway, so it served only the Node's own processes.
+
 Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
 let its controllers reach anywhere. A Kyverno policy refuses a pod in a
 namespace with no default deny, or with a rule that lets everything in or out.
@@ -97,6 +102,8 @@ each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
   uses.
 - **Runtime detection (Falco, Tetragon)**: deferred until a game port faces the
   internet.
+- **Swap kept, with `vm.swappiness` low**: rejected. It still lets a Node that
+  runs out of memory slow down rather than kill, for no process that needs it.
 
 ## Consequences
 

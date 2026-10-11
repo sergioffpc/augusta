@@ -416,6 +416,34 @@ ssh <node> 'for f in /etc/sysctl.d/[0-9]*.conf; do sudo sysctl $(grep -o "^[a-z]
 
 Each key reads back the value its file sets.
 
+### No swap
+
+The Node has no swap (ADR-0057): a server killed for memory restarts, a Node
+swapping slows every Match on it, and the kubelet keeps pods out of swap anyway.
+The bootstrap turns swap off, removes it from `/etc/fstab`, and sets the
+initramfs to resume from nothing (`RESUME=none`), rebuilding it. It never
+removes a volume.
+
+**Installing Debian**, partition by hand with LVM: `/boot` and the EFI partition
+as the guided layout makes them, one volume group, and the root volume taking
+all of it, with no swap volume. Then there is nothing to remove.
+
+**On a Node installed with swap**, give its volume back to the root once, after
+a bootstrap run, which has turned it off and left nothing to resume from it:
+
+```sh
+ssh <node>
+swapon --show                                   # nothing
+cat /etc/initramfs-tools/conf.d/resume          # RESUME=none
+sudo lvs                                        # the swap volume, e.g. vg0/swap_1
+sudo lvremove vg0/swap_1
+sudo lvextend --resizefs --extents +100%FREE vg0/root
+df -h /
+```
+
+The root filesystem, ext4, grows while mounted. Then reboot once, at a time that
+cuts no Match, to see the Node start with neither.
+
 ## Cluster access
 
 Two identities reach the API server, from the maintainer's addresses only
@@ -1007,7 +1035,8 @@ On the node, after a rebuild, a configuration change or an upgrade:
     ssh <node> "sudo /usr/local/bin/k3s-uninstall.sh"
     ```
 
-    On a reinstalled OS there is nothing to remove; skip this step.
+    On a reinstalled OS there is nothing to remove; skip this step. Install it
+    without swap ([No swap](#no-swap)).
 
 3. Run the node's bootstrap, giving it the packs copied in step 1. It sets up
    the server's user, the publish user, the pack volume (unpacking the archive
