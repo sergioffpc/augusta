@@ -17,9 +17,9 @@ import blake3
 import nacl.bindings
 import nacl.exceptions
 
-from pack import pack
-from pack.wire import ByteReader
-from pack.wire import WireError
+from augusta_pack import pack
+from augusta_pack.wire import ByteReader
+from augusta_pack.wire import WireError
 
 TRAILER_SIZE = pack.BLAKE3_HASH_SIZE + pack.ED25519_SIGNATURE_SIZE
 _HASH_CHUNK_SIZE = 1 << 20

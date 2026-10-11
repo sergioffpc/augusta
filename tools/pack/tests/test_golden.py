@@ -6,8 +6,8 @@ cook is deterministic, so any difference is a change to the format or to the
 example, and the golden packs are regenerated with the command in README.md.
 """
 
+from augusta_pack import cli
 from conftest import EXAMPLES_ROOT
-from pack import cli
 
 GOLDEN_DIR = (
     EXAMPLES_ROOT.parent.parent.parent / "tests" / "fixtures" / "example-packs"

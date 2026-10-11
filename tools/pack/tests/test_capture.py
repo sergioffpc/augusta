@@ -5,9 +5,9 @@ target's seed is one it wrote, so reading it here holds both halves to one
 format.
 """
 
+from augusta_pack import capture
+from augusta_pack import pack_cli
 from conftest import EXAMPLES_ROOT
-from pack import capture
-from pack import pack_cli
 import pytest
 
 SEED = (

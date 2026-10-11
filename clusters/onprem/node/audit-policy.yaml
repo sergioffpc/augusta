@@ -1,0 +1,18 @@
+# The API server's audit policy: /etc/rancher/k3s/audit-policy.yaml
+# (config.yaml, audit-policy-file). Every request is logged with who made it,
+# on what, and its result; a change to, or a read of, a Secret or an RBAC
+# object is logged with its body and the response too (ADR-0057). The first
+# rule that matches a request decides its level.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+# Each request is logged once it has a response, not also when it arrives.
+omitStages:
+  - RequestReceived
+rules:
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["secrets"]
+      - group: rbac.authorization.k8s.io
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  - level: Metadata

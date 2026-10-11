@@ -10,6 +10,12 @@ spec:
     # a real release cut (see ENGINEERING.md's Git Workflow), so pinning this
     # self-sync to `main` would leave Flux's own config dormant until the next release.
     branch: develop
+  # Flux's own config and every Environment's HelmRelease come from here, so
+  # its HEAD is verified as develop's is (ADR-0056).
+  verify:
+    mode: HEAD
+    secretRef:
+      name: trusted-signers-develop
   url: https://github.com/sergioffpc/augusta
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

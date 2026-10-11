@@ -3,9 +3,9 @@
 Raw, fixed-size, and usable to sign and verify a pack.
 """
 
-from pack import keys
-from pack import pack
-from pack.reader import verify_pack
+from augusta_pack import keys
+from augusta_pack import pack
+from augusta_pack.reader import verify_pack
 import pytest
 
 

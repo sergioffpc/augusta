@@ -7,6 +7,11 @@ ADR-0032), and how malformed geometry is refused.
 import shutil
 import struct
 
+from augusta_pack import pack
+from augusta_pack.cook import cook_scenario
+from augusta_pack.cook import CookError
+from augusta_pack.sounds import CueSounds
+from augusta_pack.sounds import Sound
 from conftest import decode_audio
 from conftest import decode_hitbox
 from conftest import decode_mesh
@@ -14,11 +19,6 @@ from conftest import decode_spawn_point
 from conftest import decode_string
 from conftest import FIXTURES_DIR
 from conftest import read_pack_contents
-from pack import pack
-from pack.cook import cook_scenario
-from pack.cook import CookError
-from pack.sounds import CueSounds
-from pack.sounds import Sound
 import pytest
 
 

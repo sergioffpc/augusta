@@ -32,9 +32,9 @@ import subprocess
 import sys
 from typing import Protocol
 
-from pack.assets_root import default_assets_root
-from pack.keys import read_public_key
-from pack.reader import verify_pack
+from augusta_pack.assets_root import default_assets_root
+from augusta_pack.keys import read_public_key
+from augusta_pack.reader import verify_pack
 
 VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
