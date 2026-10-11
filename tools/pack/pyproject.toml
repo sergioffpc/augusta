@@ -1,5 +1,5 @@
 [project]
-name = "pack"
+name = "augusta-pack"
 version = "0.1.0"
 description = "Augusta asset-cooking pipeline (ADR-0030): usd-optimize -> usd-validation-nvidia -> pure-Python cook/pack."
 requires-python = ">=3.12,<3.13"

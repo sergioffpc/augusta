@@ -109,7 +109,7 @@ The assets root looks like this:
 | `packs/`     | Cooked, signed packs                                                                                                                                                                                        |
 | `keys/`      | `signing.key` / `signing.pub` (Ed25519). Never commit these.                                                                                                                                                |
 | `bin/`       | `augusta-pack`, `augusta-keygen`, `augusta-inspect`, `augusta-verify`, `augusta-publish` (`.exe` on Windows; installed here by `uv tool install`), plus `augusta-composer.sh` if the Composer bootstrap ran |
-| `python/`    | The uv tool venv (`python/pack`), with this project installed editable                                                                                                                                      |
+| `python/`    | The uv tool venv (`python/augusta-pack`), with this project installed editable                                                                                                                              |
 | `tools/`     | Composer and Adobe plugins (installed by the Composer bootstrap)                                                                                                                                            |
 
 ### Running the commands
@@ -415,14 +415,14 @@ The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
 `src/augusta_pack/` and re-run the bootstrap, or build directly:
 
 ```powershell
-cmake --preset windows -S tools\pack\native "-DPYTHON_EXECUTABLE=<assets-root>\python\pack\Scripts\python.exe"
+cmake --preset windows -S tools\pack\native "-DPYTHON_EXECUTABLE=<assets-root>\python\augusta-pack\Scripts\python.exe"
 cmake --build tools\pack\native\build\x64-windows
 ```
 
 On Linux, with the `linux` preset (clang):
 
 ```bash
-cmake --preset linux -S tools/pack/native "-DPYTHON_EXECUTABLE=<assets-root>/python/pack/bin/python"
+cmake --preset linux -S tools/pack/native "-DPYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python"
 cmake --build tools/pack/native/build/x64-linux
 ```
 

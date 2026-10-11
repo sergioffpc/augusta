@@ -157,8 +157,8 @@ main() {
   # Installed with `uv tool install`, the mechanism uv provides for exactly
   # this: an isolated, uv-managed venv per tool (no system Python involved)
   # plus the tool's own console scripts placed in a bin directory. Both are
-  # redirected under the assets root - the venv to python/pack, the commands
-  # (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify,
+  # redirected under the assets root - the venv to python/augusta-pack, the
+  # commands (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify,
   # augusta-publish) to bin. tools/pack (this repo's own Python project - see
   # its pyproject.toml) is installed editable, pulling in usd-optimize
   # (Python API only, no CLI) and usd-validation-nvidia (CLI) as its
@@ -190,7 +190,8 @@ main() {
     echo "Building the native modules (${native_source_dir})..."
     "${build_env[@]}" cmake --preset "${preset}" \
       -S "$(native_path "${native_source_dir}")" \
-      "-DPYTHON_EXECUTABLE=$(native_path "${python_dir}/pack/${venv_python}")"
+      "-DPYTHON_EXECUTABLE=$(native_path \
+        "${python_dir}/augusta-pack/${venv_python}")"
     "${build_env[@]}" cmake --build \
       "$(native_path "${native_source_dir}/build/${build_dir}")"
     if ! native_modules_built "${pack_package_dir}" "${module_suffix}"; then
