@@ -431,7 +431,8 @@ claim; its previous ones stay `Bound`, so reverting the line takes them up
 again, even while the previous pod still runs from them. Removing a server, or
 turning captures off, leaves its volumes and claims too. To list them, and to
 remove those of a version no `HelmRelease` names any more (the claim first, then
-its volume; the folder stays):
+its volume; the folder stays), which is **cluster-admin**
+([Use cluster-admin](#use-cluster-admin)):
 
 ```sh
 kubectl get pv -l app.kubernetes.io/name=augustad
