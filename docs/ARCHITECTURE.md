@@ -601,6 +601,10 @@ not affect numbering.
   Ubuntu 26.04 root on `scratch`
 - [ADR-0055](./adr/0055-client-release-symbols.md) — Client symbols: a PDB with
   each release
+- [ADR-0056](./adr/0056-signed-revisions-for-flux.md) — Flux runs only signed
+  revisions; `staging` follows release tags
+- [ADR-0057](./adr/0057-cluster-hardening-baseline.md) — Cluster hardening
+  baseline: CIS k3s, PSS `restricted`, Kyverno, no Secrets
 
 ### Rendering & Audio
 

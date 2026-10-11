@@ -693,3 +693,30 @@ Measure:     Starting or stopping a load test of up to 32 Agents is one Git
 
 NFR-07 watches the server; this requirement watches what its clients see of it,
 which is what NFR-13's "degrades none of them" is measured by.
+
+### NFR-15: Cluster Hardening (Security)
+
+Version: v3 (planned)
+
+```text
+Source:      A malicious game client, a compromised LAN device, a revision or
+             image that was not ours, or a stolen operator credential
+Stimulus:    An exploit of augustad, a connection to the Node, a push or image
+             reaching GitHub or GHCR, or a stolen kubeconfig or SSH key
+Environment: The Node (k3s with Flux), LAN-only, both Environments running
+Artifact:    The Node's OS and k3s, admission policies, Flux sources, the
+             augustad chart and operator credentials
+Response:    The cluster runs only signed revisions and signed or
+             digest-pinned images, admits no pod past its namespace's Pod
+             Security level, allows no flow it did not name, holds no Secret,
+             and a stolen credential cannot change workloads or the Node
+Measure:     kube-bench reports no CIS k3s failure outside the recorded
+             exceptions; every Kyverno policy enforced, CI refusing each
+             policy's negative fixture; the Node runbook's negative checks all
+             refused; a LAN port scan shows only the game ports and Grafana
+```
+
+Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no
+admission policy, signature check or NetworkPolicy (ADR-0057, ADR-0056). The
+Node stays LAN-only; exposing a game port range to the internet is outside this
+requirement, but it is one firewall rule once this one is met.

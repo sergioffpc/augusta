@@ -27,10 +27,11 @@ that first met it, or the one it is planned for.
     - [M12 — Agents (M)](#m12--agents-m)
     - [M13 — Match Capture & Reenactment (M)](#m13--match-capture--reenactment-m)
     - [M14 — Replay (M)](#m14--replay-m)
-    - [M15 — Hardening & v3 Release (S)](#m15--hardening--v3-release-s)
+    - [M15 — Cluster Hardening (M)](#m15--cluster-hardening-m)
+    - [M16 — Hardening & v3 Release (S)](#m16--hardening--v3-release-s)
 - [Later — Scalable (planned, no version yet)](#later--scalable-planned-no-version-yet)
-    - [M16 — Client-side Metrics (S)](#m16--client-side-metrics-s)
-    - [M17 — Horizontal Scalability (M)](#m17--horizontal-scalability-m)
+    - [M17 — Client-side Metrics (S)](#m17--client-side-metrics-s)
+    - [M18 — Horizontal Scalability (M)](#m18--horizontal-scalability-m)
 - [Not yet planned](#not-yet-planned)
 
 <!-- pyml enable md051 -->
@@ -239,7 +240,8 @@ language's format and lint; the documentation site publishes from `develop`
 
 v3 makes what goes wrong under load reproducible. Players with no one at the
 keyboard come first: Agents are the load, and Match captures bring back what
-fails under it. It meets US-21, US-23 and NFR-09.
+fails under it. It also hardens the Node and cluster that run the Servers. It
+meets US-21, US-23, NFR-09 and NFR-15.
 
 ### M12 — Agents (M)
 
@@ -272,7 +274,26 @@ their ticks
 **Exercises:** ADR-0051, US-21, NFR-09 **Exit criteria:** a capture is watched
 from any player's view, its Deaths and Match end as captured
 
-### M15 — Hardening & v3 Release (S)
+### M15 — Cluster Hardening (M)
+
+- Kyverno in the cluster, and the same policies over the rendered manifests in
+  CI
+- Flux running only signed revisions; `staging` following signed release tags
+- k3s's configuration in Git, measured against the CIS k3s profile
+- The Node's OS: nftables firewall, key-only SSH, unattended security updates,
+  auditd
+- Pod Security levels per namespace; packs and captures on `local`
+  PersistentVolumes; `augustad` in a user namespace under its own seccomp
+  profile
+- Default-deny NetworkPolicies; signed or digest-pinned images; no Secrets;
+  least-privilege operator and publish credentials
+- Security logs in Loki and their alerts; every policy enforced, failing closed
+
+**Exercises:** NFR-15, ADR-0056, ADR-0057, ADR-0026 **Exit criteria:**
+`kube-bench` reports no failure outside the recorded exceptions, and every
+negative check of the Node runbook is refused on the live cluster
+
+### M16 — Hardening & v3 Release (S)
 
 - Verification of every requirement planned for v3; each then names v3
 - Release 3.0.0
@@ -285,7 +306,7 @@ A later release runs more than one Match of a scenario at once, with Agents as
 the load that proves it. It meets US-24, NFR-13 and NFR-14; its version is
 chosen when it is cut.
 
-### M16 — Client-side Metrics (S)
+### M17 — Client-side Metrics (S)
 
 - Each Agent's NetcodeStats (Reconciliation corrections, interpolation running
   dry, fire) and connection statistics served on `/metrics` from the load test
@@ -296,7 +317,7 @@ chosen when it is cut.
 test Job started by one Git change shows its Agents' metrics in Grafana beside
 the server's
 
-### M17 — Horizontal Scalability (M)
+### M18 — Horizontal Scalability (M)
 
 - An ADR for NFR-13, amending ADR-0026 and ADR-0034: several servers of a
   scenario declared in Git, each with its own Service
