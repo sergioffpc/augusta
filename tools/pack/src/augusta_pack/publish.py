@@ -17,9 +17,11 @@ signing.pub as the chart expects. The client pack stays local; nothing here
 distributes it. Publishing does not deploy: an environment serves the new
 pack once its HelmRelease names the printed version (clusters/onprem/apps/).
 
-The node is reached with the OpenSSH client (ssh, scp) on PATH, as a user
-that can sudo without a password: the volume belongs to root, and only the
-server's group reads it.
+The node is reached with the OpenSSH client (ssh) on PATH, as the node's
+augusta-publish user, whose key does nothing but run the node's end of
+publishing (clusters/onprem/node/augusta-publish-receive.sh, ADR-0057): no
+shell, no sudo. That end writes a version's folder once, and leaves it
+read-only.
 """
 
 import argparse
@@ -27,7 +29,6 @@ from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 import re
-import shlex
 import subprocess
 import sys
 from typing import Protocol
@@ -40,10 +41,6 @@ VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
 PUBLIC_KEY_NAME = "signing.pub"
 VERSION_LENGTH = 12
-# The server image's group (ADR-0054), which the node has too
-# (docs/runbooks/k3s-node-recovery.md): its servers read the packs, and nothing
-# but root writes them.
-SERVER_GROUP = "augusta"
 
 # What the chart can name a server by (charts/augustad): a DNS label short
 # enough for augustad-<scenario>-metrics to stay one.
@@ -64,22 +61,27 @@ class Release:
     files: dict[str, Path]
 
     @property
+    def folder(self) -> str:
+        """The release's folder, relative to the volume."""
+        return f"{self.scenario}/{self.version}"
+
+    @property
     def directory(self) -> str:
         """The release's folder on the node."""
-        return f"{VOLUME_ROOT}/{self.scenario}/{self.version}"
+        return f"{VOLUME_ROOT}/{self.folder}"
 
 
 class Node(Protocol):
     """The asset-pack volume of the node the servers run on."""
 
-    def digests(self, directory: str) -> dict[str, str] | None:
-        """The SHA-256 of each file in directory, by name.
+    def digests(self, folder: str) -> dict[str, str] | None:
+        """The SHA-256 of each file in folder, by name.
 
-        None if directory does not exist.
+        None if folder does not exist.
         """
 
-    def install(self, directory: str, files: dict[str, Path]) -> None:
-        """Creates directory holding files, each under its name, all at once.
+    def install(self, folder: str, files: dict[str, Path]) -> None:
+        """Creates folder holding files, each under its name, all at once.
 
         It never exists partly written. Fails if it exists already.
         """
@@ -131,7 +133,7 @@ def publish(release: Release, node: Node) -> bool:
     other files or the copy does not match.
     """
     expected = {name: _sha256(path) for name, path in release.files.items()}
-    existing = node.digests(release.directory)
+    existing = node.digests(release.folder)
     if existing is not None:
         if existing != expected:
             raise PublishError(
@@ -139,8 +141,8 @@ def publish(release: Release, node: Node) -> bool:
                 f"other files"
             )
         return False
-    node.install(release.directory, release.files)
-    if node.digests(release.directory) != expected:
+    node.install(release.folder, release.files)
+    if node.digests(release.folder) != expected:
         raise PublishError(
             f"{release.directory} on the node does not match the local files"
         )
@@ -153,30 +155,27 @@ def _sha256(path: Path) -> str:
 
 
 class SshNode:
-    """The node reached as host by ssh and scp."""
+    """The node reached as host by ssh, through its publish key's command.
 
-    # Exit status of the digests command when the folder is missing, apart
-    # from ssh's own 255 and sha256sum's 1.
+    Each call is one of the commands
+    clusters/onprem/node/augusta-publish-receive.sh takes.
+    """
+
+    # Exit status of digests when the folder is missing, apart from ssh's own
+    # 255 and the forced command's 1 and 2.
     _MISSING = 3
 
     def __init__(self, host: str):
         self._host = host
 
-    def digests(self, directory: str) -> dict[str, str] | None:
+    def digests(self, folder: str) -> dict[str, str] | None:
         """See Node.digests."""
-        folder = shlex.quote(directory)
-        # As root: the server's group alone reads the volume.
-        script = (
-            f"test -d {folder} || exit {self._MISSING}; cd {folder} && "
-            f"sha256sum -- *"
-        )
-        result = self._ssh(f"sudo sh -c {shlex.quote(script)}", check=False)
+        result = self._ssh(f"digests {folder}", check=False)
         if result.returncode == self._MISSING:
             return None
         if result.returncode != 0:
             raise PublishError(
-                f"cannot read {directory} on {self._host}: "
-                f"{result.stderr.strip()}"
+                f"cannot read {folder} on {self._host}: {result.stderr.strip()}"
             )
         digests = {}
         for line in result.stdout.splitlines():
@@ -184,54 +183,34 @@ class SshNode:
             digests[name.lstrip("*")] = digest
         return digests
 
-    def install(self, directory: str, files: dict[str, Path]) -> None:
+    def install(self, folder: str, files: dict[str, Path]) -> None:
         """See Node.install."""
-        upload = self._ssh("mktemp -d").stdout.strip()
-        try:
-            for name, path in files.items():
-                self._run(
-                    ["scp", "-q", str(path), f"{self._host}:{upload}/{name}"]
-                )
-            # Assembled beside its final place, then renamed into it: a
-            # failed copy never leaves a folder a server could be pointed at.
-            staging = f"{directory}.partial"
-            # The scenario's folder too, which the first publish of a scenario
-            # creates.
-            scenario = directory.rsplit("/", 1)[0]
-            group = shlex.quote(SERVER_GROUP)
-            installs = " && ".join(
-                f"sudo install -g {group} -m 0640 "
-                f"{shlex.quote(f'{upload}/{name}')} "
-                f"{shlex.quote(f'{staging}/{name}')}"
-                for name in files
+        # Received beside the folder, then renamed into it once it holds every
+        # file with its digest: a failed copy never leaves a folder a server
+        # could be pointed at.
+        for name, path in files.items():
+            with open(path, "rb") as stdin:
+                self._ssh(f"receive {folder} {name}", stdin=stdin)
+        self._ssh(
+            f"commit {folder} "
+            + " ".join(
+                f"{name}={_sha256(path)}" for name, path in files.items()
             )
-            self._ssh(
-                f"sudo rm -rf {shlex.quote(staging)} && sudo install -d -g "
-                f"{group} -m 0750 {shlex.quote(scenario)} "
-                f"{shlex.quote(staging)} && {installs} && sudo mv -T "
-                f"{shlex.quote(staging)} {shlex.quote(directory)} || "
-                f"{{ sudo rm -rf {shlex.quote(staging)}; exit 1; }}"
-            )
-        finally:
-            self._ssh(f"rm -rf {shlex.quote(upload)}", check=False)
+        )
 
     def _ssh(
-        self, command: str, check: bool = True
+        self, command: str, check: bool = True, stdin=subprocess.DEVNULL
     ) -> subprocess.CompletedProcess:
-        return self._run(["ssh", self._host, command], check=check)
-
-    def _run(
-        self, args: list[str], check: bool = True
-    ) -> subprocess.CompletedProcess:
+        args = ["ssh", self._host, command]
         try:
             result = subprocess.run(
-                args, capture_output=True, text=True, check=False
+                args, stdin=stdin, capture_output=True, text=True, check=False
             )
         except OSError as error:
-            raise PublishError(f"cannot run {args[0]}: {error}") from error
+            raise PublishError(f"cannot run ssh: {error}") from error
         if check and result.returncode != 0:
             raise PublishError(
-                f"{args[0]} to {self._host} failed: {result.stderr.strip()}"
+                f"ssh to {self._host} failed: {result.stderr.strip()}"
             )
         return result
 
@@ -252,7 +231,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--host",
         required=True,
-        help="The k3s node, as ssh names it (e.g. an alias in ~/.ssh/config).",
+        help="The k3s node as its augusta-publish user, as ssh names it "
+        "(augusta-publish@<node>, or an alias in ~/.ssh/config with that "
+        "User and the publish key).",
     )
     parser.add_argument(
         "--assets-root",

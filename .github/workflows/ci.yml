@@ -85,9 +85,10 @@ jobs:
 
           # The offline tools (tools/pack, tools/composer), and the golden
           # output of theirs the runtime's tests load, which the tools job checks
-          # they still write. tools/docs is the docs workflow's, not theirs.
+          # they still write; and the node's end of augusta-publish, which its
+          # tests run. tools/docs is the docs workflow's, not theirs.
           if echo "$changed" \
-              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|clusters/onprem/node/augusta-publish-receive\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run_tools=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tools=false" >> "$GITHUB_OUTPUT"
