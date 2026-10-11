@@ -1,7 +1,7 @@
 # augusta_agent's native part (ADR-0052): an Agent, a player a Python script
 # controls through Intents, and the pybind11 module the augusta_agent package
-# wraps it with. Built by the root build with AUGUSTA_TOOLS and the tools
-# environment's Python (the root CMakeLists.txt).
+# wraps it with. Built by the root build with AUGUSTA_TOOLS; the module only
+# with the tools environment's Python (the root CMakeLists.txt).
 
 # An Agent on its Session and Runner (see agent.h): no Python in it.
 add_library(augusta_agent_core STATIC agent.cpp report.cpp)
@@ -13,8 +13,8 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_agent_core CLIENT_ONLY)
 
-# The in-process server the package's tests play against (see
-# testing_server.h).
+# The in-process server the package's tests and the C++ tests of whole Matches
+# play against (see testing_server.h).
 add_library(augusta_agent_testing_server STATIC testing_server.cpp)
 target_include_directories(augusta_agent_testing_server PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
@@ -23,6 +23,10 @@ target_link_libraries(
   PRIVATE augusta_assets augusta_failure augusta_parameters
 )
 augusta_set_module_scope(augusta_agent_testing_server SERVER_ONLY)
+
+if(NOT AUGUSTA_AGENT_PYTHON)
+  return()
+endif()
 
 # Built straight into the package's source directory, so `import
 # augusta_agent._native` works once the package is installed editable (uv

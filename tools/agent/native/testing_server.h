@@ -11,9 +11,9 @@
 #include "host.h"
 
 /// \file
-/// A server::Host in the script's own process, for the augusta_agent package's
-/// tests only (augusta_agent._testing): what the C++ tests of whole Matches run
-/// against, so a test needs no augustad.
+/// A server::Host in the test's own process, for tests only: the augusta_agent
+/// package's (augusta_agent._testing) and the C++ tests of whole Matches
+/// (tools/agent/tests), so a test needs no augustad.
 namespace augusta::agent::testing {
 
 /// A Host serving a scenario on a free loopback port, ticked at its tick rate

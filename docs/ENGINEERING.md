@@ -57,7 +57,7 @@ decisions already made in ARCHITECTURE.md:
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
-  nothing under `src/`, `tests/`, `tools/swarm/` (the C++ tools, built and
+  nothing under `src/`, `tests/`, `tools/agent/` (the C++ tools, built and
   tested with the runtime), `tools/composer/examples/` (the example scenario a
   test loads), `tools/pack/cpp/` (formatted by the `format` job, though CI
   doesn't build it), `cmake/`, `config/` (the example configs a test loads),

@@ -56,7 +56,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/swarm/|tools/composer/examples/|tools/pack/cpp/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/cpp/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -396,15 +396,15 @@ jobs:
         # whole list took most of the job. One file per invocation also
         # keeps a stray Windows-only file to its own error, where a multi-file
         # invocation cascades it onto every file after it.
-        # The C++ tools (tools/swarm, tools/agent) are built with them, so
+        # The C++ tools (tools/agent) are built with them, so
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the Windows-only
         # client tests are the client job's.
         run: |
           status=0
-          find src tools/swarm tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
-          git ls-files 'tests/*.cpp' 'tools/swarm/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
+          git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 8 clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Build
         # all includes augustad: this job is the build matrix's Linux x86-64
