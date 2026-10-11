@@ -99,6 +99,33 @@ using TriggerIntent = std::variant<HoldFire, Reload, FireBursts>;
 /// the executor's lock held, so it may set another Intent.
 using OnIntentEnded = std::function<void(IntentEnding)>;
 
+namespace detail {
+
+// IntentExecutor's own, out of it so that their default member initializers
+// are parsed before IntentExecutor's channels instantiate Held: clang fails to
+// compile Held's tracking otherwise.
+
+// What an Intent that tracks something has counted so far, from the first
+// tick it was carried out on; each Intent uses only its own part.
+struct Tracking {
+  // MoveTo: the nearest along the floor its body has come to its point, and
+  // the ticks since it last came nearer.
+  float nearest = std::numeric_limits<float>::max();
+  int ticks_without_progress = 0;
+  // AimAt: the Match it was first carried out in (ServerView::matches_started).
+  std::optional<std::uint32_t> match;
+  // FireBursts: the ticks since its Burst-and-release cycle began.
+  int trigger_ticks = 0;
+};
+template <typename Intent>
+struct Held {
+  Intent intent;
+  OnIntentEnded on_ended;
+  Tracking tracking{};
+};
+
+}  // namespace detail
+
 /// One Agent's channels, and the Command they come to each tick. Setting and
 /// clearing are safe from any thread and never wait for a tick; NextCommand is
 /// called from one thread at a time (the Runner's Prediction thread).
@@ -126,24 +153,9 @@ class IntentExecutor {
   [[nodiscard]] command::Command NextCommand(const ServerView& view, const physics::BodyState& own);
 
  private:
-  // What an Intent that tracks something has counted so far, from the first
-  // tick it was carried out on; each Intent uses only its own part.
-  struct Tracking {
-    // MoveTo: the nearest along the floor its body has come to its point, and
-    // the ticks since it last came nearer.
-    float nearest = std::numeric_limits<float>::max();
-    int ticks_without_progress = 0;
-    // AimAt: the Match it was first carried out in (ServerView::matches_started).
-    std::optional<std::uint32_t> match;
-    // FireBursts: the ticks since its Burst-and-release cycle began.
-    int trigger_ticks = 0;
-  };
+  using Tracking = detail::Tracking;
   template <typename Intent>
-  struct Held {
-    Intent intent;
-    OnIntentEnded on_ended;
-    Tracking tracking{};
-  };
+  using Held = detail::Held<Intent>;
   // An Intent that has ended, to be told once the lock is let go.
   struct Ended {
     OnIntentEnded on_ended;
