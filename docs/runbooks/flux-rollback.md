@@ -156,6 +156,10 @@ tag and a published tag is never moved or reused.
 `staging` runs the newest `v*` tag, so a bad release is rolled back by pinning
 its source, `augusta-release`, to the last good tag, `vGOOD`, and the fix ships
 as the next patch release ([Cut a Release](cut-release.md#rollback--abort)).
+`vGOOD` must verify against the maintainer's key in
+[`trusted-signers.yaml`](../../clusters/onprem/flux-system/trusted-signers.yaml):
+`v2.0.1` and later do; `v1.0.0` and `v2.0.0` are signed with an older key, so
+Flux refuses them.
 
 1. **Restore service now (optional)** as step 2 of
    [Roll back develop](#roll-back-develop) does, with `augustad-staging` and
