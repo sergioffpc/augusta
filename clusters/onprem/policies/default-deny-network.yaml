@@ -28,14 +28,12 @@ spec:
         operations: [CREATE, UPDATE]
         resources: [pods]
   # Every namespace but k3s's own (kube-system) and the one it leaves empty
-  # (default). staging joins once it runs a release whose chart lets its
-  # servers' traffic in, the first tagged after #536
-  # (clusters/onprem/apps/namespaces.yaml).
+  # (default).
   matchConditions:
     - name: isolated-namespace
       expression: |-
         has(object.metadata.namespace) &&
-        object.metadata.namespace in ["develop", "flux-system", "kyverno", "monitoring", "monitoring-node"]
+        object.metadata.namespace in ["develop", "flux-system", "kyverno", "monitoring", "monitoring-node", "staging"]
   variables:
     - name: networkPolicies
       expression: |-

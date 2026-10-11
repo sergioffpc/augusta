@@ -1,0 +1,31 @@
+# A staging server mounting its pack folder straight from the Node, as v2.0.2's
+# chart did before its local PersistentVolumes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: augustad-firebase
+  namespace: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: augustad
+      scenario: firebase
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: augustad
+        scenario: firebase
+    spec:
+      containers:
+        - name: augustad
+          image: ghcr.io/sergioffpc/augustad:2.0.2
+          volumeMounts:
+            - name: pack
+              mountPath: /srv/augusta/pack
+              readOnly: true
+      volumes:
+        - name: pack
+          hostPath:
+            path: /srv/augusta/asset-packs/firebase/9d0c7edd5b34
+            type: Directory
