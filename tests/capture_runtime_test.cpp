@@ -279,4 +279,25 @@ TEST_F(CaptureFailureTest, ARuntimeStopsItsCapturesBeforeRunReturns) {
   EXPECT_EQ(Occurrences(log, "event=capture_disabled"), 1U) << log;
 }
 
+// A run whose Simulation loop never starts - here a stop came first; a worker
+// that fails before it does the same - still stops its captures before Run
+// returns.
+TEST_F(CaptureFailureTest, ARunWhoseSimulationNeverStartsStopsItsCapturesBeforeRunReturns) {
+  constexpr std::string_view kReturned = "run_returned";
+  testing::internal::CaptureStdout();
+  {
+    ServerRuntime runtime(Config(CaptureMode::kOptional), 0, EmptyScenario());
+    runtime.Stop();
+    const std::optional<augusta::failure::Failure> cause = runtime.Run();
+    std::cout << kReturned << std::endl;
+    EXPECT_FALSE(cause.has_value());
+  }
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  const std::size_t stopped = log.find("event=capture_disabled mode=optional lost=false");
+  ASSERT_NE(stopped, std::string::npos) << log;
+  EXPECT_LT(stopped, log.find(kReturned)) << log;
+  EXPECT_EQ(Occurrences(log, "event=capture_disabled"), 1U) << log;
+}
+
 }  // namespace
