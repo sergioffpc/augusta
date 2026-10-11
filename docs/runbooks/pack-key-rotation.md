@@ -65,8 +65,11 @@ pod crash-loops. The client pack never goes on the node.
   secret.
 - SSH access to the k3s node (`<node>` below, as `ssh` names it), as a user that
   can `sudo` without a password. The repository does not record its address.
-- A kubeconfig for the cluster, `kubectl`, and the `flux` CLI (see
-  [Roll Back a Bad Deploy with Flux](flux-rollback.md#prerequisites)).
+- The day-to-day kubeconfig
+  ([Cluster access](k3s-node-recovery.md#cluster-access)), `kubectl`, and the
+  `flux` CLI (see
+  [Roll Back a Bad Deploy with Flux](flux-rollback.md#prerequisites)). No step
+  here needs cluster-admin.
 - A Windows client and server build to smoke-test the packs locally.
 
 ## Steps

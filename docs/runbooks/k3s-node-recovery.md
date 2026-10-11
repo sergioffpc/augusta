@@ -77,8 +77,9 @@ restores them.
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
   the chart sets no `imagePullSecrets`, so the GHCR package must be public.
-- On the workstation: `kubectl` and the `flux` CLI
-  ([as for a rollback](flux-rollback.md#prerequisites)), and this repository
+- On the workstation: `kubectl`, the `flux` CLI
+  ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
+  day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository
   with `origin/develop` fetched: the `flux-system` GitRepository tracks
   `develop`.
 
@@ -145,30 +146,32 @@ The mount point itself stays `root:root`; only the mounted filesystem's root is
 `augusta`'s. If the image is ever not mounted, augustad cannot create its folder
 in the bare directory and refuses to start, rather than write captures to the
 node's own disk. A server started before the mount sees the bare directory until
-its pod is restarted (`kubectl -n <namespace> rollout restart deploy/<name>`).
+its pod is restarted (**cluster-admin**, on the node:
+`sudo k3s kubectl -n <namespace> rollout restart deploy/<name>`).
 
 To grow it, stop every capturing server first: a running pod keeps the
 filesystem in use. From the workstation, for each capturing environment:
 
 ```sh
 flux suspend helmrelease augustad-<environment> -n flux-system
-kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 0
 ```
 
-Then on the node:
+Then on the node, scaling each of them to zero (**cluster-admin**) before
+growing the image:
 
 ```sh
+sudo k3s kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 0
 sudo umount /srv/augusta/captures
 sudo fallocate -l <new-size>GiB /srv/augusta/captures.img
 sudo e2fsck -f /srv/augusta/captures.img
 sudo resize2fs /srv/augusta/captures.img
 sudo mount /srv/augusta/captures
+sudo k3s kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 1
 ```
 
 Then from the workstation, for each environment stopped above:
 
 ```sh
-kubectl -n <environment> scale deploy -l app.kubernetes.io/name=augustad --replicas 1
 flux resume helmrelease augustad-<environment> -n flux-system
 ```
 
@@ -313,6 +316,80 @@ sudo ausearch -i -k k3s-config -ts today
 ```
 
 The log is `/var/log/audit/audit.log`, rotated by auditd.
+
+## Cluster access
+
+Two identities reach the API server, from the maintainer's addresses only
+([The firewall](#the-firewall)):
+
+- **Day to day: `augusta:operators`.** A client certificate that expires a day
+  after it is issued, in `~/.kube/augusta.yaml` on the workstation. It reads
+  everything but Secrets, and suspends, resumes and reconciles every Flux
+  source, Kustomization and `HelmRelease`. It cannot create, change or delete a
+  workload, a Secret, a Role or ClusterRole, or a binding, nor change a Flux
+  object beyond `spec.suspend` and its `reconcile.fluxcd.io/` annotations (a
+  source's URL or a release's values would deploy anything). Its role and that
+  limit are in
+  [`clusters/onprem/infrastructure/operator.yaml`](../../clusters/onprem/infrastructure/operator.yaml).
+- **cluster-admin.** k3s's own kubeconfig, `/etc/rancher/k3s/k3s.yaml`, which
+  stays on the node: never keep a copy of it elsewhere. Only the steps marked
+  **cluster-admin** in these runbooks need it, and every `sudo k3s kubectl` run
+  on the node is one.
+
+### Issue or renew the day-to-day kubeconfig
+
+On the workstation, from this repository, with `openssl` and SSH to the node as
+a user with `sudo`:
+
+```sh
+scripts/operator-kubeconfig.sh <node>
+export KUBECONFIG=~/.kube/augusta.yaml
+kubectl get nodes
+```
+
+It makes a new key, which stays on the workstation, and has the node sign its
+certificate for 24 hours, then prints when it expires. Run it again whenever
+`kubectl` answers `the server has asked for the client to provide credentials`:
+an expired certificate is the usual cause. The certificate names you by your
+workstation user, which the API server's audit log records.
+
+To check what it may do:
+
+```sh
+kubectl auth can-i --list
+kubectl get pods -A
+flux get all -A
+flux suspend kustomization apps -n flux-system
+flux resume kustomization apps -n flux-system
+kubectl -n develop create deployment probe --image=busybox
+kubectl create clusterrolebinding probe --clusterrole=cluster-admin --user=probe
+kubectl -n flux-system patch gitrepository flux-system --type merge -p '{"spec":{"interval":"2m"}}'
+```
+
+The reads and the Flux commands work; the last three are refused, the patch by
+the `augusta-operator-flux` policy.
+
+### Use cluster-admin
+
+A **cluster-admin** step that runs on the node uses `sudo k3s kubectl` there.
+One that needs a tool on the workstation (`helm`, a `kubectl` across many steps)
+takes k3s's kubeconfig for that shell alone, and removes it when done:
+
+```sh
+export KUBECONFIG="$(mktemp)"
+ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" \
+  | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
+# ... the cluster-admin step ...
+rm "${KUBECONFIG}"
+export KUBECONFIG=~/.kube/augusta.yaml
+```
+
+A copy of k3s's kubeconfig kept from before (the old Part B step 4 wrote
+`~/.kube/augusta.yaml` from it) is cluster-admin until its certificate expires,
+about a year after k3s issued it: replace it by issuing the day-to-day one
+above. Revoking it sooner means rotating k3s's client CA
+([`k3s certificate rotate-ca`](https://docs.k3s.io/cli/certificate#certificate-authority-ca-certificates)),
+which also ends every node and controller certificate signed by it.
 
 ## The k3s configuration
 
@@ -598,14 +675,18 @@ On the node, after a rebuild, a configuration change or an upgrade:
     new one under the same version. Cook, publish and point the server at the
     new version instead.
 
-4. Copy the kubeconfig to the workstation and point it at the node:
+4. Issue the day-to-day kubeconfig ([Cluster access](#cluster-access)); the new
+   cluster has a new CA, so the old one no longer verifies:
 
     ```sh
-    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" > ~/.kube/augusta.yaml
-    sed -i 's#https://127.0.0.1:6443#https://<node-address>:6443#' ~/.kube/augusta.yaml
+    scripts/operator-kubeconfig.sh <node>
     export KUBECONFIG=~/.kube/augusta.yaml
     kubectl get nodes
     ```
+
+    It reads nothing until Flux has applied its role with the `infrastructure`
+    Kustomization, a few minutes after step 3: until then `kubectl` answers
+    `Forbidden`.
 
 5. Watch it converge:
 

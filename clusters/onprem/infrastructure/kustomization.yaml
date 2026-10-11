@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - kyverno.yaml
   - monitoring.yaml
+  - operator.yaml

@@ -43,10 +43,11 @@ for `staging`, except that a `staging.yaml` change deploys from `develop`.
 
 ## Prerequisites
 
-- A kubeconfig for the k3s cluster. The repository does not record how one is
-  obtained; step 4 of
-  [Recover or Rebuild the k3s Node](k3s-node-recovery.md#part-b-rebuild) copies
-  it from the node.
+- The day-to-day kubeconfig, from one of the maintainer's addresses
+  ([Cluster access](k3s-node-recovery.md#cluster-access)): every step but the
+  Helm rollback (step 2 of [Roll back develop](#roll-back-develop)) needs no
+  more. That step is **cluster-admin**, and needs SSH to the node as a user with
+  `sudo` ([Use cluster-admin](k3s-node-recovery.md#use-cluster-admin)).
 - `kubectl` and `helm`: `scripts/bootstrap-wsl.sh` installs both.
 - The `flux` CLI at the cluster's Flux version, the `Flux Version` in
   [`gotk-components.yaml`](../../clusters/onprem/flux-system/gotk-components.yaml)'s
@@ -92,12 +93,19 @@ for `staging`, except that a `staging.yaml` change deploys from `develop`.
 
 2. **Restore service now (optional, when the environment cannot wait for CI).**
    Stop Flux from reconciling the release, then roll Helm back to the last good
-   revision:
+   revision. The rollback is **cluster-admin**: Helm reads its release records,
+   which are Secrets, and changes the Deployment itself
+   ([Use cluster-admin](k3s-node-recovery.md#use-cluster-admin)):
 
     ```sh
     flux suspend helmrelease augustad-develop -n flux-system
+    export KUBECONFIG="$(mktemp)"
+    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" \
+      | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
     helm history augustad -n develop
     helm rollback augustad <good-revision> -n develop --wait --timeout 10m
+    rm "${KUBECONFIG}"
+    export KUBECONFIG=~/.kube/augusta.yaml
     ```
 
     The Helm release record lives in the environment's own namespace
