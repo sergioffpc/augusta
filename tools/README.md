@@ -354,11 +354,11 @@ the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
 `server.pack` and `signing.pub`, into
 `/srv/augusta/asset-packs/<scenario>/<version>/`, `<version>` being the first 12
-hex characters of the server pack's BLAKE3 hash. The folder is assembled beside
-its final place and renamed into it, so it never exists half-written, and a
-folder that exists is never written again: publishing the same cook twice checks
-the node holds the same files and copies nothing, and a folder holding other
-files is an error.
+hex characters of the server pack's BLAKE3 hash, owned by `root:augusta` so only
+the servers' group reads it. The folder is assembled beside its final place and
+renamed into it, so it never exists half-written, and a folder that exists is
+never written again: publishing the same cook twice checks the node holds the
+same files and copies nothing, and a folder holding other files is an error.
 
 It runs `ssh` and `scp` from `PATH` (on Windows, the OpenSSH client), as a user
 that can `sudo` on the node without a password.

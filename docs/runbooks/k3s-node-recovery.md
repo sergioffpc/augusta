@@ -70,6 +70,33 @@ restores them.
   with `origin/develop` fetched: the `flux-system` GitRepository tracks
   `develop`.
 
+## The server's user
+
+The server image runs as `augusta`, UID and GID 65532 (ADR-0054). The node has
+the same user and group, with no login and no home, so its files show that name
+and the node's own users stay out of them:
+
+- **Asset packs:** `/srv/augusta/asset-packs` and everything in it is owned by
+  `root:augusta`, folders `0750` and files `0640`. The servers read it as group
+  `augusta`; only root writes it (`augusta-publish` installs packs so).
+- **Captures:** the mounted capture filesystem's root is owned by
+  `augusta:augusta` ([The capture filesystem](#the-capture-filesystem)).
+
+Set it up once per node, before Flux starts a server:
+
+```sh
+ssh <node>
+sudo groupadd --system --gid 65532 augusta
+sudo useradd --system --uid 65532 --gid augusta --no-create-home \
+  --home-dir /nonexistent --shell /usr/sbin/nologin augusta
+sudo install -d -o root -g augusta -m 0750 /srv/augusta/asset-packs
+sudo chown -R root:augusta /srv/augusta/asset-packs
+sudo find /srv/augusta/asset-packs -type d -exec chmod 0750 {} +
+sudo find /srv/augusta/asset-packs -type f -exec chmod 0640 {} +
+id augusta
+sudo ls -lR /srv/augusta/asset-packs
+```
+
 ## The capture filesystem
 
 Servers whose environment sets `captures.hostPath` mount `/srv/augusta/captures`
@@ -78,15 +105,15 @@ folder there: a capture's name (when its Match started and its number in the
 server's run) is unique only within one server. augustad creates that folder
 itself, and refuses to start if it cannot.
 
-- **Path and owner:** `/srv/augusta/captures`, owned by `65532:65532`, mode
-  `0755`: the server image's user (ADR-0054). The chart's `hostPath` volume is
-  of type `Directory`, so the kubelet never creates it, as `root:root`, in its
-  place; a pod whose directory is missing waits in `ContainerCreating`.
+- **Path and owner:** `/srv/augusta/captures`, owned by `augusta:augusta`, mode
+  `0755`: [the server's user](#the-servers-user). The chart's `hostPath` volume
+  is of type `Directory`, so the kubelet never creates it, as `root:root`, in
+  its place; a pod whose directory is missing waits in `ContainerCreating`.
 - **Filesystem:** an ext4 image of fixed size, `/srv/augusta/captures.img`,
-  loop-mounted on that path. Its blocks are allocated when it is made, so
-  captures never take more of the node's disk than that and never cause
-  DiskPressure. A full filesystem fails a capture's next write: augustad stops
-  that Match's capture, logged once
+  readable by root only and loop-mounted on that path. Its blocks are allocated
+  when it is made, so captures never take more of the node's disk than that and
+  never cause DiskPressure. A full filesystem fails a capture's next write:
+  augustad stops that Match's capture, logged once
   (`subsystem=capture event=capture_stopped reason=write_failed`), and the
   server and its Match go on.
 - **Size:** 4 GiB. It must hold, at once, every capturing server's retention cap
@@ -99,25 +126,27 @@ itself, and refuses to start if it cannot.
   or a higher `maxMiB`, grows the image first (below). Until #461 lands nothing
   deletes captures, and a full filesystem only stops them.
 
-Set it up once per node, before Flux starts a capturing server:
+Set it up once per node, after [the server's user](#the-servers-user) and before
+Flux starts a capturing server:
 
 ```sh
 ssh <node>
 sudo install -d -o root -g root -m 0755 /srv/augusta/captures
 sudo fallocate -l 4GiB /srv/augusta/captures.img
+sudo chmod 0600 /srv/augusta/captures.img
 sudo mkfs.ext4 -q -m 0 -L augusta-captures /srv/augusta/captures.img
 echo '/srv/augusta/captures.img /srv/augusta/captures ext4 loop,nodev,nosuid,noexec,x-systemd.before=k3s.service 0 2' \
   | sudo tee -a /etc/fstab
 sudo systemctl daemon-reload
 sudo mount /srv/augusta/captures
-sudo install -d -o 65532 -g 65532 -m 0755 /srv/augusta/captures
+sudo install -d -o augusta -g augusta -m 0755 /srv/augusta/captures
 findmnt /srv/augusta/captures
 ls -ld /srv/augusta/captures
 ```
 
 The mount point itself stays `root:root`; only the mounted filesystem's root is
-`65532`. If the image is ever not mounted, augustad cannot create its folder in
-the bare directory and refuses to start, rather than write captures to the
+`augusta`'s. If the image is ever not mounted, augustad cannot create its folder
+in the bare directory and refuses to start, rather than write captures to the
 node's own disk. A server started before the mount sees the bare directory until
 its pod is restarted (`kubectl -n <namespace> rollout restart deploy/<name>`).
 
@@ -222,12 +251,15 @@ Record the new size in this section.
     kubectl get nodes
     ```
 
-5. Put the asset packs back before Flux starts the servers:
+5. On a reinstalled OS, set up [the server's user](#the-servers-user) first: the
+   packs' group and the captures' owner are its IDs. Then put the asset packs
+   back before Flux starts the servers (`tar` as root keeps their owners and
+   modes):
 
     ```sh
     scp asset-packs.tgz <node>:/tmp/
     ssh <node> "sudo mkdir -p /srv/augusta && sudo tar -C /srv/augusta -xzf /tmp/asset-packs.tgz && rm /tmp/asset-packs.tgz"
-    ssh <node> "ls -lR /srv/augusta/asset-packs"
+    ssh <node> "sudo ls -lR /srv/augusta/asset-packs"
     ```
 
     Without a copy, publish each `packVersion` that
