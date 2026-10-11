@@ -479,25 +479,32 @@ Version: v1
 Source:      Build system
 Stimulus:    Compilation request
 Environment: Client build targets Windows x64; server build targets
-             Linux x86-64, with Windows x64 and Linux arm64 for
+             Linux x86-64 and Linux arm64, with Windows x64 for
              development only
 Artifact:    Engine codebase (shared core, client, server)
 Response:    Shared core (ECS, physics, ballistics, networking) compiles
-             cleanly for both target platforms without platform-specific
+             cleanly for every target platform without platform-specific
              branches; client-only code (rendering) is Windows-only;
              server-only code runs in production on Linux only; any other
              target is refused when the build is configured
 Measure:     Successful client build + Match playthrough on
              Windows; successful server build + Match playthrough
-             on Linux; CI builds the server on both its platforms
+             on Linux; CI builds the server on Linux x86-64 and
+             Windows x64, and each release on both Linux architectures
 ```
 
 The server's Windows build is for development (ADR-0047): it runs a match beside
 the client on one machine, but nothing is released or deployed from it, and a
-crash there leaves only the logged stack, no core dump or split debug info. The
-Linux arm64 build is the dev container's on an arm64 host (an Apple silicon Mac,
-`scripts/dev-container.sh`), so it builds natively rather than emulating x86-64;
-CI doesn't build it, and nothing is released or deployed from it either.
+crash there leaves only the logged stack, no core dump or split debug info.
+
+Linux arm64 is a production platform, built only for what ships: each release
+builds and tests `augustad-linux-arm64` beside `augustad-linux-x64`, and
+`main`'s server image, the one a release runs, is built for both architectures.
+Pull requests and `develop` build Linux x86-64 alone, so an arm64-only break
+shows at the merge into `main` or the release's tag, not before. Each is built
+natively, on an arm64 runner; the dev container on an arm64 host (an Apple
+silicon Mac, `scripts/dev-container.sh`) builds it natively too.
+
 `cmake/AugustaPlatform.cmake` holds this contract, and the configure stops on
 any other OS, architecture or 32-bit toolchain rather than compiling for it.
 

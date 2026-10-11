@@ -1,5 +1,7 @@
-# actionlint's runner labels predate this GitHub-hosted image; the workflows pin
-# it rather than ubuntu-latest so the toolchain doesn't shift underneath them.
+# actionlint's runner labels predate these GitHub-hosted images; the workflows
+# pin them rather than ubuntu-latest so the toolchain doesn't shift underneath
+# them. ubuntu-26.04-arm builds main's and the releases' arm64 server.
 self-hosted-runner:
   labels:
     - ubuntu-26.04
+    - ubuntu-26.04-arm

@@ -45,9 +45,10 @@ binary of its own build, so each published binary has its own:
   Docker build as `sha-<12>-debuginfo` (the Dockerfile's `debuginfo` stage, a
   single file at `/augustad.debug`), attested like the image, kept as long as
   it.
-- The release's `augustad-linux-x64`, built by the release workflow and not in
-  any image: the release attaches `augustad-linux-x64.debug` from that same
-  build. It does not read a cluster core.
+- The release's `augustad-linux-x64` and `augustad-linux-arm64`, built by the
+  release workflow and in no image: the release attaches each one's
+  `augustad-linux-<arch>.debug` from that same build. It does not read a cluster
+  core.
 
 A core is read with its binary, that binary's debug info and the core:
 `gdb -e augustad -s augustad.debug -c core`, the binary taken from the image the

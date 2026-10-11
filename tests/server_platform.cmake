@@ -1,8 +1,8 @@
 # Checks the server's platform-support contract (NFR-04): which target platforms
-# augustad configures for, and as what. Linux x86-64 is where it runs in
-# production; Windows x64 (ADR-0047) and Linux arm64 (the dev container on an
-# arm64 host) are development builds only; every other target is refused at
-# configure time rather than compiled by accident.
+# augustad configures for, and as what. Linux x86-64 and Linux arm64 are where
+# it runs in production; Windows x64 (ADR-0047) is a development build only;
+# every other target is refused at configure time rather than compiled by
+# accident.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P server_platform.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -30,8 +30,8 @@ expect_support(Linux x86_64 8 production)
 expect_support(Linux AMD64 8 production)
 expect_support(Windows AMD64 8 development)
 expect_support(Windows x86_64 8 development)
-expect_support(Linux aarch64 8 development)
-expect_support(Linux arm64 8 development)
+expect_support(Linux aarch64 8 production)
+expect_support(Linux arm64 8 production)
 
 # A 32-bit toolchain on a 64-bit host still reports the host's processor.
 expect_support(Linux x86_64 4 unsupported)
