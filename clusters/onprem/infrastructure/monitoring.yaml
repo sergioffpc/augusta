@@ -120,16 +120,31 @@ spec:
       # The pod helm test would run, which Flux does not.
       testFramework:
         enabled: false
-      # Fixed and in the clear: Grafana is reached only on the LAN, and a
-      # password the chart generated would be lost with the cluster.
-      adminUser: admin
-      adminPassword: admin
+      # No credential at all (ADR-0057): anyone on the LAN views every
+      # dashboard anonymously, as a Viewer, who can change nothing, and no one
+      # can sign in. Dashboards, data sources and alert rules come only from
+      # Git. Grafana never creates its admin user, so the chart makes no
+      # Secret for its password.
+      env:
+        GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      grafana.ini:
+        auth:
+          disable_login_form: true
+          disable_signout_menu: true
+        auth.basic:
+          enabled: false
+        auth.anonymous:
+          enabled: true
+          org_role: Viewer
       service:
         # Pinned, like the game port (apps), so the LAN has a stable address.
         type: NodePort
         nodePort: 30300
       # Dashboards are ConfigMaps labelled grafana_dashboard: "1", in any
-      # namespace (the augustad chart ships its own).
+      # namespace (the augustad chart ships its own). The sidecars write them
+      # and the data sources to files Grafana provisions from; with no admin
+      # to call Grafana's reload API as, Grafana rescans the dashboards
+      # itself every 30 seconds, and loads the data sources as it starts.
       sidecar:
         image:
           tag: 2.11.2@sha256:2912be006f62f9ea080194cf6d3afcd90daead8d101d0ba686a137a849f6a4f6
@@ -138,6 +153,10 @@ spec:
           label: grafana_dashboard
           labelValue: "1"
           searchNamespace: ALL
+          skipReload: true
+        datasources:
+          skipReload: true
+          initDatasources: true
       # The logs (ADR-0053), beside the chart's own Prometheus data source.
       additionalDataSources:
         - name: Loki

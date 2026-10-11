@@ -1,0 +1,9 @@
+# A Secret named as a Helm release record but not of its type.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sh.helm.release.v1.augustad.v1
+  namespace: staging
+type: Opaque
+stringData:
+  token: not-a-release

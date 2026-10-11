@@ -304,6 +304,9 @@ no self-hosted GitHub Actions runner in this pipeline).
   also requires each policy to refuse its negative fixtures in
   `fixtures/<policy>/`. Adding a policy is its file, its entry in the
   Kustomization and its fixtures, with no change to CI.
+- **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
+  reports any Secret but Flux's trusted public keys, Helm's release records and
+  those the charts make themselves, each listed by name (ADR-0057).
 - **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
   a tag pushed again never changes what runs, except those whose signatures are
   verified instead (`augustad`'s and Flux's) and `kube-system`'s, which come
@@ -487,6 +490,14 @@ no self-hosted GitHub Actions runner in this pipeline).
   its own (ADR-0049).
 - **Alerts:** rules ship with the chart and show in Grafana and Alertmanager,
   with no receiver yet. One is chosen when the server runs unattended for real.
+- **Grafana** opens on node port 30300 with no login: anyone on the LAN is an
+  anonymous Viewer, and there is no login form, basic authentication or admin
+  user (ADR-0057). Nothing is changed in Grafana itself. A dashboard is changed
+  in its JSON in Git, `charts/augustad/dashboards/`: export it from Grafana (or
+  edit it there in a local Grafana) and commit the file; once the chart deploys,
+  Grafana picks it up within 30 seconds. Data sources are the
+  `kube-prometheus-stack` release's values
+  (`clusters/onprem/infrastructure/monitoring.yaml`), loaded as Grafana starts.
 
 ## Performance
 
