@@ -8,8 +8,10 @@
 # user with sudo. It replaces the kubeconfig in place, an expired one included.
 #
 # Usage: scripts/operator-kubeconfig.sh <node> [<kubeconfig>]
-#   <node> is the SSH destination; the API server is at its host name, port
-#   6443. <kubeconfig> defaults to ~/.kube/augusta.yaml.
+#   <node> is the SSH destination; the API server is at its host name (ssh -G
+#   resolves an alias), port 6443, which must be one the API server's
+#   certificate names: the node's address or its own host name.
+#   <kubeconfig> defaults to ~/.kube/augusta.yaml.
 set -euo pipefail
 
 readonly LIFETIME_SECONDS=86400
@@ -48,7 +50,8 @@ done
 kubectl delete csr '$1' >/dev/null
 [[ -n "\${certificate}" ]] || { echo "the request was not signed" >&2; exit 1; }
 echo "\${certificate}"
-kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}'
+kubectl config view --raw \\
+  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}'
 echo
 EOF
 }
@@ -59,7 +62,7 @@ main() {
     exit 2
   fi
   local node="$1" kubeconfig="${2:-${HOME}/.kube/augusta.yaml}"
-  local user host work name response certificate ca
+  local user host work name request response certificate ca expiry
   user="$(id -un)"
   host="$(ssh -G "${node}" | awk '$1 == "hostname" { print $2 }')"
   name="augusta-operator-${user}-$(date +%s)"
@@ -72,8 +75,8 @@ main() {
     -out "${work}/csr.pem"
 
   log "asking ${node} to sign ${user}'s certificate..."
-  response="$(remote_script "${name}" "$(base64 <"${work}/csr.pem" | tr -d '\n')" \
-    | ssh "${node}" bash -s)"
+  request="$(base64 <"${work}/csr.pem" | tr -d '\n')"
+  response="$(remote_script "${name}" "${request}" | ssh "${node}" bash -s)"
   certificate="$(sed -n 1p <<<"${response}")"
   ca="$(sed -n 2p <<<"${response}")"
 
@@ -100,8 +103,8 @@ contexts:
 current-context: augusta
 EOF
   mv "${work}/kubeconfig" "${kubeconfig}"
-  log "wrote ${kubeconfig}, valid until" \
-    "$(base64 -d <<<"${certificate}" | openssl x509 -noout -enddate | cut -d = -f 2)."
+  expiry="$(base64 -d <<<"${certificate}" | openssl x509 -noout -enddate)"
+  log "wrote ${kubeconfig}, valid until ${expiry#notAfter=}."
 }
 
 main "$@"
