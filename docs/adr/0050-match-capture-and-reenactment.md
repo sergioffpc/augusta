@@ -211,7 +211,7 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
   `augusta-replay` and the golden match are removed.
 - **Captured players run only where augustac does**, on Windows with a GPU, one
   window each: a Reenactment is for bringing back a playtest's problem, not for
-  load tests or CI, which stay with augusta-swarm's Scripted players (ADR-0013).
+  load tests or CI, which stay with Agents (ADR-0013, ADR-0052).
 - **A capture is valid only with its packs and protocol.** A change to a
   Command's encoding, to the Map or to the scenario's Characters leaves older
   captures unplayable: a spawn is a position, not a Spawn point by name, and a
@@ -253,9 +253,9 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
   of the server that made the capture, which the server played against holds to
   the newest State it sent or to `kMaxShootersDelay`, so every round would be
   judged at one extreme of Lag compensation.
-- **Captured players in augusta-swarm, headless**: rejected - augustac shows the
-  Match as the captured player saw it, which is half of what bringing back a
-  playtest's problem is for; augusta-swarm stays the Scripted players'.
+- **Captured players as Agents, headless**: rejected - augustac shows the Match
+  as the captured player saw it, which is half of what bringing back a
+  playtest's problem is for; Agents stay a script's.
 - **One augustac playing every player of a capture**: rejected - only one of
   them could be seen, and one process would no longer stand for one client.
 - **Ordering the processes' joins, so `assign_spawns` places each where it

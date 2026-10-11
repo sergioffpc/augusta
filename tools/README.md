@@ -2,19 +2,18 @@
 
 This directory contains every tool, apart from the runtime in `src/`: `pack`
 cooks authored content into signed runtime packs, `composer` sets up the
-optional USD authoring application and its launcher (both Windows), `agent` is
-the `augusta_agent` package a Python script controls Agents with, `swarm` builds
-`augusta-swarm`, which fills a server with Scripted players for load and
-end-to-end tests. Each tool's tests live beside it. `docs` is not a tool of its
-own: it holds how the documentation site is built (ADR-0046).
+optional USD authoring application and its launcher (both Windows), and `agent`
+is the `augusta_agent` package a Python script controls Agents with, for load
+and end-to-end tests among other things. Each tool's tests live beside it.
+`docs` is not a tool of its own: it holds how the documentation site is built
+(ADR-0046).
 
-| Tool                     | Purpose                                                                      |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| [`pack/`](pack/)         | Python asset cooker, signing utilities, and native cooking modules.          |
-| [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher.       |
-| [`agent/`](agent/)       | `augusta_agent`: Agents, players a Python script controls through Intents.   |
-| [`swarm/`](swarm/)       | `augusta-swarm`: the Scripted players, a server's worth of headless clients. |
-| [`docs/`](docs/)         | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`.    |
+| Tool                     | Purpose                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| [`pack/`](pack/)         | Python asset cooker, signing utilities, and native cooking modules.        |
+| [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher.     |
+| [`agent/`](agent/)       | `augusta_agent`: Agents, players a Python script controls through Intents. |
+| [`docs/`](docs/)         | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`.  |
 
 ## Python environment
 
@@ -480,79 +479,82 @@ uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $g
 
 `augusta_agent` (ADR-0052) is a Python package a script imports to connect
 Agents (see [CONTEXT.md](../CONTEXT.md)) to a server and tell each what to do;
-the Harness carries it out every tick. Its native part, `augusta_agent._native`,
-is built by the root build with `AUGUSTA_TOOLS`, against the interpreter of
-`tools/.venv`, into [`agent/src/augusta_agent/`](agent/src/augusta_agent/): run
-`uv sync` here first, or the configure leaves the module out with a warning.
-`-DPYTHON_EXECUTABLE=<python>` names another Python 3.12.
+the Harness carries it out every tick. A script runs its Agents in an asyncio
+loop: it awaits each Agent's events (`await agent.next_event()`: Shot, Hit
+confirmation, Death, Match start, Match end) and how each Intent it set ended,
+and never a tick, so a script that takes seconds to decide still has its Agents
+send a Command every tick. An Agent that is refused, cannot reach the server or
+loses its connection fails every pending await with `AgentFailed`, carrying the
+sentence `augustac` would show, and sets `agent.failure`; there is no
+reconnecting. Each Agent reports Ready for every Roster unless made with
+`auto_ready=False`, when `agent.ready()` reports it.
+
+### Building the Agent module
+
+The package's native part, `augusta_agent._native`, is C++ built with the
+engine, on Windows and Linux, against the interpreter of `tools/.venv`, into
+[`agent/src/augusta_agent/`](agent/src/augusta_agent/). The CMake option
+`AUGUSTA_TOOLS`, on by default, builds the C++ tools all together or none (the
+server image turns it off). Run `uv sync` here first, or the configure leaves
+the module out with a warning; `-DPYTHON_EXECUTABLE=<python>` names another
+Python 3.12:
 
 ```sh
 uv sync
 cmake --preset linux
 cmake --build --preset linux
-uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
-  --pack <client.pack> --public-key <pack.pub>
 ```
 
-A script runs its Agents in an asyncio loop: it awaits each Agent's events
-(`await agent.next_event()`: Shot, Hit confirmation, Death, Match start, Match
-end) and how each Intent it set ended, and never a tick, so a script that takes
-seconds to decide still has its Agents send a Command every tick. An Agent that
-is refused, cannot reach the server or loses its connection fails every pending
-await with `AgentFailed`, carrying the sentence `augustac` would show, and sets
-`agent.failure`; there is no reconnecting. Each Agent reports Ready for every
-Roster unless made with `auto_ready=False`, when `agent.ready()` reports it.
+On Windows the preset is `windows`.
 
+### Running the Agent examples
+
+The examples run from this directory, against a running `augustad`, with the
+client pack cooked with the server's and the key it is signed with.
 [`agent/examples/raw_hold.py`](agent/examples/raw_hold.py) is the smallest
-script: one Agent holding one Raw Command. The package's tests, in
-[`agent/tests/`](agent/tests/), play against a server in their own process:
+script: one Agent holding one Raw Command.
+
+```sh
+uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015   --pack <client.pack> --public-key <pack.pub>
+```
+
+[`agent/examples/load_test.py`](agent/examples/load_test.py) is the load test
+(ADR-0013): it plays the scenario's Player count of Agents, each wandering near
+its spawn, aiming at the nearest other player and firing in Bursts, until every
+one has seen `--matches` Match ends, then exits 0; it exits 1 as soon as one
+fails or `--timeout` passes, and prints every Agent's stats either way. Every
+random choice comes from `--seed`. The scenario's Player count must be 2 or
+more: a Match of one ends only when its player dies, which nothing in it causes.
+
+```sh
+uv run python agent/examples/load_test.py --server 127.0.0.1:27015   --pack <client.pack> --public-key <pack.pub> --matches 3
+```
+
+Its link fault options (`--latency-ms`, `--jitter-mean-ms`, `--jitter-max-ms`,
+`--loss-percent`, `--reorder-percent`, `--reorder-delay-ms`) simulate an
+impaired link on every packet the script sends; `--help` lists them all.
+
+### Running the Agent tests
+
+The package's tests, in [`agent/tests/`](agent/tests/), play against a server in
+their own process, the example scenario's packs, after the build above:
 
 ```sh
 cd agent
 uv run pytest
 ```
 
-## Swarm
-
-`augusta-swarm` plays the scenario's Player count of Scripted players (see
-[CONTEXT.md](../CONTEXT.md)) against a running `augustad` until every one has
-seen a number of Match ends, then exits 0; it exits 1 as soon as one fails or a
-timeout passes (ADR-0013). Each player is a client with no window or GPU: it
-predicts and sends its Commands like `augustac`, but decides them itself from
-what the server tells it, from a seed. It is C++ built with the engine, on
-Windows and Linux, in every build: the CMake option `AUGUSTA_TOOLS`, on by
-default, builds the C++ tools all together or none (the server image turns it
-off):
-
-```powershell
-cmake --preset windows
-cmake --build --preset windows --target augusta-swarm
-# build/x64-windows/tools/swarm/augusta-swarm.exe
-```
-
-It reads `augusta-swarm.yaml` next to the executable, or the file `--config`
-names (ADR-0034); copy
-[`swarm/augusta-swarm.example.yaml`](swarm/augusta-swarm.example.yaml), which
-documents every key. Its pack must be the client pack cooked with the server's,
-and its scenario's Player count 2 or more: a Match of one ends only when its
-player dies, which nothing in it can cause. The example scenario's is 1, so a
-single player can run it alone.
-
-On Linux the preset is `linux`, and the executable lands in
-`build/x64-linux/tools/swarm/`.
-
-Its tests are in [`swarm/tests/`](swarm/tests/). They join `augusta_tests`, and
-`ctest` runs them with the engine's:
+Beside them are the C++ tests of whole Matches of Agents, which need no Python.
+They join `augusta_tests`, and `ctest` runs them with the engine's:
 
 ```powershell
 cmake --build --preset windows --target augusta_tests
 ctest --preset windows
 ```
 
-but for the netcode tests (label `netcode`): runs of Scripted players under
-simulated latency, jitter, loss and reordering, minutes each, which every test
-preset leaves out and the nightly runs (ADR-0013). To run them by hand, on
-Linux:
+but for the netcode tests (label `netcode`): runs of Agents under simulated
+latency, jitter, loss and reordering, minutes each, which every test preset
+leaves out and the nightly runs (ADR-0013). To run them by hand, on Linux:
 
 ```sh
 ctest --preset linux-netcode

@@ -210,10 +210,10 @@ Grafana and Alertmanager.
 - **Connection health reported by the client**: deferred. Only the client knows
   how large its Reconciliation corrections are, or when it had fewer than two
   Authoritative State updates to interpolate between. Reporting that needs a new
-  protocol message, and the server must not trust it. The same metrics on
-  `augusta-swarm`'s Scripted players raise no trust question, but a short-lived
-  process outside the cluster needs a Pushgateway or a scrape of the developer's
-  machine. Both wait for a phase 2.
+  protocol message, and the server must not trust it. The same metrics on Agents
+  (ADR-0052) raise no trust question, but a short-lived process outside the
+  cluster needs a Pushgateway or a scrape of the developer's machine. Both wait
+  for a phase 2.
 - **Connection health aggregated only**: rejected. It cannot say which player's
   connection is bad.
 - **`/healthz`**: rejected for `/livez`. The check answers liveness only, and

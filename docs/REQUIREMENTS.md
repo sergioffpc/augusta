@@ -397,8 +397,8 @@ Then it raises AgentFailed, saying why as augustac would
 ```
 
 The Harness carries out Intents every tick; a script is never called on a tick,
-so a slow one delays its own decisions, never a tick. `load_test.py` replaces
-`augusta-swarm` (ADR-0052).
+so a slow one delays its own decisions, never a tick. `load_test.py` is the load
+test (ADR-0013, ADR-0052).
 
 ### US-24: Join a Server with Room
 
