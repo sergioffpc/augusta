@@ -13,9 +13,10 @@ it from the repository. The cluster's design is ADR-0026
 - k3s will not start after part A, its datastore is corrupt, or the node's OS or
   disk was replaced: **Rebuild** (part B).
 - An environment's `HelmRelease` sets `captures.hostPath` and its pod waits in
-  `ContainerCreating`, its events naming `/srv/augusta/captures`: set up
-  [The capture filesystem](#the-capture-filesystem) on the node. A change that
-  turns captures on needs it before it merges.
+  `ContainerCreating`, its events naming `/srv/augusta/captures`: run
+  `scripts/bootstrap-node.sh` on the node, which sets up
+  [The capture filesystem](#the-capture-filesystem) and skips what is there. A
+  change that turns captures on needs it before it merges.
 
 ## What the cluster holds
 
@@ -52,12 +53,14 @@ restores them.
 
 - Console or SSH access, with `sudo`, to the node (`<node>` below). The
   repository does not record its address or OS.
-- The Kubernetes version the cluster runs, `<k8s-version>` below:
+- A Debian 13 node.
+  [`scripts/bootstrap-node.sh`](../../scripts/bootstrap-node.sh) (README.md,
+  Bootstrap), which part B runs, sets it up: the server's user, the asset-pack
+  volume, the capture filesystem, the crash-core handler (ADR-0047), k3s at the
+  release it pins (`K3S_VERSION`, whose Kubernetes version is
   `KUBERNETES_VERSION` in the `manifests` job of
-  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), which CI
-  validates the manifests against. The repository does not record the k3s
-  release (`v<version>+k3s<n>`) or any k3s install options or
-  `/etc/rancher/k3s/config.yaml`; the steps below use k3s's defaults.
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) with k3s's
+  defaults, and Flux. It skips what the node already has.
 - For a rebuild, a copy of every environment's pack folder: either taken from
   the node in step B1, or re-made from the pack environment that cooked them
   (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was signed
@@ -82,18 +85,14 @@ and the node's own users stay out of them:
 - **Captures:** the mounted capture filesystem's root is owned by
   `augusta:augusta` ([The capture filesystem](#the-capture-filesystem)).
 
-Set it up once per node, before Flux starts a server:
+`scripts/bootstrap-node.sh` creates the user and an empty volume. Packs already
+on a node from before this layout are brought to it with:
 
 ```sh
 ssh <node>
-sudo groupadd --system --gid 65532 augusta
-sudo useradd --system --uid 65532 --gid augusta --no-create-home \
-  --home-dir /nonexistent --shell /usr/sbin/nologin augusta
-sudo install -d -o root -g augusta -m 0750 /srv/augusta/asset-packs
 sudo chown -R root:augusta /srv/augusta/asset-packs
 sudo find /srv/augusta/asset-packs -type d -exec chmod 0750 {} +
 sudo find /srv/augusta/asset-packs -type f -exec chmod 0640 {} +
-id augusta
 sudo ls -lR /srv/augusta/asset-packs
 ```
 
@@ -126,22 +125,11 @@ itself, and refuses to start if it cannot.
   or a higher `maxMiB`, grows the image first (below). Until #461 lands nothing
   deletes captures, and a full filesystem only stops them.
 
-Set it up once per node, after [the server's user](#the-servers-user) and before
-Flux starts a capturing server:
+`scripts/bootstrap-node.sh` sets it up, with its `/etc/fstab` line, before it
+installs k3s. To check it:
 
 ```sh
-ssh <node>
-sudo install -d -o root -g root -m 0755 /srv/augusta/captures
-sudo fallocate -l 4GiB /srv/augusta/captures.img
-sudo chmod 0600 /srv/augusta/captures.img
-sudo mkfs.ext4 -q -m 0 -L augusta-captures /srv/augusta/captures.img
-echo '/srv/augusta/captures.img /srv/augusta/captures ext4 loop,nodev,nosuid,noexec,x-systemd.before=k3s.service 0 2' \
-  | sudo tee -a /etc/fstab
-sudo systemctl daemon-reload
-sudo mount /srv/augusta/captures
-sudo install -d -o augusta -g augusta -m 0755 /srv/augusta/captures
-findmnt /srv/augusta/captures
-ls -ld /srv/augusta/captures
+ssh <node> "findmnt /srv/augusta/captures && ls -ld /srv/augusta/captures"
 ```
 
 The mount point itself stays `root:root`; only the mounted filesystem's root is
@@ -233,14 +221,30 @@ Record the new size in this section.
 
     On a reinstalled OS there is nothing to remove; skip this step.
 
-3. Install k3s at the cluster's Kubernetes version, with k3s's install script:
+3. Run the node's bootstrap, giving it the packs copied in step 1. It sets up
+   the server's user, the pack volume (unpacking the archive into it, owners and
+   modes kept), the capture filesystem (whose image and `/etc/fstab` line k3s's
+   uninstall script leaves, and a reinstalled OS does not), k3s, and Flux from
+   `develop`'s own manifests:
 
     ```sh
-    ssh <node> "curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION='v<k8s-version>+k3s<n>' sh -"
-    ssh <node> "sudo k3s kubectl get nodes"
+    scp asset-packs.tgz <node>:/tmp/
+    ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --packs /tmp/asset-packs.tgz"
+    ssh <node> "rm /tmp/asset-packs.tgz; sudo ls -lR /srv/augusta/asset-packs"
     ```
 
-    Wait until the node is `Ready`.
+    From there Flux manages itself (the `flux-system` Kustomization applies
+    `clusters/onprem/flux-system/`), then installs the monitoring stack and both
+    environments.
+
+    Without a copy, run it without `--packs`, then publish each `packVersion`
+    that `git grep -n packVersion -- clusters/` lists again, as step 6 of
+    [Rotate the Pack Signing Key](pack-key-rotation.md) does, from the packs of
+    the cook it names. Until then each server waits in `ContainerCreating`. A
+    pack is found by its hash: only the server pack whose BLAKE3 hash starts
+    with that version publishes to it, so a lost cook cannot be replaced by a
+    new one under the same version. Cook, publish and point the server at the
+    new version instead.
 
 4. Copy the kubeconfig to the workstation and point it at the node:
 
@@ -251,45 +255,7 @@ Record the new size in this section.
     kubectl get nodes
     ```
 
-5. On a reinstalled OS, set up [the server's user](#the-servers-user) first: the
-   packs' group and the captures' owner are its IDs. Then put the asset packs
-   back before Flux starts the servers (`tar` as root keeps their owners and
-   modes):
-
-    ```sh
-    scp asset-packs.tgz <node>:/tmp/
-    ssh <node> "sudo mkdir -p /srv/augusta && sudo tar -C /srv/augusta -xzf /tmp/asset-packs.tgz && rm /tmp/asset-packs.tgz"
-    ssh <node> "sudo ls -lR /srv/augusta/asset-packs"
-    ```
-
-    Without a copy, publish each `packVersion` that
-    `git grep -n packVersion -- clusters/` lists again, as step 6 of
-    [Rotate the Pack Signing Key](pack-key-rotation.md) does, from the packs of
-    the cook it names. A pack is found by its hash: only the server pack whose
-    BLAKE3 hash starts with that version publishes to it, so a lost cook cannot
-    be replaced by a new one under the same version. Cook, publish and point the
-    server at the new version instead.
-
-    Set up [the capture filesystem](#the-capture-filesystem) again, if the
-    node's OS or disk was replaced: `/etc/fstab` and the image went with them.
-    k3s's uninstall script leaves both.
-
-6. Install Flux from the repository's own manifests as `develop` has them, read
-   straight from `origin/develop` so the checkout's branch is left alone: its
-   controllers first, then the sync objects that point it at the repository:
-
-    ```sh
-    git fetch origin
-    git show origin/develop:clusters/onprem/flux-system/gotk-components.yaml | kubectl apply --server-side -f -
-    kubectl -n flux-system wait --for=condition=Available deployment --all --timeout 5m
-    git show origin/develop:clusters/onprem/flux-system/gotk-sync.yaml | kubectl apply -f -
-    ```
-
-    From here Flux manages itself (the `flux-system` Kustomization applies
-    `clusters/onprem/flux-system/`), then the `apps` Kustomization, which
-    depends on it, installs both environments.
-
-7. Watch it converge:
+5. Watch it converge:
 
     ```sh
     flux get kustomizations -n flux-system --watch

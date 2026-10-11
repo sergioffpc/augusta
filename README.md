@@ -97,6 +97,20 @@ runs the command it's given), and the git hooks run their checks there. Run
 Every bootstrap and the container initialize the vendored submodules and
 configure the Conventional Commits `commit-msg` hook.
 
+**k3s node (the cluster's server, Debian 13):**
+[scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
+runs `develop` and `staging`, through sudo, without a checkout: the crash-core
+handler, Podman and gdb to read a core, the server's `augusta` user, the
+asset-pack volume, the capture filesystem, k3s at the cluster's release, and
+Flux, which then installs the monitoring stack and both environments from Git.
+It skips what the node already has. The asset packs are the one state not in
+Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
+([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+```
+
 ### Build and Run
 
 The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
