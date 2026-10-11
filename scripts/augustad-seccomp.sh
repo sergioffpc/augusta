@@ -46,22 +46,29 @@ readonly RECORD_RUNS=5
 # (src/server/crash.cpp) re-raising a fatal signal (rt_sigprocmask, getpid,
 # gettid, tgkill) after symbolizing the stack from its own binary (pread64,
 # lseek). Without them a crash would end in SIGSYS, its report and core lost.
-readonly UNREACHED=(rt_sigprocmask getpid gettid tgkill pread64 lseek)
+readonly CRASH_SYSCALLS=(rt_sigprocmask getpid gettid tgkill pread64 lseek)
 readonly AUDIT_LOG=/var/log/audit/audit.log
 
 log() {
   echo "augustad-seccomp: $*" >&2
 }
 
+# Prints how to run it, and exits.
+usage() {
+  echo "usage: $0 check|record <image>" >&2
+  exit 2
+}
+
 # Writes the server's settings, its pack and its capture directory to a new
-# directory.
+# directory, removed with the container when the script exits.
 # Globals:
 #   WORK, set to that directory.
 prepare() {
   WORK="$(mktemp -d)"
   readonly WORK
   # shellcheck disable=SC2064 # WORK is set once, here
-  trap "docker rm -f '${CONTAINER}' >/dev/null 2>&1 || true; sudo rm -rf -- '${WORK}'" EXIT
+  trap "docker rm -f '${CONTAINER}' >/dev/null 2>&1 || true
+    sudo rm -rf -- '${WORK}'" EXIT
   mkdir "${WORK}/config" "${WORK}/pack"
   cp "${PACKS}/server.pack" "${WORK}/pack/server.pack"
   cp "${PACKS}/test.pub" "${WORK}/pack/signing.pub"
@@ -86,7 +93,10 @@ logging:
 EOF
 }
 
-# Plays the Matches against the image under a seccomp profile and stops it.
+# Plays the Matches against the image under a seccomp profile and stops it,
+# printing the server's log when it fails.
+# Globals:
+#   WORK
 # Arguments:
 #   The image, the profile.
 # Returns:
@@ -134,8 +144,8 @@ play() {
     # 159: 128 + SIGSYS, a syscall outside the profile.
     log "the server exited ${exit_code}"
     status=1
-  elif [[ "${status}" = 0 && -z "$(sudo find "${WORK}/captures/develop/example" \
-    -type f -print -quit 2>/dev/null)" ]]; then
+  elif [[ "${status}" = 0 && -z "$(sudo find "${WORK}/captures" \
+    -type f -name '*.capture' -print -quit)" ]]; then
     log "the server wrote no capture"
     status=1
   fi
@@ -145,6 +155,8 @@ play() {
   return "${status}"
 }
 
+# Plays the Matches under the profile; exits 1, naming what the kernel killed,
+# when the server fails.
 # Arguments:
 #   The image.
 check() {
@@ -159,8 +171,13 @@ check() {
   log "the server played ${MATCHES} Matches under its seccomp profile"
 }
 
-# Prints the syscalls the audit log recorded seccomp logging since its line
-# $1, one per line.
+# Globals:
+#   WORK, AUDIT_LOG
+# Arguments:
+#   A line of the audit log.
+# Outputs:
+#   The syscalls it recorded seccomp logging after that line, one per line,
+#   sorted; nothing when it recorded none.
 logged_since() {
   # shellcheck disable=SC2024 # the copy is ours; reading the log is root's
   sudo tail -n "+$(($1 + 1))" "${AUDIT_LOG}" >"${WORK}/audit.log"
@@ -169,7 +186,11 @@ logged_since() {
     | grep -o 'syscall=[a-z0-9_]*' | cut -d = -f 2 | sort -u
 }
 
-# Writes the profile with the syscalls in a file of names added.
+# Adds syscalls to the profile, in place, keeping its names sorted and unique.
+# Globals:
+#   PROFILE, WORK
+# Arguments:
+#   A file of syscall names, one per line.
 add_to_profile() {
   jq --rawfile added "$1" '
     .syscalls[0].names = (.syscalls[0].names
@@ -178,13 +199,22 @@ add_to_profile() {
   mv "${WORK}/profile.json" "${PROFILE}"
 }
 
+# Records the profile, then checks the server runs under it; exits 1 when it
+# cannot.
+# Globals:
+#   PROFILE, WORK, AUDIT_LOG
 # Arguments:
 #   The image.
 record() {
   local run start
   # Room for every record of a run, and none dropped for rate.
   sudo auditctl -b 65536 -r 0 >/dev/null
-  printf '%s\n' "${UNREACHED[@]}" >"${WORK}/added"
+  # Else every run would log nothing, and record take the profile as complete.
+  if ! sudo auditctl -s | grep -q '^enabled 1'; then
+    log "auditd is not running: nothing would be recorded"
+    exit 1
+  fi
+  printf '%s\n' "${CRASH_SYSCALLS[@]}" >"${WORK}/added"
   add_to_profile "${WORK}/added"
   for ((run = 1; run <= RECORD_RUNS; run++)); do
     jq '.defaultAction = "SCMP_ACT_LOG"' "${PROFILE}" >"${WORK}/logging.json"
@@ -195,7 +225,8 @@ record() {
     fi
     logged_since "${start}" >"${WORK}/added"
     if [[ ! -s "${WORK}/added" ]]; then
-      log "run ${run} logged nothing new: ${PROFILE} is complete"
+      log "run ${run} logged nothing new; checking ${PROFILE}"
+      check "$1"
       return
     fi
     log "run ${run} logged: $(tr '\n' ' ' <"${WORK}/added")"
@@ -207,18 +238,14 @@ record() {
 
 main() {
   if (($# != 2)); then
-    echo "usage: $0 check|record <image>" >&2
-    exit 2
+    usage
   fi
-  prepare
   case "$1" in
-    check) check "$2" ;;
-    record) record "$2" ;;
-    *)
-      echo "usage: $0 check|record <image>" >&2
-      exit 2
-      ;;
+    check | record) ;;
+    *) usage ;;
   esac
+  prepare
+  "$1" "$2"
 }
 
 main "$@"

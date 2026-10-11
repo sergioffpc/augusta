@@ -59,7 +59,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
@@ -894,7 +894,8 @@ jobs:
   # (scripts/augustad-seccomp.sh) and uploads it as augustad-seccomp, to
   # commit once the change that needs it is understood. It runs only when
   # both the image and the Agents were built, which every change to the
-  # server's sources, the image, the profile or its script asks for.
+  # server's sources, the image, the profile or its script asks for
+  # (changes above): an image it skips is built from what it last checked.
   confinement:
     needs: [server, container-verify]
     if: needs.server.result == 'success' && needs.container-verify.result == 'success'
