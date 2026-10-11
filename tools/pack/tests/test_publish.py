@@ -34,21 +34,23 @@ class LocalNode:
         self.root = root
         self.installs = 0
 
-    def digests(self, folder: str) -> dict[str, str] | None:
+    def put(
+        self, folder: str, files: dict[str, Path], digests: dict[str, str]
+    ) -> bool:
         folder = self.root / folder
-        if not folder.is_dir():
-            return None
-        return {
-            path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in folder.iterdir()
-        }
-
-    def install(self, folder: str, files: dict[str, Path]) -> None:
-        folder = self.root / folder
+        if folder.is_dir():
+            held = {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in folder.iterdir()
+            }
+            if held != digests:
+                raise PublishError(f"{folder} holds other files")
+            return False
         folder.mkdir(parents=True)
         for name, path in files.items():
             shutil.copyfile(path, folder / name)
         self.installs += 1
+        return True
 
 
 @pytest.fixture
@@ -198,7 +200,8 @@ def node_volume(tmp_path, monkeypatch):
     """The asset-pack volume, reached by an ssh that runs the forced command.
 
     The ssh on PATH runs the receiver as sshd does for the publish key: the
-    client's command in SSH_ORIGINAL_COMMAND, its stdin passed through.
+    client's command in SSH_ORIGINAL_COMMAND, its stdin passed through. Each
+    connection adds a line to the volume's sibling ssh.log.
     """
     volume = tmp_path / "asset-packs"
     volume.mkdir()
@@ -211,7 +214,10 @@ def node_volume(tmp_path, monkeypatch):
     bin_dir.mkdir()
     ssh = bin_dir / "ssh"
     ssh.write_text(
-        f'#!/bin/bash\nshift\nSSH_ORIGINAL_COMMAND="$*" exec bash {receiver}\n'
+        "#!/bin/bash\n"
+        f"echo connection >>{tmp_path / 'ssh.log'}\n"
+        "shift\n"
+        f'SSH_ORIGINAL_COMMAND="$*" exec bash {receiver}\n'
     )
     ssh.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
@@ -220,6 +226,12 @@ def node_volume(tmp_path, monkeypatch):
     for path in volume.rglob("*"):
         if path.is_dir():
             path.chmod(0o750)
+
+
+def connections(node_volume: Path) -> int:
+    """How many times ssh reached the node so far."""
+    log = node_volume.parent / "ssh.log"
+    return len(log.read_text().splitlines()) if log.exists() else 0
 
 
 def forced(command: str, stdin: bytes = b"") -> subprocess.CompletedProcess:
@@ -233,20 +245,68 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def publish_command(folder: str, files: dict[str, bytes]) -> tuple[str, bytes]:
+    """The publish command for files, by name, and the stdin it takes."""
+    named = " ".join(
+        f"{name}={sha256(data)}:{len(data)}" for name, data in files.items()
+    )
+    return f"publish {folder} {named}", b"".join(files.values())
+
+
+def leftovers(node_volume: Path) -> list[Path]:
+    """Whatever a publish left on the volume: folders, staging places, files."""
+    return [path for path in node_volume.rglob("*") if path.is_file()]
+
+
 @node_only
-def test_a_cook_is_published_through_the_forced_command(node_volume, cook):
+def test_a_cook_is_published_through_the_forced_command_in_one_connection(
+    node_volume, cook
+):
     client_pack, server_pack, public_key, _ = cook
     release = publish.prepare("firebase", client_pack, server_pack, public_key)
 
     assert publish.publish(release, publish.SshNode("node"))
 
+    assert connections(node_volume) == 1
     folder = node_volume / "firebase" / release.version
     assert sorted(
         path.name for path in (node_volume / "firebase").iterdir()
     ) == [release.version]
     assert (folder / "server.pack").read_bytes() == server_pack.read_bytes()
     assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
+
+
+@node_only
+def test_republishing_a_version_takes_one_connection_and_copies_nothing(
+    node_volume, cook
+):
+    client_pack, server_pack, public_key, _ = cook
+    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    publish.publish(release, publish.SshNode("node"))
+
     assert not publish.publish(release, publish.SshNode("node"))
+
+    assert connections(node_volume) == 2
+
+
+@node_only
+def test_a_version_holding_other_files_is_refused_in_one_connection(
+    node_volume, cook
+):
+    client_pack, server_pack, public_key, _ = cook
+    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    command, stdin = publish_command(
+        release.folder, {"server.pack": b"other", "signing.pub": b"key"}
+    )
+    assert forced(command, stdin).returncode == 0
+    before = connections(node_volume)
+
+    with pytest.raises(PublishError, match="holds other files"):
+        publish.publish(release, publish.SshNode("node"))
+
+    assert connections(node_volume) == before + 1
+    folder = node_volume / "firebase" / release.version
+    assert (folder / "server.pack").read_bytes() == b"other"
 
 
 @node_only
@@ -277,43 +337,78 @@ def test_the_forced_command_never_writes_into_a_published_version(
     folder = node_volume / "firebase" / release.version
     before = (folder / "server.pack").read_bytes()
 
-    received = forced(f"receive {release.folder} server.pack", b"replaced")
-    committed = forced(
-        f"commit {release.folder} server.pack={sha256(b'replaced')}"
+    result = forced(
+        *publish_command(
+            release.folder, {"server.pack": b"replaced", "signing.pub": b"key"}
+        )
     )
 
-    assert received.returncode != 0
-    assert committed.returncode != 0
+    assert result.returncode == 1
     assert (folder / "server.pack").read_bytes() == before
 
 
 @node_only
-def test_a_commit_that_does_not_match_what_was_received_writes_nothing(
-    node_volume,
+@pytest.mark.parametrize(
+    "stdin",
+    [b"packke", b"packkeyextra", b"pakckey", b""],
+    ids=["short", "long", "other bytes", "empty"],
+)
+def test_a_publish_not_matching_what_was_sent_writes_nothing(
+    node_volume, stdin
 ):
-    forced(f"receive firebase/{VERSION} server.pack", b"pack")
-    forced(f"receive firebase/{VERSION} signing.pub", b"key")
-
-    result = forced(
-        f"commit firebase/{VERSION} server.pack={sha256(b'other')} "
-        f"signing.pub={sha256(b'key')}"
+    command, _ = publish_command(
+        f"firebase/{VERSION}", {"server.pack": b"pack", "signing.pub": b"key"}
     )
 
-    assert result.returncode != 0
+    result = forced(command, stdin)
+
+    assert result.returncode == 1, result.stderr
+    assert leftovers(node_volume) == []
     assert not (node_volume / "firebase" / VERSION).exists()
 
 
 @node_only
-def test_a_commit_naming_fewer_files_than_were_received_writes_nothing(
-    node_volume,
-):
-    forced(f"receive firebase/{VERSION} server.pack", b"pack")
-    forced(f"receive firebase/{VERSION} signing.pub", b"key")
+def test_files_larger_than_a_pipe_arrive_whole(node_volume, tmp_path):
+    # Neither size a multiple of the node's copy block, nor of a pipe's.
+    server_pack = tmp_path / "server.pack"
+    server_pack.write_bytes(os.urandom(3 * 65536 + 7))
+    public_key = tmp_path / "signing.pub"
+    public_key.write_bytes(os.urandom(65536 + 13))
+    files = {"server.pack": server_pack, "signing.pub": public_key}
+    digests = {name: sha256(path.read_bytes()) for name, path in files.items()}
 
-    result = forced(f"commit firebase/{VERSION} server.pack={sha256(b'pack')}")
+    assert publish.SshNode("node").put(f"firebase/{VERSION}", files, digests)
 
-    assert result.returncode != 0
-    assert not (node_volume / "firebase" / VERSION).exists()
+    folder = node_volume / "firebase" / VERSION
+    for name, path in files.items():
+        assert (folder / name).read_bytes() == path.read_bytes()
+
+
+@node_only
+def test_a_publish_after_a_failed_one_is_published(node_volume):
+    files = {"server.pack": b"pack", "signing.pub": b"key"}
+    command, stdin = publish_command(f"firebase/{VERSION}", files)
+    forced(command, stdin[:-1])
+
+    assert forced(command, stdin).returncode == 0
+
+    folder = node_volume / "firebase" / VERSION
+    assert (folder / "server.pack").read_bytes() == b"pack"
+    assert (folder / "signing.pub").read_bytes() == b"key"
+
+
+@node_only
+@pytest.mark.usefixtures("node_volume")
+def test_the_forced_command_reports_a_version_published_with_those_files():
+    command, stdin = publish_command(
+        f"firebase/{VERSION}", {"server.pack": b"pack", "signing.pub": b"key"}
+    )
+    forced(command, stdin)
+
+    assert forced(command, stdin).returncode == 3
+
+
+DIGEST = sha256(b"")
 
 
 @node_only
@@ -324,22 +419,40 @@ def test_a_commit_naming_fewer_files_than_were_received_writes_nothing(
         "sh",
         "bash -c id",
         "rm -rf firebase",
-        f"digests ../firebase/{VERSION}",
-        f"digests firebase/{VERSION}/..",
-        "digests firebase/../../etc",
-        "digests firebase/0123456789AB",
-        f"receive firebase/{VERSION} ../escape",
-        f"receive firebase/{VERSION} other.pack",
-        f"receive firebase/{VERSION}",
-        f"receive Firebase/{VERSION} server.pack",
-        f"commit firebase/{VERSION} server.pack=nothex",
-        f"commit firebase/{VERSION} ../x={sha256(b'')}",
-        f"digests firebase/{VERSION} extra",
-        f"digests firebase/{VERSION}\nreceive firebase/{VERSION} server.pack",
-        f"commit firebase/{VERSION} server.pack={sha256(b'')} "
-        f"server.pack={sha256(b'')}",
-        f"commit firebase/{VERSION} server.pack={sha256(b'')} "
-        f"../x={sha256(b'')}",
+        f"digests firebase/{VERSION}",
+        f"receive firebase/{VERSION} server.pack",
+        f"commit firebase/{VERSION} server.pack={DIGEST} signing.pub={DIGEST}",
+        f"publish ../firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION}/.. server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/../../etc server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/0123456789AB server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish Firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} ../escape={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} other.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"server.pack={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack=nothex:0 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST} "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:-1 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:0x10 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:010 "
+        f"signing.pub={DIGEST}:0",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0 extra",
+        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"signing.pub={DIGEST}:0\nsh",
     ],
 )
 def test_the_forced_command_refuses_anything_but_publishing(
