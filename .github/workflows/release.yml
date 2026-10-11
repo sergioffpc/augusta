@@ -77,7 +77,7 @@ jobs:
         with:
           subject-path: dist/augustac-windows-x64.exe
           sbom-path: dist/augustac-windows-x64.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: client-binary
           path: |
@@ -139,7 +139,7 @@ jobs:
         with:
           subject-path: dist/${{ env.BINARY }}
           sbom-path: dist/${{ env.BINARY }}.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-binary-${{ matrix.arch }}
           path: |
@@ -196,7 +196,7 @@ jobs:
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
       - name: Release notes
         run: scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
       - name: Create GitHub Release

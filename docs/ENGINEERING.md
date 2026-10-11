@@ -206,7 +206,7 @@ decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  v1.0.0) — ROADMAP.md milestones (M0–M17) are internal checkpoints, not tagged
+  v1.0.0) — ROADMAP.md milestones (M0–M18) are internal checkpoints, not tagged
   releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
@@ -294,6 +294,15 @@ no self-hosted GitHub Actions runner in this pipeline).
   node. Its size holds every capturing server's retention cap
   (`captures.retention.maxMiB`, #461) plus slack. Node setup:
   [The capture filesystem](runbooks/k3s-node-recovery.md#the-capture-filesystem).
+- **Admission policies:** Kyverno runs in the cluster, installed by Flux with
+  its infrastructure, and the policies in
+  [`clusters/onprem/policies/`](../clusters/onprem/policies/kustomization.yaml)
+  run there in audit mode for now (ADR-0057). CI's `manifests` job runs the same
+  policy files with the Kyverno CLI over each environment's rendered chart and
+  each Flux Kustomization path, so a change the cluster would refuse fails its
+  pull request; it also requires each policy to refuse its negative fixtures in
+  `fixtures/<policy>/`. Adding a policy is its file, its entry in the
+  Kustomization and its fixtures, with no change to CI.
 
 ## Developer Environment
 

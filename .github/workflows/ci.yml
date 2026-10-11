@@ -72,8 +72,10 @@ jobs:
             echo "run_container=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # What Flux applies to the cluster: its own manifests and the chart
-          # the HelmReleases there install; and the k3s release they run on.
+          # What Flux applies to the cluster: its own manifests, the chart the
+          # HelmReleases there install, and the Kyverno policies (and their
+          # negative fixtures) both are checked against, all under clusters/;
+          # and the k3s release they run on.
           if echo "$changed" \
               | grep -qE '^(charts/|clusters/|scripts/bootstrap-node\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run_manifests=true" >> "$GITHUB_OUTPUT"
@@ -568,7 +570,7 @@ jobs:
           exit "$status"
       - name: Upload crashing inputs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-crashes
           path: fuzz-crashes/
@@ -578,7 +580,8 @@ jobs:
     # cluster runs (k3s, bumped with it): helm lint checks the chart's
     # templating, not what it renders. Flux's own resources are checked
     # against the CRDs gotk-components.yaml installs, so a Flux upgrade
-    # brings its schemas with it. kubectl and yq come with the runner image.
+    # brings its schemas with it. Then the cluster's Kyverno policies run over
+    # all of it (ADR-0057). kubectl and yq come with the runner image.
     needs: changes
     if: needs.changes.outputs.run_manifests == 'true'
     runs-on: ubuntu-26.04
@@ -614,6 +617,20 @@ jobs:
             | sha256sum --check --status
           tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
           echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Install the Kyverno CLI
+        # The release of the Kyverno the cluster runs
+        # (clusters/onprem/infrastructure/kyverno.yaml), bumped with it.
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/kyverno"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/kyverno.tar.gz" \
+            https://github.com/kyverno/kyverno/releases/download/v1.19.1/kyverno-cli_v1.19.1_linux_x86_64.tar.gz
+          printf '%s  %s\n' \
+            'b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae' "$install_dir/kyverno.tar.gz" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/kyverno.tar.gz" -C "$install_dir" kyverno
+          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
         # chart of the branch its GitRepository tracks: staging runs main's
@@ -624,7 +641,8 @@ jobs:
         # Its ServiceMonitor and PrometheusRule are checked against the CRDs
         # of the kube-prometheus-stack version the cluster installs
         # (clusters/onprem/infrastructure), so a stack upgrade brings its
-        # schemas with it.
+        # schemas with it. Each render is kept, in its HelmRelease's
+        # targetNamespace as Flux applies it, for the policy check below.
         shell: bash
         env:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
@@ -643,6 +661,7 @@ jobs:
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             crds.yaml >/dev/null)
+          mkdir -p "$RUNNER_TEMP/rendered"
           for release in clusters/onprem/apps/*.yaml; do
             grep -q '^kind: HelmRelease$' "$release" || continue
             source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
@@ -656,10 +675,15 @@ jobs:
               chart="$tree/charts/augustad"
             fi
             echo "$release, with $branch's chart"
+            namespace=$(yq '.spec.targetNamespace' "$release")
+            rendered="$RUNNER_TEMP/rendered/$namespace.yaml"
             yq '.spec.values' "$release" \
-              | helm template augustad "$chart" --values - \
-              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
-                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+              | helm template augustad "$chart" --namespace "$namespace" --values - \
+              | yq "(select(.kind != null) | .metadata.namespace) = \"$namespace\"" \
+              > "$rendered"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+              -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              "$rendered"
           done
       - name: Validate the chart's dashboards
         # Grafana's sidecar skips a dashboard it cannot parse without failing
@@ -669,19 +693,66 @@ jobs:
         # Each path a Flux Kustomization in gotk-sync.yaml applies, built as
         # Flux builds it. CustomResourceDefinitions are skipped: kubeconform's
         # schemas have none for them, and Flux's come generated
-        # (flux install --export).
+        # (flux install --export). Kyverno's policies are checked against the
+        # CRDs of the Kyverno chart version the cluster installs. Each build
+        # is kept for the policy check below.
         shell: bash
         run: |
           schemas="$RUNNER_TEMP/crd-schemas"
           mkdir -p "$schemas"
+          kyverno=clusters/onprem/infrastructure/kyverno.yaml
+          helm template kyverno kyverno \
+            --repo "$(yq --no-doc 'select(.kind == "HelmRepository") | .spec.url' "$kyverno")" \
+            --version "$(yq --no-doc 'select(.kind == "HelmRelease") | .spec.chart.spec.version' "$kyverno")" \
+            | yq 'select(.kind == "CustomResourceDefinition")' > "$schemas/kyverno-crds.yaml"
           (cd "$schemas" && FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
             uv run --no-project --with pyyaml python "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
-            "$GITHUB_WORKSPACE/clusters/onprem/flux-system/gotk-components.yaml" >/dev/null)
+            "$GITHUB_WORKSPACE/clusters/onprem/flux-system/gotk-components.yaml" kyverno-crds.yaml >/dev/null)
+          mkdir -p "$RUNNER_TEMP/rendered"
           for path in $(yq --no-doc 'select(.kind == "Kustomization") | .spec.path' clusters/onprem/flux-system/gotk-sync.yaml); do
             echo "$path"
-            kubectl kustomize "$path" \
-              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
-                -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+            rendered="$RUNNER_TEMP/rendered/$(basename "$path").yaml"
+            kubectl kustomize "$path" > "$rendered"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -skip CustomResourceDefinition \
+              -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              "$rendered"
+          done
+      - name: Check the rendered manifests against the cluster's policies
+        # The policies Flux applies (clusters/onprem/policies) over every
+        # manifest the two steps above rendered: what the cluster would report,
+        # or once its policies are enforced refuse, fails here before it
+        # merges. A violation of a policy the cluster only audits still fails,
+        # since --audit-warn is left off.
+        shell: bash
+        run: |
+          kubectl kustomize clusters/onprem/policies > "$RUNNER_TEMP/policies.yaml"
+          kyverno apply "$RUNNER_TEMP/policies.yaml" --resource "$RUNNER_TEMP/rendered" --remove-color
+      - name: Refuse each policy's negative fixtures
+        # Every policy refuses each manifest in its fixtures/<name>/: a policy
+        # that admits one checks nothing, and a policy with none is unchecked.
+        # Read from the report rather than the exit status, which an error
+        # loading the policy or the fixture would fail just the same.
+        shell: bash
+        run: |
+          policies="$RUNNER_TEMP/policies.yaml"
+          for name in $(yq --no-doc '.metadata.name' "$policies"); do
+            fixtures="clusters/onprem/policies/fixtures/$name"
+            if ! compgen -G "$fixtures/*.yaml" >/dev/null; then
+              echo "::error::Policy $name has no negative fixture in $fixtures/"
+              exit 1
+            fi
+            policy="$RUNNER_TEMP/policy-$name.yaml"
+            yq "select(.metadata.name == \"$name\")" "$policies" > "$policy"
+            for fixture in "$fixtures"/*.yaml; do
+              report=$(kyverno apply "$policy" --resource "$fixture" --policy-report || true)
+              failed=$(yq eval-all '[.results[] | select(.result == "fail")] | length' <<< "$report")
+              if [ "$failed" -eq 0 ]; then
+                echo "$report"
+                echo "::error file=$fixture::Policy $name admits its negative fixture"
+                exit 1
+              fi
+              echo "$fixture: refused by $name"
+            done
           done
   container-verify:
     needs: changes
