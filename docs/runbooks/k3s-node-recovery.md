@@ -62,10 +62,10 @@ restores them.
   repository does not record its address or OS.
 - A Debian 13 node.
   [`scripts/bootstrap-node.sh`](../../scripts/bootstrap-node.sh) (README.md,
-  Bootstrap), which part B runs, sets it up: the server's user, the asset-pack
-  volume, the capture filesystem, the crash-core handler (ADR-0047), k3s at the
-  release it pins (`K3S_VERSION`, whose Kubernetes version is
-  `KUBERNETES_VERSION` in the `manifests` job of
+  Bootstrap), which part B runs, sets it up: the server's user, the publish
+  user, the asset-pack volume, the capture filesystem, the crash-core handler
+  (ADR-0047), k3s at the release it pins (`K3S_VERSION`, whose Kubernetes
+  version is `KUBERNETES_VERSION` in the `manifests` job of
   [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) with
   [its configuration](#the-k3s-configuration),
   [the OS's hardening](#the-nodes-os), and Flux. It skips what the node already
@@ -90,21 +90,63 @@ the same user and group, with no login and no home, so its files show that name
 and the node's own users stay out of them:
 
 - **Asset packs:** `/srv/augusta/asset-packs` and everything in it is owned by
-  `root:augusta`, folders `0750` and files `0640`. The servers read it as group
-  `augusta`; only root writes it (`augusta-publish` installs packs so).
+  `augusta-publish:augusta`, readable by the group alone: the volume and each
+  scenario's folder `2750` (setgid, so what is created in them takes the group),
+  each version's folder `0550` and its files `0440`. The servers read it as
+  group `augusta`; only [the publish user](#the-publish-user) writes it, and a
+  version's folder only once.
 - **Captures:** the mounted capture filesystem's root is owned by
   `augusta:augusta` ([The capture filesystem](#the-capture-filesystem)).
 
-`scripts/bootstrap-node.sh` creates the user and an empty volume. Packs already
-on a node from before this layout are brought to it with:
+`scripts/bootstrap-node.sh` creates the user and an empty volume, and gives
+whatever the volume holds those owners and modes on every run: packs on a node
+from before this layout (`root:augusta`) take it with a run of the bootstrap
+([The node's OS](#the-nodes-os) has the command).
+
+## The publish user
+
+`augusta-publish` (`tools/pack`) logs in as the node's `augusta-publish` user
+(ADR-0057). It owns the asset packs, is neither the servers' user nor in their
+group, and has no `sudo`. Its one key, in
+`/var/lib/augusta-publish/.ssh/authorized_keys`, runs nothing but
+`/usr/local/bin/augusta-publish-receive`
+([`augusta-publish-receive.sh`](../../clusters/onprem/node/augusta-publish-receive.sh)),
+whatever its holder asks for, with no shell, PTY, or port, agent or X11
+forwarding (`restrict`). That command writes a new `<scenario>/<packVersion>/`
+folder and leaves it read-only, and never writes one that exists. The user's
+home and `authorized_keys` are root's, so neither the user nor its key can add
+another key. A stolen publish key can add a pack, never replace one a server
+runs; a pack it adds runs only once a `HelmRelease` names its version. The user
+owns its packs and could make them writable again, but its key runs nothing
+else, and nothing else logs in as it.
+
+The key is the publisher's, whoever holds the pack signing key (ADR-0026), and
+not their login key. Make it hardware-backed where you have a FIDO2 security
+key, as for [SSH](#ssh), or an `ed25519` key with a passphrase, used from one of
+[the maintainer's addresses](#the-firewall). A publish makes up to five
+connections, each needing the key (a touch, for a FIDO2 key). Give it to the
+node with `--publish-key`, which replaces the key the node had: the same command
+rotates it.
 
 ```sh
-ssh <node>
-sudo chown -R root:augusta /srv/augusta/asset-packs
-sudo find /srv/augusta/asset-packs -type d -exec chmod 0750 {} +
-sudo find /srv/augusta/asset-packs -type f -exec chmod 0640 {} +
-sudo ls -lR /srv/augusta/asset-packs
+ssh-keygen -t ed25519-sk -C "<you>@augusta-publish" -f ~/.ssh/augusta_publish
+scp ~/.ssh/augusta_publish.pub <node>:/tmp/
+ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --publish-key /tmp/augusta_publish.pub; rm /tmp/augusta_publish.pub"
 ```
+
+Then name the node for `augusta-publish --host` in `~/.ssh/config` on the
+machine that publishes:
+
+```text
+Host augusta-publish
+    HostName <node-address>
+    User augusta-publish
+    IdentityFile ~/.ssh/augusta_publish
+    IdentitiesOnly yes
+```
+
+A node without a key is told so by the bootstrap; nothing can publish to it
+until one is given.
 
 ## The capture filesystem
 
@@ -737,17 +779,21 @@ On the node, after a rebuild, a configuration change or an upgrade:
     On a reinstalled OS there is nothing to remove; skip this step.
 
 3. Run the node's bootstrap, giving it the packs copied in step 1. It sets up
-   the server's user, the pack volume (unpacking the archive into it, owners and
-   modes kept), the capture filesystem (whose image and `/etc/fstab` line k3s's
-   uninstall script leaves, and a reinstalled OS does not), k3s with
+   the server's user, the publish user, the pack volume (unpacking the archive
+   into it, then giving it [its owners and modes](#the-servers-user)), the
+   capture filesystem (whose image and `/etc/fstab` line k3s's uninstall script
+   leaves, and a reinstalled OS does not), k3s with
    [its configuration](#the-k3s-configuration), and Flux from `develop`'s own
    manifests:
 
     ```sh
-    scp asset-packs.tgz <node>:/tmp/
-    ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --packs /tmp/asset-packs.tgz [--admin <address>...]"
-    ssh <node> "rm /tmp/asset-packs.tgz; sudo ls -lR /srv/augusta/asset-packs"
+    scp asset-packs.tgz ~/.ssh/augusta_publish.pub <node>:/tmp/
+    ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --packs /tmp/asset-packs.tgz --publish-key /tmp/augusta_publish.pub [--admin <address>...]"
+    ssh <node> "rm /tmp/asset-packs.tgz /tmp/augusta_publish.pub; sudo ls -lR /srv/augusta/asset-packs"
     ```
+
+    `--publish-key` sets up [the publish user](#the-publish-user) with the
+    publisher's key; a node that kept its OS keeps the key it had without it.
 
     On a reinstalled OS, log in as your own user, with your key already in its
     `authorized_keys`: from this run on SSH takes keys only, not root
@@ -857,6 +903,20 @@ kubectl get nodes
 
 - The first two are refused with `Permission denied (publickey)`, with no
   password prompt; the key login and `kubectl` work.
+
+Then the publish key, from the machine that publishes
+([The publish user](#the-publish-user)):
+
+```sh
+ssh augusta-publish
+ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
+ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
+```
+
+- The first gets no shell: it prints `only digests, receive and commit` and
+  exits `2`. The second fails with `remote port forwarding failed`. The third,
+  for any published version, fails with `Permission denied`: the folder is
+  read-only to the publish user.
 - [Updates](#updates)' checks show `Debian-Security` alone, and
   [The audit trail](#the-audit-trail)'s show the login just made, from that
   address.

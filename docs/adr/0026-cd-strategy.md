@@ -114,8 +114,9 @@ simply not deployed to k3s at all.
   scenario its values list.
 - A server whose pack version is not published yet never starts: its pod waits
   in `ContainerCreating`, its events naming the missing folder.
-- `augusta-publish` reaches the node over SSH as a user that can `sudo` without
-  a password; the node's address is not in the repository.
+- `augusta-publish` reaches the node over SSH as its `augusta-publish` user,
+  with no `sudo`, whose key can only publish (ADR-0057); the node's address is
+  not in the repository.
 - CI (build/test, `helm lint`/`docker build`) is unaffected: it never needed
   cluster access, so it stays on GitHub-hosted runners and just pushes the built
   image to GHCR, which Flux reads from for `main`/ `develop`.
