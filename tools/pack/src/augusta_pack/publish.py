@@ -25,15 +25,16 @@ end writes a version's folder once, and leaves it read-only.
 """
 
 import argparse
+from collections.abc import Iterable
 import contextlib
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
-from typing import Protocol
+import tempfile
+from typing import IO, Protocol
 
 from augusta_pack.assets_root import default_assets_root
 from augusta_pack.keys import read_public_key
@@ -154,8 +155,9 @@ class SshNode:
     """
 
     # The forced command's exit status for a folder that holds those files
-    # already, apart from ssh's own 255 and the forced command's 1 and 2.
+    # already, apart from ssh's own 255 and the forced command's 1, 2 and 4.
     _PUBLISHED = 3
+    _CHUNK = 1 << 16
 
     def __init__(self, host: str):
         self._host = host
@@ -166,37 +168,80 @@ class SshNode:
         """See Node.put."""
         # The files go back to back on stdin, each its size, in the command's
         # order: the node parses no archive, and takes names from the command.
-        named = " ".join(
-            f"{name}={digests[name]}:{path.stat().st_size}"
-            for name, path in files.items()
-        )
         try:
-            ssh = subprocess.Popen(
-                ["ssh", self._host, f"publish {folder} {named}"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+            named = " ".join(
+                f"{name}={digests[name]}:{path.stat().st_size}"
+                for name, path in files.items()
             )
         except OSError as error:
-            raise PublishError(f"cannot run ssh: {error}") from error
-        try:
-            for path in files.values():
-                with open(path, "rb") as f:
-                    shutil.copyfileobj(f, ssh.stdin)
-            ssh.stdin.close()
-        except OSError:
-            # The node stopped reading (BrokenPipeError; EINVAL on Windows):
-            # the folder is there already, or it refused. Its exit status and
-            # stderr say which.
-            with contextlib.suppress(OSError):
-                ssh.stdin.close()
-        stderr = ssh.stderr.read().decode(errors="replace").strip()
-        ssh.wait()
+            raise PublishError(
+                f"cannot read {error.filename}: {error}"
+            ) from error
+        # A file, not a pipe: ssh never blocks on its stderr while stdin is
+        # still being written.
+        with tempfile.TemporaryFile() as stderr:
+            try:
+                ssh = subprocess.Popen(
+                    ["ssh", self._host, f"publish {folder} {named}"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=stderr,
+                )
+            except OSError as error:
+                raise PublishError(f"cannot run ssh: {error}") from error
+            try:
+                self._send(files.values(), ssh.stdin)
+                ssh.wait()
+            finally:
+                # Interrupted, or a file unreadable: the node, its stdin cut
+                # short, publishes nothing.
+                if ssh.poll() is None:
+                    ssh.kill()
+                    ssh.wait()
+            stderr.seek(0)
+            message = stderr.read().decode(errors="replace").strip()
         if ssh.returncode == self._PUBLISHED:
             return False
         if ssh.returncode != 0:
-            raise PublishError(f"publishing {folder} on {self._host}: {stderr}")
+            raise PublishError(
+                f"publishing {folder} on {self._host}: {message}"
+            )
         return True
+
+    @classmethod
+    def _send(cls, paths: Iterable[Path], stdin: IO[bytes]) -> None:
+        """Writes the files to ssh's stdin back to back, then closes it.
+
+        Stops early once the node stops reading.
+
+        Raises:
+            PublishError: a file cannot be read.
+        """
+        try:
+            for path in paths:
+                with open(path, "rb") as f:
+                    while chunk := f.read(cls._CHUNK):
+                        if not _write(stdin, chunk):
+                            return
+        except OSError as error:
+            raise PublishError(f"cannot read {path}: {error}") from error
+        finally:
+            with contextlib.suppress(OSError):
+                stdin.close()
+
+
+def _write(stdin: IO[bytes], chunk: bytes) -> bool:
+    """Writes chunk to ssh's stdin; returns whether the node still reads.
+
+    It stops once the folder is there already, or it refused: its exit status
+    and stderr say which.
+    """
+    try:
+        stdin.write(chunk)
+    except OSError:
+        # BrokenPipeError; EINVAL on Windows.
+        return False
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:

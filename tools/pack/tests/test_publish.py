@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 
 from augusta_pack import keys
 from augusta_pack import pack
@@ -188,6 +189,7 @@ RECEIVER = (
     / "augusta-publish-receive.sh"
 )
 VERSION = "0123456789ab"
+DIGEST = hashlib.sha256(b"").hexdigest()
 # The node's own commands: the receiver is a bash script, and Windows' file
 # modes do not stop a write.
 node_only = pytest.mark.skipif(
@@ -254,8 +256,11 @@ def publish_command(folder: str, files: dict[str, bytes]) -> tuple[str, bytes]:
 
 
 def leftovers(node_volume: Path) -> list[Path]:
-    """Whatever a publish left on the volume: folders, staging places, files."""
-    return [path for path in node_volume.rglob("*") if path.is_file()]
+    """Whatever a publish left in a scenario's folder: versions, staging places.
+
+    A scenario's folder itself may stay: a server is never pointed at one.
+    """
+    return [path for path in node_volume.glob("*/*")]
 
 
 @node_only
@@ -343,7 +348,7 @@ def test_the_forced_command_never_writes_into_a_published_version(
         )
     )
 
-    assert result.returncode == 1
+    assert result.returncode == 4
     assert (folder / "server.pack").read_bytes() == before
 
 
@@ -408,7 +413,72 @@ def test_the_forced_command_reports_a_version_published_with_those_files():
     assert forced(command, stdin).returncode == 3
 
 
-DIGEST = sha256(b"")
+@node_only
+def test_two_publishes_of_one_version_take_turns(node_volume):
+    files = {"server.pack": os.urandom(4 * 65536), "signing.pub": b"key"}
+    command, stdin = publish_command(f"firebase/{VERSION}", files)
+    publishes = [
+        subprocess.Popen(
+            ["ssh", "node", command],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for _ in range(2)
+    ]
+    # Each fed from its own thread: whichever waits for the other still
+    # takes its stdin.
+    feeders = [
+        threading.Thread(target=process.communicate, args=(stdin,))
+        for process in publishes
+    ]
+    for feeder in feeders:
+        feeder.start()
+    for feeder in feeders:
+        feeder.join()
+
+    assert sorted(process.returncode for process in publishes) == [0, 3]
+    assert leftovers(node_volume) == [node_volume / "firebase" / VERSION]
+
+
+@node_only
+def test_a_publish_whose_rename_fails_leaves_no_staging_place(
+    node_volume, tmp_path, monkeypatch
+):
+    # The staging place is sealed by then: read-only, as the folder it was to
+    # become.
+    failing = tmp_path / "failing"
+    failing.mkdir()
+    mv = failing / "mv"
+    mv.write_text("#!/bin/bash\nexit 1\n")
+    mv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{failing}{os.pathsep}{os.environ['PATH']}")
+
+    result = forced(
+        *publish_command(
+            f"firebase/{VERSION}",
+            {"server.pack": b"pack", "signing.pub": b"key"},
+        )
+    )
+
+    assert result.returncode == 1
+    assert leftovers(node_volume) == []
+
+
+@node_only
+def test_a_file_that_cannot_be_read_publishes_nothing(node_volume, tmp_path):
+    server_pack = tmp_path / "server.pack"
+    server_pack.write_bytes(b"pack")
+    # It has a size, but no bytes to read.
+    unreadable = tmp_path / "signing.pub"
+    unreadable.mkdir()
+    files = {"server.pack": server_pack, "signing.pub": unreadable}
+    digests = {"server.pack": sha256(b"pack"), "signing.pub": DIGEST}
+
+    with pytest.raises(PublishError, match=f"cannot read {unreadable}"):
+        publish.SshNode("node").put(f"firebase/{VERSION}", files, digests)
+
+    assert leftovers(node_volume) == []
 
 
 @node_only
