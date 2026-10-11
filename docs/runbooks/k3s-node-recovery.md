@@ -243,6 +243,7 @@ credential (ADR-0057). Its configuration is in
 | `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                             |
 | `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                           |
 | `81-tuning.conf`               | `/etc/sysctl.d/81-tuning.conf`                               | [The kernel](#the-kernel)'s tuning: socket buffers, writeback, free memory, TCP. |
+| `10-augusta-ixgbe.link`        | `/etc/systemd/network/10-augusta-ixgbe.link`                 | The 10 GbE ports' rings, from the next boot ([The kernel](#the-kernel)).         |
 
 To change any of it, merge the change to `develop`, then run the bootstrap on
 the node, which writes what changed and reloads the service that reads it:
@@ -392,6 +393,13 @@ share of the RAM, and a soft lockup that reboots the Node rather than hangs it.
 default until measured: a fixed load of agents (ADR-0052) with it at `1`, then
 `0`, comparing the share of late ticks and the tick duration's p99, and
 `numa_pages_migrated` in `/proc/vmstat` during the first.
+
+**The NIC** queues line-rate bursts in its largest rings (4096 packets, from
+512), and `irqbalance` spreads its interrupts across the CPUs. udev sizes the
+rings at boot only: changing one resets the port, which would cut the SSH
+session of a bootstrap applying it, so the bootstrap says when one waits for a
+reboot. The link file names the ports as systemd's default does, which it
+replaces for them.
 
 The bootstrap applies the kernel parameters at once. To see what the kernel
 runs:

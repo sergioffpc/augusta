@@ -63,7 +63,8 @@ readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
 readonly SYSCTL_FILES=(80-hardening.conf 81-tuning.conf 90-kubelet.conf)
 # The OS's, from the same place: the files the runbook's "The node's OS" lists.
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
-  unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules)
+  unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules
+  10-augusta-ixgbe.link)
 # The publish key's forced command, from the same place.
 readonly RECEIVER_FILE=augusta-publish-receive.sh
 readonly RECEIVER=/usr/local/bin/augusta-publish-receive
@@ -121,6 +122,7 @@ install_packages() {
     curl \
     e2fsprogs \
     gdb \
+    irqbalance \
     nftables \
     openssh-server \
     podman \
@@ -411,6 +413,20 @@ configure_kernel() {
   done
 }
 
+# Sizes the 10 GbE ports' rings, from the next boot on: applying them now would
+# reset the port this session may run over. Spreads the NIC's interrupts
+# across the CPUs.
+configure_nic() {
+  local link=/etc/systemd/network/10-augusta-ixgbe.link
+  if differs "${DOWNLOADS}/10-augusta-ixgbe.link" "${link}"; then
+    install_node_file 10-augusta-ixgbe.link "${link}" 0644
+    # The initramfs's udev names the ports too, from its own copy.
+    as_root update-initramfs -u
+    log "the NIC's rings changed; they take effect when the node next reboots."
+  fi
+  as_root systemctl enable --quiet --now irqbalance
+}
+
 # Writes k3s's configuration, its audit policy and admission configuration
 # (clusters/onprem/node/).
 configure_k3s() {
@@ -533,6 +549,7 @@ main() {
   configure_updates
   configure_audit
   configure_kernel
+  configure_nic
   configure_k3s
   install_k3s
   install_flux
