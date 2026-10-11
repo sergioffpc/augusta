@@ -216,11 +216,14 @@ nftables denies every inbound connection that is not listed:
 | 6443, 9100, 10250/TCP | The node's own pods (10.42.0.0/16, on `cni0`)                 | Prometheus's scrapes.                      |
 | Anything              | The node itself                                               | The kubelet, flannel, k3s's own ports.     |
 
-Ping, path MTU and address configuration (DHCP, IPv6 neighbour discovery) are
-let in too. Outbound is not filtered. The table, `inet augusta`, filters before
-kube-proxy redirects a node port to its pod, and lives beside k3s's own tables:
-never `nft flush ruleset` on the node, which deletes those too. To see it and
-what it holds:
+The pod and service networks (10.42.0.0/16, 10.43.0.0/16) take traffic from the
+node's pods alone: a LAN host that routes them through the node reaches nothing.
+The LAN is the private ranges: a client on a global IPv6 address counts as the
+internet, so LAN players join over IPv4. Ping, path MTU and address
+configuration (DHCP, IPv6 neighbour discovery) are let in too. Outbound is not
+filtered. The table, `inet augusta`, filters before kube-proxy redirects a node
+port to its pod, and lives beside k3s's own tables: never `nft flush ruleset` on
+the node, which deletes those too. To see it and what it holds:
 
 ```sh
 sudo nft list table inet augusta
@@ -228,8 +231,9 @@ sudo nft list table inet augusta
 
 **The maintainer's addresses** are the node's, not the repository's:
 `/etc/nftables.d/admin-addresses.nft`, which the bootstrap writes. A new node
-takes the address of the SSH session that runs it; to set them, pass each
-address or range, the one you are connecting from included:
+takes the address of the SSH session that runs it, so run it as yourself, not
+under `sudo`, which hides the session from it. To set them, pass each address or
+range, the one you are connecting from included:
 
 ```sh
 ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash -s -- --admin <address> [--admin <address>...]"
