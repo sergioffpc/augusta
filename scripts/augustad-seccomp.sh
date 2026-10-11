@@ -182,9 +182,10 @@ check() {
 logged_since() {
   # shellcheck disable=SC2024 # the copy is ours; reading the log is root's
   sudo tail -n "+$(($1 + 1))" "${AUDIT_LOG}" >"${WORK}/audit.log"
+  # grep finds nothing in a run that logged nothing: not a failure.
   { ausearch --input "${WORK}/audit.log" --message SECCOMP --interpret \
     2>/dev/null || true; } \
-    | grep -o 'syscall=[a-z0-9_]*' | cut -d = -f 2 | sort -u
+    | { grep -o 'syscall=[a-z0-9_]*' || true; } | cut -d = -f 2 | sort -u
 }
 
 # Adds syscalls to the profile, in place, keeping its names sorted and unique.
