@@ -4,8 +4,11 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+# A pull request's newer push cancels its older run. A push to main/develop gets
+# a group per commit, so a newer push neither cancels it nor replaces it while
+# it is pending: Flux deploys every one of those commits (docs/ENGINEERING.md).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}${{ github.event_name == 'push' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -731,8 +734,7 @@ jobs:
     # and the image's checks passed. The server job only runs when run_build is
     # true (see changes above), so a skipped result there is fine - only an
     # actual failure should block publishing. !cancelled() rather than
-    # always(): a run cancelled by a newer push must not publish its older
-    # commit's branch tag over the newer one's.
+    # always(): a run someone cancelled publishes nothing.
     if: |
       !cancelled() && github.event_name == 'push' &&
       needs.container-verify.result == 'success' &&
@@ -772,10 +774,21 @@ jobs:
         id: publish
         # The digest is read back from GHCR: the build only loaded the image,
         # so its own digest output isn't the manifest the registry serves.
+        # The sha- tag, which Flux runs, is always pushed. Pushes run side by
+        # side (see concurrency), so the branch tag is pushed only from the
+        # branch's newest commit: an older run finishing last must not move it
+        # back.
         run: |
           image=ghcr.io/${{ github.repository_owner }}/augustad
-          docker push --all-tags "$image"
-          digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.image.outputs.short-sha }}" --format '{{.Manifest.Digest}}')
+          sha_tag="$image:sha-${{ steps.image.outputs.short-sha }}"
+          docker push "$sha_tag"
+          head=$(git ls-remote --exit-code origin "$GITHUB_REF")
+          if [ "${head%%[[:space:]]*}" = "$GITHUB_SHA" ]; then
+            docker push "$image:$GITHUB_REF_NAME"
+          else
+            echo "$GITHUB_REF_NAME has moved on to ${head%%[[:space:]]*}: leaving its tag alone"
+          fi
+          digest=$(docker buildx imagetools inspect "$sha_tag" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # The published binary's debug info (the Dockerfile's debuginfo stage,
       # from the build layer the image was just built from), kept beside the

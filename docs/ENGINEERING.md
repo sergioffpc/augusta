@@ -65,8 +65,11 @@ decisions already made in ARCHITECTURE.md:
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file itself
   or the composite actions it shares (`.github/actions/`) changed (a docs-only
   PR shouldn't pay for a full build). `concurrency` cancels a still-running run
-  for the same branch/PR when a new push arrives, so superseded runs don't keep
-  burning minutes.
+  for the same PR when a new push arrives, so superseded runs don't keep burning
+  minutes. A newer push to `main`/`develop` never cancels a run there: Flux
+  deploys every commit on those branches, and each commit's `sha-<commit>` image
+  is published only by that commit's run. Those runs overlap, so only the
+  branch's newest commit moves the branch tag.
 - **Pipeline stages:**
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
