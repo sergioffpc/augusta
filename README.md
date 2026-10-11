@@ -101,10 +101,13 @@ configure the Conventional Commits `commit-msg` hook.
 [scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
 runs `develop` and `staging`, through sudo, without a checkout: the crash-core
 handler, Podman and gdb to read a core, the server's `augusta` user, the
-asset-pack volume, the capture filesystem, k3s at the cluster's release, and
-Flux, which then installs the monitoring stack and both environments from Git.
-It skips what the node already has. The asset packs are the one state not in
-Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
+asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
+by key only, unattended security updates, auditd), k3s at the cluster's release,
+and Flux, which then installs the monitoring stack and both environments from
+Git. It skips what the node already has. Run it over SSH, by key, as your own
+user: the firewall then lets only that session's address, or those given with
+`--admin`, reach SSH and the API server. The asset packs are the one state not
+in Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
 ([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)):
 
 ```bash

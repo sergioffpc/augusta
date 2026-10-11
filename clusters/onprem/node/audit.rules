@@ -1,0 +1,36 @@
+## The Node's audit trail (ADR-0057): /etc/audit/rules.d/augusta.rules, written
+## by scripts/bootstrap-node.sh and loaded by augenrules. Each rule's key (-k)
+## is what `ausearch -k` finds it by (k3s-node-recovery.md, The audit trail).
+## A watched path's directory must exist when the rules load, or loading stops
+## there: nothing below is made by k3s at its first start. Watches are -w, not
+## -F perm=wa with an arch, which auditctl refuses on arm64.
+##
+## Logins need no rule: PAM records every one, by SSH or on the console, with
+## the account and the address it came from (USER_ACCT, USER_START).
+
+## Logins: SSH's own policy.
+-w /etc/ssh/sshd_config -p wa -k sshd
+-w /etc/ssh/sshd_config.d/ -p wa -k sshd
+
+## Privilege changes: who may become root, who did, and the accounts.
+-w /etc/sudoers -p wa -k privilege
+-w /etc/sudoers.d/ -p wa -k privilege
+-a always,exit -F arch=b64 -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=unset -k privilege
+-a always,exit -F arch=b64 -F path=/usr/bin/su -F perm=x -F auid>=1000 -F auid!=unset -k privilege
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+
+## k3s: its configuration (/etc/rancher/k3s/, which the bootstrap makes before
+## k3s), its binary and its service.
+-w /etc/rancher/k3s/ -p wa -k k3s-config
+-w /usr/local/bin/k3s -p wa -k k3s-config
+-w /etc/systemd/system/k3s.service -p wa -k k3s-config
+-w /etc/systemd/system/k3s.service.env -p wa -k k3s-config
+
+## The rest of this hardening: the firewall, updates and this audit itself.
+-w /etc/nftables.conf -p wa -k firewall
+-w /etc/nftables.d/ -p wa -k firewall
+-w /etc/apt/apt.conf.d/ -p wa -k updates
+-w /etc/audit/ -p wa -k audit-config
