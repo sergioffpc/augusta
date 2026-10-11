@@ -233,15 +233,16 @@ credential (ADR-0057). Its configuration is in
 [`clusters/onprem/node/`](../../clusters/onprem/node), beside k3s's, and
 `scripts/bootstrap-node.sh` writes it on every run, before k3s's:
 
-| In the repository              | On the node                                                  | What it sets                                                                   |
-| ------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                 |
-| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                      |
-| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                         |
-| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed. |
-| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                       |
-| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                           |
-| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                         |
+| In the repository              | On the node                                                  | What it sets                                                                     |
+| ------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `nftables.conf`                | `/etc/nftables.conf`                                         | [The firewall](#the-firewall).                                                   |
+| `nftables.service.conf`        | `/etc/systemd/system/nftables.service.d/augusta.conf`        | Stopping the firewall removes its table alone, not k3s's.                        |
+| `sshd.conf`                    | `/etc/ssh/sshd_config.d/10-augusta.conf`                     | [SSH](#ssh): keys only, no root login.                                           |
+| `unattended-upgrades.conf`     | `/etc/apt/apt.conf.d/52augusta-upgrades`                     | [Updates](#updates): Debian's security updates, a reboot at 05:00 when needed.   |
+| `apt-daily-upgrade.timer.conf` | `/etc/systemd/system/apt-daily-upgrade.timer.d/augusta.conf` | Updates install between 04:00 and 04:30.                                         |
+| `audit.rules`                  | `/etc/audit/rules.d/augusta.rules`                           | [The audit trail](#the-audit-trail).                                             |
+| `80-hardening.conf`            | `/etc/sysctl.d/80-hardening.conf`                            | [The kernel](#the-kernel)'s hardening.                                           |
+| `81-tuning.conf`               | `/etc/sysctl.d/81-tuning.conf`                               | [The kernel](#the-kernel)'s tuning: socket buffers, writeback, free memory, TCP. |
 
 To change any of it, merge the change to `develop`, then run the bootstrap on
 the node, which writes what changed and reloads the service that reads it:
@@ -383,6 +384,14 @@ Two things work differently for it:
   runs under `sudo`: rootless, it cannot make its user namespace.
 - `kexec_load_disabled` holds until the next reboot. A crash kernel (kdump)
   needs its line removed from `80-hardening.conf` and a reboot.
+
+**Its tuning** suits a 10 GbE Node running UDP servers: socket buffers the
+servers' networking library asks for, writeback bounded in bytes rather than a
+share of the RAM, and a soft lockup that reboots the Node rather than hangs it.
+`81-tuning.conf` says why each value. `kernel.numa_balancing` keeps Debian's
+default until measured: a fixed load of agents (ADR-0052) with it at `1`, then
+`0`, comparing the share of late ticks and the tick duration's p99, and
+`numa_pages_migrated` in `/proc/vmstat` during the first.
 
 The bootstrap applies the kernel parameters at once. To see what the kernel
 runs:
