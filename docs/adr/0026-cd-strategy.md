@@ -1,5 +1,9 @@
 # CD Strategy: Flux for `main`/`develop`; No k3s Deploy for Ephemeral Branches
 
+> Amended by ADR-0056: `staging` follows the signed `v*` release tags, not the
+> `main` branch, and Flux runs only signed revisions. Where this record says
+> `staging` runs `main`, read the latest release tag; the rest still stands.
+
 `main` and `develop` are reconciled by Flux (GitOps, pull-based) running inside
 the k3s cluster. `feature/*`, `hotfix/*`, and `release/*` branches are not
 deployed to k3s at all — no CD, ephemeral or otherwise, for these.

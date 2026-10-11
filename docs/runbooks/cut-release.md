@@ -4,9 +4,10 @@ Takes `develop` to a tagged release on `main` through a Git Flow
 `release/vX.Y.Z` branch, publishes the GitHub Release, and merges the release
 back into `develop`. The branching model, changelog and release workflow are
 [ENGINEERING.md's Git Workflow](../ENGINEERING.md#git-workflow) and
-[CI/CD](../ENGINEERING.md#cicd); what deploys `main` is ADR-0026
-([CD strategy](../adr/0026-cd-strategy.md)); what a release is tested with is
-ADR-0013 ([testing](../adr/0013-testing-and-benchmarking.md)).
+[CI/CD](../ENGINEERING.md#cicd); what deploys a release to `staging` is ADR-0026
+([CD strategy](../adr/0026-cd-strategy.md)) and ADR-0056
+([signed revisions](../adr/0056-signed-revisions-for-flux.md)); what a release
+is tested with is ADR-0013 ([testing](../adr/0013-testing-and-benchmarking.md)).
 
 ## When to use
 
@@ -26,7 +27,10 @@ skipped: a branch cut from `main` already has everything `main` has.
   it merges.
 - Commit and tag signing configured locally (the `v*` tags are signed, annotated
   tags), and the repository's hooks active
-  (`git config core.hooksPath .githooks`).
+  (`git config core.hooksPath .githooks`). The tag must be signed with an SSH
+  signing key Flux trusts for releases (`trusted-signers-release` in
+  [`trusted-signers.yaml`](../../clusters/onprem/flux-system/trusted-signers.yaml)),
+  or `staging` never runs it.
 - `bash` and `uvx` (uv) for
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
@@ -122,8 +126,13 @@ skipped: a branch cut from `main` already has everything `main` has.
     gh pr merge <number> --merge
     ```
 
+    This changes nothing that runs: `staging` follows the release tags, not
+    `main`, and moves at step 8.
+
 8. Tag `main`'s merge commit and push the tag, which starts the release workflow
-   ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)):
+   ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)) and
+   moves `staging` to it: Flux verifies the tag's signature, then upgrades
+   `staging` to the chart and image of the tagged commit:
 
     ```sh
     git fetch origin
@@ -174,6 +183,7 @@ gh attestation verify release-vX.Y.Z/augustad-linux-arm64 --repo sergioffpc/augu
 gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> --repo sergioffpc/augusta
 docker buildx imagetools inspect ghcr.io/sergioffpc/augustad:sha-<12>  # amd64 + arm64
 git log --oneline -1 origin/develop      # the back-merge
+flux get sources git augusta-release -n flux-system   # vX.Y.Z, verified
 flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 ```
 
@@ -186,7 +196,8 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
   commit: the image a release runs is the one CI published for it on `main`.
 - `develop` contains the release
   (`git merge-base --is-ancestor vX.Y.Z origin/develop` exits 0).
-- Flux has upgraded `staging` to the chart `X.Y.Z+<12>`
+- Flux's `augusta-release` source is at `vX.Y.Z` and verified, and Flux has
+  upgraded `staging` to the chart `X.Y.Z+<12>`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md#verification) has the
   checks).
 
@@ -209,10 +220,11 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
     ```
 
     If a Release was created all the same, `gh release delete vX.Y.Z --yes`
-    first. Merge the hotfix back into `develop` as in step 10.
+    first. Merge the hotfix back into `develop` as in step 10. `staging` ran the
+    tag from the moment it was pushed, and follows it to the new merge commit.
 
 - **The published release is bad:** a published tag is never moved or reused.
-  Restore `staging` first by pinning it to the previous good image
+  Restore `staging` first by pinning it to the previous good tag
   ([Roll back staging](flux-rollback.md#roll-back-staging)), then ship
   `X.Y.(Z+1)` as a hotfix (see [When to use](#when-to-use)), and remove the pin
-  once it is on `main`.
+  once its tag is pushed.

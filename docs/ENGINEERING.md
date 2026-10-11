@@ -231,8 +231,9 @@ no self-hosted GitHub Actions runner in this pipeline).
 
 - **Infrastructure:** self-hosted k3s, single node, on the developer's own
   hardware. No cloud provider involved.
-- **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (tracks
-  `main`) and `develop` (tracks `develop`). No per-branch/ephemeral namespaces.
+- **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (the
+  latest signed `v*` release tag, ADR-0056) and `develop` (tracks `develop`). No
+  per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry (GHCR).
   The server image is `scratch` with an Ubuntu 26.04 root cut by chisel: the
   libraries `augustad` links, `tini`, and no shell (ADR-0054). A running server
@@ -247,10 +248,20 @@ no self-hosted GitHub Actions runner in this pipeline).
   shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
   server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
-  reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
-  needs inbound access to the LAN, and no external PR can trigger execution on
-  the cluster host, since there's no CI runner in this path at all (see
-  ADR-0026).
+  reconciling each environment's `HelmRelease` from Git — nothing outside the
+  cluster needs inbound access to the LAN, and no external PR can trigger
+  execution on the cluster host, since there's no CI runner in this path at all
+  (see ADR-0026).
+- **Signed revisions only:** Flux verifies every revision before reconciling it
+  (ADR-0056), against public keys kept in Git
+  ([`trusted-signers.yaml`](../clusters/onprem/flux-system/trusted-signers.yaml)).
+  `develop`'s HEAD, which the `flux-system` source tracks too, must be signed by
+  one of the maintainer's SSH signing keys or GitHub's `web-flow` key (a pull
+  request merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver,
+  verified against the maintainer's keys alone: a merge to `main` changes
+  nothing that runs, and `staging` moves when the release's signed tag is pushed
+  ([Cut a Release](runbooks/cut-release.md)). A revision that fails verification
+  leaves its environment on the last verified one.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD pipeline
   (see ADR-0018, CI/CD above). Packs are versioned independently of code deploys

@@ -3,10 +3,12 @@
 # (ADR-0026), on Debian 13, as a user that can sudo: the crash-core handler
 # and the tools that read a core, the server's user, the asset-pack volume and
 # the capture filesystem
-# (docs/runbooks/k3s-node-recovery.md), k3s at the cluster's release, and Flux
-# from the repository's own manifests, which then installs everything else
+# (docs/runbooks/k3s-node-recovery.md), k3s at the cluster's release with its
+# hardened configuration (clusters/onprem/node/, ADR-0057), and Flux from the
+# repository's own manifests, which then installs everything else
 # (clusters/onprem/). Each step is skipped when the node already has it, so a
-# re-run finishes an interrupted one.
+# re-run finishes an interrupted one; k3s's configuration is written again
+# each time, and a k3s already running takes it when it next restarts.
 #
 # It never writes the asset packs' contents: they are the one state not in Git.
 # --packs puts back an archive taken from a node (the runbook's part B), else
@@ -29,10 +31,19 @@ set -euo pipefail
 
 # The cluster's k3s release: its Kubernetes version is CI's
 # KUBERNETES_VERSION (.github/workflows/ci.yml), which the manifests are
-# validated against; bump them together.
+# validated against, and CI fails when they differ. Bump them together
+# (docs/runbooks/k3s-node-recovery.md, Upgrade k3s).
 readonly K3S_VERSION=v1.36.4+k3s1
 # What the flux-system GitRepository tracks (clusters/onprem/flux-system/).
 readonly MANIFESTS=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/flux-system
+# k3s's configuration, from the same branch: the files the runbook's "The k3s
+# configuration" lists, kept in step with it.
+readonly NODE_CONFIG=https://raw.githubusercontent.com/sergioffpc/augusta/develop/clusters/onprem/node
+readonly K3S_CONFIG_FILES=(config.yaml audit-policy.yaml admission.yaml)
+readonly SYSCTL_FILE=90-kubelet.conf
+# What k3s secrets-encrypt enable, or a first start with secrets-encryption,
+# writes.
+readonly ENCRYPTION_CONFIG=/var/lib/rancher/k3s/server/cred/encryption-config.json
 # The server image's user (ADR-0054), which the node has too.
 readonly SERVER_USER=augusta SERVER_ID=65532
 readonly VOLUME=/srv/augusta
@@ -132,12 +143,73 @@ create_capture_filesystem() {
   as_root install -d -o "${SERVER_USER}" -g "${SERVER_USER}" -m 0755 "${mount}"
 }
 
+# Arguments:
+#   A downloaded file, the file it is to replace.
+# Returns:
+#   0 when they differ or the second is missing, 1 when they are the same.
+differs() {
+  ! as_root cmp -s "$1" "$2"
+}
+
+# Writes k3s's configuration, its audit policy and admission configuration
+# (clusters/onprem/node/), and the kernel parameters its kubelet needs, which
+# are applied at once: protect-kernel-defaults stops a kubelet that starts
+# without them.
+configure_k3s() {
+  local downloads changed="" file
+  # A node installed before its configuration was in the repository runs
+  # without secrets encryption prepared; written now, the configuration's
+  # secrets-encryption would take it unprepared at k3s's next restart.
+  if command -v k3s >/dev/null 2>&1 \
+    && ! as_root test -e "${ENCRYPTION_CONFIG}"; then
+    log "k3s runs without secrets encryption prepared - leaving its" \
+      "configuration. See docs/runbooks/k3s-node-recovery.md, Harden a" \
+      "running node."
+    exit 1
+  fi
+  downloads="$(mktemp -d)"
+  # shellcheck disable=SC2064 # downloads is set once, here
+  trap "rm -rf -- '${downloads}'" EXIT
+  for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILE}"; do
+    curl -fsSL "${NODE_CONFIG}/${file}" -o "${downloads}/${file}"
+  done
+
+  if differs "${downloads}/${SYSCTL_FILE}" "/etc/sysctl.d/${SYSCTL_FILE}"; then
+    changed=yes
+  fi
+  as_root install -d -o root -g root -m 0755 /etc/sysctl.d
+  as_root install -o root -g root -m 0644 "${downloads}/${SYSCTL_FILE}" \
+    /etc/sysctl.d
+  as_root sysctl --quiet --load "/etc/sysctl.d/${SYSCTL_FILE}"
+
+  as_root install -d -o root -g root -m 0755 /etc/rancher/k3s
+  for file in "${K3S_CONFIG_FILES[@]}"; do
+    if differs "${downloads}/${file}" "/etc/rancher/k3s/${file}"; then
+      changed=yes
+    fi
+    as_root install -o root -g root -m 0600 "${downloads}/${file}" \
+      /etc/rancher/k3s
+  done
+  # The audit log's, before the API server first writes it: root's only, as
+  # the log holds Secrets' contents. The server directory is 0700 as k3s
+  # makes it.
+  as_root install -d -o root -g root -m 0700 /var/lib/rancher/k3s/server \
+    /var/lib/rancher/k3s/server/logs
+
+  if [[ -n "${changed}" ]] && command -v k3s >/dev/null 2>&1; then
+    log "k3s's configuration changed; the running k3s takes it when it" \
+      "restarts. See docs/runbooks/k3s-node-recovery.md, Change k3s's" \
+      "configuration."
+  fi
+}
+
 install_k3s() {
   if command -v k3s >/dev/null 2>&1; then
     local installed
     installed="$(k3s --version | awk 'NR == 1 { print $3 }')"
     if [[ "${installed}" != "${K3S_VERSION}" ]]; then
-      log "k3s ${installed} is installed, not ${K3S_VERSION} - leaving it."
+      log "k3s ${installed} is installed, not ${K3S_VERSION} - leaving it." \
+        "See docs/runbooks/k3s-node-recovery.md, Upgrade k3s."
     fi
   else
     curl -sfL https://get.k3s.io \
@@ -164,6 +236,9 @@ install_flux() {
   kubectl wait --for=condition=Established crd --all --timeout=2m
   kubectl -n flux-system wait --for=condition=Available deployment --all \
     --timeout=5m
+  # The keys the flux-system GitRepository verifies develop's HEAD against
+  # (ADR-0056): without them no revision verifies, and Flux applies nothing.
+  curl -fsSL "${MANIFESTS}/trusted-signers.yaml" | kubectl apply -f -
   curl -fsSL "${MANIFESTS}/gotk-sync.yaml" | kubectl apply -f -
 }
 
@@ -189,6 +264,7 @@ main() {
   create_server_user
   create_pack_volume "${packs}"
   create_capture_filesystem
+  configure_k3s
   install_k3s
   install_flux
 
