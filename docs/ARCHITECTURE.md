@@ -320,7 +320,7 @@ after the tick.
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
   compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small native
-  pybind11 modules (`tools/pack/cpp/`, per ADR-0025's vcpkg ports - neither
+  pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
   links OpenUSD, see ADR-0030), and packages everything into signed, verified
   pack files (separate client and server packs) via a pure-Python
   reimplementation of augusta_assets' wire format. Full ordered pipeline:
@@ -373,16 +373,17 @@ A Match is one Linux `augustad` server and 2–8 Windows `augustac` clients on o
 trusted LAN (§11). The server runs in one of two places:
 
 - **The k3s cluster:** a self-hosted, single-node k3s cluster on the developer's
-  own hardware, where Flux deploys `develop` and `main` (ADR-0026). This is the
-  standing environment, and what the diagrams below show.
+  own hardware, where Flux deploys `develop` and the latest release (ADR-0026,
+  ADR-0056). This is the standing environment, and what the diagrams below show.
 - **Local:** `augustad` and the clients run by hand on one machine or across the
   LAN, with a locally cooked pack and their own config files (ADR-0034). Nothing
   is deployed; this is for development and tests.
 
-There is no production environment. `main` runs in `staging`, a test environment
-like `develop`; deploying to players beyond the LAN is undecided. The values
-below (namespaces, node ports, paths) are those of ENGINEERING.md, Deployment &
-CD, which is their reference; ADR-0026 gives the reasons.
+There is no production environment. The latest release, its signed `v*` tag,
+runs in `staging`, a test environment like `develop` (ADR-0056); deploying to
+players beyond the LAN is undecided. The values below (namespaces, node ports,
+paths) are those of ENGINEERING.md, Deployment & CD, which is their reference;
+ADR-0026 gives the reasons.
 
 ### 7.1 Topology
 
@@ -394,7 +395,7 @@ What runs on the node, and who reaches it:
 | Windows PC        |     | ns develop      (tracks develop)                |
 |                   | UDP |   augustad-<scenario>   :7777 <- NodePort 307xx |
 |  augustac.exe     |---->|   metrics + /livez      :9464                   |
-|  client.pack      |     | ns staging      (tracks main)                   |
+|  client.pack      |     | ns staging      (latest v* tag)                 |
 |  signing.pub      |     |   augustad-<scenario>   :7777 <- NodePort 308xx |
 |                   |     |   metrics + /livez      :9464                   |
 |  browser          |     | ns monitoring                                   |

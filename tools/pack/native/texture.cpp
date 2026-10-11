@@ -1,17 +1,20 @@
+#include "texture.h"
+
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <DirectXTex.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl/filesystem.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
@@ -19,7 +22,7 @@
 #define STBI_ONLY_JPEG
 #include <stb_image.h>
 
-namespace py = pybind11;
+namespace augusta::pack {
 
 namespace {
 
@@ -71,11 +74,7 @@ DirectX::ScratchImage LoadImageRgba8(const std::filesystem::path& image_path) {
 
 }  // namespace
 
-// Loads image_path (PNG/JPEG, via stb_image) and block-compresses it
-// (ADR-0017) to `format` ("bc7"/"bc5"/"bc4"), returning DirectXTex's own
-// SaveToDDSMemory output (DDS header included) as bytes. Raises RuntimeError
-// on any failure.
-py::bytes CompressTexture(const std::filesystem::path& image_path, const std::string& format) {
+std::vector<std::uint8_t> CompressTexture(const std::filesystem::path& image_path, const std::string& format) {
   const DirectX::ScratchImage image = LoadImageRgba8(image_path);
 
   DirectX::ScratchImage compressed;
@@ -90,13 +89,9 @@ py::bytes CompressTexture(const std::filesystem::path& image_path, const std::st
     throw std::runtime_error(std::format("failed to encode DDS for texture image {}", image_path.string()));
   }
 
-  return py::bytes(reinterpret_cast<const char*>(dds_blob.GetBufferPointer()), dds_blob.GetBufferSize());
+  const std::span<const std::uint8_t> dds(static_cast<const std::uint8_t*>(dds_blob.GetBufferPointer()),
+                                          dds_blob.GetBufferSize());
+  return {dds.begin(), dds.end()};
 }
 
-PYBIND11_MODULE(_textconv, m) {
-  m.doc() =
-      "Thin bindings over stb_image and DirectXTex (ADR-0017), called from pack.cook - PNG/JPEG load + "
-      "BC7/BC5/BC4 block compression + DDS encode.";
-  m.def("compress_texture", &CompressTexture, py::arg("image_path"), py::arg("format") = "bc7",
-        "Loads image_path (PNG/JPEG), BC-compresses to `format` (bc7/bc5/bc4), returns SaveToDDSMemory bytes.");
-}
+}  // namespace augusta::pack

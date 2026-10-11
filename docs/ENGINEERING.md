@@ -59,7 +59,7 @@ decisions already made in ARCHITECTURE.md:
   diffs against the base commit first and skips build/test/lint entirely when
   nothing under `src/`, `tests/`, `tools/agent/` (the C++ tools, built and
   tested with the runtime), `tools/composer/examples/` (the example scenario a
-  test loads), `tools/pack/cpp/` (formatted by the `format` job, though CI
+  test loads), `tools/pack/native/` (formatted by the `format` job, though CI
   doesn't build it), `cmake/`, `config/` (the example configs a test loads),
   `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file itself
@@ -89,7 +89,7 @@ decisions already made in ARCHITECTURE.md:
        after merge, since the PR already validated it
     5. Compile with a strict warning set, treated as errors
     6. the `tools` job, when `tools/` changed: on a Windows runner, build the
-       asset cooker's native modules and run its pytest suite, which also
+       asset cooker's native module and run its pytest suite, which also
        requires that cooking the example scenario still gives the golden packs
        in `tests/fixtures/example-packs/` byte for byte; the C++ tests in 2 and
        3 load those same packs — the contract between the Python writer and the
@@ -116,8 +116,8 @@ decisions already made in ARCHITECTURE.md:
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job, saved only when a job built a package it didn't restore -
-      except the `tools` job's Linux leg, whose `tools/pack/cpp` manifest keeps
-      an entry of its own. vcpkg builds its ports with the system compiler
+      except the `tools` job's Linux leg, whose `tools/pack/native` manifest
+      keeps an entry of its own. vcpkg builds its ports with the system compiler
       (`/usr/bin/c++`, Ubuntu's g++) for the default `x64-linux` triplet; the
       presets' clang compiles the project alone. So the entry's packages are the
       same whatever preset a job configures, and the server image's dependency
@@ -231,8 +231,9 @@ no self-hosted GitHub Actions runner in this pipeline).
 
 - **Infrastructure:** self-hosted k3s, single node, on the developer's own
   hardware. No cloud provider involved.
-- **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (tracks
-  `main`) and `develop` (tracks `develop`). No per-branch/ephemeral namespaces.
+- **Isolation:** two fixed, long-lived Kubernetes namespaces — `staging` (the
+  latest signed `v*` release tag, ADR-0056) and `develop` (tracks `develop`). No
+  per-branch/ephemeral namespaces.
 - **Container images:** built in CI, pushed to GitHub Container Registry (GHCR).
   The server image is `scratch` with an Ubuntu 26.04 root cut by chisel: the
   libraries `augustad` links, `tini`, and no shell (ADR-0054). A running server
@@ -247,10 +248,20 @@ no self-hosted GitHub Actions runner in this pipeline).
   shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
   server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
-  reconciling each branch's `HelmRelease` from Git — nothing outside the cluster
-  needs inbound access to the LAN, and no external PR can trigger execution on
-  the cluster host, since there's no CI runner in this path at all (see
-  ADR-0026).
+  reconciling each environment's `HelmRelease` from Git — nothing outside the
+  cluster needs inbound access to the LAN, and no external PR can trigger
+  execution on the cluster host, since there's no CI runner in this path at all
+  (see ADR-0026).
+- **Signed revisions only:** Flux verifies every revision before reconciling it
+  (ADR-0056), against public keys kept in Git
+  ([`trusted-signers.yaml`](../clusters/onprem/flux-system/trusted-signers.yaml)).
+  `develop`'s HEAD, which the `flux-system` source tracks too, must be signed by
+  one of the maintainer's SSH signing keys or GitHub's `web-flow` key (a pull
+  request merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver,
+  verified against the maintainer's keys alone: a merge to `main` changes
+  nothing that runs, and `staging` moves when the release's signed tag is pushed
+  ([Cut a Release](runbooks/cut-release.md)). A revision that fails verification
+  leaves its environment on the last verified one.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD pipeline
   (see ADR-0018, CI/CD above). Packs are versioned independently of code deploys
@@ -298,11 +309,21 @@ no self-hosted GitHub Actions runner in this pipeline).
   its infrastructure, and the policies in
   [`clusters/onprem/policies/`](../clusters/onprem/policies/kustomization.yaml)
   run there in audit mode for now (ADR-0057). CI's `manifests` job runs the same
-  policy files with the Kyverno CLI over each environment's rendered chart and
-  each Flux Kustomization path, so a change the cluster would refuse fails its
-  pull request; it also requires each policy to refuse its negative fixtures in
+  policy files with the Kyverno CLI over each environment's rendered chart, each
+  Flux Kustomization path and each infrastructure `HelmRelease` rendered with
+  its values, so a change the cluster would refuse fails its pull request; it
+  also requires each policy to refuse its negative fixtures in
   `fixtures/<policy>/`. Adding a policy is its file, its entry in the
   Kustomization and its fixtures, with no change to CI.
+- **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
+  reports any Secret but Flux's trusted public keys, Helm's release records and
+  those the charts make themselves, each listed by name (ADR-0057).
+- **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
+  a tag pushed again never changes what runs, except those whose signatures are
+  verified instead (`augustad`'s and Flux's) and `kube-system`'s, which come
+  with k3s's version (ADR-0057). The infrastructure's `HelmRelease`s pin their
+  charts' images in their values; a chart upgrade moves the digests with its
+  version, as the comment on `kube-prometheus-stack`'s release says how.
 
 ## Developer Environment
 
@@ -368,20 +389,20 @@ no self-hosted GitHub Actions runner in this pipeline).
   ADR-0009, isn't worth the purity.)
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
-  `_textconv` wraps, builds for) builds the pack environment under a
-  caller-chosen assets root (ADR-0030): a uv-managed Python environment with
-  `tools/pack` installed editable, its native modules, signing keys and sample
-  authoring content.
+  `_native` wraps, builds for) builds the pack environment under a caller-chosen
+  assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
+  installed editable, its native module, signing keys and sample authoring
+  content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/cpp`'s own
-  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
-  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
-  fetched by this script.
+  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/native`'s
+  own C++ build dependencies (two small pybind11 modules, no OpenUSD - see
+  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
+  codebase, not fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the
@@ -480,6 +501,14 @@ no self-hosted GitHub Actions runner in this pipeline).
   its own (ADR-0049).
 - **Alerts:** rules ship with the chart and show in Grafana and Alertmanager,
   with no receiver yet. One is chosen when the server runs unattended for real.
+- **Grafana** opens on node port 30300 with no login: anyone on the LAN is an
+  anonymous Viewer, and there is no login form, basic authentication or admin
+  user (ADR-0057). Nothing is changed in Grafana itself. A dashboard is changed
+  in its JSON in Git, `charts/augustad/dashboards/`: export it from Grafana (or
+  edit it there in a local Grafana) and commit the file; once the chart deploys,
+  Grafana picks it up within 30 seconds. Data sources are the
+  `kube-prometheus-stack` release's values
+  (`clusters/onprem/infrastructure/monitoring.yaml`), loaded as Grafana starts.
 
 ## Performance
 
