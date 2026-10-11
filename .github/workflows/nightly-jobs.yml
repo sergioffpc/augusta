@@ -162,7 +162,7 @@ jobs:
           path: junit/
           if-no-files-found: ignore
   netcode:
-    # Scripted players against an in-process server under the transport's
+    # Agents against an in-process server under the transport's
     # simulated latency, jitter, loss and reordering, from a broadband link to
     # the agreed worst case (ADR-0013): every one plays through, corrections
     # stay bounded and shots within the lag compensation window are confirmed

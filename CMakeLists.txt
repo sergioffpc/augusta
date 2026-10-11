@@ -26,11 +26,11 @@ endif()
 include(cmake/AugustaPlatform.cmake)
 augusta_require_server_host()
 
-# The tools (tools/agent, tools/swarm) and their tests. On by default, so every
+# The tools (tools/agent) and their tests. On by default, so every
 # build compiles them and their C++ tests join augusta_tests; the server image,
 # which builds augustad alone, turns them off. Before project(): with them,
 # vcpkg installs what the Agents' Python module needs.
-option(AUGUSTA_TOOLS "Build the tools (tools/agent, tools/swarm) and their tests" ON)
+option(AUGUSTA_TOOLS "Build the tools (tools/agent) and their tests" ON)
 if(AUGUSTA_TOOLS)
   include(cmake/AugustaAgentPython.cmake)
   augusta_find_agent_python(AUGUSTA_AGENT_PYTHON)
@@ -128,12 +128,11 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
-# The tools, built with the runtime they link on every platform: augusta-swarm,
-# the Scripted players (ADR-0013), and the Agents' Python module (ADR-0052),
-# against the interpreter augusta_find_agent_python found - pybind11 in its
-# classic mode reads it from PYTHON_EXECUTABLE.
+# The tools, built with the runtime they link on every platform: the Agents
+# (ADR-0052), whose Python module is built against the interpreter
+# augusta_find_agent_python found - pybind11 in its classic mode reads it from
+# PYTHON_EXECUTABLE - and left out without one.
 if(AUGUSTA_TOOLS)
-  add_subdirectory(tools/swarm)
   if(AUGUSTA_AGENT_PYTHON)
     set(PYTHON_EXECUTABLE "${AUGUSTA_AGENT_PYTHON}")
     # Classic mode's FindPythonInterp/FindPythonLibs, which CMake has removed
@@ -141,8 +140,8 @@ if(AUGUSTA_TOOLS)
     # as pybind11's config sets its own policy version.
     set(CMAKE_POLICY_DEFAULT_CMP0148 OLD)
     find_package(pybind11 CONFIG REQUIRED)
-    add_subdirectory(tools/agent/native)
   endif()
+  add_subdirectory(tools/agent)
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs
 # one before and one after its tests (VS Code's CMake Tools, "Run Tests with

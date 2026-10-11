@@ -6,28 +6,35 @@
 
 #include <gtest/gtest.h>
 
+#include "agent.h"
 #include "augusta/netcode_stats.h"
 #include "augusta/networking.h"
-#include "example_server.h"
-#include "run.h"
+#include "example_run.h"
+#include "match_loop.h"
+#include "testing_server.h"
 
-// The netcode under an impaired link (ADR-0013): whole runs of Scripted players
-// against a server::Host in the same process, with the transport's simulated
-// latency, jitter, loss and reordering on every packet either side sends, held
+// The netcode under an impaired link (ADR-0013): whole runs of Agents,
+// composing Intents as load_test.py does, against a server::Host in the same
+// process, with the transport's simulated latency, jitter, loss and reordering
+// on every packet either side sends, held
 // to bounds on what reconciliation (ADR-0004) and lag compensation (ADR-0044)
 // make of them. Real time, minutes a run, so the nightly runs them (label
 // netcode), not every pull request.
 namespace {
 
+using augusta::agent::LoadedPack;
+using augusta::agent::testing::ExampleClientPack;
+using augusta::agent::testing::ExamplePacks;
+using augusta::agent::testing::MatchLoopResult;
+using augusta::agent::testing::PlayMatches;
+using augusta::agent::testing::RunAgainst;
+using augusta::agent::testing::Server;
+using augusta::agent::testing::Verdict;
 using augusta::harness::NetcodeStats;
 using augusta::networking::SimulatedConditions;
-using augusta::swarm::RunResult;
-using augusta::swarm::RunScriptedPlayers;
-using augusta::swarm::Verdict;
-using augusta::swarm::testing::ExampleServer;
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =
-    ::testing::AddGlobalTestEnvironment(new augusta::swarm::testing::NetworkingEnvironment);
+    ::testing::AddGlobalTestEnvironment(new augusta::agent::testing::NetworkingEnvironment);
 
 // One set of link conditions. Both sides are in this process, so each applies
 // to the server's packets and the clients' alike: a round trip is twice the
@@ -40,11 +47,11 @@ struct Profile {
 void PrintTo(const Profile& profile, std::ostream* out) { *out << profile.name; }
 
 // From a good broadband link up to the agreed worst case: NFR-02's latency and
-// beyond, as far as a Scripted player's Shooter's delay stays within lag
-// compensation's 250 ms cap (ADR-0044). A Scripted player aims at where the
-// newest Authoritative State puts its target and reports that state's tick as
-// its Seen time, so its delay is about a round trip, the jitter both ways and
-// the couple of ticks its commands wait queued on the server.
+// beyond, as far as an Agent's Shooter's delay stays within lag compensation's
+// 250 ms cap (ADR-0044). An Agent's AimAt aims at where the newest
+// Authoritative State puts its target and the Harness reports that state's
+// tick as its Seen time, so its delay is about a round trip, the jitter both
+// ways and the couple of ticks its commands wait queued on the server.
 constexpr Profile kBroadband{
     .name = "Broadband",
     .conditions = {.latency_ms = 20,
@@ -95,16 +102,17 @@ class ImpairedLinkTest : public ::testing::TestWithParam<Profile> {
 };
 
 // Requirements: NFR-02, NFR-06
-TEST_P(ImpairedLinkTest, ScriptedPlayersPlayThroughWithBoundedCorrectionsAndConfirmedHits) {
-  const ExampleServer server(kPlayers);
+TEST_P(ImpairedLinkTest, AgentsPlayThroughWithBoundedCorrectionsAndConfirmedHits) {
+  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", kPlayers);
+  const LoadedPack pack = ExampleClientPack();
   augusta::networking::SimulateNetworkConditions(GetParam().conditions);
 
-  const RunResult result = RunScriptedPlayers(server.RunOf(kMatches, kTimeout));
+  const MatchLoopResult result = PlayMatches(RunAgainst(server.Address(), pack, kMatches, kTimeout));
 
-  // Nothing disconnects: every player sees every Match end.
-  ASSERT_EQ(result.verdict, Verdict::kSucceeded);
+  // Nothing disconnects: every Agent sees every Match end.
+  ASSERT_EQ(result.verdict, Verdict::kSucceeded) << result.failure;
   NetcodeStats all;
-  for (const NetcodeStats& player : result.players) {
+  for (const NetcodeStats& player : result.agents) {
     EXPECT_LT(player.largest_correction_m, kMaxCorrectionM);
     all += player;
   }
