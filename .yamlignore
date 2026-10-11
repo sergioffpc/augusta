@@ -1,3 +1,4 @@
 charts/augustad/templates/
 clusters/onprem/flux-system/gotk-components.yaml
+clusters/onprem/infrastructure/kube-bench/cfg/
 third_party/

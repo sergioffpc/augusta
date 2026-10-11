@@ -694,10 +694,39 @@ jobs:
               -schema-location default -schema-location "$schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
-      - name: Validate the chart's dashboards
+      - name: Validate the dashboards
+        # The chart's and the cluster's own (clusters/onprem/infrastructure).
         # Grafana's sidecar skips a dashboard it cannot parse without failing
         # anything, and kubeconform sees only the string it is carried in.
-        run: jq empty charts/augustad/dashboards/*.json
+        run: jq empty charts/augustad/dashboards/*.json clusters/onprem/infrastructure/dashboards/*.json
+      - name: Validate the cluster's Loki rules
+        # Loki's ruler skips a rule file it cannot parse, and kubeconform
+        # sees only the string it is carried in: each ConfigMap labelled
+        # loki_rule in clusters/onprem/infrastructure (security-alerts.yaml)
+        # is parsed with the LogQL of the Loki release the cluster runs
+        # (monitoring.yaml there), bumped with it.
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/lokitool"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/lokitool.zip" \
+            https://github.com/grafana/loki/releases/download/v3.6.11/lokitool-linux-amd64.zip
+          printf '%s  %s\n' \
+            '1424b486b2fc1a4fad1de84aa2ad5cda86896da08d5c6be97a210f8f3b22b50e' "$install_dir/lokitool.zip" \
+            | sha256sum --check --status
+          unzip -q "$install_dir/lokitool.zip" -d "$install_dir"
+          rules="$RUNNER_TEMP/loki-rules"
+          mkdir -p "$rules"
+          rule_maps='select(.kind == "ConfigMap" and .metadata.labels.loki_rule != null)'
+          for file in clusters/onprem/infrastructure/*.yaml; do
+            for name in $(yq --no-doc "$rule_maps | .metadata.name" "$file"); do
+              rule_map="$rule_maps | select(.metadata.name == \"$name\")"
+              for key in $(yq --no-doc "$rule_map | .data | keys | .[]" "$file"); do
+                yq --no-doc "$rule_map | .data[\"$key\"]" "$file" > "$rules/$name-$key"
+              done
+            done
+          done
+          "$install_dir/lokitool-linux-amd64" rules lint --dry-run "$rules"/*
       - name: Validate the cluster's manifests
         # Each path a Flux Kustomization in gotk-sync.yaml applies, built as
         # Flux builds it. CustomResourceDefinitions are skipped: kubeconform's

@@ -1,8 +1,9 @@
 # The namespaces Pod Security leaves privileged (ADR-0057) run only the pods
-# they exist for: monitoring-node, node-exporter alone; kube-system, what k3s
-# itself deploys there (its packaged manifests, the Helm jobs that install
-# Traefik, ServiceLB's pods and local-path-provisioner's helper pods). Any
-# other pod there could take the Node, as the namespace's level no longer
+# they exist for: monitoring-node, node-exporter, alloy-node and kube-bench
+# (clusters/onprem/infrastructure/monitoring.yaml, kube-bench/); kube-system,
+# what k3s itself deploys there (its packaged manifests, the Helm jobs that
+# install Traefik, ServiceLB's pods and local-path-provisioner's helper pods).
+# Any other pod there could take the Node, as the namespace's level no longer
 # stops it.
 #
 # A pod is known by the repository of every image it runs, not by its labels:
@@ -44,8 +45,9 @@ spec:
     # Each privileged namespace's known image repositories. k3s's are its
     # release's image list (scripts/airgap/image-list.txt in k3s's repository,
     # at K3S_VERSION in scripts/bootstrap-node.sh), but its pause image, which
-    # no pod names; node-exporter's is kube-prometheus-stack's
-    # (clusters/onprem/infrastructure/monitoring.yaml).
+    # no pod names; monitoring-node's are node-exporter's, Alloy's and its
+    # config reloader's (clusters/onprem/infrastructure/monitoring.yaml), and
+    # kube-bench's (clusters/onprem/infrastructure/kube-bench/).
     - name: knownRepositories
       expression: |-
         {
@@ -59,6 +61,9 @@ spec:
             "docker.io/rancher/mirrored-metrics-server"
           ],
           "monitoring-node": [
+            "docker.io/aquasec/kube-bench",
+            "docker.io/grafana/alloy",
+            "quay.io/prometheus-operator/prometheus-config-reloader",
             "quay.io/prometheus/node-exporter"
           ]
         }

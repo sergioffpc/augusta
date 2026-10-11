@@ -1,7 +1,20 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - kube-bench
   - kube-system.yaml
   - kyverno.yaml
   - monitoring.yaml
   - operator.yaml
+  - security-alerts.yaml
+# The cluster's own dashboards, as code (ADR-0049), loaded by Grafana's
+# sidecar from any namespace: "Security", the security logs (ADR-0057).
+configMapGenerator:
+  - name: security-dashboard
+    namespace: monitoring
+    files:
+      - dashboards/security.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
