@@ -27,13 +27,8 @@ spec:
     # label: CI checks manifests with no Namespace objects to read one from,
     # and a label anyone who can edit a namespace could set is no confinement.
     # kube-system and monitoring-node are the privileged ones (ADR-0057).
-    # staging joins them until it runs a release whose chart mounts its packs
-    # from local PersistentVolumes, the first tagged after #530: CI checks
-    # staging with the latest release's chart, as Flux runs it. staging
-    # enforces restricted from then on (clusters/onprem/apps/namespaces.yaml),
-    # and leaves this list.
     - name: allowed
-      expression: '["kube-system", "monitoring-node", "staging"]'
+      expression: '["kube-system", "monitoring-node"]'
   validations:
     - expression: |-
         object.metadata.namespace in variables.allowed ||

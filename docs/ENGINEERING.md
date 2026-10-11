@@ -326,13 +326,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   also requires each policy to refuse its negative fixtures in
   `fixtures/<policy>/`. Adding a policy is its file, its entry in the
   Kustomization and its fixtures, with no change to CI.
-- **Pod Security:** `develop` enforces the `restricted` Pod Security Standard,
-  which the chart's pods meet: they mount the node's folders from
-  PersistentVolumes, never as `hostPath` volumes, which a `host-path-volumes`
-  policy reports outside the `privileged` namespaces (ADR-0057). `staging` is
-  audited and warned against `restricted`, and enforces it once it runs the
-  first release tagged after #530, whose chart is the first without `hostPath`
-  volumes; until then the policy admits it too.
+- **Pod Security:** `develop` and `staging` enforce the `restricted` Pod
+  Security Standard, which the chart's pods meet: they mount the node's folders
+  from PersistentVolumes, never as `hostPath` volumes, which a
+  `host-path-volumes` policy reports outside the `privileged` namespaces
+  (ADR-0057).
 - **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
   reports any Secret but Flux's trusted public keys, Helm's release records and
   those the charts make themselves, each listed by name (ADR-0057).

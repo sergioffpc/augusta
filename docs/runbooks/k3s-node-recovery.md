@@ -224,39 +224,6 @@ under the old folder are removed as above.
 A rebuilt cluster has none of them: Flux makes those of the versions the
 `HelmRelease`s name, from the same folders.
 
-### Move a running cluster off hostPath volumes
-
-The first `develop` revision with this layout (#530) changes the running cluster
-on its own; nothing on the node changes. This section goes once `staging`
-enforces `restricted` (step 3).
-
-1. Before it merges, check the node carries k3s's label, and every `packVersion`
-   `git grep -n packVersion -- clusters/onprem/apps` lists is published:
-
-    ```sh
-    kubectl get nodes -l node-role.kubernetes.io/control-plane=true
-    ssh <node> "sudo ls -l /srv/augusta/asset-packs/*/"
-    ```
-
-2. Once Flux reconciles it, `develop` is labelled `restricted` and its servers
-   are replaced by pods mounting their volumes, cutting any Match in progress
-   (ADR-0026). Warnings that the old pods use `hostPath` are expected while they
-   still run. `staging` keeps its pods until a release with this layout is
-   tagged:
-
-    ```sh
-    flux reconcile kustomization apps -n flux-system --with-source
-    kubectl get ns develop staging --show-labels
-    kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
-    kubectl get pv -l app.kubernetes.io/name=augustad
-    kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep -E 'event=(pack_verified|capture_enabled)'
-    ```
-
-3. Once `staging` runs that release, label it `restricted` in
-   `clusters/onprem/apps/namespaces.yaml` and drop it from
-   `clusters/onprem/policies/host-path-volumes.yaml` in one pull request, then
-   check its servers the same way.
-
 ## The k3s configuration
 
 k3s runs hardened from its first start, to the CIS Kubernetes Benchmark's k3s
