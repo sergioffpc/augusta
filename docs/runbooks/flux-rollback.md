@@ -2,8 +2,8 @@
 
 Returns the `develop` or `staging` environment to a working server after a
 commit that Flux deployed broke it. How the environments are deployed is
-ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)), ADR-0056 (signed
-revisions) and
+ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)), ADR-0056
+([signed revisions](../adr/0056-signed-revisions-for-flux.md)) and
 [ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment--cd).
 
 ## When to use
