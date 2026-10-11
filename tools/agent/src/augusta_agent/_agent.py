@@ -14,10 +14,6 @@ import weakref
 
 from augusta_agent import _native
 
-# The most events an Agent keeps for next_event: the newest, as the Session
-# keeps the newest Shots, so a script that never asks holds no more than this.
-MAX_PENDING_EVENTS = 4096
-
 Event = (
     _native.Shot
     | _native.HitConfirmation
@@ -59,9 +55,9 @@ class Agent:
         without, only when ready() is called.
         """
         self._loop = asyncio.get_running_loop()
-        self._events: collections.deque[Event] = collections.deque(
-            maxlen=MAX_PENDING_EVENTS
-        )
+        # Every event until next_event takes it: none is dropped, so a script
+        # that drains late still sees each Match start and end.
+        self._events: collections.deque[Event] = collections.deque()
         self._event_waiters: collections.deque[asyncio.Future[Event]] = (
             collections.deque()
         )
