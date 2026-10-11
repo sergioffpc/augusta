@@ -5,9 +5,8 @@ or more characters (ADR-0041) - and bakes them into one signed client/server
 pack pair (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
 pip-installed usd-optimize build optimize.py already uses, rather than linking a
 second, independently-built OpenUSD - see ADR-0030 for why those can't coexist
-in one process), and calls the small native _meshoptimizer/_textconv bindings
-only for the two pieces with no Python equivalent (mesh optimization, texture
-compression).
+in one process), and calls the small native module, _native, only for the two
+pieces with no Python equivalent (mesh optimization, texture compression).
 """
 
 from __future__ import annotations
@@ -25,44 +24,43 @@ from pxr import UsdGeom
 from pxr import UsdPhysics
 from pxr import UsdShade
 
-from pack import _meshoptimizer
-from pack import _textconv
-from pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
-from pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
-from pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
-from pack.pack import ASSET_TYPE_EYE as _TYPE_EYE
-from pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
-from pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
-from pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
-from pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
-from pack.pack import ASSET_TYPE_SOUNDS as _TYPE_SOUNDS
-from pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
-from pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from pack.pack import AssetEntry
-from pack.pack import BODY_PART_HEAD
-from pack.pack import BODY_PART_LIMB
-from pack.pack import BODY_PART_TORSO
-from pack.pack import CHARACTERS_PATH
-from pack.pack import encode_audio_blob
-from pack.pack import encode_characters_blob
-from pack.pack import encode_eye_blob
-from pack.pack import encode_hitbox_blob
-from pack.pack import encode_mesh_blob
-from pack.pack import encode_scene_blob
-from pack.pack import encode_script_blob
-from pack.pack import encode_sounds_blob
-from pack.pack import encode_spawn_point_blob
-from pack.pack import encode_texture_blob
-from pack.pack import MeshData
-from pack.pack import NO_PARENT
-from pack.pack import SceneNode
-from pack.pack import SOUNDS_PATH
-from pack.pack import TEXTURE_FORMAT_BC4
-from pack.pack import TEXTURE_FORMAT_BC5
-from pack.pack import TEXTURE_FORMAT_BC7
-from pack.pack import write_pack
-from pack.sounds import CueSounds
-from pack.sounds import SOUNDS_PREFIX
+from augusta_pack import _native
+from augusta_pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
+from augusta_pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
+from augusta_pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
+from augusta_pack.pack import ASSET_TYPE_EYE as _TYPE_EYE
+from augusta_pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
+from augusta_pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
+from augusta_pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
+from augusta_pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
+from augusta_pack.pack import ASSET_TYPE_SOUNDS as _TYPE_SOUNDS
+from augusta_pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
+from augusta_pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
+from augusta_pack.pack import AssetEntry
+from augusta_pack.pack import BODY_PART_HEAD
+from augusta_pack.pack import BODY_PART_LIMB
+from augusta_pack.pack import BODY_PART_TORSO
+from augusta_pack.pack import CHARACTERS_PATH
+from augusta_pack.pack import encode_audio_blob
+from augusta_pack.pack import encode_characters_blob
+from augusta_pack.pack import encode_eye_blob
+from augusta_pack.pack import encode_hitbox_blob
+from augusta_pack.pack import encode_mesh_blob
+from augusta_pack.pack import encode_scene_blob
+from augusta_pack.pack import encode_script_blob
+from augusta_pack.pack import encode_sounds_blob
+from augusta_pack.pack import encode_spawn_point_blob
+from augusta_pack.pack import encode_texture_blob
+from augusta_pack.pack import MeshData
+from augusta_pack.pack import NO_PARENT
+from augusta_pack.pack import SceneNode
+from augusta_pack.pack import SOUNDS_PATH
+from augusta_pack.pack import TEXTURE_FORMAT_BC4
+from augusta_pack.pack import TEXTURE_FORMAT_BC5
+from augusta_pack.pack import TEXTURE_FORMAT_BC7
+from augusta_pack.pack import write_pack
+from augusta_pack.sounds import CueSounds
+from augusta_pack.sounds import SOUNDS_PREFIX
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -188,7 +186,7 @@ def _cook_texture(
     texture_path = _resolve_texture_file_path(asset_path, stage_path)
     texture_format = _read_texture_format(prim)
     try:
-        dds_bytes = _textconv.compress_texture(
+        dds_bytes = _native.compress_texture(
             texture_path, _TEXTURE_FORMAT_NAMES[texture_format]
         )
     except RuntimeError as error:
@@ -339,7 +337,7 @@ def _optimize_mesh(mesh: MeshData) -> MeshData:
     if not mesh.points or not mesh.indices:
         return mesh
     flat_points = [component for point in mesh.points for component in point]
-    optimized_points, optimized_indices = _meshoptimizer.optimize_mesh(
+    optimized_points, optimized_indices = _native.optimize_mesh(
         flat_points, mesh.indices
     )
     points = [

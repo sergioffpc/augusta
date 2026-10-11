@@ -30,7 +30,7 @@ endif()
 
 # Built straight into the package's source directory, so `import
 # augusta_agent._native` works once the package is installed editable (uv
-# sync in tools/), as the cooker's modules are (tools/pack/cpp). Untagged, as
+# sync in tools/), as the cooker's modules are (tools/pack/native). Untagged, as
 # a test executable is: it holds an Agent and the test-only server in one
 # process.
 set(AUGUSTA_AGENT_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_agent")

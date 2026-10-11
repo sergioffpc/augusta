@@ -4,12 +4,12 @@ The container a pack is (ADR-0031) and the signature that makes it trusted
 (ADR-0018).
 """
 
+from augusta_pack import keys
+from augusta_pack import pack
+from augusta_pack.reader import PackError
+from augusta_pack.reader import read_pack
+from augusta_pack.reader import verify_pack
 from conftest import read_pack_contents
-from pack import keys
-from pack import pack
-from pack.reader import PackError
-from pack.reader import read_pack
-from pack.reader import verify_pack
 import pytest
 
 ENTRIES = [

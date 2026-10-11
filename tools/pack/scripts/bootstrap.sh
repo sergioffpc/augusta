@@ -1,15 +1,15 @@
 #!/bin/bash
 # Builds the hermetic cooking environment for the Asset Pipeline (ADR-0030)
 # entirely under <assets-root>, in Git Bash on Windows or on Linux - the
-# platforms vcpkg's DirectXTex port, which the cooker's _textconv module wraps
+# platforms vcpkg's DirectXTex port, which the cooker's _native module wraps
 # (ADR-0017), builds for.
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
 # into it (pulling in usd-optimize/usd-validation-nvidia/pynacl/blake3 as its
-# own dependencies, plus the two small native _meshoptimizer/_textconv
-# extension modules built and placed into that same project - ADR-0030's
-# cooker is pure Python otherwise, including the pack format and key
+# own dependencies, plus the small native _native extension module built
+# and placed into that same project - ADR-0030's cooker is pure Python
+# otherwise, including the pack format and key
 # generation), a signing keypair, and the authoring/packs/keys content dirs
 # (the cooker reads stages from authoring/, relative to it). Everything the
 # installed `augusta-pack` command needs to run lives under this one root, so
@@ -59,15 +59,14 @@ native_path() {
   fi
 }
 
-# Whether both native modules are in the pack package. pybind11 tags the
-# actual filename with the Python ABI (e.g. _meshoptimizer.cp312-win_amd64.pyd,
-# _textconv.cpython-312-x86_64-linux-gnu.so) - Python's import machinery
+# Whether the native module is in the pack package. pybind11 tags the
+# actual filename with the Python ABI (e.g. _native.cp312-win_amd64.pyd,
+# _native.cpython-312-x86_64-linux-gnu.so) - Python's import machinery
 # resolves that back to the plain module name regardless, so check by glob.
 # Arguments:
-#   The pack package directory, the extension modules' suffix (pyd or so).
-native_modules_built() {
-  compgen -G "$1/_meshoptimizer*.$2" >/dev/null \
-    && compgen -G "$1/_textconv*.$2" >/dev/null
+#   The pack package directory, the extension module's suffix (pyd or so).
+native_module_built() {
+  compgen -G "$1/_native*.$2" >/dev/null
 }
 
 main() {
@@ -81,7 +80,7 @@ main() {
 
   # What differs between the two platforms: the assets root's form, the CMake
   # preset and the build directory it names, the venv's interpreter, the
-  # extension modules' suffix, an executable's, the compiler the preset needs
+  # extension module's suffix, an executable's, the compiler the preset needs
   # beyond the common commands below, and what cmake runs through -
   # scripts/vcenv.cmd on Windows, where Ninja finds cl.exe only in the Visual
   # Studio Build Tools environment, as the Makefile builds.
@@ -105,7 +104,7 @@ main() {
     compiler=(clang++)
   else
     echo "bootstrap: the cooker runs on Windows (Git Bash) or Linux only -" \
-      "vcpkg's DirectXTex port, which its _textconv module wraps" \
+      "vcpkg's DirectXTex port, which its _native module wraps" \
       "(ADR-0017), builds for no other platform." >&2
     exit 1
   fi
@@ -157,8 +156,8 @@ main() {
   # Installed with `uv tool install`, the mechanism uv provides for exactly
   # this: an isolated, uv-managed venv per tool (no system Python involved)
   # plus the tool's own console scripts placed in a bin directory. Both are
-  # redirected under the assets root - the venv to python/pack, the commands
-  # (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify,
+  # redirected under the assets root - the venv to python/augusta-pack, the
+  # commands (augusta-pack, augusta-keygen, augusta-inspect, augusta-verify,
   # augusta-publish) to bin. tools/pack (this repo's own Python project - see
   # its pyproject.toml) is installed editable, pulling in usd-optimize
   # (Python API only, no CLI) and usd-validation-nvidia (CLI) as its
@@ -176,27 +175,27 @@ main() {
     uv tool install --python 3.12 --force --editable \
     "$(native_path "${pack_project}")"
 
-  # --- Native modules build (ADR-0030) ---
-  # tools/pack/cpp is its own standalone CMake project (own
+  # --- Native module build (ADR-0030) ---
+  # tools/pack/native is its own standalone CMake project (own
   # vcpkg.json/CMakePresets.json, independent of the client/server build)
-  # that builds the two pybind11 modules straight into ../src/pack, so
-  # `import pack._meshoptimizer`/`_textconv` just work with no separate copy
-  # step. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
+  # that builds the pybind11 module straight into ../src/augusta_pack, so
+  # `import augusta_pack._native` just works with no separate copy step.
+  # PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
   # FindPythonInterp reads) points cmake at this venv, so the built
-  # extensions' ABI matches the interpreter that imports them.
-  local native_source_dir="${pack_project}/cpp"
-  local pack_package_dir="${pack_project}/src/pack"
-  if ! native_modules_built "${pack_package_dir}" "${module_suffix}"; then
-    echo "Building the native modules (${native_source_dir})..."
+  # extension's ABI matches the interpreter that imports it.
+  local native_source_dir="${pack_project}/native"
+  local pack_package_dir="${pack_project}/src/augusta_pack"
+  if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
+    echo "Building the native module (${native_source_dir})..."
     "${build_env[@]}" cmake --preset "${preset}" \
       -S "$(native_path "${native_source_dir}")" \
-      "-DPYTHON_EXECUTABLE=$(native_path "${python_dir}/pack/${venv_python}")"
+      "-DPYTHON_EXECUTABLE=$(native_path \
+        "${python_dir}/augusta-pack/${venv_python}")"
     "${build_env[@]}" cmake --build \
       "$(native_path "${native_source_dir}/build/${build_dir}")"
-    if ! native_modules_built "${pack_package_dir}" "${module_suffix}"; then
-      echo "bootstrap: the native modules build did not produce both" \
-        "_meshoptimizer and _textconv in ${pack_package_dir} - see the" \
-        "cmake output above." >&2
+    if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
+      echo "bootstrap: the native module build did not produce _native" \
+        "in ${pack_package_dir} - see the cmake output above." >&2
       exit 1
     fi
   fi
@@ -227,8 +226,8 @@ main() {
   echo "  - ${bin_dir}: augusta-pack, augusta-keygen, augusta-inspect," \
     "augusta-verify, augusta-publish"
   echo "  - ${python_dir}: hermetic Python venv (uv tool), pack installed" \
-    "editable from tools/pack (includes the native _meshoptimizer/_textconv" \
-    "modules - ${pack_package_dir})"
+    "editable from tools/pack (includes the native _native module -" \
+    "${pack_package_dir})"
   echo
   echo "Cook the example scenario: ${bin_dir}/augusta-pack${exe_suffix}" \
     "firebase"

@@ -107,7 +107,7 @@ touches a hardcoded placeholder.
   (validation) on the OpenUSD-authored test map, baked to runtime format
 - Asset cooker (`tools/pack`, pure Python): meshoptimizer (meshes, read directly
   from the cleaned USD stage) and DirectXTex (textures) via two small native
-  bindings (`tools/pack/cpp/`, no OpenUSD - see ADR-0030)
+  bindings (`tools/pack/native/`, no OpenUSD - see ADR-0030)
 - Signed, verified packs (client + server split)
 - CI addition: asset-pipeline check — generate a fresh throwaway Ed25519 keypair
   for the run, cook the test assets, sign with the ephemeral key, verify the
