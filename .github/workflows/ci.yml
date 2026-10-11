@@ -73,9 +73,9 @@ jobs:
           fi
 
           # What Flux applies to the cluster: its own manifests and the chart
-          # the HelmReleases there install.
+          # the HelmReleases there install; and the k3s release they run on.
           if echo "$changed" \
-              | grep -qE '^(charts/|clusters/|\.github/workflows/ci\.yml$)'; then
+              | grep -qE '^(charts/|clusters/|scripts/bootstrap-node\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "run_manifests=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_manifests=false" >> "$GITHUB_OUTPUT"
@@ -586,6 +586,15 @@ jobs:
       KUBERNETES_VERSION: 1.36.4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the cluster's k3s release
+        # The Node's k3s (K3S_VERSION, scripts/bootstrap-node.sh) runs the
+        # Kubernetes version the manifests are validated against.
+        run: |
+          k3s=$(sed -n 's/^readonly K3S_VERSION=v\([^+]*\)+k3s[0-9]*$/\1/p' scripts/bootstrap-node.sh)
+          if [ "$k3s" != "$KUBERNETES_VERSION" ]; then
+            echo "::error file=scripts/bootstrap-node.sh::K3S_VERSION runs Kubernetes ${k3s:-(not found)}, not KUBERNETES_VERSION's $KUBERNETES_VERSION"
+            exit 1
+          fi
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
