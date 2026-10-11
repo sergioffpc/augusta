@@ -15,14 +15,15 @@ Security Standard** wherever a workload can meet it.
 **Admission: Pod Security Admission, then Kyverno, the same policies in CI.**
 PSA enforces each namespace's level from inside the API server: `restricted` for
 `develop`, `staging`, `flux-system`, `kyverno` and `monitoring`; `privileged`
-only for `kube-system` and a `monitoring-node` namespace holding node-exporter
-alone. Kyverno adds what PSA cannot: `augustad`, Flux and Kyverno images must
-carry a valid cosign signature (`augustad`'s, keyless, from this repository's CI
-workflow), every other image must be pinned by digest, the `privileged`
-namespaces admit only their known pods, and node ports stay in their
-Environment's range. Its webhooks fail closed, except for `kube-system` and
-`kyverno`, so Kyverno can always start; PSA still holds when it is down. CI runs
-the same policies over the rendered manifests (`kyverno apply`), so a pull
+only for `kube-system` and a `monitoring-node` namespace holding only what reads
+the Node itself: node-exporter, the collector of its security logs and
+`kube-bench`. Kyverno adds what PSA cannot: `augustad`, Flux and Kyverno images
+must carry a valid cosign signature (`augustad`'s, keyless, from this
+repository's CI workflow), every other image must be pinned by digest, the
+`privileged` namespaces admit only their known pods, and node ports stay in
+their Environment's range. Its webhooks fail closed, except for `kube-system`
+and `kyverno`, so Kyverno can always start; PSA still holds when it is down. CI
+runs the same policies over the rendered manifests (`kyverno apply`), so a pull
 request that breaks them fails before it merges.
 
 **Packs and captures are local PersistentVolumes, not `hostPath`.** `baseline`,
@@ -59,6 +60,16 @@ Helm repositories or Sigstore (Flux's source-controller, Kyverno's image
 verification) reaches HTTPS on the internet, never the LAN or the cluster; the
 API server, a process of the Node, is reached by its port.
 
+**Security events are searchable, and the important ones alert.** Loki keeps,
+beside every pod's log (ADR-0053), the API server's audit log, the Node's logins
+and `sudo` (its journal's auth facilities) and auditd's log, Kyverno's policy
+violations and Flux's failed signature checks (as the Kubernetes events both
+write), and a daily `kube-bench` run's report. The audit log reaches Loki
+without request or response bodies, which hold Secrets' contents and stay in the
+Node's root-only copy. An SSH login to the Node, a request by k3s's
+cluster-admin identity, a policy violation and a source failing verification
+each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
+
 ## Considered Options
 
 - **PSA alone**: rejected. It cannot verify an image's signature or confine a
@@ -85,7 +96,11 @@ API server, a process of the Node, is reached by its port.
   ready.
 - An upstream chart upgrade can fail admission until its images' digests are
   updated with it.
-- The node-exporter moves out of `monitoring` into `monitoring-node`.
+- The node-exporter moves out of `monitoring` into `monitoring-node`, where the
+  security logs' collector and `kube-bench` join it, both reading the Node's
+  root-only files as root.
+- Loki, which anything in the cluster can read, holds who did what to the
+  cluster and the Node, though no Secret's contents.
 - Kyverno admits any Sigstore bundle the identity made for the image's digest,
   so CI's own provenance and SBOM attestations satisfy the policy as its cosign
   signature does: admission proves an image came from this repository's CI

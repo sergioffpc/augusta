@@ -1,0 +1,27 @@
+# kube-bench on a schedule (ADR-0057): the Node measured against the CIS k3s
+# profile once a day, its report in Loki beside the security logs
+# (ADR-0053).
+#
+# cfg/ is kube-bench's own configuration and its k3s-cis-1.11 profile, as the
+# runbook's run takes them (docs/runbooks/k3s-node-recovery.md, Verify the
+# hardening): copied unchanged from aquasecurity/kube-bench at
+# 8102dfb87b02d708356b8560a04a6d7f9b38965b (Apache-2.0), since kube-bench's
+# image, v0.16.0, has profiles only up to CIS 1.9. When a kube-bench release
+# carries k3s-cis-1.11, the CronJob takes its image's cfg/ and this goes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring-node
+resources:
+  - cronjob.yaml
+configMapGenerator:
+  - name: kube-bench-config
+    files:
+      - cfg/config.yaml
+  - name: kube-bench-k3s-cis-1.11
+    files:
+      - cfg/k3s-cis-1.11/config.yaml
+      - cfg/k3s-cis-1.11/controlplane.yaml
+      - cfg/k3s-cis-1.11/etcd.yaml
+      - cfg/k3s-cis-1.11/master.yaml
+      - cfg/k3s-cis-1.11/node.yaml
+      - cfg/k3s-cis-1.11/policies.yaml

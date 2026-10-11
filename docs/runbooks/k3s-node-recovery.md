@@ -26,6 +26,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to the node's firewall, SSH, update or audit policy has merged, the
   maintainer's addresses change, or a game port range is to face the internet:
   [The node's OS](#the-nodes-os).
+- A security alert fires, a security event is to be looked up, or the latest
+  `kube-bench` report is wanted:
+  [Security logs and alerts](#security-logs-and-alerts).
 
 ## What the cluster holds
 
@@ -504,6 +507,122 @@ sudo k3s kubectl -n flux-system delete networkpolicy --all
 
 Flux fetches the fix and applies its NetworkPolicies again with it.
 
+## Security logs and alerts
+
+Every security event on the node and the cluster is in Loki, and the important
+ones alert (ADR-0057, ADR-0053). Grafana's **Security** dashboard shows each
+source, with a search box over all of them:
+
+| Source                                       | In Loki                                           | Collected by                                                                             |
+| -------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| SSH logins, `sudo`, `su`                     | `{job="node/auth"}`                               | `alloy-node`, from the journal's auth facilities (Debian 13 keeps no `auth.log`).        |
+| auditd                                       | `{job="node/auditd"}`                             | `alloy-node`, from `/var/log/audit/audit.log`.                                           |
+| The API server's audit log                   | `{job="node/kube-audit"}`                         | `alloy-node`, from `/var/lib/rancher/k3s/server/logs/audit.log`, without request bodies. |
+| Kyverno's policy violations, Flux's warnings | `{job="kubernetes/events"}`                       | `alloy`, every Kubernetes event.                                                         |
+| `kube-bench`                                 | `{namespace="monitoring-node", app="kube-bench"}` | `alloy`, the daily CronJob's pod log.                                                    |
+
+`alloy-node` runs in `monitoring-node`, one pod on the node, and keeps where it
+has read up to in `/var/lib/alloy-node` on the node. The alerts are Loki rules
+([`security-alerts.yaml`](../../clusters/onprem/infrastructure/security-alerts.yaml)),
+in Alertmanager beside Prometheus's, each firing for five minutes after its
+event:
+
+| Alert                          | Fires on                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `NodeSSHLogin`                 | A login sshd accepts.                                                          |
+| `ClusterAdminUsed`             | A request by `system:admin`, k3s's own kubeconfig: any **cluster-admin** step. |
+| `KyvernoPolicyViolation`       | A failed policy result, at admission or in the background scan.                |
+| `FluxSourceVerificationFailed` | A `GitRepository` revision failing its signature check (ADR-0056).             |
+
+A **cluster-admin** step raises `ClusterAdminUsed` by design: the alert is the
+record that it happened.
+
+### kube-bench on a schedule
+
+The CronJob `monitoring-node/kube-bench` runs
+[Verify the hardening](#verify-the-hardening)'s `kube-bench` once a day, at
+12:00 UTC, with the same profile but for its `policies` section (manual, and its
+`kubectl` would be cluster-admin's). The last run's pod stays, so its report is
+also one command away:
+
+```sh
+kubectl -n monitoring-node logs -l app.kubernetes.io/name=kube-bench --tail=-1
+```
+
+To run it now, a **cluster-admin** step on the node:
+
+```sh
+sudo k3s kubectl -n monitoring-node create job kube-bench-now --from=cronjob/kube-bench
+sudo k3s kubectl -n monitoring-node wait --for=condition=Complete job/kube-bench-now --timeout=5m
+sudo k3s kubectl -n monitoring-node logs job/kube-bench-now | grep -E '^\[(FAIL|WARN)\]'
+sudo k3s kubectl -n monitoring-node delete job kube-bench-now
+```
+
+Every `FAIL` and `WARN` is in
+[`cis-exceptions.md`](../../clusters/onprem/node/cis-exceptions.md), as for the
+manual run.
+
+### Check the alerts
+
+After a rebuild, or a change to the alerts or the collectors. Alertmanager
+answers only inside the cluster, and the day-to-day kubeconfig cannot
+port-forward, so forward it from the node, a **cluster-admin** step, and leave
+it open:
+
+```sh
+ssh -L 9093:127.0.0.1:9093 <node> \
+  "sudo k3s kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093"
+```
+
+Then, at <http://127.0.0.1:9093>, within a couple of minutes of each step:
+
+1. `NodeSSHLogin` and `ClusterAdminUsed` fire: the SSH login and the
+   port-forward above.
+2. A policy violation, reported as the cluster's policies are still in audit
+   mode: a pod `monitoring-node` does not know, as **cluster-admin** on the
+   node, removed at once.
+
+    ```sh
+    sudo k3s kubectl -n monitoring-node run policy-probe \
+      --image=docker.io/library/busybox:1.37.0 --restart=Never -- true
+    sudo k3s kubectl -n monitoring-node delete pod policy-probe
+    ```
+
+    `KyvernoPolicyViolation` fires for `Pod monitoring-node/policy-probe`.
+
+3. A source failing verification: a throwaway `GitRepository` following
+   `develop` but trusting the release's signer alone, which a merge GitHub
+   signed (`web-flow`) fails. As **cluster-admin** on the node; if `develop`'s
+   head is a commit of yours, run it after the next merge.
+
+    ```sh
+    sudo k3s kubectl apply -f - <<'YAML'
+    apiVersion: source.toolkit.fluxcd.io/v1
+    kind: GitRepository
+    metadata:
+      name: verify-probe
+      namespace: flux-system
+    spec:
+      interval: 1m
+      url: https://github.com/sergioffpc/augusta
+      ref:
+        branch: develop
+      verify:
+        mode: HEAD
+        secretRef:
+          name: trusted-signers-release
+    YAML
+    ```
+
+    Once `FluxSourceVerificationFailed` fires for `verify-probe`, remove it:
+
+    ```sh
+    sudo k3s kubectl -n flux-system delete gitrepository verify-probe
+    ```
+
+4. Each source has lines on Grafana's **Security** dashboard, `kube-bench`'s
+   after its first run.
+
 ## Volumes
 
 No server mounts a folder of the node as a `hostPath` volume, which the
@@ -931,9 +1050,10 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 - Each server's Service is on the node port its `HelmRelease` pins, in its
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).
-- node-exporter, alone in `monitoring-node`, is `Running`. `flux-system`,
-  `kyverno` and `monitoring` enforce the `restricted` Pod Security level;
-  `kube-system` and `monitoring-node`, `privileged` (ADR-0057).
+- node-exporter and `alloy-node` are `Running` in `monitoring-node`, beside
+  `kube-bench`'s last pod, if it has run. `flux-system`, `kyverno` and
+  `monitoring` enforce the `restricted` Pod Security level; `kube-system` and
+  `monitoring-node`, `privileged` (ADR-0057).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
   dashboard, offers no way to edit or save one, shows no login form, and refuses
@@ -946,7 +1066,8 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
     ```
 
 - After a rebuild, the node also passes
-  [Verify the hardening](#verify-the-hardening).
+  [Verify the hardening](#verify-the-hardening) and
+  [Check the alerts](#check-the-alerts).
 - Each namespace's NetworkPolicies hold:
   [Verify the isolation](#verify-the-isolation).
 

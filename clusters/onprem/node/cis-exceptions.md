@@ -16,8 +16,11 @@ or add the control here with its reason in the same change.
   its sections 1, 2 and 4 are the 2.0 guide's controls under the same numbers;
   it adds section 3 (authentication and audit policy) and a 5.2.9 (added
   capabilities), which moves the 2.0 guide's 5.2.9 to 5.2.12 one number on. The
-  numbers below are `kube-bench`'s. When `kube-bench` gains a newer k3s profile,
-  run that one and update this record.
+  numbers below are `kube-bench`'s. A CronJob runs the same profile once a day,
+  but for its `policies` section, and ships the report to Loki
+  ([kube-bench on a schedule](../../../docs/runbooks/k3s-node-recovery.md#kube-bench-on-a-schedule)).
+  When `kube-bench` gains a newer k3s profile, run that one, in both places
+  ([`kube-bench/`](../infrastructure/kube-bench)), and update this record.
 - **The results.** `kube-bench` reports a control it can check as `PASS` or
   `FAIL`, and a manual one, or an automated one that is not scored, as `WARN`
   when it is not met. A `WARN` is not a failure of the run, but each one is

@@ -17,10 +17,12 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---
-# node-exporter alone: it reads the Node's /proc, /sys and filesystems from
-# the host's network and PID namespaces, which no Pod Security level short of
-# privileged allows. clusters/onprem/policies/privileged-namespace-workloads.yaml
-# admits nothing else here.
+# What reads the Node itself, which no Pod Security level short of privileged
+# allows: node-exporter, its /proc, /sys and filesystems from the host's
+# network and PID namespaces; alloy-node (below), its security logs; and
+# kube-bench (kube-bench/), its k3s against the CIS profile.
+# clusters/onprem/policies/privileged-namespace-workloads.yaml admits nothing
+# else here.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -229,7 +231,9 @@ spec:
         name: grafana
   values:
     deploymentMode: SingleBinary
-    # Pinned by digest, as kube-prometheus-stack's images are.
+    # Pinned by digest, as kube-prometheus-stack's images are. CI parses the
+    # cluster's Loki rules with this release's lokitool (ci.yml), bumped with
+    # it.
     loki:
       image:
         tag: 3.6.11@sha256:44148ad243c07957113baea950ee5ba9b0c8eff8d7e38ff3cc1c0af705790945
@@ -261,10 +265,23 @@ spec:
       compactor:
         retention_enabled: true
         delete_request_store: filesystem
+      # Evaluates the alerting rules the sidecar below loads
+      # (security-alerts.yaml) and sends what fires to the stack's
+      # Alertmanager. The rules are read from the sidecar's folder, under the
+      # one tenant's name, fake; the ruler's own copy of them goes elsewhere.
+      rulerConfig:
+        storage:
+          type: local
+          local:
+            directory: /rules
+        rule_path: /tmp/loki-rules
+        alertmanager_url: http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093
     # Loads the alerting rules ConfigMaps labelled loki_rule carry.
     sidecar:
       image:
         tag: 2.5.0@sha256:a6b3f707f883108376514489a94d6629109a327b2978e1d826cd104c4ca436df
+      rules:
+        folder: /rules/fake
     singleBinary:
       replicas: 1
       # On the node's disk, so the logs survive the pod's restart.
@@ -291,7 +308,9 @@ spec:
       replicas: 0
 ---
 # Tails every container's log through the Kubernetes API and pushes it to
-# Loki, labelled with its namespace, pod, container and app.
+# Loki, labelled with its namespace, pod, container and app; and every
+# Kubernetes event, job="kubernetes/events", among them Kyverno's policy
+# violations and Flux's failed signature checks (security-alerts.yaml).
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -371,6 +390,185 @@ spec:
 
           loki.source.kubernetes "pods" {
             targets    = discovery.relabel.pods.output
+            forward_to = [loki.write.default.receiver]
+          }
+
+          // Each event's object, reason, type and message as a logfmt line,
+          // labelled with its namespace.
+          loki.source.kubernetes_events "events" {
+            job_name   = "kubernetes/events"
+            log_format = "logfmt"
+            forward_to = [loki.write.default.receiver]
+          }
+
+          loki.write "default" {
+            endpoint {
+              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }
+---
+# The Node's own security logs, which no pod's log holds (ADR-0057): the
+# auth facilities of its journal (sshd, sudo, su; Debian 13 keeps no
+# auth.log), auditd's log, and the API server's audit log, which k3s writes
+# on the Node. One pod on each node, in monitoring-node, as it reads them
+# from the Node's filesystem; it reaches nothing in the cluster but Loki.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy-node
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: alloy-node
+  targetNamespace: monitoring-node
+  storageNamespace: monitoring-node
+  dependsOn:
+    - name: loki
+  chart:
+    spec:
+      chart: alloy
+      version: 1.13.0
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  values:
+    # As the release above's.
+    image:
+      tag: v1.20.0
+      digest: sha256:f111cce835516c5f99166342be7038496b52ced16667be5a11e19258a3e4cd30
+    # The release above installs Alloy's CRDs; this one reads no Kubernetes
+    # object, so it has no RBAC, no token and no Service.
+    crds:
+      create: false
+    rbac:
+      create: false
+    serviceAccount:
+      automountServiceAccountToken: false
+    service:
+      enabled: false
+    controller:
+      type: daemonset
+      volumes:
+        extra:
+          - name: journal
+            hostPath:
+              path: /var/log/journal
+              type: Directory
+          - name: auditd
+            hostPath:
+              path: /var/log/audit
+              type: Directory
+          - name: kube-audit
+            hostPath:
+              path: /var/lib/rancher/k3s/server/logs
+              type: Directory
+          # Where each source has read up to, so a restarted pod neither
+          # ships a log twice nor skips what was written while it was down.
+          - name: positions
+            hostPath:
+              path: /var/lib/alloy-node
+              type: DirectoryOrCreate
+          - name: tmp
+            emptyDir: {}
+    global:
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
+    alloy:
+      enableReporting: false
+      storagePath: /var/lib/alloy-node
+      # Root, as each log and the directories that hold them are root's
+      # alone, but with no capability: root reads what it owns without one.
+      # It writes only its positions.
+      securityContext:
+        runAsUser: 0
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+      mounts:
+        extra:
+          - name: journal
+            mountPath: /var/log/journal
+            readOnly: true
+          - name: auditd
+            mountPath: /var/log/audit
+            readOnly: true
+          - name: kube-audit
+            mountPath: /var/lib/rancher/k3s/server/logs
+            readOnly: true
+          - name: positions
+            mountPath: /var/lib/alloy-node
+          - name: tmp
+            mountPath: /tmp
+      configMap:
+        content: |
+          // The auth and authpriv facilities: every login sshd accepts or
+          // refuses, and every sudo and su. job="node/auth", and the program
+          // that logged it as identifier.
+          loki.source.journal "auth" {
+            path          = "/var/log/journal"
+            matches       = "SYSLOG_FACILITY=4 SYSLOG_FACILITY=10"
+            labels        = {job = "node/auth"}
+            relabel_rules = loki.relabel.journal.rules
+            forward_to    = [loki.write.default.receiver]
+          }
+
+          loki.relabel "journal" {
+            forward_to = []
+
+            rule {
+              source_labels = ["__journal_syslog_identifier"]
+              target_label  = "identifier"
+            }
+          }
+
+          // auditd's log (clusters/onprem/node/audit.rules), each record at
+          // the time auditd stamped it. job="node/auditd".
+          loki.source.file "auditd" {
+            targets    = [{"__path__" = "/var/log/audit/audit.log", "job" = "node/auditd"}]
+            forward_to = [loki.process.auditd.receiver]
+          }
+
+          loki.process "auditd" {
+            stage.regex {
+              expression = `msg=audit\((?P<ts>\d+\.\d+):`
+            }
+            stage.timestamp {
+              source = "ts"
+              format = "Unix"
+            }
+            forward_to = [loki.write.default.receiver]
+          }
+
+          // The API server's audit log (clusters/onprem/node/audit-policy.yaml),
+          // each event at the time the API server finished it.
+          // job="node/kube-audit".
+          loki.source.file "kube_audit" {
+            targets    = [{"__path__" = "/var/lib/rancher/k3s/server/logs/audit.log", "job" = "node/kube-audit"}]
+            forward_to = [loki.process.kube_audit.receiver]
+          }
+
+          loki.process "kube_audit" {
+            // Without the request's and the response's bodies: at
+            // RequestResponse they are a Secret's contents, which stay in the
+            // Node's root-only log and never reach Loki, which anything in
+            // the cluster can read. An event's fields come in a fixed order,
+            // the bodies last but its timestamps and annotations, so this
+            // cuts from the first body to the last requestReceivedTimestamp,
+            // which no body can outlast.
+            stage.replace {
+              expression = `(,"(?:requestObject|responseObject)":.*),"requestReceivedTimestamp":`
+              replace    = ""
+            }
+            stage.json {
+              expressions = {ts = "stageTimestamp"}
+            }
+            stage.timestamp {
+              source = "ts"
+              format = "RFC3339Nano"
+            }
             forward_to = [loki.write.default.receiver]
           }
 
