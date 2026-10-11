@@ -44,12 +44,20 @@ at all, anonymous viewers only, its dashboards, data sources and alerts all from
 Git; Loki and Prometheus answer only inside the cluster. The one Secret in Git
 is Flux's trusted signing keys, which are public (ADR-0056).
 
-**`augustad` cannot reach out, nor in past its container.** Every namespace
-denies ingress and egress by default, each flow allowed by name; `augustad`
-takes UDP on its game port and Prometheus's scrape, and sends nothing out. It
-runs in a user namespace (`hostUsers: false`), so its UID maps to no one on the
-Node, under a seccomp profile of the syscalls it makes rather than
+**`augustad` cannot reach out, nor in past its container.** Every namespace but
+k3s's own denies ingress and egress by default, each flow allowed by name;
+`augustad` takes UDP on its game port and Prometheus's scrape, and sends nothing
+out. It runs in a user namespace (`hostUsers: false`), so its UID maps to no one
+on the Node, under a seccomp profile of the syscalls it makes rather than
 `RuntimeDefault`.
+
+Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
+let its controllers reach anywhere. A Kyverno policy refuses a pod in a
+namespace with no default deny, or with a rule that lets everything in or out.
+NetworkPolicies name addresses, not hosts: what must reach GitHub, GHCR, the
+Helm repositories or Sigstore (Flux's source-controller, Kyverno's image
+verification) reaches HTTPS on the internet, never the LAN or the cluster; the
+API server, a process of the Node, is reached by its port.
 
 ## Considered Options
 

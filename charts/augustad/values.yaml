@@ -30,6 +30,13 @@ server:
 metrics:
   port: 9464
   scrapeInterval: 15s
+  # The Prometheus that scrapes it, the only pod the metrics port takes
+  # connections from (templates/networkpolicy.yaml): the cluster's monitoring
+  # stack's (clusters/onprem/infrastructure/monitoring.yaml).
+  prometheus:
+    namespace: monitoring
+    podLabels:
+      app.kubernetes.io/name: prometheus
   # augustad serves /livez only once its pack is verified and its content
   # loaded, and fails it 5 s after the Simulation thread last finished a tick
   # (ADR-0049). Kubernetes restarts the container at the failureThreshold-th

@@ -588,6 +588,13 @@ jobs:
     runs-on: ubuntu-26.04
     env:
       KUBERNETES_VERSION: 1.36.4
+      # The Kyverno CLI's stand-in for the cluster's NetworkPolicies, which a
+      # policy looks up (clusters/onprem/policies): those of the manifests
+      # yq reads.
+      NETWORK_POLICIES_CONTEXT: |-
+        [select(.kind == "NetworkPolicy")]
+        | {"apiVersion": "cli.kyverno.io/v1alpha1", "kind": "Context",
+           "metadata": {"name": "network-policies"}, "spec": {"resources": .}}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check the cluster's k3s release
@@ -760,24 +767,29 @@ jobs:
         # manifest the steps above rendered: what the cluster would report,
         # or once its policies are enforced refuse, fails here before it
         # merges. A violation of a policy the cluster only audits still fails,
-        # since --audit-warn is left off. Image signature policies are left to
-        # their fixtures below: the chart runs the image of the commit under
-        # test, which CI publishes and signs only once it lands on develop or
-        # main, so no pull request's render could pass them.
+        # since --audit-warn is left off. A policy that looks objects up in
+        # the cluster (default-deny-network, its NetworkPolicies) finds the
+        # rendered ones, as Flux would apply them. Image signature policies
+        # are left to their fixtures below: the chart runs the image of the
+        # commit under test, which CI publishes and signs only once it lands
+        # on develop or main, so no pull request's render could pass them.
         shell: bash
         run: |
           kubectl kustomize clusters/onprem/policies > "$RUNNER_TEMP/policies.yaml"
           yq 'select(.kind != "ImageValidatingPolicy")' "$RUNNER_TEMP/policies.yaml" \
             > "$RUNNER_TEMP/rendered-policies.yaml"
-          kyverno apply "$RUNNER_TEMP/rendered-policies.yaml" --resource "$RUNNER_TEMP/rendered" --remove-color
+          yq ea "$NETWORK_POLICIES_CONTEXT" "$RUNNER_TEMP"/rendered/*.yaml > "$RUNNER_TEMP/context.yaml"
+          kyverno apply "$RUNNER_TEMP/rendered-policies.yaml" --resource "$RUNNER_TEMP/rendered" \
+            --context-file "$RUNNER_TEMP/context.yaml" --remove-color
       - name: Refuse each policy's negative fixtures
         # Every policy refuses each manifest in its fixtures/<name>/: a policy
         # that admits one checks nothing, and a policy with none is unchecked.
         # Read from the report rather than the exit status, which an error
-        # loading the policy or the fixture would fail just the same. An image
-        # signature policy fetches its fixtures' images and signatures from
-        # their registries; one it cannot fetch is an error, not a refusal, so
-        # its fixtures are real images.
+        # loading the policy or the fixture would fail just the same. A
+        # fixture's own NetworkPolicies are the cluster's it is judged in. An
+        # image signature policy fetches its fixtures' images and signatures
+        # from their registries; one it cannot fetch is an error, not a
+        # refusal, so its fixtures are real images.
         shell: bash
         run: |
           policies="$RUNNER_TEMP/policies.yaml"
@@ -790,7 +802,9 @@ jobs:
             policy="$RUNNER_TEMP/policy-$name.yaml"
             yq "select(.metadata.name == \"$name\")" "$policies" > "$policy"
             for fixture in "$fixtures"/*.yaml; do
-              report=$(kyverno apply "$policy" --resource "$fixture" --policy-report || true)
+              yq ea "$NETWORK_POLICIES_CONTEXT" "$fixture" > "$RUNNER_TEMP/context.yaml"
+              report=$(kyverno apply "$policy" --resource "$fixture" \
+                --context-file "$RUNNER_TEMP/context.yaml" --policy-report || true)
               failed=$(yq eval-all '[.results[] | select(.result == "fail")] | length' <<< "$report")
               if [ "$failed" -eq 0 ]; then
                 echo "$report"

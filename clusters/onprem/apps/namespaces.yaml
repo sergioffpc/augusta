@@ -12,11 +12,31 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---
+# Nothing reaches in or out of the namespace but what a NetworkPolicy allows by
+# name (ADR-0057): the chart's own, for its servers (charts/augustad
+# networkpolicy.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: develop
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
 # staging runs the latest release's chart (ADR-0056), which mounts its packs as
 # hostPath volumes until the first release after #530 is tagged: until then it
 # is only audited and warned against restricted. Once that release runs in
 # staging, enforce restricted here and drop staging from the host-path-volumes
 # policy (clusters/onprem/policies).
+#
+# Nor has it a default-deny NetworkPolicy yet: the release it runs ships no
+# NetworkPolicy to let its servers' traffic in, so one here would cut LAN
+# clients and Prometheus off from them. Once the first release after #536 runs
+# in staging, give it develop's default-deny and add staging to the
+# default-deny-network policy.
 apiVersion: v1
 kind: Namespace
 metadata:

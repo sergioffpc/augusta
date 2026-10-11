@@ -1,0 +1,430 @@
+# Kyverno's and the monitoring stack's namespaces deny everything by default,
+# each flow allowed by name (ADR-0057). A flow between two pods is allowed at
+# both ends: as egress where it starts, as ingress where it ends.
+#
+# Two kinds of peer have no pod to select. The API server is a process of the
+# Node, reached at the Node's port 6443 once kube-proxy has forwarded the
+# kubernetes Service there, and the Node's address is not one these files pin:
+# it is allowed by port. Its calls into a webhook come from the Node too,
+# like the kubelet's probes, which no NetworkPolicy stops.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: kyverno
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Every pod here, the controllers and the Jobs an upgrade or uninstall runs,
+# works through the API server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-server
+  namespace: kyverno
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 6443
+          protocol: TCP
+---
+# The admission and cleanup controllers' webhooks, which the API server calls.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: webhooks
+  namespace: kyverno
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - admission-controller
+          - cleanup-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 9443
+          protocol: TCP
+---
+# The controllers that verify images' signatures, at admission and in the
+# background scan, reach the registries holding them (GHCR and Kyverno's) and
+# Sigstore's transparency log and trust root. NetworkPolicies name addresses,
+# not hosts, and these hosts' addresses are their CDNs', which change: they
+# reach HTTPS on the internet, but not the LAN or the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: image-verification
+  namespace: kyverno
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - admission-controller
+          - reports-controller
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# node-exporter runs in the Node's network namespace, which NetworkPolicies do
+# not reach: this holds for any other pod the namespace ever runs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: monitoring-node
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Who works through the API server: Prometheus discovers its targets and
+# scrapes the API server; Grafana's and Loki's sidecars read the dashboards,
+# data sources and rules from ConfigMaps; Alloy tails every pod's log;
+# kube-state-metrics reads every object; the operator runs Prometheus and
+# Alertmanager, and its Jobs install its webhook's certificate.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-server
+  namespace: monitoring
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - prometheus
+          - grafana
+          - loki
+          - alloy
+          - kube-state-metrics
+          - kube-prometheus-stack-prometheus-operator
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 6443
+          protocol: TCP
+---
+# Who resolves names: Grafana its data sources', Alloy Loki's, Loki and
+# Alertmanager their own peers' (themselves alone, on one node).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dns
+  namespace: monitoring
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - grafana
+          - loki
+          - alloy
+          - alertmanager
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Prometheus scrapes every target its ServiceMonitors name and sends
+# Alertmanager its alerts; Grafana queries it. Its own endpoints it scrapes
+# over its own pod's address, which no NetworkPolicy stands between.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 9090
+          protocol: TCP
+  egress:
+    # On the Node's address: the kubelet, and node-exporter, which runs in the
+    # Node's network namespace.
+    - ports:
+        - port: 10250
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 9153
+          protocol: TCP
+    # Every augustad server's metrics port (charts/augustad values.yaml),
+    # which its chart lets this Prometheus in to.
+    - to:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - develop
+                  - staging
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: augustad
+      ports:
+        - port: 9464
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 3000
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kube-state-metrics
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Its API and its config reloader's.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - port: 9093
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
+      ports:
+        - port: 10250
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9093
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 9093
+          protocol: TCP
+---
+# Grafana answers anyone: the LAN, through its node port, as the Node's
+# firewall lets it, and Prometheus's scrape. It queries its data sources:
+# Prometheus, Alertmanager and Loki.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 3000
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - port: 9093
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+      ports:
+        - port: 3100
+          protocol: TCP
+---
+# Loki takes Alloy's pushes and Grafana's queries, and no one else's: it has
+# no authentication (ADR-0053).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 3100
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alloy
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+      ports:
+        - port: 3100
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# The operator's one port serves its admission webhook, which the API server
+# calls, and its metrics, which Prometheus scrapes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
+      app.kubernetes.io/component: prometheus-operator
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 10250
+          protocol: TCP

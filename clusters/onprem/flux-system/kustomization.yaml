@@ -16,5 +16,6 @@ patches:
         value: restricted
 resources:
   - gotk-components.yaml
+  - network-policies.yaml
   - trusted-signers.yaml
   - gotk-sync.yaml

@@ -1,0 +1,95 @@
+# Flux's namespace denies everything by default, each flow allowed by name
+# (ADR-0057), in place of the NetworkPolicies flux install generates, which let
+# every controller reach anywhere: gotk-components.yaml is generated with
+# --network-policy=false.
+#
+# A mistake here can cut Flux off from GitHub, and with it from the fix: delete
+# these from the Node (docs/runbooks/k3s-node-recovery.md, Flux cannot fetch).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: flux-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# The controllers work through the API server, and talk to each other: the
+# others fetch source-controller's artifacts, and send notification-controller
+# their events, both on port http.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flux-controllers
+  namespace: flux-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: flux
+      ports:
+        - port: 9090
+          protocol: TCP
+  egress:
+    # The API server, as kube-proxy forwards the kubernetes Service to it: the
+    # Node's port 6443, whatever address the Node has.
+    - ports:
+        - port: 6443
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: flux
+      ports:
+        - port: 9090
+          protocol: TCP
+    # The cluster's DNS, for the Services above and the sources' hosts.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# source-controller alone fetches what Flux applies: the repository from
+# GitHub, the charts from their Helm repositories, any OCI artifact from GHCR.
+# NetworkPolicies name addresses, not hosts, and these hosts' addresses are
+# GitHub's and their CDNs', which change: it reaches HTTPS on the internet,
+# but not the LAN or the cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: source-controller
+  namespace: flux-system
+spec:
+  podSelector:
+    matchLabels:
+      app: source-controller
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP

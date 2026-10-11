@@ -1,0 +1,47 @@
+# flux-system denies by default, but keeps the NetworkPolicy flux install
+# generates without --network-policy=false, whose empty egress rule lets every
+# controller reach anywhere.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: flux-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress
+  namespace: flux-system
+spec:
+  egress:
+    - {}
+  ingress:
+    - from:
+        - podSelector: {}
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: source-controller
+  namespace: flux-system
+spec:
+  selector:
+    matchLabels:
+      app: source-controller
+  template:
+    metadata:
+      labels:
+        app: source-controller
+    spec:
+      containers:
+        - name: manager
+          image: ghcr.io/fluxcd/source-controller:v1.9.0
