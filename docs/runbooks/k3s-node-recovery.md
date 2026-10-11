@@ -17,6 +17,9 @@ it from the repository. The cluster's design is ADR-0026
   `scripts/bootstrap-node.sh` on the node, which sets up
   [The capture filesystem](#the-capture-filesystem) and skips what is there. A
   change that turns captures on needs it before it merges.
+- A change to k3s's configuration (`clusters/onprem/node/`) or release
+  (`K3S_VERSION`) has merged, or the node's CIS hardening is to be checked:
+  [The k3s configuration](#the-k3s-configuration).
 
 ## What the cluster holds
 
@@ -59,8 +62,9 @@ restores them.
   volume, the capture filesystem, the crash-core handler (ADR-0047), k3s at the
   release it pins (`K3S_VERSION`, whose Kubernetes version is
   `KUBERNETES_VERSION` in the `manifests` job of
-  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) with k3s's
-  defaults, and Flux. It skips what the node already has.
+  [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) with
+  [its configuration](#the-k3s-configuration), and Flux. It skips what the node
+  already has.
 - For a rebuild, a copy of every environment's pack folder: either taken from
   the node in step B1, or re-made from the pack environment that cooked them
   (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was signed
@@ -165,6 +169,201 @@ flux resume helmrelease augustad-<environment> -n flux-system
 
 Record the new size in this section.
 
+## The k3s configuration
+
+k3s runs hardened from its first start, to the CIS Kubernetes Benchmark's k3s
+profile (ADR-0057). Its configuration is in
+[`clusters/onprem/node/`](../../clusters/onprem/node), and
+`scripts/bootstrap-node.sh` writes it on every run, before it installs k3s:
+
+| In the repository   | On the node                          | What it sets                                                                                                    |
+| ------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `config.yaml`       | `/etc/rancher/k3s/config.yaml`       | k3s's flags: secrets encryption, the audit log, admission plugins, the kubelet's hardening.                     |
+| `audit-policy.yaml` | `/etc/rancher/k3s/audit-policy.yaml` | What the API server logs: every request at `Metadata`, Secrets and RBAC objects at `RequestResponse`.           |
+| `admission.yaml`    | `/etc/rancher/k3s/admission.yaml`    | `EventRateLimit`'s limits. No Pod Security default: each namespace's labels set its level.                      |
+| `90-kubelet.conf`   | `/etc/sysctl.d/90-kubelet.conf`      | The kernel parameters `protect-kernel-defaults` requires; without them the kubelet, and so k3s, does not start. |
+
+- **Secrets encryption:** k3s encrypts Secrets in its datastore with a key it
+  generates on first start, in `/var/lib/rancher/k3s/server/cred/`. A rebuild
+  makes a new key along with the new datastore.
+- **Audit log:** `/var/lib/rancher/k3s/server/logs/audit.log`, rotated at 100
+  MB, with 10 old files kept for up to 30 days. At `RequestResponse`, a read or
+  write of a Secret logs its contents, so the directory is root's only (`0700`)
+  and so are its files; do not copy the log off the node.
+- **Exceptions:** every CIS control the node does not pass, and why, is in
+  [`cis-exceptions.md`](../../clusters/onprem/node/cis-exceptions.md).
+
+### Change k3s's configuration
+
+A change to `clusters/onprem/node/` merges to `develop` like any other. Then, on
+the node, run the bootstrap to write it, and restart k3s to apply it:
+
+```sh
+ssh <node> "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash"
+ssh <node> "sudo systemctl restart k3s && sudo k3s kubectl wait --for=condition=Ready node --all --timeout=5m"
+```
+
+The bootstrap says when the configuration it wrote differs from what was there.
+A restart stops the servers' Matches for the minute k3s takes to come back. A
+k3s that does not come back is [Part A](#part-a-recover)'s: its journal names
+the flag or kernel parameter it rejects. To back out, revert the change and
+repeat. Then [Verify the hardening](#verify-the-hardening).
+
+### Harden a running node
+
+Once, on a node installed before its configuration was in the repository. The
+configuration applies as a change does (above), except for secrets encryption:
+the existing Secrets are encrypted in steps, as k3s's
+[Enable Secrets Encryption on an Existing Cluster](https://docs.k3s.io/cli/secrets-encrypt#enable-secrets-encryption-on-an-existing-cluster)
+describes. Until step 1 has prepared encryption, the bootstrap refuses to run on
+that node: it would write the configuration, and k3s would take it unprepared at
+its next restart.
+
+1. Check that encryption is off, and prepare it while k3s still runs without it:
+
+    ```sh
+    ssh <node>
+    sudo k3s secrets-encrypt status
+    sudo k3s secrets-encrypt enable
+    ```
+
+    The status shows `Disabled, no configuration file found`.
+
+2. Write the configuration, and restart k3s with it:
+
+    ```sh
+    curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+    sudo systemctl restart k3s
+    sudo k3s secrets-encrypt status
+    ```
+
+    The status shows `Disabled`, rotation stage `start`, and `All hashes match`.
+
+3. Rotate the keys, which turns encryption on and re-encrypts every Secret, then
+   restart k3s again:
+
+    ```sh
+    sudo k3s secrets-encrypt rotate-keys
+    sudo k3s secrets-encrypt status
+    sudo systemctl restart k3s
+    sudo k3s secrets-encrypt status
+    ```
+
+    Restart only once the stage is `reencrypt_finished`; k3s re-encrypts about 5
+    Secrets a second. The last status shows `Enabled`.
+
+4. [Verify the hardening](#verify-the-hardening).
+
+If k3s does not start after step 2, its journal names the cause: a kernel
+parameter (`sudo sysctl --system` loads `90-kubelet.conf`) or a rejected flag.
+Nothing is encrypted yet then, so to abort, remove
+`/etc/rancher/k3s/config.yaml` and restart k3s, which runs on its defaults
+again. From step 3 on, `secrets-encryption` stays in the configuration: without
+it the API server cannot read the Secrets it encrypted. Turning it off again is
+k3s's
+[disable procedure](https://docs.k3s.io/cli/secrets-encrypt#secrets-encryption-disablere-enable).
+
+### Upgrade k3s
+
+k3s is upgraded by hand, to the release the repository pins, one minor version
+at a time; nothing on the node upgrades it unattended.
+
+1. In a pull request to `develop`, set `K3S_VERSION` in
+   `scripts/bootstrap-node.sh` to the new release, and `KUBERNETES_VERSION` in
+   the `manifests` job of `.github/workflows/ci.yml` to its Kubernetes version.
+   The job fails when they differ, and validates the manifests against the new
+   version. Read the release's notes for removed APIs and flags, and k3s's
+   [CIS hardening guide](https://docs.k3s.io/security/hardening-guide) for it,
+   and change `clusters/onprem/node/` with them if needed.
+2. Once it has merged, write any configuration it changed and install the new
+   release over the running one; the install script keeps `/etc/rancher/k3s/`
+   and the datastore:
+
+    ```sh
+    ssh <node>
+    curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+    curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION=<K3S_VERSION> sh -
+    k3s --version
+    sudo k3s kubectl wait --for=condition=Ready node --all --timeout=5m
+    ```
+
+    The bootstrap reports the installed release it leaves; the install then
+    replaces it with `<K3S_VERSION>`, the pull request's.
+
+3. [Verify the hardening](#verify-the-hardening), then the
+   [Verification](#verification) below.
+
+A release that misbehaves within its minor version is rolled back the same way,
+with the previous release. Going back a minor version on the same datastore is
+not supported: that needs Part B, at the previous release.
+
+### Verify the hardening
+
+On the node, after a rebuild, a configuration change or an upgrade:
+
+1. Run `kube-bench` with the k3s profile. Its latest release has k3s profiles
+   only up to CIS 1.9, so it runs with the `k3s-cis-1.11` profile from the
+   `kube-bench` commit that added it
+   ([`cis-exceptions.md`](../../clusters/onprem/node/cis-exceptions.md) says why
+   that profile):
+
+    ```sh
+    ssh <node>
+    mkdir -p ~/kube-bench && cd ~/kube-bench
+    release=https://github.com/aquasecurity/kube-bench/releases/download/v0.16.0
+    arch="$(dpkg --print-architecture)"
+    curl -fsSLO "${release}/kube-bench_0.16.0_linux_${arch}.tar.gz"
+    curl -fsSLO "${release}/kube-bench_0.16.0_checksums.txt"
+    sha256sum --check --ignore-missing kube-bench_0.16.0_checksums.txt
+    tar -xzf "kube-bench_0.16.0_linux_${arch}.tar.gz" kube-bench
+    rm -rf cfg
+    curl -fsSL https://codeload.github.com/aquasecurity/kube-bench/tar.gz/8102dfb87b02d708356b8560a04a6d7f9b38965b \
+      | tar -xz --strip-components=1 --wildcards 'kube-bench-*/cfg'
+    sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml ./kube-bench run \
+      --config-dir cfg --benchmark k3s-cis-1.11 | tee kube-bench.txt
+    grep -E '^\[(FAIL|WARN)\]' kube-bench.txt
+    ```
+
+    Every `FAIL` and every `WARN` is in
+    [`cis-exceptions.md`](../../clusters/onprem/node/cis-exceptions.md), as
+    accepted or as met by the configuration. Fix the configuration for any
+    other, or record it there with its reason.
+
+2. Secrets are encrypted at rest:
+
+    ```sh
+    sudo k3s secrets-encrypt status
+    ```
+
+    It shows `Encryption Status: Enabled` and `All hashes match`.
+
+3. The audit log is written, at both levels. Write a Secret and remove it, then
+   count the levels of its entries and of the whole log:
+
+    ```sh
+    log=/var/lib/rancher/k3s/server/logs/audit.log
+    sudo ls -la "$(dirname "${log}")"
+    sudo k3s kubectl -n default create secret generic audit-probe --from-literal=probe=1
+    sudo k3s kubectl -n default delete secret audit-probe
+    sudo grep '"name":"audit-probe"' "${log}" | grep -o '"level":"[A-Za-z]*"' | sort | uniq -c
+    sudo grep -o '"level":"[A-Za-z]*"' "${log}" | sort | uniq -c
+    ```
+
+    The directory is `drwx------ root root` and `audit.log` is readable by root
+    alone; the probe's entries are all `RequestResponse`; the whole log has
+    `Metadata` entries too.
+
+4. The kubelet refuses an anonymous request:
+
+    ```sh
+    curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1:10250/pods
+    ```
+
+    It prints `401`.
+
+5. From the workstation, both environments and the monitoring stack run as they
+   did: [Verification](#verification).
+
 ## Part A: Recover
 
 1. Check the k3s service and its log on the node:
@@ -212,8 +411,9 @@ Record the new size in this section.
     ```
 
 2. Remove the old install. The script ships with an install made by k3s's
-   install script; it removes `/etc/rancher/k3s` and `/var/lib/rancher/k3s`, not
-   `/srv/augusta`:
+   install script; it removes `/etc/rancher/k3s` (k3s's configuration, which
+   step 3 writes again) and `/var/lib/rancher/k3s` (the datastore, its
+   encryption key and the audit log), not `/srv/augusta`:
 
     ```sh
     ssh <node> "sudo /usr/local/bin/k3s-uninstall.sh"
@@ -224,8 +424,9 @@ Record the new size in this section.
 3. Run the node's bootstrap, giving it the packs copied in step 1. It sets up
    the server's user, the pack volume (unpacking the archive into it, owners and
    modes kept), the capture filesystem (whose image and `/etc/fstab` line k3s's
-   uninstall script leaves, and a reinstalled OS does not), k3s, and Flux from
-   `develop`'s own manifests:
+   uninstall script leaves, and a reinstalled OS does not), k3s with
+   [its configuration](#the-k3s-configuration), and Flux from `develop`'s own
+   manifests:
 
     ```sh
     scp asset-packs.tgz <node>:/tmp/
@@ -289,6 +490,8 @@ kubectl -n monitoring get pods
   `staging`'s 30800-30899 (`firebase` on 30800).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`).
+- After a rebuild, the node also passes
+  [Verify the hardening](#verify-the-hardening).
 
 ## Rollback / abort
 
