@@ -408,10 +408,11 @@ Flux's in
 [`flux-system/network-policies.yaml`](../../clusters/onprem/flux-system/network-policies.yaml),
 Kyverno's and the monitoring stack's in
 [`infrastructure/network-policies.yaml`](../../clusters/onprem/infrastructure/network-policies.yaml).
-`staging` joins once it runs a release that ships the chart's NetworkPolicy
-([`namespaces.yaml`](../../clusters/onprem/apps/namespaces.yaml)). A pod that
-cannot reach what it needs times out rather than being refused: a target `down`
-in Prometheus, a Flux source not `Ready`, a Grafana panel with no data.
+`staging` is not yet isolated
+([`namespaces.yaml`](../../clusters/onprem/apps/namespaces.yaml) says when). A
+pod that cannot reach what it needs times out rather than being refused: a
+target `down` in Prometheus, a Flux source not `Ready`, a Grafana panel with no
+data.
 
 ### Verify the isolation
 
