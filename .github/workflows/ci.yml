@@ -628,7 +628,9 @@ jobs:
         # trail develop's until the next release. The branch this run's commit
         # lands on (the pull request's base, or the pushed branch) is checked
         # out already; any other ref is fetched. staging's tag is the newest
-        # vX.Y.Z by version, as Flux's semver "*" picks it (no pre-releases).
+        # vX.Y.Z by version, as Flux's semver "*" picks it (no pre-releases);
+        # Flux would also take a tag spelt otherwise (1.2.3, v1.3), which
+        # releases never are (cut-release.md).
         # bash for pipefail - a render that fails leaves kubeconform nothing
         # to reject.
         # Its ServiceMonitor and PrometheusRule are checked against the CRDs
