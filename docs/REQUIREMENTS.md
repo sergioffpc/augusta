@@ -704,16 +704,21 @@ Source:      A malicious game client, a compromised LAN device, a revision or
 Stimulus:    An exploit of augustad, a connection to the Node, a push or image
              reaching GitHub or GHCR, or a stolen kubeconfig or SSH key
 Environment: The Node (k3s with Flux), LAN-only, both Environments running
-Artifact:    The Node's OS and k3s, admission policies, Flux sources, the
-             augustad chart and operator credentials
+Artifact:    The Node's OS, kernel and k3s, admission policies, Flux sources,
+             the augustad chart and operator credentials
 Response:    The cluster runs only signed revisions and signed or
              digest-pinned images, admits no pod past its namespace's Pod
              Security level, allows no flow it did not name, holds no Secret,
-             and a stolen credential cannot change workloads or the Node
+             and a stolen credential cannot change workloads or the Node; a
+             process that escapes augustad's container finds kernel addresses
+             hidden, no ptrace, no kexec, no unprivileged user namespace and
+             no ICMP redirect
 Measure:     kube-bench reports no CIS k3s failure outside the recorded
              exceptions; every Kyverno policy enforced, CI refusing each
              policy's negative fixture; the Node runbook's negative checks all
-             refused; a LAN port scan shows only the game ports and Grafana
+             refused; every hardening kernel parameter reads back its value on
+             every interface after a reboot; a LAN port scan shows only the
+             game ports and Grafana
 ```
 
 Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no

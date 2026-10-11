@@ -282,6 +282,9 @@ from any player's view, its Deaths and Match end as captured
 - k3s's configuration in Git, measured against the CIS k3s profile
 - The Node's OS: nftables firewall, key-only SSH, unattended security updates,
   auditd
+- The Node's kernel: hardened parameters, tuning for UDP servers (socket
+  buffers, bounded writeback, NIC rings, huge pages on request only), and no
+  swap
 - Pod Security levels per namespace; packs and captures on `local`
   PersistentVolumes; `augustad` in a user namespace under its own seccomp
   profile
@@ -344,6 +347,9 @@ criteria:** 4 servers of one scenario run 8-player Matches of Agents at once at
 - Production (`main`) deployment target — explicitly undecided for now (see
   ENGINEERING.md, Deployment & CD)
 - Agones, if fleet-scale dynamic server allocation is ever needed
+- NUMA-aware Servers (automatic NUMA balancing off, CPU manager and topology
+  manager pinning each to one socket), if an Agent load shows the Node's
+  balancing in the tick's late share or p99
 - Remote/public access to non-production environments (VPN or port-forwarding) —
   LAN-only for now
 - Client-side metrics from the real client, and an alert receiver (see ADR-0049)
