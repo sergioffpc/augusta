@@ -195,7 +195,12 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     workers.Spawn("network", [this] { return NetworkThreadMain(); });
     workers.Run("simulation", [this] { return SimulationLoop(); });
     workers.StopAndJoin();
-    return workers.Failure();
+    // A Simulation loop that never ran - a worker failed, or a stop came,
+    // before it started - left the captures running: they are finished here,
+    // still before Run returns. After one that ran, this changes nothing.
+    std::optional<failure::Failure> lost = FinishCaptureOf(served);
+    std::optional<failure::Failure> failed = workers.Failure();
+    return failed.has_value() ? failed : lost;
   }
 
   void Stop() override { workers.RequestStop(); }
