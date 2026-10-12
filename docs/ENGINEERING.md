@@ -191,8 +191,9 @@ decisions already made in ARCHITECTURE.md:
   alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
   was built with, taken from vcpkg's own per-port SPDX documents
   (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
-  nothing in a statically linked C++ binary. The image's SBOM is syft's, of its
-  Ubuntu packages. Verified with:
+  nothing in a statically linked C++ binary. The client's also lists what its
+  zip ships beside it: Falcor's own dependencies and the MSVC runtime
+  (ADR-0058). The image's SBOM is syft's, of its Ubuntu packages. Verified with:
 
     ```sh
     gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta

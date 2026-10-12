@@ -64,12 +64,15 @@ jobs:
           # the zipped augustac.exe's debug directory names (ADR-0055).
           cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
       # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
-      # their commits. What Falcor itself fetches with packman is not listed.
+      # their commits. What the zip ships beside them is named too (ADR-0058):
+      # Falcor's own dependencies, as its build fetched them, and the MSVC
+      # runtime, at the version of the staged vcruntime140.dll.
       - name: SBOM
         run: |
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/falcor --git-package third_party/nvtx \
+            --falcor third_party/falcor --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

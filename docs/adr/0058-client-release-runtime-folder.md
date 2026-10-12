@@ -48,6 +48,8 @@ The PDB stays a separate asset (ADR-0055).
   missing DLL that `augustac` imports. It does not catch anything Falcor loads
   once it runs. A hosted runner has the VC++ redistributable in `System32`, so
   the check does not show that the bundled MSVC runtime is complete either.
-- The SBOM lists the vcpkg ports and the Falcor and NVTX commits. It does not
-  list what Falcor fetches with packman, nor the MSVC runtime, though the zip
-  ships both.
+- The SBOM lists what the zip ships beside `augustac`'s own ports: Falcor's
+  vcpkg ports, packman packages and fetched SDKs, and the MSVC runtime
+  (`scripts/vcpkg-sbom.py --falcor --msvc-runtime`). Falcor's ports are years
+  older than `augustac`'s. Nightly `sbom-scan` matches their CVEs, which fail it
+  until each one is fixed or assessed.
