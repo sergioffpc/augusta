@@ -122,10 +122,10 @@ simply not deployed to k3s at all.
   image to GHCR, which Flux reads from for `main`/ `develop`.
 - Every push to `main`/`develop` publishes an image tagged
   `sha-<first 12 characters of the commit>`, and the chart runs the tag of its
-  own commit (Flux versions a Git-sourced chart
-  `<version>+<those 12 characters>`). A tag is never reused, so a pod never runs
-  a stale image, and Flux's upgrade waits for CI to finish pushing it. No
-  image-automation controller is needed.
+  own commit (the chart is versioned `<version>+<those 12 characters>`). A tag
+  is never reused, so a pod never runs a stale image, and an Environment rolls
+  out a commit only once CI has pushed its image (ADR-0056). No image-automation
+  controller is needed.
 - Without a readiness probe, the new pod is Ready as soon as its container runs,
   so Helm's and Flux's upgrade wait no longer catches a server that fails to
   start or crash-loops after starting: the upgrade succeeds, and the failure

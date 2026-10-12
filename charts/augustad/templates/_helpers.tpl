@@ -11,7 +11,7 @@ app.kubernetes.io/name: {{ include "augustad.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/* Flux's helm-controller synthesizes versions like "0.1.0+<sha>" for
-     git-sourced charts - "+" isn't valid in a label value, so sanitize it. */}}
+     git-sourced charts, as CI versions the charts it publishes - "+" isn't valid in a label value, so sanitize it. */}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end -}}
 
@@ -129,9 +129,10 @@ logging:
   level: {{ .root.Values.server.logLevel }}
 {{- end -}}
 
-{{/* The image tag to run: image.tag if set; else, for a chart Flux versioned
-     <version>+<commit>, the sha-<commit> tag CI pushed for that same commit;
-     else the chart's appVersion. */}}
+{{/* The image tag to run: image.tag if set; else, for a chart versioned
+     <version>+<commit> (by Flux from Git, or by CI publishing it), the
+     sha-<commit> tag CI pushed for that same commit; else the chart's
+     appVersion. */}}
 {{- define "augustad.imageTag" -}}
 {{- if .Values.image.tag -}}
 {{- .Values.image.tag -}}

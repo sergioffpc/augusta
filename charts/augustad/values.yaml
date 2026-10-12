@@ -1,10 +1,15 @@
+# Each environment's HelmRelease (clusters/onprem/apps) sets its own values on
+# top of these. develop's come from Git but its chart from what CI publishes
+# (ADR-0056), so renaming a value develop sets takes two steps: the chart
+# first, and develop.yaml once that chart runs there. In between, the old
+# chart runs with the new values and ignores the key it does not know.
 image:
   repository: ghcr.io/sergioffpc/augustad
-  # Left empty to run the image CI built from this chart's own commit: Flux
-  # versions a Git-sourced chart <version>+<first 12 characters of the commit>
-  # and CI tags every main/develop image sha-<the same 12 characters> (see
-  # _helpers.tpl). Both tags are immutable, so IfNotPresent never runs a stale
-  # image.
+  # Left empty to run the image CI built from this chart's own commit: the
+  # chart is versioned <version>+<first 12 characters of the commit>, by Flux
+  # for staging's chart from Git and by CI for develop's, and CI tags every
+  # main/develop image sha-<the same 12 characters> (see _helpers.tpl). Both
+  # tags are immutable, so IfNotPresent never runs a stale image.
   tag: ""
   pullPolicy: IfNotPresent
 service:

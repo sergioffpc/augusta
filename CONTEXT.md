@@ -341,8 +341,9 @@ Servers with it: what is hardened, patched and rebuilt as one. _Avoid_: Server
 (the Authoritative server, `augustad`, is a workload on the Node, not the Node),
 host, k3s server, box
 
-**Environment**: One long-lived deployment that follows one signed ref and runs
-a Server per scenario it serves: `develop` (tracks `develop`) and `staging` (the
-latest signed `v*` release tag), both on the Node and kept apart from each other
-(ADR-0026, ADR-0056). _Avoid_: Stage, namespace (the namespace is how an
-Environment is kept apart, not the Environment), preview
+**Environment**: One long-lived deployment that follows signed sources and runs
+a Server per scenario it serves: `develop` (the chart CI signed for the latest
+`develop` commit) and `staging` (the latest signed `v*` release tag), both on
+the Node and kept apart from each other (ADR-0026, ADR-0056). _Avoid_: Stage,
+namespace (the namespace is how an Environment is kept apart, not the
+Environment), preview

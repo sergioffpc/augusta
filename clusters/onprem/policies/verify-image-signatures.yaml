@@ -1,6 +1,6 @@
 # The images the cluster trusts by who signed them, not by digest (ADR-0057):
 # augustad only as this repository's CI workflow signed it, on develop or main
-# (ci.yml, .github/actions/sign-image), and Flux's and Kyverno's controllers
+# (ci.yml, .github/actions/sign-artifact), and Flux's and Kyverno's controllers
 # as their publishers' release workflows did. An augustad image pushed to GHCR
 # by anyone else fails it, as does any of these images without a signature.
 # Every other image is trusted by its digest instead (ADR-0057).
@@ -56,7 +56,7 @@ spec:
     mutateDigest: true
     verifyDigest: false
   attestors:
-    # The cosign verify in .github/actions/sign-image checks the same
+    # The cosign verify in .github/actions/sign-artifact checks the same
     # identity, so an image CI publishes is one this admits.
     - name: augusta
       cosign:

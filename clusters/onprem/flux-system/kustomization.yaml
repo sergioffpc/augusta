@@ -14,6 +14,18 @@ patches:
       - op: add
         path: /metadata/labels/pod-security.kubernetes.io~1audit
         value: restricted
+  # helm-controller keeps an OCI chart's version as CI published it,
+  # <version>+<12 characters of the commit>, rather than replacing its build
+  # metadata with the artifact's digest: the chart takes its image tag from it
+  # (charts/augustad _helpers.tpl). No chart CI publishes is ever re-pushed
+  # under its version, so the digest tells no upgrade the version does not.
+  - target:
+      kind: Deployment
+      name: helm-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --feature-gates=DisableChartDigestTracking=true
 resources:
   - gotk-components.yaml
   - network-policies.yaml

@@ -39,11 +39,12 @@ Everything Flux deploys is in Git: Flux's own manifests in
 [`clusters/onprem/flux-system/`](../../clusters/onprem/flux-system), the
 monitoring stack's `HelmRelease` in
 [`clusters/onprem/infrastructure/`](../../clusters/onprem/infrastructure), the
-two augustad `HelmRelease` objects and their GitRepository sources in
+two augustad `HelmRelease` objects and their sources in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), and the chart in
-[`charts/augustad/`](../../charts/augustad). The `flux-system` GitRepository
-reads the public repository over HTTPS with no credentials, so a rebuilt cluster
-needs no deploy key.
+[`charts/augustad/`](../../charts/augustad), which `develop` runs as CI
+published it to GHCR, as its image. The `flux-system` GitRepository reads the
+public repository over HTTPS with no credentials, so a rebuilt cluster needs no
+deploy key.
 
 The only state not in Git is the asset packs in the node's pack folder:
 `/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
@@ -85,7 +86,9 @@ restores them.
   with, see [Rotate the Pack Signing Key](pack-key-rotation.md)). The repository
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
-  the chart sets no `imagePullSecrets`, so the GHCR package must be public.
+  the chart sets no `imagePullSecrets`, so the GHCR package must be public. So
+  must `develop`'s chart, `ghcr.io/sergioffpc/charts/augustad`: its
+  `OCIRepository` sets no `secretRef`.
 - On the workstation: `kubectl`, the `flux` CLI
   ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
   day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository
@@ -798,7 +801,7 @@ event:
 | `NodeSSHLogin`                 | A login sshd accepts.                                                          |
 | `ClusterAdminUsed`             | A request by `system:admin`, k3s's own kubeconfig: any **cluster-admin** step. |
 | `KyvernoPolicyViolation`       | A failed policy result, at admission or in the background scan.                |
-| `FluxSourceVerificationFailed` | A `GitRepository` revision failing its signature check (ADR-0056).             |
+| `FluxSourceVerificationFailed` | A `GitRepository` or `OCIRepository` revision failing its signature check.     |
 
 A **cluster-admin** step raises `ClusterAdminUsed` by design: the alert is the
 record that it happened.

@@ -109,7 +109,10 @@ decisions already made in ARCHITECTURE.md:
        arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
        its own debug info and attestations, and `container-index` then makes
        `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
-       architectures (NFR-04)
+       architectures (NFR-04). On a push to `develop` alone, `chart-publish`
+       then pushes the chart, versioned `<chart version>+<12>`, to
+       `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
+       what the `develop` environment runs (ADR-0056)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
@@ -193,7 +196,7 @@ decisions already made in ARCHITECTURE.md:
 
 - **Image signatures:** every server image CI publishes on `develop` or `main`
   is also signed with cosign, keylessly, by digest: each architecture's image,
-  and on `main` the index of both (`.github/actions/sign-image`). The job
+  and on `main` the index of both (`.github/actions/sign-artifact`). The job
   verifies the signature at once against the identity the cluster admits, this
   repository's `ci.yml` on `develop` or `main`, and fails if it does not verify.
   In the cluster, Kyverno's `verify-image-signatures` policy checks the same
@@ -267,18 +270,21 @@ no self-hosted GitHub Actions runner in this pipeline).
   shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
   server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
-  reconciling each environment's `HelmRelease` from Git — nothing outside the
-  cluster needs inbound access to the LAN, and no external PR can trigger
-  execution on the cluster host, since there's no CI runner in this path at all
-  (see ADR-0026).
+  reconciling each environment's `HelmRelease` from Git (and `develop`'s chart
+  from what CI signed on GHCR) — nothing outside the cluster needs inbound
+  access to the LAN, and no external PR can trigger execution on the cluster
+  host, since there's no CI runner in this path at all (see ADR-0026).
 - **Signed revisions only:** Flux verifies every revision before reconciling it
   (ADR-0056), against public keys kept in Git
   ([`trusted-signers.yaml`](../clusters/onprem/flux-system/trusted-signers.yaml)).
   `develop`'s HEAD, which the `flux-system` source tracks too, must be signed by
   one of the maintainer's SSH signing keys or GitHub's `web-flow` key (a pull
-  request merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver,
-  verified against the maintainer's keys alone: a merge to `main` changes
-  nothing that runs, and `staging` moves when the release's signed tag is pushed
+  request merged on GitHub). `develop` runs the chart CI published and signed,
+  keyless, for the branch's newest commit once its image was published, with the
+  values of that HEAD; a commit whose CI fails leaves it on the previous chart.
+  `staging` runs the newest `vX.Y.Z` tag by semver, verified against the
+  maintainer's keys alone: a merge to `main` changes nothing that runs, and
+  `staging` moves when the release's signed tag is pushed, once its image is
   ([Cut a Release](runbooks/cut-release.md)). A revision that fails verification
   leaves its environment on the last verified one.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
