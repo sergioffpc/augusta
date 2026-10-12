@@ -17,6 +17,7 @@ using Clock = std::chrono::steady_clock;
 const Clock::time_point kStart{};
 constexpr auto kInstant = std::chrono::milliseconds(1);
 
+// Requirements: NFR-07
 TEST(HeartbeatTest, NothingIsDueBeforeTheIntervalHasPassed) {
   Heartbeat heartbeat(kStart);
 
@@ -24,6 +25,7 @@ TEST(HeartbeatTest, NothingIsDueBeforeTheIntervalHasPassed) {
   EXPECT_FALSE(heartbeat.Record(Activity{.ticks = 2}, kStart + kHeartbeatInterval - kInstant).has_value());
 }
 
+// Requirements: NFR-07
 TEST(HeartbeatTest, TheIntervalIsDueOnceItHasPassedWithEverythingCountedSinceTheStart) {
   Heartbeat heartbeat(kStart);
 
@@ -48,6 +50,7 @@ TEST(HeartbeatTest, TheIntervalIsDueOnceItHasPassedWithEverythingCountedSinceThe
   EXPECT_EQ(second->misbehaving, 1U);
 }
 
+// Requirements: NFR-07
 TEST(HeartbeatTest, TheNextIntervalCountsOnlyWhatHappenedSinceTheLastWasDue) {
   Heartbeat heartbeat(kStart);
   ASSERT_TRUE(heartbeat.Record(Activity{.ticks = 60, .misbehaving = 1}, kStart + kHeartbeatInterval).has_value());

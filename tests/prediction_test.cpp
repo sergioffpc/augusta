@@ -46,6 +46,7 @@ Command Walking() {
   return walk;
 }
 
+// Requirements: US-04
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
   World world;
 
@@ -57,6 +58,7 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
   EXPECT_GT(state.local_body.position.x, 0.0F);
 }
 
+// Requirements: US-03
 TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
   World world;
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -125,6 +127,7 @@ class ReconciliationTest : public ::testing::Test {
   BodyState rest_{};
 };
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, AnInjectedDivergenceIsAdoptedAtOnce) {
   constexpr float kDivergence = 0.5F;
 
@@ -134,6 +137,7 @@ TEST_F(ReconciliationTest, AnInjectedDivergenceIsAdoptedAtOnce) {
   EXPECT_NEAR(state.local_body.position.x, rest_.position.x + kDivergence, 0.02F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, ADivergenceOfAnySizeIsAdoptedAtOnce) {
   for (const float divergence : {0.1F, 3.0F, 10.0F}) {
     const State state = Tick(ServerSays(sequence_, Vec3(divergence, 0.0F, 0.0F)));
@@ -145,6 +149,7 @@ TEST_F(ReconciliationTest, ADivergenceOfAnySizeIsAdoptedAtOnce) {
   }
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, ADivergenceUnderAMillimetreIsNotCorrected) {
   const float before = states_.back().position.x;
 
@@ -154,12 +159,14 @@ TEST_F(ReconciliationTest, ADivergenceUnderAMillimetreIsNotCorrected) {
   EXPECT_NEAR(state.local_body.position.x, before, 0.0001F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, ADivergenceOverAMillimetreIsCorrected) {
   const State state = Tick(ServerSays(sequence_, Vec3(0.002F, 0.0F, 0.0F)));
 
   EXPECT_NEAR(state.total_correction.x, 0.002F, 0.0005F);
 }
 
+// Requirements: US-05, NFR-02
 TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgrees) {
   constexpr float kServerStamina = 0.5F;
   Acknowledgement ack = ServerSays(sequence_, Vec3(0.0F, 0.0F, 0.0F));
@@ -180,6 +187,7 @@ Command SprintingForward() {
 
 constexpr float kSprintStep = 4.8F * kFixedTick;  // Metres per tick at sprinting speed (4.8 m/s).
 
+// Requirements: US-05, NFR-02
 TEST_F(ReconciliationTest, AnExhaustedFlagThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
   Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
   ASSERT_FALSE(ack.body.exhausted);
@@ -191,6 +199,7 @@ TEST_F(ReconciliationTest, AnExhaustedFlagThatDiffersIsCorrectedEvenWhereEveryth
   EXPECT_NEAR(state.local_body.position.x - ack.body.position.x, kWalkStep, 0.01F);
 }
 
+// Requirements: US-05, NFR-02
 TEST_F(ReconciliationTest, AnExhaustedFlagThatAgreesChangesNothing) {
   const Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
 
@@ -200,6 +209,7 @@ TEST_F(ReconciliationTest, AnExhaustedFlagThatAgreesChangesNothing) {
   EXPECT_NEAR(state.local_body.position.x - ack.body.position.x, kSprintStep, 0.01F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, TheJumpTheReplayMadeIsTheTotalCorrection) {
   constexpr float kDivergence = 0.5F;
   EXPECT_EQ(latest_.total_correction, Vec3(0.0F, 0.0F, 0.0F));
@@ -209,6 +219,7 @@ TEST_F(ReconciliationTest, TheJumpTheReplayMadeIsTheTotalCorrection) {
   EXPECT_NEAR(state.total_correction.x, kDivergence, 0.02F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, StartingOverKeepsTheTotalCorrection) {
   const State corrected = Tick(ServerSays(sequence_, Vec3(0.5F, 0.0F, 0.0F)));
   ASSERT_GT(corrected.total_correction.x, 0.4F);
@@ -219,6 +230,7 @@ TEST_F(ReconciliationTest, StartingOverKeepsTheTotalCorrection) {
   EXPECT_EQ(restarted.total_correction, corrected.total_correction);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, TheFirstFrameOfTheNextMatchHasNoOffset) {
   constexpr float kFrame = 1.0F / 60.0F;
   constexpr int kFadeFrames = 60;
@@ -239,6 +251,7 @@ TEST_F(ReconciliationTest, TheFirstFrameOfTheNextMatchHasNoOffset) {
   EXPECT_NEAR(offset.z, 0.0F, 1e-6F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, TheSameAcknowledgementRepeatedIsActedOnOnce) {
   const Acknowledgement ack = ServerSays(sequence_, Vec3(1.0F, 0.0F, 0.0F));
   const State first = Tick(ack, Walking());
@@ -253,6 +266,7 @@ TEST_F(ReconciliationTest, TheSameAcknowledgementRepeatedIsActedOnOnce) {
   EXPECT_NEAR(last.local_body.position.x - first.local_body.position.x, kTicksWalked * kWalkStep, 0.1F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, AnAcknowledgementForACommandNeverSentChangesNothing) {
   const float before = states_.back().position.x;
 
@@ -262,6 +276,7 @@ TEST_F(ReconciliationTest, AnAcknowledgementForACommandNeverSentChangesNothing) 
   EXPECT_EQ(state.total_correction, Vec3(0.0F, 0.0F, 0.0F));
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, TheServerComparedAtTheCommandItAnswersNotAtTheClientsNewestState) {
   // The client walks; the server, running behind by 5 commands, reports the
   // state the client itself predicted at that command. Comparing it with the
@@ -274,6 +289,7 @@ TEST_F(ReconciliationTest, TheServerComparedAtTheCommandItAnswersNotAtTheClients
   EXPECT_NEAR(states_.back().position.x - rest_.position.x, 30 * kWalkStep, 0.05F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, ADivergenceIsCarriedThroughTheCommandsSentSince) {
   for (int i = 0; i < 10; ++i) {
     Tick(std::nullopt, Walking());
@@ -287,6 +303,7 @@ TEST_F(ReconciliationTest, ADivergenceIsCarriedThroughTheCommandsSentSince) {
   EXPECT_NEAR(state.local_body.position.x, before.position.x + kWalkStep, 0.02F);
 }
 
+// Requirements: NFR-02
 TEST_F(ReconciliationTest, TheCommandsSentSinceAreSteppedAgainFromTheServersState) {
   // The client sprints, at full stamina. The server, 5 commands behind, says the
   // player was out of stamina and so could only walk: the commands sent since
@@ -365,6 +382,7 @@ class WeaponPredictionTest : public ::testing::Test {
   State latest_;
 };
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, AMatchStartsWithAFullMagazineOfTheServersRifle) {
   const State state = Tick(Command{});
 
@@ -381,6 +399,7 @@ TEST(PredictionWorldTest, BeforeAMatchStartsNothingFires) {
   EXPECT_EQ(state.rifle.rounds, 0);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, ATickThatFiresTakesARoundOffTheMagazineAndSaysSo) {
   const State fired = Tick(Firing());
   EXPECT_EQ(fired.rounds_fired, 1);
@@ -392,6 +411,7 @@ TEST_F(WeaponPredictionTest, ATickThatFiresTakesARoundOffTheMagazineAndSaysSo) {
   EXPECT_EQ(waiting.rifle.rounds, kMagazine - 1);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, HoldingFireFiresAtTheRiflesRate) {
   int fired = 0;
   for (int i = 0; i < 10 * kTicksPerRound; ++i) {
@@ -404,6 +424,7 @@ TEST_F(WeaponPredictionTest, HoldingFireFiresAtTheRiflesRate) {
 
 // A frame that sees only some ticks still learns of every round fired between
 // two it saw, which is what draws each muzzle flash.
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, TheRunningTotalOfRoundsFiredCountsEveryRoundAndOutlivesStartingOver) {
   Run(10 * kTicksPerRound, Firing());
   EXPECT_EQ(latest_.total_rounds_fired, 10U);
@@ -414,6 +435,7 @@ TEST_F(WeaponPredictionTest, TheRunningTotalOfRoundsFiredCountsEveryRoundAndOutl
   EXPECT_EQ(Tick(Firing()).total_rounds_fired, 11U);
 }
 
+// Requirements: US-08, NFR-02
 TEST_F(WeaponPredictionTest, AReloadFillsTheMagazineOnceItsTimeHasPassed) {
   Run(3 * kTicksPerRound, Firing());
   ASSERT_EQ(latest_.rifle.rounds, kMagazine - 3);
@@ -423,6 +445,7 @@ TEST_F(WeaponPredictionTest, AReloadFillsTheMagazineOnceItsTimeHasPassed) {
   EXPECT_EQ(Tick(Command{}).rifle.rounds, kMagazine);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, StartingOverLoadsTheRifleAgain) {
   Run(3 * kTicksPerRound, Firing());
   ASSERT_LT(latest_.rifle.rounds, kMagazine);
@@ -432,6 +455,7 @@ TEST_F(WeaponPredictionTest, StartingOverLoadsTheRifleAgain) {
   EXPECT_EQ(Tick(Command{}).rifle.rounds, kMagazine);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, ARifleTheServerAgreesWithIsNeverCorrected) {
   // The server answers each command three ticks after it was sent.
   for (int i = 0; i < 20 * kTicksPerRound; ++i) {
@@ -445,6 +469,7 @@ TEST_F(WeaponPredictionTest, ARifleTheServerAgreesWithIsNeverCorrected) {
 // A rifle with a full magazine, ready to fire.
 constexpr augusta::weapon::State kFullRifle{.cooldown = 0.0F, .reload_remaining = 0.0F, .rounds = kMagazine};
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, AReplayAddsNoRoundToTheRunningTotal) {
   Run(kTicksPerRound, Firing());
   Acknowledgement refused = ServerAgreesWithTheClient(1);
@@ -457,6 +482,7 @@ TEST_F(WeaponPredictionTest, AReplayAddsNoRoundToTheRunningTotal) {
 
 // The server refused the round the client fired on its first command: it says
 // the rifle was still full and ready after it.
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, ARifleTheServerDisagreesWithIsPutAtTheServersAndTheCommandsSinceReplayedFromIt) {
   Run(kTicksPerRound, Firing());
   ASSERT_EQ(latest_.rifle.rounds, kMagazine - 1);
@@ -474,6 +500,7 @@ TEST_F(WeaponPredictionTest, ARifleTheServerDisagreesWithIsPutAtTheServersAndThe
   EXPECT_EQ(Tick(Firing()).rounds_fired, 1);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, ACorrectedRifleIsWhatTheNextAcknowledgementIsComparedWith) {
   Run(kTicksPerRound, Firing());
   Acknowledgement refused = ServerAgreesWithTheClient(1);
@@ -489,6 +516,7 @@ TEST_F(WeaponPredictionTest, ACorrectedRifleIsWhatTheNextAcknowledgementIsCompar
   EXPECT_EQ(state.rifle_corrections, 1U);
 }
 
+// Requirements: US-07, NFR-02
 TEST_F(WeaponPredictionTest, ABodyTheServerDisagreesWithIsCorrectedWithoutCountingARifleCorrection) {
   Run(kTicksPerRound, Firing());
   Acknowledgement moved = ServerAgreesWithTheClient(sequence_);

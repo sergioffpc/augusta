@@ -1,0 +1,22 @@
+# A staging server that leaves its node port for Kubernetes to assign, from
+# anywhere in the node's 30000-32767 range.
+apiVersion: v1
+kind: Service
+metadata:
+  name: augustad-firebase
+  namespace: staging
+  labels:
+    app.kubernetes.io/name: augustad
+    app.kubernetes.io/instance: augustad
+    scenario: firebase
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: augustad
+    app.kubernetes.io/instance: augustad
+    scenario: firebase
+  ports:
+    - name: game
+      port: 7777
+      targetPort: game
+      protocol: UDP

@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "augusta/command.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/prediction.h"
 #include "augusta/supervisor.h"
@@ -37,13 +38,20 @@ struct PredictedTick {
 /// What the caller of a Runner supplies, and what it is told, each on the
 /// thread it is called from.
 struct RunnerHooks {
-  /// The Command for the coming Tick. Prediction thread.
-  std::function<command::Command()> next_command;
+  /// The Command for the coming Tick, or nullopt to skip it: nothing is
+  /// predicted or sent, and the Tick's state is the last one's (a Captured
+  /// player that already has enough Commands waiting at the server,
+  /// ADR-0050). Prediction thread.
+  std::function<std::optional<command::Command>()> next_command;
   /// Each Tick, once it has run. Prediction thread; may be empty.
   std::function<void(const PredictedTick&)> on_tick;
   /// Each round of network work, once it is done. Network I/O thread, so the
   /// Session's Network I/O calls (GetConnectionStats) are safe; may be empty.
   std::function<void()> on_network_round;
+  /// Once, with the first cause a thread stopped on (Runner::Failure), on that
+  /// thread, or on the constructor's if a thread could not be started. Must
+  /// return at once; may be empty.
+  std::function<void(const failure::Failure&)> on_failure;
 };
 
 /// The Prediction and Network I/O threads one Session runs on.
@@ -62,13 +70,16 @@ class Runner {
   Runner(Runner&&) = delete;
   Runner& operator=(Runner&&) = delete;
 
-  /// Why a thread stopped on an exception (a hook's included), or nullopt
-  /// while none has; the other thread is stopped too. Safe from any thread.
-  [[nodiscard]] std::optional<supervisor::WorkerFailure> Failure() const;
+  /// The first cause a thread stopped on, including an exception thrown by a
+  /// hook, a failure of the local transport (Session::TakeTransportFailure) and
+  /// a message the Session could not encode (Session::TakeInvariantFailure), or
+  /// nullopt while none has; the other thread is stopped too. Safe from any
+  /// thread.
+  [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
  private:
-  void PredictionThreadMain();
-  void NetworkThreadMain();
+  supervisor::WorkerResult PredictionThreadMain();
+  supervisor::WorkerResult NetworkThreadMain();
   // The server's tick rate once it has admitted the client, or nullopt if
   // the stop came first.
   std::optional<float> WaitForTickRate();

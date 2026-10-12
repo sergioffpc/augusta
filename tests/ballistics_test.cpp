@@ -6,6 +6,7 @@
 #include <format>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@ using augusta::ballistics::BodyPart;
 using augusta::ballistics::BulletConfig;
 using augusta::ballistics::Hitbox;
 using augusta::ballistics::Outcome;
+using augusta::ballistics::Segment;
 using augusta::ballistics::StepResult;
 using augusta::ballistics::TargetId;
 using augusta::ballistics::Triangle;
@@ -128,6 +130,7 @@ std::vector<Trajectory> ReadGolden(const std::string& path) {
   return shots;
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, BulletTravelsAlongItsDirectionAtItsSpeed) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -140,6 +143,7 @@ TEST(BallisticsWorldTest, BulletTravelsAlongItsDirectionAtItsSpeed) {
   EXPECT_NEAR(Length(result.state.velocity), 800.0F, 1e-3F);
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, GravityDropsTheBulletMoreEachTick) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -153,6 +157,7 @@ TEST(BallisticsWorldTest, GravityDropsTheBulletMoreEachTick) {
   EXPECT_LT(second - first, first);
 }
 
+// Requirements: US-10
 TEST(BallisticsWorldTest, BulletExpiresOncePastItsMaxRange) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -165,6 +170,48 @@ TEST(BallisticsWorldTest, BulletExpiresOncePastItsMaxRange) {
   EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kExpired);
 }
 
+// Requirements: US-10
+TEST(BallisticsWorldTest, TheNextSegmentIsTheMovementTheNextStepTests) {
+  const augusta::physics::World physics_world{StaminaConfig{}};
+  World world;
+  const auto bullet =
+      world.Fire(Vec3(0.0F), Vec3(1.0F, 0.5F, -2.0F), 800.0F, {.gravity = kGravity, .max_range = 1000.0F});
+  const Vec3 before = world.Step(bullet, kFixedTick, physics_world, {}).state.position;
+
+  const Segment next = world.NextSegment(bullet, kFixedTick);
+  const Vec3 after = world.Step(bullet, kFixedTick, physics_world, {}).state.position;
+
+  EXPECT_EQ(next.from, before);
+  EXPECT_EQ(next.to, after);
+}
+
+// Requirements: US-10
+TEST(BallisticsWorldTest, MaxFlightStepsIsTheMaxFlightTimeInStepsRoundedUp) {
+  EXPECT_EQ(augusta::ballistics::MaxFlightSteps(2.0F), 3U);
+  EXPECT_EQ(augusta::ballistics::MaxFlightSteps(0.3F), 17U);
+  // Every tick rate, whichever way 1/rate rounds to a float.
+  for (std::uint32_t rate = 1; rate <= std::numeric_limits<std::uint8_t>::max(); ++rate) {
+    EXPECT_EQ(augusta::ballistics::MaxFlightSteps(1.0F / static_cast<float>(rate)), 5 * rate) << rate << " Hz";
+  }
+}
+
+// A metre a second against the longest range a float holds: only the flight
+// time ends it.
+// Requirements: US-10
+TEST(BallisticsWorldTest, ABulletStillFlyingAtTheMaxFlightTimeExpires) {
+  const augusta::physics::World physics_world{StaminaConfig{}};
+  World world;
+  const auto bullet = world.Fire(Vec3(0.0F), Vec3(1.0F, 0.0F, 0.0F), 1.0F,
+                                 {.gravity = 0.0F, .max_range = std::numeric_limits<float>::max()});
+  const std::uint32_t steps = augusta::ballistics::MaxFlightSteps(kFixedTick);
+
+  for (std::uint32_t step = 1; step < steps; ++step) {
+    ASSERT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kInFlight) << "step " << step;
+  }
+  EXPECT_EQ(world.Step(bullet, kFixedTick, physics_world, {}).outcome, Outcome::kExpired);
+}
+
+// Requirements: US-10
 TEST(BallisticsWorldTest, EachBulletKeepsItsOwnConfig) {
   const augusta::physics::World physics_world{StaminaConfig{}};
   World world;
@@ -207,6 +254,7 @@ std::unique_ptr<augusta::physics::World> MapWithWall(float x) {
   return map;
 }
 
+// Requirements: US-10
 TEST(BallisticsHitTest, ABulletStopsOnTheMapWhereItCrossesIt) {
   const auto map = MapWithWall(5.0F);
   World world;
@@ -219,6 +267,7 @@ TEST(BallisticsHitTest, ABulletStopsOnTheMapWhereItCrossesIt) {
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-3F);
 }
 
+// Requirements: US-10
 TEST(BallisticsHitTest, ABulletShortOfTheMapStaysInFlight) {
   const auto map = MapWithWall(15.0F);
   World world;
@@ -231,6 +280,7 @@ TEST(BallisticsHitTest, ABulletShortOfTheMapStaysInFlight) {
 // A player is hit through its Hitboxes only (ADR-0044): its controller's
 // capsule, which the physics scene holds where the controller was made, is
 // never what a bullet hits (ADR-0002).
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHandedIn) {
   augusta::physics::World map{StaminaConfig{}};
   map.CreateBody(Vec3(0.0F));
@@ -244,6 +294,7 @@ TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHand
   EXPECT_EQ(world.Step(bullet, kFixedTick, map, {}).outcome, Outcome::kInFlight);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletThatCrossesAHitboxHitsItsTargetAndBodyPart) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
@@ -260,6 +311,7 @@ TEST(BallisticsHitTest, ABulletThatCrossesAHitboxHitsItsTargetAndBodyPart) {
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-4F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
@@ -271,6 +323,7 @@ TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
   EXPECT_EQ(world.Step(bullet, kFixedTick, map, hitboxes).outcome, Outcome::kInFlight);
 }
 
+// Requirements: US-10, US-11
 TEST(BallisticsHitTest, AWallInFrontOfAHitboxStopsTheBullet) {
   const auto map = MapWithWall(3.0F);
   const auto plane = Plane(5.0F);
@@ -284,6 +337,7 @@ TEST(BallisticsHitTest, AWallInFrontOfAHitboxStopsTheBullet) {
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-3F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, AHitboxInFrontOfAWallIsHit) {
   const auto map = MapWithWall(5.0F);
   const auto plane = Plane(3.0F);
@@ -297,6 +351,7 @@ TEST(BallisticsHitTest, AHitboxInFrontOfAWallIsHit) {
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-4F);
 }
 
+// Requirements: US-11
 TEST(BallisticsHitTest, OfTwoPlayersInLineOnlyTheNearerIsHit) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto far = Plane(6.0F);
@@ -314,6 +369,7 @@ TEST(BallisticsHitTest, OfTwoPlayersInLineOnlyTheNearerIsHit) {
   EXPECT_EQ(result.part, BodyPart::kLimb);
 }
 
+// Requirements: US-10, US-11
 TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(9.0F);
@@ -329,6 +385,7 @@ TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
 // within the tolerance, tick for tick, and ends on the same tick. It runs on the
 // Windows (MSVC) and Linux runners alike, so a compiler that computes a
 // different trajectory fails its own runner (ADR-0013).
+// Requirements: US-10, NFR-03
 TEST(BallisticsGoldenTest, TrajectoriesMatchTheGoldenFileWithinNfr03Tolerance) {
   const std::vector<Trajectory> golden = ReadGolden(AUGUSTA_GOLDEN_TRAJECTORIES);
   ASSERT_EQ(golden.size(), GoldenShots().size()) << "regenerate " << AUGUSTA_GOLDEN_TRAJECTORIES;

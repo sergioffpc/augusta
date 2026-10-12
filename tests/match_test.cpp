@@ -10,12 +10,14 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/networking.h"
 
 // The Lobby and the match are pure bookkeeping: no socket is opened here.
 namespace {
 
 using augusta::assets::PackHash;
+using augusta::math::Vec3;
 using augusta::networking::PeerId;
 using augusta::server::Departure;
 using augusta::server::JoinRefusal;
@@ -76,6 +78,7 @@ void JoinPeers(Match& match, std::uint32_t first, std::uint32_t count) {
   }
 }
 
+// Requirements: US-01
 TEST(MatchTest, AdmitsAClientWithTheMatchingVersionToTheLobby) {
   Match match(Config());
 
@@ -87,6 +90,7 @@ TEST(MatchTest, AdmitsAClientWithTheMatchingVersionToTheLobby) {
   EXPECT_FALSE(match.InMatch());
 }
 
+// Requirements: US-01
 TEST(MatchTest, RefusesAnyOtherVersion) {
   Match match(Config());
 
@@ -97,6 +101,7 @@ TEST(MatchTest, RefusesAnyOtherVersion) {
   EXPECT_FALSE(match.SessionOf(Peer(10)).has_value());
 }
 
+// Requirements: US-01, NFR-08
 TEST(MatchTest, AdmitsOnlyTheClientPackCookedWithTheServers) {
   MatchConfig config = Config();
   config.client_pack = OtherClientPack();
@@ -107,6 +112,7 @@ TEST(MatchTest, AdmitsOnlyTheClientPackCookedWithTheServers) {
   EXPECT_EQ(match.PlayerCount(), 1U);
 }
 
+// Requirements: US-01
 TEST(MatchTest, ChecksTheClientPackAfterTheVersionAndBeforeTheCharacter) {
   Match match(Config());
 
@@ -116,6 +122,18 @@ TEST(MatchTest, ChecksTheClientPackAfterTheVersionAndBeforeTheCharacter) {
             JoinRefusal::kPackMismatch);
 }
 
+// Every way in - a Join request, a Replay request (ADR-0051) - is checked
+// by the same version-then-pack order before anything it asks for.
+// Requirements: US-01
+TEST(RefusalOfClientTest, RefusesAnotherVersionFirstThenAnotherPackAndAdmitsTheServersOwn) {
+  const augusta::server::ClientTerms terms{.engine_version = kVersion, .client_pack = {}};
+
+  EXPECT_EQ(augusta::server::RefusalOfClient("other", OtherClientPack(), terms), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, OtherClientPack(), terms), JoinRefusal::kPackMismatch);
+  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, PackHash{}, terms), std::nullopt);
+}
+
+// Requirements: US-01
 TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
   Match match(Config());
 
@@ -127,6 +145,7 @@ TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
   EXPECT_NE(static_cast<std::uint32_t>(first->session), 500U);
 }
 
+// Requirements: US-02
 TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
   Match match(Config(3));
   JoinPeers(match, 0, 3);
@@ -135,6 +154,7 @@ TEST(MatchTest, AdmitsUpToThePlayerCountAndRefusesTheNextAsLobbyFull) {
   EXPECT_EQ(match.PlayerCount(), 3U);
 }
 
+// Requirements: US-02, US-16
 TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
 
@@ -142,6 +162,7 @@ TEST(MatchTest, EachPlayerIsAdmittedWithItsCharacter) {
   EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "medic"))->character, "medic");
 }
 
+// Requirements: US-02, US-16
 TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   Match match(Config());
 
@@ -151,18 +172,21 @@ TEST(MatchTest, RefusesACharacterTheScenarioDoesNotOffer) {
   EXPECT_EQ(match.PlayerCount(), 0U);
 }
 
+// Requirements: US-02, US-16
 TEST(MatchTest, AScenarioWithNoCharactersAdmitsNoOne) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {}});
 
   EXPECT_EQ(match.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusal::kUnknownCharacter);
 }
 
+// Requirements: US-01
 TEST(MatchTest, AVersionMismatchOutranksAnUnknownCharacter) {
   Match match(Config());
 
   EXPECT_EQ(match.Join(Peer(1), Request("other", "characters/nobody")).error(), JoinRefusal::kVersionMismatch);
 }
 
+// Requirements: US-02
 TEST(MatchTest, AnUnknownCharacterOutranksAFullLobby) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -170,6 +194,7 @@ TEST(MatchTest, AnUnknownCharacterOutranksAFullLobby) {
   EXPECT_EQ(match.Join(Peer(2), Request(kVersion, "characters/nobody")).error(), JoinRefusal::kUnknownCharacter);
 }
 
+// Requirements: US-01
 TEST(MatchTest, AVersionMismatchIsReportedEvenWhenTheLobbyIsFull) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -177,6 +202,7 @@ TEST(MatchTest, AVersionMismatchIsReportedEvenWhenTheLobbyIsFull) {
   EXPECT_EQ(match.Join(Peer(2), Request("other", kCharacter)).error(), JoinRefusal::kVersionMismatch);
 }
 
+// Requirements: US-02
 TEST(MatchTest, AJoinDuringAMatchIsRefusedAsMatchInProgress) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -186,6 +212,7 @@ TEST(MatchTest, AJoinDuringAMatchIsRefusedAsMatchInProgress) {
 }
 
 // Joining later is no use to a client that can never play here.
+// Requirements: US-02
 TEST(MatchTest, AVersionOrCharacterOutranksAMatchInProgress) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -197,6 +224,7 @@ TEST(MatchTest, AVersionOrCharacterOutranksAMatchInProgress) {
 
 // A match in progress holds the Player count, so it is full as well: the
 // client should hear that one ends, not that one is full.
+// Requirements: US-02
 TEST(MatchTest, AMatchInProgressOutranksAFullLobby) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -205,6 +233,7 @@ TEST(MatchTest, AMatchInProgressOutranksAFullLobby) {
   EXPECT_EQ(match.Join(Peer(2), Request(kVersion, kCharacter)).error(), JoinRefusal::kMatchInProgress);
 }
 
+// Requirements: US-02
 TEST(MatchTest, LeavingFreesTheSlotAndNeverReusesTheSessionId) {
   Match match(Config(1));
   const auto first = match.Join(Peer(1), Request(kVersion, kCharacter));
@@ -218,6 +247,7 @@ TEST(MatchTest, LeavingFreesTheSlotAndNeverReusesTheSessionId) {
   EXPECT_FALSE(match.SessionOf(Peer(1)).has_value());
 }
 
+// Requirements: US-02
 TEST(MatchTest, LeavingWithoutHavingJoinedChangesNothing) {
   Match match(Config());
   const auto version = match.GetRoster().version;
@@ -228,6 +258,7 @@ TEST(MatchTest, LeavingWithoutHavingJoinedChangesNothing) {
   EXPECT_EQ(match.GetRoster().version, version);
 }
 
+// Requirements: US-02, US-15
 TEST(MatchTest, JoiningAgainReturnsTheSameAdmissionWithoutTakingAnotherSlot) {
   Match match(Config());
   const auto first = match.Join(Peer(1), Request(kVersion, kCharacter));
@@ -241,6 +272,7 @@ TEST(MatchTest, JoiningAgainReturnsTheSameAdmissionWithoutTakingAnotherSlot) {
   EXPECT_EQ(match.GetRoster().version, version);
 }
 
+// Requirements: US-02, US-16
 TEST(MatchTest, TheRosterListsEveryLobbyPlayerWithItsCharacterBySession) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
   const auto medic = match.Join(Peer(9), Request(kVersion, "medic"));
@@ -255,6 +287,7 @@ TEST(MatchTest, TheRosterListsEveryLobbyPlayerWithItsCharacterBySession) {
   EXPECT_EQ(roster.players[1].character, "sniper");
 }
 
+// Requirements: US-02
 TEST(MatchTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   Match match(Config());
   const auto empty = match.GetRoster().version;
@@ -273,6 +306,7 @@ TEST(MatchTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   EXPECT_EQ(match.GetRoster().players[0].session, *match.SessionOf(Peer(2)));
 }
 
+// Requirements: US-02
 TEST(MatchTest, ARefusedJoinTakesNoSlotAndLeavesTheRosterAsItWas) {
   Match match(Config(1));
   const auto version = match.GetRoster().version;
@@ -283,6 +317,7 @@ TEST(MatchTest, ARefusedJoinTakesNoSlotAndLeavesTheRosterAsItWas) {
   EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
 }
 
+// Requirements: US-02
 TEST(MatchTest, AMatchDoesNotStartBeforeTheLobbyHoldsThePlayerCount) {
   Match match(Config(3));
   JoinPeers(match, 1, 2);
@@ -291,6 +326,7 @@ TEST(MatchTest, AMatchDoesNotStartBeforeTheLobbyHoldsThePlayerCount) {
   EXPECT_FALSE(match.InMatch());
 }
 
+// Requirements: US-02
 TEST(MatchTest, AMatchStartsOnceTheLobbyHoldsThePlayerCount) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -305,6 +341,7 @@ TEST(MatchTest, AMatchStartsOnceTheLobbyHoldsThePlayerCount) {
   EXPECT_EQ(match.Playing(), (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
 }
 
+// Requirements: US-02
 TEST(MatchTest, AMatchInProgressDoesNotStartAgain) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -313,6 +350,7 @@ TEST(MatchTest, AMatchInProgressDoesNotStartAgain) {
   EXPECT_FALSE(ReadyAndStart(match).has_value());
 }
 
+// Requirements: US-03, US-16
 TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 2});
   ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, "medic")).has_value());
@@ -325,6 +363,7 @@ TEST(MatchTest, MatchStartTellsEachPlayersCharacter) {
   EXPECT_EQ(start->players[1].character, "sniper");
 }
 
+// Requirements: US-02
 TEST(MatchTest, APlayerWhoLeftTheLobbyIsNotInTheMatch) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -339,6 +378,7 @@ TEST(MatchTest, APlayerWhoLeftTheLobbyIsNotInTheMatch) {
   EXPECT_EQ(start->players[1].session, *match.SessionOf(Peer(3)));
 }
 
+// Requirements: US-02
 TEST(MatchTest, TheRosterIsEmptyWhileAMatchIsInProgress) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -347,6 +387,7 @@ TEST(MatchTest, TheRosterIsEmptyWhileAMatchIsInProgress) {
   EXPECT_TRUE(match.GetRoster().players.empty());
 }
 
+// Requirements: US-02
 TEST(MatchTest, APlayerWhoLeavesAMatchIsNoLongerInIt) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -361,6 +402,7 @@ TEST(MatchTest, APlayerWhoLeavesAMatchIsNoLongerInIt) {
   EXPECT_TRUE(match.InMatch());
 }
 
+// Requirements: US-02
 TEST(MatchTest, NoOneIsPlayingInTheLobby) {
   Match match(Config(2));
   JoinPeers(match, 1, 1);
@@ -369,6 +411,7 @@ TEST(MatchTest, NoOneIsPlayingInTheLobby) {
   EXPECT_TRUE(match.Playing().empty());
 }
 
+// Requirements: US-02
 TEST(MatchTest, AFullLobbyDoesNotStartUntilEveryoneIsReadyForTheCurrentRoster) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -380,6 +423,7 @@ TEST(MatchTest, AFullLobbyDoesNotStartUntilEveryoneIsReadyForTheCurrentRoster) {
   EXPECT_TRUE(match.TryStart().has_value());
 }
 
+// Requirements: US-02
 TEST(MatchTest, AReadyForAnOlderRosterDoesNotCount) {
   Match match(Config(2));
   JoinPeers(match, 1, 1);
@@ -392,6 +436,7 @@ TEST(MatchTest, AReadyForAnOlderRosterDoesNotCount) {
   EXPECT_FALSE(match.TryStart().has_value());
 }
 
+// Requirements: US-02
 TEST(MatchTest, ANewcomerMakesEveryoneAlreadyThereNotReady) {
   Match match(Config(2));
   JoinPeers(match, 1, 1);
@@ -405,6 +450,7 @@ TEST(MatchTest, ANewcomerMakesEveryoneAlreadyThereNotReady) {
   EXPECT_TRUE(match.TryStart().has_value());
 }
 
+// Requirements: US-02
 TEST(MatchTest, APlayerLeavingTheLobbyMakesNoOneNotReady) {
   Match match(Config(3));
   JoinPeers(match, 1, 3);
@@ -417,6 +463,7 @@ TEST(MatchTest, APlayerLeavingTheLobbyMakesNoOneNotReady) {
 }
 
 // Someone who was not Ready before a departure is not made Ready by it.
+// Requirements: US-02
 TEST(MatchTest, APlayerLeavingTheLobbyMakesNoOneReadyEither) {
   Match match(Config(3));
   JoinPeers(match, 1, 3);
@@ -428,6 +475,7 @@ TEST(MatchTest, APlayerLeavingTheLobbyMakesNoOneReadyEither) {
   EXPECT_FALSE(match.IsReady(Peer(2)));
 }
 
+// Requirements: US-02, US-15
 TEST(MatchTest, AReadyFromAPeerThatHasNotJoinedOrDuringAMatchCountsForNothing) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -437,6 +485,7 @@ TEST(MatchTest, AReadyFromAPeerThatHasNotJoinedOrDuringAMatchCountsForNothing) {
   EXPECT_FALSE(match.Ready(Peer(1), match.GetRoster().version));
 }
 
+// Requirements: US-14
 TEST(MatchTest, EndingAMatchReturnsItsPlayersToTheLobbyUnderANewRoster) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -456,6 +505,7 @@ TEST(MatchTest, EndingAMatchReturnsItsPlayersToTheLobbyUnderANewRoster) {
   EXPECT_EQ(roster.players[1].session, *match.SessionOf(Peer(2)));
 }
 
+// Requirements: US-14
 TEST(MatchTest, AMatchEndedWithAWinnerNamesItToItsPlayers) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -468,6 +518,7 @@ TEST(MatchTest, AMatchEndedWithAWinnerNamesItToItsPlayers) {
   EXPECT_EQ(ended->players.size(), 2U);
 }
 
+// Requirements: US-14
 TEST(MatchTest, AMatchEndedWithNoWinnerIsADraw) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -481,6 +532,7 @@ TEST(MatchTest, AMatchEndedWithNoWinnerIsADraw) {
 
 // Policy declares a winner from the tick's state; the player may have left
 // before the server acts on it, and a Match end never names a player not told of it.
+// Requirements: US-14
 TEST(MatchTest, AWinnerNoLongerInTheMatchEndsItAsADraw) {
   Match match(Config(3));
   JoinPeers(match, 1, 3);
@@ -495,6 +547,7 @@ TEST(MatchTest, AWinnerNoLongerInTheMatchEndsItAsADraw) {
   EXPECT_EQ(ended->players.size(), 2U);
 }
 
+// Requirements: US-14, US-16
 TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
   Match match(MatchConfig{.engine_version = kVersion, .characters = {"sniper", "medic"}, .player_count = 1});
   const auto admission = match.Join(Peer(1), Request(kVersion, "medic"));
@@ -508,6 +561,7 @@ TEST(MatchTest, PlayersKeepTheirSessionAndCharacterAcrossMatches) {
   EXPECT_EQ(ReadyAndStart(match)->players[0].session, admission->session);
 }
 
+// Requirements: US-14
 TEST(MatchTest, AfterAMatchNoOneIsReadyUntilTheyReportTheNewRoster) {
   Match match(Config(1));
   JoinPeers(match, 1, 1);
@@ -519,6 +573,7 @@ TEST(MatchTest, AfterAMatchNoOneIsReadyUntilTheyReportTheNewRoster) {
   EXPECT_TRUE(ReadyAndStart(match).has_value());
 }
 
+// Requirements: US-14
 TEST(MatchTest, EndingWithNoMatchInProgressChangesNothing) {
   Match match(Config(2));
   JoinPeers(match, 1, 1);
@@ -529,6 +584,7 @@ TEST(MatchTest, EndingWithNoMatchInProgressChangesNothing) {
   EXPECT_EQ(match.GetRoster().version, version);
 }
 
+// Requirements: US-14
 TEST(MatchTest, AMatchWhoseLastPlayerLeavesEndsAndTheLobbyOpens) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -542,6 +598,7 @@ TEST(MatchTest, AMatchWhoseLastPlayerLeavesEndsAndTheLobbyOpens) {
   EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
 }
 
+// Requirements: US-14
 TEST(MatchTest, TheNextMatchStartsOnlyOnceThePauseHasPassed) {
   constexpr std::uint32_t kPause = 300;
   Match match(Config(1, kPause));
@@ -558,6 +615,7 @@ TEST(MatchTest, TheNextMatchStartsOnlyOnceThePauseHasPassed) {
   EXPECT_TRUE(match.TryStart().has_value());
 }
 
+// Requirements: US-14
 TEST(MatchTest, TheFirstMatchWaitsForNoPause) {
   Match match(Config(1, 300));
   JoinPeers(match, 1, 1);
@@ -566,6 +624,7 @@ TEST(MatchTest, TheFirstMatchWaitsForNoPause) {
 }
 
 // The pause is counted from the end, not from the last start.
+// Requirements: US-14
 TEST(MatchTest, TicksDuringAMatchDoNotCountTowardsThePauseAfterIt) {
   constexpr std::uint32_t kPause = 10;
   Match match(Config(1, kPause));
@@ -580,6 +639,7 @@ TEST(MatchTest, TicksDuringAMatchDoNotCountTowardsThePauseAfterIt) {
   EXPECT_FALSE(ReadyAndStart(match).has_value());
 }
 
+// Requirements: US-03
 TEST(MatchTest, EachPlayerInAMatchControlsABodyOfItsOwn) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -591,6 +651,7 @@ TEST(MatchTest, EachPlayerInAMatchControlsABodyOfItsOwn) {
   EXPECT_NE(start->players[0].entity, start->players[1].entity);
 }
 
+// Requirements: US-03
 TEST(MatchTest, EntityIdsAreNeverReusedAcrossMatches) {
   Match match(Config(2));
   JoinPeers(match, 1, 2);
@@ -606,6 +667,60 @@ TEST(MatchTest, EntityIdsAreNeverReusedAcrossMatches) {
       EXPECT_NE(earlier.entity, later.entity);
     }
   }
+}
+
+// A Captured player's Reenact request (ADR-0050): a Join request that names its spawn.
+JoinRequest ReenactRequest(std::string version, const Vec3& spawn) {
+  JoinRequest request = Request(std::move(version), kCharacter);
+  request.spawn = spawn;
+  return request;
+}
+
+// A match of player_count that takes Reenact requests.
+MatchConfig ReenactingConfig(std::size_t player_count = kPlayerCount) {
+  MatchConfig config = Config(player_count);
+  config.reenactments = true;
+  return config;
+}
+
+// Requirements: US-21
+TEST(MatchTest, AMatchThatTakesNoReenactmentsRefusesAReenactRequestBeforeAnythingElse) {
+  Match match(Config());
+
+  EXPECT_EQ(match.Join(Peer(1), ReenactRequest(kVersion, Vec3(1.0F, 0.0F, 2.0F))).error(),
+            JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(match.Join(Peer(2), ReenactRequest("other", Vec3(1.0F, 0.0F, 2.0F))).error(),
+            JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(match.PlayerCount(), 0U);
+  EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
+}
+
+// Requirements: US-21
+TEST(MatchTest, AReenactRequestIsCheckedAsAJoinRequestIs) {
+  Match match(ReenactingConfig(1));
+
+  EXPECT_EQ(match.Join(Peer(1), ReenactRequest("other", Vec3())).error(), JoinRefusal::kVersionMismatch);
+  JoinRequest unknown = ReenactRequest(kVersion, Vec3());
+  unknown.character = "characters/nobody";
+  EXPECT_EQ(match.Join(Peer(2), unknown).error(), JoinRefusal::kUnknownCharacter);
+  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3())).has_value());
+  EXPECT_EQ(match.Join(Peer(4), ReenactRequest(kVersion, Vec3())).error(), JoinRefusal::kLobbyFull);
+}
+
+// Requirements: US-21
+TEST(MatchTest, AMatchStartNamesTheSpawnOfEachPlayerAdmittedThroughAReenactRequestAndNoOneElses) {
+  Match match(ReenactingConfig(3));
+  ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, kCharacter)).has_value());
+  ASSERT_TRUE(match.Join(Peer(2), ReenactRequest(kVersion, Vec3(4.0F, 0.0F, -2.0F))).has_value());
+  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3(-6.0F, 1.0F, 8.0F))).has_value());
+
+  const auto start = ReadyAndStart(match);
+
+  ASSERT_TRUE(start.has_value());
+  ASSERT_EQ(start->players.size(), 3U);
+  EXPECT_FALSE(start->players[0].spawn.has_value());
+  EXPECT_EQ(start->players[1].spawn, Vec3(4.0F, 0.0F, -2.0F));
+  EXPECT_EQ(start->players[2].spawn, Vec3(-6.0F, 1.0F, 8.0F));
 }
 
 }  // namespace

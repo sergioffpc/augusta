@@ -1,12 +1,14 @@
 #ifndef AUGUSTA_COMMAND_H_
 #define AUGUSTA_COMMAND_H_
 
+#include <chrono>
 #include <cstdint>
 
 #include <glm/ext/quaternion_trigonometric.hpp>
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/primitives.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -65,12 +67,21 @@ struct Command {
   return glm::angleAxis(yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * glm::angleAxis(pitch, math::Vec3(1.0F, 0.0F, 0.0F));
 }
 
-/// The number a client gives each Command it sends (ADR-0038): from 1, one more
-/// per command, over one connection, and the acknowledged sequence that answers
-/// it. Wide enough never to wrap, as tick::Tick is, so every receiver orders
-/// sequences as plain numbers; everything that holds one, the wire included,
-/// takes its width from here.
-using Sequence = std::uint64_t;
+/// The number a client gives each Command it sends, and the acknowledged
+/// sequence that answers it (ADR-0038); its width is the primitives', which the
+/// wire takes too.
+using Sequence = primitives::Sequence;
+
+/// How long the server's command queue repeats a player's last movement on
+/// the ticks no new Command arrived for, before it idles
+/// (server::CommandQueue); a Captured player fills a capture's gaps the same
+/// way (ADR-0050).
+inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
+
+/// kMaxHeldTime in ticks at tick_rate_hz, rounded up so the hold is never shorter.
+[[nodiscard]] constexpr int HeldTicks(std::uint8_t tick_rate_hz) {
+  return static_cast<int>(std::chrono::ceil<std::chrono::seconds>(kMaxHeldTime * tick_rate_hz).count());
+}
 
 /// Where a view with this yaw and pitch looks, as a unit vector.
 [[nodiscard]] inline math::Vec3 ViewDirection(float yaw, float pitch) {

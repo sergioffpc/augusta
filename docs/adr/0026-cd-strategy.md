@@ -1,5 +1,9 @@
 # CD Strategy: Flux for `main`/`develop`; No k3s Deploy for Ephemeral Branches
 
+> Amended by ADR-0056: `staging` follows the signed `v*` release tags, not the
+> `main` branch, and Flux runs only signed revisions. Where this record says
+> `staging` runs `main`, read the latest release tag; the rest still stands.
+
 `main` and `develop` are reconciled by Flux (GitOps, pull-based) running inside
 the k3s cluster. `feature/*`, `hotfix/*`, and `release/*` branches are not
 deployed to k3s at all — no CD, ephemeral or otherwise, for these.
@@ -7,7 +11,9 @@ deployed to k3s at all — no CD, ephemeral or otherwise, for these.
 **One server per scenario.** An environment runs one `augustad` server for each
 scenario it serves, and a server serves its scenario's pack and no other: its
 own Deployment of one pod, game Service on its own node port, and metrics
-Service, named `augustad-<scenario>`. The servers are a list in the
+Service, named `augustad-<scenario>`. The node port is pinned, from a range of
+the environment's own (`develop` 30700-30799, `staging` 30800-30899), so the two
+environments never collide on the node. The servers are a list in the
 environment's `HelmRelease` values (`servers`, keyed by scenario name, each
 naming the pack version it runs), so one release per environment still owns them
 all, and adding a scenario is one entry, not one more release.
@@ -108,8 +114,9 @@ simply not deployed to k3s at all.
   scenario its values list.
 - A server whose pack version is not published yet never starts: its pod waits
   in `ContainerCreating`, its events naming the missing folder.
-- `augusta-publish` reaches the node over SSH as a user that can `sudo` without
-  a password; the node's address is not in the repository.
+- `augusta-publish` reaches the node over SSH as its `augusta-publish` user,
+  with no `sudo`, whose key can only publish (ADR-0057); the node's address is
+  not in the repository.
 - CI (build/test, `helm lint`/`docker build`) is unaffected: it never needed
   cluster access, so it stays on GitHub-hosted runners and just pushes the built
   image to GHCR, which Flux reads from for `main`/ `develop`.

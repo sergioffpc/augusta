@@ -7,6 +7,11 @@ ADR-0032), and how malformed geometry is refused.
 import shutil
 import struct
 
+from augusta_pack import pack
+from augusta_pack.cook import cook_scenario
+from augusta_pack.cook import CookError
+from augusta_pack.sounds import CueSounds
+from augusta_pack.sounds import Sound
 from conftest import decode_audio
 from conftest import decode_hitbox
 from conftest import decode_mesh
@@ -14,11 +19,6 @@ from conftest import decode_spawn_point
 from conftest import decode_string
 from conftest import FIXTURES_DIR
 from conftest import read_pack_contents
-from pack import pack
-from pack.cook import cook_scenario
-from pack.cook import CookError
-from pack.sounds import CueSounds
-from pack.sounds import Sound
 import pytest
 
 
@@ -156,6 +156,27 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
     shutil.copy(FIXTURES_DIR / "texture_fixture.usda", stage_dir)
+
+    with pytest.raises(CookError) as raised:
+        cook_scenario(
+            stage_dir / "texture_fixture.usda",
+            [],
+            tmp_path / "client.pack",
+            tmp_path / "server.pack",
+            key_pair.private_key,
+        )
+
+    assert raised.value.code == "texture_load_failed"
+    assert raised.value.prim_path == "TestMesh/Mat/DiffuseTexture"
+
+
+def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
+    tmp_path, key_pair
+):
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    shutil.copy(FIXTURES_DIR / "texture_fixture.usda", stage_dir)
+    (stage_dir / "texture_fixture.png").write_bytes(b"not an image")
 
     with pytest.raises(CookError) as raised:
         cook_scenario(

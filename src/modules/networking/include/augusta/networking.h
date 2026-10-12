@@ -3,10 +3,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 
 /// \file
 /// augusta::networking wraps GameNetworkingSockets/UDP (ADR-0003) for
@@ -37,12 +41,23 @@
 /// its Reliability explicitly rather than this module picking a default:
 /// unreliable suits real-time state updates where a newer message
 /// supersedes an older one, reliable suits a handshake that must arrive.
+///
+/// Every send and receive says what the local transport did with it
+/// (ADR-0033): a message it accepted, one it dropped because its peer's
+/// connection could not take it - a peer outcome, which never stops the
+/// runtime - or a failure of the local transport itself, a failure::Failure
+/// whose runtime Disposition its caller escalates. Reliable delivery is the
+/// transport's: nothing here, or above it, retries a send. A Client or Server
+/// given a failure::Faults asks it at each send, receive and listener setup,
+/// so a test makes the transport fail there.
 namespace augusta::networking {
 
 /// One-time process-wide setup for the underlying transport library. Call
 /// exactly once at process startup, before constructing any Client or
-/// Server.
-void Init();
+/// Server. Fails (failure::Code::kTransportInitFailed) with the library's own
+/// words as detail, which its caller reports. faults, when given, is asked
+/// first (failure::Site::kDependencyInit), so a test makes it fail.
+[[nodiscard]] std::expected<void, failure::Failure> Init(failure::Faults* faults = nullptr);
 
 /// Releases the transport library's process-wide state. Call at most
 /// once, after every Client/Server has been destroyed. augustac/augustad
@@ -95,8 +110,26 @@ struct SimulatedConditions {
 /// too) and reset it before the next test.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
+/// What the local transport did with a message it did not fail on.
+enum class SendOutcome : std::uint8_t {
+  /// Taken: the transport delivers it as its Reliability says. Only an
+  /// accepted message counts as sent.
+  kAccepted,
+  /// Not taken, because its peer's connection could not: it is not connected,
+  /// is ending, or has more queued than the transport holds. A peer outcome,
+  /// not a local failure. A reliable message dropped for a full queue ends that
+  /// connection, since it could no longer be delivered as reliable promises:
+  /// a server's peer is then reported kDisconnected (kConnectionLost) by the
+  /// next PumpEvents, and a client's connection reads kDisconnected.
+  kDropped,
+};
+
+/// A send's outcome, or the local transport's failure
+/// (failure::Code::kTransportSendFailed).
+using SendResult = std::expected<SendOutcome, failure::Failure>;
+
 /// A server address in "host:port" form (e.g. "192.168.1.10:27015"). A
-/// numeric IP, not a hostname - no DNS resolution in v1, matching the
+/// numeric IP, not a hostname - no DNS resolution, matching the
 /// direct-IP-only scope above.
 struct Endpoint {
   std::string address;
@@ -158,7 +191,10 @@ struct ConnectionStats {
 /// exactly one.
 class Client {
  public:
-  Client();
+  /// faults, when given, is asked at every send and receive
+  /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
+  /// Client.
+  explicit Client(failure::Faults* faults = nullptr);
 
   /// Closes the connection, if any, and releases the underlying
   /// transport connection.
@@ -171,7 +207,8 @@ class Client {
   Client(Client&&) = delete;
   Client& operator=(Client&&) = delete;
 
-  /// Begins connecting to server; returns immediately. Throws if
+  /// Begins connecting to server; returns immediately. Throws
+  /// failure::ClassifiedFailure (failure::Code::kInvalidConfiguration) if
   /// server.address does not parse; if the transport cannot create the
   /// connection, GetState() reports kDisconnected on return instead of
   /// kConnecting. Calling again before GetState() reports kDisconnected
@@ -194,12 +231,17 @@ class Client {
   /// its own rolling window; this doesn't block or perform I/O.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
 
-  /// Sends payload to the server as reliability says; a no-op if GetState() isn't kConnected.
-  void Send(const Payload& payload, Reliability reliability);
+  /// Sends payload to the server as reliability says: kDropped if GetState()
+  /// isn't kConnected.
+  [[nodiscard]] SendResult Send(const Payload& payload, Reliability reliability);
 
   /// Returns every message received since the last call, in arrival
-  /// order. Empty once drained.
-  [[nodiscard]] std::vector<Payload> ReceiveMessages();
+  /// order: empty once drained, or while not connected. What arrived before
+  /// the server closed the connection is still returned once, after
+  /// PumpEvents has seen the close; Connect and Disconnect drop it. Fails
+  /// (failure::Code::kTransportReceiveFailed) only when the local transport
+  /// cannot receive on a connection it holds, never for an empty queue.
+  [[nodiscard]] std::expected<std::vector<Payload>, failure::Failure> ReceiveMessages();
 
  private:
   struct Impl;
@@ -262,9 +304,15 @@ struct PeerMessage {
 class Server {
  public:
   /// Starts listening on local_endpoint - on a free port of its own choosing
-  /// if that names port 0 (see LocalEndpoint). Throws std::runtime_error if
-  /// the address can't be bound.
-  explicit Server(const Endpoint& local_endpoint);
+  /// if that names port 0 (see LocalEndpoint). Throws
+  /// failure::ClassifiedFailure, which the application boundary keeps whole:
+  /// failure::Code::kInvalidConfiguration if local_endpoint does not parse,
+  /// kListenerSetupFailed if the transport cannot set up its listen socket or
+  /// poll group (e.g. the address can't be bound). faults, when given, is
+  /// asked at listener setup and at every send and receive
+  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
+  /// must outlive the Server.
+  explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr);
 
   /// Closes the listen socket and every connected peer's connection.
   ~Server();
@@ -298,15 +346,20 @@ class Server {
   /// delivered. A no-op if peer is unknown (already disconnected).
   void Disconnect(PeerId peer);
 
-  /// Sends payload to one connected peer as reliability says; a no-op if peer isn't connected.
-  void Send(PeerId peer, const Payload& payload, Reliability reliability);
+  /// Sends payload to one connected peer as reliability says: kDropped if
+  /// peer isn't connected.
+  [[nodiscard]] SendResult Send(PeerId peer, const Payload& payload, Reliability reliability);
 
-  /// Sends payload to every currently connected peer as reliability says.
-  void Broadcast(const Payload& payload, Reliability reliability);
+  /// Sends payload to every currently connected peer as reliability says,
+  /// as Send does to each. Fails on the first local transport failure, not
+  /// sending to the peers after it; a peer that drops it is that peer's outcome.
+  [[nodiscard]] std::expected<void, failure::Failure> Broadcast(const Payload& payload, Reliability reliability);
 
   /// Returns every message received from any peer since the last call,
-  /// in arrival order. Empty once drained.
-  [[nodiscard]] std::vector<PeerMessage> ReceiveMessages();
+  /// in arrival order: empty once drained. Fails
+  /// (failure::Code::kTransportReceiveFailed) only when the local transport
+  /// cannot receive on its poll group, never for an empty queue.
+  [[nodiscard]] std::expected<std::vector<PeerMessage>, failure::Failure> ReceiveMessages();
 
   /// Returns a snapshot of every connected peer's connection (ConnectionStats),
   /// as Client::GetStats does for the client's one: each read clears its

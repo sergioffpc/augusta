@@ -1,5 +1,10 @@
 # Match Recording and Replay: SimulationWorld's Input and Outcome per Tick, in the Protocol's Encoding
 
+> Superseded by ADR-0050 and ADR-0051: the Match recording is dropped, and a
+> Match capture is the one way the server keeps a Match, re-run on the server
+> for Replay viewers (ADR-0051) or reenacted by Captured players (ADR-0050).
+> Nothing below stands.
+
 A bug seen in a playtest is hard to reproduce by playing again, and a
 non-determinism in SimulationWorld's phase pipeline (ADR-0023) shows only as a
 match that cannot be played the same way twice. This ADR decides what the server
@@ -45,18 +50,45 @@ the body placed there is.
 **augustad records only when asked.** `simulation.recording` in `augustad.yaml`
 (ADR-0034) names the file; without it nothing is recorded. The file is replaced
 when the server starts and holds the whole run, Lobby ticks included, since the
-World's tick count and every Seen time depend on them. The Simulation thread
-writes each tick's record right after the tick and flushes it, so a server that
-stops abruptly leaves every whole tick behind; a record cut short is dropped
-when read, and reported. It costs about 35 KB a second with 8 players at 60 Hz,
-which is why it is a debugging setting and not a default.
+World's tick count and every Seen time depend on them. Each tick's record is
+written and flushed as soon as the recording's writer reaches it, so a server
+that stops abruptly leaves behind every whole tick written by then; a record cut
+short is dropped when read, and reported. It costs about 35 KB a second with 8
+players at 60 Hz, which is why it is a debugging setting and not a default.
 
-**The write stays on the Simulation thread.** A record is encoded and handed to
-the operating system on the tick that made it, about 600 bytes into its file
-cache, which takes microseconds of a 16.7 ms tick (NFR-01); a writer thread
-would add a queue and its own failure to report for no gain a debugging setting
-needs. Recording is off in production and when NFR-01 is measured, so a disk
-that stalls a write delays only a debugging session.
+**Optional or strict.** `simulation.recording_mode` says what losing a tick of
+the recording costs. `optional`, the default, is for a debugging aid: the
+recording is a non-authoritative subsystem (ADR-0033), and a failure to write or
+flush a record, a queue found full, or a record too long degrades it. Its first
+failure is logged once at `ERR` (`event=recording_degraded`, its code
+`recording_write_failed` or `recording_flush_failed`, the tick and the step it
+was lost at), nothing more is written, and the server and its Match go on
+exactly as without a recording. `strict` is for a replay or verification run
+that needs every tick, a test recording a match to replay it among them: the
+same failure is `strict_recording_failed`, a `runtime` one, and the Simulation
+thread stops on it before it ticks again, so the runtime stops and the process
+exits with a failure status, its boundary writing the one `ERR` line. The writer
+finds a loss only after the tick that lost it, so a few ticks may run,
+unrecorded, before the Simulation thread does; a loss found only at the stop, in
+what was still queued, fails the run as it returns. Operators tell a recording's
+states apart by its log lines (`recording_enabled` with its mode,
+`recording_degraded`, `recording_stopped` when it is closed or a strict one
+fails) and by `augustad_recording_state` (ADR-0049), on which `stopped` means a
+strict recording's loss: a recording closed cleanly is closed after the endpoint
+stops serving. With no failure, the two modes write the very same file.
+
+**The disk is written on a thread of the recording's own.** The Simulation
+thread encodes a tick's record right after the tick, which costs only the
+record, at most 64 KiB, and hands it to the recording's writer through a queue
+of at most 256 records (about 4 seconds at 60 Hz, 16 MiB at worst), without
+waiting for the disk; the writer writes and flushes each record in turn. A disk
+that stalls a write then holds up only the writer, never a tick (NFR-01). A
+record that finds the queue full means the disk is not keeping up: the recording
+loses its ticks from there, as for a record too long to write or a write that
+fails, and the file keeps every tick before it, because dropping a tick and
+going on would leave ticks that are no longer their places. When the server
+stops, the writer writes what is still queued before it goes, so a stalled disk
+holds up the server's shutdown, not its ticks.
 
 **A replay hands a fresh World the same and checks each tick.** The replay loads
 the content of the pack the header names (refusing another pack), builds the
@@ -133,6 +165,11 @@ recording, from a playtest, becomes a test the same way.
   tick moves where the next tick starts, and over a match the difference grows
   past any fixed tolerance, so the golden match would fail on the other platform
   as soon as its bodies moved.
-- **A writer thread for the records**: rejected - see above.
+- **Writing each record on the Simulation thread**: rejected - a write is
+  usually microseconds into the operating system's file cache, but nothing
+  bounds it: a disk that stalls holds up the tick, and the debugging session
+  that turned recording on then debugs a server missing its deadlines.
+- **Blocking the Simulation thread when the queue is full**: rejected - it
+  brings the stall back, only later.
 - **Recording by default**: rejected - it costs disk on every run for a file
   only a debugging session reads.

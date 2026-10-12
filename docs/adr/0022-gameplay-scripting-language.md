@@ -56,8 +56,8 @@ keeps game policy separate from mechanism code.
   point per player. `server::Host` acts on the typed actions and never sees a
   hook's raw answer. The set grows only with a decision policy is given, as the
   hook catalogue does; a winner is part of a Match end, not an action of its
-  own, and there is no spawn action during a Match since there is no respawn in
-  v1 (ADR-0023).
+  own, and there is no spawn action during a Match since there is no respawn
+  (ADR-0023).
 - **Spawn assignment** is the rules' `assign_spawns(match)`, called once at
   Match start (ADR-0023). Its view holds `player_count`, `spawn_points` (how
   many the Map has) and `players`, a list of `{session, entity, character}`

@@ -25,8 +25,8 @@ namespace augusta::assets {
 inline constexpr std::size_t kBitsPerByte = 8;
 inline constexpr std::uint32_t kByteMask = 0xFFU;
 
-/// Pragmatic v1 sanity limits on a pack's size, entry count and path
-/// length. Chosen to be far above any real v1 content while still rejecting a hostile or
+/// Pragmatic sanity limits on a pack's size, entry count and path
+/// length. Chosen to be far above any real content while still rejecting a hostile or
 /// corrupt file long before it could cause a multi-gigabyte allocation.
 /// Every place that narrows a size_t count into a u32 wire field checks
 /// the relevant limit below first, which doubles as the narrowing guard:
@@ -39,7 +39,7 @@ inline constexpr std::uint32_t kMaxMeshIndices = 48'000'000;
 inline constexpr std::uint32_t kMaxSceneNodes = 1'000'000;
 inline constexpr std::uint32_t kMaxProperties = 256;
 /// A single BC7-compressed 8K DDS is well under this; comfortably above
-/// any real v1 texture while still rejecting a hostile/corrupt blob long
+/// any real texture while still rejecting a hostile/corrupt blob long
 /// before an oversized allocation.
 inline constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
 /// A Lua script is text an author wrote by hand; a megabyte is far beyond any

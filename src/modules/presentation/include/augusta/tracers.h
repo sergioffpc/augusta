@@ -14,7 +14,7 @@
 /// tracer along the trajectory the server computes for it - the same
 /// ballistics::World, with the Parameters' muzzle velocity and ammo, stepped a
 /// server tick at a time - until it meets the Map, where it leaves an impact,
-/// or reaches its max range. A tracer is a visual only: it is handed no
+/// or expires as the server's does. A tracer is a visual only: it is handed no
 /// player's hitboxes, so it never hits a player (ADR-0044: hits on players are
 /// drawn only from the server's Hit confirmations).
 ///
@@ -52,7 +52,7 @@ class Tracers {
   /// Moves every tracer on by elapsed seconds, stepping its trajectory by each
   /// tick that completes, and ages every impact. A tracer whose bullet reaches
   /// the Map ends there with an impact, aged by the time since; one past its
-  /// max range just ends.
+  /// max range or flight time (ballistics::kMaxFlightTime) just ends.
   void Advance(float elapsed);
 
   /// Every tracer in flight, as drawn now.

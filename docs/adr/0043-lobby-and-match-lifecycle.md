@@ -9,7 +9,7 @@ of each match. It changes parts of ADR-0042 and extends the message catalogue of
 ADR-0038.
 
 **A match has a fixed player count.** The scenario's Parameters (ADR-0039) set
-how many players a match needs, from 1 to `protocol::kMaxPlayers`. The server
+how many players a match needs, from 1 to `primitives::kMaxPlayers`. The server
 decides this number and tells each client, as it does for every other parameter.
 A Player count of 1 is allowed for development and tests, so one client can
 exercise a whole match; a scenario meant to be played asks for 2 to 8, as US-02

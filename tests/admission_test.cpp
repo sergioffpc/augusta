@@ -21,6 +21,7 @@ constexpr auto kInstant = std::chrono::milliseconds(1);
 constexpr auto kFirst = static_cast<PeerId>(1);
 constexpr auto kSecond = static_cast<PeerId>(2);
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, APeerNotAdmittedIsOverdueOnceTheDeadlinePassesAndNotBefore) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);
@@ -29,6 +30,7 @@ TEST(AdmissionDeadlinesTest, APeerNotAdmittedIsOverdueOnceTheDeadlinePassesAndNo
   EXPECT_EQ(deadlines.TakeOverdue(kStart + kAdmissionDeadline), Peers{kFirst});
 }
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, AnOverduePeerIsTakenOnlyOnce) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);
@@ -37,6 +39,7 @@ TEST(AdmissionDeadlinesTest, AnOverduePeerIsTakenOnlyOnce) {
   EXPECT_EQ(deadlines.TakeOverdue(kStart + (2 * kAdmissionDeadline)), Peers{});
 }
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, AnAdmittedPeerIsNeverOverdue) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);
@@ -45,6 +48,7 @@ TEST(AdmissionDeadlinesTest, AnAdmittedPeerIsNeverOverdue) {
   EXPECT_EQ(deadlines.TakeOverdue(kStart + (2 * kAdmissionDeadline)), Peers{});
 }
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, APeerThatLeftIsNeverOverdue) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);
@@ -53,6 +57,7 @@ TEST(AdmissionDeadlinesTest, APeerThatLeftIsNeverOverdue) {
   EXPECT_EQ(deadlines.TakeOverdue(kStart + (2 * kAdmissionDeadline)), Peers{});
 }
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, EachPeerHasItsOwnDeadline) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);
@@ -63,6 +68,7 @@ TEST(AdmissionDeadlinesTest, EachPeerHasItsOwnDeadline) {
   EXPECT_EQ(deadlines.TakeOverdue(kStart + (2 * kAdmissionDeadline)), Peers{kSecond});
 }
 
+// Requirements: NFR-05
 TEST(AdmissionDeadlinesTest, ThePeersAdmittedOrGoneLeaveTheOthersDeadlinesAsTheyWere) {
   AdmissionDeadlines deadlines;
   deadlines.Connected(kFirst, kStart);

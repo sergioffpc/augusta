@@ -5,16 +5,20 @@
 #include <memory>
 #include <optional>
 
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "augusta/supervisor.h"
+#include "content.h"
 #include "host.h"
+#include "replay_server.h"
 
 /// \file
 /// The augustad executable's orchestrator (ARCHITECTURE.md §5): it runs a
-/// server::Host on the two threads ADR-0005 gives the server - the Network I/O
-/// thread pumps its connections, the Simulation thread ticks it at the fixed
-/// rate - and has no render thread, since the server is headless. Beside them
+/// server::Host, or in replay mode a server::ReplayServer (ADR-0051), on the
+/// two threads ADR-0005 gives the server - the Network I/O thread pumps its
+/// connections, the Simulation thread ticks it at the fixed rate - and has no
+/// render thread, since the server is headless. Beside them
 /// it serves the metrics endpoint (metrics.h, ADR-0049) on a third thread it
 /// does not supervise. Decoding what clients send, admitting them, screening
 /// their commands and replicating each tick is Host's work (host.h);
@@ -26,13 +30,21 @@ namespace augusta::server {
 /// thread (see Run()).
 class ServerRuntime {
  public:
-  /// Constructs SimulationWorld with scenario's collision (throws
-  /// std::runtime_error if a map mesh is rejected - see host.h) and the
-  /// scenario's Game policy, and starts networking::Server listening on
-  /// config.listen (throws std::runtime_error if the address can't be bound -
-  /// see networking.h). Does not yet spawn any thread or start the metrics
-  /// endpoint; see Run().
-  ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy = {});
+  /// Constructs SimulationWorld with scenario's collision and the scenario's
+  /// Game policy, and starts networking::Server listening on config.listen,
+  /// throwing the failure::ClassifiedFailure Host's constructor does (see
+  /// host.h). Does not yet spawn any thread or start the metrics
+  /// endpoint; see Run(). faults, for tests only, is asked by its supervisor
+  /// at each worker's creation and execution, and must outlive Run().
+  ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario, scripting::Engine policy = {},
+                failure::Faults* faults = nullptr);
+
+  /// A replay server's runtime (ADR-0051): as above, but what it runs is a
+  /// ReplayServer on config, scenario and policy (see replay_server.h, which
+  /// says what it throws), whose Replays each tick at config.tick_rate_hz. It
+  /// captures nothing, so it has no capture to fail.
+  ServerRuntime(const ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario, PolicyMaker policy,
+                failure::Faults* faults = nullptr);
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do
@@ -52,11 +64,14 @@ class ServerRuntime {
   /// Simulation loop on the calling thread - gather this tick's latest
   /// validated commands, SimulationWorld::Tick, hand the resulting
   /// Authoritative State onward - until Stop() is called or either thread
-  /// fails on an exception, which stops the other (supervisor.h). Always stops
-  /// and joins the Network I/O thread before returning. Returns the failure
-  /// that stopped it, nullopt if Stop() did: the caller reports it and exits.
-  /// Must not be called more than once.
-  [[nodiscard]] std::optional<supervisor::WorkerFailure> Run();
+  /// fails, the local transport failing among the ways it can
+  /// (Host::TakeTransportFailure), which stops the other (supervisor.h):
+  /// neither ticks nor pumps the network again once the stop is requested.
+  /// Always stops and joins the Network I/O
+  /// thread before returning, and so before Host, which it uses, can go.
+  /// Returns the first cause that stopped it, nullopt if Stop() did:
+  /// the caller reports it and exits. Must not be called more than once.
+  [[nodiscard]] std::optional<failure::Failure> Run();
 
   /// Signals Run()'s Simulation loop to stop after its current tick, and the
   /// Network I/O thread after its current round. Safe to call from any thread
@@ -66,6 +81,8 @@ class ServerRuntime {
 
  private:
   struct Impl;
+  template <typename Served>
+  struct Running;
   std::unique_ptr<Impl> impl_;
 };
 

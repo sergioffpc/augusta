@@ -9,7 +9,7 @@
 # (CMake's default when unset) and DESTDIR, e.g.
 #   make install prefix=/opt/augusta DESTDIR=/tmp/stage
 #
-# On Windows every command runs through scripts\vcenv.ps1, which loads the
+# On Windows every command runs through scripts\vcenv.cmd, which loads the
 # Visual Studio Build Tools environment first (cl.exe needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
 
@@ -17,7 +17,7 @@ ifeq ($(OS),Windows_NT)
 SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
-RUN := powershell -NoProfile -ExecutionPolicy Bypass -File scripts\vcenv.ps1
+RUN := scripts\vcenv.cmd
 else
 PRESET ?= linux
 RUN :=
@@ -43,19 +43,11 @@ GERSEMI := uv tool run gersemi@0.29.2
 PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
-# PSScriptAnalyzer is a PowerShell module: Windows PowerShell here, PowerShell 7
-# (pwsh) elsewhere, skipped where there is none (CI still runs it).
-ifeq ($(OS),Windows_NT)
-psscriptanalyzer = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/psscriptanalyzer.ps1 $(1)
-else
-psscriptanalyzer = if command -v pwsh >/dev/null; then pwsh -NoProfile -File scripts/psscriptanalyzer.ps1 $(1); \
-  else echo "pwsh not found - skipping PSScriptAnalyzer"; fi
-endif
 
 # What CI's Lint step runs clang-tidy on: every src .cpp except the two
 # Windows-only trees and the audio module's Windows-only output device, which
 # its Linux build graph has no compile commands for, and the C++ tools'
-# (tools/replay, tools/swarm), built with them.
+# (tools/agent), built with them.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
@@ -64,7 +56,7 @@ TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modu
 else
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
-TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/replay/*.cpp" "tools/swarm/*.cpp" ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
+TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
 
 # The rest of src and tests that this platform's build has compile commands
 # for, which tidy holds to include-cleaner alone (.clang-tidy's
@@ -79,12 +71,13 @@ else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
 JOBS ?= $(shell nproc)
 endif
-INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" "tools/replay/tests/*.cpp" "tools/swarm/tests/*.cpp" $(INCLUDE_EXCLUDES)))
+INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell git ls-files -- "src/*.cpp" "tests/*.cpp" "tools/agent/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
+TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check install uninstall clean distclean format format-check tidy lint docs
+.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint docs
 
 all: build
 
@@ -97,6 +90,7 @@ help:
 	$(info $()  build         configure, then compile the binaries (no tests))
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         the same as test)
+	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
@@ -120,6 +114,14 @@ test: build
 	$(RUN) ctest --preset $(PRESET)
 
 check: test
+
+# The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
+# preset's tests, then their llvm-cov report. The last run's profiles go first,
+# so the report is of this run alone.
+coverage:
+	cmake -E rm -rf build/x64-linux-coverage/profiles
+	$(MAKE) --no-print-directory test PRESET=linux-coverage
+	bash scripts/coverage-report.sh
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.
@@ -155,7 +157,6 @@ format:
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer,-Fix)
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -173,18 +174,17 @@ format-check:
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
-	$(call psscriptanalyzer)
 
-# -p is written -p=<dir> because PowerShell reads a bare -p as its own
-# -PipelineVariable when vcenv.ps1 forwards the arguments, and clang-tidy would
-# then run without the compile commands. Configuring first keeps
+# Configuring first keeps
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure
-	$(RUN) clang-tidy -p=$(BUILD_DIR) $(TIDY_SOURCES)
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(INCLUDE_CHECKS)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 
-.PHONY: $(INCLUDE_CHECKS)
+.PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+$(TIDY_CHECKS): tidy/%:
+	$(RUN) clang-tidy -p=$(BUILD_DIR) $*
+
 $(INCLUDE_CHECKS): include-cleaner/%:
 	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 

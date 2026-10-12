@@ -6,34 +6,40 @@ metadata:
 spec:
   interval: 5m
   releaseName: augustad
+  # The namespace in namespaces.yaml, with its Pod Security labels: not one
+  # Flux creates.
   targetNamespace: staging
   # Defaults to this HelmRelease's own namespace (flux-system) if unset,
   # which every environment shares - pin it to targetNamespace so each
   # environment gets its own Helm release storage instead of colliding on
   # the same (flux-system, augustad) release record.
   storageNamespace: staging
-  install:
-    createNamespace: true
+  # The chart runs the image CI builds from the same commit (charts/augustad
+  # values.yaml), which can still be building when Flux picks the commit up:
+  # wait for it rather than fail the upgrade.
+  timeout: 30m
   chart:
     spec:
       chart: charts/augustad
       reconcileStrategy: Revision
       sourceRef:
         kind: GitRepository
-        name: augusta-main
-  # main's chart still predates running the image of its own commit, so it is
-  # pointed at the branch tag. Drop image.tag once main carries develop's
-  # chart (and add timeout: 30m, as in develop.yaml).
+        name: augusta-release
   values:
-    image:
-      tag: main
-    # main's chart also predates a server per scenario (ADR-0026) and its
-    # server the pack format augusta-publish verifies: until main carries
-    # develop's chart, staging runs one server, reading a pack published by
-    # hand to /srv/augusta/asset-packs/<packVersion>/ (server.pack and
-    # augusta.pub). Replace this with servers, as in develop.yaml, then.
-    assetPacks:
-      packVersion: augusta
+    # staging's node ports (charts/augustad values.yaml), apart from
+    # develop's on the same node.
+    service:
+      nodePortRange:
+        first: 30800
+        last: 30899
+    # A server per scenario (ADR-0026), each running the pack version
+    # augusta-publish printed for it: the release's packs, signed with the
+    # release key.
+    servers:
+      firebase:
+        packVersion: "073cb2bb854f"
+        # Pinned so this server has a stable address for LAN clients.
+        nodePort: 30800
     # develop's release ships the dashboards (charts/augustad values.yaml).
     dashboards:
       enabled: false

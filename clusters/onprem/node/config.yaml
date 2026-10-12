@@ -1,0 +1,40 @@
+# k3s's configuration on the Node: /etc/rancher/k3s/config.yaml, written by
+# scripts/bootstrap-node.sh with the files beside it, before k3s's first start.
+# The flags are the k3s CIS hardening guide's
+# (https://docs.k3s.io/security/hardening-guide), checked against the CIS
+# Kubernetes Benchmark's k3s profile (ADR-0057); what they leave unmet is in
+# cis-exceptions.md. k3s's release is K3S_VERSION in the bootstrap script.
+#
+# protect-kernel-defaults: the kubelet exits rather than run on kernel
+# parameters other than its own; 90-kubelet.conf sets them, before k3s starts.
+protect-kernel-defaults: true
+# Secrets in the datastore are encrypted with an AES-CBC key k3s generates on
+# first start (/var/lib/rancher/k3s/server/cred/encryption-config.json).
+secrets-encryption: true
+kube-apiserver-arg:
+  # NodeRestriction is k3s's own; this list replaces it. EventRateLimit is
+  # configured in admission.yaml.
+  - enable-admission-plugins=NodeRestriction,EventRateLimit,DenyServiceExternalIPs
+  - admission-control-config-file=/etc/rancher/k3s/admission.yaml
+  - audit-policy-file=/etc/rancher/k3s/audit-policy.yaml
+  # Its directory is root's only: the log holds every Secret written or read.
+  - audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
+  - audit-log-maxage=30
+  - audit-log-maxbackup=10
+  - audit-log-maxsize=100
+  - service-account-extend-token-expiration=false
+kube-controller-manager-arg:
+  - terminated-pod-gc-threshold=100
+# rotate-server-certificates is left out: k3s issues the kubelet's serving
+# certificate itself, and with it on the kubelet would wait for a CSR that
+# nothing approves. kube-bench's RotateKubeletServerCertificate checks pass
+# without it.
+kubelet-arg:
+  - anonymous-auth=false
+  - make-iptables-util-chains=true
+  - streaming-connection-idle-timeout=5m
+  - tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+  # A fork bomb in one pod cannot exhaust the Node's PIDs.
+  - pod-max-pids=4096
+  # A pod that names no seccomp profile gets the runtime's default, not none.
+  - seccomp-default=true

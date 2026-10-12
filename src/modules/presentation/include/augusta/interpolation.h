@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "augusta/math.h"
@@ -164,13 +165,38 @@ class RemoteInterpolator {
     physics::BodyState body{};
     float yaw = 0.0F;
   };
+  // One entity's newest kUpdatesKept updates, oldest first, overwriting the
+  // oldest in place once full rather than shifting the rest down per update.
+  class History {
+   public:
+    explicit History(const Update& first);
+    // Appends update as the newest, dropping the oldest beyond kUpdatesKept.
+    void Push(const Update& update);
+    [[nodiscard]] std::size_t Size() const { return slots_.size(); }
+    // The index-th oldest kept update, index < Size().
+    [[nodiscard]] const Update& operator[](std::size_t index) const;
+    [[nodiscard]] const Update& Newest() const { return (*this)[Size() - 1]; }
+
+   private:
+    // Never empty; grows to kUpdatesKept, then wraps.
+    std::vector<Update> slots_;
+    // Where the oldest kept update is in slots_: 0 until it first wraps.
+    std::size_t oldest_ = 0;
+  };
   struct Buffered {
     EntityId entity{};
-    // Oldest first, at most kUpdatesKept, never empty.
-    std::vector<Update> updates;
+    History updates;
+    // Whether the list Sync is applying names this entity; false outside Sync.
+    bool listed = false;
   };
 
+  // Every buffered entity, in the order each was first recorded (since it was
+  // last forgotten): the order Sample returns them in.
   std::vector<Buffered> bodies_;
+  // Each buffered entity's position in bodies_, so Record and Sync find it
+  // without searching every other entity's buffer for each. Always names
+  // exactly bodies_'s entities at their current positions.
+  std::unordered_map<EntityId, std::size_t> index_;
 };
 
 }  // namespace augusta::presentation

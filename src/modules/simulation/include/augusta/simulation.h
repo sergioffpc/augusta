@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,9 @@ struct MatchPlayer {
   PlayerIdentity identity{};
   /// The Character identity's index names, copied.
   Character character{};
+  /// Where it spawns when it named its own, as a Captured player's Reenact
+  /// request does (ADR-0050); nullopt for Game policy to assign.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// One dynamic body as of the end of a tick.
@@ -270,7 +274,10 @@ struct State {
   /// one target in the order they took its health.
   std::vector<Hit> hits;
   /// How many bullets are still flying after this tick: fired and neither
-  /// stopped by the Map nor past the ammo's max range.
+  /// stopped by the Map nor past the ammo's max range or
+  /// ballistics::kMaxFlightTime. Fewer than ballistics::MaxFlightSteps(the
+  /// tick) per player the Match started with, since each fires at most one
+  /// round a tick (ADR-0002).
   std::uint32_t bullets_in_flight = 0;
 };
 
@@ -333,17 +340,13 @@ class World {
   /// bullets it fired fly on.
   void RemovePlayer(EntityId entity);
 
-  /// Puts entity's body at state, on the grids, keeping its fall tracking, as
-  /// if its last tick had ended there; a no-op if it has no body in the world.
-  /// A replay across builds re-syncs each body to the recorded one with it
-  /// (ADR-0048); the server never calls it.
-  void PlaceBody(EntityId entity, const physics::BodyState& state);
-
   /// Match start (US-03): the Match in the world ends first, as EndMatch ends
   /// it, then players, which name distinct entities, each get a Spawn point of
   /// spawn_points from Game policy (the rules' assign_spawns hook,
   /// ADR-0022) and are added there as AddPlayer adds them, with their identity:
-  /// fresh, with the Parameters' starting health and a full rifle. With no
+  /// fresh, with the Parameters' starting health and a full rifle. A player
+  /// that names its spawn (MatchPlayer::spawn) is added there instead, and the
+  /// hook is asked about the others alone, if there are any (ADR-0050). With no
   /// hook, or an answer that is refused (and logged), players take spawn_points
   /// in order, starting over after the last. With no spawn_points, every player
   /// spawns at the origin. Returns where each of players spawned, in the same

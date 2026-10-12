@@ -591,6 +591,7 @@ TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
   EXPECT_TRUE(pack->ResolveMesh("Mesh").has_value());
 }
 
+// Requirements: NFR-08
 TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
   const auto pack = augusta::assets::LoadVerifiedPack(MakePackPath("augusta_assets_test_unread.pack"),
                                                       MakePackPath("augusta_assets_test_missing.pub"));
@@ -599,6 +600,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
   EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPublicKeyUnreadable);
 }
 
+// Requirements: NFR-08
 TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
   const auto pack_path = MakePackPath("augusta_assets_test_other_key.pack");
   const auto key_path = MakePackPath("augusta_assets_test_other_key.pub");
@@ -618,6 +620,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
   EXPECT_EQ(pack.error().load_error, augusta::assets::LoadError::kSignatureInvalid);
 }
 
+// Requirements: NFR-08
 TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   const auto keys = GenerateEd25519KeyPair();
   const auto client_path = MakePackPath("augusta_assets_test_client.pack");
@@ -667,6 +670,7 @@ class PackLoadNegativeTest : public PackTest {
   std::vector<std::byte> valid_bytes_;
 };
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
   auto bytes = valid_bytes_;
   bytes[0] = std::byte{'X'};
@@ -678,6 +682,7 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kBadMagic);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsUnsupportedVersion) {
   auto bytes = valid_bytes_;
   // Version is the u32 right after the 4-byte magic, little-endian.
@@ -690,6 +695,7 @@ TEST_F(PackLoadNegativeTest, RejectsUnsupportedVersion) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kUnsupportedVersion);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
   const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + 10);
   const auto path = MakePackPath("augusta_assets_test_truncated_tiny.pack");
@@ -700,6 +706,7 @@ TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
   // Short enough that the header's own (unchanged) index_offset now
   // claims to point past this file's much smaller hashed_length.
@@ -712,6 +719,7 @@ TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
   auto bytes = valid_bytes_;
   // Flip a byte inside the data section (right after the fixed-size
@@ -727,6 +735,7 @@ TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kHashMismatch);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
   auto bytes = valid_bytes_;
   // The hash's first byte, right after the flags byte, which is clear.
@@ -739,6 +748,7 @@ TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
   auto bytes = valid_bytes_;
   bytes[kHeaderSize - 33] = std::byte{0x02};
@@ -750,6 +760,7 @@ TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kTruncated);
 }
 
+// Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
   const auto path = MakePackPath("augusta_assets_test_wrong_key.pack");
   WriteFileBytes(path, valid_bytes_);

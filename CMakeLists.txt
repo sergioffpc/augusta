@@ -20,7 +20,27 @@ if(SCCACHE_PROGRAM AND (NOT CMAKE_GENERATOR MATCHES "Visual Studio"))
   set(CMAKE_CXX_COMPILER_LAUNCHER "${SCCACHE_PROGRAM}")
 endif()
 
+# The server is on every build's graph, so a platform augustad doesn't support
+# (NFR-04) stops the configure: by its host OS here, before vcpkg's toolchain
+# installs the dependencies in project(), and by its target right after.
+include(cmake/AugustaPlatform.cmake)
+augusta_require_server_host()
+
+# The tools (tools/agent) and their tests. On by default, so every
+# build compiles them and their C++ tests join augusta_tests; the server image,
+# which builds augustad alone, turns them off. Before project(): with them,
+# vcpkg installs what the Agents' Python module needs.
+option(AUGUSTA_TOOLS "Build the tools (tools/agent) and their tests" ON)
+if(AUGUSTA_TOOLS)
+  include(cmake/AugustaAgentPython.cmake)
+  augusta_find_agent_python(AUGUSTA_AGENT_PYTHON)
+  if(AUGUSTA_AGENT_PYTHON)
+    list(APPEND VCPKG_MANIFEST_FEATURES agent)
+  endif()
+endif()
+
 project(augusta LANGUAGES CXX)
+augusta_require_server_platform()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +52,12 @@ include(GNUInstallDirs)
 
 if(MSVC)
   add_compile_options(/W4 /WX /EHsc)
+  # Every configuration keeps its debug info, embedded in each object file
+  # (/Z7), which sccache caches - not /Zi's PDB shared between compiles, which
+  # it cannot. Every target, as on Linux: augustac's Release link gathers it
+  # into augustac.pdb, published with each release (ADR-0055). A normal
+  # variable, not a cache one, so a -D cannot drop the published symbols.
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
 else()
   add_compile_options(-Wall -Wextra -Werror)
   # Release keeps its debug info, which src/server splits off augustad: what a
@@ -39,6 +65,13 @@ else()
   # own: a core's frames are mostly in the module libraries it links, and
   # without theirs gdb has no file, line or local for them.
   add_compile_options($<$<CONFIG:Release>:-g>)
+endif()
+
+# The Agents' Python module (tools/agent) is a shared library that links the
+# engine's static ones, which on Linux must then be position-independent: the
+# whole build, so the tools link what augustad does. Windows needs nothing.
+if(AUGUSTA_TOOLS AND NOT WIN32)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -69,8 +102,11 @@ add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
+add_subdirectory(src/modules/primitives)
 add_subdirectory(src/modules/tick)
 add_subdirectory(src/modules/supervisor)
+add_subdirectory(src/modules/failure)
+add_subdirectory(src/modules/application)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
 add_subdirectory(src/modules/command)
@@ -79,6 +115,8 @@ add_subdirectory(src/modules/map)
 add_subdirectory(src/modules/ballistics)
 add_subdirectory(src/modules/weapon)
 add_subdirectory(src/modules/protocol)
+add_subdirectory(src/modules/shared_wire)
+add_subdirectory(src/modules/capture_file)
 add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
 add_subdirectory(src/modules/audio)
@@ -90,16 +128,20 @@ add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/replication)
 add_subdirectory(src/server)
-# The C++ tools, built with the runtime they link on every platform, all or
-# none: augusta-replay, which replays a match recording augustad wrote
-# (ADR-0048), and augusta-swarm, the Scripted players (ADR-0013). On by
-# default, so every build compiles them and their tests join augusta_tests,
-# the golden match among them; the server image, which builds augustad alone,
-# turns them off.
-option(AUGUSTA_TOOLS "Build the C++ tools (tools/replay, tools/swarm) and their tests" ON)
+# The tools, built with the runtime they link on every platform: the Agents
+# (ADR-0052), whose Python module is built against the interpreter
+# augusta_find_agent_python found - pybind11 in its classic mode reads it from
+# PYTHON_EXECUTABLE - and left out without one.
 if(AUGUSTA_TOOLS)
-  add_subdirectory(tools/replay)
-  add_subdirectory(tools/swarm)
+  if(AUGUSTA_AGENT_PYTHON)
+    set(PYTHON_EXECUTABLE "${AUGUSTA_AGENT_PYTHON}")
+    # Classic mode's FindPythonInterp/FindPythonLibs, which CMake has removed
+    # from its own (CMP0148) and pybind11 still ships for itself: a default,
+    # as pybind11's config sets its own policy version.
+    set(CMAKE_POLICY_DEFAULT_CMP0148 OLD)
+    find_package(pybind11 CONFIG REQUIRED)
+  endif()
+  add_subdirectory(tools/agent)
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs
 # one before and one after its tests (VS Code's CMake Tools, "Run Tests with

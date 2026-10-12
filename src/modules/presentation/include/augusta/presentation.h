@@ -5,6 +5,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -84,10 +85,12 @@ enum class Phase {
   /// shows over the view: the crosshair from the hip, the hit marker after a Hit
   /// confirmation (HitMarker), and the local player's muzzle flash on the frame
   /// its predicted fire fires a round (FiredRounds). Once the local player's
-  /// Death has arrived it is a spectator until the match ends: the camera
-  /// follows the eye of a living player instead (Spectator and WatchedCamera,
-  /// local_view.h; fire moves it on), holds where it was while no one is left
-  /// alive, and neither turns with the local player's aim nor zooms; no
+  /// Death has arrived it is a spectator until the match ends, and a Replay
+  /// viewer is one from the Match's first tick: the camera follows the eye of a
+  /// living player instead (Spectator and WatchedCamera, local_view.h; fire
+  /// moves it on), holds where it was while no one is left alive, and neither
+  /// turns with the local player's aim nor zooms; a Replay viewer's looks at
+  /// the watched player's pitch and zooms with its ADS (FrameInput::views). No
   /// crosshair or hit marker shows. View bob is still future work. Not yet a
   /// module of its own - see the header comment above.
   kCamera,
@@ -155,6 +158,15 @@ struct Shot {
   float pitch = 0.0F;
 };
 
+/// Where one player of a Replay looked on its newest tick (ADR-0051) -
+/// World::RunFrame's input, in presentation's own terms (see there).
+struct PlayerView {
+  EntityId entity{};
+  /// In radians (command::Command).
+  float pitch = 0.0F;
+  bool ads = false;
+};
+
 /// What the server said when a match ended (US-14) - World::RunFrame's input,
 /// in presentation's own terms (see there).
 struct MatchEnd {
@@ -166,6 +178,11 @@ struct MatchEnd {
 /// presentation's own type: ClientRuntime converts them from the harness's at
 /// its edge, the way each peer converts the protocol at its own (ADR-0038), so
 /// this module does not depend on the network session.
+///
+/// snapshot and characters are borrowed, not owned: the caller converts the
+/// server's data once when it arrives and lends it to every render frame until
+/// newer data replaces it. They need only outlive the RunFrame call; World keeps
+/// nothing of them past it but its own copies.
 struct FrameInput {
   /// The two most recently committed Prediction States and how far between them
   /// the frame is, which Interpolation blends by.
@@ -177,15 +194,15 @@ struct FrameInput {
   bool fire = false;
   /// The body this client's player controls, or nullopt before its first match.
   std::optional<EntityId> local_entity;
-  /// The newest Authoritative State update of the match in progress, or nullopt
+  /// The newest Authoritative State update of the match in progress, or null
   /// outside one. Every body in it other than local_entity's is fed to the
   /// RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
   /// newer a tick than the previous frame's) is not recorded again.
-  std::optional<WorldSnapshot> snapshot;
+  const WorldSnapshot* snapshot = nullptr;
   /// Every player's character, as the server named them when the match
   /// started, in Session order (whom a spectator watches first and next), or
   /// empty before the first.
-  std::vector<PlayerCharacter> characters;
+  std::span<const PlayerCharacter> characters;
   /// The Shots announced since the previous frame, in the order they arrived.
   std::vector<Shot> shots;
   /// How many Hit confirmations arrived since the previous frame.
@@ -199,6 +216,13 @@ struct FrameInput {
   /// What the server said when the match this client was last in ended, or
   /// nullopt before the first ends and while one is in progress.
   std::optional<MatchEnd> match_end;
+  /// Whether this client is a Replay viewer (ADR-0051): a spectator from the
+  /// Match's first tick, with no body of its own, which local_entity names none.
+  bool replay_viewer = false;
+  /// Every player's view on the Replay's newest tick, a Replay viewer's only:
+  /// the watched player's pitch and ADS, which its camera takes. Empty for any
+  /// other client, whose spectator looks level from the hip.
+  std::span<const PlayerView> views;
 };
 
 /// PresentationWorld's per-frame output - ADR-0024/ARCHITECTURE.md's

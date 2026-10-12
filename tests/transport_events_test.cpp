@@ -161,6 +161,33 @@ TEST(PeerTableTest, ForgettingAPeerStopsItBeingConnected) {
   EXPECT_EQ(peers.Connections(), std::vector<std::uint32_t>{kOther});
 }
 
+// A connection this side ends because the transport cannot keep it is a peer
+// outcome: reported like any departure, so its Session ends and nothing else.
+TEST(PeerTableTest, APeerTheTransportCannotKeepIsClosedAndReportedAsLost) {
+  PeerTable peers;
+  Feed(peers, kPeer, TransportState::kConnected);
+  Feed(peers, kOther, TransportState::kConnected);
+  Discard(peers.TakeEvents());
+
+  EXPECT_EQ(peers.Lose(kPeer), TransportCall::kClose);
+
+  const std::vector<PeerEvent> events = peers.TakeEvents();
+  ASSERT_EQ(events.size(), 1U);
+  EXPECT_EQ(events[0].peer, PeerId{kPeer});
+  EXPECT_EQ(events[0].type, PeerEventType::kDisconnected);
+  EXPECT_EQ(events[0].reason, DisconnectReason::kConnectionLost);
+  EXPECT_FALSE(peers.IsConnected(kPeer));
+  EXPECT_TRUE(peers.IsConnected(kOther));
+}
+
+TEST(PeerTableTest, LosingAPeerAlreadyGoneChangesNothing) {
+  PeerTable peers;
+
+  EXPECT_EQ(peers.Lose(kPeer), TransportCall::kNone);
+
+  EXPECT_TRUE(peers.TakeEvents().empty());
+}
+
 TEST(PeerTableTest, ConnectionsHoldsBothPendingAndConnectedPeers) {
   PeerTable peers;
   Feed(peers, kPeer, TransportState::kConnected);

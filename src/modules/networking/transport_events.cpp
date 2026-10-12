@@ -69,6 +69,17 @@ void PeerTable::Forget(std::uint32_t connection) {
   connected_.erase(connection);
 }
 
+TransportCall PeerTable::Lose(std::uint32_t connection) {
+  if (!pending_.contains(connection) && !connected_.contains(connection)) {
+    return TransportCall::kNone;
+  }
+  Forget(connection);
+  queued_.push_back(PeerEvent{.peer = static_cast<PeerId>(connection),
+                              .type = PeerEventType::kDisconnected,
+                              .reason = DisconnectReason::kConnectionLost});
+  return TransportCall::kClose;
+}
+
 bool PeerTable::IsConnected(std::uint32_t connection) const { return connected_.contains(connection); }
 
 std::vector<std::uint32_t> PeerTable::Connected() const { return {connected_.begin(), connected_.end()}; }

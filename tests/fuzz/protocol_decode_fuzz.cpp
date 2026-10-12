@@ -15,7 +15,7 @@
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
   const std::span<const std::byte> payload(reinterpret_cast<const std::byte*>(data), size);
   const auto message = augusta::protocol::Decode(payload);
-  if (message.has_value() && !std::ranges::equal(augusta::protocol::Encode(*message), payload)) {
+  if (message.has_value() && !std::ranges::equal(augusta::protocol::Encode(*message).value(), payload)) {
     std::abort();
   }
   return 0;

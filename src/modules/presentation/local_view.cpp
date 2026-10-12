@@ -62,8 +62,8 @@ Camera LocalCamera(const math::Vec3& feet, physics::Stance stance, const math::V
                 .vertical_fov = kHipFieldOfView};
 }
 
-Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye) {
-  return LocalCamera(body.position, body.stance, standing_eye, Aim{.yaw = body.yaw, .pitch = 0.0F, .ads = false},
+Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye, float pitch) {
+  return LocalCamera(body.position, body.stance, standing_eye, Aim{.yaw = body.yaw, .pitch = pitch, .ads = false},
                      weapon::RecoilOffset{});
 }
 

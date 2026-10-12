@@ -47,7 +47,7 @@ constexpr std::size_t kEd25519SignatureSize = 64;
 // BLAKE3 hash + Ed25519 signature of that hash, ADR-0031's trailer.
 constexpr std::uint64_t kTrailerSize = kPackHashSize + kEd25519SignatureSize;
 
-// Pragmatic v1 sanity limits - see wire_format.h's own comment on
+// Pragmatic sanity limits - see wire_format.h's own comment on
 // kMaxPathLength for the rest of this module's limits (shared with
 // encoder.cpp/decoder.cpp); these two are pack-container-only.
 constexpr std::uint32_t kMaxEntries = 1U << 20;
@@ -233,7 +233,7 @@ std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index
   return std::move(*value);
 }
 
-// Rejects entries.size()/each path exceeding this module's pragmatic v1
+// Rejects entries.size()/each path exceeding this module's pragmatic
 // limits, and any two entries sharing a path (ResolveMesh/ResolveScene
 // would be ambiguous about which one they name).
 std::expected<void, WriteError> ValidateEntries(const std::vector<AssetEntry>& entries) {

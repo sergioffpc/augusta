@@ -7,10 +7,13 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -18,6 +21,8 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "capture.h"
+#include "capture_retention.h"
 #include "connection_sample.h"
 #include "content.h"
 #include "host_metrics.h"
@@ -40,7 +45,11 @@
 /// The Network I/O thread's PumpNetwork and the Simulation thread's Tick may
 /// run concurrently: what they share (the Lobby, the match and the players'
 /// commands) is guarded inside. Both count what they do into the Host's metrics
-/// (host_metrics.h, ADR-0049) as they do it, lock-free.
+/// (host_metrics.h, ADR-0049) as they do it, lock-free, and count only what the
+/// transport accepted. A peer's malformed input or departure stays that peer's
+/// (dropped, judged, disconnected); a failure of the local transport is the
+/// runtime's, which Host keeps for a worker to take (TakeTransportFailure) and
+/// escalate (ADR-0033).
 namespace augusta::server {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
@@ -54,21 +63,34 @@ struct HostConfig {
   parameters::Parameters parameters{};
   /// Local address to listen on (US-01).
   networking::Endpoint listen{};
-  /// Where to write a recording of every tick SimulationWorld runs (ADR-0048),
-  /// replacing any file there; empty records none.
-  std::filesystem::path recording;
-  /// The hash of the server pack the content was loaded from, which a recording names.
+  /// The hash of the server pack the content was loaded from, which a capture names.
   assets::PackHash server_pack{};
+  /// The directory to capture every Match into (ADR-0050), created if
+  /// missing; empty captures none.
+  std::filesystem::path capture_directory;
+  /// What losing a record of a capture costs: an optional one degrades while
+  /// the Host goes on, a strict one is Host::CaptureFailure.
+  CaptureMode capture_mode = CaptureMode::kOptional;
+  /// What that directory is kept within, oldest capture first; off by default.
+  CaptureRetention capture_retention{};
+  /// Whether a Captured player's Reenact request is admitted, at the spawn it
+  /// names (ADR-0050); without it each is refused. Never for a server open to players.
+  bool reenactments = false;
+  /// For a test: asked at listener setup, at every send and receive
+  /// (networking.h) and at the capture's write and flush, so the transport or
+  /// the disk fails there; null otherwise. Must outlive the Host.
+  failure::Faults* faults = nullptr;
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.
 class Host {
  public:
-  /// Constructs SimulationWorld with scenario's collision (throws
-  /// std::runtime_error if a map mesh, or a character's hitbox, is not a whole
-  /// triangle list) and the scenario's Game policy (none by default), and starts
-  /// listening (throws std::runtime_error if the address can't be bound, or
-  /// HostConfig::recording can't be written).
+  /// Constructs SimulationWorld with scenario's collision and the scenario's
+  /// Game policy (none by default), and starts listening. Throws
+  /// failure::ClassifiedFailure, its Code saying which: kInvalidContent if a map
+  /// mesh, or a character's hitbox, is not a whole triangle list (see
+  /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
+  /// can't be created, or what networking::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
@@ -81,6 +103,16 @@ class Host {
 
   /// The address it listens on: HostConfig::listen's, with the port it chose if that named port 0.
   [[nodiscard]] networking::Endpoint ListenEndpoint() const;
+
+  /// The first message or record the Host could not encode, as the broken
+  /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
+  /// is sent to no one and recorded nowhere, and the runtime must stop.
+  /// PumpNetwork and Tick may each find one, so the thread that runs each asks
+  /// after it. Given once, as TakeTransportFailure is, so the runtime reports
+  /// it once; nullopt before one and after it has been taken. From any thread.
+  /// Once it, or a transport failure, is met, taken or not, the Host sends
+  /// nothing more, valid messages included.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// Does one round of the Network I/O thread's work, at now: connection events
   /// and received messages. A peer that keeps sending what no honest client
@@ -130,6 +162,29 @@ class Host {
   /// What it has counted (ADR-0049), for the metrics endpoint to collect and a
   /// test to read. From any thread; it lives as long as the Host.
   [[nodiscard]] const HostMetrics& Metrics() const;
+
+  /// The failure a strict capture lost a record on
+  /// (failure::Code::kStrictCaptureFailed), which the runtime must stop on
+  /// before it ticks again; nullopt while it has lost none, when the capture
+  /// is optional, whose loss only degrades it, or when nothing is captured.
+  /// From any thread.
+  [[nodiscard]] std::optional<failure::Failure> CaptureFailure() const;
+
+  /// CaptureFailure once every record queued so far is written, waiting for
+  /// the capture's writer, which then stops the captures (Capturer::Finish):
+  /// the last word on whether a strict capture is whole, for the runtime to
+  /// ask once it ticks no more, so its metrics read the captures stopped until
+  /// the process exits. A stalled disk holds it up. From the Simulation
+  /// thread, after its last Tick.
+  [[nodiscard]] std::optional<failure::Failure> FinishCapture();
+
+  /// The first failure of the local transport PumpNetwork or Tick met (a send,
+  /// or a receive, it refused: failure::Code::kTransportSendFailed,
+  /// kTransportReceiveFailed), once; nullopt before one and after it has been
+  /// taken. A runtime failure: the worker that takes it returns it to the
+  /// supervisor, which stops the runtime. Never a peer's doing - a peer's
+  /// malformed input or departure is handled as that peer's. From any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
 
  private:
   struct Impl;

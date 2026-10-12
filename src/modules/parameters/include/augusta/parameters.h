@@ -25,7 +25,7 @@ struct RecoilKick {
   bool operator==(const RecoilKick&) const = default;
 };
 
-/// The rifle every player carries (US-06 to US-09; one weapon in v1).
+/// The rifle every player carries (US-06 to US-09; the only weapon).
 struct Rifle {
   /// How many rounds per minute holding fire shoots. At most one round fires a
   /// tick, so a rate above the tick rate fires at the tick rate.
@@ -42,7 +42,7 @@ struct Rifle {
   /// The vertical field of view aiming down sights zooms to, in radians.
   float ads_field_of_view = 1.0F;
   /// The kick of each round of a burst, in order, at most
-  /// protocol::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
+  /// primitives::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
   std::vector<RecoilKick> recoil_pattern;
   /// How many rounds a full magazine holds, 1 or more.
   std::uint8_t magazine_capacity = 1;
@@ -89,7 +89,7 @@ struct Parameters {
   Ammo ammo{};
   /// The health every player starts a Match with, above 0; it never regenerates.
   float starting_health = 1.0F;
-  /// How many players a match needs to start (ADR-0043), 1 to protocol::kMaxPlayers.
+  /// How many players a match needs to start (ADR-0043), 1 to primitives::kMaxPlayers.
   std::uint8_t player_count{1};
 };
 
@@ -100,12 +100,12 @@ struct InvalidParameter {
 };
 
 /// Whether every value of parameters is one the simulation can run on: the
-/// player count 1 to protocol::kMaxPlayers, and then, in the order the struct
+/// player count 1 to primitives::kMaxPlayers, and then, in the order the struct
 /// declares them, numbers finite and: the stamina rates 0 or more and the forced
 /// walk threshold 0 or more and below 1; the fire rate, muzzle velocity and
 /// magazine capacity above 0, the reload time and recoil recovery 0 or more, the
 /// ADS recoil scale above 0 and at most 1, the ADS field of view above 0 and
-/// below pi, and at most protocol::kMaxRecoilKicks recoil kicks; the gravity 0
+/// below pi, and at most primitives::kMaxRecoilKicks recoil kicks; the gravity 0
 /// or more, the range above 0 and every damage 0 or more; the starting health
 /// above 0. The first that is not is the error. The server checks what its
 /// script gives and a client what its server sends, with these same rules.

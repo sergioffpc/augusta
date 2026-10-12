@@ -11,10 +11,20 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, built in C++23 with a Windows client (rendering via NVIDIA
-Falcor/D3D12) and a headless Linux dedicated server. A hobby project to master
-low-level systems and networking programming, deliberately built from scratch
-instead of on top of Unreal/Unity/Godot.
+server-authoritative, with a Windows client and a headless Linux dedicated
+server.
+
+## Contents
+
+- [Highlights](#highlights)
+- [Status](#status)
+- [Development Setup](#development-setup)
+    - [Bootstrap](#bootstrap)
+    - [Build and Run](#build-and-run)
+    - [Tests](#tests)
+    - [Agent Skills](#agent-skills)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## Highlights
 
@@ -25,17 +35,15 @@ instead of on top of Unreal/Unity/Godot.
   hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
   walk/run/crouch/prone, stamina, and recoil.
-- **ECS core** (Flecs) shared between client and server, with PhysX for
-  collision/movement and a custom ballistics module.
+- **ECS core** (Flecs) shared between client and server, with a physics layer
+  for collision/movement and a custom ballistics module.
 - **Mechanism / policy / data separation** — engine mechanism in C++, game
   policy (round lifecycle, win conditions, spawn rules) in sandboxed Lua,
   tunable balance values as data.
-- **v1 scope** — 1 weapon (rifle), 1 test map, 2–8 concurrent players.
 
 ## Status
 
-Early stage — see [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
-This is a solo-developer hobby project with no fixed deadline.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
@@ -44,16 +52,27 @@ docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
 ### Bootstrap
 
-**Windows (client):** run PowerShell as Administrator (Win+X → "Terminal
-(Admin)"). The bootstrap installs Visual Studio Build Tools and GNU make:
+[scripts/bootstrap.sh](scripts/bootstrap.sh) installs the toolchain, clones the
+repository into `./augusta` (or `$AUGUSTA_DIR`) and readies the checkout. In an
+existing checkout, run `scripts/bootstrap.sh` instead.
+
+**Windows (client):** in PowerShell as Administrator (Win+X → "Terminal
+(Admin)"). This installs Git for Windows, then runs the bootstrap in its Git
+Bash, which installs Visual Studio Build Tools and GNU make among the rest:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-./scripts/bootstrap-windows.ps1
+winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
 ```
 
 Open a new terminal after setup. The Makefile loads the Visual Studio Build
 Tools environment automatically for each command on Windows.
+
+**Linux host (server / shared core, Ubuntu 26.04):** installs the dev
+container's toolchain on the host, through sudo:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+```
 
 **Dev container (server / shared core):** open the repository in VS Code's Dev
 Containers or in GitHub Codespaces. The container reproduces CI's Linux build
@@ -61,13 +80,44 @@ environment, so `make test` builds and tests the `linux` preset with nothing
 else to install. The first build compiles the vcpkg dependencies; later ones
 reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
 
-Both the Windows bootstrap and the container initialize the vendored submodules
-and configure the Conventional Commits `commit-msg` hook.
+**macOS (server / shared core, through the dev container):** nothing builds
+natively. With [Homebrew](https://brew.sh) installed, this installs git, Git LFS
+and Podman (unless Docker is already there), starts Podman's machine, then
+builds the dev container's image and creates the checkout's container:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+```
+
+`scripts/dev-container.sh` opens a shell in that container from a terminal (or
+runs the command it's given), and the git hooks run their checks there. Run
+`scripts/dev-container.sh make configure PRESET=linux-debug` once so the
+`pre-push` hook can run clang-tidy.
+
+Every bootstrap and the container initialize the vendored submodules and
+configure the Conventional Commits `commit-msg` hook.
+
+**k3s node (the cluster's server, Debian 13):**
+[scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
+runs `develop` and `staging`, through sudo, without a checkout: the crash-core
+handler, Podman and gdb to read a core, the server's `augusta` user, the
+asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
+by key only, unattended security updates, auditd), k3s at the cluster's release,
+and Flux, which then installs the monitoring stack and both environments from
+Git. It skips what the node already has. Run it over SSH, by key, as your own
+user: the firewall then lets only that session's address, or those given with
+`--admin`, reach SSH and the API server. The asset packs are the one state not
+in Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
+([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+```
 
 ### Build and Run
 
 The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
-Studio Build Tools environment through [scripts/vcenv.ps1](scripts/vcenv.ps1).
+Studio Build Tools environment through [scripts/vcenv.cmd](scripts/vcenv.cmd).
 
 Build and start the Linux server in the dev container first. Leave it running,
 listening on the configured address (the default client connects to
@@ -86,11 +136,23 @@ make
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
 ```
 
+To bring back a playtest from its Match capture (ADR-0050), start a server with
+`simulation.reenactments: true` on the capture's packs, then one client per
+captured player, all at once, each the player of the capture `--player` names:
+
+```powershell
+& "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml --reenact captures/20261009T101500123Z-0001.capture --player 1
+```
+
+`augusta-inspect` lists a capture's players by those numbers.
+
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
-default release preset (`windows` on Windows, `linux` on Linux). To install the
-server, use `make install prefix=C:/augusta` on Windows or choose a Unix-style
-prefix on Linux.
+default release preset (`windows` on Windows, `linux` on Linux). `make install`
+installs only the server; the client has no install step and runs from its build
+directory. Use `prefix=C:/augusta` on Windows (a development build; Linux x86-64
+and Linux arm64 are the production server platforms) or a Unix-style prefix on
+Linux. Configuring on any other platform stops with the supported list (NFR-04).
 
 ### Tests
 
@@ -115,9 +177,7 @@ select it and run "Test: Run All Tests with Coverage": CMake Tools shows the
 result in the editor and the Test Coverage view. From a shell:
 
 ```bash
-cmake --preset linux-coverage && cmake --build --preset linux-coverage
-ctest --preset linux-coverage
-scripts/coverage-report.sh   # HTML and LCOV in build/x64-linux-coverage/report
+make coverage   # HTML and LCOV in build/x64-linux-coverage/report
 ```
 
 The nightly uploads the same report as its `coverage-report` artifact.
@@ -129,9 +189,26 @@ make format-check
 make lint
 ```
 
+### Agent Skills
+
+The development flows in [CLAUDE.md](CLAUDE.md) (main, engineering) run on
+[Matt Pocock's skills](https://github.com/mattpocock/skills). Install them
+either as editable files, choosing the skills and agents you use:
+
+```bash
+npx skills@latest add mattpocock/skills
+```
+
+and update them with `npx skills update`; or, in Claude Code, as the complete
+set in a managed, read-only plugin from the official marketplace:
+
+```bash
+claude plugins install mattpocock-skills
+```
+
 ## Documentation
 
-- [VISION.md](docs/VISION.md) — product vision and v1 definition of done
+- [VISION.md](docs/VISION.md) — product vision
 - [REQUIREMENTS.md](docs/REQUIREMENTS.md) — functional and non-functional
   requirements
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document

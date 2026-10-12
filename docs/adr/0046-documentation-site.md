@@ -32,9 +32,11 @@ runs from it; Doxygen is installed on the machine, like clang-format.
 **The site also charts the nightly benchmarks' history** (ADR-0013), under
 `benchmarks/`, linked from the navigation: the page and results the nightly
 keeps on the `benchmarks` branch, copied in when the site is built for
-deployment. So that it shows the latest night, `main`'s site is also deployed
-once a day, after the nightly; what it says of the code is still what was
-released.
+deployment. **Beside it, under `tests/`, is the nightly's test report**
+(ADR-0013), its tests' results and coverage, the latest scheduled night's,
+downloaded from that run's artifacts when the site is built for deployment. So
+that both show the latest night, `main`'s site is also deployed once a day,
+after the nightly; what it says of the code is still what was released.
 
 ## Considered Options
 

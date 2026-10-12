@@ -81,6 +81,13 @@ A non-functional requirement with a measure a test can check (NFR-02, NFR-03,
 NFR-05, NFR-06) gets one, through the Harness, ticked by hand rather than by a
 clock (ADR-0013).
 
+A test that checks a requirement's acceptance criteria or measure names it on a
+`// Requirements: US-07, US-08` line directly above the test macro, as the last
+line of its comment if it has one. Name only what the test checks, not what it
+merely passes through; a test of plumbing no requirement describes names none.
+CI refuses a marker that names an ID `docs/REQUIREMENTS.md` does not have
+(`scripts/requirements-matrix.py --check`).
+
 Reach for a property-based test (RapidCheck) when an invariant holds over a
 whole input domain — a serialization round-trip, a value that must never go
 negative, a state that must converge — not in place of example-based tests,

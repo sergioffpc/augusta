@@ -10,11 +10,10 @@
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
 
-#include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
+#include "augusta/primitives.h"
 #include "augusta/protocol.h"
-#include "augusta/tick.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -114,7 +113,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "}";
+      out << "first tick " << start.first_tick << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
@@ -133,6 +132,43 @@ void showValue(const MessageWire& message, std::ostream& out) {
           << static_cast<std::uint32_t>(death.killer) << ", part " << +static_cast<std::uint8_t>(death.part) << ", yaw "
           << death.yaw << ", pitch " << death.pitch << "}";
     }
+    void operator()(const ReplayListRequestWire& /*request*/) const { out << "ReplayListRequest{}"; }
+    void operator()(const ReplayListWire& list) const {
+      out << "ReplayList{";
+      for (const ReplayListingWire& listing : list.replays) {
+        out << rc::toString(listing.name) << ": started " << listing.started_unix_ms << ", ticks " << listing.ticks
+            << ", tick_rate_hz " << +listing.tick_rate_hz << ", characters";
+        for (const std::string& character : listing.characters) {
+          out << " " << rc::toString(character);
+        }
+        out << "; ";
+      }
+      out << "}";
+    }
+    void operator()(const ReplayRequestWire& request) const {
+      out << "ReplayRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
+      for (const std::byte byte : request.client_pack) {
+        out << " " << std::to_integer<int>(byte);
+      }
+      out << ", capture " << rc::toString(request.capture) << "}";
+    }
+    void operator()(const ReplayViewWire& view) const {
+      out << "ReplayView{tick " << view.tick << ", ";
+      for (const PlayerViewWire& player : view.players) {
+        out << static_cast<std::uint32_t>(player.entity) << ": pitch " << player.pitch << ", flags " << +player.flags
+            << "; ";
+      }
+      out << "}";
+    }
+    void operator()(const ReenactRequestWire& request) const {
+      out << "ReenactRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
+      for (const std::byte byte : request.client_pack) {
+        out << " " << std::to_integer<int>(byte);
+      }
+      out << ", character " << rc::toString(request.character) << ", spawn ";
+      showValue(request.spawn, out);
+      out << "}";
+    }
   };
   std::visit(Printer{.out = out}, message);
 }
@@ -150,6 +186,9 @@ using augusta::math::kPositionGrid;
 using augusta::math::kStaminaGrid;
 using augusta::math::kVelocityGrid;
 using augusta::math::Vec3;
+using augusta::primitives::kMaxCommandsPerMessage;
+using augusta::primitives::kMaxPlayers;
+using augusta::primitives::kMaxRecoilKicks;
 using augusta::protocol::AmmoWire;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyPartWire;
@@ -167,10 +206,7 @@ using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
 using augusta::protocol::kMaxCharacterNameLength;
-using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
-using augusta::protocol::kMaxPlayers;
-using augusta::protocol::kMaxRecoilKicks;
 using augusta::protocol::kPackHashSize;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
@@ -179,8 +215,15 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
+using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::RecoilKickWire;
+using augusta::protocol::ReenactRequestWire;
+using augusta::protocol::ReplayListingWire;
+using augusta::protocol::ReplayListRequestWire;
+using augusta::protocol::ReplayListWire;
+using augusta::protocol::ReplayRequestWire;
+using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -268,6 +311,15 @@ rc::Gen<JoinRequestWire> JoinRequest() {
       rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
 }
 
+rc::Gen<ReenactRequestWire> ReenactRequest() {
+  return rc::gen::build<ReenactRequestWire>(
+      rc::gen::set(&ReenactRequestWire::engine_version,
+                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
+      rc::gen::set(&ReenactRequestWire::character, Character()),
+      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
+}
+
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
   const auto stamina = rc::gen::build<StaminaWire>(rc::gen::set(&StaminaWire::deplete_per_second, FiniteFloat()),
                                                    rc::gen::set(&StaminaWire::regen_per_second, FiniteFloat()),
@@ -298,18 +350,20 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
 
 rc::Gen<JoinRefusedWire> JoinRefused() {
   return rc::gen::build<JoinRefusedWire>(rc::gen::set(
-      &JoinRefusedWire::reason, rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
-                                                 JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
-                                                 JoinRefusalWire::kPackMismatch)));
+      &JoinRefusedWire::reason,
+      rc::gen::element(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kLobbyFull,
+                       JoinRefusalWire::kUnknownCharacter, JoinRefusalWire::kMatchInProgress,
+                       JoinRefusalWire::kPackMismatch, JoinRefusalWire::kReplayServer, JoinRefusalWire::kUnknownCapture,
+                       JoinRefusalWire::kNotAReplayServer, JoinRefusalWire::kReenactmentsNotAccepted)));
 }
 
 rc::Gen<CommandsWire> Commands() {
   const auto sequenced = rc::gen::build<SequencedCommandWire>(
-      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
+      rc::gen::set(&SequencedCommandWire::sequence, rc::gen::arbitrary<augusta::primitives::Sequence>()),
       rc::gen::set(&SequencedCommandWire::command, Command()));
   return rc::gen::build<CommandsWire>(
       rc::gen::set(&CommandsWire::commands, UpTo<std::vector<SequencedCommandWire>>(kMaxCommandsPerMessage, sequenced)),
-      rc::gen::set(&CommandsWire::seen_tick, rc::gen::arbitrary<augusta::tick::Tick>()));
+      rc::gen::set(&CommandsWire::seen_tick, rc::gen::arbitrary<augusta::primitives::Tick>()));
 }
 
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
@@ -324,8 +378,8 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
                                       rc::gen::set(&WeaponStateWire::rounds, rc::gen::arbitrary<std::uint8_t>()),
                                       rc::gen::set(&WeaponStateWire::burst_index, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<AuthoritativeStateWire>(
-      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
-      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<augusta::command::Sequence>()),
+      rc::gen::set(&AuthoritativeStateWire::tick, rc::gen::arbitrary<augusta::primitives::Tick>()),
+      rc::gen::set(&AuthoritativeStateWire::acknowledged_sequence, rc::gen::arbitrary<augusta::primitives::Sequence>()),
       rc::gen::set(&AuthoritativeStateWire::bodies, UpTo<std::vector<EntityStateWire>>(kMaxPlayers, entity)),
       rc::gen::set(&AuthoritativeStateWire::rifle, rifle), rc::gen::set(&AuthoritativeStateWire::health, FiniteFloat()),
       rc::gen::set(&AuthoritativeStateWire::queued_commands, rc::gen::arbitrary<std::uint8_t>()));
@@ -349,7 +403,8 @@ rc::Gen<MatchStartWire> MatchStart() {
                                                       rc::gen::set(&MatchPlayerWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
-      rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)));
+      rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)),
+      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()));
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {
@@ -359,7 +414,7 @@ rc::Gen<MatchEndWire> MatchEnd() {
 rc::Gen<ShotWire> Shot() {
   return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
                                   rc::gen::set(&ShotWire::shooter, AnyId<EntityIdWire>()),
-                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
+                                  rc::gen::set(&ShotWire::tick, rc::gen::arbitrary<augusta::primitives::Tick>()),
                                   rc::gen::set(&ShotWire::yaw, OnGrid(kAngleGrid)),
                                   rc::gen::set(&ShotWire::pitch, OnGrid(kAngleGrid)));
 }
@@ -379,6 +434,42 @@ rc::Gen<DeathWire> Death() {
       rc::gen::set(&DeathWire::part, rc::gen::element(BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb)));
 }
 
+// A capture's name: any bytes up to the longest a message may carry.
+rc::Gen<std::string> CaptureName() {
+  return UpTo<std::string>(augusta::protocol::kMaxCaptureNameLength, rc::gen::arbitrary<char>());
+}
+
+rc::Gen<ReplayListWire> ReplayList() {
+  const auto listing = rc::gen::build<ReplayListingWire>(
+      rc::gen::set(&ReplayListingWire::started_unix_ms, rc::gen::arbitrary<std::int64_t>()),
+      rc::gen::set(&ReplayListingWire::characters, UpTo<std::vector<std::string>>(kMaxPlayers, Character())),
+      rc::gen::set(&ReplayListingWire::name, CaptureName()),
+      rc::gen::set(&ReplayListingWire::ticks, rc::gen::arbitrary<std::uint32_t>()),
+      rc::gen::set(&ReplayListingWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()));
+  // A few listings cover the list's encoding; its count's limit is checked by
+  // example (protocol_test.cpp).
+  return rc::gen::build<ReplayListWire>(
+      rc::gen::set(&ReplayListWire::replays, UpTo<std::vector<ReplayListingWire>>(4, listing)));
+}
+
+rc::Gen<ReplayRequestWire> ReplayRequest() {
+  return rc::gen::build<ReplayRequestWire>(
+      rc::gen::set(&ReplayRequestWire::engine_version,
+                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
+}
+
+rc::Gen<ReplayViewWire> ReplayView() {
+  const auto player = rc::gen::build<PlayerViewWire>(
+      rc::gen::set(&PlayerViewWire::pitch, OnGrid(kAngleGrid)),
+      rc::gen::set(&PlayerViewWire::entity, AnyId<EntityIdWire>()),
+      rc::gen::set(&PlayerViewWire::flags, rc::gen::element<std::uint8_t>(0, PlayerViewWire::kAds)));
+  return rc::gen::build<ReplayViewWire>(
+      rc::gen::set(&ReplayViewWire::tick, rc::gen::arbitrary<augusta::primitives::Tick>()),
+      rc::gen::set(&ReplayViewWire::players, UpTo<std::vector<PlayerViewWire>>(kMaxPlayers, player)));
+}
+
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
@@ -386,13 +477,16 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(AuthoritativeState()), rc::gen::cast<MessageWire>(Lobby()),
                         rc::gen::cast<MessageWire>(Ready()), rc::gen::cast<MessageWire>(MatchStart()),
                         rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
-                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()));
+                        rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()),
+                        rc::gen::just(MessageWire{ReplayListRequestWire{}}), rc::gen::cast<MessageWire>(ReplayList()),
+                        rc::gen::cast<MessageWire>(ReplayRequest()), rc::gen::cast<MessageWire>(ReplayView()),
+                        rc::gen::cast<MessageWire>(ReenactRequest()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {
   const MessageWire message = *Message();
 
-  const auto decoded = Decode(Encode(message));
+  const auto decoded = Decode(Encode(message).value());
 
   RC_ASSERT(decoded.has_value());
   RC_ASSERT(*decoded == message);

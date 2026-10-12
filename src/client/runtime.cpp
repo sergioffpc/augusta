@@ -1,5 +1,7 @@
 #include "runtime.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -7,21 +9,23 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "application.h"
 #include "augusta/audio.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
+#include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
+#include "augusta/local_view.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
@@ -29,9 +33,9 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
+#include "augusta/reenactment.h"
 #include "augusta/renderer.h"
 #include "augusta/runner.h"
-#include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "character_loader.h"
 #include "content.h"
@@ -56,16 +60,6 @@ struct RunnerJoiner {
 
 }  // namespace
 
-std::string DescribeRunFailure(const RunFailure& failure) {
-  if (const auto* session = std::get_if<harness::Failure>(&failure)) {
-    return harness::DescribeFailure(*session);
-  }
-  if (const auto* worker = std::get_if<supervisor::WorkerFailure>(&failure)) {
-    return supervisor::DescribeWorkerFailure(*worker);
-  }
-  return DescribeCharacterError(std::get<CharacterError>(failure));
-}
-
 struct ClientRuntime::Impl {
   RuntimeConfig config;
   // Main/Render thread only: loads a character, and what to load in the Lobby
@@ -78,6 +72,21 @@ struct ClientRuntime::Impl {
   std::optional<harness::Session> session;
   presentation::World presentation;
   renderer::Renderer renderer;
+
+  // A Captured player's run (ADR-0050), if this client is one: NextCommand is
+  // the Prediction thread's, the rest the Main/Render thread's.
+  std::optional<harness::Reenactment> reenactment;
+  // The connection's round trip in ticks, written by the Network I/O thread
+  // and read by the Prediction and Main/Render threads, for the reenactment's pacing.
+  std::atomic<tick::Tick> round_trip_ticks{0};
+  // The last Command the reenactment sent, which the view aims by: written by
+  // the Prediction thread, read once per Main/Render frame.
+  std::mutex reenacted_mutex;
+  command::Command reenacted;
+  // Main/Render thread only: the Deaths the server told and the newest server
+  // tick seen, for what the run logs when it ends.
+  std::vector<harness::ObservedDeath> observed_deaths;
+  tick::Tick last_tick = 0;
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
@@ -96,6 +105,15 @@ struct ClientRuntime::Impl {
   // otherwise once it holds real payload.
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
+
+  // Main/Render thread only: the Server view's Authoritative State and Match
+  // start as presentation's types, converted when they change and lent to
+  // every render frame in between (NextFrameInput); a Replay viewer's views
+  // of the newest tick, lent to the frame they are converted for; and the
+  // characters a Replay viewer has loaded.
+  ConvertedServerView converted_view;
+  std::vector<presentation::PlayerView> replay_views;
+  std::set<std::string, std::less<>> replay_characters;
 
   // What the last render frame showed the other players at, or nullopt while
   // it showed none: written once per Main/Render frame, read once per
@@ -123,6 +141,9 @@ struct ClientRuntime::Impl {
 
   void SampleNetworkStats() {
     const std::optional<networking::ConnectionStats> stats = session->GetConnectionStats();
+    if (const std::optional<std::uint8_t> rate = session->GetTickRate(); stats.has_value() && rate.has_value()) {
+      round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, *rate));
+    }
     net_stats_counters.Sample(stats);
     const std::optional<renderer::DebugHudNetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
@@ -136,6 +157,9 @@ struct ClientRuntime::Impl {
         input(cfg.input),
         presentation(audio, cue_sounds, eye),
         renderer(cfg.renderer, input) {
+    if (cfg.reenactment.has_value()) {
+      reenactment.emplace(*cfg.reenactment);
+    }
     // The map goes in before the Session takes the world over: a body that has
     // already ticked has been predicted without it, and reconciliation cannot
     // account for that.
@@ -147,12 +171,19 @@ struct ClientRuntime::Impl {
       return map::AddCollision(presentation, map.collision);
     });
     if (!added) {
-      throw std::runtime_error(
-          std::format("ClientRuntime: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
+      throw failure::ClassifiedFailure(failure::Failure{
+          .code = failure::Code::kInvalidContent,
+          .context = {},
+          .detail = std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error()))});
     }
-    session.emplace(
-        harness::SessionConfig{.server = cfg.server, .client_pack = cfg.client_pack, .character = cfg.character},
-        std::move(world));
+    // A Captured player asks to join at its captured spawn (ADR-0050).
+    session.emplace(harness::SessionConfig{.server = cfg.server,
+                                           .client_pack = cfg.client_pack,
+                                           .character = cfg.character,
+                                           .replay = cfg.replay,
+                                           .spawn = cfg.reenactment.transform(
+                                               [](const harness::Script& script) { return script.spawn; })},
+                    std::move(world));
   }
 
   // Prediction thread only: the state of the tick before the newest, nullopt
@@ -160,8 +191,77 @@ struct ClientRuntime::Impl {
   std::optional<prediction::State> previous_tick;
 
   // The Runner's Command for each tick: the player's input, with what the last
-  // render frame showed the other players at. Prediction thread.
-  command::Command NextCommand() { return WithSeenTime(input.Sample(), GetSeenTime()); }
+  // render frame showed the other players at; or a Captured player's, paced
+  // with its own Seen time, the input sampled and set aside. Prediction thread.
+  // A Captured player skips the tick (nullopt) while enough of its Commands
+  // already wait at the server.
+  std::optional<command::Command> NextCommand() {
+    const command::Command sampled = input.Sample();
+    if (!reenactment.has_value()) {
+      return WithSeenTime(sampled, GetSeenTime());
+    }
+    const std::optional<command::Command> next =
+        reenactment->NextCommand(*session->GetServerView(), session->NextSequence(), round_trip_ticks.load());
+    if (next.has_value()) {
+      const std::lock_guard<std::mutex> lock(reenacted_mutex);
+      reenacted = *next;
+    }
+    return next;
+  }
+
+  // Where the view aims and whether fire is held this frame: the player's
+  // input, or a Captured player's last Command. Main/Render thread.
+  std::pair<presentation::Aim, bool> CurrentAim() {
+    if (!reenactment.has_value()) {
+      return {ToPresentation(input.CurrentAim()), input.IsHeld(input::Control::kFire)};
+    }
+    const std::lock_guard<std::mutex> lock(reenacted_mutex);
+    return {ToPresentation(input::Aim{.yaw = reenacted.yaw, .pitch = reenacted.pitch, .ads = reenacted.ads}),
+            reenacted.fire};
+  }
+
+  // How a Captured player's run ends as of view, or nullopt while it plays
+  // on or this client is none: at its captured Leave, or at the capture's
+  // Match end or the server's (ADR-0050). Main/Render thread.
+  std::optional<harness::Progress> ReenactmentEnding(const harness::ServerView& view) const {
+    if (!reenactment.has_value()) {
+      return std::nullopt;
+    }
+    const harness::Progress progress = reenactment->Check(view, round_trip_ticks.load());
+    return progress == harness::Progress::kPlaying ? std::nullopt : std::optional(progress);
+  }
+
+  // Keeps what a Captured player's run compares with its capture: the newest
+  // server tick of view, and the Deaths of its Match told and not yet taken,
+  // each at that tick. Main/Render thread.
+  void CollectOutcome(const harness::ServerView& view) {
+    if (!reenactment.has_value()) {
+      return;
+    }
+    if (view.authoritative.has_value()) {
+      last_tick = std::max(last_tick, view.authoritative->tick);
+    }
+    for (const harness::Death& death : session->TakeDeaths(view)) {
+      RecordDeath(death);
+    }
+  }
+
+  // Keeps death, told as of the newest server tick seen, for a Captured
+  // player's outcome. Main/Render thread.
+  void RecordDeath(const harness::Death& death) {
+    observed_deaths.push_back(
+        harness::ObservedDeath{.tick = last_tick, .victim = death.victim, .killer = death.killer});
+  }
+
+  // Logs how a Captured player's run ended, and what it saw beside what its
+  // capture holds. Main/Render thread.
+  void LogOutcome(const harness::ServerView& view, harness::Progress how) const {
+    LI("subsystem=reenactment event={} player={}", how == harness::Progress::kLeave ? "left" : "ended",
+       reenactment->GetScript().player);
+    for (const std::string& line : reenactment->Outcome(view, observed_deaths, last_tick, how)) {
+      LI("subsystem=reenactment {}", line);
+    }
+  }
 
   // The Runner's word on each tick: publishes it, with the one before it, for
   // render frames to blend. Prediction thread.
@@ -201,20 +301,51 @@ struct ClientRuntime::Impl {
     return std::nullopt;
   }
 
+  // A Replay viewer's characters to draw, once its Match has started: every
+  // player's not loaded yet, uploaded and handed to PresentationWorld as
+  // GetReadyForLobby does a Lobby's. A viewer is sent no Lobby and reports no
+  // Ready (ADR-0051). Main/Render thread only. Returns why a character could
+  // not be loaded, if one could not.
+  std::optional<CharacterError> LoadReplayCharacters() {
+    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    if (!view->match_start.has_value()) {
+      return std::nullopt;
+    }
+    for (const harness::MatchPlayer& player : view->match_start->players) {
+      if (replay_characters.contains(player.character)) {
+        continue;
+      }
+      auto loaded = load_character(player.character);
+      if (!loaded.has_value()) {
+        return loaded.error();
+      }
+      renderer.SetCharacterMesh(player.character, loaded->mesh);
+      presentation.SetCharacterEye(player.character, loaded->eye);
+      LI("subsystem=clientruntime event=character_loaded character={}", player.character);
+      replay_characters.insert(player.character);
+    }
+    return std::nullopt;
+  }
+
+  // What to load before the next frame: a player's Lobby, or a Replay viewer's Match.
+  std::optional<CharacterError> LoadCharacters() {
+    return config.replay.has_value() ? LoadReplayCharacters() : GetReadyForLobby();
+  }
+
   LatestTick GetLatestTick() {
     std::lock_guard<std::mutex> lock(latest_tick_mutex);
     return latest_tick;
   }
 
-  // Why the run must end, if a worker or the session has failed. A worker has
-  // logged its own failure where it failed; the session's is logged here.
-  std::optional<RunFailure> GetRunFailure() {
+  // Why the run must end, if a worker or the session has failed, classified.
+  // Not logged here: the application boundary writes the client's one terminal
+  // event for it (augusta/application.h).
+  std::optional<failure::Failure> GetRunFailure() {
     if (auto worker_failure = runner->Failure(); worker_failure.has_value()) {
       return std::move(*worker_failure);
     }
     if (const auto session_failure = session->GetFailure(); session_failure.has_value()) {
-      LE("subsystem=clientruntime event=session_failed reason=\"{}\"", harness::DescribeFailure(*session_failure));
-      return *session_failure;
+      return ClassifySessionFailure(*session_failure);
     }
     return std::nullopt;
   }
@@ -224,7 +355,7 @@ struct ClientRuntime::Impl {
   // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
   // why the run failed first, if it did; returns nothing if the window closed
   // first. Main/Render thread only.
-  std::optional<RunFailure> WaitForAdmission() {
+  std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
     while (!renderer.ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
@@ -232,6 +363,11 @@ struct ClientRuntime::Impl {
       }
       const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
       if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
+        if (reenactment.has_value()) {
+          if (const std::optional<std::string> mismatch = reenactment->PlayerCountMismatch(*accepted)) {
+            LW("subsystem=reenactment {}", *mismatch);
+          }
+        }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
         return std::nullopt;
       }
@@ -249,31 +385,48 @@ struct ClientRuntime::Impl {
   //
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
-  // (ADR-0005), however the Network I/O thread interleaves with this one.
+  // (ADR-0005), however the Network I/O thread interleaves with this one; the
+  // events taken are of that view's match too. The snapshot and characters
+  // are lent from converted_view, so the frame must run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    converted_view.Update(*view);
+    const auto [aim, fire] = CurrentAim();
+    replay_views = ViewsOf(*view);
+    const bool viewer = config.replay.has_value();
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
                   .latest = latest.latest,
                   .fraction = tick::FractionElapsed(latest.start, latest.duration, tick::Clock::now())},
-        .aim = ToPresentation(input.CurrentAim()),
-        .fire = input.IsHeld(input::Control::kFire),
+        .aim = aim,
+        .fire = fire,
         .local_entity = std::nullopt,
-        .snapshot = SnapshotOf(*view),
-        .characters = CharactersOf(view->match_start),
+        .snapshot = converted_view.Snapshot(),
+        .characters = converted_view.Characters(),
         .shots = {},
-        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations().size()),
+        .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),
         .deaths = {},
-        .health = view->authoritative.transform([](const harness::AuthoritativeState& state) { return state.health; }),
+        // A Replay viewer has no health of its own to lose.
+        .health = viewer ? std::optional<float>()
+                         : view->authoritative.transform(
+                               [](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
+        .replay_viewer = viewer,
+        .views = replay_views,
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
-    for (const harness::Shot& shot : session->TakeShots()) {
+    for (const harness::Shot& shot : session->TakeShots(*view)) {
       frame.shots.push_back(ToPresentation(shot));
     }
-    for (const harness::Death& death : session->TakeDeaths()) {
+    if (reenactment.has_value() && view->authoritative.has_value()) {
+      last_tick = std::max(last_tick, view->authoritative->tick);
+    }
+    for (const harness::Death& death : session->TakeDeaths(*view)) {
       frame.deaths.push_back(ToPresentation(death.victim));
+      if (reenactment.has_value()) {
+        RecordDeath(death);
+      }
     }
     return frame;
   }
@@ -318,17 +471,18 @@ ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
 
 ClientRuntime::~ClientRuntime() = default;
 
-std::optional<RunFailure> ClientRuntime::Run() {
+std::optional<failure::Failure> ClientRuntime::Run() {
   Impl& impl = *impl_;
   impl.runner.emplace(*impl.session,
                       harness::RunnerHooks{
                           .next_command = [&impl] { return impl.NextCommand(); },
                           .on_tick = [&impl](const harness::PredictedTick& tick) { impl.PublishTick(tick); },
                           .on_network_round = [&impl] { impl.SampleNetworkStats(); },
+                          .on_failure = {},
                       });
   const RunnerJoiner joiner{.runner = impl.runner};
 
-  std::optional<RunFailure> failure = impl.WaitForAdmission();
+  std::optional<failure::Failure> failure = impl.WaitForAdmission();
   if (failure.has_value()) {
     return failure;
   }
@@ -341,9 +495,20 @@ std::optional<RunFailure> ClientRuntime::Run() {
     if (failure.has_value()) {
       break;
     }
-    if (const auto load_failure = impl_->GetReadyForLobby(); load_failure.has_value()) {
-      LE("subsystem=clientruntime event=character_load_failed reason=\"{}\"", DescribeCharacterError(*load_failure));
-      failure = *load_failure;
+    // A Replay viewer's run is over once its Replay is: the server has closed the connection.
+    if (impl_->session->ReplayEnded()) {
+      LI("subsystem=clientruntime event=replay_ended");
+      break;
+    }
+    if (const auto load_failure = impl_->LoadCharacters(); load_failure.has_value()) {
+      failure = ClassifyCharacterError(*load_failure);
+      break;
+    }
+    const std::shared_ptr<const harness::ServerView> view = impl_->session->GetServerView();
+    if (const std::optional<harness::Progress> ending = impl_->ReenactmentEnding(*view)) {
+      // The Deaths no frame took yet, the ones that ended the Match among them.
+      impl_->CollectOutcome(*view);
+      impl_->LogOutcome(*view, *ending);
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};

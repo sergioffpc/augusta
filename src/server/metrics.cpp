@@ -8,6 +8,7 @@
 #include <exception>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -21,6 +22,8 @@
 #include <prometheus/registry.h>
 #include <prometheus/text_serializer.h>
 
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -94,7 +97,7 @@ Response TextResponse(const Request& request, http::status status, const char* c
   return response;
 }
 
-// Decision: the response to request. A request that fails is logged and
+// Decision: the response to request. A request that fails is warned of and
 // answered 500, so the endpoint keeps serving.
 Response Respond(const Sources& sources, const Request& request) {
   try {
@@ -115,25 +118,29 @@ Response Respond(const Sources& sources, const Request& request) {
     }
     return TextResponse(request, http::status::not_found, kTextContentType, "not found\n");
   } catch (const std::exception& error) {
-    LE("subsystem=metrics event=request_failed target={} error={}", std::string(request.target()), error.what());
+    LW("subsystem=metrics event=request_failed target={} error={}", std::string(request.target()), error.what());
     return TextResponse(request, http::status::internal_server_error, kTextContentType, "internal error\n");
   }
 }
 
 // Mechanism: one connection, one request and its response, then closed. Kept
-// alive by the handlers it has pending on the endpoint's io_context.
+// alive by the handlers it has pending on the endpoint's io_context. A failure
+// in one of them ends only this connection: it never reaches the endpoint's
+// thread, whose failure is the endpoint's.
 class Session : public std::enable_shared_from_this<Session> {
  public:
   Session(Tcp::socket socket, const Sources& sources) : stream_(std::move(socket)), sources_(sources) {}
 
   void Start() {
-    stream_.expires_after(kRequestTimeout);
-    http::async_read(stream_, buffer_, request_,
-                     [self = shared_from_this()](beast::error_code error, std::size_t /*bytes*/) {
-                       if (!error) {
-                         self->Write();
-                       }
-                     });
+    Contained([this] {
+      stream_.expires_after(kRequestTimeout);
+      http::async_read(stream_, buffer_, request_,
+                       [self = shared_from_this()](beast::error_code error, std::size_t /*bytes*/) {
+                         if (!error) {
+                           self->Contained([&self] { self->Write(); });
+                         }
+                       });
+    });
   }
 
  private:
@@ -143,6 +150,24 @@ class Session : public std::enable_shared_from_this<Session> {
       beast::error_code ignored;
       self->stream_.socket().shutdown(Tcp::socket::shutdown_send, ignored);
     });
+  }
+
+  // Runs step, closing this connection if it throws.
+  template <typename Step>
+  void Contained(Step&& step) {
+    try {
+      std::forward<Step>(step)();
+    } catch (const std::exception& error) {
+      Drop(error.what());
+    } catch (...) {
+      Drop("unknown exception");
+    }
+  }
+
+  void Drop(const char* error) {
+    LW("subsystem=metrics event=connection_failed error={}", error);
+    beast::error_code ignored;
+    stream_.socket().close(ignored);
   }
 
   beast::tcp_stream stream_;
@@ -164,18 +189,45 @@ Tcp::acceptor Listen(asio::io_context& io, std::uint16_t port) {
   return {io, Tcp::endpoint(Tcp::v4(), port), kReuseAddress};
 }
 
+failure::Failure EndpointFailure(std::uint16_t port, std::string detail) {
+  return {.code = failure::Code::kMetricsEndpointFailed,
+          .context = {{.key = "port", .value = std::to_string(port)}},
+          .detail = std::move(detail)};
+}
+
 }  // namespace
 
+// Decision: bounded recovery, never a tight loop on an acceptor that keeps
+// failing.
+std::optional<std::chrono::milliseconds> AcceptRetryDelay(int failures) {
+  if (failures >= kMetricsAcceptAttempts) {
+    return std::nullopt;
+  }
+  return kMetricsFirstAcceptRetry * (1 << (failures - 1));
+}
+
 struct MetricsEndpoint::Impl {
+  std::uint16_t port;
+  failure::Faults* faults;
   prometheus::Registry registry;
   Sources sources;
   asio::io_context io;
   Tcp::acceptor acceptor;
+  asio::steady_timer retry{io};
+  // Accept failures since the last connection accepted; endpoint thread only.
+  int accept_failures = 0;
+  // Whether the endpoint has stopped serving; endpoint thread only.
+  bool stopped = false;
+  // What Available() reports, published only once serving has stopped.
+  std::atomic<bool> available{true};
   // Declared last, so it is joined before what it serves from goes.
   std::thread thread;
 
-  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end, ServerMetrics server_metrics)
-      : sources{.registry = registry, .server_metrics = std::move(server_metrics), .last_tick_end = last_tick_end},
+  Impl(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end, ServerMetrics server_metrics,
+       failure::Faults* faults)
+      : port(port),
+        faults(faults),
+        sources{.registry = registry, .server_metrics = std::move(server_metrics), .last_tick_end = last_tick_end},
         acceptor(Listen(io, port)) {
     AddProcessMetrics(registry);
     Accept();
@@ -193,34 +245,84 @@ struct MetricsEndpoint::Impl {
   Impl& operator=(Impl&&) = delete;
 
   void Accept() {
+    if (faults != nullptr) {
+      // Fails as the acceptor does, leaving a pending connection queued.
+      if (std::optional<std::string> detail = faults->Trip(failure::Site::kMetricsAccept)) {
+        asio::post(io, [this, detail = std::move(*detail)]() mutable { AcceptFailed(std::move(detail)); });
+        return;
+      }
+    }
     acceptor.async_accept([this](beast::error_code error, Tcp::socket socket) {
       if (error == asio::error::operation_aborted) {
         return;
       }
-      if (error) {
-        LW("subsystem=metrics event=accept_failed error={}", error.message());
-      } else {
-        std::make_shared<Session>(std::move(socket), sources)->Start();
+      if (error == asio::error::connection_aborted) {
+        // The peer gave up before it was accepted: only its connection is lost.
+        Accept();
+        return;
       }
+      if (error) {
+        AcceptFailed(error.message());
+        return;
+      }
+      accept_failures = 0;
+      std::make_shared<Session>(std::move(socket), sources)->Start();
       Accept();
     });
   }
 
-  // The endpoint's thread (ADR-0049). Not supervised: if it fails, the failure
-  // is logged and the tick loop keeps running; /livez then stops answering.
+  // Bounded recovery: waits longer after each failure in a row, rather than
+  // spinning on an acceptor that keeps failing, and gives up after the last.
+  void AcceptFailed(std::string detail) {
+    ++accept_failures;
+    const std::optional<std::chrono::milliseconds> delay = AcceptRetryDelay(accept_failures);
+    if (!delay) {
+      Unavailable(EndpointFailure(port, std::move(detail)));
+      return;
+    }
+    LW("subsystem=metrics event=accept_retrying attempt={} retry_in_ms={} {}", accept_failures, delay->count(),
+       failure::DescribeFailure(EndpointFailure(port, std::move(detail))));
+    retry.expires_after(*delay);
+    retry.async_wait([this](beast::error_code error) {
+      if (!error) {
+        Accept();
+      }
+    });
+  }
+
+  // The endpoint's permanent failure, recovered at the subsystem (ADR-0033):
+  // logged once, and its port closed, so /livez is refused and the platform
+  // restarts the pod (ADR-0049); the tick loop is not told and runs on.
+  // Endpoint thread only. Available() turns false last, so a caller that sees
+  // it false finds the port already closed.
+  void Unavailable(const failure::Failure& failure) {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    beast::error_code ignored;
+    acceptor.close(ignored);
+    retry.cancel();
+    io.stop();
+    LE("subsystem=metrics event=unavailable {}", failure::DescribeFailure(failure));
+    available.store(false, std::memory_order_release);
+  }
+
+  // The endpoint's thread (ADR-0049). Not supervised: its failure never stops
+  // the tick loop.
   void Serve() {
-    try {
-      io.run();
-    } catch (const std::exception& error) {
-      LE("subsystem=metrics event=serving_failed error={}", error.what());
+    if (auto served = failure::Guard(failure::Code::kMetricsEndpointFailed, [this] { io.run(); }); !served) {
+      Unavailable(EndpointFailure(port, std::move(served.error().detail)));
     }
   }
 };
 
 MetricsEndpoint::MetricsEndpoint(std::uint16_t port, const std::atomic<tick::Clock::time_point>& last_tick_end,
-                                 ServerMetrics server_metrics)
-    : impl_(std::make_unique<Impl>(port, last_tick_end, std::move(server_metrics))) {}
+                                 ServerMetrics server_metrics, failure::Faults* faults)
+    : impl_(std::make_unique<Impl>(port, last_tick_end, std::move(server_metrics), faults)) {}
 
 MetricsEndpoint::~MetricsEndpoint() = default;
+
+bool MetricsEndpoint::Available() const { return impl_->available.load(std::memory_order_acquire); }
 
 }  // namespace augusta::server

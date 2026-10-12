@@ -1,5 +1,5 @@
-# The Server and Connection health dashboards (ADR-0049), which Grafana's
-# sidecar loads from any namespace by their grafana_dashboard label.
+# The Server, Connection health and Match captures dashboards (ADR-0049), which
+# Grafana's sidecar loads from any namespace by their grafana_dashboard label.
 {{- if .Values.dashboards.enabled }}
 apiVersion: v1
 kind: ConfigMap

@@ -21,6 +21,10 @@ env:
 jobs:
   client:
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     # See ci.yml's client job: packman's cache stays off the workspace's drive
     # when Falcor is built from source (no prebuilt published for it yet).
     env:
@@ -34,34 +38,35 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - name: Configure
         run: cmake --preset windows
-        shell: pwsh
       - name: Build
         run: cmake --build --preset windows --target all augusta_tests
       - name: Test
         run: ctest --preset windows
       - name: Stage binary
-        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item build\x64-windows\src\client\augustac.exe dist\augustac-windows-x64.exe
+          mkdir -p dist
+          cp build/x64-windows/src/client/augustac.exe dist/augustac-windows-x64.exe
+          # Its PDB, from this same build, so its GUID and age are the ones
+          # this binary's debug directory names (ADR-0055).
+          cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
       # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
       # their commits. What Falcor itself fetches with packman is not listed.
       - name: SBOM
-        shell: pwsh
         run: |
-          python scripts/vcpkg-sbom.py --name augustac --version $env:GITHUB_REF_NAME `
-            --repo "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY" --commit $env:GITHUB_SHA `
-            --git-package third_party/falcor --git-package third_party/nvtx `
+          python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --git-package third_party/falcor --git-package third_party/nvtx \
             build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -72,20 +77,30 @@ jobs:
         with:
           subject-path: dist/augustac-windows-x64.exe
           sbom-path: dist/augustac-windows-x64.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: client-binary
           path: |
             dist/augustac-windows-x64.exe
+            dist/augustac-windows-x64.pdb
             dist/augustac-windows-x64.spdx.json
   server:
-    runs-on: ubuntu-26.04
+    # Both production architectures (NFR-04), each built and tested natively.
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
     # See ci.yml's server job for why this isn't the workflow-level
     # NuGet default: nuget.exe runs under Mono here, and Mono's
     # untrusted-by-default cert store fails every restore/push with
     # CERTIFICATE_VERIFY_FAILED.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+      BINARY: augustad-linux-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,38 +116,45 @@ jobs:
       - name: Test
         run: ctest --preset linux
       - name: Stage binary
+        # The linux preset builds into build/x64-linux on either architecture:
+        # the directory is the preset's, not the target's.
         run: |
           mkdir -p dist
-          cp build/x64-linux/src/server/augustad dist/augustad-linux-x64
+          cp build/x64-linux/src/server/augustad "dist/$BINARY"
           # Its debug info, split off by this same build, so it matches this
           # binary's build ID - not the image's (ADR-0047).
-          cp build/x64-linux/src/server/augustad.debug dist/augustad-linux-x64.debug
+          cp build/x64-linux/src/server/augustad.debug "dist/$BINARY.debug"
       - name: SBOM
+        # vcpkg's triplet is the runner's own: x64-linux or arm64-linux.
         run: |
           python3 scripts/vcpkg-sbom.py --name augustad --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
-            build/x64-linux/vcpkg_installed/x64-linux > dist/augustad-linux-x64.spdx.json
+            "build/x64-linux/vcpkg_installed/${{ matrix.arch }}-linux" > "dist/$BINARY.spdx.json"
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/augustad-linux-x64
+          subject-path: dist/${{ env.BINARY }}
       - name: Attest SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/augustad-linux-x64
-          sbom-path: dist/augustad-linux-x64.spdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          subject-path: dist/${{ env.BINARY }}
+          sbom-path: dist/${{ env.BINARY }}.spdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: server-binary
+          name: server-binary-${{ matrix.arch }}
           path: |
-            dist/augustad-linux-x64
-            dist/augustad-linux-x64.debug
-            dist/augustad-linux-x64.spdx.json
+            dist/${{ env.BINARY }}
+            dist/${{ env.BINARY }}.debug
+            dist/${{ env.BINARY }}.spdx.json
   tools:
     # The cooker's half of the pack contract: its pytest suite, which requires
     # that cooking the example scenario still gives the golden packs the
     # build jobs' ctest loads. The same steps as ci.yml's tools job.
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,14 +164,15 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
-          & $nugetPath setapikey "${{ secrets.GITHUB_TOKEN }}" -Source GitHubPackages
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -157,11 +180,10 @@ jobs:
       - name: Install the cooker
         working-directory: tools
         run: uv sync --locked
-      - name: Build the native modules
-        shell: pwsh
+      - name: Build the native module
         run: |
-          cmake --preset windows -S tools/pack/cpp "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/Scripts/python.exe"
-          cmake --build tools/pack/cpp/build/x64-windows
+          cmake --preset windows -S tools/pack/native "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
+          cmake --build tools/pack/native/build/x64-windows
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
@@ -174,7 +196,7 @@ jobs:
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
       - name: Release notes
         run: scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
       - name: Create GitHub Release
@@ -183,10 +205,14 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.exe \
+            dist/client-binary/augustac-windows-x64.pdb \
             dist/client-binary/augustac-windows-x64.spdx.json \
-            dist/server-binary/augustad-linux-x64 \
-            dist/server-binary/augustad-linux-x64.debug \
-            dist/server-binary/augustad-linux-x64.spdx.json \
+            dist/server-binary-x64/augustad-linux-x64 \
+            dist/server-binary-x64/augustad-linux-x64.debug \
+            dist/server-binary-x64/augustad-linux-x64.spdx.json \
+            dist/server-binary-arm64/augustad-linux-arm64 \
+            dist/server-binary-arm64/augustad-linux-arm64.debug \
+            dist/server-binary-arm64/augustad-linux-arm64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --notes-file "$RUNNER_TEMP/notes.md"

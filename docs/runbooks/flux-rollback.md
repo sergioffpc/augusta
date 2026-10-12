@@ -2,53 +2,63 @@
 
 Returns the `develop` or `staging` environment to a working server after a
 commit that Flux deployed broke it. How the environments are deployed is
-ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)) and
-[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment-cd).
+ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)), ADR-0056
+([signed revisions](../adr/0056-signed-revisions-for-flux.md)) and
+[ENGINEERING.md's Deployment & CD](../ENGINEERING.md#deployment--cd).
 
 ## When to use
 
 - The `augustad` pod of an environment crash-loops, fails to start, or
-  misbehaves after a merge to `develop` (the `develop` namespace) or `main` (the
-  `staging` namespace).
+  misbehaves after a merge to `develop` (the `develop` namespace) or a release
+  tag (the `staging` namespace).
 - A Flux `HelmRelease` is stuck failing after a chart or `clusters/onprem/apps/`
   change.
 
 Not for a pod that crash-loops because its pack or public key is missing or does
-not verify (the server's last log line names `server.pack` or `augusta.pub`): no
+not verify (the server's last log line names `server.pack` or `signing.pub`): no
 rollback fixes that, the files must be put in place
 ([Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node)).
 Moving an environment back to its previous pack folder is the rollback step of
-[Rotate the Pack Signing Key](pack-key-rotation.md#rollback-abort).
+[Rotate the Pack Signing Key](pack-key-rotation.md#rollback--abort).
+
+Nor for a source that fails verification (`flux get sources git -n flux-system`
+shows it not ready, its message naming the signature): Flux deployed nothing
+from that revision, and its environment keeps running the last verified one. The
+fix is a signed revision, or the trusted keys in
+[`trusted-signers.yaml`](../../clusters/onprem/flux-system/trusted-signers.yaml)
+updated after a key rotation (ADR-0056).
 
 ## What runs where
 
-| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from                                  | Image tag                              |
-| ----------- | ------------------------------------- | ------------ | --------- | ------------------------------------------- | -------------------------------------- |
-| develop     | `augustad-develop`                    | `augustad`   | `develop` | GitRepository `augusta-develop` (`develop`) | `sha-<12>` of the chart's commit       |
-| staging     | `augustad-staging`                    | `augustad`   | `staging` | GitRepository `augusta-main` (`main`)       | `main` (`image.tag` in `staging.yaml`) |
+| Environment | HelmRelease (namespace `flux-system`) | Helm release | Namespace | Chart from                                        | Image tag                        |
+| ----------- | ------------------------------------- | ------------ | --------- | ------------------------------------------------- | -------------------------------- |
+| develop     | `augustad-develop`                    | `augustad`   | `develop` | GitRepository `augusta-develop` (`develop`)       | `sha-<12>` of the chart's commit |
+| staging     | `augustad-staging`                    | `augustad`   | `staging` | GitRepository `augusta-release` (newest `v*` tag) | `sha-<12>` of the chart's commit |
 
-Both `HelmRelease` objects, and the rest of
+Both `HelmRelease` objects, both sources
+([`sources.yaml`](../../clusters/onprem/apps/sources.yaml)) and the rest of
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), are applied by the `apps`
 Kustomization from the `flux-system` GitRepository, which tracks `develop`
 ([`gotk-sync.yaml`](../../clusters/onprem/flux-system/gotk-sync.yaml)). A change
-to `staging.yaml` therefore deploys when it reaches `develop`, not `main`.
-Neither `HelmRelease` sets `upgrade.remediation`, so Flux never rolls back by
-itself: a failed upgrade stays failed until Git or a person changes it.
+to `staging.yaml` or `sources.yaml` therefore deploys when it reaches `develop`,
+not `main`. Neither `HelmRelease` sets `upgrade.remediation`, so Flux never
+rolls back by itself: a failed upgrade stays failed until Git or a person
+changes it.
 
-The two environments roll back differently. `develop` runs the image of its
-chart's commit, so going back to an earlier commit, by Helm or by Git, goes back
-to its image. `staging` runs the mutable `main` tag with
-`pullPolicy: IfNotPresent`: a Helm rollback or a revert on `main` leaves the
-pod's image string `augustad:main` unchanged, so nothing rolls out, and the node
-keeps whichever `main` image it has cached. `staging` is rolled back by pinning
-its image to the last good commit's `sha-<12>` tag instead.
+Both environments run the image CI published for their chart's own commit
+(`image.tag` is left empty, [`values.yaml`](../../charts/augustad/values.yaml)),
+so going back to an earlier commit, by Helm or by Git, goes back to its image.
+They differ in how Git goes back: `develop` reverts the bad change on `develop`;
+`staging` pins its source to the previous release tag, since it runs a signed
+tag and a published tag is never moved or reused.
 
 ## Prerequisites
 
-- A kubeconfig for the k3s cluster. The repository does not record how one is
-  obtained; step 4 of
-  [Recover or Rebuild the k3s Node](k3s-node-recovery.md#part-b-rebuild) copies
-  it from the node.
+- The day-to-day kubeconfig, from one of the maintainer's addresses
+  ([Cluster access](k3s-node-recovery.md#cluster-access)): every step but the
+  Helm rollback (step 2 of [Roll back develop](#roll-back-develop)) needs no
+  more. That step is **cluster-admin**, and needs SSH to the node as a user with
+  `sudo` ([Use cluster-admin](k3s-node-recovery.md#use-cluster-admin)).
 - `kubectl` and `helm`: `scripts/bootstrap-wsl.sh` installs both.
 - The `flux` CLI at the cluster's Flux version, the `Flux Version` in
   [`gotk-components.yaml`](../../clusters/onprem/flux-system/gotk-components.yaml)'s
@@ -79,25 +89,34 @@ its image to the last good commit's `sha-<12>` tag instead.
 ### Roll back develop
 
 1. If the failure is an upgrade still waiting for its image (`timeout: 30m` in
-   `develop.yaml` covers CI still pushing `sha-<12>`), check the `container` job
-   of that commit's CI run first:
+   `develop.yaml` covers CI still pushing `sha-<12>`), check the
+   `container-verify` and `container-publish` jobs of that commit's CI run
+   first:
 
     ```sh
     gh run list --workflow ci.yml --branch develop --limit 5
     ```
 
-    A failed `container` job (build or trivy scan) means the image was never
-    published; the fix is the rollback below, or a new commit that publishes
-    one.
+    A failed `container-verify` or `container-publish` job (build or trivy
+    scan), or a skipped `container-publish` (the server job failed), means the
+    image was never published; the fix is the rollback below, or a new commit
+    that publishes one.
 
 2. **Restore service now (optional, when the environment cannot wait for CI).**
    Stop Flux from reconciling the release, then roll Helm back to the last good
-   revision:
+   revision. The rollback is **cluster-admin**: Helm reads its release records,
+   which are Secrets, and changes the Deployment itself
+   ([Use cluster-admin](k3s-node-recovery.md#use-cluster-admin)):
 
     ```sh
     flux suspend helmrelease augustad-develop -n flux-system
+    export KUBECONFIG="$(mktemp)"
+    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" \
+      | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
     helm history augustad -n develop
     helm rollback augustad <good-revision> -n develop --wait --timeout 10m
+    rm "${KUBECONFIG}"
+    export KUBECONFIG=~/.kube/augusta.yaml
     ```
 
     The Helm release record lives in the environment's own namespace
@@ -142,56 +161,48 @@ its image to the last good commit's `sha-<12>` tag instead.
 
 ### Roll back staging
 
-1. Pin `staging` to the last good `main` commit's image. CI published
-   `ghcr.io/sergioffpc/augustad:sha-<good12>` (the first 12 characters of
-   `<good>`) when that commit was pushed to `main`. Check it exists, then pin it
-   on a `feature/*` branch off `develop`:
+`staging` runs the newest `v*` tag, so a bad release is rolled back by pinning
+its source, `augusta-release`, to the last good tag, `vGOOD`, and the fix ships
+as the next patch release ([Cut a Release](cut-release.md#rollback--abort)).
+
+1. **Restore service now (optional)** as step 2 of
+   [Roll back develop](#roll-back-develop) does, with `augustad-staging` and
+   `-n staging`.
+
+2. Pin the source on a `feature/*` branch off `develop`: `sources.yaml` is
+   applied from `develop` (see [What runs where](#what-runs-where)). In
+   [`sources.yaml`](../../clusters/onprem/apps/sources.yaml), replace
+   `augusta-release`'s `semver: "*"` with `tag: vGOOD`; a `semver` left beside
+   it would win. Flux still verifies the pinned tag's signature.
 
     ```sh
-    docker buildx imagetools inspect ghcr.io/sergioffpc/augustad:sha-<good12>
-    git fetch origin
-    git switch -c feature/pin-staging-<good12> origin/develop
+    git fetch origin --tags
+    git switch -c feature/pin-staging-vGOOD origin/develop
+    # edit clusters/onprem/apps/sources.yaml: ref: {tag: vGOOD}
+    git commit -am "fix(cluster): pin staging to vGOOD"
+    git push -u origin feature/pin-staging-vGOOD
+    gh pr create --base develop --title "fix(cluster): pin staging to vGOOD" --body "<why>"
     ```
 
-    In
-    [`clusters/onprem/apps/staging.yaml`](../../clusters/onprem/apps/staging.yaml),
-    set `spec.values.image.tag` to `sha-<good12>`, then:
+    A bad `staging.yaml` change (its values, not the chart) is reverted on
+    `develop` instead, as step 3 of [Roll back develop](#roll-back-develop)
+    does.
 
-    ```sh
-    git commit -am "revert(cluster): pin staging to the sha-<good12> image"
-    git push -u origin feature/pin-staging-<good12>
-    gh pr create --base develop --title "revert(cluster): pin staging to the sha-<good12> image" --body "<why>"
-    gh pr merge <number> --merge          # once its checks pass
-    flux reconcile kustomization apps -n flux-system --with-source
-    ```
-
-    The pod's image string changes, so the Deployment rolls out the pinned
-    image. The chart still comes from `main`'s head: if the bad change is in the
-    chart rather than the image, also suspend and roll back Helm as in
-    [Roll back develop](#roll-back-develop) step 2, with `augustad-staging` and
-    `-n staging`, and keep the `HelmRelease` suspended until step 3 below.
-
-2. Fix `main`: revert or fix the bad change on a `hotfix/*` branch off
-   `origin/main`, as in [Roll back develop](#roll-back-develop) step 3 but with
-   `--base main`. After it merges, bring the same branch back into `develop`
-   with a second pull request, `--base develop`, as Git Flow does for every
-   hotfix. When the bad change is a published release, the fix ships as the next
-   patch release ([Cut a Release](cut-release.md#rollback-abort)).
-
-3. Remove the pin once `main`'s head is good: on a `feature/*` branch off
-   `develop`, delete the `image.tag` line from `staging.yaml` and merge it
-   through a pull request. Then resume the `HelmRelease` if step 1 suspended it,
-   and reconcile:
+3. Merge it once its checks pass (`gh pr merge <number> --merge`), resume the
+   release if step 1 suspended it, and reconcile:
 
     ```sh
     flux resume helmrelease augustad-staging -n flux-system
     flux reconcile kustomization apps -n flux-system --with-source
+    flux reconcile source git augusta-release -n flux-system
+    flux reconcile helmrelease augustad-staging -n flux-system
     ```
 
-    With `image.tag` empty, `main`'s chart runs the `sha-<12>` image of its own
-    commit, as `develop`'s does (`staging.yaml`'s own comment asks for the line
-    to go). Setting it back to `main` instead would let the node keep running a
-    stale cached `main` image.
+    `vGOOD`'s image, `sha-<12>` of its commit, was published when that commit
+    reached `main`, so the pod changes without waiting for CI.
+
+4. Once the fixed release's tag is pushed, remove the pin the same way,
+   `semver: "*"` back in place of `tag: vGOOD`. Until then no new tag deploys.
 
 ## Verification
 
@@ -203,10 +214,11 @@ kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'even
 ```
 
 - The `HelmRelease` is `Ready` and not suspended.
-- On `develop`, its revision's `+<12>` is the revert commit (or later), and the
-  image is `ghcr.io/sergioffpc/augustad:sha-<12>` of that same commit.
-- On `staging`, the image is the pinned `sha-<good12>`, or, once the pin is
-  removed, `sha-<12>` of `main`'s head.
+- Its revision's `+<12>` is the revert commit (or later), or for `staging` the
+  pinned tag's commit, and the image is `ghcr.io/sergioffpc/augustad:sha-<12>`
+  of that same commit.
+- `flux get sources git -n flux-system` shows the source ready, on a verified
+  revision.
 - The server logged `event=pack_verified` and keeps running (the pod's restart
   count stays put).
 
@@ -214,7 +226,8 @@ kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep 'even
 
 - Before any pull request merges, nothing has changed in Git:
   `flux resume helmrelease <name> -n flux-system` hands the release back to
-  Flux, which upgrades it to the branch head again.
+  Flux, which upgrades it to its source's revision again: `develop`'s head, or
+  `staging`'s newest tag.
 - A revert or pin that turns out wrong is itself reverted the same way.
 - Never leave a `HelmRelease` suspended: `flux get helmreleases -n flux-system`
   shows `SUSPENDED True` until it is resumed, and no later commit deploys.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -89,6 +90,36 @@ std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harn
     }
   }
   return characters;
+}
+
+void ConvertedServerView::Update(const harness::ServerView& view) {
+  if (view.matches_started != characters_match_) {
+    characters_ = CharactersOf(view.match_start);
+    characters_match_ = view.matches_started;
+  }
+  const bool converted = snapshot_.has_value() && view.authoritative.has_value() &&
+                         snapshot_match_ == view.matches_started && snapshot_->tick == view.authoritative->tick;
+  if (!converted) {
+    snapshot_ = SnapshotOf(view);
+    snapshot_match_ = view.matches_started;
+  }
+}
+
+const presentation::WorldSnapshot* ConvertedServerView::Snapshot() const {
+  return snapshot_.has_value() ? &*snapshot_ : nullptr;
+}
+
+std::span<const presentation::PlayerCharacter> ConvertedServerView::Characters() const { return characters_; }
+
+std::vector<presentation::PlayerView> ViewsOf(const harness::ServerView& view) {
+  std::vector<presentation::PlayerView> views;
+  if (view.replay_view.has_value()) {
+    views.reserve(view.replay_view->players.size());
+    for (const harness::PlayerView& player : view.replay_view->players) {
+      views.push_back({.entity = ToPresentation(player.entity), .pitch = player.pitch, .ads = player.ads});
+    }
+  }
+  return views;
 }
 
 std::optional<presentation::MatchEnd> MatchEndOf(const harness::ServerView& view) {

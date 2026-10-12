@@ -1,0 +1,82 @@
+# The security events that alert (ADR-0057), as Loki alerting rules over the
+# security logs (ADR-0053): Loki's rules sidecar loads every ConfigMap
+# labelled loki_rule in monitoring, and its ruler sends what fires to the
+# stack's Alertmanager, whose receivers are still ADR-0049's (none: alerts
+# show only in Grafana and Alertmanager).
+#
+# Each counts over five minutes, so an event keeps its alert firing for five
+# minutes after it, and no longer: a new event raises it again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-alerts
+  namespace: monitoring
+  labels:
+    loki_rule: "1"
+data:
+  security-alerts.yaml: |
+    groups:
+      - name: security
+        rules:
+          # sshd logs every login it accepts to the auth facility, with the
+          # account, the address and how it authenticated.
+          - alert: NodeSSHLogin
+            expr: |
+              sum by (user, address, method) (
+                count_over_time({job="node/auth"}
+                  | regexp `Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<address>\S+)`
+                  [5m])
+              ) > 0
+            labels:
+              severity: info
+            annotations:
+              summary: "{{ $labels.user }} logged in to the Node over SSH from {{ $labels.address }} ({{ $labels.method }})."
+          # k3s's own kubeconfig, /etc/rancher/k3s/k3s.yaml, is the
+          # cluster-admin identity, system:admin; the operators' day-to-day
+          # one is augusta:operators (docs/runbooks/k3s-node-recovery.md,
+          # Cluster access). k3s's controllers have identities of their own.
+          - alert: ClusterAdminUsed
+            expr: |
+              sum by (user_agent, source_ip) (
+                count_over_time({job="node/kube-audit"}
+                  | json username="user.username", user_agent="userAgent", source_ip="sourceIPs[0]"
+                  | username = "system:admin"
+                  [5m])
+              ) > 0
+            labels:
+              severity: warning
+            annotations:
+              summary: "The cluster-admin identity made requests from {{ $labels.source_ip }} with {{ $labels.user_agent }}."
+          # Kyverno writes an event for every failed policy result, at
+          # admission and in its background scan, on the policy and on the
+          # object that failed it: the PolicyReports' failures as they are
+          # found. The object's alone count here, one alert for each.
+          - alert: KyvernoPolicyViolation
+            expr: |
+              sum by (namespace, kind, name) (
+                count_over_time({job="kubernetes/events"}
+                  | logfmt
+                  | reason = "PolicyViolation" and kind !~ ".*Policy"
+                  [5m])
+              ) > 0
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} fails a Kyverno policy."
+          # Flux's source-controller warns on a GitRepository whose revision
+          # fails its signature check (ADR-0056), each time it fetches it:
+          # by its reason, or its message where the reason is a generic one.
+          # A certificate that fails to verify is not a signature's failure.
+          - alert: FluxSourceVerificationFailed
+            expr: |
+              sum by (name) (
+                count_over_time({job="kubernetes/events", namespace="flux-system"}
+                  | logfmt
+                  | kind = "GitRepository" and type = "Warning"
+                  | reason =~ "Invalid.*Signature" or msg =~ "(?i).*signature.*"
+                  [5m])
+              ) > 0
+            labels:
+              severity: critical
+            annotations:
+              summary: "Flux's {{ $labels.name }} revision fails its signature verification: Flux applies nothing new from it."

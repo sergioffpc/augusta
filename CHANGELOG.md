@@ -2,6 +2,252 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 3.0.0 - 2026-10-11
+
+### Features
+
+- **cluster:** run a firebase server in develop
+- **cluster:** drop the augusta scenario, serve firebase on 30777
+- **cluster:** give develop and staging their own node port ranges
+- **ci:** publish the nightly's test results and coverage as one report
+- **tests:** trace each requirement to the tests that check it
+- **tests:** benchmark recording, replication and render frames
+- **ballistics:** bound a bullet's flight to five seconds
+- **failure:** add the shared error disposition model
+- **metrics:** make the endpoint's permanent failure explicit
+- **supervisor:** make the runtime stop a typed first-cause contract
+- **supervisor:** let a worker escalate its own typed failure
+- **config:** add simulation.recording_mode to augustad.yaml
+- **server:** add optional and strict recording failure modes
+- **application:** add the application boundary both executables end through
+- **server,client:** route startup and runtime failures through the boundary
+- **networking:** expose and escalate local transport failures
+- **chart:** alert when an augustad container restarts
+- **cluster:** aggregate pod logs in Loki and query them from Grafana
+- **protocol:** reject outbound invariant violations in every build
+- **pack:** port the asset cooker to Linux
+- **server:** capture each Match and read captures in augusta-inspect
+- **chart:** harden the augustad pod and capture Matches to a host directory
+- **server:** add optional and strict Match capture failure modes
+- **server:** bound each server's Match captures by count and size
+- **server:** count Match captures in augustad's metrics
+- **chart:** add the Match captures dashboard and capture alerts
+- **protocol:** add the Replay list, Replay request and Replay view messages
+- **config:** read replay.captures and replay.max_viewers
+- **server:** replay Match captures on a replay server
+- **harness:** watch a Replay as a Replay viewer
+- **client:** list and watch Replays with --replays and --replay
+- **protocol:** add the Reenact request and the reenactments-not-accepted refusal
+- **server:** admit Reenact requests at their spawn under simulation.reenactments
+- **harness:** join with a Reenact request when the Session names a spawn
+- **harness:** pace a Captured player's Commands to the server's ticks
+- **config:** read augustac's --reenact <capture> --player <n>
+- **client:** reenact a Match capture's player with augustac --reenact
+- **harness:** run an Agent's Intents as its Runner's Command source
+- **agent:** connect Agents from a Python script with a Raw Intent
+- **harness:** add the tracking Intents and build the Scripted player on them
+- **agent:** tell a Python script its Agents' events, Intent endings and failures
+- **agent:** give Python scripts the whole Agent API and load_test.py
+- **pack:** give the node an augusta user and keep its packs readable by that group alone
+- **bootstrap:** bootstrap the k3s node on Debian 13
+- **release:** release the server for Linux arm64, binary and image
+- **node:** keep k3s's configuration in Git and meet the CIS k3s profile
+- **cluster:** run Kyverno in the cluster and its policies in CI
+- **node:** harden the Node's OS: firewall, SSH, updates, auditd
+- **cluster:** operate day to day with a least-privilege kubeconfig
+- **cluster:** enforce Pod Security levels per namespace
+- **cluster:** run only signed revisions; staging follows release tags
+- **cluster:** pin every third-party image by digest
+- **cluster:** anonymous read-only Grafana and a cluster without Secrets
+- **chart:** mount packs and captures from local PersistentVolumes
+- **cluster:** default-deny NetworkPolicies; augustad has no egress
+- **ci:** sign the augustad image and verify it on admission
+- **publish:** publish packs as a user without sudo and a restricted key
+- **cluster:** ship security logs to Loki and alert on security events
+- **node:** harden the kernel against an escaped container
+- **node:** tune network, writeback and lockups
+- **node:** size the 10 GbE rings and balance IRQs
+- **node:** give transparent huge pages on request only
+- **node:** run the Node without swap
+- **cluster:** serve firebase's pack 073cb2bb854f in develop
+- **cluster:** serve firebase's pack 073cb2bb854f in staging
+- **pack:** publish a pack over one SSH connection
+
+### Bug Fixes
+
+- **cluster:** run staging's server from the servers map
+- **vscode:** spell stylua.searchBinaryInPATH as the extension declares it
+- **ci:** let the nightly's jobs ask for the permissions they need
+- **server:** collect every Session's Connection health from one Record
+- **server:** report a match recording's real I/O outcomes
+- **server:** name the Recorder's stopped accessor in CamelCase
+- **harness:** take combat events of the Server view's own Match
+- **metrics:** contain connection failures and publish unavailability last
+- **swarm:** describe a worker failure as a failure::Failure
+- **tests:** stop discarding the supervisor test's WorkerResult
+- **server:** fail a strict run on a recording loss found at the stop
+- **server,client:** address review of the application boundary
+- **networking:** address review of the local transport failure change
+- **tests:** keep received queues alive across their range-for
+- **swarm:** hold the server view while reading its admission
+- **tests:** keep the requirement markers directly above their tests
+- **server:** default-initialise RecorderOptions::on_state
+- **server:** satisfy clang-tidy in the recording failure modes
+- **server:** name on_state in the recording tests' RecorderOptions
+- **hooks:** make pre-commit and commit-msg executable
+- **protocol:** report each outbound invariant once and keep ticks whole
+- **tests:** initialise every JoinAcceptedWire field the refusal test names
+- **server:** keep protocol types out of host_impl.h and fix CI
+- **docker:** drop the base image's unpatched Pebble from the runtime stage
+- **server:** address review of the Match capture
+- **tests:** build the capture tests on Windows
+- **tests:** keep the capture directory until the host has closed its file
+- **server:** name capture losses by step and stop captures at run end
+- **tests:** build the capture tests on Windows
+- **server:** include what the capture metrics use
+- **ci:** compare each night's benchmarks only with the same runner CPU
+- **ci:** fail the benchmarks job when the runner names no CPU model
+- **runtime:** stop a failed runtime's sends and keep a startup invariant's Code
+- **server:** address the replay server review
+- **runtime:** stop a failed Host's tick messages mid-tick
+- satisfy clang-tidy and clang-format on the reenactment changes
+- **harness:** hold a Captured player to the server's ticks and leave without losing Commands
+- **client:** include the header that declares presentation::Aim
+- **networking:** keep what arrived before the server closed a client's connection
+- **harness:** define Held and Tracking outside IntentExecutor
+- **agent:** keep every event until the script takes it
+- **bootstrap:** stop the node bootstrap under sh and leave a syncing Flux alone
+- **ci:** publish every main/develop commit's image, even when superseded
+- **node:** refuse to configure a node without encryption prepared
+- **node:** keep the LAN out of the pod and service networks
+- **cluster:** trust each of the maintainer's signing keys
+- **cluster:** stop trusting the Dell R630's signing key
+- **publish:** seal a pack before it is published, and refuse more
+- **server:** stop captures before Run returns when the loop never ran
+- **node:** reach every interface's redirects, and review fixes
+- **cluster:** let Grafana's data-sources init container exit
+- **pack:** leave nothing behind when a publish fails or races
+
+### Performance
+
+- **simulation:** pose a bullet's hitboxes once a tick, near it only
+- **server:** write match recordings off the Simulation thread
+- **client:** convert server data once and lend it to every render frame
+- **server:** replicate a tick's bodies once for every recipient
+- **interpolation:** index remote bodies by Entity ID
+- **interpolation:** keep each body's history in a fixed ring
+
+### Refactoring
+
+- **pack:** name the pack signing keypair signing.key/signing.pub
+- **harness:** name the pending events' Match by matches_started
+- **simulation:** measure hitbox reach standing, not per listed stance
+- **protocol:** add neutral shared primitives alongside the codec's
+- **protocol:** tighten the neutral primitives after review
+- **server:** name a recipient update by its entity and tidy review nits
+- **config:** keep client Input off the headless server surface
+- **config:** address review of the server/client config split
+- **config:** move key-binding errors out of the shared config
+- **protocol:** take counters and bounds from the neutral primitives
+- **protocol:** contract the codec to math and the neutral primitives
+- **harness:** move NetcodeStats from augusta-swarm into the Harness
+- keep the protocol at the replay server's edge and satisfy clang-tidy
+- **server:** **BREAKING** remove the Match recording and augusta-replay
+- **server:** fix the capture's frame format in frames.h
+- share the capture file format and the shared core's wire conversions
+- drop the includes the shared capture format and wire conversions left unused
+- **failure:** retire the legacy error paths
+- **agent:** type LoadPack's error and keep a cached default Python lax
+- **agent:** retire augusta-swarm into tools/agent
+- **pack:** name the native modules' dir native and the package augusta_pack
+- **pack:** name the project augusta-pack, as augusta-agent is
+- **pack:** bind the cooker's native steps as one _native module
+- **node:** install the kernel parameters from a list
+
+### Documentation
+
+- **runbooks:** fast-forward the release branch to main before the back-merge
+- **security:** support the latest release, not a pre-1.0 main
+- align the remaining server platform statements with NFR-04
+- **client:** tighten the render-frame reuse contracts after review
+- **readme:** trim the project summary paragraph
+- **readme:** drop the PhysX mention from the ECS highlight
+- **readme:** name the physics layer and drop the v1 scope highlight
+- **readme:** reduce the status section to the roadmap pointer
+- **vision:** trim the vision statement
+- **vision:** record v1 as met and drop its scope line
+- **requirements:** document the engine's undocumented requirements
+- **adr:** replace the match recording with match capture, replay and reenactment
+- **requirements:** rewrite US-21 and NFR-09 for capture and replay
+- **adr:** add ADR-0052 for Agents scripted in Python through Intents
+- **requirements:** version each requirement and add horizontal scalability
+- drop v1-scoped and hobby wording, and describe connections as encrypted
+- **roadmap:** group milestones by release and record what v2 shipped
+- **roadmap:** plan v3 as Agents, client metrics, capture, replay and scale-out
+- **requirements:** add v3's Agent, server-with-room and load observability requirements
+- **adr:** record outbound protocol invariants in ADR-0038
+- **comments:** drop the v1 scope from code comments
+- **engineering:** give v1.0.0 as the example of a tagged release
+- **architecture:** drop the v1 scope from the deployment view
+- **architecture:** drop the v1 scope from the threading constraint
+- **adr:** drop the v1 scope from ADR-0005's threading model
+- **architecture:** drop the v1 scope from the scope-ambition risk
+- drop the remaining v1 scope wording
+- **adr:** frame Match capture records with a one-byte length
+- **agents:** name the main flow and the git flow in CLAUDE.md
+- **agents:** name the engineering flow in CLAUDE.md
+- **readme:** say how to install the agent skills the flows run on
+- add a table of contents to README, ARCHITECTURE, ENGINEERING and ROADMAP
+- **readme:** say make install covers only the server
+- **release:** address review of augustac's PDB publishing
+- **adr:** say a Reenact request is refused for reenactments off before its other checks
+- **runbooks:** roll staging back by Git revert, as develop
+- **runbooks:** spell out staging's hotfix revert commands
+- **architecture:** draw the deployment view
+- **runbooks:** point a capture pod stuck in ContainerCreating at the capture filesystem
+- **roadmap:** move client-side metrics and horizontal scalability past v3
+- **agent:** document Agents in place of augusta-swarm
+- **agent:** restore the example commands' line breaks and tighten the Agent wording
+- **adr:** record the cluster hardening decisions for v3
+- **engineering:** describe the cluster's admission policies
+- **cluster:** cite ADR-0056 without linking it before it lands
+- **runbooks:** name the release tags staging can roll back to
+- **cluster:** link ADR-0056 now it is on develop; staging's Environment
+- **runbooks:** link ADR-0056 from the rollback runbook
+- explain why kube-bench keeps 4.2.12 at WARN
+- **runbooks:** check Grafana refuses admin/admin at its login
+- **adr:** note ADR-0057's move of node-exporter in ADR-0049
+- **runbooks:** mark removing a server's volumes as cluster-admin
+- **cluster:** untangle ADR-0057's isolation paragraph; rename Kyverno's egress policy
+- **adr:** record that attestations satisfy the image signature policy
+
+### Tests
+
+- **harness:** an ended Match's view takes nothing once the next has sent its own
+- **simulation:** pin hit semantics a shared hitbox pose must keep
+- **benchmarks:** time a tick whose rounds are judged at different moments
+- **interpolation:** tidy the indexed interpolator's tests per review
+- **networking:** cover local transport failures at the runtime seams
+- name the new requirements the tests check
+- **server:** hold a capture frame to its one-byte length
+
+### Build
+
+- **windows:** pin StyLua and taplo, fail the bootstrap on a failed pin
+- enforce the server platform-support contract
+- **make:** add a coverage target
+- **bootstrap:** add macOS and Linux bootstraps, one recipe with the dev container
+- **devcontainer:** run the dev container from a macOS terminal
+- **platform:** accept Linux arm64 as a development server platform
+- **bootstrap:** one bash bootstrap for Windows and Linux, no PowerShell
+- **bootstrap:** bootstrap macOS through the dev container
+- **container:** cut the server image's root with chisel, on scratch
+- **release:** publish augustac's PDB with each release
+- **image:** copy CMake files after the vcpkg install layer
+- **presets:** run the Linux test presets four tests at a time
+- **bootstrap:** bootstrap a fresh checkout from develop
+- **deps:** bump third_party/vcpkg from `eb2d3a3` to `2750401`
+- **deps:** bump the actions group with 4 updates
 ## 2.0.2 - 2026-10-09
 
 ### Bug Fixes

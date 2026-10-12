@@ -111,7 +111,7 @@ def spdx_document(name, version, repo, commit, dependencies):
         # Unique per document, as SPDX requires, under the repository's own URI.
         "documentNamespace": f"{repo}/spdx/{name}-{version}-{commit}",
         "creationInfo": {
-            "creators": ["Tool: augusta-vcpkg-sbom"],
+            "creators": ["Tool: scripts/vcpkg-sbom.py"],
             "created": created,
         },
         "packages": [root, *dependencies],

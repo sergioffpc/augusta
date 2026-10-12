@@ -2,6 +2,8 @@ add_library(augusta_networking STATIC free_port.cpp networking.cpp transport_eve
 target_include_directories(augusta_networking PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_networking
+  # Every send and receive answers with failure.h's model, and takes faults.h's.
+  PUBLIC augusta_failure
   PRIVATE
     augusta_logging
     # free_port.cpp's plain socket.

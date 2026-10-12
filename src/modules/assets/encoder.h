@@ -26,7 +26,7 @@ namespace augusta::assets {
 /// Why an Encode* function refused its input.
 enum class EncodeError {
   /// A count or length exceeded what the wire format's fields can hold, or
-  /// this module's own pragmatic v1 sanity limits (kMaxPathLength,
+  /// this module's own pragmatic sanity limits (kMaxPathLength,
   /// kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
   kTooLarge,
 };
@@ -81,7 +81,7 @@ enum class WriteError {
   /// would be ambiguous about which one they name.
   kDuplicatePath,
   /// entries.size(), an entry's path, or a blob exceeded this module's
-  /// pragmatic v1 size limits (kMaxEntries, kMaxPathLength, kMaxPackSize).
+  /// pragmatic size limits (kMaxEntries, kMaxPathLength, kMaxPackSize).
   kTooLarge,
 };
 

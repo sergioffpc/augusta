@@ -9,6 +9,7 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 | Target            | Input                                                                                                                     | Seeds                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | `protocol_decode` | one payload for `protocol::Decode`                                                                                        | one message of each kind           |
+| `capture_read`    | a Match capture file for `server::ReadCapture`, and the same bytes as one record for `protocol::DecodeCaptureRecord`      | one capture holding every record   |
 | `pack_load`       | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
 
 ## Layout
@@ -25,6 +26,14 @@ when they drift from it. After a deliberate change to the wire, rewrite them:
 
 ```bash
 cmake --build --preset linux --target augusta_protocol_decode_seeds
+```
+
+The `capture_read` seed is what a `Capturer` writes for the short Match in
+[capture_read_seeds_test.cpp](capture_read_seeds_test.cpp), which fails when it
+drifts from it. After a deliberate change to the capture format, rewrite it:
+
+```bash
+cmake --build --preset linux --target augusta_capture_read_seeds
 ```
 
 The `pack_load` seeds are the golden packs in `tests/fixtures/example-packs`

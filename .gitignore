@@ -16,6 +16,7 @@ CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
 _deps/
+CMakeUserPresets.json
 
 # Visual Studio
 .vs/
@@ -42,6 +43,9 @@ _deps/
 .ninja_log
 compile_commands.json
 
+# clangd index
+.cache/
+
 # Packages / vcpkg
 vcpkg_installed/
 packages/
@@ -55,16 +59,25 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.ruff_cache/
 
-# Native _meshoptimizer/_textconv extension modules (tools/pack/
-# cpp/*_bindings.cpp) and any runtime DLLs they need alongside them
+# The native _native extension module (tools/pack/native) and any runtime
+# DLLs it needs alongside it
 # (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.
-# _meshoptimizer.cp312-win_amd64.pyd) - Python resolves that back to the
-# plain module name on import regardless.
-tools/pack/src/pack/*.pyd
-tools/pack/src/pack/*.dll
+# _native.cp312-win_amd64.pyd, or a .so on Linux) - Python resolves
+# that back to the plain module name on import regardless.
+tools/pack/src/augusta_pack/*.pyd
+tools/pack/src/augusta_pack/*.so
+tools/pack/src/augusta_pack/*.dll
+# Likewise the Agents' _native module (tools/agent/native), which the root
+# build writes into its package with the DLLs it needs on Windows.
+tools/agent/src/augusta_agent/*.pyd
+tools/agent/src/augusta_agent/*.so
+tools/agent/src/augusta_agent/*.dll
+tools/agent/src/augusta_agent/*.pdb
+tools/agent/src/augusta_agent/*.ilk
 
 # Local runtime config (ADR-0034): machine-specific paths, never committed. The
 # templates in config/ are named *.example.yaml and stay tracked. A Parameters
@@ -72,6 +85,17 @@ tools/pack/src/pack/*.dll
 # meant to be committed, so it is never matched here.
 config/augustac.yaml
 config/augustad.yaml
+
+# Claude Code per-user state (project .claude/settings.json stays tracked)
+.claude/settings.local.json
+.claude/worktrees/
+.claude/*.lock
+
+# NVIDIA tooling output: Aftermath GPU crash dumps, Nsight Systems reports,
+# Nsight Graphics captures
+*.nv-gpudmp
+*.nsys-rep
+*.ngfx-capture
 
 # OS
 .DS_Store

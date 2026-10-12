@@ -20,5 +20,5 @@ Chosen over XAudio2 (Windows SDK, no extra dependency, but no built-in file
 decoding or mixing - both would have to be hand-rolled) and OpenAL Soft (LGPL,
 and its own 3D positional audio would go unused in favor of Steam Audio, same as
 miniaudio's). miniaudio trades one more vendored dependency for materially less
-plumbing code, consistent with this being a hobby project whose learning focus
-is elsewhere (ballistics, networking, ECS - see ENGINEERING.md).
+plumbing code, consistent with this project's focus being elsewhere (ballistics,
+networking, ECS - see ENGINEERING.md).

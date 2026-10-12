@@ -1,6 +1,7 @@
 #include "augusta/replication.h"
 
 #include <algorithm>
+#include <cassert>
 #include <span>
 #include <vector>
 
@@ -12,40 +13,31 @@ namespace augusta::replication {
 
 namespace {
 
-// The rifle of the player who controls entity in state; one with no round if
-// state holds no such body.
-weapon::State RifleOf(const simulation::State& state, simulation::EntityId entity) {
-  const auto body = std::ranges::find(state.bodies, entity, &simulation::EntityState::entity);
-  return body == state.bodies.end() ? weapon::State{} : body->rifle;
-}
-
-// The health of the player who controls entity in state; 0 if state holds no
-// such body, as it holds none of a dead player.
-float HealthOf(const simulation::State& state, simulation::EntityId entity) {
-  const auto body = std::ranges::find(state.bodies, entity, &simulation::EntityState::entity);
-  return body == state.bodies.end() ? 0.0F : body->health;
+// The body of the player who controls entity in state, or nullptr if state
+// holds no such body, as it holds none of a dead player. state's bodies are
+// ordered by EntityId.
+const simulation::EntityState* BodyOf(const simulation::State& state, simulation::EntityId entity) {
+  const auto body = std::ranges::lower_bound(state.bodies, entity, {}, &simulation::EntityState::entity);
+  return body == state.bodies.end() || body->entity != entity ? nullptr : &*body;
 }
 
 }  // namespace
 
-std::vector<Update> PlanUpdates(const simulation::State& state, tick::Tick tick,
-                                std::span<const Recipient> recipients) {
-  std::vector<EntityBody> everyone;
-  everyone.reserve(state.bodies.size());
+Updates PlanUpdates(const simulation::State& state, tick::Tick tick, std::span<const Recipient> recipients) {
+  assert(std::ranges::is_sorted(state.bodies, {}, &simulation::EntityState::entity));
+  Updates updates{.tick = tick, .bodies = {}, .recipients = {}};
+  updates.bodies.reserve(state.bodies.size());
   for (const simulation::EntityState& body : state.bodies) {
-    everyone.push_back(EntityBody{.entity = body.entity, .body = body.body, .yaw = body.yaw});
+    updates.bodies.push_back(EntityBody{.entity = body.entity, .body = body.body, .yaw = body.yaw});
   }
-
-  std::vector<Update> updates;
-  updates.reserve(recipients.size());
+  updates.recipients.reserve(recipients.size());
   for (const Recipient& recipient : recipients) {
-    updates.push_back(Update{
-        .recipient = recipient.entity,
-        .tick = tick,
+    const simulation::EntityState* const body = BodyOf(state, recipient.entity);
+    updates.recipients.push_back(RecipientUpdate{
+        .entity = recipient.entity,
         .acknowledged_sequence = recipient.acknowledged_sequence,
-        .bodies = everyone,
-        .rifle = RifleOf(state, recipient.entity),
-        .health = HealthOf(state, recipient.entity),
+        .rifle = body == nullptr ? weapon::State{} : body->rifle,
+        .health = body == nullptr ? 0.0F : body->health,
         .queued_commands = recipient.queued_commands,
     });
   }

@@ -4,15 +4,13 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <variant>
 
 #include "augusta/assets.h"
-#include "augusta/harness.h"
+#include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/networking.h"
+#include "augusta/reenactment.h"
 #include "augusta/renderer.h"
-#include "augusta/supervisor.h"
-#include "character_loader.h"
 #include "content.h"
 
 /// \file
@@ -25,8 +23,10 @@
 /// reconciling the prediction is harness::Session's work, and its Prediction and
 /// Network I/O threads are a harness::Runner's (ADR-0005): ClientRuntime supplies
 /// each tick's command from the player's input, blends the ticks it is handed
-/// into render frames, and loads what the Lobby names. Where its content comes
-/// from is main.cpp's business (content.h).
+/// into render frames, and loads what the Lobby names. As a Captured player
+/// (ADR-0050) each tick's command is its harness::Reenactment's instead, the
+/// keyboard and mouse move nothing, and the run ends with its reenactment.
+/// Where its content comes from is main.cpp's business (content.h).
 namespace augusta::client {
 
 struct RuntimeConfig {
@@ -39,16 +39,15 @@ struct RuntimeConfig {
   /// The hash of the client pack loaded, which the server checks is the one
   /// cooked with its own.
   assets::PackHash client_pack{};
+  /// The capture's player to be, as a Captured player (`--reenact`, ADR-0050):
+  /// it joins at its spawn with a Reenact request, as character, which must be
+  /// its. nullopt to play from the player's input.
+  std::optional<harness::Script> reenactment;
+  /// Set, the client is a Replay viewer (ADR-0051, `augustac --replay`): it
+  /// watches the capture of this name on a replay server instead of playing,
+  /// and its run ends, as the window closing ends it, once the Replay has.
+  std::optional<std::string> replay;
 };
-
-/// Why Run() stopped without the player closing the window: the session ended
-/// on its own, a character could not be loaded, or the Prediction or Network I/O
-/// thread stopped on an exception (for one, the transport rejecting the server
-/// address).
-using RunFailure = std::variant<harness::Failure, CharacterError, supervisor::WorkerFailure>;
-
-/// What to tell whoever runs the process about why the client stopped.
-[[nodiscard]] std::string DescribeRunFailure(const RunFailure& failure);
 
 /// The client process constructs exactly one, on what becomes the Main/Render
 /// thread (see Run()).
@@ -73,8 +72,8 @@ class ClientRuntime {
   /// since where content comes from is the executable's business, not the
   /// orchestrator's. load_character is called in the Lobby for each
   /// character another player brings (ADR-0043); it must stay callable until
-  /// Run() returns. Throws std::runtime_error if physics rejects a collision
-  /// mesh.
+  /// Run() returns. Throws failure::ClassifiedFailure
+  /// (failure::Code::kInvalidContent) if physics rejects a collision mesh.
   ClientRuntime(const RuntimeConfig& config, Content content);
 
   /// Run() always stops and joins the Prediction and Network I/O
@@ -102,15 +101,20 @@ class ClientRuntime {
   /// Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
   /// session fails (refused, server unreachable, connection lost), a
   /// character cannot be loaded or the Prediction or Network I/O thread
-  /// throws (which stops the others), which is what it returns: the caller
-  /// reports it and exits, since there is no reconnecting. nullopt if the
-  /// player closed the window.
+  /// fails (which stops the others), which is what it returns, classified
+  /// (application.h) - a thread's first cause as its supervisor recorded it:
+  /// the caller reports it and exits, since there is no reconnecting. nullopt
+  /// if the player closed the window, a Captured player's run left at its
+  /// captured Leave or reached the capture's Match end or the server's, which
+  /// it logs beside what the capture holds (ADR-0050), or a Replay viewer's
+  /// Replay ended (RuntimeConfig::replay), which loads every player's character
+  /// once its Match starts, as there is no Lobby to load them in.
   /// Always stops and joins both spawned threads before returning or
   /// propagating an exception (see ~ClientRuntime). Must be called from
   /// the same thread that constructed this ClientRuntime (ADR-0009's
   /// window-thread-affinity requirement, inherited from Renderer) and
   /// must not be called more than once.
-  [[nodiscard]] std::optional<RunFailure> Run();
+  [[nodiscard]] std::optional<failure::Failure> Run();
 
  private:
   struct Impl;

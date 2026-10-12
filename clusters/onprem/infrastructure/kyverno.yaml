@@ -1,0 +1,91 @@
+# Kyverno (ADR-0057): admits what Pod Security Admission cannot judge, by the
+# policies in clusters/onprem/policies, which CI runs over the same manifests
+# before they merge.
+#
+# Its namespace runs under the restricted Pod Security Standard, as every
+# workload that can meet it does; the chart's pods meet it as they come
+# (non-root, no privilege escalation, every capability dropped, the runtime's
+# seccomp profile). Kyverno's webhooks skip kube-system and kyverno itself, so
+# Kyverno can always start.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://kyverno.github.io/kyverno
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  interval: 30m
+  releaseName: kyverno
+  # The namespace above, with its Pod Security labels: not one Flux creates.
+  targetNamespace: kyverno
+  storageNamespace: kyverno
+  # The first install pulls every controller's image.
+  timeout: 10m
+  chart:
+    spec:
+      chart: kyverno
+      version: 3.9.1
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+  values:
+    # Every image pinned by digest (ADR-0057), the tag beside it for the
+    # reader: the chart renders <registry>/<repository>:<tag>. A chart upgrade
+    # brings new images, so these move with its version.
+    admissionController:
+      initContainer:
+        image:
+          tag: v1.19.1@sha256:c25c47461f06f2845a48c319ae86fbbc1730a7b9ed5b701889c9dc1f9ee94b09
+      container:
+        image:
+          tag: v1.19.1@sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb
+    backgroundController:
+      image:
+        tag: v1.19.1@sha256:8f1e9143373a27578cafc2d28d2c66ba0926c63b4c77e63de8d2fdd4a122859f
+    cleanupController:
+      image:
+        tag: v1.19.1@sha256:67a48e62a8d8f8120c86914ff822b90017c54054c7b64ef8a1555645e9d9761e
+    reportsController:
+      image:
+        tag: v1.19.1@sha256:c0eee97b9b44a0dd35805d56b358fa52548480f79d4944602b9609538eccd64c
+    # The Job an upgrade runs to move stored policies to the new CRD versions.
+    crds:
+      migration:
+        image:
+          tag: v1.19.1@sha256:ced7b2be0b04250cabfe695f15307f69eb715fe23234816388af4f3812915b2a
+    # The Jobs an uninstall runs to remove Kyverno's webhooks before its pods,
+    # and the pods `helm test` runs.
+    webhooksCleanup:
+      image:
+        tag: v1.19.1@sha256:31bb42ce7f5b2e27c1cf633aeff4f0cad1f5bb63761e2cb09f0e25cdd26572bf
+    test:
+      image:
+        tag: v1.19.1@sha256:31bb42ce7f5b2e27c1cf633aeff4f0cad1f5bb63761e2cb09f0e25cdd26572bf
+    # The chart filters kube-system and kyverno out of everything Kyverno
+    # does. Taken out of that filter, both are in the background scan: it
+    # reports a pod in kube-system that is not k3s's
+    # (privileged-namespace-workloads), and Kyverno's own pods' images'
+    # signatures checked (verify-image-signatures). The chart's webhooks still
+    # skip both (its default config.webhooks), so no request there waits on
+    # Kyverno, and Kyverno never waits on itself to start.
+    config:
+      resourceFiltersExcludeNamespaces:
+        - kube-system
+        - kyverno

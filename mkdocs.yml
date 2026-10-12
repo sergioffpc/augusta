@@ -37,14 +37,19 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      # GitHub's heading anchors, so a link to one works on GitHub and on the
+      # site alike: "M0 — Project & Setup" is #m0--project--setup on both.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.superfences
 hooks:
   - tools/docs/hooks.py
 validation:
   # The navigation's API reference entry links to api/, which Doxygen fills
-  # after MkDocs has built, and its Benchmarks entry to benchmarks/, which the
-  # docs workflow fills from the nightly's results; every other entry is a page
-  # the hook found.
+  # after MkDocs has built, and its Benchmarks and Tests entries to benchmarks/
+  # and tests/, which the docs workflow fills from the nightly's results; every
+  # other entry is a page the hook found.
   nav:
     not_found: info
   links:

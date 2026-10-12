@@ -38,3 +38,18 @@ controllers' actors, whether or not the World has simulated since they moved.
 Any other query that must see players exactly where they are needs each actor
 made queryable where the body is first, for instance by raising that flag on
 `PxController::getActor()` or by setting the actor's pose after each move.
+
+## A bullet's flight is bounded
+
+A bullet ends on the Map, on a player, at its ammo's max range, or once it has
+flown 5 seconds (`ballistics::kMaxFlightTime`), whichever comes first. The
+Parameters' muzzle velocity and range are only required to be finite and above
+0, so a valid pair can have a round crawl toward a range it never reaches; the
+flight time is what keeps such a round from being simulated forever. A player
+fires at most one round a tick, so each player the Match started with has fewer
+than a flight time's worth of ticks of rounds in flight
+(`ballistics::MaxFlightSteps`), and the Ballistics phase's work per tick has a
+bound whatever the Parameters say. It is a resource bound, not a tuning value: a
+rifle round reaches any range a Map has room for in a fraction of it, so it is a
+constant shared by the server and the clients' tracers rather than a Parameter.
+Server operators see the count as `augustad_bullets_in_flight` (ADR-0049).

@@ -1,24 +1,49 @@
 # arc42 Architecture Document — FPS Simulator Engine
 
+## Contents
+
+<!-- pyml disable md051 -->
+
+- [1. Introduction and Goals](#1-introduction-and-goals)
+- [2. Architecture Constraints](#2-architecture-constraints)
+- [3. System Scope and Context](#3-system-scope-and-context)
+- [4. Solution Strategy](#4-solution-strategy)
+- [5. Building Block View](#5-building-block-view)
+- [6. Runtime View](#6-runtime-view)
+- [7. Deployment View](#7-deployment-view)
+- [8. Crosscutting Concepts](#8-crosscutting-concepts)
+- [9. Architecture Decisions (ADRs)](#9-architecture-decisions-adrs)
+    - [Core Engine](#core-engine)
+    - [Tooling & Build](#tooling--build)
+    - [Rendering & Audio](#rendering--audio)
+    - [Asset Pipeline](#asset-pipeline)
+    - [Client Runtime](#client-runtime)
+    - [Server Runtime](#server-runtime)
+    - [Infrastructure & CD](#infrastructure--cd)
+- [10. Quality Requirements](#10-quality-requirements)
+- [11. Risks and Technical Debt](#11-risks-and-technical-debt)
+- [12. Glossary](#12-glossary)
+
+<!-- pyml enable md051 -->
+
 ## 1. Introduction and Goals
 
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic,
 physics-driven, server-authoritative multiplayer FPS simulator engine, built in
-C++ with a Windows client (rendering via NVIDIA Falcor/D3D12) and a headless
-Linux server, as a learning project in low-level systems and networking
-programming.
+C++ with a Windows client and a headless Linux server.
 
 Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 
 1. Server-authoritative correctness (NFR-05)
 2. Realistic, consistent ballistics (NFR-03)
-3. Stable performance under v1 load (NFR-01, NFR-06)
+3. Stable performance under load (NFR-01, NFR-06)
 4. Platform targeting, Windows client + Linux server (NFR-04)
 
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux-only, headless.
+  via NVIDIA Falcor (D3D12). Server: Linux x86-64 and Linux arm64 in production
+  (Windows x64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
   [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
@@ -32,23 +57,24 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   2.0, stage cleanup), usd-validation-nvidia (Apache 2.0 + CC-BY-4.0,
   validation), and Adobe's USD-Fileformat-plugins (Apache 2.0, glTF/FBX/OBJ
   ingestion as USD layers, ADR-0016) — all offline/build-time only.
-- **Organizational:** solo developer / small informal team, hobby project, no
-  fixed deadline, milestone-driven
+- **Organizational:** solo developer / small informal team, no fixed deadline,
+  milestone-driven
 
 ## 3. System Scope and Context
 
 **Business context:** Players connect directly to a dedicated server via
-IP:port. No matchmaking, master server, or third-party platform integration in
-v1.
+IP:port.
 
 **Technical context:**
 
 - Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
   local prediction
-- Dedicated server executable (Linux only): headless, authoritative simulation
-- Scripted players tool (`augusta-swarm`, Windows and Linux): a server's worth
-  of headless clients, for load and end-to-end tests (ADR-0013)
-- Communication: GameNetworkingSockets over UDP, unencrypted in v1
+- Dedicated server executable (Linux in production, Windows for development
+  only - NFR-04): headless, authoritative simulation
+- Agents (`tools/agent`, Windows and Linux): players a Python script controls,
+  such as the load test's (ADR-0013, ADR-0052)
+- Communication: GameNetworkingSockets over UDP, encrypted (AES-GCM-256) but
+  unauthenticated
 
 ```text
 +--------+          +------------------------+
@@ -66,8 +92,7 @@ v1.
 - Client-side prediction for responsiveness, reconciled by restoring the
   authoritative server state and replaying the unacknowledged commands from it,
   with the visible jump smoothed in presentation (see ADR-0004)
-- Multithreaded from v1: dedicated Main/Render, Simulation, and Network I/O
-  threads
+- Multithreaded: dedicated Main/Render, Simulation, and Network I/O threads
 - Custom lightweight binary protocol for game-state messages
 - Mechanism vs. policy vs. data separation: engine mechanism (movement, physics,
   ballistics, hit detection) is C++; game policy (Match lifecycle, win
@@ -75,8 +100,8 @@ v1.
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
 - Rendering built on NVIDIA Falcor (D3D12), used exclusively by the Windows
-  client. The server is Linux-only, headless, and entirely decoupled from
-  Falcor/graphics-API concerns.
+  client. The server runs in production on Linux only (NFR-04), headless, and
+  entirely decoupled from Falcor/graphics-API concerns.
 - Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
   spatial audio; no audio dependency on the headless Linux server.
 - Shaders authored in Slang — already Falcor's default shader compiler (targets
@@ -122,6 +147,10 @@ v1.
   with it, a visual only. Deciding a bullet's outcome (hit detection, damage)
   stays server-side (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
+- Primitives — the Tick and command sequence widths and the player, command and
+  recoil-kick bounds for the engine and the protocol to share
+  (augusta_primitives), depending on no other module, so neither side needs the
+  other's for them
 - Command — one tick's player intent (augusta_command): what the client's Input
   handling samples and the server screens and simulates, so the server links no
   client input code
@@ -210,7 +239,7 @@ the other five run — ADR-0024)
 Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
 
-**Server-only** (Linux-only, headless)
+**Server-only** (Linux in production, Windows for development; headless)
 
 - Networking — receives client commands, sends authoritative state; the only
   server component that touches the network
@@ -291,7 +320,7 @@ after the tick.
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
   compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small native
-  pybind11 modules (`tools/pack/cpp/`, per ADR-0025's vcpkg ports - neither
+  pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
   links OpenUSD, see ADR-0030), and packages everything into signed, verified
   pack files (separate client and server packs) via a pure-Python
   reimplementation of augusta_assets' wire format. Full ordered pipeline:
@@ -330,7 +359,7 @@ after the tick.
 **Scenario: Match End**
 
 1. Server evaluates the win condition each tick (game policy, the scenario's
-   rules; in v1 last player standing)
+   rules; last player standing)
 2. When it is met, the decision is a typed Match end action in that tick's
    result; the server ends the Match after the tick, removes every body and
    bullet in flight, and sends Match end, with the winner or a draw, reliably;
@@ -340,32 +369,129 @@ after the tick.
 
 ## 7. Deployment View
 
-v1 gameplay: a Linux dedicated server process and up to 8 Windows client
-processes, on the same LAN/localhost.
+A Match is one Linux `augustad` server and 2–8 Windows `augustac` clients on one
+trusted LAN (§11). The server runs in one of two places:
 
-Non-production development/test deployment: the server also runs on a
-self-hosted, single-node k3s cluster (developer's own hardware), two fixed,
-long-lived Kubernetes namespaces (`staging` tracks `main`, `develop` tracks
-`develop`) — no per-branch/ephemeral namespaces — see ENGINEERING.md, Deployment
-& CD. LAN-only access; this removes the need for a separate Linux VM/WSL2 just
-to run the server locally, since k3s now hosts it.
+- **The k3s cluster:** a self-hosted, single-node k3s cluster on the developer's
+  own hardware, where Flux deploys `develop` and the latest release (ADR-0026,
+  ADR-0056). This is the standing environment, and what the diagrams below show.
+- **Local:** `augustad` and the clients run by hand on one machine or across the
+  LAN, with a locally cooked pack and their own config files (ADR-0034). Nothing
+  is deployed; this is for development and tests.
 
-Production deployment (`main`) is explicitly out of scope/undecided for now.
+There is no production environment. The latest release, its signed `v*` tag,
+runs in `staging`, a test environment like `develop` (ADR-0056); deploying to
+players beyond the LAN is undecided. The values below (namespaces, node ports,
+paths) are those of ENGINEERING.md, Deployment & CD, which is their reference;
+ADR-0026 gives the reasons.
+
+### 7.1 Topology
+
+What runs on the node, and who reaches it:
+
+```text
+ LAN                       k3s node (single, self-hosted)
++-------------------+     +-------------------------------------------------+
+| Windows PC        |     | ns develop      (tracks develop)                |
+|                   | UDP |   augustad-<scenario>   :7777 <- NodePort 307xx |
+|  augustac.exe     |---->|   metrics + /livez      :9464                   |
+|  client.pack      |     | ns staging      (latest v* tag)                 |
+|  signing.pub      |     |   augustad-<scenario>   :7777 <- NodePort 308xx |
+|                   |     |   metrics + /livez      :9464                   |
+|  browser          |     | ns monitoring                                   |
+|                   |---->|   Grafana               <- NodePort 30300       |
++-------------------+ HTTP|   Prometheus  scrapes   :9464 (ServiceMonitor)  |
+                          |   Loki <- Alloy <- every container's log        |
+                          | ns flux-system                                  |
+                          |   Flux: a GitRepository + HelmRelease per env   |
+                          |                                                 |
+                          | hostPath                                        |
+                          |   /srv/augusta/asset-packs/<scenario>/<ver>/    |
+                          |     server.pack + signing.pub, mounted ro       |
+                          |   /srv/augusta/captures/<ns>/<scenario>/        |
+                          |     Match captures, develop only                |
+                          | systemd-coredump        keeps server core dumps |
+                          +-------------------------------------------------+
+```
+
+- **One server per scenario per environment:** each `augustad-<scenario>` is a
+  Deployment of one pod with its own game Service, a node port pinned in its
+  environment's range (`develop` 30700-30799, `staging` 30800-30899), and its
+  own metrics Service. A client connects to the node's address and that port.
+- **Packs:** a server mounts only the folder of the pack version its
+  environment's values name. The client pack is not on the node: the client
+  loads its own copy, which must come from the same cook (ADR-0019).
+- **Observability:** Prometheus scrapes each server's `/metrics` and the
+  Deployment probes its `/livez` (ADR-0049); Alloy ships container logs to Loki
+  (ADR-0053); Grafana shows both, the one service on the node meant for a
+  browser.
+- **Debugging:** a server is inspected with `kubectl debug --target=augustad`,
+  its image having no shell (ADR-0054), and its core dumps are kept by the
+  node's `systemd-coredump` (ADR-0047).
+
+### 7.2 Delivery
+
+How each piece reaches the node or the player:
+
+```text
+ developer machine         GitHub                          k3s node
++------------------+ push +--------------------------+ pull +----------------+
+| source           |----->| repo: develop, main      |<-----| Flux, every 1m |
+|                  |  PR  |  clusters/onprem/        |      |  HelmRelease   |
+|                  |      |  charts/augustad         |      |  -> augustad   |
+|                  |      |                          |      |     pods       |
+|                  |      | CI, on each push         |      |                |
+|                  |      |  -> GHCR augustad:       |<-----| image pull     |
+|                  |      |     sha-<12>             | pull |                |
+|                  |      |     sha-<12>-debuginfo   |      |                |
+|                  |      | release, on a v* tag     |      |                |
+|                  |      |  -> GitHub Release       |      |                |
+| cook + sign      |      +--------------------------+      |                |
+| (signing key)    |                  |                     |                |
+|                  | augusta-publish (ssh + scp)            |                |
+|  server.pack ----+--------------------------------------->| asset-packs/   |
+|  client.pack ... |                  |                     +----------------+
++-----------.------+                  | augustac.exe + .pdb
+            .                         v
+            .  by hand, no      +-----------------+
+            ....channel .......>| Windows PC      |
+               defined          +-----------------+
+```
+
+- **Server code:** a merge to `develop` or `main` is all a deploy takes. CI
+  builds the image from that commit and pushes it to GHCR as `sha-<12>` (on
+  `main`, an index of its amd64 and arm64 images); Flux pulls the branch, and
+  its `HelmRelease` upgrades the chart, which runs the image of the chart's own
+  commit. No CI runner reaches the cluster; Flux only pulls.
+- **Server packs:** cooked and signed on the developer's machine, never in CI.
+  `augusta-publish` copies a server pack and its `signing.pub` to the node, in a
+  new folder named by its version, which changes nothing that runs. A pull
+  request then sets that `packVersion` in the environment's `HelmRelease`, and
+  Flux deploys it like any other change.
+- **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.exe`
+  and its `.pdb` to the GitHub Release (ADR-0055;
+  [cut-release](runbooks/cut-release.md)).
+- **Client packs:** no channel is defined. A client pack is copied by hand from
+  the cook that made its server pack, beside the `signing.pub` it is signed with
+  ([pack-key-rotation](runbooks/pack-key-rotation.md)).
+- **Rollback:** reverting the commit that changed a `HelmRelease` rolls its
+  servers back; an older pack folder is never removed
+  ([flux-rollback](runbooks/flux-rollback.md)).
 
 ## 8. Crosscutting Concepts
 
 - **Units:** 1 engine unit = 1 meter (real-world scale, required for realistic
   ballistics)
-- **Threading:** fixed dedicated threads, no generic job/task scheduler in v1.
-  Client: 3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O).
-  Server: 3 threads (Simulation, Network I/O, Metrics) — no render thread, since
-  it's headless (see ADR-0005, ADR-0049). Each piece of mutable state has one
-  owning thread and crosses to another only as an immutable value: transport
-  callbacks publish events that the Network I/O owner applies outside their
-  locks, the client reads what the server said through one immutable Server
-  view, and SimulationWorld returns a `TickResult`. A runtime supervisor owns
-  the worker threads, their stop request and the first failure, which a runtime
-  reports rather than terminating the process.
+- **Threading:** fixed dedicated threads, no generic job/task scheduler. Client:
+  3 threads (Main/Render, Simulation [ECS + PhysX], Network I/O). Server: 3
+  threads (Simulation, Network I/O, Metrics) — no render thread, since it's
+  headless (see ADR-0005, ADR-0049). Each piece of mutable state has one owning
+  thread and crosses to another only as an immutable value: transport callbacks
+  publish events that the Network I/O owner applies outside their locks, the
+  client reads what the server said through one immutable Server view, and
+  SimulationWorld returns a `TickResult`. A runtime supervisor owns the worker
+  threads, their stop request and the first failure, which a runtime reports
+  rather than terminating the process.
 - **Determinism strategy:** PhysX does not guarantee cross-platform bit-exact
   determinism (confirmed: NVIDIA docs state cross-platform determinism is
   unsupported). Client prediction is therefore treated as approximate: the
@@ -378,8 +504,10 @@ Production deployment (`main`) is explicitly out of scope/undecided for now.
   of such rejections within a sliding window, or that connects and is not
   admitted to the Lobby within a deadline (boundary constants, set so an honest
   client under NFR-02's latency and loss never reaches them; routine rejections
-  never count); encryption deliberately deferred past v1 (trusted LAN testing
-  only)
+  never count). Every connection is encrypted, GameNetworkingSockets' default
+  (AES-GCM-256, Curve25519 key exchange), but not authenticated: with no
+  certificate authority, each peer presents a self-signed certificate, so a
+  man-in-the-middle on the network goes undetected (trusted LAN only)
 - **No I/O inside ECS worlds:** ECS worlds are pure state transformations.
   Device input, networking, rendering, and audio output are all handled by
   dedicated boundary components outside the worlds, which translate between the
@@ -432,9 +560,14 @@ not affect numbering.
   compensation and replication
 - [ADR-0045](./adr/0045-dynamic-bodies.md) — Dynamic bodies:
   server-authoritative Props, client-only cosmetics, fixed-step simulate
-- [ADR-0048](./adr/0048-match-recording-and-replay.md) — Match recording and
-  replay: SimulationWorld's input and outcome per tick, in the protocol's
-  encoding
+- [ADR-0048](./adr/0048-match-recording-and-replay.md) — (Superseded by
+  ADR-0050, ADR-0051) Match recording and replay: SimulationWorld's input and
+  outcome per tick, in the protocol's encoding
+- [ADR-0050](./adr/0050-match-capture-and-reenactment.md) — Match capture and
+  Reenactment: one Match's client actions, played again by augustac against a
+  live server
+- [ADR-0051](./adr/0051-replay.md) — Replay: augustad re-runs a Match capture
+  and streams it to Replay viewers
 
 ### Tooling & Build
 
@@ -460,6 +593,18 @@ not affect numbering.
   core dumps, a logged stack, and split debug info
 - [ADR-0049](./adr/0049-metrics-and-liveness.md) — Metrics and liveness:
   Prometheus pull from augustad, kube-prometheus-stack via Flux
+- [ADR-0052](./adr/0052-python-scripted-agents.md) — Agents: players scripted in
+  Python through Intents the Harness runs
+- [ADR-0053](./adr/0053-log-aggregation.md) — Log aggregation: Loki and Alloy
+  beside kube-prometheus-stack
+- [ADR-0054](./adr/0054-chiselled-server-image.md) — Server image: a chiselled
+  Ubuntu 26.04 root on `scratch`
+- [ADR-0055](./adr/0055-client-release-symbols.md) — Client symbols: a PDB with
+  each release
+- [ADR-0056](./adr/0056-signed-revisions-for-flux.md) — Flux runs only signed
+  revisions; `staging` follows release tags
+- [ADR-0057](./adr/0057-cluster-hardening-baseline.md) — Cluster hardening
+  baseline: CIS k3s, PSS `restricted`, Kyverno, no Secrets
 
 ### Rendering & Audio
 
@@ -522,11 +667,13 @@ to NFR-07).
   ("rubber-banding") if divergence grows too fast.
 - **Scope ambition vs. solo-dev bandwidth:** ECS + custom physics/ballistics +
   client prediction + multithreading + a new networking library is a lot of new
-  surface area to learn and integrate simultaneously for v1.
+  surface area to learn and integrate simultaneously.
 - **GameNetworkingSockets build complexity:** pulls in transitive dependencies
   (protobuf, OpenSSL) that add cross-platform build maintenance overhead.
-- **No encryption in v1:** acceptable only under the stated trusted-LAN
-  assumption; must be revisited before any non-trusted deployment.
+- **No authentication of peers:** connections are encrypted, but neither side
+  proves who it is, so a man-in-the-middle goes undetected. Acceptable only
+  under the stated trusted-LAN assumption; certificates signed by a project
+  certificate authority are needed before any non-trusted deployment.
 - **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
   recommended to insulate against upstream abandonment.
 - **Cross-OS local development:** building and testing requires both a Windows
@@ -540,8 +687,8 @@ to NFR-07).
 - **Signing key management:** losing or leaking the pack-signing private key
   would require re-keying and re-signing all shipped packs — back it up securely
   and keep it out of version control.
-- **Full rebake on every cook** is acceptable at v1's asset scale; will need
-  incremental invalidation (e.g., content-hash-based) if asset count grows
+- **Full rebake on every cook** is acceptable at the current asset scale; will
+  need incremental invalidation (e.g., content-hash-based) if asset count grows
   significantly.
 - **Lua sandbox correctness:** security relies on a carefully curated restricted
   environment; an incomplete sandbox (e.g., leaking `load`/`dofile`, or a C++

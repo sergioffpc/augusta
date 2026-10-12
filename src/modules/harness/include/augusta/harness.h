@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_HARNESS_H_
 #define AUGUSTA_HARNESS_H_
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -12,6 +13,8 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -37,7 +40,10 @@
 /// different threads, as in Runner: Connect, Disconnect, PumpEvents,
 /// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
 /// I/O thread, and Tick from the Prediction thread (the transport is safe to
-/// send from both).
+/// send from both). A failure of the local transport inside any of them is kept
+/// for the caller to take (Session::TakeTransportFailure) and stop on, and the
+/// Session sends nothing more after it, or after a broken invariant; the
+/// server ending the connection is the Session's own Failure instead.
 namespace augusta::harness {
 
 /// The server's name for one connected player (CONTEXT.md, "Session ID"), as
@@ -109,6 +115,23 @@ struct HitConfirmation {
   ballistics::BodyPart part = ballistics::BodyPart::kTorso;
 };
 
+/// Where one player of a Replay looked on one tick, from the Command the
+/// replay server's World ran (ADR-0051): what its Replay viewer is shown, which
+/// no Authoritative State carries.
+struct PlayerView {
+  EntityId entity{};
+  /// The view's pitch, in radians (command::Command).
+  float pitch = 0.0F;
+  bool ads = false;
+};
+
+/// Every player's view on one tick of a Replay, as its replay server sent it.
+struct ReplayView {
+  /// The tick, as the Authoritative State of the same tick names it.
+  tick::Tick tick = 0;
+  std::vector<PlayerView> players;
+};
+
 /// A player in the match died (US-13), as the server told every client in it:
 /// for the rest of the match. Carries what a ragdoll would start from (ADR-0045).
 struct Death {
@@ -159,6 +182,8 @@ struct MatchPlayer {
 /// What the server said when a match started: everyone in it, this client's own player included.
 struct MatchStart {
   std::vector<MatchPlayer> players;
+  /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
+  tick::Tick first_tick = 0;
 };
 
 /// What the server said when a match ended (US-14).
@@ -189,6 +214,14 @@ enum class JoinRefusal : std::uint8_t {
   kMatchInProgress,
   /// This client's pack is not the one cooked with the server's.
   kPackMismatch,
+  /// The server is a replay server, which only replays Match captures (ADR-0051).
+  kReplayServer,
+  /// The capture this client asked to watch is none the replay server replays (ADR-0051).
+  kUnknownCapture,
+  /// This client asked a live server for Replays, which only a replay server serves (ADR-0051).
+  kNotAReplayServer,
+  /// This client asked to join as a Captured player, and the server takes none (ADR-0050).
+  kReenactmentsNotAccepted,
 };
 
 /// A short lowercase description of reason, for logs and for the player.
@@ -242,7 +275,8 @@ struct ServerView {
   /// The newest Roster, kept through a match.
   std::optional<Lobby> lobby;
   /// The last match's start, and how many have started: a new count is a new
-  /// match for the prediction to start over in.
+  /// match for the prediction to start over in, and the match whose Shots, Hit
+  /// confirmations and Deaths a view takes (Session::TakeShots).
   std::optional<MatchStart> match_start;
   std::uint32_t matches_started = 0;
   /// Whether this client is playing in a match: from its Match start to its Match end.
@@ -253,6 +287,9 @@ struct ServerView {
   std::optional<AuthoritativeState> authoritative;
   /// The bodies of the match in progress whose Death has been told.
   std::vector<EntityId> dead;
+  /// The newest Replay view of the Replay this client watches (ADR-0051), a
+  /// Replay viewer's only; only while in_match.
+  std::optional<ReplayView> replay_view;
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
   [[nodiscard]] Phase GetPhase() const;
@@ -275,6 +312,18 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
+  /// For a test: asked at every send and receive (networking.h), so the
+  /// transport fails there; null otherwise. Must outlive the Session.
+  failure::Faults* faults = nullptr;
+  /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
+  /// asks a replay server to replay the capture of this name, by its name in
+  /// the server's Replay list. It is then a Spectator from the first tick: it
+  /// predicts nothing and sends no Command, and character is not asked for.
+  std::optional<std::string> replay = std::nullopt;
+  /// Where to ask to spawn, for a Captured player (ADR-0050): it joins with a
+  /// Reenact request naming it in place of a Join request. nullopt, the
+  /// default, for anyone else, whom Game policy places.
+  std::optional<math::Vec3> spawn = std::nullopt;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
@@ -316,8 +365,28 @@ class Session {
 
   /// Why this session has ended on its own, or nullopt while it has not: before
   /// Connect, while connecting or connected, and after Disconnect (which the
-  /// caller asked for, so it is not a failure). Safe to read from any thread.
+  /// caller asked for, so it is not a failure), nor once a Replay viewer's
+  /// Replay has ended (ReplayEnded). Safe to read from any thread.
   [[nodiscard]] std::optional<Failure> GetFailure() const;
+
+  /// Whether this Replay viewer's Replay is over: its Match end has arrived
+  /// and the replay server has closed the connection, as it does after one.
+  /// Never for a client that plays. Safe to read from any thread.
+  [[nodiscard]] bool ReplayEnded() const;
+
+  /// The first failure of the local transport a send or receive met
+  /// (failure::Code::kTransportSendFailed, kTransportReceiveFailed), once;
+  /// nullopt before one and after it has been taken. A runtime failure, not
+  /// the server's doing: Runner's thread that takes it stops on it. Safe from
+  /// any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
+
+  /// The first message this client could not encode, as the broken invariant
+  /// it is (failure::Code::kInvariantViolated, ADR-0033), once; nullopt before
+  /// one and after it has been taken. What it was is not sent: whoever runs
+  /// the Session stops on it, as on a transport failure. ExchangeMessages,
+  /// ReportReady and Tick may each meet one. Safe from any thread.
+  [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
@@ -373,26 +442,30 @@ class Session {
   /// from any thread.
   [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
-  /// The Shots of the match in progress, or of the last one if back in the
-  /// Lobby, received since the last call, in the order they arrived; the newest
-  /// kMaxPendingShots of them if more did. One that arrives outside a match or
-  /// names a body not in it is dropped, and a match starts with none. Received
-  /// by ExchangeMessages; safe to call from any thread.
+  /// The Shots of the match view is of (ServerView::matches_started): the
+  /// match in progress, or the last one if back in the Lobby. Those received
+  /// since the last call, in the order they arrived; the newest
+  /// kMaxPendingShots of them if more did. One of an earlier match is never
+  /// taken: once a view of a match is held, none of the one before is left to
+  /// take. One of a later match is kept for a view of it, so what a reader
+  /// draws is always of the match its view is of. One that arrives outside a
+  /// match or names a body not in it is dropped. Received by ExchangeMessages;
+  /// safe to call from any thread.
+  [[nodiscard]] std::vector<Shot> TakeShots(const ServerView& view);
+  /// TakeShots for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Shot> TakeShots();
 
-  /// The Hit confirmations of the match in progress, or of the last one if back
-  /// in the Lobby, received since the last call, in the order they arrived; the
-  /// newest kMaxPendingHitConfirmations of them if more did. One that arrives
-  /// outside a match or names a body not in it is dropped, and a match starts
-  /// with none. Received by ExchangeMessages; safe to call from any thread.
+  /// The Hit confirmations of the match view is of, as TakeShots hands out
+  /// Shots; the newest kMaxPendingHitConfirmations of them if more arrived.
+  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(const ServerView& view);
+  /// TakeHitConfirmations for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
-  /// The Deaths of the match in progress, or of the last one if back in the
-  /// Lobby (those that ended it among them), received since the last call, in
-  /// the order they arrived; the newest kMaxPendingDeaths of them if more did.
-  /// One that arrives outside a match or names a body not in it is dropped, and
-  /// a match starts with none. Received by ExchangeMessages; safe to call from
-  /// any thread.
+  /// The Deaths of the match view is of (those that ended it among them), as
+  /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
+  /// arrived.
+  [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
+  /// TakeDeaths for the newest Server view (GetServerView).
   [[nodiscard]] std::vector<Death> TakeDeaths();
 
   /// Whether this client's own player is alive: in a match, and neither told
@@ -412,6 +485,12 @@ class Session {
   /// the first. Set by ExchangeMessages; safe to read from any thread.
   [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
+  /// The sequence the command of the next Tick in a match goes under: what a
+  /// caller that paces its commands to the server's ticks counts from (the
+  /// Authoritative State's acknowledged sequence is the last handed to the
+  /// World). Prediction thread, as Tick.
+  [[nodiscard]] command::Sequence NextSequence() const;
+
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// The Seen time command reports (command::Command) is the caller's to fill, from
   /// whatever it shows the other players with: a Session shows nothing.
@@ -426,12 +505,67 @@ class Session {
   /// this client's player is dead (IsAlive), nothing more is predicted and the
   /// state is the last one predicted; the command still goes to the server,
   /// which acknowledges it and does nothing with it, but never with fire held.
+  /// A Replay viewer predicts and sends nothing, ever: its state is the one a
+  /// PredictionWorld starts with.
   prediction::State Tick(const command::Command& command, float delta_time);
 
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+/// One capture a replay server replays, as its Replay list names it (ADR-0051).
+struct ReplayListing {
+  /// What a Replay request names it by (SessionConfig::replay).
+  std::string name;
+  /// When its Match started, in UTC.
+  std::chrono::sys_time<std::chrono::milliseconds> started;
+  /// How long its Match lasted, in ticks at tick_rate_hz.
+  std::uint32_t ticks = 0;
+  std::uint8_t tick_rate_hz = 0;
+  /// Its players' Characters, in its first player's order.
+  std::vector<std::string> characters;
+};
+
+/// Asks a replay server which captures it replays (ADR-0051): connects, sends
+/// a Replay list request once connected, and keeps the list it answers with,
+/// after which the server closes the connection. Like a Session it owns no
+/// thread and reads no clock: the caller pumps it, and decides how long to wait.
+class ReplayListQuery {
+ public:
+  /// Begins connecting to server; returns immediately. faults, for a test, as SessionConfig::faults.
+  explicit ReplayListQuery(const networking::Endpoint& server, failure::Faults* faults = nullptr);
+  ~ReplayListQuery();
+
+  ReplayListQuery(const ReplayListQuery&) = delete;
+  ReplayListQuery& operator=(const ReplayListQuery&) = delete;
+  ReplayListQuery(ReplayListQuery&&) = delete;
+  ReplayListQuery& operator=(ReplayListQuery&&) = delete;
+
+  /// One round of network work: connection events, the request once
+  /// connected, and what has arrived.
+  void Pump();
+
+  /// The server's list, oldest capture first, once it has answered; nullopt until then.
+  [[nodiscard]] const std::optional<std::vector<ReplayListing>>& List() const;
+
+  /// Why it ended without a list: the server refused this client, or the
+  /// connection ended before it answered (FailureKind::kServerUnreachable);
+  /// nullopt while it may still answer, and once it has.
+  [[nodiscard]] std::optional<Failure> GetFailure() const;
+
+  /// The first local transport failure a send or receive met, once, as Session::TakeTransportFailure.
+  [[nodiscard]] std::optional<failure::Failure> TakeTransportFailure();
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+/// listings as lines for whoever ran `augustac --replays`: one a capture,
+/// its name, when it started in UTC, how long it lasted and its players'
+/// Characters, or a line saying there is none.
+[[nodiscard]] std::string DescribeReplayList(const std::vector<ReplayListing>& listings);
 
 }  // namespace augusta::harness
 

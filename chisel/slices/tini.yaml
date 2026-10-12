@@ -1,0 +1,15 @@
+# tini, which chisel-releases has no slice for: the server image's PID 1
+# (Dockerfile, ADR-0047). The Dockerfile copies this file into the pinned
+# chisel-releases tree before it cuts the image's root filesystem.
+package: tini
+essential:
+  tini_copyright:
+slices:
+  bins:
+    essential:
+      libc6_libs:
+    contents:
+      /usr/bin/tini:
+  copyright:
+    contents:
+      /usr/share/doc/tini/copyright:

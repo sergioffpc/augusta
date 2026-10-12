@@ -1,7 +1,10 @@
 # The client's startup settings (ADR-0034). Copy this next to augustac(.exe) as
 # augustac.yaml and edit it, or keep it anywhere and run
 # `augustac --config <this file>`. Keys are grouped into sections; an error
-# names a key by its path, e.g. network.server_address.
+# names a key by its path, e.g. network.server_address. `augustac --reenact
+# <capture> --player <n>` plays player n of a Match capture again against the
+# server below, as that player's Character rather than player.character
+# (ADR-0050).
 # Where the relative paths below start from (required). A relative value is
 # relative to this file's directory, so "." means the directory of this file.
 base_dir: .
@@ -15,7 +18,7 @@ content:
   # Client pack to load (required).
   pack: packs/firebase/client.pack
   # Ed25519 public key the pack is signed with (required).
-  public_key: keys/augusta.pub
+  public_key: keys/signing.pub
 network:
   # Server to connect to (optional, default 127.0.0.1:27015).
   server_address: 127.0.0.1:27015

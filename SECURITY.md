@@ -15,5 +15,8 @@ version/commit. You should expect an initial response within a few days.
 
 ## Supported Versions
 
-Augusta is pre-1.0 and under active, solo development with no stable releases
-yet — report vulnerabilities against the `main` branch.
+Only the [latest release](https://github.com/sergioffpc/augusta/releases/latest)
+gets security fixes, as a new patch release cut from `main` through a `hotfix/*`
+branch. Older releases are not patched: upgrade to the latest. Report
+vulnerabilities against the latest release or `main`, naming the version or
+commit.

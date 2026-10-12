@@ -1,24 +1,43 @@
 {
+  // VS Code reads this file as JSONC, so comments are allowed.
   "recommendations": [
-    "ms-vscode-remote.remote-containers",
-    "ms-vscode.cpptools",
-    "ms-vscode.cmake-tools",
-    "ms-vscode.makefile-tools",
-    "llvm-vs-code-extensions.vscode-clangd",
-    "editorconfig.editorconfig",
-    "redhat.vscode-yaml",
-    "ms-kubernetes-tools.vscode-kubernetes-tools",
-    "sumneko.lua",
-    "dwenegar.vscode-luacheck",
-    "JohnnyMorganz.stylua",
-    "tamasfe.even-better-toml",
-    "github.vscode-github-actions",
-    "shader-slang.slang-language-extension",
-    "ms-python.python",
-    "ms-python.vscode-pylance",
+    // Python: lint and format against ruff.toml.
     "charliermarsh.ruff",
-    "timonwong.shellcheck",
+    // Lua: lint Composer scripts against .luacheckrc.
+    "dwenegar.vscode-luacheck",
+    // All files: apply .editorconfig (indent, line endings, final newline).
+    "editorconfig.editorconfig",
+    // CI: edit and validate .github/workflows, view runs.
+    "github.vscode-github-actions",
+    // Lua: format against stylua.toml.
+    "JohnnyMorganz.stylua",
+    // C/C++: language server and clang-format/clang-tidy integration.
+    "llvm-vs-code-extensions.vscode-clangd",
+    // Shell: format scripts with shfmt.
     "mkhl.shfmt",
-    "ms-vscode.powershell"
+    // Kubernetes: manifest schemas for clusters/**/*.yaml and cluster access.
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    // Python: interpreter, venvs, debugging and test runner for tools/.
+    "ms-python.python",
+    // Python: language server (types, completion, navigation).
+    "ms-python.vscode-pylance",
+    // Dev container: build, test and lint inside .devcontainer/.
+    "ms-vscode-remote.remote-containers",
+    // C++: CMake configure/build/test from presets.
+    "ms-vscode.cmake-tools",
+    // C++: debugger only; IntelliSense is disabled in favour of clangd.
+    "ms-vscode.cpptools",
+    // Root Makefile: run its targets from the editor.
+    "ms-vscode.makefile-tools",
+    // YAML: schema validation for CI workflows and other YAML files.
+    "redhat.vscode-yaml",
+    // Shaders: Slang language support for src/modules/renderer/shaders/.
+    "shader-slang.slang-language-extension",
+    // Lua: language server for Composer scripts.
+    "sumneko.lua",
+    // TOML: syntax and formatting against .taplo.toml.
+    "tamasfe.even-better-toml",
+    // Shell: lint scripts with ShellCheck.
+    "timonwong.shellcheck"
   ]
 }

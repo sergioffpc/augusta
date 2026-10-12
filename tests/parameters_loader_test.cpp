@@ -90,6 +90,7 @@ void ExpectError(std::string_view script, ParametersLoadErrorCode code, std::str
   EXPECT_EQ(loaded.error().subject, subject) << script;
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   const auto loaded = Load(kValid);
 
@@ -119,6 +120,7 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   EXPECT_FLOAT_EQ(loaded->starting_health, 100.0F);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, AMissingCombatKeyIsAnErrorNamingItsPath) {
   ExpectError(Replacing("starting_health = 100,", ""), ParametersLoadErrorCode::kMissingKey, "starting_health");
   ExpectError(Replacing("magazine_capacity = 30,", ""), ParametersLoadErrorCode::kMissingKey,
@@ -134,6 +136,7 @@ TEST(ParametersLoaderCombatTest, AMissingCombatKeyIsAnErrorNamingItsPath) {
   ExpectError(Replacing("limb = 25", ""), ParametersLoadErrorCode::kMissingKey, "ammo.damage.limb");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, AWholeTableMissingIsNamed) {
   ExpectError(
       "return { player_count = 1, stamina = { deplete_per_second = 0, regen_per_second = 0, "
@@ -141,6 +144,7 @@ TEST(ParametersLoaderCombatTest, AWholeTableMissingIsNamed) {
       ParametersLoadErrorCode::kMissingKey, "rifle");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, AnUnknownCombatKeyIsAnErrorNamingItsPath) {
   ExpectError(Replacing("reload_seconds = 2.5,", "reload_seconds = 2.5, spread = 0.01,"),
               ParametersLoadErrorCode::kUnknownKey, "rifle.spread");
@@ -149,6 +153,7 @@ TEST(ParametersLoaderCombatTest, AnUnknownCombatKeyIsAnErrorNamingItsPath) {
               ParametersLoadErrorCode::kUnknownKey, "rifle.recoil_pattern[2].roll");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, ACombatValueOfTheWrongTypeIsAnErrorNamingItsPath) {
   ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 30.5"), ParametersLoadErrorCode::kWrongType,
               "rifle.magazine_capacity");
@@ -162,6 +167,7 @@ TEST(ParametersLoaderCombatTest, ACombatValueOfTheWrongTypeIsAnErrorNamingItsPat
               "rifle.recoil_pattern[2]");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, ARecoilPatternThatIsNotAListIsTheWrongType) {
   for (const std::string_view pattern : {"{ pitch = 0.01, yaw = 0 }",
                                          "{ [1] = { pitch = 0, yaw = 0 }, [3] = { "
@@ -173,6 +179,7 @@ TEST(ParametersLoaderCombatTest, ARecoilPatternThatIsNotAListIsTheWrongType) {
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, AnEmptyRecoilPatternIsNoRecoil) {
   const auto loaded = Load(Replacing(
       "recoil_pattern = { { pitch = 0.01, yaw = 0.002 }, { pitch = 0.008, yaw = -0.002 } }", "recoil_pattern = {}"));
@@ -181,6 +188,7 @@ TEST(ParametersLoaderCombatTest, AnEmptyRecoilPatternIsNoRecoil) {
   EXPECT_TRUE(loaded->rifle.recoil_pattern.empty());
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, ACombatValueOutsideItsRangeIsOutOfRange) {
   ExpectError(Replacing("magazine_capacity = 30", "magazine_capacity = 0"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.magazine_capacity");
@@ -196,6 +204,7 @@ TEST(ParametersLoaderCombatTest, ACombatValueOutsideItsRangeIsOutOfRange) {
               "starting_health");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderCombatTest, ARecoilPatternLongerThanTheWireCarriesIsOutOfRange) {
   const std::string long_pattern = "local kicks = {}\nfor i = 1, 65 do kicks[i] = { pitch = 0, yaw = 0 } end\n" +
                                    Replacing(
@@ -206,18 +215,21 @@ TEST(ParametersLoaderCombatTest, ARecoilPatternLongerThanTheWireCarriesIsOutOfRa
   ExpectError(long_pattern, ParametersLoadErrorCode::kOutOfRange, "rifle.recoil_pattern");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, APlayerCountMayBeAnyWholeNumberFromOneToTheMostAMatchHolds) {
   for (const std::string_view count : {"1", "8", "16 / 2"}) {
     EXPECT_TRUE(Load(WithPlayerCount(count)).has_value()) << count;
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, APlayerCountOutsideItsRangeIsOutOfRange) {
   for (const std::string_view count : {"0", "9", "256", "-1", "2^40", "math.huge", "0/0"}) {
     ExpectError(WithPlayerCount(count), ParametersLoadErrorCode::kOutOfRange, "player_count");
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, APlayerCountThatIsNotAWholeNumberIsTheWrongType) {
   for (const std::string_view count : {"1.5", "'2'", "true"}) {
     ExpectError(WithPlayerCount(count), ParametersLoadErrorCode::kWrongType, "player_count");
@@ -232,6 +244,7 @@ TEST(ParametersLoaderTest, AcceptsAWholeNumberWrittenWithoutADecimalPoint) {
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.0F);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, ASyntaxErrorIsAScriptError) {
   const auto loaded = Load("return {");
 
@@ -240,6 +253,7 @@ TEST(ParametersLoaderTest, ASyntaxErrorIsAScriptError) {
   EXPECT_FALSE(loaded.error().subject.empty());
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AnErrorRaisedByTheScriptIsAScriptErrorCarryingItsMessage) {
   const auto loaded = Load("error('no such thing')");
 
@@ -248,11 +262,13 @@ TEST(ParametersLoaderTest, AnErrorRaisedByTheScriptIsAScriptErrorCarryingItsMess
   EXPECT_NE(loaded.error().subject.find("no such thing"), std::string::npos);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AScriptThatDoesNotReturnATableIsNotATable) {
   ExpectError("return 3", ParametersLoadErrorCode::kNotATable, "");
   ExpectError("local unused = {}", ParametersLoadErrorCode::kNotATable, "");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AMissingKeyIsAnErrorNamingItsPath) {
   ExpectError("return {}", ParametersLoadErrorCode::kMissingKey, "player_count");
   ExpectError("return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 } }",
@@ -266,6 +282,7 @@ TEST(ParametersLoaderTest, AMissingKeyIsAnErrorNamingItsPath) {
               ParametersLoadErrorCode::kMissingKey, "stamina.forced_walk_below");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
   ExpectError(
       "return { stamina = { deplete_per_second = 0, regen_per_second = 0, forced_walk_below = 0 }, "
@@ -277,6 +294,7 @@ TEST(ParametersLoaderTest, AnUnknownKeyIsAnErrorNamingItsPath) {
       ParametersLoadErrorCode::kUnknownKey, "stamina.regen_per_sec");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, TheTickRateIsNotAParameterAndIsAnUnknownKey) {
   // It is the server's startup setting (ADR-0034), fixed while the server runs.
   ExpectError(
@@ -284,6 +302,7 @@ TEST(ParametersLoaderTest, TheTickRateIsNotAParameterAndIsAnUnknownKey) {
       ParametersLoadErrorCode::kUnknownKey, "tick_rate_hz");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AMisspelledKeyIsNeverReadAsAMissingOneOrADefault) {
   // The misspelling is the cause, so it is what is reported, not the key it left absent.
   ExpectError(
@@ -295,6 +314,7 @@ TEST(ParametersLoaderTest, WhenSeveralKeysAreUnknownTheFirstInNameOrderIsReporte
   ExpectError("return { zz = 1, aa = 2, stamina = {} }", ParametersLoadErrorCode::kUnknownKey, "aa");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, AValueOfTheWrongTypeIsAnErrorNamingItsPath) {
   ExpectError(WithStamina("'0.5'", "0", "0"), ParametersLoadErrorCode::kWrongType, "stamina.deplete_per_second");
   ExpectError(WithStamina("0", "true", "0"), ParametersLoadErrorCode::kWrongType, "stamina.regen_per_second");
@@ -302,11 +322,13 @@ TEST(ParametersLoaderTest, AValueOfTheWrongTypeIsAnErrorNamingItsPath) {
   ExpectError("return { player_count = 1, stamina = 3 }", ParametersLoadErrorCode::kWrongType, "stamina");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, ANegativeRateIsOutOfRange) {
   ExpectError(WithStamina("-0.1", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
   ExpectError(WithStamina("0", "-0.1", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.regen_per_second");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderTest, ANumberThatIsNotFiniteIsOutOfRange) {
   ExpectError(WithStamina("math.huge", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
   ExpectError(WithStamina("0", "0/0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.regen_per_second");
@@ -326,6 +348,7 @@ constexpr std::string_view kUnavailable[] = {
     "load", "print", "loadfile", "math.random", "math.randomseed", "pcall",   "xpcall",
 };
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, NothingThatReachesOutsideTheScriptIsVisible) {
   for (const std::string_view name : kUnavailable) {
     const std::string script = "if " + std::string(name) + " ~= nil then error('visible') end\n" + std::string(kValid);
@@ -333,6 +356,7 @@ TEST(ParametersLoaderSandboxTest, NothingThatReachesOutsideTheScriptIsVisible) {
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptThatCallsWhatTheSandboxLacksFailsToLoad) {
   for (const std::string_view call :
        {"io.open('parameters.txt')", "os.execute('echo')", "os.time()", "os.clock()", "math.random()",
@@ -344,6 +368,7 @@ TEST(ParametersLoaderSandboxTest, AScriptThatCallsWhatTheSandboxLacksFailsToLoad
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptThatNeverReturnsIsStoppedByTheInstructionLimit) {
   for (const std::string_view loop : {"while true do end", "repeat until false", "for i = 1, math.huge do end"}) {
     const auto loaded = Load(loop);
@@ -354,6 +379,7 @@ TEST(ParametersLoaderSandboxTest, AScriptThatNeverReturnsIsStoppedByTheInstructi
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn) {
   // Were pcall there, each stop would be caught and the loop would go on for ever.
   for (const std::string_view loop : {"while true do pcall(function() while true do end end) end",
@@ -365,6 +391,7 @@ TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn)
   }
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptThatDoesRealWorkWithinTheLimitStillLoads) {
   const auto loaded = Load(
       "local sum = 0\n"
@@ -376,12 +403,14 @@ TEST(ParametersLoaderSandboxTest, AScriptThatDoesRealWorkWithinTheLimitStillLoad
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 1.0F);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderSandboxTest, EachLoadHasAStateOfItsOwn) {
   ASSERT_TRUE(Load("leaked = 1\n" + std::string(kValid)).has_value());
 
   EXPECT_TRUE(Load("if leaked ~= nil then error('shared') end\n" + std::string(kValid)).has_value());
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheScript) {
   const auto loaded = Load(
       "local sprint_seconds = 5\n"
@@ -398,6 +427,7 @@ TEST(ParametersLoaderExpressionTest, AValueMayBeAnExpressionOfOtherValuesInTheSc
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.1F);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderExpressionTest, AnExpressionCanUseAFunctionOfTheScript) {
   const auto loaded =
       Load("local function per_second(seconds) return 1 / seconds end\n" +
@@ -410,10 +440,12 @@ TEST(ParametersLoaderExpressionTest, AnExpressionCanUseAFunctionOfTheScript) {
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.5F);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderExpressionTest, AnExpressionThatIsOutOfRangeIsRefusedLikeAnyValue) {
   ExpectError(WithStamina("1 / 0", "0", "0"), ParametersLoadErrorCode::kOutOfRange, "stamina.deplete_per_second");
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderExpressionTest, TheSameScriptLoadedTwiceGivesEqualParameters) {
   const std::string script = "local base = 0.3\n" + WithStamina("base * 2", "base / 3", "base / 4");
 
@@ -435,6 +467,7 @@ TEST(ParametersLoaderTest, ADescriptionNamesTheKeyItIsAbout) {
   EXPECT_NE(message.find("stamina.regen_per_second"), std::string::npos) << message;
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderServerTest, AScriptReadsTheTickRateItIsLoadedFor) {
   const std::string script = "if server.tick_rate_hz ~= 30 then error('not 30 Hz') end\n" + std::string(kValid);
 
@@ -444,6 +477,7 @@ TEST(ParametersLoaderServerTest, AScriptReadsTheTickRateItIsLoadedFor) {
   EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderServerTest, AWarningReachesTheCallerAndTheScriptStillLoads) {
   std::vector<std::string> warnings;
   const auto loaded = Load("warn('fires at ', 30, ' Hz')\n" + std::string(kValid),
@@ -453,6 +487,7 @@ TEST(ParametersLoaderServerTest, AWarningReachesTheCallerAndTheScriptStillLoads)
   EXPECT_EQ(warnings, std::vector<std::string>{"fires at 30 Hz"});
 }
 
+// Requirements: US-22
 TEST(ParametersLoaderServerTest, AWarningOfNothingOrOfATableIsAScriptError) {
   for (const std::string_view call : {"warn()", "warn({})", "warn('a', {})"}) {
     const auto loaded = Load(std::string(call) + "\n" + std::string(kValid));
@@ -465,6 +500,7 @@ TEST(ParametersLoaderServerTest, AWarningOfNothingOrOfATableIsAScriptError) {
 // The example Parameters script (tools/composer/examples/authoring/scripts/parameters)
 // is what an author copies to start a new one, so it must stay a script the
 // loader accepts.
+// Requirements: US-22
 TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   std::ifstream stream(AUGUSTA_EXAMPLE_PARAMETERS, std::ios::binary);
   ASSERT_TRUE(stream.is_open()) << AUGUSTA_EXAMPLE_PARAMETERS;
@@ -489,6 +525,7 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
 
 // The example's rifle fires 10 rounds a second: a server ticking slower fires it
 // slower, which the script warns of rather than refuses.
+// Requirements: US-22
 TEST(ParametersExampleTest, TheExampleScriptWarnsOfARifleFasterThanTheTick) {
   std::ifstream stream(AUGUSTA_EXAMPLE_PARAMETERS, std::ios::binary);
   ASSERT_TRUE(stream.is_open()) << AUGUSTA_EXAMPLE_PARAMETERS;

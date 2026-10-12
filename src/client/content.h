@@ -8,6 +8,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
@@ -48,23 +49,13 @@ struct Content {
   audio::CueSounds cue_sounds;
 };
 
-/// Which part of the startup content could not be loaded; what was wrong with
-/// it is logged where it failed.
-enum class ContentError {
-  kEyeLoading,
-  kSceneLoading,
-  kCharacterLoading,
-  kMapLoading,
-  kCueSoundsLoading,
-};
-
-[[nodiscard]] std::string_view DescribeContentError(ContentError error);
-
 /// Loads startup content from the verified pack for the local player's
-/// character, logging what is wrong with it; the pack must outlive the returned
-/// content and the ClientRuntime constructed from it.
-[[nodiscard]] std::expected<Content, ContentError> LoadClientContent(const assets::Pack& pack,
-                                                                     std::string_view character);
+/// character, or returns what is wrong with it: failure::Code::kInvalidContent,
+/// with the pack's path and the part of it that failed as context, for the
+/// application boundary to report. The pack must outlive the returned content
+/// and the ClientRuntime constructed from it.
+[[nodiscard]] std::expected<Content, failure::Failure> LoadClientContent(const assets::Pack& pack,
+                                                                         std::string_view character);
 
 }  // namespace augusta::client
 

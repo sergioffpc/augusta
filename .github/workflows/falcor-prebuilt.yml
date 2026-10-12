@@ -32,26 +32,29 @@ jobs:
   publish:
     # The same image as the builds that link the package (ci.yml, release.yml).
     runs-on: windows-2025
+    # Git Bash, as everywhere else: no PowerShell in the repository.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - name: Bootstrap vcpkg
-        shell: pwsh
-        run: .\third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
-        shell: pwsh
+        env:
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $nugetPath = & ".\third_party\vcpkg\vcpkg" fetch nuget | Select-Object -Last 1
-          & $nugetPath sources add -Name GitHubPackages -Source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" -Username "${{ github.repository_owner }}" -Password "${{ secrets.GITHUB_TOKEN }}" -StorePasswordInClearText
+          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
       - name: Configure
         # Falcor from source, never the package this job is about to publish.
         run: cmake --preset windows -DAUGUSTA_FALCOR_PREBUILT=OFF
-        shell: pwsh
       - name: Look for the published package
         id: package
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -72,7 +75,6 @@ jobs:
         run: cmake --build --preset windows --target falcor_prebuilt_package
       - name: Publish
         if: steps.package.outputs.published != 'true'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.package.outputs.tag }}

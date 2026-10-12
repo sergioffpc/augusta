@@ -53,6 +53,7 @@ TEST_F(CookedPackTest, TheClientPackResolvesTheExampleScenariosContent) {
   EXPECT_EQ(*characters, std::vector<std::string>{"soldier"});
 }
 
+// Requirements: NFR-08
 TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
   EXPECT_FALSE(server_->ResolveMesh("Root/Floor/Visual").has_value());
   EXPECT_TRUE(server_->ResolveCollision("Root/Floor/Collider").has_value());
@@ -68,6 +69,7 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
 
 // The server loads them at startup as it does any scenario's: an example whose
 // policy did not load would stop every server run on it.
+// Requirements: US-22
 TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
   EXPECT_TRUE(server_->ResolveScript(augusta::scripting::kRulesScriptPath).has_value());
 

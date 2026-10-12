@@ -1,5 +1,12 @@
 # Metrics and Liveness: Prometheus Pull from augustad, kube-prometheus-stack via Flux
 
+> Amended by ADR-0057: node-exporter runs in a `privileged` `monitoring-node`
+> namespace, with nothing but the other workloads that read the Node, since it
+> needs the Node's network, PID namespace and filesystems; the rest of the stack
+> stays in `monitoring`, under the `restricted` Pod Security Standard. Where
+> this record puts node-exporter in `monitoring`, read `monitoring-node`; its
+> series and the queries that read them are unchanged.
+
 `augustad` serves Prometheus metrics and a liveness check over HTTP. A
 kube-prometheus-stack in the k3s cluster scrapes it, keeps the series and draws
 them in Grafana. The metrics answer two questions: is the server healthy (its
@@ -34,10 +41,18 @@ count the same events from the same counters, so the log line and the series
 cannot disagree. The Network I/O thread samples every connection's transport
 status (`GetConnectionRealTimeStatus`) once a heartbeat interval (1 second). The
 endpoint thread is not a supervised worker: if it fails, the failure is logged
-and the tick loop keeps running, because an HTTP request must never stop it.
-`/livez` goes down with the endpoint, though, so in the cluster the liveness
-probe then restarts the pod: a dead endpoint ends the Match in progress, as a
-hung tick does.
+and the tick loop keeps running, because an HTTP request must never stop it. A
+request that fails is answered `500` and logged at `WARN`, and a failure on one
+connection, or a peer that disconnects, ends only that connection. A failure to
+accept is retried after a wait of 100 ms that doubles with each failure in a
+row, never in a tight loop; the fifth in a row, or the endpoint's thread
+failing, is the endpoint's permanent failure, a `subsystem` one (ADR-0033): the
+endpoint stops serving and closes its port. Its degraded state is observable as
+exactly that, a refused `/livez` and one `ERR` line
+(`code=metrics_endpoint_failed`), and not as a metric, which a dead endpoint
+could not serve. The Simulation and Network I/O threads are not signalled and
+run on, so in the cluster the liveness probe then restarts the pod: a dead
+endpoint ends the Match in progress, as a hung tick does.
 
 **Names.** Every metric is named `augustad_<what>_<unit>`. Units are base units
 (`_seconds`, `_bytes`, `_ratio`, `_hertz`), and counters end in `_total`. Each
@@ -81,6 +96,17 @@ an address or a Character's name. The domain words are CONTEXT.md's.
 |                   | `augustad_hit_confirmations_total`                                                    | counter                                                     | `body_part` = `head`, `torso`, `limb`                                               |
 |                   | `augustad_shooters_delay_seconds`                                                     | histogram                                                   |                                                                                     |
 |                   | `augustad_shooters_delay_capped_total` (at the 250 ms cap, ADR-0044)                  | counter                                                     |                                                                                     |
+|                   | `augustad_bullets_in_flight` (after the last tick, ADR-0002's flight cap)             | gauge                                                       |                                                                                     |
+| Capture           | `augustad_capture_state` (the Match capture's, ADR-0050)                              | gauge, 0 or 1                                               | `state` = `off`, `idle`, `capturing`, `stopped`                                     |
+|                   | `augustad_captures_started_total` (Matches whose capture's file was created)          | counter                                                     |                                                                                     |
+|                   | `augustad_captures_completed_total` (captures that reached their Match end)           | counter                                                     |                                                                                     |
+|                   | `augustad_capture_stops_total` (captures stopped before their Match end)              | counter                                                     | `reason` = `record_too_long`, `queue_full`, `write_failed`, `retention_budget`      |
+|                   | `augustad_capture_written_bytes_total`                                                | counter                                                     |                                                                                     |
+|                   | `augustad_capture_queue_records` (waiting in the writer's bounded queue)              | gauge                                                       |                                                                                     |
+|                   | `augustad_capture_directory_files`, `augustad_capture_directory_bytes`                | gauge                                                       |                                                                                     |
+| Replay            | `augustad_replays` (Replays running on a replay server, ADR-0051)                     | gauge                                                       |                                                                                     |
+|                   | `augustad_replay_tick_duration_seconds` (one Replay's tick and what it sends)         | histogram                                                   |                                                                                     |
+|                   | `augustad_capture_health` (the Match captures', ADR-0050)                             | gauge, 0 or 1                                               | `state` = `enabled`, `degraded`, `stopped`                                          |
 | Process           | `augustad_build_info` = 1                                                             | gauge                                                       | `version`, `commit`                                                                 |
 |                   | `augustad_start_time_seconds`                                                         | gauge                                                       |                                                                                     |
 
@@ -89,7 +115,9 @@ with: admission's refusals, the transport's end reasons (and a disconnect for
 misbehaving), the misbehaviour kinds and the command queue's discards (and its
 overflow, and commands from a player not in a match or a peer that has not
 joined). Every command counted received is taken in or discarded; those a peer
-sent after the one that got it disconnected are neither.
+sent after the one that got it disconnected are neither. A message counts as
+sent, in the Network family, only once the transport has accepted it: one it
+dropped, or refused, was never sent (ADR-0003).
 
 `augustad_build_info`'s `commit` is the commit the server image was built from,
 which the image's runtime stage sets as the `AUGUSTA_COMMIT` environment
@@ -102,13 +130,33 @@ show the one player whose connection is bad; the RTT, quality and jitter gauges
 are named apart from their histograms (`augustad_session_connection_*`), because
 one name cannot be both a histogram and a gauge in the exposition. A value the
 transport has not measured yet (a negative quality, or no jitter yet, right
-after connecting) is not recorded. Each Session's gauges are read together, so
-the Network I/O thread publishes them whole, each Session's into one of a fixed
-set of slots, one per player the Lobby can hold, which the endpoint reads
-without the writer ever waiting on it. A Session's gauges are removed at the
-first sample after the Session ends, so within a heartbeat interval. Session IDs
-are never reused, so every Session leaves its own series behind, but no more
-than the Player count are live at once, which a 15-day retention easily holds.
+after connecting) is not recorded. Every Session's gauges are read together, so
+the Network I/O thread publishes them whole, once a sample, into a fixed set of
+slots, one per player the Lobby can hold, which the endpoint reads without the
+writer ever waiting on it: a scrape never mixes two samples, nor shows a Session
+that one sample ended alongside one that the next sample added. A Session's
+gauges are removed at the first sample after the Session ends, so within a
+heartbeat interval. Session IDs are never reused, so every Session leaves its
+own series behind, but no more than the Player count are live at once, which a
+15-day retention easily holds.
+
+The Capture family is counted where the capture's log lines are written
+(ADR-0050), by the Simulation thread or the capture's writer thread, through an
+observer the capture module is handed: the module itself knows nothing of
+Prometheus. `augustad_capture_state` is `off` while the server has no capture
+directory, and `stopped` from a capture's early stop until its Match end. The
+directory's gauges count the files named as captures are, scanned by the writer
+as each Match's file is created, plus what it has written since, so they cover
+every capture in the directory, not only this run's. `retention_budget` is the
+stop of the capture directory's retention, labelled from the start so its series
+exists at 0.
+
+`augustad_capture_health` is 0 for every state while the server captures
+nothing. Otherwise it is `enabled` from the start, `degraded` once an optional
+capture has lost a record, and `stopped` once the run's captures produce no more
+records: a strict capture lost one, or the runtime's last tick was captured. It
+reads `stopped` from then until the process exits, since the metrics endpoint
+outlives the runtime's workers (ADR-0050).
 
 CPU, memory and restarts are not `augustad`'s metrics: the stack's kubelet and
 cAdvisor scrape already has them per pod.
@@ -126,15 +174,24 @@ scenario (ADR-0026), by a `scenario` label the `ServiceMonitor` copies from each
 server's metrics Service.
 
 Dashboards are code: JSON in ConfigMaps that Grafana's sidecar loads, kept in
-the repository next to the chart. There are two, "Server" (tick, Lobby and
-Match, Sessions, misbehaviour, network, combat) and "Connection health" (the
-histograms and one line per Session). Each selects its environment from the
-namespace label itself, and then a server from the scenarios that environment
-runs, so only one release ships them, `develop`'s: a second copy would load the
-same dashboards again. Alert rules are `PrometheusRule`s in the `augustad` chart
-(server down, tick overruns sustained, packet loss high), one set per server,
-each alert labelled with its scenario. They route to no receiver yet, so they
-show only in Grafana and Alertmanager.
+the repository next to the chart. There are three, "Server" (tick, Lobby and
+Match, Sessions, misbehaviour, network, combat), "Connection health" (the
+histograms and one line per Session) and "Match captures" (the capture
+filesystem's use, size and time to full from node-exporter, at the mount point
+the chart's `captures.hostPath` names; each server's capture state, write rate,
+directory and retention; stops, writer queue depth, retention failures and the
+capture subsystem's log lines from Loki, ADR-0053). Each selects its environment
+from the namespace label itself, and then a server, or for captures any number
+of them, from the scenarios that environment runs, so only one release ships
+them, `develop`'s: a second copy would load the same dashboards again. Alert
+rules are `PrometheusRule`s in the `augustad` chart (server down, server
+restarted, tick overruns sustained, packet loss high, capture stopped, capture
+retention failing), one set per server, each alert labelled with its scenario.
+The capture filesystem's rules (almost full, a warning past 85% for 10 minutes
+and critical past 95%; filling up, full within 6 hours at the last 6 hours'
+rate) are the node's, not a server's, so they come once, with the release that
+ships the dashboards. They route to no receiver yet, so they show only in
+Grafana and Alertmanager.
 
 ## Considered Options
 
@@ -160,10 +217,10 @@ show only in Grafana and Alertmanager.
 - **Connection health reported by the client**: deferred. Only the client knows
   how large its Reconciliation corrections are, or when it had fewer than two
   Authoritative State updates to interpolate between. Reporting that needs a new
-  protocol message, and the server must not trust it. The same metrics on
-  `augusta-swarm`'s Scripted players raise no trust question, but a short-lived
-  process outside the cluster needs a Pushgateway or a scrape of the developer's
-  machine. Both wait for a phase 2.
+  protocol message, and the server must not trust it. The same metrics on Agents
+  (ADR-0052) raise no trust question, but a short-lived process outside the
+  cluster needs a Pushgateway or a scrape of the developer's machine. Both wait
+  for a phase 2.
 - **Connection health aggregated only**: rejected. It cannot say which player's
   connection is bad.
 - **`/healthz`**: rejected for `/livez`. The check answers liveness only, and

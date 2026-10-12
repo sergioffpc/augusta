@@ -1,10 +1,8 @@
 #include "augusta/config.h"
 
 #include <algorithm>
-#include <array>
 #include <charconv>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -12,9 +10,8 @@
 #include <fstream>
 #include <functional>
 #include <ios>
-#include <limits>
+#include <map>
 #include <optional>
-#include <ranges>
 #include <set>
 #include <span>
 #include <sstream>
@@ -27,7 +24,6 @@
 #include <boost/program_options.hpp>
 #include <yaml-cpp/yaml.h>
 
-#include "augusta/input.h"
 #include "augusta/logging.h"
 
 namespace augusta::config {
@@ -37,7 +33,7 @@ namespace {
 // An error about subject, not yet tied to a config file: the Load* functions
 // set that once they know it.
 std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject = {}) {
-  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .file = {}});
+  return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .reason = {}, .file = {}});
 }
 
 std::optional<std::filesystem::path> ExecutableDirectory() {
@@ -118,97 +114,6 @@ std::expected<void, ConfigError> Flatten(const YAML::Node& node, const std::stri
   return {};
 }
 
-std::expected<std::uint8_t, ConfigError> RequireTickRate(const ConfigValues& values, std::string_view key) {
-  return RequireWholeNumber(values, key, 1, std::numeric_limits<std::uint8_t>::max()).transform([](std::uint32_t rate) {
-    return static_cast<std::uint8_t>(rate);
-  });
-}
-
-// The fallback when key is absent; when present, a TCP port from 1 to 65535.
-std::expected<std::uint16_t, ConfigError> OptionalPort(const ConfigValues& values, std::string_view key,
-                                                       std::uint16_t fallback) {
-  if (!values.contains(key)) {
-    return fallback;
-  }
-  return RequireWholeNumber(values, key, 1, std::numeric_limits<std::uint16_t>::max())
-      .transform([](std::uint32_t port) { return static_cast<std::uint16_t>(port); });
-}
-
-// The fallback when key is absent; when present, a finite number above zero.
-std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& values, std::string_view key,
-                                                         float fallback) {
-  return values.contains(key) ? RequirePositiveNumber(values, key) : fallback;
-}
-
-// The client's open section binding each control it names to a key, on top of
-// the defaults for the controls it leaves out.
-constexpr std::string_view kKeysSection = "input.keys";
-
-// Decision: the keymap the `input.keys` entries of values (control name -> key
-// name) make of the defaults. Each control keeps a key of its own, never the
-// one that releases the cursor; errors name the entry ("input.keys.<control>").
-std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values) {
-  const std::string prefix = std::format("{}.", kKeysSection);
-  auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
-  const auto error = [](ConfigErrorCode code, const std::string& path) { return Fail(code, path); };
-  input::Keymap keymap = input::kDefaultKeymap;
-  for (const auto& [path, key_name] : bindings) {
-    const auto control = input::ControlNamed(std::string_view(path).substr(prefix.size()));
-    if (!control) {
-      return error(ConfigErrorCode::kUnknownControl, path);
-    }
-    const auto key = input::KeyNamed(key_name);
-    if (!key) {
-      return error(ConfigErrorCode::kInvalidKeyName, path);
-    }
-    if (*key == input::kReleaseCursorKey) {
-      return error(ConfigErrorCode::kReservedKey, path);
-    }
-    keymap.at(static_cast<std::size_t>(*control)) = *key;
-  }
-  // The defaults never share a key, so any clash involves a control the section rebound.
-  for (const auto& [path, key_name] : bindings) {
-    if (std::ranges::count(keymap, *input::KeyNamed(key_name)) > 1) {
-      return error(ConfigErrorCode::kKeyBoundTwice, path);
-    }
-  }
-  return keymap;
-}
-
-std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& values) {
-  const auto sensitivity = OptionalPositiveNumber(values, "input.mouse_sensitivity", input::kDefaultMouseSensitivity);
-  if (!sensitivity) {
-    return std::unexpected(sensitivity.error());
-  }
-  const auto keymap = ParseKeymap(values);
-  if (!keymap) {
-    return std::unexpected(keymap.error());
-  }
-  return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
-}
-
-template <typename Config, typename ParseFn>
-std::expected<Config, ConfigError> LoadFile(const std::filesystem::path& file, ParseFn parse) {
-  const auto text = ReadConfigFile(file);
-  if (!text) {
-    return std::unexpected(text.error());
-  }
-  auto config = parse(*text, file.parent_path());
-  if (!config) {
-    config.error().file = file;
-  }
-  return config;
-}
-
-// Every control's name, comma-separated, for an error that names none of them.
-std::string ControlNames() {
-  std::string names;
-  for (std::size_t i = 0; i < input::kControlCount; ++i) {
-    names += std::format("{}{}", i == 0 ? "" : ", ", input::NameOf(static_cast<input::Control>(i)));
-  }
-  return names;
-}
-
 // The phrase for a code alone, before its subject and file are added.
 std::string Phrase(const ConfigError& error) {
   switch (error.code) {
@@ -235,40 +140,39 @@ std::string Phrase(const ConfigError& error) {
     case ConfigErrorCode::kEmptyValue:
       return std::format("'{}' must not be empty", error.subject);
     case ConfigErrorCode::kInvalidNumber:
-      if (error.subject == "simulation.tick_rate_hz") {
-        return std::format("'{}' must be an integer from 1 to 255", error.subject);
-      }
-      if (error.subject == "metrics.port") {
-        return std::format("'{}' must be an integer from 1 to 65535", error.subject);
-      }
       return std::format("'{}' must be a finite number above zero", error.subject);
     case ConfigErrorCode::kInvalidLogLevel:
       return std::format("'{}' must be one of trace, debug, info, warn, error, critical", error.subject);
     case ConfigErrorCode::kNotASection:
       return std::format("'{}' must be a mapping of names to values", error.subject);
-    case ConfigErrorCode::kUnknownControl:
-      return std::format("'{}' names no control; the controls are {}", error.subject, ControlNames());
-    case ConfigErrorCode::kInvalidKeyName:
-      return std::format("'{}' must name a key, e.g. W, LeftShift, Space, F1 or MouseRight", error.subject);
-    case ConfigErrorCode::kKeyBoundTwice:
-      return std::format("'{}' is bound to a key another control already uses", error.subject);
-    case ConfigErrorCode::kReservedKey:
-      return std::format("'{}' can't use {}: it releases the cursor", error.subject,
-                         input::NameOf(input::kReleaseCursorKey));
+    case ConfigErrorCode::kInvalidEntry:
+      return std::format("'{}' {}", error.subject, error.reason);
   }
   return "unknown config error";
 }
 
+// How option reads in the usage: `--name` or `--name <value>`.
+std::string Spelled(const CommandLineOption& option) {
+  return option.value.empty() ? std::format("--{}", option.name) : std::format("--{} <{}>", option.name, option.value);
+}
+
 // The usage message ParseCommandLine's help and errors show.
-std::string Usage(std::string_view program, std::string_view default_file_name) {
+std::string Usage(std::string_view program, std::string_view default_file_name,
+                  std::span<const CommandLineOption> options) {
+  std::string synopsis;
+  std::string described;
+  for (const CommandLineOption& option : options) {
+    synopsis += std::format(" [{}]", Spelled(option));
+    described += std::format("\n  {:<17}{}", Spelled(option), option.description);
+  }
   return std::format(
-      "usage: {0} [--config <file>]\n"
+      "usage: {0} [--config <file>]{2}\n"
       "       {0} --help | --version\n"
       "  --config <file>  the config file, relative to the working directory\n"
-      "                   (without it, {1} next to the executable)\n"
+      "                   (without it, {1} next to the executable){3}\n"
       "  --help           print this message and exit\n"
       "  --version        print the version and exit",
-      program, default_file_name);
+      program, default_file_name, synopsis, described);
 }
 
 }  // namespace
@@ -349,7 +253,8 @@ std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& val
 std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file) {
   std::ifstream stream(file, std::ios::binary);
   if (!stream) {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .file = file});
+    return std::unexpected(
+        ConfigError{.code = ConfigErrorCode::kCannotOpenFile, .subject = {}, .reason = {}, .file = file});
   }
   std::ostringstream contents;
   contents << stream.rdbuf();
@@ -371,19 +276,54 @@ std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues&
   return static_cast<std::uint32_t>(number);
 }
 
-std::string DescribeConfigError(const ConfigError& error) {
-  const auto phrase = Phrase(error);
-  return error.file.empty() ? phrase : std::format("{}: {}", error.file.string(), phrase);
+std::string DescribeConfigError(const ConfigError& error) { return DescribeConfigError(error, Phrase(error)); }
+
+std::string DescribeConfigError(const ConfigError& error, std::string_view phrase) {
+  return error.file.empty() ? std::string(phrase) : std::format("{}: {}", error.file.string(), phrase);
 }
 
+namespace {
+
+// What Boost reads a command line by: the shared options, then the
+// executable's own.
+boost::program_options::options_description Described(std::span<const CommandLineOption> options) {
+  namespace po = boost::program_options;
+  po::options_description described;
+  described.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
+      "help", "print the usage and exit")("version", "print the version and exit");
+  for (const CommandLineOption& option : options) {
+    const std::string name(option.name);
+    const std::string description(option.description);
+    if (option.value.empty()) {
+      described.add_options()(name.c_str(), description.c_str());
+    } else {
+      described.add_options()(name.c_str(), boost::program_options::value<std::string>(), description.c_str());
+    }
+  }
+  return described;
+}
+
+// Each of options arguments holds, by name, with its value, empty for one that takes none.
+std::map<std::string, std::string, std::less<>> Given(const boost::program_options::variables_map& arguments,
+                                                      std::span<const CommandLineOption> options) {
+  std::map<std::string, std::string, std::less<>> given;
+  for (const CommandLineOption& option : options) {
+    const std::string name(option.name);
+    if (!arguments[name].empty()) {
+      given.emplace(name, option.value.empty() ? std::string() : arguments[name].as<std::string>());
+    }
+  }
+  return given;
+}
+
+}  // namespace
+
 std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* const* argv, std::string_view program,
-                                                         std::string_view default_file_name, std::string_view version) {
-  const auto usage = Usage(program, default_file_name);
+                                                         std::string_view default_file_name, std::string_view version,
+                                                         std::span<const CommandLineOption> options) {
+  const auto usage = Usage(program, default_file_name, options);
 
   namespace po = boost::program_options;
-  po::options_description options;
-  options.add_options()("config", po::value<std::string>(), "config file, relative to the working directory")(
-      "help", "print the usage and exit")("version", "print the version and exit");
 
   // Prefix guessing is off so `--conf` is an error, not a silent `--config`;
   // the empty positional description makes a bare argument an error too,
@@ -391,7 +331,7 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
   po::variables_map arguments;
   try {
     po::store(po::command_line_parser(argc, argv)
-                  .options(options)
+                  .options(Described(options))
                   .positional(po::positional_options_description())
                   .style(po::command_line_style::default_style & ~po::command_line_style::allow_guessing)
                   .run(),
@@ -404,146 +344,31 @@ std::expected<CommandLine, ConfigError> ParseCommandLine(int argc, const char* c
   // variables_map's own operator[] (an empty value for an absent option), not
   // std::map::contains: MSVC links that through Boost's DLL, which lacks it.
   if (!arguments["help"].empty()) {
-    return CommandLine{.config_file = {}, .message = usage, .action = CommandLineAction::kShowHelp};
+    return CommandLine{.config_file = {}, .message = usage, .options = {}, .action = CommandLineAction::kShowHelp};
   }
   if (!arguments["version"].empty()) {
     return CommandLine{.config_file = {},
                        .message = std::format("{} {}", program, version),
+                       .options = {},
                        .action = CommandLineAction::kShowVersion};
   }
+  std::map<std::string, std::string, std::less<>> given = Given(arguments, options);
   if (arguments["config"].empty()) {
     const auto directory = ExecutableDirectory();
     if (!directory) {
       return Fail(ConfigErrorCode::kExecutableDirectoryUnknown, std::string(default_file_name));
     }
-    return CommandLine{.config_file = *directory / default_file_name, .message = {}, .action = CommandLineAction::kRun};
+    return CommandLine{.config_file = *directory / default_file_name,
+                       .message = {},
+                       .options = std::move(given),
+                       .action = CommandLineAction::kRun};
   }
   const auto& file = arguments["config"].as<std::string>();
   if (file.empty()) {
     return Fail(ConfigErrorCode::kInvalidArguments, std::format("--config needs a file name\n{}", usage));
   }
-  return CommandLine{.config_file = file, .message = {}, .action = CommandLineAction::kRun};
-}
-
-std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
-                                                           const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 7> kKeys{
-      "base_dir",
-      "content.pack",
-      "content.public_key",
-      "player.character",
-      "network.server_address",
-      "logging.level",
-      "input.mouse_sensitivity",
-  };
-  static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
-  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = kOpenSections});
-  if (!values) {
-    return std::unexpected(values.error());
-  }
-  // The file's own directory only anchors a relative base_dir; every other
-  // relative path starts from base_dir.
-  const auto root = RequirePath(*values, "base_dir", base_dir);
-  if (!root) {
-    return std::unexpected(root.error());
-  }
-  auto pack_path = RequirePath(*values, "content.pack", *root);
-  if (!pack_path) {
-    return std::unexpected(pack_path.error());
-  }
-  auto public_key_path = RequirePath(*values, "content.public_key", *root);
-  if (!public_key_path) {
-    return std::unexpected(public_key_path.error());
-  }
-  auto character = RequireString(*values, "player.character");
-  if (!character) {
-    return std::unexpected(character.error());
-  }
-  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
-  if (!log_level) {
-    return std::unexpected(log_level.error());
-  }
-  const auto input = ParseInputConfig(*values);
-  if (!input) {
-    return std::unexpected(input.error());
-  }
-  return ClientConfig{
-      .pack_path = *std::move(pack_path),
-      .public_key_path = *std::move(public_key_path),
-      .character = *std::move(character),
-      .server_address = OptionalString(*values, "network.server_address", kDefaultServerAddress),
-      .log_level = *std::move(log_level),
-      .input = *input,
-  };
-}
-
-std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
-                                                           const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 8> kKeys{
-      "base_dir",
-      "content.pack",
-      "content.public_key",
-      "simulation.tick_rate_hz",
-      "simulation.recording",
-      "network.listen_address",
-      "logging.level",
-      "metrics.port",
-  };
-  const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
-  if (!values) {
-    return std::unexpected(values.error());
-  }
-  // The file's own directory only anchors a relative base_dir; every other
-  // relative path starts from base_dir.
-  const auto root = RequirePath(*values, "base_dir", base_dir);
-  if (!root) {
-    return std::unexpected(root.error());
-  }
-  auto pack_path = RequirePath(*values, "content.pack", *root);
-  if (!pack_path) {
-    return std::unexpected(pack_path.error());
-  }
-  auto public_key_path = RequirePath(*values, "content.public_key", *root);
-  if (!public_key_path) {
-    return std::unexpected(public_key_path.error());
-  }
-  const auto tick_rate_hz = RequireTickRate(*values, "simulation.tick_rate_hz");
-  if (!tick_rate_hz) {
-    return std::unexpected(tick_rate_hz.error());
-  }
-  auto log_level = OptionalLogLevel(*values, "logging.level", kDefaultLogLevel);
-  if (!log_level) {
-    return std::unexpected(log_level.error());
-  }
-  std::filesystem::path recording_path;
-  if (values->contains("simulation.recording")) {
-    auto path = RequirePath(*values, "simulation.recording", *root);
-    if (!path) {
-      return std::unexpected(path.error());
-    }
-    recording_path = *std::move(path);
-  }
-  const auto metrics_port = OptionalPort(*values, "metrics.port", kDefaultMetricsPort);
-  if (!metrics_port) {
-    return std::unexpected(metrics_port.error());
-  }
-  return ServerConfig{
-      .pack_path = *std::move(pack_path),
-      .public_key_path = *std::move(public_key_path),
-      .tick_rate_hz = *tick_rate_hz,
-      .listen_address = OptionalString(*values, "network.listen_address", kDefaultListenAddress),
-      .log_level = *std::move(log_level),
-      .recording_path = std::move(recording_path),
-      .metrics_port = *metrics_port,
-  };
-}
-
-std::expected<ClientConfig, ConfigError> LoadClientConfig(const std::filesystem::path& file) {
-  return LoadFile<ClientConfig>(file, ParseClientConfig);
-}
-
-std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {
-  return LoadFile<ServerConfig>(file, ParseServerConfig);
+  return CommandLine{
+      .config_file = file, .message = {}, .options = std::move(given), .action = CommandLineAction::kRun};
 }
 
 }  // namespace augusta::config

@@ -16,6 +16,7 @@ constexpr int kBudgetFrames = 9;  // NFR-02's 150 ms at 60 Hz.
 
 Vec3 Along(float x) { return Vec3(x, 0.0F, 0.0F); }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, ThereIsNoOffsetWhileNothingHasBeenCorrected) {
   Correction smoothing;
 
@@ -23,12 +24,14 @@ TEST(CorrectionTest, ThereIsNoOffsetWhileNothingHasBeenCorrected) {
   EXPECT_EQ(smoothing.Update(Along(0.0F), kFrame), Along(0.0F));
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, TheFirstFrameHasNothingShownBeforeItToSlideFrom) {
   Correction smoothing;
 
   EXPECT_EQ(smoothing.Update(Along(0.5F), kFrame), Along(0.0F));
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, AJumpIsHiddenInFullOnTheFrameItArrives) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));
@@ -39,6 +42,7 @@ TEST(CorrectionTest, AJumpIsHiddenInFullOnTheFrameItArrives) {
   EXPECT_NEAR(offset.x, -0.5F, 1e-6F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, TheOffsetFadesToNothingWithinTheBudgetWithoutOvershoot) {
   constexpr float kJump = 0.5F;
   Correction smoothing;
@@ -55,6 +59,7 @@ TEST(CorrectionTest, TheOffsetFadesToNothingWithinTheBudgetWithoutOvershoot) {
   EXPECT_GT(previous, -0.05F * kJump);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, TheSameTotalSeenAgainIsNotAJumpTwice) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));
@@ -65,6 +70,7 @@ TEST(CorrectionTest, TheSameTotalSeenAgainIsNotAJumpTwice) {
   EXPECT_NEAR(again, first, 1e-6F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, JumpsOfTicksTheFrameNeverSawAreStillHidden) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));
@@ -75,6 +81,7 @@ TEST(CorrectionTest, JumpsOfTicksTheFrameNeverSawAreStillHidden) {
   EXPECT_NEAR(offset.x, -0.6F, 1e-6F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, JumpsInOppositeDirectionsCancel) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));
@@ -85,6 +92,7 @@ TEST(CorrectionTest, JumpsInOppositeDirectionsCancel) {
   EXPECT_NEAR(offset.x, 0.0F, 1e-6F);
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, AJumpAtTheSnapDistanceIsShownAtOnce) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));
@@ -92,6 +100,7 @@ TEST(CorrectionTest, AJumpAtTheSnapDistanceIsShownAtOnce) {
   EXPECT_EQ(smoothing.Update(Along(kSnapDistance), kFrame), Along(0.0F));
 }
 
+// Requirements: NFR-02
 TEST(CorrectionTest, ASnapDropsWhatWasStillFading) {
   Correction smoothing;
   static_cast<void>(smoothing.Update(Along(0.0F), kFrame));

@@ -35,6 +35,9 @@ class CommandStream {
   /// as Session::Tick describes.
   [[nodiscard]] CommandTick Tick(const ServerView& server_view, const command::Command& command, float delta_time);
 
+  /// The sequence the next command sent goes under.
+  [[nodiscard]] command::Sequence NextSequence() const { return next_sequence_; }
+
  private:
   // Keeps command under sequence with the commands server_view does not yet
   // acknowledge, and returns them all, as one message carries them.

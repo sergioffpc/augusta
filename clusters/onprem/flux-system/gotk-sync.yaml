@@ -8,8 +8,14 @@ spec:
   ref:
     # `develop` is where feature work actually lands; `main` only advances on
     # a real release cut (see ENGINEERING.md's Git Workflow), so pinning this
-    # self-sync to `main` would leave Flux's own config dormant until v1.
+    # self-sync to `main` would leave Flux's own config dormant until the next release.
     branch: develop
+  # Flux's own config and every Environment's HelmRelease come from here, so
+  # its HEAD is verified as develop's is (ADR-0056).
+  verify:
+    mode: HEAD
+    secretRef:
+      name: trusted-signers-develop
   url: https://github.com/sergioffpc/augusta
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -25,7 +31,8 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
-# What the apps run on rather than are: the monitoring stack (ADR-0049).
+# What the apps run on rather than are: Kyverno (ADR-0057) and the monitoring
+# stack (ADR-0049).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -37,8 +44,9 @@ spec:
   interval: 10m
   path: ./clusters/onprem/infrastructure
   prune: true
-  # Ready only once its HelmReleases are, so apps, which depends on it, finds
-  # the monitoring stack's CRDs (ServiceMonitor, PrometheusRule) installed.
+  # Ready only once its HelmReleases are, so apps and policies, which depend
+  # on it, find the monitoring stack's CRDs (ServiceMonitor, PrometheusRule)
+  # and Kyverno's (ValidatingPolicy) installed.
   wait: true
   timeout: 15m
   sourceRef:
@@ -56,6 +64,24 @@ spec:
     - name: infrastructure
   interval: 10m
   path: ./clusters/onprem/apps
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+# Kyverno's policies (ADR-0057), the same files CI runs over every rendered
+# manifest. Each one's negative fixtures, under fixtures/, are CI's alone.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: policies
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: flux-system
+    - name: infrastructure
+  interval: 10m
+  path: ./clusters/onprem/policies
   prune: true
   sourceRef:
     kind: GitRepository

@@ -20,6 +20,7 @@ namespace {
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
+using augusta::presentation::EntityId;
 using augusta::presentation::RemoteBody;
 using augusta::presentation::RemoteInterpolator;
 using augusta::presentation::RemotePlayer;
@@ -27,8 +28,9 @@ using augusta::presentation::SeenTime;
 using augusta::presentation::SeenTimeAt;
 using augusta::presentation::ServerClock;
 
-constexpr auto kEntityA = static_cast<augusta::presentation::EntityId>(1);
-constexpr auto kEntityB = static_cast<augusta::presentation::EntityId>(2);
+constexpr auto kEntityA = static_cast<EntityId>(1);
+constexpr auto kEntityB = static_cast<EntityId>(2);
+constexpr auto kEntityC = static_cast<EntityId>(3);
 
 BodyState At(float x, Stance stance = Stance::kStanding) {
   return BodyState{.position = Vec3(x, 0.0F, 0.0F), .velocity = Vec3(), .stance = stance};
@@ -41,12 +43,14 @@ RemoteBody Only(const RemoteInterpolator& interpolator, double sample_time) {
   return sampled.front().body;
 }
 
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, ASessionWithNoUpdatesIsNotSampled) {
   const RemoteInterpolator interpolator;
 
   EXPECT_TRUE(interpolator.Sample(0.0F).empty());
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, ASingleUpdateIsShownAsIs) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 1.0F, At(5.0F, Stance::kCrouching), 0.0F);
@@ -59,6 +63,7 @@ TEST(RemoteInterpolatorTest, ASingleUpdateIsShownAsIs) {
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, PositionIsLinearlyInterpolatedBetweenTheTwoSurroundingUpdates) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
@@ -69,6 +74,7 @@ TEST(RemoteInterpolatorTest, PositionIsLinearlyInterpolatedBetweenTheTwoSurround
   EXPECT_FLOAT_EQ(Only(interpolator, 0.75F).position.x, 7.5F);
 }
 
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, StanceSwitchesAtTheMidpointBetweenTheTwoUpdates) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F, Stance::kStanding), 0.0F);
@@ -78,6 +84,7 @@ TEST(RemoteInterpolatorTest, StanceSwitchesAtTheMidpointBetweenTheTwoUpdates) {
   EXPECT_EQ(Only(interpolator, 0.75F).stance, Stance::kProne);
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, FacingTurnsBetweenTheTwoSurroundingUpdates) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
@@ -89,6 +96,7 @@ TEST(RemoteInterpolatorTest, FacingTurnsBetweenTheTwoSurroundingUpdates) {
 
 // From just short of a half turn left to just short of one right is a small
 // turn through the back, not most of a turn through the front.
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, FacingTurnsTheShorterWayRound) {
   constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
   RemoteInterpolator interpolator;
@@ -100,6 +108,7 @@ TEST(RemoteInterpolatorTest, FacingTurnsTheShorterWayRound) {
   EXPECT_NEAR(std::remainder(halfway - std::numbers::pi_v<float>, kTurn), 0.0F, 1e-5F);
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, ARenderTimeBeforeTheFirstUpdateHoldsAtTheFirst) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 1.0F, At(0.0F), 0.0F);
@@ -108,6 +117,7 @@ TEST(RemoteInterpolatorTest, ARenderTimeBeforeTheFirstUpdateHoldsAtTheFirst) {
   EXPECT_FLOAT_EQ(Only(interpolator, 0.0F).position.x, 0.0F);
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, AGapPastTheNewestUpdateHoldsAtTheNewestRatherThanExtrapolating) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
@@ -118,6 +128,7 @@ TEST(RemoteInterpolatorTest, AGapPastTheNewestUpdateHoldsAtTheNewestRatherThanEx
   EXPECT_FLOAT_EQ(Only(interpolator, 50.0F).position.x, 10.0F);
 }
 
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, SamplingRepeatedlyAtTheSameRenderTimeIsUnaffectedByHowManyTimesItWasSampled) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
@@ -129,6 +140,7 @@ TEST(RemoteInterpolatorTest, SamplingRepeatedlyAtTheSameRenderTimeIsUnaffectedBy
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, AnOutOfOrderOrRepeatedUpdateDoesNotMoveInterpolationBackward) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
@@ -140,6 +152,7 @@ TEST(RemoteInterpolatorTest, AnOutOfOrderOrRepeatedUpdateDoesNotMoveInterpolatio
   EXPECT_FLOAT_EQ(Only(interpolator, 1.0F).position.x, 10.0F);
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, EachSessionIsBufferedAndInterpolatedIndependently) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
@@ -160,15 +173,125 @@ TEST(RemoteInterpolatorTest, EachSessionIsBufferedAndInterpolatedIndependently) 
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, ASessionNoLongerInSyncsCurrentListIsNoLongerSampled) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
   interpolator.Record(kEntityB, 0.0F, At(0.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
+  const std::array<EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
 
   const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0F);
+  ASSERT_EQ(sampled.size(), 1U);
+  EXPECT_EQ(sampled.front().entity, kEntityA);
+}
+
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, BodiesAreSampledInTheOrderTheirEntitiesWereFirstRecorded) {
+  RemoteInterpolator interpolator;
+  for (const double server_time : {0.0, 1.0}) {
+    interpolator.Record(kEntityC, server_time, At(3.0F), 0.0F);
+    interpolator.Record(kEntityA, server_time, At(1.0F), 0.0F);
+    interpolator.Record(kEntityB, server_time, At(2.0F), 0.0F);
+  }
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(0.5);
+
+  ASSERT_EQ(sampled.size(), 3U);
+  EXPECT_EQ(sampled[0].entity, kEntityC);
+  EXPECT_EQ(sampled[1].entity, kEntityA);
+  EXPECT_EQ(sampled[2].entity, kEntityB);
+}
+
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, AStaleUpdateForOneEntityLeavesTheOthersRecording) {
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0, At(0.0F), 0.0F);
+  interpolator.Record(kEntityB, 0.0, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0, At(10.0F), 0.0F);
+
+  // Stale for A (older than its newest), new for B.
+  interpolator.Record(kEntityA, 0.5, At(999.0F), 0.0F);
+  interpolator.Record(kEntityB, 1.0, At(20.0F), 0.0F);
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(0.5);
+  ASSERT_EQ(sampled.size(), 2U);
+  EXPECT_FLOAT_EQ(sampled[0].body.position.x, 5.0F);
+  EXPECT_FLOAT_EQ(sampled[1].body.position.x, 10.0F);
+}
+
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, RemainingBodiesKeepTheirOrderAndHistoryWhenOneDeparts) {
+  RemoteInterpolator interpolator;
+  for (const double server_time : {0.0, 1.0}) {
+    const auto x = static_cast<float>(server_time) * 10.0F;
+    interpolator.Record(kEntityA, server_time, At(x), 0.0F);
+    interpolator.Record(kEntityB, server_time, At(x), 0.0F);
+    interpolator.Record(kEntityC, server_time, At(-x), 0.0F);
+  }
+
+  const std::array<EntityId, 2> still_here{kEntityC, kEntityA};
+  interpolator.Sync(still_here);
+  // Recording after the departure still reaches the right buffers.
+  interpolator.Record(kEntityC, 2.0, At(-20.0F), 0.0F);
+  interpolator.Record(kEntityA, 2.0, At(20.0F), 0.0F);
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(0.5);
+  ASSERT_EQ(sampled.size(), 2U);
+  EXPECT_EQ(sampled[0].entity, kEntityA);
+  EXPECT_FLOAT_EQ(sampled[0].body.position.x, 5.0F);
+  EXPECT_EQ(sampled[1].entity, kEntityC);
+  EXPECT_FLOAT_EQ(sampled[1].body.position.x, -5.0F);
+  const std::vector<RemotePlayer> newest = interpolator.Sample(2.0);
+  EXPECT_FLOAT_EQ(newest[0].body.position.x, 20.0F);
+  EXPECT_FLOAT_EQ(newest[1].body.position.x, -20.0F);
+}
+
+// A body forgotten by Sync starts over if it is recorded again: no history from
+// before, and sampled after the bodies that stayed.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, ADepartedEntityRecordedAgainStartsAFreshHistoryLast) {
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0, At(0.0F), 0.0F);
+  interpolator.Record(kEntityB, 0.0, At(0.0F), 0.0F);
+  interpolator.Record(kEntityA, 1.0, At(10.0F), 0.0F);
+
+  const std::array<EntityId, 1> still_here{kEntityB};
+  interpolator.Sync(still_here);
+  // Older than A's newest before it departed: accepted, since that is forgotten.
+  interpolator.Record(kEntityA, 0.5, At(7.0F), 0.0F);
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0);
+  ASSERT_EQ(sampled.size(), 2U);
+  EXPECT_EQ(sampled[0].entity, kEntityB);
+  EXPECT_EQ(sampled[1].entity, kEntityA);
+  EXPECT_FLOAT_EQ(sampled[1].body.position.x, 7.0F);
+}
+
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, SyncWithNoOneForgetsEveryBody) {
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0, At(0.0F), 0.0F);
+  interpolator.Record(kEntityB, 0.0, At(0.0F), 0.0F);
+
+  interpolator.Sync({});
+
+  EXPECT_TRUE(interpolator.Sample(0.0).empty());
+}
+
+// An entity in Sync's list that was never recorded is not made up; a repeated
+// one is kept once.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, SyncNeitherAddsUnrecordedEntitiesNorDuplicatesRepeatedOnes) {
+  constexpr auto kNeverRecorded = static_cast<EntityId>(99);
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0, At(0.0F), 0.0F);
+
+  const std::array<EntityId, 3> current{kNeverRecorded, kEntityA, kEntityA};
+  interpolator.Sync(current);
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(0.0);
   ASSERT_EQ(sampled.size(), 1U);
   EXPECT_EQ(sampled.front().entity, kEntityA);
 }
@@ -236,6 +359,7 @@ std::vector<std::pair<Seconds, float>> Play(const Arrivals& arrivals, std::span<
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, UpdatesOneATickSampledAtFrameTimesAreShownBetweenTheSurroundingUpdates) {
   constexpr int kTicks = 60;
 
@@ -253,6 +377,7 @@ TEST(RemoteInterpolatorTest, UpdatesOneATickSampledAtFrameTimesAreShownBetweenTh
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, JitteredArrivalsWithCorrectTicksAreShownAsIfOnTime) {
   constexpr int kTicks = 60;
   const std::vector<std::pair<Seconds, float>> on_time = Play(OnTime(kTicks));
@@ -266,6 +391,7 @@ TEST(RemoteInterpolatorTest, JitteredArrivalsWithCorrectTicksAreShownAsIfOnTime)
   }
 }
 
+// Requirements: NFR-02, US-17
 TEST(RemoteInterpolatorTest, AGapHoldsAtTheNewestUpdateAndResumedUpdatesContinueWithoutJumpingBackwards) {
   constexpr int kTicks = 60;
   constexpr int kLastBeforeGap = 20;
@@ -293,12 +419,14 @@ TEST(RemoteInterpolatorTest, AGapHoldsAtTheNewestUpdateAndResumedUpdatesContinue
   EXPECT_GT(previous, static_cast<float>(kFirstAfterGap));
 }
 
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, KeepsEnoughUpdatesToCoverTheDelayAtTheFastestTickRate) {
   const double fastest_tick_duration = 1.0 / augusta::presentation::kFastestTickRateHz;
   EXPECT_GE(static_cast<double>(augusta::presentation::kUpdatesKept),
             (augusta::presentation::kInterpolationDelay / fastest_tick_duration) + 2.0);
 }
 
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptTheOldestIsDropped) {
   constexpr int kDropped = 5;
   const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
@@ -311,12 +439,32 @@ TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptTheOldestIsDropped) {
   EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(0)).position.x, static_cast<float>(kDropped));
 }
 
+// Once more updates have arrived than are kept, every kept pair still
+// interpolates in order, from the oldest kept to the newest.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, BeyondTheUpdatesKeptEveryKeptPairStillInterpolatesInOrder) {
+  constexpr int kDropped = 5;
+  const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
+  RemoteInterpolator interpolator;
+  for (int tick = 0; tick < ticks; ++tick) {
+    interpolator.Record(kEntityA, ServerTime(tick), At(static_cast<float>(tick)), 0.0F);
+  }
+
+  for (int tick = kDropped; tick < ticks - 1; ++tick) {
+    EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(tick) + (0.5 * kTickDuration)).position.x,
+                    static_cast<float>(tick) + 0.5F)
+        << tick;
+  }
+  EXPECT_FLOAT_EQ(Only(interpolator, ServerTime(ticks + 10)).position.x, static_cast<float>(ticks - 1));
+}
+
+// Requirements: NFR-02
 TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   RemoteInterpolator interpolator;
   interpolator.Record(kEntityA, 0.0F, At(0.0F), 0.0F);
   interpolator.Record(kEntityA, 1.0F, At(10.0F), 0.0F);
 
-  const std::array<augusta::presentation::EntityId, 1> still_here{kEntityA};
+  const std::array<EntityId, 1> still_here{kEntityA};
   interpolator.Sync(still_here);
 
   // The two updates recorded before Sync are still both buffered, so this still
@@ -324,6 +472,40 @@ TEST(RemoteInterpolatorTest, SyncWithEveryoneStillPresentKeepsBufferedHistory) {
   EXPECT_FLOAT_EQ(Only(interpolator, 0.5F).position.x, 5.0F);
 }
 
+// Each of many bodies keeps its own kUpdatesKept newest updates, whatever the
+// others record and whoever departs.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, ManyBodiesEachKeepTheirOwnNewestUpdatesAcrossRepeatedAuthoritativeStates) {
+  constexpr int kBodies = 64;
+  constexpr int kDropped = 5;
+  const int ticks = static_cast<int>(augusta::presentation::kUpdatesKept) + kDropped;
+  RemoteInterpolator interpolator;
+  std::vector<EntityId> odd;
+  for (int body = 1; body < kBodies; body += 2) {
+    odd.push_back(static_cast<EntityId>(body));
+  }
+  for (int tick = 0; tick < ticks; ++tick) {
+    // Every update twice over, as a repeated Authoritative State would be.
+    for (int repeat = 0; repeat < 2; ++repeat) {
+      for (int body = 0; body < kBodies; ++body) {
+        interpolator.Record(static_cast<EntityId>(body), ServerTime(tick), At(static_cast<float>((body * 1000) + tick)),
+                            0.0F);
+      }
+    }
+  }
+  interpolator.Sync(odd);
+
+  const std::vector<RemotePlayer> sampled = interpolator.Sample(ServerTime(0));
+  ASSERT_EQ(sampled.size(), odd.size());
+  for (std::size_t index = 0; index < odd.size(); ++index) {
+    EXPECT_EQ(sampled[index].entity, odd[index]);
+    const auto body = static_cast<int>(odd[index]);
+    // Before the oldest kept: held there.
+    EXPECT_FLOAT_EQ(sampled[index].body.position.x, static_cast<float>((body * 1000) + kDropped)) << body;
+  }
+}
+
+// Requirements: NFR-02
 TEST(ServerClockTest, HasNoTimeUntilTheFirstUpdateThenAlignsToIt) {
   ServerClock clock;
   clock.Advance(1.0);
@@ -334,6 +516,7 @@ TEST(ServerClockTest, HasNoTimeUntilTheFirstUpdateThenAlignsToIt) {
   EXPECT_DOUBLE_EQ(clock.Now().value(), ServerTime(100));
 }
 
+// Requirements: NFR-02
 TEST(ServerClockTest, UpdatesInStepLeaveItAdvancingAtRealTime) {
   ServerClock clock;
   clock.Observe(ServerTime(0));
@@ -344,6 +527,7 @@ TEST(ServerClockTest, UpdatesInStepLeaveItAdvancingAtRealTime) {
   }
 }
 
+// Requirements: NFR-02
 TEST(ServerClockTest, ALateOrEarlyUpdateIsCaughtUpWithSlowlyAndNeverBackwards) {
   constexpr Seconds kOffset = 0.05;
   for (const Seconds offset : {kOffset, -kOffset}) {
@@ -368,6 +552,7 @@ TEST(ServerClockTest, ALateOrEarlyUpdateIsCaughtUpWithSlowlyAndNeverBackwards) {
   }
 }
 
+// Requirements: NFR-02
 TEST(ServerClockTest, AnUpdateTooFarOffTheClockRealignsItAtOnce) {
   ServerClock clock;
   clock.Observe(0.0);
@@ -378,6 +563,7 @@ TEST(ServerClockTest, AnUpdateTooFarOffTheClockRealignsItAtOnce) {
   EXPECT_DOUBLE_EQ(clock.Now().value(), 1.0 + (2.0 * ServerClock::kResyncThreshold));
 }
 
+// Requirements: NFR-02
 TEST(ServerClockTest, ResetForgetsTheAlignment) {
   ServerClock clock;
   clock.Observe(ServerTime(100));
@@ -391,6 +577,7 @@ TEST(ServerClockTest, ResetForgetsTheAlignment) {
 
 // The Seen time a Command reports (ADR-0044): which update a frame shows, and how
 // far toward the next.
+// Requirements: NFR-02
 TEST(SeenTimeAtTest, ASampleBetweenTwoTicksIsTheEarlierTickAndHowFarPastIt) {
   const SeenTime seen = SeenTimeAt(ServerTime(100) + (0.25 * kTickDuration), kTickDuration, 90, 110);
 
@@ -398,6 +585,7 @@ TEST(SeenTimeAtTest, ASampleBetweenTwoTicksIsTheEarlierTickAndHowFarPastIt) {
   EXPECT_NEAR(seen.fraction, 0.25F, 1e-4F);
 }
 
+// Requirements: NFR-02
 TEST(SeenTimeAtTest, TheSeenTimeIsTheMomentTheInterpolatorSamples) {
   RemoteInterpolator interpolator;
   for (int tick = 100; tick <= 102; ++tick) {
@@ -414,6 +602,7 @@ TEST(SeenTimeAtTest, TheSeenTimeIsTheMomentTheInterpolatorSamples) {
 
 // Before the first update there is, or past the last, a frame shows that
 // update itself: no Seen time is of a moment outside the updates the client holds.
+// Requirements: NFR-02
 TEST(SeenTimeAtTest, ASampleOutsideTheUpdatesThereAreIsTheNearestOfThem) {
   const SeenTime before = SeenTimeAt(ServerTime(100) - 0.1, kTickDuration, 100, 110);
   const SeenTime past = SeenTimeAt(ServerTime(110) + 0.5, kTickDuration, 100, 110);
@@ -424,6 +613,7 @@ TEST(SeenTimeAtTest, ASampleOutsideTheUpdatesThereAreIsTheNearestOfThem) {
   EXPECT_EQ(past.fraction, 0.0F);
 }
 
+// Requirements: NFR-02
 TEST(SeenTimeAtTest, AFractionIsNeverOutsideZeroToOne) {
   for (int step = 0; step <= 600; ++step) {
     const SeenTime seen = SeenTimeAt(ServerTime(100) + (static_cast<Seconds>(step) * 0.001), kTickDuration, 0, 1000);

@@ -1,4 +1,4 @@
-{{- range $scenario, $values := .Values.servers }}
+{{- range $scenario, $_ := .Values.servers }}
 {{- $server := dict "root" $ "scenario" $scenario }}
 ---
 apiVersion: v1
@@ -17,7 +17,7 @@ spec:
       port: {{ $.Values.service.port }}
       targetPort: game
       protocol: UDP
-      {{- with $values.nodePort }}
+      {{- with include "augustad.nodePort" $server }}
       nodePort: {{ . }}
       {{- end }}
 {{- end }}

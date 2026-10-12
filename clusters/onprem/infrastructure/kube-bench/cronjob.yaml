@@ -1,0 +1,95 @@
+# Runs the runbook's kube-bench once a day and prints its report, which
+# Alloy ships to Loki as any pod's log:
+# {namespace="monitoring-node", app="kube-bench"}.
+#
+# The profile's checks read k3s's flags from the Node's journal with the
+# Node's journalctl, which kube-bench's Alpine image cannot run, and its files'
+# owners and modes. So kube-bench runs as on the Node, in a chroot of its root
+# filesystem, mounted read-only: the container copies its own binary and the
+# profile into an empty directory it mounts over the Node's /mnt, which only
+# this container sees, and runs it from there. It needs root to read k3s's
+# files, which are root's alone, and no capability but chroot's.
+#
+# The policies target (section 5) is left out: its checks call kubectl, which
+# on the Node is k3s's cluster-admin kubeconfig, and every one of them is
+# manual and accepted (clusters/onprem/node/cis-exceptions.md).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench
+spec:
+  # In the controller's time zone, UTC, not the Node's, which the update and
+  # reboot window (04:00 to 05:00) is in: midday UTC stays clear of that
+  # window in any time zone within six hours of UTC.
+  schedule: "0 12 * * *"
+  concurrencyPolicy: Forbid
+  # The last run's pod stays, so its report can still be read with kubectl
+  # logs, and Alloy has it to ship however short the run.
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: kube-bench
+        spec:
+          restartPolicy: Never
+          # The k3s process, which the checks find by name.
+          hostPID: true
+          automountServiceAccountToken: false
+          containers:
+            - name: kube-bench
+              # Pinned by digest (ADR-0057), the tag beside it for the reader:
+              # the digest of its multi-architecture index.
+              image: docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /host/mnt/cfg/k3s-cis-1.11
+                  cp /usr/local/bin/kube-bench /host/mnt/kube-bench
+                  cp /config/config.yaml /host/mnt/cfg/config.yaml
+                  cp /profile/*.yaml /host/mnt/cfg/k3s-cis-1.11/
+                  exec chroot /host /mnt/kube-bench run --config-dir /mnt/cfg \
+                    --benchmark k3s-cis-1.11 --targets master,controlplane,etcd,node \
+                    --noremediations
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - SYS_CHROOT
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: host
+                  mountPath: /host
+                  readOnly: true
+                  recursiveReadOnly: IfPossible
+                - name: chroot-mnt
+                  mountPath: /host/mnt
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: profile
+                  mountPath: /profile
+                  readOnly: true
+          volumes:
+            - name: host
+              hostPath:
+                path: /
+                type: Directory
+            - name: chroot-mnt
+              emptyDir: {}
+            - name: config
+              configMap:
+                name: kube-bench-config
+            - name: profile
+              configMap:
+                name: kube-bench-k3s-cis-1.11

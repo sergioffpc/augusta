@@ -50,7 +50,7 @@ class CueSelector {
   // Whether health is lower than the previous frame's; remembers it.
   [[nodiscard]] bool HitTaken(const std::optional<float>& health);
   // Remembers where snapshot, if any, reports each body.
-  void RememberPositions(const std::optional<WorldSnapshot>& snapshot);
+  void RememberPositions(const WorldSnapshot* snapshot);
   // The stinger to play if match_end arrived since the previous frame.
   [[nodiscard]] std::optional<audio::Cue> MatchEndStinger(const std::optional<MatchEnd>& match_end,
                                                           const std::optional<EntityId>& local_entity);

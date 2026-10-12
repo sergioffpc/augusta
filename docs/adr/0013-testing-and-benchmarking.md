@@ -21,6 +21,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 | TSan                                            |                     |                     | ✅                        |                             |
 | Netcode under an impaired link                  |                     |                     | ✅                        |                             |
 | Coverage report (`llvm-cov`)                    |                     |                     | ✅                        |                             |
+| Test report (HTML)                              |                     |                     | ✅                        |                             |
 | NFR-01 (tick rate under load)                   |                     |                     |                           | manual, on the r630 cluster |
 | Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× |                             |
 
@@ -51,28 +52,28 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   a shared CI runner, so it is checked by hand on the r630 cluster before each
   release; once Flux runs the `develop` release (ADR-0026), it becomes a CronJob
   of 8 Harness clients in that namespace.
-- **The load test is built with everything else, and run by hand.**
-  `augusta-swarm` (`tools/swarm`) runs the scenario's Player count of Scripted
-  players, each on a Harness, against a server, and exits non-zero unless every
-  one sees the Match ends it was asked for before a timeout. The C++ tools build
-  together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by default:
-  every build, pull requests included, compiles and lints the tool and runs its
-  tests, the whole Match loop against an in-process `server::Host` among them,
-  but not the netcode tests below, which every test preset leaves out and only
-  the nightly runs. The tool itself is run by hand, against a local `augustad`
-  or the r630 cluster's. The server image turns the option off: it builds
-  `augustad` alone.
+- **The load test's module is built with everything else, and the load test run
+  by hand.** `load_test.py` (`tools/agent/examples`, ADR-0052) runs the
+  scenario's Player count of Agents against a server, and exits non-zero unless
+  every one sees the Match ends it was asked for before a timeout. The C++ tools
+  build together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by
+  default: every build, pull requests included, compiles and lints the Agents'
+  module and runs its C++ tests, the whole Match loop against an in-process
+  `server::Host` among them, but not the netcode tests below, which every test
+  preset leaves out and only the nightly runs. The script itself is run by hand,
+  against a local `augustad` or the r630 cluster's. The server image turns the
+  option off: it builds `augustad` alone.
 - **Netcode under an impaired link, nightly.** Prediction and reconciliation
   (ADR-0004) and lag compensation (ADR-0044) are only proven under bad network
-  conditions, and a whole run of Scripted players under them takes minutes of
-  real time. So the nightly builds the `linux` preset and runs the tests
-  labelled `netcode` (the `linux-netcode` test preset; every other test preset
-  leaves them out): four Scripted players through five Matches against an
-  in-process `server::Host`, under the transport's own simulated conditions
-  (GameNetworkingSockets' fake packet lag, jitter, loss and reordering, on every
-  packet either side sends) rather than `tc netem`, which would need root on the
-  runner and a server in another process for no more realism on loopback. Three
-  profiles, one way each, so a round trip is twice the latency:
+  conditions, and a whole run of Agents under them takes minutes of real time.
+  So the nightly builds the `linux` preset and runs the tests labelled `netcode`
+  (the `linux-netcode` test preset; every other test preset leaves them out):
+  four Agents through five Matches against an in-process `server::Host`, under
+  the transport's own simulated conditions (GameNetworkingSockets' fake packet
+  lag, jitter, loss and reordering, on every packet either side sends) rather
+  than `tc netem`, which would need root on the runner and a server in another
+  process for no more realism on loopback. Three profiles, one way each, so a
+  round trip is twice the latency:
 
     | Profile    | Latency | Jitter (mean / max) | Loss | Reordered (extra delay) |
     | ---------- | ------- | ------------------- | ---- | ----------------------- |
@@ -80,10 +81,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
     | NFR-02     | 50 ms   | 10 / 30 ms          | 5%   | 2% (20 ms)              |
     | Worst case | 75 ms   | 10 / 30 ms          | 10%  | 5% (20 ms)              |
 
-    The worst case is the most this netcode is held to: a Scripted player's
-    Shooter's delay (about a round trip, the jitter both ways and the ticks its
-    commands wait queued) stays within lag compensation's 250 ms cap. At every
-    profile, every player must see every Match end with no disconnect; no single
+    The worst case is the most this netcode is held to: an Agent's Shooter's
+    delay (about a round trip, the jitter both ways and the ticks its commands
+    wait queued) stays within lag compensation's 250 ms cap. At every profile,
+    every player must see every Match end with no disconnect; no single
     correction may reach the 2 m that the presentation shows at once instead of
     sliding (ADR-0004), and corrections may happen on at most 5% of the players'
     Match ticks; and at least 40% of the rounds fired must come back as Hit
@@ -98,13 +99,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   without either job needing the other's output. A deliberate change to the
   ballistics model regenerates the file with one build target, and the diff is
   reviewed like code.
-- **A golden match, the same way.** A match recording (ADR-0048) of a scripted
-  duel on the example scenario's golden server pack lives in the repository, and
-  the test replays it on every runner, within the tolerance ADR-0048 gives a
-  replay on another build: positions a grid step off, every other value equal,
-  each tick starting from the recorded bodies. A deliberate change to the
-  simulation rewrites it with one build target, and the diff is reviewed like
-  code.
+- **No golden match.** ADR-0048's golden match, a recorded duel replayed on
+  every runner, is dropped with the Match recording (ADR-0050): a Replay
+  (ADR-0051) checks only Deaths and the Match end, and only on the build that
+  captured them.
 - **Pack contract through golden packs.** The pack format has two
   implementations, the Python cooker writing it and `augusta_assets` reading it,
   so both are held to the same committed files: the example scenario's client
@@ -139,22 +137,48 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   regression test.
 - **Coverage** is a report for finding untested deterministic logic, not a gate:
   a minimum percentage pushes toward tests written for the number.
+- **Each test names the requirements it checks** (`docs/REQUIREMENTS.md`'s
+  `US-nn` and `NFR-nn`) on a `// Requirements:` line directly above it, so which
+  tests exercise a requirement is read from the code rather than kept in a table
+  beside it that drifts. `scripts/requirements-matrix.py` reads them: CI fails
+  on one that names a requirement the document does not have, and the test
+  report's requirements matrix lists every requirement with the tests that name
+  it and how each did that night. A requirement no test names shows as untested,
+  whether no test can check it (NFR-04 is checked by the Windows and Linux
+  builds themselves) or one is missing.
+- **The test report** is the nightly's tests in one HTML report
+  (`scripts/test-report.sh`): its `ctest` runs (the whole Linux suite, the
+  property tests, TSan and the netcode profiles), which `ctest` writes as JUnit
+  XML and `junit2html` renders together, a row per test and a column per run,
+  each result linked to its output; the requirements matrix; and the coverage
+  report beside them, with its totals on the report's first page. It is a run
+  artifact, and the documentation site publishes the latest scheduled night's
+  (ADR-0046). It reports; the jobs' own results are what fail the nightly.
 - **Micro-benchmarks** time the hot paths, through their public interfaces: a
-  server tick through every phase of SimulationWorld in a full Match, the
-  protocol's encoding and decoding of the messages each tick sends and receives,
-  `Pack::Load`, and a bullet's ballistics step. The nightly runs them on a
-  GitHub-hosted runner, keeps the median of five repetitions, and records it
-  with `github-action-benchmark` on the `benchmarks` branch, not in `docs/`; the
-  first night on `develop` starts that branch itself, with an empty commit, and
-  the documentation site charts its history (ADR-0046). Of the nightly's jobs,
-  only this one may push. Only `develop`'s nights are recorded: a manual run on
-  another branch is compared with them and leaves no trace. A shared runner is
-  noisy, so the threshold is generous: a benchmark more than twice as slow as
-  the night before fails the nightly, reported like any other failure. The
-  slower result is recorded all the same, so one regression fails one night, not
-  every night after it. Benchmarks are also run by hand when a profile (NVTX in
-  Nsight Systems) points at a hot spot. They never gate a pull request, and
-  NFR-01 stays the only formal performance target.
+  server tick through every phase of SimulationWorld in a full Match, alone and
+  with Host writing its Match capture; that tick's Authoritative State
+  replicated to every player in the Match as Host replicates it, short of the
+  socket; a PresentationWorld render frame of the Match, without a GPU, both
+  handed a newer Authoritative State and handed the same one as the frame
+  before, as most frames are while the client renders faster than the server
+  ticks; the protocol's encoding and decoding of the messages each tick sends
+  and receives; `Pack::Load`; and a bullet's ballistics step. The nightly runs
+  them on a GitHub-hosted runner, keeps the median of five repetitions, and
+  records it with `github-action-benchmark` on the `benchmarks` branch, not in
+  `docs/`; the first night on `develop` starts that branch itself, with an empty
+  commit, and the documentation site charts its history (ADR-0046). Of the
+  nightly's jobs, only this one may push. Only `develop`'s nights are recorded:
+  a manual run on another branch is compared with them and leaves no trace. A
+  shared runner is noisy, so the threshold is generous: a benchmark more than
+  twice as slow as the night before fails the nightly, reported like any other
+  failure. The slower result is recorded all the same, so one regression fails
+  one night per CPU model, not every night after it. The runners of one label
+  come on several CPU models, the fastest about twice as quick as the slowest,
+  so each model keeps its own history, named after it, and "the night before" is
+  the last night on the same model; a model's first night has nothing to compare
+  with. Benchmarks are also run by hand when a profile (NVTX in Nsight Systems)
+  points at a hot spot. They never gate a pull request, and NFR-01 stays the
+  only formal performance target.
 
 ## Out of scope
 
