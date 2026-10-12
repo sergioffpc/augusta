@@ -322,7 +322,7 @@ Then the cursor is released and every held key let go, and keys and mouse do not
 
 ### US-21: Capture a Match, Then Replay or Reenact It
 
-Version: v3 (planned)
+Version: v3
 
 As a developer, I want the server to capture a Match, to watch it again from any
 player's eyes and to play it again against a live server, so that a crash, a
@@ -375,7 +375,7 @@ ADR-0041).
 
 ### US-23: Script Players with Agents
 
-Version: v3 (planned)
+Version: v3
 
 As a developer, I want to control players from a Python script, so that a load
 test, an end-to-end test or an AI can play the game with no one at the keyboard.
@@ -574,7 +574,7 @@ pack hash; ADR-0019 and ADR-0038 the Join's pack mismatch.
 
 ### NFR-09: Replay Consistency
 
-Version: v3 (planned)
+Version: v3
 
 ```text
 Source:      Developer replaying a Match capture
