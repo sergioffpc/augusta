@@ -314,15 +314,16 @@ no self-hosted GitHub Actions runner in this pipeline).
   client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
   `.exe`'s debug directory gives it; the two match by GUID and age
   (`dumpbin /headers`, ADR-0055).
-- **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
-  capability dropped, the `RuntimeDefault` seccomp profile and a read-only root
-  filesystem; augustad writes only to its capture volume, if any. None of it
-  changes core dumps, which the kernel pipes to the node's `systemd-coredump`,
-  or `kubectl debug --target=augustad`: its ephemeral container has its own root
-  filesystem and `securityContext`, and reads the server's files through
-  `/proc/<pid>/root/` as the same user. The node has that user too, `augusta`
-  (ADR-0054): the asset packs are `augusta-publish:augusta`, readable by its
-  group alone, and the capture volume is its own
+- **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
+  privilege escalation, every capability dropped, augustad's own seccomp profile
+  and a read-only root filesystem; augustad writes only to its capture volume,
+  if any ([confinement](runbooks/k3s-node-recovery.md#the-servers-confinement)).
+  None of it changes core dumps, which the kernel pipes to the node's
+  `systemd-coredump`, or `kubectl debug --target=augustad`: its ephemeral
+  container has its own root filesystem and `securityContext`, and reads the
+  server's files through `/proc/<pid>/root/` as the same user. The node has that
+  user too, `augusta` (ADR-0054): the asset packs are `augusta-publish:augusta`,
+  readable by its group alone, and the capture volume is its own
   ([The server's user](runbooks/k3s-node-recovery.md#the-servers-user)).
 - **Match captures:** an environment turns them on in its Helm values
   (`captures.hostPath`, `develop` only), and each of its servers then captures

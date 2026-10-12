@@ -28,6 +28,12 @@ spec:
       # augustad stops within a tick of SIGTERM (src/server/main.cpp), so this
       # is not sized for a match to end: a rollout may cut one (ADR-0026).
       terminationGracePeriodSeconds: 10
+      # A user namespace of its own (ADR-0057): the server's UID maps to no
+      # user of the Node, so a server that leaves its container is no one
+      # there. Its volumes are mounted ID-mapped, so the Node's files keep
+      # their owner, the server's user (65532), and the capture directory
+      # stays writable to it.
+      hostUsers: false
       # The image's own user (the Dockerfile's AUGUSTA_UID, ADR-0054): the kubelet
       # refuses to start the server as root, and a `kubectl debug` ephemeral
       # container runs as the server does, so it can read the server's files.
@@ -50,8 +56,16 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+            # The syscalls augustad makes and no other (ADR-0057): one outside
+            # them kills the server. The Node holds it under the kubelet's
+            # seccomp directory (clusters/onprem/node/augustad-seccomp.json,
+            # docs/runbooks/k3s-node-recovery.md, The server's seccomp
+            # profile); until it does, the pod fails to start, its events
+            # naming the missing file. Set here, not for the pod, so a
+            # `kubectl debug` container runs under its runtime's default.
             seccompProfile:
-              type: RuntimeDefault
+              type: Localhost
+              localhostProfile: augusta/augustad.json
           ports:
             - name: game
               containerPort: {{ $.Values.service.port }}

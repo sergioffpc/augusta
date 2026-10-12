@@ -801,6 +801,91 @@ enforces `restricted` (step 3).
    `clusters/onprem/policies/host-path-volumes.yaml` in one pull request, then
    check its servers the same way.
 
+## The server's confinement
+
+A compromised server gains as little as it can past its container (ADR-0057).
+Each runs in a user namespace of its own (`hostUsers: false`): its UID, 65532 in
+the container, maps to an unused range on the node, so it is no one there. Its
+volumes are mounted ID-mapped, so the node's files keep their owners
+([The server's user](#the-servers-user)) and nothing on the node changes. k3s's
+Kubernetes enables user namespaces on its own, on Debian 13's kernel and the
+ext4 the pack and capture folders are on.
+
+Each also runs under augustad's own seccomp profile,
+[`clusters/onprem/node/augustad-seccomp.json`](../../clusters/onprem/node/augustad-seccomp.json):
+the x86-64 syscalls the server image makes (its `tini` and the container
+runtime's last steps included) and its crash handler's, nothing else. A syscall
+outside it kills the server, with `SIGSYS`: the pod restarts, its last state
+`Terminated` with exit code 159, and the node's audit log names the syscall.
+
+```sh
+kubectl -n <environment> describe pod -l app.kubernetes.io/name=augustad | grep -A3 'Last State'
+ssh <node> "sudo ausearch --message SECCOMP --interpret --start today"
+```
+
+`clusters/onprem/policies/server-confinement.yaml` refuses a server that runs
+without either.
+
+### The server's seccomp profile
+
+The kubelet reads it from `/var/lib/kubelet/seccomp/augusta/augustad.json`,
+which `scripts/bootstrap-node.sh` writes from `develop` on every run, before it
+installs k3s. A server whose profile is missing does not start: its pod waits
+with `CreateContainerError`, its events naming the file.
+
+CI's `confinement` job runs every image it builds under the profile, while
+Agents play two full Matches against it. A change to the server that makes a new
+syscall fails that job, which then records the profile again
+(`scripts/augustad-seccomp.sh record`, which says how) and uploads it as the
+`augustad-seccomp` artifact: commit it to the same pull request once you know
+why the syscall is new. Recording only adds syscalls, so the profile still
+covers every older image an Environment runs (`staging`'s release).
+
+Install a changed profile on the node before the change merges, from the pull
+request's branch, so `develop`'s next server finds it. Running servers keep the
+profile they started with until they restart:
+
+```sh
+ssh <node> "curl -fsSL https://raw.githubusercontent.com/sergioffpc/augusta/<branch>/clusters/onprem/node/augustad-seccomp.json \
+  | sudo install -D -o root -g root -m 0644 /dev/stdin /var/lib/kubelet/seccomp/augusta/augustad.json"
+```
+
+A server killed for a syscall the profile lacks keeps restarting until the
+profile has it. To bring it back before the fix merges, install the profile
+recorded for it, as above, from the artifact or the branch.
+
+### Verify the confinement
+
+On the node, for each server:
+
+```sh
+ssh <node>
+pid="$(pgrep -n -x augustad)"
+ps -o uid=,cmd= -p "${pid}"
+grep -E '^(Uid|Seccomp):' "/proc/${pid}/status"
+cat "/proc/${pid}/uid_map"
+```
+
+The UID is not 65532 but above 65535, the user namespace's mapping of 65532;
+`Seccomp` is `2` (filtered); `uid_map` maps the container's 0 to 65536 of the
+node's UIDs from a multiple of 65536, not to 0. Then
+[Verification](#verification)'s checks show every server verifying its pack, and
+`develop`'s writing its capture.
+
+### Confine a running cluster
+
+The first `develop` revision with the confinement (#535) needs the profile on
+the node first:
+
+1. Before it merges, install the profile from the pull request's branch, as
+   above.
+2. Once Flux reconciles it, `develop`'s servers are replaced by confined pods,
+   cutting any Match in progress (ADR-0026).
+   [Verify the confinement](#verify-the-confinement).
+3. Once `staging` runs a release with it, drop `staging`'s exemption from
+   `clusters/onprem/policies/server-confinement.yaml` (its `matchConditions`),
+   and verify its servers the same way.
+
 ## The k3s configuration
 
 k3s runs hardened from its first start, to the CIS Kubernetes Benchmark's k3s
@@ -1135,6 +1220,8 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 - Every server logged `event=pack_verified` and keeps running, from the volumes
   of the `packVersion` its `HelmRelease` names, each `Bound`
   ([Volumes](#volumes)); `develop` enforces `restricted`.
+- Every server runs in its own user namespace, under its own seccomp profile
+  ([Verify the confinement](#verify-the-confinement)).
 - Every `develop` server logged `event=capture_enabled` with its own
   `/srv/augusta/captures/develop/<scenario>` directory; the capture filesystem
   is mounted, and a Match played to its end leaves a `.capture` file there.

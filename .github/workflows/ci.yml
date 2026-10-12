@@ -59,14 +59,14 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/|src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
@@ -421,6 +421,13 @@ jobs:
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
         run: uv run --locked --no-default-groups --group agent pytest
+      - name: Upload the Agents' native module
+        # For the confinement job's Agents, built here with the rest.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agents-native
+          path: tools/agent/src/augusta_agent/_native*.so
+          retention-days: 1
   tools:
     needs: changes
     if: needs.changes.outputs.run_tools == 'true'
@@ -853,6 +860,9 @@ jobs:
     # PRs build only when the image or chart changed.
     if: github.event_name == 'push' || needs.changes.outputs.run_container == 'true'
     runs-on: ubuntu-26.04
+    # The tag of the image it built, which the confinement job runs.
+    outputs:
+      short-sha: ${{ steps.image.outputs.short-sha }}
     permissions:
       contents: read
       # Writing the registry layer cache, on a push.
@@ -894,20 +904,80 @@ jobs:
       # Only a push writes the layer cache, as only a push publishes:
       # container-publish rebuilds from it.
       - name: Build and scan server image
+        id: image
         uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
-  container-publish:
+      - name: Save server image
+        # For the confinement job, which runs the image this job checked.
+        run: >-
+          docker save ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }} | gzip > "$RUNNER_TEMP/augustad.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-image
+          path: ${{ runner.temp }}/augustad.tar.gz
+          retention-days: 1
+  # The image under its own seccomp profile (ADR-0057), as the Node runs it:
+  # Agents play full Matches against it, and a syscall outside the profile
+  # kills it and fails the job. On a failure it records the profile again
+  # (scripts/augustad-seccomp.sh) and uploads it as augustad-seccomp, to
+  # commit once the change that needs it is understood. It runs only when
+  # both the image and the Agents were built, which every change to the
+  # server's sources, the image, the profile or its script asks for
+  # (changes above): an image it skips is built from what it last checked.
+  confinement:
     needs: [server, container-verify]
+    if: needs.server.result == 'success' && needs.container-verify.result == 'success'
+    runs-on: ubuntu-26.04
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ needs.container-verify.outputs.short-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/uv.lock
+      - name: Install the Agents' package
+        # As the server job does; its native module is that job's build.
+        working-directory: tools
+        run: uv sync --locked --no-default-groups --group agent
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agents-native
+          path: tools/agent/src/augusta_agent
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: server-image
+          path: ${{ runner.temp }}
+      - name: Load server image
+        run: gunzip -c "$RUNNER_TEMP/augustad.tar.gz" | docker load
+      - name: Check the server's seccomp profile
+        id: check
+        run: scripts/augustad-seccomp.sh check "$IMAGE"
+      - name: Record the server's seccomp profile again
+        if: failure() && steps.check.outcome == 'failure'
+        run: |
+          sudo apt-get update && sudo apt-get install -y auditd
+          scripts/augustad-seccomp.sh record "$IMAGE"
+      - name: Upload the recorded profile
+        if: failure() && steps.check.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: augustad-seccomp
+          path: clusters/onprem/node/augustad-seccomp.json
+  container-publish:
+    needs: [server, container-verify, confinement]
     # Only main/develop pushes publish, and only once both the server's tests
     # and the image's checks passed. The server job only runs when run_build is
     # true (see changes above), so a skipped result there is fine - only an
-    # actual failure should block publishing. !cancelled() rather than
-    # always(): a run someone cancelled publishes nothing.
+    # actual failure should block publishing. confinement is skipped with it.
+    # !cancelled() rather than always(): a run someone cancelled publishes
+    # nothing.
     if: |
       !cancelled() && github.event_name == 'push' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped')
+      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04
     # What container-index merges with main's arm64 image and debug info.
     outputs:
@@ -1020,11 +1090,12 @@ jobs:
   # requests' stay amd64 alone. Its own build is its check: no
   # container-verify runs on arm64, so it writes its own layer cache.
   container-publish-arm64:
-    needs: [server, container-verify]
+    needs: [server, container-verify, confinement]
     if: |
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped')
+      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04-arm
     outputs:
       image: ${{ steps.publish.outputs.digest }}

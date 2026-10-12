@@ -13,4 +13,5 @@ resources:
   - node-port-range.yaml
   - privileged-namespace-workloads.yaml
   - secret-allowlist.yaml
+  - server-confinement.yaml
   - verify-image-signatures.yaml

@@ -1,0 +1,26 @@
+# A develop server in its own user namespace, but under the runtime's default
+# seccomp profile rather than augustad's own.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: augustad-firebase
+  namespace: develop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: augustad
+      scenario: firebase
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: augustad
+        scenario: firebase
+    spec:
+      hostUsers: false
+      containers:
+        - name: augustad
+          image: ghcr.io/sergioffpc/augustad:2.0.2
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault

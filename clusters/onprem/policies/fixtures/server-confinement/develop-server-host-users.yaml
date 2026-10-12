@@ -1,0 +1,26 @@
+# A develop server sharing the Node's user namespace, as the chart's servers did
+# before #535.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: augustad-firebase
+  namespace: develop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: augustad
+      scenario: firebase
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: augustad
+        scenario: firebase
+    spec:
+      containers:
+        - name: augustad
+          image: ghcr.io/sergioffpc/augustad:2.0.2
+          securityContext:
+            seccompProfile:
+              type: Localhost
+              localhostProfile: augusta/augustad.json
