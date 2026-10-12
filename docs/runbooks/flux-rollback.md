@@ -67,10 +67,11 @@ alone is reverted on `develop` instead.
   Helm rollback (step 1 of [Roll back develop](#roll-back-develop)) needs no
   more. That step is **cluster-admin**, and needs SSH to the node as a user with
   `sudo` ([Use cluster-admin](k3s-node-recovery.md#use-cluster-admin)).
-- `kubectl` and `helm`: `scripts/bootstrap-wsl.sh` installs both.
-- The `flux` CLI at the cluster's Flux version, the `Flux Version` in
+- `kubectl`, `helm` and the `flux` CLI at the cluster's Flux version, the
+  `Flux Version` in
   [`gotk-components.yaml`](../../clusters/onprem/flux-system/gotk-components.yaml)'s
-  header. No bootstrap script installs it.
+  header: `scripts/bootstrap.sh` installs all three, `flux` at its
+  `FLUX_VERSION`.
 - `gh`, authenticated, with permission to merge pull requests to `develop` and
   `main` ([branch rules](cut-release.md#prerequisites)).
 

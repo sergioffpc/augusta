@@ -535,6 +535,9 @@ export KUBECONFIG=~/.kube/augusta.yaml
 kubectl get nodes
 ```
 
+VS Code's terminals and its Kubernetes extension already use that kubeconfig
+(the workspace's `.vscode/settings.json`).
+
 It makes a new key, which stays on the workstation, and has the node sign its
 certificate for 24 hours, then prints when it expires. Run it again whenever
 `kubectl` answers `the server has asked for the client to provide credentials`:
