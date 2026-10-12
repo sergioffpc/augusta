@@ -21,9 +21,10 @@ kind: ValidatingPolicy
 metadata:
   name: privileged-namespace-workloads
 spec:
-  # Reported, not refused, until the cluster's policies are enforced.
+  # Refused, and refused too while Kyverno cannot answer (ADR-0057).
   validationActions:
-    - Audit
+    - Deny
+  failurePolicy: Fail
   # Pods only: Kyverno's autogen adds the same rule for every pod
   # controller, so a Deployment's or DaemonSet's template is judged before
   # its pods exist (fixtures/: unknown-deployment-in-kube-system.yaml).

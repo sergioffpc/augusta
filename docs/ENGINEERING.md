@@ -339,22 +339,24 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Admission policies:** Kyverno runs in the cluster, installed by Flux with
   its infrastructure, and the policies in
   [`clusters/onprem/policies/`](../clusters/onprem/policies/kustomization.yaml)
-  run there in audit mode for now (ADR-0057). CI's `manifests` job runs the same
-  policy files with the Kyverno CLI over each environment's rendered chart, each
-  Flux Kustomization path and each infrastructure `HelmRelease` rendered with
-  its values, so a change the cluster would refuse fails its pull request; it
-  also requires each policy to refuse its negative fixtures in
-  `fixtures/<policy>/`. Adding a policy is its file, its entry in the
-  Kustomization and its fixtures, with no change to CI.
+  are enforced there, failing closed: while Kyverno cannot answer, every request
+  it judges is refused, except in `kube-system` and `kyverno`, which its
+  webhooks skip so that it can always start (ADR-0057). CI's `manifests` job
+  runs the same policy files with the Kyverno CLI over each environment's
+  rendered chart, each Flux Kustomization path and each infrastructure
+  `HelmRelease` rendered with its values, so a change the cluster would refuse
+  fails its pull request; it also requires each policy to refuse its negative
+  fixtures in `fixtures/<policy>/`. Adding a policy is its file, its entry in
+  the Kustomization and its fixtures, with no change to CI.
 - **Pod Security:** `develop` enforces the `restricted` Pod Security Standard,
   which the chart's pods meet: they mount the node's folders from
   PersistentVolumes, never as `hostPath` volumes, which a `host-path-volumes`
-  policy reports outside the `privileged` namespaces (ADR-0057). `staging` is
+  policy refuses outside the `privileged` namespaces (ADR-0057). `staging` is
   audited and warned against `restricted`, and enforces it once it runs the
   first release tagged after #530, whose chart is the first without `hostPath`
   volumes; until then the policy admits it too.
 - **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
-  reports any Secret but Flux's trusted public keys, Helm's release records and
+  refuses any Secret but Flux's trusted public keys, Helm's release records and
   those the charts make themselves, each listed by name (ADR-0057).
 - **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
   a tag pushed again never changes what runs, except those whose signatures are

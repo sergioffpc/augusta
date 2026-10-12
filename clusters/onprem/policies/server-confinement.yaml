@@ -9,9 +9,10 @@ kind: ValidatingPolicy
 metadata:
   name: server-confinement
 spec:
-  # Reported, not refused, until the cluster's policies are enforced.
+  # Refused, and refused too while Kyverno cannot answer (ADR-0057).
   validationActions:
-    - Audit
+    - Deny
+  failurePolicy: Fail
   # Kyverno extends a policy on pods to the pod templates of Deployments,
   # DaemonSets, StatefulSets, Jobs and CronJobs, which CI's rendered manifests
   # hold rather than pods.

@@ -5,8 +5,10 @@
 # Its namespace runs under the restricted Pod Security Standard, as every
 # workload that can meet it does; the chart's pods meet it as they come
 # (non-root, no privilege escalation, every capability dropped, the runtime's
-# seccomp profile). Kyverno's webhooks skip kube-system and kyverno itself, so
-# Kyverno can always start.
+# seccomp profile). Kyverno's webhooks fail closed, so a request they judge
+# while Kyverno is down or not yet ready is refused (a pod's controller retries
+# it), but they skip kube-system and kyverno itself, so Kyverno can always
+# start; Pod Security Admission still holds every namespace meanwhile.
 apiVersion: v1
 kind: Namespace
 metadata:

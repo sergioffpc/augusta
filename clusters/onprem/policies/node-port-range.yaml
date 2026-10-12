@@ -9,9 +9,10 @@ kind: ValidatingPolicy
 metadata:
   name: node-port-range
 spec:
-  # Reported, not refused, until the cluster's policies are enforced.
+  # Refused, and refused too while Kyverno cannot answer (ADR-0057).
   validationActions:
-    - Audit
+    - Deny
+  failurePolicy: Fail
   matchConstraints:
     resourceRules:
       - apiGroups: [""]
