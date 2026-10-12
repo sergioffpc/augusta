@@ -155,7 +155,15 @@ decisions already made in ARCHITECTURE.md:
   Release-config client/server binaries, runs the tests and the asset pipeline
   check against them, and attaches them to a GitHub Release, whose notes are
   generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic.
+  cutting a release is a deliberate tag rather than automatic. The client is
+  attached as `augustac-windows-x64.zip`, its whole runtime folder: the `.exe`,
+  the DLLs it loads, Falcor's runtime (its shaders, data and plugins) and the
+  MSVC runtime, staged by the client's install rules
+  (`scripts/stage-client.sh`). `augustac.exe` alone loads nothing, and Falcor is
+  a DLL that reads its folder at runtime, so it cannot be linked statically. The
+  workflow unzips the zip into an empty folder and checks that
+  `augustac --version` prints the tag's version from there. CI's client job
+  checks that the staged folder starts on every pull request.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -188,7 +196,7 @@ decisions already made in ARCHITECTURE.md:
   Ubuntu packages. Verified with:
 
     ```sh
-    gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
+    gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta
     gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta
     gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> \
       --repo sergioffpc/augusta
@@ -322,10 +330,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   `augustad-linux-<arch>.debug` reads only that release binary, which no image
   runs (ADR-0047).
 - **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
-  of the `augustac-windows-x64.exe` beside it, which reads a crash of that
-  client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
-  `.exe`'s debug directory gives it; the two match by GUID and age
-  (`dumpbin /headers`, ADR-0055).
+  of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
+  a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
+  `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
+  by GUID and age (`dumpbin /headers`, ADR-0055).
 - **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
   privilege escalation, every capability dropped, augustad's own seccomp profile
   and a read-only root filesystem; augustad writes only to its capture volume,

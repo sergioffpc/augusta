@@ -137,3 +137,38 @@ add_custom_command(
     "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer"
   COMMENT "Deploying Falcor's runtime (ADR-0009) and shaders next to augustac"
 )
+
+# `cmake --install --component client` stages the client's whole runtime folder,
+# which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
+# loads, Falcor's runtime as the build tree has it beside it (its DLLs, those it
+# loads itself, and the shaders, data and plugins it reads), and the MSVC
+# runtime, so it starts on a Windows with no Visual C++ redistributable. CMake
+# resolves the DLLs itself, as for augustad. Falcor's PDBs stay out: they are
+# most of its folder, and no player reads them.
+install(
+  TARGETS augustac
+  RUNTIME_DEPENDENCY_SET augustac_dlls
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client
+)
+install(
+  RUNTIME_DEPENDENCY_SET augustac_dlls
+  PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+  POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
+  DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin" "${FALCOR_BIN_DIR}"
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client
+)
+install(
+  DIRECTORY "${FALCOR_BIN_DIR}/"
+  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  COMPONENT client
+  PATTERN "*.pdb" EXCLUDE
+  PATTERN "setpath.*" EXCLUDE
+)
+install(
+  DIRECTORY "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders/"
+  DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders/Augusta/Renderer
+  COMPONENT client
+)
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT client)
+include(InstallRequiredSystemLibraries)

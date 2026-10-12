@@ -198,7 +198,7 @@ skipped: a branch cut from `main` already has everything `main` has.
 ```sh
 gh release view vX.Y.Z
 gh release download vX.Y.Z --dir release-vX.Y.Z
-gh attestation verify release-vX.Y.Z/augustac-windows-x64.exe --repo sergioffpc/augusta
+gh attestation verify release-vX.Y.Z/augustac-windows-x64.zip --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-x64 --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-arm64 --repo sergioffpc/augusta
 gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> --repo sergioffpc/augusta
@@ -208,9 +208,11 @@ flux get sources git augusta-release -n flux-system   # vX.Y.Z, verified
 flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 ```
 
-- The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.exe`,
+- The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.zip`,
   `augustad-linux-x64`, `augustad-linux-arm64` and their `.spdx.json` SBOMs, and
-  its notes are the changelog section.
+  its notes are the changelog section. The zip's `augustac.exe --version` prints
+  `augustac X.Y.Z` from an empty folder: the release workflow checks it before
+  it publishes.
 - `sha-<12>` is an index with a `linux/amd64` and a `linux/arm64` manifest:
   `main`'s `container-index` job ran.
 - The attestations verify. `<12>` is the first 12 characters of the tagged merge

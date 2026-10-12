@@ -319,6 +319,11 @@ jobs:
         run: |
           test -f build/x64-windows/src/client/augustac.pdb
           dumpbin -nologo -headers build/x64-windows/src/client/augustac.exe | grep -E 'Format: RSDS, .*augustac\.pdb'
+      - name: Check the client's runtime folder
+        # What each release zips (release.yml): staged by the client's install
+        # rules, augustac starts from it alone. Checked here so a DLL the
+        # rules miss fails the pull request that adds it, not the release.
+        run: scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac"
       - name: Install clang-tidy
         # LLVM 21.1.8, the version the server job's distro package and the
         # Windows bootstrap give, so both platforms agree on which header
