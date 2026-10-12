@@ -11,16 +11,18 @@ every target. A dependency vcpkg doesn't provide (a submodule: Falcor, NVTX)
 is named with --git-package, at its checked-out commit.
 
 The client ships Falcor's own dependencies beside it (ADR-0058), which
---falcor names from the Falcor checkout they were fetched into: the ports of
-the vcpkg tree its packman bundle is (external/packman/deps), every packman
-package of dependencies.xml, and every FetchPackage URL of
-external/CMakeLists.txt. --msvc-runtime names the MSVC runtime the client
-bundles, at the version of its vcruntime140.dll.
+--falcor names from the Falcor checkout: every packman package of its
+dependencies.xml, every FetchPackage URL of its external/CMakeLists.txt, and
+the ports of the vcpkg tree its packman bundle is (deps under
+--falcor-packman, the checkout's external/packman unless a prebuilt Falcor's
+packman/ holds it: the build's FALCOR_PACKMAN_DIR). --msvc-runtime names the
+MSVC runtime the client bundles, at the version of its vcruntime140.dll.
 
   scripts/vcpkg-sbom.py --name augustad --version v1.0.0 \
       --repo https://github.com/owner/augusta --commit <commit> \
       build/x64-linux/vcpkg_installed/x64-linux > augustad.spdx.json
   scripts/vcpkg-sbom.py --name augustac ... --falcor third_party/falcor \
+      --falcor-packman <FALCOR_PACKMAN_DIR> \
       --msvc-runtime <staged>/bin/vcruntime140.dll \
       build/x64-windows/vcpkg_installed/x64-windows > augustac.spdx.json
 """
@@ -196,12 +198,10 @@ def fetched_packages(cmake_lists):
     return packages
 
 
-def falcor_packages(checkout):
-    """Falcor's own dependencies, from its checkout (the module's doc)."""
+def falcor_packages(checkout, packman):
+    """Falcor's own dependencies, from its checkout and packman directory."""
     return (
-        port_packages(
-            checkout / "external" / "packman" / "deps", "falcor-vcpkg"
-        )
+        port_packages(packman / "deps", "falcor-vcpkg")
         + packman_packages(checkout / "dependencies.xml")
         + fetched_packages(checkout / "external" / "CMakeLists.txt")
     )
@@ -306,6 +306,11 @@ def main():
         help="the Falcor checkout whose dependencies ship beside it",
     )
     parser.add_argument(
+        "--falcor-packman",
+        type=pathlib.Path,
+        help="Falcor's packman directory (default: external/packman in it)",
+    )
+    parser.add_argument(
         "--msvc-runtime",
         type=pathlib.Path,
         help="the vcruntime140.dll the executable ships with",
@@ -318,7 +323,8 @@ def main():
         git_package(p) for p in args.git_package
     ]
     if args.falcor:
-        dependencies += falcor_packages(args.falcor)
+        packman = args.falcor_packman or args.falcor / "external" / "packman"
+        dependencies += falcor_packages(args.falcor, packman)
     if args.msvc_runtime:
         dependencies.append(msvc_runtime_package(args.msvc_runtime))
     json.dump(
