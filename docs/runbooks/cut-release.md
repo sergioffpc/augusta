@@ -35,6 +35,8 @@ skipped: a branch cut from `main` already has everything `main` has.
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
   or Git Bash on Windows.
+- `docker` with buildx, and `jq`, for step 8's wait on the image. GHCR serves
+  the image's manifest without a login.
 - The release packs, cooked and signed with the release key on the developer's
   machine ([Release signing](../ENGINEERING.md#cicd),
   [Rotate the Pack Signing Key](pack-key-rotation.md)), for the pre-merge check
@@ -132,14 +134,28 @@ skipped: a branch cut from `main` already has everything `main` has.
 8. Tag `main`'s merge commit and push the tag, which starts the release workflow
    ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)) and
    moves `staging` to it: Flux verifies the tag's signature, then upgrades
-   `staging` to the chart and image of the tagged commit:
+   `staging` to the chart and image of the tagged commit. Wait first until
+   `main`'s CI has published that commit's image as the index of both
+   architectures (its `container-index` job), so `staging` never runs a chart
+   whose image is missing (ADR-0056):
 
     ```sh
     git fetch origin
     git log -1 origin/main          # the "Merge pull request #<number> from .../release/vX.Y.Z" commit
+    image=ghcr.io/sergioffpc/augustad:sha-$(git rev-parse --short=12 origin/main)
+    until docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' 2>/dev/null \
+        | jq --exit-status '[.manifests[]?.platform.architecture] | contains(["amd64", "arm64"])' >/dev/null; do
+      sleep 60
+    done
     git tag -s vX.Y.Z -m vX.Y.Z origin/main
     git push origin vX.Y.Z
     ```
+
+    If `main`'s CI fails instead
+    (`gh run list --workflow ci.yml --branch main`), no image is published and
+    nothing is tagged: fix it on a `hotfix/*` branch off `main` as
+    [Rollback / abort](#rollback--abort) describes, and tag its merge commit
+    once its image is published.
 
 9. Watch the workflow. Its `client`, `server` and `tools` jobs rebuild and test
    the Release binaries; `publish` creates the GitHub Release only if all three
@@ -209,12 +225,14 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
   exists (`publish` needs every job). Fix on a `hotfix/*` branch off `main`
   through a pull request to `main`, re-cutting the changelog there
   (`scripts/changelog.sh vX.Y.Z`) if the fix belongs in the notes, then move the
-  tag to the new merge commit:
+  tag to the new merge commit once its image is published, waiting as step 8
+  does:
 
     ```sh
     git tag -d vX.Y.Z
     git push origin :refs/tags/vX.Y.Z
     git fetch origin
+    # step 8's wait for ghcr.io/sergioffpc/augustad:sha-<12 of origin/main>
     git tag -s vX.Y.Z -m vX.Y.Z origin/main
     git push origin vX.Y.Z
     ```

@@ -67,9 +67,11 @@ spec:
           protocol: TCP
 ---
 # source-controller alone fetches what Flux applies: the repository from
-# GitHub, the charts from their Helm repositories, any OCI artifact from GHCR.
-# NetworkPolicies name addresses, not hosts, and these hosts' addresses are
-# GitHub's and their CDNs', which change: it reaches HTTPS on the internet,
+# GitHub, the charts from their Helm repositories, any OCI artifact from GHCR,
+# and what verifying an OCI artifact keyless takes, Sigstore's trusted root
+# and transparency log (clusters/onprem/apps/sources.yaml). NetworkPolicies
+# name addresses, not hosts, and these hosts' addresses are GitHub's,
+# Sigstore's and their CDNs', which change: it reaches HTTPS on the internet,
 # but not the LAN or the cluster.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

@@ -63,16 +63,17 @@ data:
               severity: warning
             annotations:
               summary: "{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} fails a Kyverno policy."
-          # Flux's source-controller warns on a GitRepository whose revision
-          # fails its signature check (ADR-0056), each time it fetches it:
-          # by its reason, or its message where the reason is a generic one.
-          # A certificate that fails to verify is not a signature's failure.
+          # Flux's source-controller warns on a GitRepository or OCIRepository
+          # whose revision fails its signature check (ADR-0056), each time it
+          # fetches it: by its reason, or its message where the reason is a
+          # generic one. A certificate that fails to verify is not a
+          # signature's failure.
           - alert: FluxSourceVerificationFailed
             expr: |
               sum by (name) (
                 count_over_time({job="kubernetes/events", namespace="flux-system"}
                   | logfmt
-                  | kind = "GitRepository" and type = "Warning"
+                  | kind =~ "GitRepository|OCIRepository" and type = "Warning"
                   | reason =~ "Invalid.*Signature" or msg =~ "(?i).*signature.*"
                   [5m])
               ) > 0

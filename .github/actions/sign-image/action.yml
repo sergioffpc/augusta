@@ -1,30 +1,38 @@
-name: Sign the server image
+name: Sign a published artifact
 description: >
-  Signs a published augustad image by digest with cosign, keyless (a Fulcio certificate for the workflow's GitHub OIDC token, logged in Rekor), and verifies the signature at once against the identity the cluster admits (clusters/onprem/policies/verify-image-signatures.yaml, ADR-0057), so a publish whose image the cluster would refuse fails here. ci.yml runs it for each image it publishes: container-publish's, container-publish-arm64's and container-index's index of both. The job needs id-token: write and packages: write, and is logged in to GHCR.
+  Signs an artifact published to GHCR by digest with cosign, keyless (a Fulcio certificate for the workflow's GitHub OIDC token, logged in Rekor), and verifies the signature at once against the identity the cluster admits it by, so a publish the cluster would refuse fails here. ci.yml runs it for each augustad image it publishes (container-publish's, container-publish-arm64's and container-index's index of both), which clusters/onprem/policies/verify-image-signatures.yaml admits from develop or main (ADR-0057), and for develop's chart (chart-publish), which develop's OCIRepository (clusters/onprem/apps/sources.yaml) takes from develop alone. The job needs id-token: write and packages: write, and is logged in to GHCR.
 
 inputs:
   digest:
-    description: The image's manifest digest, sha256:..., as GHCR serves it.
+    description: The artifact's manifest digest, sha256:..., as GHCR serves it.
     required: true
+  repository:
+    description: The artifact's repository, under the owner's on GHCR.
+    default: augustad
+  branches:
+    description: The branches whose ci.yml the cluster admits the artifact from, as alternatives of a regular expression.
+    default: develop|main
 runs:
   using: composite
   steps:
     - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-    - name: Sign the image
+    - name: Sign the artifact
       shell: bash
       env:
-        IMAGE: ghcr.io/${{ github.repository_owner }}/augustad@${{ inputs.digest }}
-      run: cosign sign --yes "$IMAGE"
-    # The policy's identity: this workflow on develop or main. cosign verify
-    # also accepts the provenance and SBOM attestations the same workflow
-    # pushes (as Kyverno does), so the output must hold a signature proper,
-    # not only those: an image this step signed nothing for fails.
+        ARTIFACT: ghcr.io/${{ github.repository_owner }}/${{ inputs.repository }}@${{ inputs.digest }}
+      run: cosign sign --yes "$ARTIFACT"
+    # The cluster's identity: this workflow on one of those branches. cosign
+    # verify also accepts the provenance and SBOM attestations the same
+    # workflow pushes beside an image (as Kyverno does), so the output must
+    # hold a signature proper, not only those: an artifact this step signed
+    # nothing for fails.
     - name: Verify the signature
       shell: bash
       env:
-        IMAGE: ghcr.io/${{ github.repository_owner }}/augustad@${{ inputs.digest }}
+        ARTIFACT: ghcr.io/${{ github.repository_owner }}/${{ inputs.repository }}@${{ inputs.digest }}
+        IDENTITY: ^https://github\.com/sergioffpc/augusta/\.github/workflows/ci\.yml@refs/heads/(${{ inputs.branches }})$
       run: |
-        cosign verify "$IMAGE" \
-          --certificate-identity-regexp '^https://github\.com/sergioffpc/augusta/\.github/workflows/ci\.yml@refs/heads/(develop|main)$' \
+        cosign verify "$ARTIFACT" \
+          --certificate-identity-regexp "$IDENTITY" \
           --certificate-oidc-issuer https://token.actions.githubusercontent.com \
           | jq --exit-status 'any(.[]; .critical.type == "https://sigstore.dev/cosign/sign/v1")' >/dev/null

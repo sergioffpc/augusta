@@ -648,8 +648,9 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
-        # chart of the ref its GitRepository follows: develop's branch, or
-        # staging's latest release tag (ADR-0056), whose chart's values can
+        # chart of the ref its source follows: develop's branch (the chart CI
+        # publishes from it), or staging's latest release tag (ADR-0056),
+        # whose chart's values can
         # trail develop's until the next release. The branch this run's commit
         # lands on (the pull request's base, or the pushed branch) is checked
         # out already; any other ref is fetched. staging's tag is the newest
@@ -666,6 +667,7 @@ jobs:
         shell: bash
         env:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # The file holds other releases (Loki, Alloy): pick the stack's by
           # name, and its repository by the release's sourceRef.
@@ -684,8 +686,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/rendered"
           for release in clusters/onprem/apps/*.yaml; do
             grep -q '^kind: HelmRelease$' "$release" || continue
-            source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
-            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // \"\"" clusters/onprem/apps/sources.yaml)
+            source=$(yq '.spec.chartRef.name // .spec.chart.spec.sourceRef.name' "$release")
+            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // .spec.ref.tag // \"\"" clusters/onprem/apps/sources.yaml)
+            # develop's OCIRepository follows the chart chart-publish pushed
+            # for that branch's newest commit, under the tag develop, or a
+            # rollback pins the tag <version>_<12> of an older commit's,
+            # fetched by its full hash.
+            if [[ "$ref" =~ _([0-9a-f]{12})$ ]]; then
+              ref=$(gh api "repos/$GITHUB_REPOSITORY/commits/${BASH_REMATCH[1]}" --jq .sha)
+            fi
             if [ -z "$ref" ]; then
               ref=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' \
                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
@@ -1234,3 +1243,62 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/augustad
           subject-digest: ${{ steps.index.outputs.debuginfo }}
           push-to-registry: true
+  # develop's chart (ADR-0056), published only once its commit's image is
+  # published and signed, so develop's OCIRepository
+  # (clusters/onprem/apps/sources.yaml) never offers a chart whose image is
+  # missing, nor one of a commit whose server tests, image checks or manifests
+  # failed: develop keeps its previous chart. Versioned
+  # <chart version>+<12 characters of the commit>, from which the chart takes
+  # its image's sha-<12> tag (charts/augustad _helpers.tpl), and pushed under
+  # the immutable tag <chart version>_<12> (Helm writes + as _). The cluster
+  # follows the tag develop, moved to it only once it is signed, and only from
+  # the branch's newest commit, as container-publish moves the image's. main's
+  # charts are never published: staging runs its release tag's from Git.
+  chart-publish:
+    needs: [container-publish, manifests]
+    if: |
+      !cancelled() && github.ref == 'refs/heads/develop' &&
+      needs.container-publish.result == 'success' &&
+      (needs.manifests.result == 'success' || needs.manifests.result == 'skipped')
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      # Signing the chart (Sigstore, through the workflow's OIDC token).
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+      # Docker's login, which cosign and oras read, and Helm's own.
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the chart
+        id: publish
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin <<< "$TOKEN"
+          version="$(yq '.version' charts/augustad/Chart.yaml)+${GITHUB_SHA::12}"
+          helm package charts/augustad --version "$version" --destination "$RUNNER_TEMP/chart"
+          helm push "$RUNNER_TEMP/chart/augustad-$version.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          echo "digest=$(oras resolve "ghcr.io/${{ github.repository_owner }}/charts/augustad:${version/+/_}")" >> "$GITHUB_OUTPUT"
+      - name: Sign the chart
+        uses: ./.github/actions/sign-image
+        with:
+          digest: ${{ steps.publish.outputs.digest }}
+          repository: charts/augustad
+          branches: develop
+      - name: Tag the chart develop
+        run: |
+          chart="ghcr.io/${{ github.repository_owner }}/charts/augustad@${{ steps.publish.outputs.digest }}"
+          head=$(git ls-remote --exit-code origin "$GITHUB_REF")
+          if [ "${head%%[[:space:]]*}" = "$GITHUB_SHA" ]; then
+            oras tag "$chart" develop
+          else
+            echo "develop has moved on to ${head%%[[:space:]]*}: leaving the chart's tag alone"
+          fi
