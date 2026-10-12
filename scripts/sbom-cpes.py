@@ -88,6 +88,16 @@ _NO_CPE = {
     "vcpkg-msbuild": "a build tool",
     "vcpkg-pkgconfig-get-modules": "a build tool",
     "vcpkg-tool-meson": "a build tool",
+    "vcpkg-get-python": "a build tool",
+    # The manifest's agent feature, which CI turns on for the Agents' Python
+    # module (tools/agent) and a release doesn't: pybind11 and the python3
+    # port it pulls in, with python3's own dependencies.
+    "pybind11": "the Agents' module's, linked into no executable shipped",
+    "python3": "pybind11's, linked into no executable shipped",
+    "expat": "python3's, linked into no executable shipped",
+    "libffi": "python3's, linked into no executable shipped",
+    "mpdecimal": "python3's, linked into no executable shipped",
+    "sqlite3": "python3's, linked into no executable shipped",
     # What the client's zip ships beside it (ADR-0058): the MSVC runtime, and
     # Falcor's own vcpkg ports, packman packages and fetched SDKs.
     "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
