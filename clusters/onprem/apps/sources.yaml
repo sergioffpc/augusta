@@ -43,7 +43,8 @@ spec:
 # signs it, keyless: the identity the cluster trusts augustad's image by
 # (clusters/onprem/policies/verify-image-signatures.yaml), narrowed to
 # develop. Rolling develop back is pinning tag to an older
-# <chart version>_<12> (docs/runbooks/flux-rollback.md).
+# <chart version>_<12> (docs/runbooks/flux-rollback.md). The GHCR package is
+# public, as the image's is: the cluster keeps no credentials for it.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:

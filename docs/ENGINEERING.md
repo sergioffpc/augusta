@@ -196,7 +196,7 @@ decisions already made in ARCHITECTURE.md:
 
 - **Image signatures:** every server image CI publishes on `develop` or `main`
   is also signed with cosign, keylessly, by digest: each architecture's image,
-  and on `main` the index of both (`.github/actions/sign-image`). The job
+  and on `main` the index of both (`.github/actions/sign-artifact`). The job
   verifies the signature at once against the identity the cluster admits, this
   repository's `ci.yml` on `develop` or `main`, and fails if it does not verify.
   In the cluster, Kyverno's `verify-image-signatures` policy checks the same

@@ -113,7 +113,8 @@ it as step 3 does, and it rolls out without waiting for CI.
     ```sh
     flux suspend helmrelease augustad-develop -n flux-system
     export KUBECONFIG="$(mktemp)"
-    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml"       | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
+    ssh <node> "sudo cat /etc/rancher/k3s/k3s.yaml" \
+      | sed 's#https://127.0.0.1:6443#https://<node-address>:6443#' > "${KUBECONFIG}"
     helm history augustad -n develop
     helm rollback augustad <good-revision> -n develop --wait --timeout 10m
     rm "${KUBECONFIG}"

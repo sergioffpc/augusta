@@ -83,7 +83,9 @@ restores them.
   with, see [Rotate the Pack Signing Key](pack-key-rotation.md)). The repository
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
-  the chart sets no `imagePullSecrets`, so the GHCR package must be public.
+  the chart sets no `imagePullSecrets`, so the GHCR package must be public. So
+  must `develop`'s chart, `ghcr.io/sergioffpc/charts/augustad`: its
+  `OCIRepository` sets no `secretRef`.
 - On the workstation: `kubectl`, the `flux` CLI
   ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
   day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository

@@ -35,8 +35,8 @@ skipped: a branch cut from `main` already has everything `main` has.
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
   or Git Bash on Windows.
-- `docker` with buildx, and `jq`, for step 8's wait on the image. GHCR serves
-  the image's manifest without a login.
+- `docker` with buildx, `jq` and `cosign`, for step 8's wait on the image. GHCR
+  serves the image and its signatures without a login.
 - The release packs, cooked and signed with the release key on the developer's
   machine ([Release signing](../ENGINEERING.md#cicd),
   [Rotate the Pack Signing Key](pack-key-rotation.md)), for the pre-merge check
@@ -136,15 +136,20 @@ skipped: a branch cut from `main` already has everything `main` has.
    moves `staging` to it: Flux verifies the tag's signature, then upgrades
    `staging` to the chart and image of the tagged commit. Wait first until
    `main`'s CI has published that commit's image as the index of both
-   architectures (its `container-index` job), so `staging` never runs a chart
-   whose image is missing (ADR-0056):
+   architectures and signed it (its `container-index` job), so `staging` never
+   runs a chart whose image is missing, or one the cluster's signature policy
+   would refuse (ADR-0056, ADR-0057):
 
     ```sh
     git fetch origin
     git log -1 origin/main          # the "Merge pull request #<number> from .../release/vX.Y.Z" commit
     image=ghcr.io/sergioffpc/augustad:sha-$(git rev-parse --short=12 origin/main)
+    both='[.manifests[]?.platform.architecture] | contains(["amd64", "arm64"])'
+    signer=https://github.com/sergioffpc/augusta/.github/workflows/ci.yml@refs/heads/main
     until docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' 2>/dev/null \
-        | jq --exit-status '[.manifests[]?.platform.architecture] | contains(["amd64", "arm64"])' >/dev/null; do
+        | jq --exit-status "$both" >/dev/null \
+      && cosign verify "$image" --certificate-identity "$signer" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1; do
       sleep 60
     done
     git tag -s vX.Y.Z -m vX.Y.Z origin/main
