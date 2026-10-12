@@ -108,6 +108,7 @@ TEST(IntentExecutorTest, WithNoIntentItHoldsNothing) {
   EXPECT_EQ(command.pitch, 0.0F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveHoldsItsDirectionSprintAndStanceEveryTick) {
   IntentExecutor executor;
   executor.SetMovement(Move{.direction = Vec3(1.0F, 0.0F, 0.0F), .sprint = true, .stance = Stance::kCrouching});
@@ -120,6 +121,7 @@ TEST(IntentExecutorTest, AMoveHoldsItsDirectionSprintAndStanceEveryTick) {
   }
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ALookHoldsItsYawAndPitchEveryTick) {
   IntentExecutor executor;
   executor.SetAim(Look{.yaw = 0.5F, .pitch = -0.25F});
@@ -131,6 +133,7 @@ TEST(IntentExecutorTest, ALookHoldsItsYawAndPitchEveryTick) {
   }
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, HoldFireHoldsTheTriggerEveryTick) {
   IntentExecutor executor;
   executor.SetTrigger(HoldFire{});
@@ -139,6 +142,7 @@ TEST(IntentExecutorTest, HoldFireHoldsTheTriggerEveryTick) {
   EXPECT_TRUE(Next(executor).fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AReloadIsSentOnOneTickAndThenEndsDone) {
   IntentExecutor executor;
   Endings endings;
@@ -194,6 +198,7 @@ TEST(IntentExecutorTest, EachChannelIsSetWithoutTouchingTheOthers) {
   EXPECT_TRUE(movement.seen.empty());
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, SettingAChannelAgainEndsItsIntentReplacedOnce) {
   IntentExecutor executor;
   Endings first;
@@ -205,6 +210,7 @@ TEST(IntentExecutorTest, SettingAChannelAgainEndsItsIntentReplacedOnce) {
   EXPECT_EQ(first.seen, std::vector{IntentEnding::kReplaced});
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ClearingAChannelEndsItsIntentReplacedAndStopsIt) {
   IntentExecutor executor;
   Endings endings;
@@ -222,6 +228,7 @@ TEST(IntentExecutorTest, ClearingAChannelEndsItsIntentReplacedAndStopsIt) {
   EXPECT_FALSE(command.fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AReloadThatIsDoneIsNotReplacedAfterwards) {
   IntentExecutor executor;
   Endings endings;
@@ -364,6 +371,7 @@ TEST(IntentExecutorTest, AnEndingMaySetAnotherIntent) {
   EXPECT_TRUE(Next(executor).fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveToHeadsStraightForItsPointWithItsSprintAndStance) {
   IntentExecutor executor;
   executor.SetMovement(MoveTo{.point = Vec3(10.0F, 0.0F, 0.0F), .sprint = true, .stance = Stance::kCrouching});
@@ -377,6 +385,7 @@ TEST(IntentExecutorTest, AMoveToHeadsStraightForItsPointWithItsSprintAndStance) 
   EXPECT_EQ(command.movement.desired_stance, Stance::kCrouching);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveToEndsArrivedAtItsPointAndStopsThere) {
   IntentExecutor executor;
   Endings endings;
@@ -394,6 +403,7 @@ TEST(IntentExecutorTest, AMoveToEndsArrivedAtItsPointAndStopsThere) {
   EXPECT_EQ(executor.NextCommand(InMatch(), At(own)).movement.direction, Vec3(0.0F));
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveToEndsBlockedOnceItsBodyMakesNoProgressForAboutASecond) {
   IntentExecutor executor;
   Endings endings;
@@ -412,6 +422,7 @@ TEST(IntentExecutorTest, AMoveToEndsBlockedOnceItsBodyMakesNoProgressForAboutASe
   EXPECT_EQ(executor.NextCommand(InMatch(), At(Vec3(0.0F))).movement.direction, Vec3(0.0F));
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveToThatKeepsGainingGroundIsNotBlocked) {
   IntentExecutor executor;
   Endings endings;
@@ -429,6 +440,7 @@ TEST(IntentExecutorTest, AMoveToThatKeepsGainingGroundIsNotBlocked) {
 
 // As a client aims from where it shows its own player: the newest state's is a
 // round trip behind, by however far the player has moved since.
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtLooksFromItsPredictedBodyAtTheTargetWhereTheNewestStatePlacesIt) {
   IntentExecutor executor;
   executor.SetAim(AimAt{.target = kTarget});
@@ -440,6 +452,7 @@ TEST(IntentExecutorTest, AnAimAtLooksFromItsPredictedBodyAtTheTargetWhereTheNewe
   EXPECT_NEAR(aim.z, 0.0F, 1e-3F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtFollowsATargetThatMovesBetweenTicks) {
   IntentExecutor executor;
   executor.SetAim(AimAt{.target = kTarget});
@@ -451,6 +464,7 @@ TEST(IntentExecutorTest, AnAimAtFollowsATargetThatMovesBetweenTicks) {
   EXPECT_NEAR(Aim(right).x, 1.0F, 1e-3F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtLooksUpAtATargetAboveAndDownAtOneBelow) {
   IntentExecutor above;
   IntentExecutor below;
@@ -461,6 +475,7 @@ TEST(IntentExecutorTest, AnAimAtLooksUpAtATargetAboveAndDownAtOneBelow) {
   EXPECT_LT(below.NextCommand(WithTargetAt(Vec3(0.0F, -10.0F, -10.0F)), At(Vec3(0.0F))).pitch, 0.0F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetDiesAndKeepsTheLastView) {
   IntentExecutor executor;
   Endings endings;
@@ -476,6 +491,7 @@ TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetDiesAndKeepsTheLastVi
 }
 
 // A player who disconnects leaves the Match, and its body is removed.
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetLeavesTheMatch) {
   IntentExecutor executor;
   Endings endings;
@@ -489,6 +505,7 @@ TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetLeavesTheMatch) {
 
 // A body is named for one Match: the next may give its name to someone else.
 // It ends as the Match does, not once this Agent is in the next.
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtEndsTargetGoneOnceItsMatchIsOver) {
   IntentExecutor executor;
   Endings endings;
@@ -500,6 +517,7 @@ TEST(IntentExecutorTest, AnAimAtEndsTargetGoneOnceItsMatchIsOver) {
   EXPECT_EQ(endings.seen, std::vector{IntentEnding::kTargetGone});
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetDiesAfterThisAgentHas) {
   IntentExecutor executor;
   Endings endings;
@@ -530,6 +548,7 @@ TEST(IntentExecutorTest, AnAimAtSetOutsideAMatchWaitsForOne) {
 }
 
 // Released between Bursts, the Recoil offset recovers as a person's would.
+// Requirements: US-23
 TEST(IntentExecutorTest, FireBurstsHoldsTheTriggerInBurstsAndReleasesItBetween) {
   IntentExecutor executor;
   executor.SetTrigger(FireBursts{});
@@ -550,6 +569,7 @@ TEST(IntentExecutorTest, FireBurstsHoldsTheTriggerInBurstsAndReleasesItBetween) 
   EXPECT_LT(ticks_firing, kTicks / 2);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, FireBurstsReloadsAnEmptyMagazineInsteadOfFiringAndKeepsOn) {
   IntentExecutor executor;
   Endings endings;
@@ -565,6 +585,7 @@ TEST(IntentExecutorTest, FireBurstsReloadsAnEmptyMagazineInsteadOfFiringAndKeeps
   EXPECT_TRUE(Next(executor).fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, FireBurstsDoesNotPressReloadAgainWhileAReloadIsUnderWay) {
   IntentExecutor executor;
   executor.SetTrigger(FireBursts{});
