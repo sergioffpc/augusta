@@ -23,7 +23,7 @@ that first met it, or the one it is planned for.
     - [M9 — Scenario Composition (S)](#m9--scenario-composition-s)
     - [M10 — Test & Performance Tooling (M)](#m10--test--performance-tooling-m)
     - [M11 — Codebase & Developer Experience (M)](#m11--codebase--developer-experience-m)
-- [v3 — Reproducible (planned, 3.0.0)](#v3--reproducible-planned-300)
+- [v3 — Reproducible (3.0.0, 2026-10-11)](#v3--reproducible-300-2026-10-11)
     - [M12 — Agents (M)](#m12--agents-m)
     - [M13 — Match Capture & Reenactment (M)](#m13--match-capture--reenactment-m)
     - [M14 — Replay (M)](#m14--replay-m)
@@ -236,7 +236,7 @@ its Match ends; the nightly runs the netcode tests and the benchmarks
 **Exercises:** ADR-0012, ADR-0021, ADR-0046 **Exit criteria:** CI checks every
 language's format and lint; the documentation site publishes from `develop`
 
-## v3 — Reproducible (planned, 3.0.0)
+## v3 — Reproducible (3.0.0, 2026-10-11)
 
 v3 makes what goes wrong under load reproducible. Players with no one at the
 keyboard come first: Agents are the load, and Match captures bring back what
