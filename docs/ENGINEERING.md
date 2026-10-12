@@ -161,8 +161,8 @@ decisions already made in ARCHITECTURE.md:
   folder at runtime, so the client cannot be linked statically, and it carries
   the MSVC runtime so it needs no redistributable. A release is published only
   once its unzipped client runs `augustac --version` and prints the tag's
-  version (`scripts/stage-client.sh`). That catches a DLL it imports that is
-  missing, not what Falcor loads once it starts.
+  version (`scripts/stage-client.sh`, ADR-0058). That catches a DLL it imports
+  that is missing, not what Falcor loads once it starts.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`

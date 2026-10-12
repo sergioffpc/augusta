@@ -607,6 +607,8 @@ not affect numbering.
   revisions; `staging` follows release tags
 - [ADR-0057](./adr/0057-cluster-hardening-baseline.md) — Cluster hardening
   baseline: CIS k3s, PSS `restricted`, Kyverno, no Secrets
+- [ADR-0058](./adr/0058-client-release-runtime-folder.md) — Client release: its
+  whole runtime folder, zipped
 
 ### Rendering & Audio
 
