@@ -460,6 +460,42 @@ df -h /
 The root filesystem, ext4, grows while mounted. Then reboot once, at a time that
 cuts no Match, to see the Node start with neither.
 
+### After a reboot
+
+What the bootstrap applies only from the next boot (the command line, the NIC's
+rings, no swap to resume from) shows only after one. After a reboot, the
+bootstrap's or Debian's:
+
+```sh
+ssh <node>
+swapon --show; sudo lvs; df -h /
+cat /proc/cmdline; cat /sys/kernel/mm/transparent_hugepage/enabled
+for f in /etc/sysctl.d/{80,81,90}-*.conf; do
+  sudo sysctl $(grep -E '^[a-z][^=*]*=' "$f" | cut -d = -f 1)
+done
+sudo sysctl -a 2>/dev/null | grep -E '\.(send|accept)_redirects ='
+lsmod | grep tcp_bbr
+for i in eno1 eno2; do udevadm info /sys/class/net/$i | grep -E 'ID_NET_DRIVER|ID_NET_LINK_FILE='; done
+sudo journalctl -b -u systemd-udevd | grep -iE 'ring|link_config'
+systemctl is-active irqbalance k3s; systemctl --failed
+sudo k3s kubectl get nodes
+sudo k3s kubectl get pods -A -l app.kubernetes.io/name=augustad
+```
+
+- No swap is active and no swap volume is left; `/` holds the volume group's
+  whole space.
+- The command line carries `transparent_hugepage=madvise`, and THP reports
+  `[madvise]`.
+- Each key in the hardening and tuning files reads back its value, and every
+  interface's redirects are `0`, `eno1`, `cni0` and the pods' veths included.
+- `tcp_bbr` is loaded.
+- The ixgbe ports keep their names (`eno1`, `eno2`) and take
+  `10-augusta-ixgbe.link`; udev logged no error sizing their rings to 4096. The
+  Node has no `ethtool` to read the rings back.
+- `irqbalance` and `k3s` are active, no unit has failed, and the Node is
+  `Ready`.
+- Every server pod is `Running`; then [Verification](#verification).
+
 ## Cluster access
 
 Two identities reach the API server, from the maintainer's addresses only
