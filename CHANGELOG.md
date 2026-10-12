@@ -2,6 +2,45 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 3.1.0 - 2026-10-12
+
+### Features
+
+- **cluster:** run augustad in a user namespace under its own seccomp profile
+- **cluster:** commit augustad's seccomp profile recorded on x86-64
+- **policies:** enforce every Kyverno policy, failing closed
+- **cluster:** roll out a revision only once its image is published
+- **cluster:** enforce restricted and default-deny in staging
+- **pack:** keep each Environment's packs in its own tree and key
+- **release:** ship the client as a zip of its whole runtime folder
+- **release:** name Falcor's dependencies and the MSVC runtime in the client's SBOM
+
+### Bug Fixes
+
+- **cluster:** check every image change under the seccomp profile
+- **cluster:** play one Agent's Match at a time in the seccomp check
+- **cluster:** keep recording the seccomp profile when a run logs nothing
+- **ci:** publish develop's chart only once every check passes
+- **pack:** address review of the per-Environment pack trees
+- **release:** check the client runs, and keep it out of a plain install
+- **release:** list only what the client ships, with valid SPDX IDs
+
+### Documentation
+
+- **requirements:** state the Node's kernel hardening in NFR-15 and M15
+- **runbook:** check the Node after a reboot
+- **runbook:** isolate each admission probe's refusal
+- mark US-21, US-23 and NFR-09 as shipped in v3
+- **adr:** record the client's release as its whole runtime folder
+
+### Tests
+
+- **agent:** name US-23 on the tests that check it
+- **agent:** name US-23 on the rest of the Intent tests that check it
+
+### Build
+
+- **bootstrap:** install kubectl, helm and flux, and put Git's bash on PATH
 ## 3.0.0 - 2026-10-11
 
 ### Features
