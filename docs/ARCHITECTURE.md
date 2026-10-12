@@ -470,9 +470,9 @@ How each piece reaches the node or the player:
   nothing that runs. Each environment signs with its own key, `develop`'s or the
   release key, `staging`'s. A pull request then sets that `packVersion` in the
   environment's `HelmRelease`, and Flux deploys it like any other change.
-- **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.exe`
-  and its `.pdb` to the GitHub Release (ADR-0055;
-  [cut-release](runbooks/cut-release.md)).
+- **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.zip`,
+  the client's whole runtime folder, and its `augustac.exe`'s `.pdb` to the
+  GitHub Release (ADR-0055; [cut-release](runbooks/cut-release.md)).
 - **Client packs:** no channel is defined. A client pack is copied by hand from
   the cook that made its server pack, beside the `signing.pub` it is signed with
   ([pack-key-rotation](runbooks/pack-key-rotation.md)).
@@ -607,6 +607,8 @@ not affect numbering.
   revisions; `staging` follows release tags
 - [ADR-0057](./adr/0057-cluster-hardening-baseline.md) — Cluster hardening
   baseline: CIS k3s, PSS `restricted`, Kyverno, no Secrets
+- [ADR-0058](./adr/0058-client-release-runtime-folder.md) — Client release: its
+  whole runtime folder, zipped
 
 ### Rendering & Audio
 
