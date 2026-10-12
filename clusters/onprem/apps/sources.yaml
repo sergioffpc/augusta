@@ -18,7 +18,8 @@ spec:
   url: https://github.com/sergioffpc/augusta
 ---
 # develop's HEAD is signed by the maintainer, or by GitHub's web-flow key for a
-# pull request merged on GitHub.
+# pull request merged on GitHub: develop's values (develop.yaml) come from it,
+# its chart does not.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -33,3 +34,33 @@ spec:
     secretRef:
       name: trusted-signers-develop
   url: https://github.com/sergioffpc/augusta
+---
+# develop's chart: the one CI publishes for develop's newest commit, once that
+# commit's image is published and signed (ci.yml, chart-publish), so develop
+# never rolls out a revision whose image is missing, nor one whose CI failed.
+# It is versioned <chart version>+<12 characters of the commit>, from which
+# the chart takes the image's sha-<12> tag. Verified as only CI on develop
+# signs it, keyless: the identity the cluster trusts augustad's image by
+# (clusters/onprem/policies/verify-image-signatures.yaml), narrowed to
+# develop. Rolling develop back is pinning tag to an older
+# <chart version>_<12> (docs/runbooks/flux-rollback.md). The GHCR package is
+# public, as the image's is: the cluster keeps no credentials for it.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: augustad-develop
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: oci://ghcr.io/sergioffpc/charts/augustad
+  ref:
+    tag: develop
+  # The chart's own layer, as a HelmRelease's chartRef takes it.
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  verify:
+    provider: cosign
+    matchOIDCIdentity:
+      - issuer: ^https://token\.actions\.githubusercontent\.com$
+        subject: ^https://github\.com/sergioffpc/augusta/\.github/workflows/ci\.yml@refs/heads/develop$

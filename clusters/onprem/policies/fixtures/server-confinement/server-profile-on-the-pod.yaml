@@ -1,0 +1,16 @@
+# A bare server pod, by digest, naming augustad's profile for the whole pod
+# rather than its container, where a debug container would inherit it.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: augustad
+  namespace: develop
+spec:
+  hostUsers: false
+  securityContext:
+    seccompProfile:
+      type: Localhost
+      localhostProfile: augusta/augustad.json
+  containers:
+    - name: augustad
+      image: ghcr.io/sergioffpc/augustad@sha256:0000000000000000000000000000000000000000000000000000000000000000

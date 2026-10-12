@@ -23,7 +23,7 @@ that first met it, or the one it is planned for.
     - [M9 — Scenario Composition (S)](#m9--scenario-composition-s)
     - [M10 — Test & Performance Tooling (M)](#m10--test--performance-tooling-m)
     - [M11 — Codebase & Developer Experience (M)](#m11--codebase--developer-experience-m)
-- [v3 — Reproducible (planned, 3.0.0)](#v3--reproducible-planned-300)
+- [v3 — Reproducible (3.0.0, 2026-10-11)](#v3--reproducible-300-2026-10-11)
     - [M12 — Agents (M)](#m12--agents-m)
     - [M13 — Match Capture & Reenactment (M)](#m13--match-capture--reenactment-m)
     - [M14 — Replay (M)](#m14--replay-m)
@@ -236,7 +236,7 @@ its Match ends; the nightly runs the netcode tests and the benchmarks
 **Exercises:** ADR-0012, ADR-0021, ADR-0046 **Exit criteria:** CI checks every
 language's format and lint; the documentation site publishes from `develop`
 
-## v3 — Reproducible (planned, 3.0.0)
+## v3 — Reproducible (3.0.0, 2026-10-11)
 
 v3 makes what goes wrong under load reproducible. Players with no one at the
 keyboard come first: Agents are the load, and Match captures bring back what
@@ -282,6 +282,9 @@ from any player's view, its Deaths and Match end as captured
 - k3s's configuration in Git, measured against the CIS k3s profile
 - The Node's OS: nftables firewall, key-only SSH, unattended security updates,
   auditd
+- The Node's kernel: hardened parameters, tuning for UDP servers (socket
+  buffers, bounded writeback, NIC rings, huge pages on request only), and no
+  swap
 - Pod Security levels per namespace; packs and captures on `local`
   PersistentVolumes; `augustad` in a user namespace under its own seccomp
   profile
@@ -344,6 +347,9 @@ criteria:** 4 servers of one scenario run 8-player Matches of Agents at once at
 - Production (`main`) deployment target — explicitly undecided for now (see
   ENGINEERING.md, Deployment & CD)
 - Agones, if fleet-scale dynamic server allocation is ever needed
+- NUMA-aware Servers (automatic NUMA balancing off, CPU manager and topology
+  manager pinning each to one socket), if an Agent load shows the Node's
+  balancing in the tick's late share or p99
 - Remote/public access to non-production environments (VPN or port-forwarding) —
   LAN-only for now
 - Client-side metrics from the real client, and an alert receiver (see ADR-0049)

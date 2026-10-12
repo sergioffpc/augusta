@@ -7,6 +7,7 @@
 # key only, unattended security updates, an audit trail), the kernel's
 # hardening and tuning (no swap, the NIC's rings), k3s at the cluster's
 # release with its hardened configuration (clusters/onprem/node/, ADR-0057),
+# the servers' seccomp profile,
 # and Flux from the repository's own manifests, which then installs everything
 # else (clusters/onprem/). Each step is skipped when the node already has it,
 # so a re-run finishes an interrupted one; the node's configuration is written
@@ -66,6 +67,11 @@ readonly SYSCTL_FILES=(80-hardening.conf 81-tuning.conf 90-kubelet.conf)
 readonly OS_FILES=(nftables.conf nftables.service.conf sshd.conf
   unattended-upgrades.conf apt-daily-upgrade.timer.conf audit.rules
   10-augusta-ixgbe.link grub.cfg)
+# The servers' seccomp profile, from the same place, where the kubelet reads a
+# pod's Localhost profile: under its root directory, k3s's /var/lib/kubelet,
+# at the localhostProfile the chart names (ADR-0057).
+readonly SECCOMP_FILE=augustad-seccomp.json
+readonly SECCOMP_PROFILE=/var/lib/kubelet/seccomp/augusta/augustad.json
 # The publish key's forced command, from the same place.
 readonly RECEIVER_FILE=augusta-publish-receive.sh
 readonly RECEIVER=/usr/local/bin/augusta-publish-receive
@@ -79,6 +85,9 @@ readonly SERVER_USER=augusta SERVER_ID=65532
 # nothing but publish. Not the servers' user, nor in their group, and no sudo.
 # Its home and authorized_keys are root's, so it cannot add a key of its own.
 readonly PUBLISH_USER=augusta-publish
+# The Environments the node serves, each from its own tree of the asset-pack
+# volume, as the publish key's forced command takes them (RECEIVER_FILE).
+readonly ENVIRONMENTS=(develop staging)
 readonly PUBLISH_HOME=/var/lib/augusta-publish
 readonly VOLUME=/srv/augusta
 readonly CAPTURE_IMAGE="${VOLUME}/captures.img" CAPTURE_SIZE=4GiB
@@ -185,12 +194,13 @@ write_publish_key() {
   fi
 }
 
-# Creates the asset-pack volume, fills it from an archive if given one, and
-# gives everything in it its owner and modes.
+# Creates the asset-pack volume and each Environment's tree in it, fills it
+# from an archive if given one, and gives everything in it its owner and modes.
 # Arguments:
 #   The archive of asset-packs/, or nothing.
 create_pack_volume() {
-  local packs="${VOLUME}/asset-packs"
+  local packs="${VOLUME}/asset-packs" environment
+  local -a trees=()
   as_root install -d -o root -g root -m 0755 "${VOLUME}"
   as_root install -d -o "${PUBLISH_USER}" -g "${SERVER_USER}" -m 2750 \
     "${packs}"
@@ -201,15 +211,23 @@ create_pack_volume() {
       as_root tar -C "${VOLUME}" -xzf "$1" asset-packs
     fi
   fi
-  # The publish user's, read by the servers' group alone: the scenarios'
-  # folders take new versions, and inherit the group (setgid); a version's
-  # folder and files are read-only, as publishing leaves them. Its staging
-  # folders (.<version>.partial) keep their modes.
+  for environment in "${ENVIRONMENTS[@]}"; do
+    trees+=("${packs}/${environment}")
+  done
+  as_root install -d -o "${PUBLISH_USER}" -g "${SERVER_USER}" -m 2750 \
+    "${trees[@]}"
+  # The publish user's, read by the servers' group alone: an Environment's
+  # tree and its scenarios' folders take new versions, and inherit the group
+  # (setgid); a version's folder and files are read-only, as publishing leaves
+  # them. Its staging folders (.<version>.partial) keep their modes, as does
+  # anything outside the trees, which an archive from before them may hold
+  # (k3s-node-recovery.md).
   as_root chown -R "${PUBLISH_USER}:${SERVER_USER}" "${packs}"
-  as_root find "${packs}" -mindepth 1 -maxdepth 1 -type d -exec chmod 2750 {} +
-  as_root find "${packs}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
+  as_root find "${trees[@]}" -maxdepth 1 -type d ! -name '.*' \
+    -exec chmod 2750 {} +
+  as_root find "${trees[@]}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
     -exec chmod 0550 {} +
-  as_root find "${packs}" -mindepth 3 -maxdepth 3 -type f ! -path '*/.*' \
+  as_root find "${trees[@]}" -mindepth 3 -maxdepth 3 -type f ! -path '*/.*' \
     -exec chmod 0440 {} +
 }
 
@@ -242,7 +260,7 @@ download_node_config() {
   # shellcheck disable=SC2064 # DOWNLOADS is set once, here
   trap "rm -rf -- '${DOWNLOADS}'" EXIT
   for file in "${K3S_CONFIG_FILES[@]}" "${SYSCTL_FILES[@]}" "${OS_FILES[@]}" \
-    "${RECEIVER_FILE}"; do
+    "${RECEIVER_FILE}" "${SECCOMP_FILE}"; do
     curl -fsSL "${NODE_CONFIG}/${file}" -o "${DOWNLOADS}/${file}"
   done
 }
@@ -509,6 +527,19 @@ configure_k3s() {
   fi
 }
 
+# Installs the servers' seccomp profile, before k3s starts a server that needs
+# it. A server already running keeps the profile it started with until it
+# restarts.
+install_seccomp_profile() {
+  if differs "${DOWNLOADS}/${SECCOMP_FILE}" "${SECCOMP_PROFILE}" \
+    && as_root test -e "${SECCOMP_PROFILE}"; then
+    log "the servers' seccomp profile changed; a running server takes it" \
+      "when it restarts. See docs/runbooks/k3s-node-recovery.md, The" \
+      "server's seccomp profile."
+  fi
+  install_node_file "${SECCOMP_FILE}" "${SECCOMP_PROFILE}" 0644
+}
+
 install_k3s() {
   if command -v k3s >/dev/null 2>&1; then
     local installed
@@ -599,6 +630,7 @@ main() {
   configure_huge_pages
   configure_nic
   configure_k3s
+  install_seccomp_profile
   install_k3s
   install_flux
 

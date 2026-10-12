@@ -61,8 +61,10 @@ install_toolchain() {
 
   # The hooks' and CI's format job's formatters and linters that Ubuntu doesn't
   # package at CI's versions: uv (for yamllint and the rest uv runs), yamlfmt,
-  # StyLua and taplo. uv is its latest release: what it runs is pinned.
-  local arch yamlfmt_arch yamlfmt_sha stylua_arch stylua_sha taplo_arch taplo_sha
+  # StyLua and taplo. uv is its latest release: what it runs is pinned. With
+  # them, the flux CLI at the cluster's Flux.
+  local arch yamlfmt_arch yamlfmt_sha stylua_arch stylua_sha taplo_arch \
+    taplo_sha flux_sha
   arch="$(dpkg --print-architecture)"
   case "${arch}" in
     amd64)
@@ -72,6 +74,7 @@ install_toolchain() {
       stylua_sha=bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
       taplo_arch=x86_64
       taplo_sha=8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
+      flux_sha=b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473
       ;;
     arm64)
       yamlfmt_arch=arm64
@@ -80,6 +83,7 @@ install_toolchain() {
       stylua_sha=0ef2ebf0b7e5a652b65c4cb96c6d9ffb3981a98547de3c764465bbf54a8d761a
       taplo_arch=aarch64
       taplo_sha=033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3
+      flux_sha=f3e159af616ec0b9bd0a405c2185cf09d06b74652c1de3c7f377e8166826651a
       ;;
     *)
       echo "bootstrap: unsupported architecture: ${arch}" >&2
@@ -101,11 +105,15 @@ install_toolchain() {
   download_verified \
     "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-${taplo_arch}.gz" \
     "${taplo_sha}" "${tmp}/taplo.gz"
+  download_verified \
+    "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_${arch}.tar.gz" \
+    "${flux_sha}" "${tmp}/flux.tar.gz"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt
   unzip -q "${tmp}/stylua.zip" -d "${tmp}"
   gunzip "${tmp}/taplo.gz"
+  tar -xzf "${tmp}/flux.tar.gz" -C "${tmp}" flux
   as_root install -m 0755 "${tmp}/yamlfmt" "${tmp}/stylua" "${tmp}/taplo" \
-    /usr/local/bin
+    "${tmp}/flux" /usr/local/bin
   rm -rf "${tmp}"
 
   # kubectl and helm, for the server's k3s cluster and its chart

@@ -48,6 +48,13 @@
     "**/charts/*/templates/**": "helm"
   },
 
+  "vs-kubernetes": {
+    "vs-kubernetes.kubeconfig": "${userHome}/.kube/augusta.yaml"
+  },
+  "terminal.integrated.env.windows": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
+  "terminal.integrated.env.linux": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
+  "terminal.integrated.env.osx": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
+
   "git.detectSubmodules": false,
   "git.autofetch": true,
   "git.inputValidation": true,

@@ -20,17 +20,17 @@ all, and adding a scenario is one entry, not one more release.
 
 **Packs are published, then deployed through Git.** A server pack is not in the
 image or the chart: `augusta-publish` (in `tools/pack`) puts it on the node's
-shared `hostPath` volume, at `<scenario>/<version>/`, beside the public key it
-is signed with, after checking both packs of its cook verify against that key
-and that the server pack names that client pack (ADR-0031). The version is the
-first 12 hex characters of the server pack's BLAKE3 hash, so a folder is never
-written twice: a new cook is a new folder. Publishing changes nothing that runs;
-a server takes the pack once its environment's `HelmRelease` names that version,
-merged like any other change, and each server mounts only its own version's
-folder. A rollback reverts that commit, and the older folder is still there to
-go back to. Whoever holds the signing key cooks, publishes and opens that pull
-request; nothing in CI or the cluster can, since neither has the key or the
-node's shell.
+shared `hostPath` volume, at `<environment>/<scenario>/<version>/`, beside the
+public key it is signed with, after checking both packs of its cook verify
+against that key and that the server pack names that client pack (ADR-0031). The
+version is the first 12 hex characters of the server pack's BLAKE3 hash, so a
+folder is never written twice: a new cook is a new folder. Publishing changes
+nothing that runs; a server takes the pack once its environment's `HelmRelease`
+names that version, merged like any other change, and each server mounts only
+its own version's folder. A rollback reverts that commit, and the older folder
+is still there to go back to. Whoever holds the signing key cooks, publishes and
+opens that pull request; nothing in CI or the cluster can, since neither has the
+key or the node's shell.
 
 **A rollout may cut a match in progress.** An upgrade replaces a server's pod
 the Deployment's default way: the new pod starts, and the old one gets SIGTERM
@@ -122,10 +122,10 @@ simply not deployed to k3s at all.
   image to GHCR, which Flux reads from for `main`/ `develop`.
 - Every push to `main`/`develop` publishes an image tagged
   `sha-<first 12 characters of the commit>`, and the chart runs the tag of its
-  own commit (Flux versions a Git-sourced chart
-  `<version>+<those 12 characters>`). A tag is never reused, so a pod never runs
-  a stale image, and Flux's upgrade waits for CI to finish pushing it. No
-  image-automation controller is needed.
+  own commit (the chart is versioned `<version>+<those 12 characters>`). A tag
+  is never reused, so a pod never runs a stale image, and an Environment rolls
+  out a commit only once CI has pushed its image (ADR-0056). No image-automation
+  controller is needed.
 - Without a readiness probe, the new pod is Ready as soon as its container runs,
   so Helm's and Flux's upgrade wait no longer catches a server that fails to
   start or crash-loops after starting: the upgrade succeeds, and the failure

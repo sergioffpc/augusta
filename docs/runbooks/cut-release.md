@@ -35,6 +35,8 @@ skipped: a branch cut from `main` already has everything `main` has.
   [`scripts/changelog.sh`](../../scripts/changelog.sh), which runs git-cliff
   through `uvx` with [`cliff.toml`](../../cliff.toml): WSL, the dev container,
   or Git Bash on Windows.
+- `docker` with buildx, `jq` and `cosign`, for step 8's wait on the image. GHCR
+  serves the image and its signatures without a login.
 - The release packs, cooked and signed with the release key on the developer's
   machine ([Release signing](../ENGINEERING.md#cicd),
   [Rotate the Pack Signing Key](pack-key-rotation.md)), for the pre-merge check
@@ -132,14 +134,33 @@ skipped: a branch cut from `main` already has everything `main` has.
 8. Tag `main`'s merge commit and push the tag, which starts the release workflow
    ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)) and
    moves `staging` to it: Flux verifies the tag's signature, then upgrades
-   `staging` to the chart and image of the tagged commit:
+   `staging` to the chart and image of the tagged commit. Wait first until
+   `main`'s CI has published that commit's image as the index of both
+   architectures and signed it (its `container-index` job), so `staging` never
+   runs a chart whose image is missing, or one the cluster's signature policy
+   would refuse (ADR-0056, ADR-0057):
 
     ```sh
     git fetch origin
     git log -1 origin/main          # the "Merge pull request #<number> from .../release/vX.Y.Z" commit
+    image=ghcr.io/sergioffpc/augustad:sha-$(git rev-parse --short=12 origin/main)
+    both='[.manifests[]?.platform.architecture] | contains(["amd64", "arm64"])'
+    signer=https://github.com/sergioffpc/augusta/.github/workflows/ci.yml@refs/heads/main
+    until docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' 2>/dev/null \
+        | jq --exit-status "$both" >/dev/null \
+      && cosign verify "$image" --certificate-identity "$signer" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1; do
+      sleep 60
+    done
     git tag -s vX.Y.Z -m vX.Y.Z origin/main
     git push origin vX.Y.Z
     ```
+
+    If `main`'s CI fails instead
+    (`gh run list --workflow ci.yml --branch main`), no image is published and
+    nothing is tagged: fix it on a `hotfix/*` branch off `main` as
+    [Rollback / abort](#rollback--abort) describes, and tag its merge commit
+    once its image is published.
 
 9. Watch the workflow. Its `client`, `server` and `tools` jobs rebuild and test
    the Release binaries; `publish` creates the GitHub Release only if all three
@@ -177,7 +198,7 @@ skipped: a branch cut from `main` already has everything `main` has.
 ```sh
 gh release view vX.Y.Z
 gh release download vX.Y.Z --dir release-vX.Y.Z
-gh attestation verify release-vX.Y.Z/augustac-windows-x64.exe --repo sergioffpc/augusta
+gh attestation verify release-vX.Y.Z/augustac-windows-x64.zip --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-x64 --repo sergioffpc/augusta
 gh attestation verify release-vX.Y.Z/augustad-linux-arm64 --repo sergioffpc/augusta
 gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> --repo sergioffpc/augusta
@@ -187,9 +208,11 @@ flux get sources git augusta-release -n flux-system   # vX.Y.Z, verified
 flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 ```
 
-- The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.exe`,
+- The GitHub Release `vX.Y.Z` exists with `augustac-windows-x64.zip`,
   `augustad-linux-x64`, `augustad-linux-arm64` and their `.spdx.json` SBOMs, and
-  its notes are the changelog section.
+  its notes are the changelog section. The zip's `augustac.exe --version` prints
+  `augustac X.Y.Z` from an empty folder: the release workflow checks it before
+  it publishes.
 - `sha-<12>` is an index with a `linux/amd64` and a `linux/arm64` manifest:
   `main`'s `container-index` job ran.
 - The attestations verify. `<12>` is the first 12 characters of the tagged merge
@@ -209,12 +232,14 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
   exists (`publish` needs every job). Fix on a `hotfix/*` branch off `main`
   through a pull request to `main`, re-cutting the changelog there
   (`scripts/changelog.sh vX.Y.Z`) if the fix belongs in the notes, then move the
-  tag to the new merge commit:
+  tag to the new merge commit once its image is published, waiting as step 8
+  does:
 
     ```sh
     git tag -d vX.Y.Z
     git push origin :refs/tags/vX.Y.Z
     git fetch origin
+    # step 8's wait for ghcr.io/sergioffpc/augustad:sha-<12 of origin/main>
     git tag -s vX.Y.Z -m vX.Y.Z origin/main
     git push origin vX.Y.Z
     ```

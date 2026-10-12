@@ -1,0 +1,37 @@
+# staging with its chart's NetworkPolicy, for the servers alone, and no
+# default-deny of its own: any other pod in it reaches anywhere.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: augustad
+  namespace: staging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: augustad
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: game
+          protocol: UDP
+  egress: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: augustad-firebase
+  namespace: staging
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: augustad
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: augustad
+    spec:
+      containers:
+        - name: augustad
+          image: ghcr.io/sergioffpc/augustad:3.0.0

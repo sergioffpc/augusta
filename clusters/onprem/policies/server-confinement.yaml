@@ -1,0 +1,49 @@
+# A Server runs in a user namespace of its own, under augustad's own seccomp
+# profile (ADR-0057), so a compromised augustad is no one on the Node and makes
+# no syscall the server does not: a pod running the augustad image without
+# either is refused. Set on the container, not only the pod: the pod's profile
+# would also be a `kubectl debug` container's, which a shell's syscalls would
+# kill.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: server-confinement
+spec:
+  # Refused, and refused too while Kyverno cannot answer (ADR-0057).
+  validationActions:
+    - Deny
+  failurePolicy: Fail
+  # Kyverno extends a policy on pods to the pod templates of Deployments,
+  # DaemonSets, StatefulSets, Jobs and CronJobs, which CI's rendered manifests
+  # hold rather than pods.
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  # staging is exempt until it runs a release whose chart confines its
+  # servers, the first tagged after #535: CI checks staging with the latest
+  # release's chart, as Flux runs it. staging then leaves this condition.
+  matchConditions:
+    - name: outside-staging
+      expression: request.namespace != "staging"
+  variables:
+    - name: servers
+      expression: |-
+        object.spec.containers.filter(container,
+          container.image.startsWith("ghcr.io/sergioffpc/augustad:") ||
+          container.image.startsWith("ghcr.io/sergioffpc/augustad@"))
+  validations:
+    - expression: |-
+        variables.servers.size() == 0 ||
+        object.spec.?hostUsers.orValue(true) == false
+      message: "a Server must run in a user namespace of its own: hostUsers: false (ADR-0057)"
+    - expression: |-
+        variables.servers.all(container,
+          container.?securityContext.?seccompProfile.?type.orValue("") == "Localhost" &&
+          container.?securityContext.?seccompProfile.?localhostProfile.orValue("") == "augusta/augustad.json")
+      messageExpression: |-
+        "a Server's container must run under augustad's own seccomp profile," +
+        " type Localhost, localhostProfile augusta/augustad.json (ADR-0057): " +
+        variables.servers.map(container, container.name).join(", ")

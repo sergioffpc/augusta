@@ -1,6 +1,6 @@
 # The Environments' namespaces, with their Pod Security labels (ADR-0057): not
 # ones Flux creates for their HelmReleases. The chart's pods meet restricted
-# (non-root, no privilege escalation, every capability dropped, the runtime's
+# (non-root, no privilege escalation, every capability dropped, augustad's own
 # seccomp profile), and mount their packs and captures from local
 # PersistentVolumes rather than hostPath volumes, which restricted forbids.
 apiVersion: v1
@@ -26,22 +26,24 @@ spec:
     - Ingress
     - Egress
 ---
-# staging runs the latest release's chart (ADR-0056), which mounts its packs as
-# hostPath volumes until the first release after #530 is tagged: until then it
-# is only audited and warned against restricted. Once that release runs in
-# staging, enforce restricted here and drop staging from the host-path-volumes
-# policy (clusters/onprem/policies).
-#
-# Nor has it a default-deny NetworkPolicy yet: the release it runs ships no
-# NetworkPolicy to let its servers' traffic in, so one here would cut LAN
-# clients and Prometheus off from them. Once the first release after #536 runs
-# in staging, give it develop's default-deny and add staging to the
-# default-deny-network policy.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: staging
   labels:
-    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
+---
+# Nothing reaches in or out of the namespace but what a NetworkPolicy allows by
+# name (ADR-0057), as in develop.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: staging
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

@@ -109,7 +109,10 @@ decisions already made in ARCHITECTURE.md:
        arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
        its own debug info and attestations, and `container-index` then makes
        `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
-       architectures (NFR-04)
+       architectures (NFR-04). On a push to `develop` alone, `chart-publish`
+       then pushes the chart, versioned `<chart version>+<12>`, to
+       `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
+       what the `develop` environment runs (ADR-0056)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
@@ -152,7 +155,14 @@ decisions already made in ARCHITECTURE.md:
   Release-config client/server binaries, runs the tests and the asset pipeline
   check against them, and attaches them to a GitHub Release, whose notes are
   generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic.
+  cutting a release is a deliberate tag rather than automatic. The client ships
+  as `augustac-windows-x64.zip`, its whole runtime folder, never as a lone
+  `.exe`: Falcor is a DLL that reads its shaders, data and plugins from its
+  folder at runtime, so the client cannot be linked statically, and it carries
+  the MSVC runtime so it needs no redistributable. A release is published only
+  once its unzipped client runs `augustac --version` and prints the tag's
+  version (`scripts/stage-client.sh`, ADR-0058). That catches a DLL it imports
+  that is missing, not what Falcor loads once it starts.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -160,12 +170,15 @@ decisions already made in ARCHITECTURE.md:
   bootstraps install.
 - **Release signing:** release packs are signed by the developer, on the
   developer's machine, never by a workflow. The release Ed25519 keypair is
-  generated offline with `augusta-keygen`. It is distinct from the committed
-  test key and from any development key. Its private key is kept off the repo
-  and out of every CI secret. The client and server packs of a release come from
-  one cook run signed with it, since Join refuses a client pack not cooked with
-  the server pack (ADR-0019, ADR-0038). Only the public key, `signing.pub`,
-  travels with the packs, named by each executable's config (ADR-0034).
+  generated offline with `augusta-keygen`, as `staging.key`/`staging.pub`: it is
+  `staging`'s key, as `develop.key`/`develop.pub` is `develop`'s, and a
+  `staging` server refuses a pack that does not verify against the `staging.pub`
+  published beside it. It is distinct from the committed test key and from any
+  development key. Its private key is kept off the repo and out of every CI
+  secret. The client and server packs of a release come from one cook run signed
+  with it, since Join refuses a client pack not cooked with the server pack
+  (ADR-0019, ADR-0038). Only the public key, `signing.pub`, travels with the
+  packs, named by each executable's config (ADR-0034).
 - **Provenance and SBOMs:** what packs get from their signature, the release
   executables and every published server image get from GitHub artifact
   attestations, signed keylessly (Sigstore) by the workflow that built them:
@@ -178,11 +191,12 @@ decisions already made in ARCHITECTURE.md:
   alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
   was built with, taken from vcpkg's own per-port SPDX documents
   (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
-  nothing in a statically linked C++ binary. The image's SBOM is syft's, of its
-  Ubuntu packages. Verified with:
+  nothing in a statically linked C++ binary. The client's also lists what its
+  zip ships beside it: Falcor's own dependencies and the MSVC runtime
+  (ADR-0058). The image's SBOM is syft's, of its Ubuntu packages. Verified with:
 
     ```sh
-    gh attestation verify augustac-windows-x64.exe --repo sergioffpc/augusta
+    gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta
     gh attestation verify augustad-linux-x64 --repo sergioffpc/augusta
     gh attestation verify oci://ghcr.io/sergioffpc/augustad:sha-<12> \
       --repo sergioffpc/augusta
@@ -193,7 +207,7 @@ decisions already made in ARCHITECTURE.md:
 
 - **Image signatures:** every server image CI publishes on `develop` or `main`
   is also signed with cosign, keylessly, by digest: each architecture's image,
-  and on `main` the index of both (`.github/actions/sign-image`). The job
+  and on `main` the index of both (`.github/actions/sign-artifact`). The job
   verifies the signature at once against the identity the cluster admits, this
   repository's `ci.yml` on `develop` or `main`, and fails if it does not verify.
   In the cluster, Kyverno's `verify-image-signatures` policy checks the same
@@ -267,34 +281,40 @@ no self-hosted GitHub Actions runner in this pipeline).
   shared node: `develop` 30700-30799, `staging` 30800-30899. The chart refuses a
   server without a node port in its range.
 - **CD mechanism:** pull-based via Flux, running inside the k3s cluster and
-  reconciling each environment's `HelmRelease` from Git — nothing outside the
-  cluster needs inbound access to the LAN, and no external PR can trigger
-  execution on the cluster host, since there's no CI runner in this path at all
-  (see ADR-0026).
+  reconciling each environment's `HelmRelease` from Git (and `develop`'s chart
+  from what CI signed on GHCR) — nothing outside the cluster needs inbound
+  access to the LAN, and no external PR can trigger execution on the cluster
+  host, since there's no CI runner in this path at all (see ADR-0026).
 - **Signed revisions only:** Flux verifies every revision before reconciling it
   (ADR-0056), against public keys kept in Git
   ([`trusted-signers.yaml`](../clusters/onprem/flux-system/trusted-signers.yaml)).
   `develop`'s HEAD, which the `flux-system` source tracks too, must be signed by
   one of the maintainer's SSH signing keys or GitHub's `web-flow` key (a pull
-  request merged on GitHub). `staging` runs the newest `vX.Y.Z` tag by semver,
-  verified against the maintainer's keys alone: a merge to `main` changes
-  nothing that runs, and `staging` moves when the release's signed tag is pushed
+  request merged on GitHub). `develop` runs the chart CI published and signed,
+  keyless, for the branch's newest commit once its image was published, with the
+  values of that HEAD; a commit whose CI fails leaves it on the previous chart.
+  `staging` runs the newest `vX.Y.Z` tag by semver, verified against the
+  maintainer's keys alone: a merge to `main` changes nothing that runs, and
+  `staging` moves when the release's signed tag is pushed, once its image is
   ([Cut a Release](runbooks/cut-release.md)). A revision that fails verification
   leaves its environment on the last verified one.
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD pipeline
   (see ADR-0018, CI/CD above). Packs are versioned independently of code deploys
-  and can be shared across multiple server instances/versions. Stored in a
-  folder of the k3s node, `assetPacks.hostPath` (`/srv/augusta/asset-packs`),
-  which `augusta-publish` fills after signing (ADR-0026):
+  and can be shared across multiple server instances/versions. Each
+  environment's are stored in its own folder of the k3s node,
+  `/srv/augusta/asset-packs/<environment>`, its `assetPacks.hostPath`, which
+  `augusta-publish --environment <environment>` fills after signing (ADR-0026):
   `<scenario>/<packVersion>/` in it holds a scenario's `server.pack` and the
   `signing.pub` key it is signed with, `<packVersion>` being the first 12 hex
-  characters of the server pack's BLAKE3 hash. A published folder is never
-  rewritten. Each environment's Helm values list its servers, one per scenario,
-  each naming the `packVersion` it runs; the chart makes, for each server, a
-  `local` PersistentVolume on that folder alone, read-only and pinned to the
-  node, and the claim bound to it (ADR-0057), both named by the version:
-  `<namespace>-augustad-<scenario>-pack-<packVersion>` and
+  characters of the server pack's BLAKE3 hash. Each environment signs with its
+  own key, `develop`'s or `staging`'s (Release signing above). The hash does not
+  cover the signature, so one cook signed for both is one `packVersion` in two
+  folders. A published folder is never rewritten. Each environment's Helm values
+  list its servers, one per scenario, each naming the `packVersion` it runs; the
+  chart makes, for each server, a `local` PersistentVolume on that folder alone,
+  read-only and pinned to the node, and the claim bound to it (ADR-0057), both
+  named by the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
   `augustad-<scenario>-pack-<packVersion>`. A new version is a new volume and
   claim, and the previous ones stay, so reverting the line goes back to them;
   Helm never deletes either, nor Kubernetes the folder
@@ -310,19 +330,20 @@ no self-hosted GitHub Actions runner in this pipeline).
   `augustad-linux-<arch>.debug` reads only that release binary, which no image
   runs (ADR-0047).
 - **Client symbols:** each release attaches `augustac-windows-x64.pdb`, the PDB
-  of the `augustac-windows-x64.exe` beside it, which reads a crash of that
-  client or its Aftermath `.nv-gpudmp`. Rename it `augustac.pdb`, the name the
-  `.exe`'s debug directory gives it; the two match by GUID and age
-  (`dumpbin /headers`, ADR-0055).
-- **Server pod:** runs as UID/GID 65532 with no privilege escalation, every
-  capability dropped, the `RuntimeDefault` seccomp profile and a read-only root
-  filesystem; augustad writes only to its capture volume, if any. None of it
-  changes core dumps, which the kernel pipes to the node's `systemd-coredump`,
-  or `kubectl debug --target=augustad`: its ephemeral container has its own root
-  filesystem and `securityContext`, and reads the server's files through
-  `/proc/<pid>/root/` as the same user. The node has that user too, `augusta`
-  (ADR-0054): the asset packs are `augusta-publish:augusta`, readable by its
-  group alone, and the capture volume is its own
+  of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
+  a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
+  `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
+  by GUID and age (`dumpbin /headers`, ADR-0055).
+- **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
+  privilege escalation, every capability dropped, augustad's own seccomp profile
+  and a read-only root filesystem; augustad writes only to its capture volume,
+  if any ([confinement](runbooks/k3s-node-recovery.md#the-servers-confinement)).
+  None of it changes core dumps, which the kernel pipes to the node's
+  `systemd-coredump`, or `kubectl debug --target=augustad`: its ephemeral
+  container has its own root filesystem and `securityContext`, and reads the
+  server's files through `/proc/<pid>/root/` as the same user. The node has that
+  user too, `augusta` (ADR-0054): the asset packs are `augusta-publish:augusta`,
+  readable by its group alone, and the capture volume is its own
   ([The server's user](runbooks/k3s-node-recovery.md#the-servers-user)).
 - **Match captures:** an environment turns them on in its Helm values
   (`captures.hostPath`, `develop` only), and each of its servers then captures
@@ -338,22 +359,22 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Admission policies:** Kyverno runs in the cluster, installed by Flux with
   its infrastructure, and the policies in
   [`clusters/onprem/policies/`](../clusters/onprem/policies/kustomization.yaml)
-  run there in audit mode for now (ADR-0057). CI's `manifests` job runs the same
-  policy files with the Kyverno CLI over each environment's rendered chart, each
-  Flux Kustomization path and each infrastructure `HelmRelease` rendered with
-  its values, so a change the cluster would refuse fails its pull request; it
-  also requires each policy to refuse its negative fixtures in
-  `fixtures/<policy>/`. Adding a policy is its file, its entry in the
-  Kustomization and its fixtures, with no change to CI.
-- **Pod Security:** `develop` enforces the `restricted` Pod Security Standard,
-  which the chart's pods meet: they mount the node's folders from
-  PersistentVolumes, never as `hostPath` volumes, which a `host-path-volumes`
-  policy reports outside the `privileged` namespaces (ADR-0057). `staging` is
-  audited and warned against `restricted`, and enforces it once it runs the
-  first release tagged after #530, whose chart is the first without `hostPath`
-  volumes; until then the policy admits it too.
+  are enforced there, failing closed: while Kyverno cannot answer, every request
+  it judges is refused, except in `kube-system` and `kyverno`, which its
+  webhooks skip so that it can always start (ADR-0057). CI's `manifests` job
+  runs the same policy files with the Kyverno CLI over each environment's
+  rendered chart, each Flux Kustomization path and each infrastructure
+  `HelmRelease` rendered with its values, so a change the cluster would refuse
+  fails its pull request; it also requires each policy to refuse its negative
+  fixtures in `fixtures/<policy>/`. Adding a policy is its file, its entry in
+  the Kustomization and its fixtures, with no change to CI.
+- **Pod Security:** `develop` and `staging` enforce the `restricted` Pod
+  Security Standard, which the chart's pods meet: they mount the node's folders
+  from PersistentVolumes, never as `hostPath` volumes, which a
+  `host-path-volumes` policy refuses outside the `privileged` namespaces
+  (ADR-0057).
 - **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
-  reports any Secret but Flux's trusted public keys, Helm's release records and
+  refuses any Secret but Flux's trusted public keys, Helm's release records and
   those the charts make themselves, each listed by name (ADR-0057).
 - **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
   a tag pushed again never changes what runs, except those whose signatures are
@@ -380,17 +401,17 @@ no self-hosted GitHub Actions runner in this pipeline).
   runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
   `.github/actions/setup-linux-build` installs (kept in step with it by hand),
   clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
-  CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
-  yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
-  pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
-  versions), and CI's Linux vcpkg binary cache configuration (a files provider
-  in the checkout's `.vcpkg-bincache`). The image builds for the host's
-  architecture (amd64 or arm64) rather than emulating CI's amd64. sccache's
-  cache lives in a volume shared by every container of the repository; the build
-  trees in a volume per container, so they never collide with a Windows build of
-  the same checkout. One recipe, not a container beside a separate host
-  bootstrap: two recipes for the same toolchain drift apart. The client has no
-  container equivalent (see below).
+  CLI, kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the
+  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
+  actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua,
+  luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg binary
+  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
+  The image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. The client has no container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -419,7 +440,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
   uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
   clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
-  Ubuntu runner ships so the hooks agree with CI's gates. (A fully hermetic,
+  Ubuntu runner ships so the hooks agree with CI's gates, and kubectl, helm and
+  the flux CLI, for the cluster. It also puts Git's `bin` directory on PATH, so
+  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
+  VS Code settings point the Kubernetes extension and its terminals at the
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`. (A fully hermetic,
   registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
   and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
   stacking an unsupported compiler on top of an already-unmaintained dependency,

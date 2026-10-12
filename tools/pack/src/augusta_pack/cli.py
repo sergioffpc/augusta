@@ -21,7 +21,8 @@ installed into the hermetic environment tools/pack/scripts/bootstrap.sh
 builds (--assets-root/python), so --assets-root defaults to the
 root of the venv this interpreter is already running from, and is used for:
 resolving authoring/scenarios/<name>.yaml and everything it names; the
-signing key, --assets-root/keys/signing.key; and packs, which default to
+signing key, --assets-root/keys/develop.key, develop's (a release signs with
+staging's, --signing-key); and packs, which default to
 --assets-root/packs/<name>/{client,server}.pack - keyed by the scenario's
 name alone, not its authoring/scenarios/ position.
 """
@@ -85,7 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         "--signing-key",
         type=Path,
         default=None,
-        help="Default: <assets-root>/keys/signing.key",
+        help="Default: <assets-root>/keys/develop.key, develop's key (a "
+        "release signs with staging's, keys/staging.key)",
     )
     parser.add_argument(
         "--skip-validation",
@@ -105,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     pack_subdir = Path(scenario.name)
-    signing_key_path = args.signing_key or assets_root / "keys" / "signing.key"
+    signing_key_path = args.signing_key or assets_root / "keys" / "develop.key"
     client_output_pack = (
         args.client_output_pack or packs_dir / pack_subdir / "client.pack"
     )

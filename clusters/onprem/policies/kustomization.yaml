@@ -13,4 +13,20 @@ resources:
   - node-port-range.yaml
   - privileged-namespace-workloads.yaml
   - secret-allowlist.yaml
+  - server-confinement.yaml
   - verify-image-signatures.yaml
+# Kyverno extends a policy on pods to the pod templates of Deployments,
+# DaemonSets, StatefulSets, Jobs and CronJobs, but not of ReplicaSets, which
+# it would by default: a Deployment's controller scales its old ReplicaSets
+# down, and one whose template a policy now refuses would be refused that
+# too, its pods left running beside the new ones. A ReplicaSet's pods are
+# judged as it creates them.
+patches:
+  - target:
+      group: policies.kyverno.io
+    patch: |-
+      - op: add
+        path: /spec/autogen
+        value:
+          podControllers:
+            controllers: [daemonsets, deployments, statefulsets, jobs, cronjobs]

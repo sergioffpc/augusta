@@ -26,6 +26,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to the node's firewall, SSH, update or audit policy has merged, the
   maintainer's addresses change, or a game port range is to face the internet:
   [The node's OS](#the-nodes-os).
+- Pods are not created, their controllers' `FailedCreate` events naming a
+  Kyverno webhook or policy, after a reboot, a Kyverno upgrade or a change to
+  the policies, or the admission is to be checked: [Admission](#admission).
 - A security alert fires, a security event is to be looked up, or the latest
   `kube-bench` report is wanted:
   [Security logs and alerts](#security-logs-and-alerts).
@@ -36,15 +39,16 @@ Everything Flux deploys is in Git: Flux's own manifests in
 [`clusters/onprem/flux-system/`](../../clusters/onprem/flux-system), the
 monitoring stack's `HelmRelease` in
 [`clusters/onprem/infrastructure/`](../../clusters/onprem/infrastructure), the
-two augustad `HelmRelease` objects and their GitRepository sources in
+two augustad `HelmRelease` objects and their sources in
 [`clusters/onprem/apps/`](../../clusters/onprem/apps), and the chart in
-[`charts/augustad/`](../../charts/augustad). The `flux-system` GitRepository
-reads the public repository over HTTPS with no credentials, so a rebuilt cluster
-needs no deploy key.
+[`charts/augustad/`](../../charts/augustad), which `develop` runs as CI
+published it to GHCR, as its image. The `flux-system` GitRepository reads the
+public repository over HTTPS with no credentials, so a rebuilt cluster needs no
+deploy key.
 
 The only state not in Git is the asset packs in the node's pack folder:
-`/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
-`signing.pub` for each server the `HelmRelease` values in
+`/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/server.pack`
+and `signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
 them the servers never start; the layout, and how a missing folder shows, is
@@ -82,7 +86,9 @@ restores them.
   with, see [Rotate the Pack Signing Key](pack-key-rotation.md)). The repository
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
-  the chart sets no `imagePullSecrets`, so the GHCR package must be public.
+  the chart sets no `imagePullSecrets`, so the GHCR package must be public. So
+  must `develop`'s chart, `ghcr.io/sergioffpc/charts/augustad`: its
+  `OCIRepository` sets no `secretRef`.
 - On the workstation: `kubectl`, the `flux` CLI
   ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
   day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository
@@ -96,17 +102,19 @@ the same user and group, with no login and no home, so its files show that name
 and the node's own users stay out of them:
 
 - **Asset packs:** `/srv/augusta/asset-packs` and everything in it is owned by
-  `augusta-publish:augusta`, readable by the group alone: the volume and each
-  scenario's folder `2750` (setgid, so what is created in them takes the group),
-  each version's folder `0550` and its files `0440`. The servers read it as
-  group `augusta`; only [the publish user](#the-publish-user) writes it, and a
-  version's folder only once.
+  `augusta-publish:augusta`, readable by the group alone: the volume, each
+  environment's tree (`develop/`, `staging/`) and each scenario's folder in it
+  `2750` (setgid, so what is created in them takes the group), each version's
+  folder `0550` and its files `0440`. The servers read it as group `augusta`;
+  only [the publish user](#the-publish-user) writes it, and a version's folder
+  only once.
 - **Captures:** the mounted capture filesystem's root is owned by
   `augusta:augusta` ([The capture filesystem](#the-capture-filesystem)).
 
-`scripts/bootstrap-node.sh` creates the user and an empty volume, and gives
-whatever the volume holds those owners and modes on every run: packs on a node
-from before this layout (`root:augusta`) take it with a run of the bootstrap
+`scripts/bootstrap-node.sh` creates the user and the volume with an empty tree
+per environment, and gives whatever the trees hold those modes, and the whole
+volume those owners, on every run: packs on a node from before this layout
+(`root:augusta`) take it with a run of the bootstrap
 ([The node's OS](#the-nodes-os) has the command).
 
 ## The publish user
@@ -118,8 +126,9 @@ group, and has no `sudo`. Its one key, in
 `/usr/local/bin/augusta-publish-receive`
 ([`augusta-publish-receive.sh`](../../clusters/onprem/node/augusta-publish-receive.sh)),
 whatever its holder asks for, with no shell, PTY, or port, agent or X11
-forwarding (`restrict`). That command writes a new `<scenario>/<packVersion>/`
-folder and leaves it read-only, and never writes one that exists. The user's
+forwarding (`restrict`). That command writes a new
+`<environment>/<scenario>/<packVersion>/` folder, for `develop` or `staging`
+alone, and leaves it read-only, and never writes one that exists. The user's
 home and `authorized_keys` are root's, so neither the user nor its key can add
 another key. A stolen publish key can add a pack, never replace one a server
 runs; a pack it adds runs only once a `HelmRelease` names its version. The user
@@ -460,6 +469,42 @@ df -h /
 The root filesystem, ext4, grows while mounted. Then reboot once, at a time that
 cuts no Match, to see the Node start with neither.
 
+### After a reboot
+
+What the bootstrap applies only from the next boot (the command line, the NIC's
+rings, no swap to resume from) shows only after one. After a reboot, the
+bootstrap's or Debian's:
+
+```sh
+ssh <node>
+swapon --show; sudo lvs; df -h /
+cat /proc/cmdline; cat /sys/kernel/mm/transparent_hugepage/enabled
+for f in /etc/sysctl.d/{80,81,90}-*.conf; do
+  sudo sysctl $(grep -E '^[a-z][^=*]*=' "$f" | cut -d = -f 1)
+done
+sudo sysctl -a 2>/dev/null | grep -E '\.(send|accept)_redirects ='
+lsmod | grep tcp_bbr
+for i in eno1 eno2; do udevadm info /sys/class/net/$i | grep -E 'ID_NET_DRIVER|ID_NET_LINK_FILE='; done
+sudo journalctl -b -u systemd-udevd | grep -iE 'ring|link_config'
+systemctl is-active irqbalance k3s; systemctl --failed
+sudo k3s kubectl get nodes
+sudo k3s kubectl get pods -A -l app.kubernetes.io/name=augustad
+```
+
+- No swap is active and no swap volume is left; `/` holds the volume group's
+  whole space.
+- The command line carries `transparent_hugepage=madvise`, and THP reports
+  `[madvise]`.
+- Each key in the hardening and tuning files reads back its value, and every
+  interface's redirects are `0`, `eno1`, `cni0` and the pods' veths included.
+- `tcp_bbr` is loaded.
+- The ixgbe ports keep their names (`eno1`, `eno2`) and take
+  `10-augusta-ixgbe.link`; udev logged no error sizing their rings to 4096. The
+  Node has no `ethtool` to read the rings back.
+- `irqbalance` and `k3s` are active, no unit has failed, and the Node is
+  `Ready`.
+- Every server pod is `Running`; then [Verification](#verification).
+
 ## Cluster access
 
 Two identities reach the API server, from the maintainer's addresses only
@@ -490,6 +535,9 @@ export KUBECONFIG=~/.kube/augusta.yaml
 kubectl get nodes
 ```
 
+VS Code's terminals and its Kubernetes extension already use that kubeconfig
+(the workspace's `.vscode/settings.json`).
+
 It makes a new key, which stays on the workstation, and has the node sign its
 certificate for 24 hours, then prints when it expires. Run it again whenever
 `kubectl` answers `the server has asked for the client to provide credentials`:
@@ -504,13 +552,15 @@ kubectl get pods -A
 flux get all -A
 flux suspend kustomization apps -n flux-system
 flux resume kustomization apps -n flux-system
-kubectl -n develop create deployment probe --image=busybox
+kubectl -n develop create deployment probe \
+  --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
 kubectl create clusterrolebinding probe --clusterrole=cluster-admin --user=probe
 kubectl -n flux-system patch gitrepository flux-system --type merge -p '{"spec":{"interval":"2m"}}'
 ```
 
-The reads and the Flux commands work; the last three are refused, the patch by
-the `augusta-operator-flux` policy.
+The reads and the Flux commands work; the last three are refused, the first two
+`Forbidden` for the identity's role, the patch by the `augusta-operator-flux`
+policy.
 
 ### Use cluster-admin
 
@@ -534,6 +584,140 @@ above. Revoking it sooner means rotating k3s's client CA
 ([`k3s certificate rotate-ca`](https://docs.k3s.io/cli/certificate#certificate-authority-ca-certificates)),
 which also ends every node and controller certificate signed by it.
 
+## Admission
+
+Every pod, Service and Secret the API server is asked to create or change passes
+two gates (ADR-0057). Pod Security Admission, inside the API server, holds each
+namespace to its level. Kyverno then refuses what the policies in
+[`clusters/onprem/policies/`](../../clusters/onprem/policies/kustomization.yaml)
+do not admit, each file saying why: an image not pinned by digest, an
+`augustad`, Flux or Kyverno image its publisher did not sign, a `hostPath`
+volume outside the `privileged` namespaces, a pod in one of those that is not
+one of its known ones, a node port outside its Environment's range, a Secret not
+on the list, an unconfined server, a pod in a namespace with no default deny. A
+refused pod that a controller creates (a Deployment's ReplicaSet, a DaemonSet, a
+Job) shows as that controller's `FailedCreate` event, and a refused object Flux
+applies as its `HelmRelease` or Kustomization failing, each with the message of
+the policy that refused it:
+
+```sh
+kubectl get events -A --field-selector reason=FailedCreate
+flux get all -A --status-selector ready=false
+```
+
+**Kyverno's webhooks fail closed.** While Kyverno is down or not yet ready,
+every request they judge is refused, its message naming a `kyverno.svc` webhook
+it could not call, rather than admitted unchecked. They skip `kube-system` and
+`kyverno`, so k3s's own pods and Kyverno's always start, and Pod Security
+Admission holds every namespace meanwhile. A pod already running is not judged
+again.
+
+### Kyverno comes up late
+
+After a reboot, the nightly one of [Updates](#updates) included, the kubelet
+starts again every pod it ran, the servers included, with no admission. What
+needs a new pod before Kyverno is ready, a server's rollout or a `kube-bench`
+run, is refused, and its controller retries with a growing back-off of up to a
+few minutes; a `HelmRelease` that upgraded meanwhile fails, and Flux retries it
+at its interval. Nothing needs doing; to watch it through:
+
+```sh
+kubectl -n kyverno get pods
+kubectl get events -A --field-selector reason=FailedCreate
+flux get helmreleases -n flux-system
+```
+
+Once Kyverno's pods are `Ready`, no new `FailedCreate` names its webhooks, and
+[Verification](#verification) shows every server running.
+
+Kyverno that does not start (its pods crash after an upgrade) holds every new
+pod back, but k3s's and its own. Revert its change in Git: Flux's running
+controllers apply it, as Kyverno's namespace is skipped. If Flux's controllers
+are not running either, nothing can apply it. Then, as **cluster-admin** on the
+node, remove Kyverno's webhooks, which leaves the cluster to Pod Security
+Admission alone until Kyverno starts again and registers them anew:
+
+```sh
+sudo k3s kubectl delete validatingwebhookconfiguration,mutatingwebhookconfiguration \
+  -l webhook.kyverno.io/managed-by=kyverno
+```
+
+### Verify the admission
+
+On the node (**cluster-admin**: the day-to-day identity creates no pod). Each
+probe is a server-side dry run, judged by both gates and never created. `probe`
+asks for a pod running the image given, in `develop` or the namespace given,
+with the rest of the pod read from its input as JSON. `restricted` prints a pod
+that `develop`'s Pod Security level admits, in a user namespace, under the
+runtime's seccomp profile or the one given, so that only Kyverno can refuse it:
+
+```sh
+probe() {
+  sudo k3s kubectl -n "${2:-develop}" run policy-probe --restart=Never \
+    --dry-run=server -o name --image="$1" --overrides="$(cat)"
+}
+restricted() {
+  printf '{"spec": {"hostUsers": false, "securityContext": {"runAsNonRoot": true,
+    "runAsUser": 65534}, "containers": [{"name": "policy-probe", "image": "%s",
+    "securityContext": {"allowPrivilegeEscalation": false, "capabilities":
+    {"drop": ["ALL"]}, "seccompProfile": {"type": "%s"%s}}}]}}' \
+    "$1" "${2:-RuntimeDefault}" "${3:+, \"localhostProfile\": \"$3\"}"
+}
+busybox=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+unsigned=ghcr.io/sergioffpc/augustad:sha-f6e03442e921@sha256:dee0157f2b1985e2d6b11f53ca929748d3cdbf84bed55f926120b74a0a0fdae0
+```
+
+1. A pinned, `restricted` pod is admitted, so a refusal below is the check's:
+
+    ```sh
+    restricted "${busybox}" | probe "${busybox}"
+    ```
+
+    It prints `pod/policy-probe`.
+
+2. Each of these is refused:
+
+    ```sh
+    echo '{"spec": {"securityContext": {"runAsNonRoot": true, "runAsUser": 65534},
+      "containers": [{"name": "policy-probe", "image": "'"${busybox}"'",
+      "securityContext": {"privileged": true, "capabilities": {"drop": ["ALL"]},
+      "seccompProfile": {"type": "RuntimeDefault"}}}]}}' | probe "${busybox}"
+    restricted "${busybox}" \
+      | sed 's#^{"spec": {#{"spec": {"volumes": [{"name": "node", "hostPath": {"path": "/"}}], #' \
+      | probe "${busybox}"
+    restricted docker.io/library/busybox:1.37.0 | probe docker.io/library/busybox:1.37.0
+    restricted "${unsigned}" Localhost augusta/augustad.json | probe "${unsigned}"
+    echo '{}' | probe "${busybox}" monitoring-node
+    ```
+
+    The `privileged` pod and the `hostPath` volume, each otherwise `restricted`,
+    are refused by Pod Security (`violates PodSecurity "restricted:latest"`),
+    naming `privileged` (with the privilege escalation it implies) and
+    `restricted volume types`; the image by tag by `image-digest`, an `augustad`
+    image CI did not sign (v1.0.0's, from before it signed them) by
+    `verify-image-signatures`, and a pod `monitoring-node` does not know by
+    `privileged-namespace-workloads`, each message naming the policy and its
+    Kyverno webhook, which `denied the request`.
+
+3. With Kyverno's admission controller stopped, the pod of step 1 is refused,
+   and Kyverno starts again. Flux would scale it back on its next upgrade, so
+   suspend its `HelmRelease` meanwhile:
+
+    ```sh
+    sudo k3s kubectl -n flux-system patch helmrelease kyverno --type merge -p '{"spec": {"suspend": true}}'
+    sudo k3s kubectl -n kyverno scale deploy kyverno-admission-controller --replicas 0
+    sudo k3s kubectl -n kyverno wait --for=delete pod -l app.kubernetes.io/component=admission-controller --timeout 2m
+    restricted "${busybox}" | probe "${busybox}"
+    sudo k3s kubectl -n kyverno scale deploy kyverno-admission-controller --replicas 1
+    sudo k3s kubectl -n kyverno rollout status deploy kyverno-admission-controller --timeout 5m
+    restricted "${busybox}" | probe "${busybox}"
+    sudo k3s kubectl -n flux-system patch helmrelease kyverno --type merge -p '{"spec": {"suspend": false}}'
+    ```
+
+    The first probe is refused, `failed calling webhook`, as `kyverno-svc` has
+    no endpoints; Kyverno's pod starts, in the namespace its webhooks skip, and
+    the second probe prints `pod/policy-probe`.
+
 ## Network isolation
 
 Every namespace but `kube-system` and `default` denies ingress and egress by
@@ -543,9 +727,7 @@ Flux's in
 [`flux-system/network-policies.yaml`](../../clusters/onprem/flux-system/network-policies.yaml),
 Kyverno's and the monitoring stack's in
 [`infrastructure/network-policies.yaml`](../../clusters/onprem/infrastructure/network-policies.yaml).
-`staging` is not yet isolated
-([`namespaces.yaml`](../../clusters/onprem/apps/namespaces.yaml) says when). A
-pod that cannot reach what it needs times out rather than being refused: a
+A pod that cannot reach what it needs times out rather than being refused: a
 target `down` in Prometheus, a Flux source not `Ready`, a Grafana panel with no
 data.
 
@@ -558,22 +740,24 @@ On the node (**cluster-admin**: the day-to-day identity creates no pod):
 
     ```sh
     pod="$(sudo k3s kubectl -n develop get pod -l app.kubernetes.io/name=augustad,scenario=firebase -o name)"
+    busybox=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
     sudo k3s kubectl -n develop debug "${pod}" --profile=restricted \
-      --image=docker.io/library/busybox:1.37.0 --target=augustad -i --quiet -- \
+      --image="${busybox}" --target=augustad -i --quiet -- \
       sh -c 'nslookup github.com; nc -z -w 5 140.82.121.4 443; echo "exit $?"'
     ```
 
-    The lookup times out and `nc` exits `1`.
+    The lookup times out and `nc` exits `1`. Then the same for `staging`'s
+    server: `-n staging` in both `kubectl` commands.
 
-2. A pod in `develop` reaches neither Loki nor Grafana:
+2. A pod in `develop` reaches neither Loki nor Grafana (`busybox` as in step 1):
 
     ```sh
     loki="$(sudo k3s kubectl -n monitoring get svc loki -o jsonpath='{.spec.clusterIP}')"
     grafana="$(sudo k3s kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.spec.clusterIP}')"
     sudo k3s kubectl -n develop run netprobe --rm -i --quiet --restart=Never \
-      --image=docker.io/library/busybox:1.37.0 --overrides='{"spec": {
+      --image="${busybox}" --overrides='{"spec": {
         "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
-        "containers": [{"name": "netprobe", "image": "docker.io/library/busybox:1.37.0",
+        "containers": [{"name": "netprobe", "image": "'"${busybox}"'",
           "command": ["sh", "-c", "nc -z -w 5 '"${loki}"' 3100; echo loki $?; nc -z -w 5 '"${grafana}"' 80; echo grafana $?"],
           "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}'
     ```
@@ -622,7 +806,7 @@ event:
 | `NodeSSHLogin`                 | A login sshd accepts.                                                          |
 | `ClusterAdminUsed`             | A request by `system:admin`, k3s's own kubeconfig: any **cluster-admin** step. |
 | `KyvernoPolicyViolation`       | A failed policy result, at admission or in the background scan.                |
-| `FluxSourceVerificationFailed` | A `GitRepository` revision failing its signature check (ADR-0056).             |
+| `FluxSourceVerificationFailed` | A `GitRepository` or `OCIRepository` revision failing its signature check.     |
 
 A **cluster-admin** step raises `ClusterAdminUsed` by design: the alert is the
 record that it happened.
@@ -668,14 +852,13 @@ Then, at <http://127.0.0.1:9093>, within a couple of minutes of each step:
 
 1. `NodeSSHLogin` and `ClusterAdminUsed` fire: the SSH login and the
    port-forward above.
-2. A policy violation, reported as the cluster's policies are still in audit
-   mode: a pod `monitoring-node` does not know, as **cluster-admin** on the
-   node, removed at once.
+2. A policy violation: a pod `monitoring-node` does not know, as
+   **cluster-admin** on the node. Kyverno refuses it, so nothing is left to
+   remove:
 
     ```sh
-    sudo k3s kubectl -n monitoring-node run policy-probe \
-      --image=docker.io/library/busybox:1.37.0 --restart=Never -- true
-    sudo k3s kubectl -n monitoring-node delete pod policy-probe
+    sudo k3s kubectl -n monitoring-node run policy-probe --restart=Never \
+      --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
     ```
 
     `KyvernoPolicyViolation` fires for `Pod monitoring-node/policy-probe`.
@@ -723,7 +906,7 @@ mounts, and a claim bound to it by name
 
 - **Pack:** the claim `augustad-<scenario>-pack-<packVersion>` and the volume
   `<namespace>-augustad-<scenario>-pack-<packVersion>`, on
-  `/srv/augusta/asset-packs/<scenario>/<packVersion>/`, read-only.
+  `/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/`, read-only.
 - **Captures,** when the environment turns them on: the claim
   `augustad-<scenario>-captures` and the volume
   `<namespace>-augustad-<scenario>-captures`, on `/srv/augusta/captures`,
@@ -738,7 +921,7 @@ no label of its own. A volume whose folder is missing leaves its pod waiting in
 kubectl -n <environment> get events --field-selector reason=FailedMount
 # MountVolume.NewMounter initialization failed for volume
 # "develop-augustad-firebase-pack-<packVersion>" : path
-# "/srv/augusta/asset-packs/firebase/<packVersion>" does not exist
+# "/srv/augusta/asset-packs/develop/firebase/<packVersion>" does not exist
 ```
 
 Helm never deletes these volumes and claims (`helm.sh/resource-policy: keep`),
@@ -768,38 +951,140 @@ under the old folder are removed as above.
 A rebuilt cluster has none of them: Flux makes those of the versions the
 `HelmRelease`s name, from the same folders.
 
-### Move a running cluster off hostPath volumes
+### Move packs into each environment's tree
 
-The first `develop` revision with this layout (#530) changes the running cluster
-on its own; nothing on the node changes. This section goes once `staging`
-enforces `restricted` (step 3).
+Until #583 every environment's packs shared one tree,
+`/srv/augusta/asset-packs/<scenario>/<packVersion>/`, signed with one key,
+`signing.pub`. Each environment now has its own tree and key
+([The server's user](#the-servers-user)). A node from before needs, once:
 
-1. Before it merges, check the node carries k3s's label, and every `packVersion`
-   `git grep -n packVersion -- clusters/onprem/apps` lists is published:
-
-    ```sh
-    kubectl get nodes -l node-role.kubernetes.io/control-plane=true
-    ssh <node> "sudo ls -l /srv/augusta/asset-packs/*/"
-    ```
-
-2. Once Flux reconciles it, `develop` is labelled `restricted` and its servers
-   are replaced by pods mounting their volumes, cutting any Match in progress
-   (ADR-0026). Warnings that the old pods use `hostPath` are expected while they
-   still run. `staging` keeps its pods until a release with this layout is
-   tagged:
+1. Before the pull request merges, suspend both environments' `HelmRelease`s, so
+   Flux does not upgrade them onto folders that are not there yet, then install
+   the publish key's new forced command and the environments' trees, from its
+   branch, as a user with `sudo`:
 
     ```sh
-    flux reconcile kustomization apps -n flux-system --with-source
-    kubectl get ns develop staging --show-labels
-    kubectl -n develop rollout status deploy -l app.kubernetes.io/name=augustad --timeout 30m
-    kubectl get pv -l app.kubernetes.io/name=augustad
-    kubectl -n develop logs -l app.kubernetes.io/name=augustad --prefix | grep -E 'event=(pack_verified|capture_enabled)'
+    flux suspend helmrelease augustad-develop -n flux-system
+    flux suspend helmrelease augustad-staging -n flux-system
+    scp clusters/onprem/node/augusta-publish-receive.sh <node>:/tmp/
+    ssh <node> "sudo install -o root -g root -m 0755 /tmp/augusta-publish-receive.sh /usr/local/bin/augusta-publish-receive && sudo install -d -o augusta-publish -g augusta -m 2750 /srv/augusta/asset-packs/develop /srv/augusta/asset-packs/staging; rm /tmp/augusta-publish-receive.sh"
     ```
 
-3. Once `staging` runs that release, label it `restricted` in
-   `clusters/onprem/apps/namespaces.yaml` and drop it from
-   `clusters/onprem/policies/host-path-volumes.yaml` in one pull request, then
-   check its servers the same way.
+2. Publish each environment's packs into its tree, each cooked and signed with
+   its environment's key (`develop.key`, `staging.key`; `tools/README.md`):
+   `augusta-publish <scenario> --environment develop` and
+   `--environment staging`.
+3. Merge. A cook re-signed with another key has the `packVersion` it had, so
+   each server's volume keeps its name and changes its folder, which would fail
+   the upgrade (above). For each environment and server, as **cluster-admin**,
+   delete its pack claim and volume, then its Deployment, which frees them, wait
+   until they are gone, and resume the `HelmRelease`, which makes all three
+   again on the new folder:
+
+    ```sh
+    kubectl -n <environment> delete pvc augustad-<scenario>-pack-<packVersion> --wait=false
+    kubectl delete pv <environment>-augustad-<scenario>-pack-<packVersion> --wait=false
+    kubectl -n <environment> delete deploy augustad-<scenario>
+    kubectl -n <environment> wait --for=delete pvc/augustad-<scenario>-pack-<packVersion> --timeout 2m
+    kubectl wait --for=delete pv/<environment>-augustad-<scenario>-pack-<packVersion> --timeout 2m
+    flux resume helmrelease augustad-<environment> -n flux-system
+    kubectl -n <environment> logs deploy/augustad-<scenario> | grep 'event=pack_verified'
+    ```
+
+4. Once no environment serves a folder of the old tree (every volume's path is
+   in `develop/` or `staging/`), remove the old scenario folders, and the claims
+   and volumes of their versions as above, and the publisher's old
+   `keys/signing.*`:
+
+    ```sh
+    kubectl get pv -l app.kubernetes.io/name=augustad -o custom-columns=NAME:.metadata.name,PATH:.spec.local.path
+    ssh <node> "sudo find /srv/augusta/asset-packs -mindepth 1 -maxdepth 1 ! -name develop ! -name staging -exec rm -r {} +"
+    ```
+
+## The server's confinement
+
+A compromised server gains as little as it can past its container (ADR-0057).
+Each runs in a user namespace of its own (`hostUsers: false`): its UID, 65532 in
+the container, maps to an unused range on the node, so it is no one there. Its
+volumes are mounted ID-mapped, so the node's files keep their owners
+([The server's user](#the-servers-user)) and nothing on the node changes. k3s's
+Kubernetes enables user namespaces on its own, on Debian 13's kernel and the
+ext4 the pack and capture folders are on.
+
+Each also runs under augustad's own seccomp profile,
+[`clusters/onprem/node/augustad-seccomp.json`](../../clusters/onprem/node/augustad-seccomp.json):
+the x86-64 syscalls the server image makes (its `tini` and the container
+runtime's last steps included) and its crash handler's, nothing else. A syscall
+outside it kills the server, with `SIGSYS`: the pod restarts, its last state
+`Terminated` with exit code 159, and the node's audit log names the syscall.
+
+```sh
+kubectl -n <environment> describe pod -l app.kubernetes.io/name=augustad | grep -A3 'Last State'
+ssh <node> "sudo ausearch --message SECCOMP --interpret --start today"
+```
+
+`clusters/onprem/policies/server-confinement.yaml` refuses a server that runs
+without either.
+
+### The server's seccomp profile
+
+The kubelet reads it from `/var/lib/kubelet/seccomp/augusta/augustad.json`,
+which `scripts/bootstrap-node.sh` writes from `develop` on every run, before it
+installs k3s. A server whose profile is missing does not start: its pod waits
+with `CreateContainerError`, its events naming the file.
+
+CI's `confinement` job runs every image it builds under the profile, while
+Agents play two full Matches against it. A change to the server that makes a new
+syscall fails that job, which then records the profile again
+(`scripts/augustad-seccomp.sh record`, which says how) and uploads it as the
+`augustad-seccomp` artifact: commit it to the same pull request once you know
+why the syscall is new. Recording only adds syscalls, so the profile still
+covers every older image an Environment runs (`staging`'s release).
+
+Install a changed profile on the node before the change merges, from the pull
+request's branch, so `develop`'s next server finds it. Running servers keep the
+profile they started with until they restart:
+
+```sh
+ssh <node> "curl -fsSL https://raw.githubusercontent.com/sergioffpc/augusta/<branch>/clusters/onprem/node/augustad-seccomp.json \
+  | sudo install -D -o root -g root -m 0644 /dev/stdin /var/lib/kubelet/seccomp/augusta/augustad.json"
+```
+
+A server killed for a syscall the profile lacks keeps restarting until the
+profile has it. To bring it back before the fix merges, install the profile
+recorded for it, as above, from the artifact or the branch.
+
+### Verify the confinement
+
+On the node, for each server:
+
+```sh
+ssh <node>
+pid="$(pgrep -n -x augustad)"
+ps -o uid=,cmd= -p "${pid}"
+grep -E '^(Uid|Seccomp):' "/proc/${pid}/status"
+cat "/proc/${pid}/uid_map"
+```
+
+The UID is not 65532 but above 65535, the user namespace's mapping of 65532;
+`Seccomp` is `2` (filtered); `uid_map` maps the container's 0 to 65536 of the
+node's UIDs from a multiple of 65536, not to 0. Then
+[Verification](#verification)'s checks show every server verifying its pack, and
+`develop`'s writing its capture.
+
+### Confine a running cluster
+
+The first `develop` revision with the confinement (#535) needs the profile on
+the node first:
+
+1. Before it merges, install the profile from the pull request's branch, as
+   above.
+2. Once Flux reconciles it, `develop`'s servers are replaced by confined pods,
+   cutting any Match in progress (ADR-0026).
+   [Verify the confinement](#verify-the-confinement).
+3. Once `staging` runs a release with it, drop `staging`'s exemption from
+   `clusters/onprem/policies/server-confinement.yaml` (its `matchConditions`),
+   and verify its servers the same way.
 
 ## The k3s configuration
 
@@ -1135,6 +1420,8 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
 - Every server logged `event=pack_verified` and keeps running, from the volumes
   of the `packVersion` its `HelmRelease` names, each `Bound`
   ([Volumes](#volumes)); `develop` enforces `restricted`.
+- Every server runs in its own user namespace, under its own seccomp profile
+  ([Verify the confinement](#verify-the-confinement)).
 - Every `develop` server logged `event=capture_enabled` with its own
   `/srv/augusta/captures/develop/<scenario>` directory; the capture filesystem
   is mounted, and a Match played to its end leaves a `.capture` file there.
@@ -1147,59 +1434,69 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
   `monitoring-node`, `privileged` (ADR-0057).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
-  dashboard, offers no way to edit or save one, shows no login form, and refuses
-  `admin`/`admin`, there being no admin user: posting them to its login
-  answers 401.
+  dashboard, offers no way to edit or save one, and shows no login form.
+- After a rebuild, the node also passes
+  [Verify the hardening](#verify-the-hardening) and
+  [Check the alerts](#check-the-alerts).
+- After a reboot, every server is running again once Kyverno is
+  ([Kyverno comes up late](#kyverno-comes-up-late)).
+
+### The protections hold
+
+Then each protection, by what it refuses: a check that is not refused is a
+protection the cluster or the node has lost (ADR-0057).
+
+1. Admission: a `privileged` pod, a `hostPath` volume, an image by tag, an
+   unsigned `augustad` and a pod a `privileged` namespace does not know are
+   refused, and with Kyverno down any pod in `develop` is:
+   [Verify the admission](#verify-the-admission).
+2. The day-to-day kubeconfig changes no workload, Secret or role:
+   [Issue or renew the day-to-day kubeconfig](#issue-or-renew-the-day-to-day-kubeconfig)'s
+   checks.
+3. A server reaches nothing, and a pod in `develop` neither Loki nor Grafana:
+   [Verify the isolation](#verify-the-isolation).
+4. Grafana refuses `admin`/`admin`, there being no admin user: posting them to
+   its login answers 401.
 
     ```bash
     curl -i -X POST -H 'Content-Type: application/json' \
       -d '{"user":"admin","password":"admin"}' http://<node>:30300/login
     ```
 
-- After a rebuild, the node also passes
-  [Verify the hardening](#verify-the-hardening) and
-  [Check the alerts](#check-the-alerts).
-- Each namespace's NetworkPolicies hold:
-  [Verify the isolation](#verify-the-isolation).
+5. From a LAN host that is not one of the maintainer's addresses, the node shows
+   30300 alone open. The game ports are UDP, which this scan does not show: a
+   client on that host still joins a Match in either environment.
 
-Then the OS's hardening. From a LAN host that is not one of the maintainer's
-addresses, scan the node:
+    ```sh
+    nmap -Pn -sT -p- --open <node-address>
+    ```
 
-```sh
-nmap -Pn -sT -p- --open <node-address>
-```
+6. From an admin address, a password login and root's are refused with
+   `Permission denied (publickey)`, with no password prompt; your key and
+   `kubectl` work.
 
-- It shows 30300 alone open. The game ports are UDP, which this scan does not
-  show: a client on that host still joins a Match in either environment.
+    ```sh
+    ssh -o PubkeyAuthentication=no <user>@<node-address>
+    ssh -o PubkeyAuthentication=no root@<node-address>
+    ssh <user>@<node-address> true
+    kubectl get nodes
+    ```
 
-From an admin address, try a password login, root's, and your key:
+    [Updates](#updates)' checks show `Debian-Security` alone, and
+    [The audit trail](#the-audit-trail)'s show the login just made, from that
+    address.
 
-```sh
-ssh -o PubkeyAuthentication=no <user>@<node-address>
-ssh -o PubkeyAuthentication=no root@<node-address>
-ssh <user>@<node-address> true
-kubectl get nodes
-```
+7. The publish key, from the machine that publishes
+   ([The publish user](#the-publish-user)), gets no shell: it prints
+   `only publish` and exits `2`. A port forward fails with
+   `remote port forwarding failed`, and the publish user cannot write a
+   published version's folder, which is read-only to it (`Permission denied`).
 
-- The first two are refused with `Permission denied (publickey)`, with no
-  password prompt; the key login and `kubectl` work.
-
-Then the publish key, from the machine that publishes
-([The publish user](#the-publish-user)):
-
-```sh
-ssh augusta-publish
-ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
-ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
-```
-
-- The first gets no shell: it prints `only publish` and exits `2`. The second
-  fails with `remote port forwarding failed`. The third, for any published
-  version, fails with `Permission denied`: the folder is read-only to the
-  publish user.
-- [Updates](#updates)' checks show `Debian-Security` alone, and
-  [The audit trail](#the-audit-trail)'s show the login just made, from that
-  address.
+    ```sh
+    ssh augusta-publish
+    ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
+    ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/probe"
+    ```
 
 ## Rollback / abort
 

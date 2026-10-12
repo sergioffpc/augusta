@@ -59,14 +59,14 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
           if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/)'; then
+              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/)'; then
             echo "run_build=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_build=false" >> "$GITHUB_OUTPUT"
           fi
 
           if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/)'; then
+              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/|src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$)'; then
             echo "run_container=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_container=false" >> "$GITHUB_OUTPUT"
@@ -319,6 +319,11 @@ jobs:
         run: |
           test -f build/x64-windows/src/client/augustac.pdb
           dumpbin -nologo -headers build/x64-windows/src/client/augustac.exe | grep -E 'Format: RSDS, .*augustac\.pdb'
+      - name: Check the client's runtime folder
+        # What each release zips (release.yml): staged by the client's install
+        # rules, augustac starts from it alone. Checked here so a DLL the
+        # rules miss fails the pull request that adds it, not the release.
+        run: scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac"
       - name: Install clang-tidy
         # LLVM 21.1.8, the version the server job's distro package and the
         # Windows bootstrap give, so both platforms agree on which header
@@ -421,6 +426,13 @@ jobs:
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
         run: uv run --locked --no-default-groups --group agent pytest
+      - name: Upload the Agents' native module
+        # For the confinement job's Agents, built here with the rest.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agents-native
+          path: tools/agent/src/augusta_agent/_native*.so
+          retention-days: 1
   tools:
     needs: changes
     if: needs.changes.outputs.run_tools == 'true'
@@ -641,11 +653,11 @@ jobs:
           echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
-        # chart of the ref its GitRepository follows: develop's branch, or
-        # staging's latest release tag (ADR-0056), whose chart's values can
-        # trail develop's until the next release. The branch this run's commit
-        # lands on (the pull request's base, or the pushed branch) is checked
-        # out already; any other ref is fetched. staging's tag is the newest
+        # chart of the ref its source follows: develop's branch (the chart CI
+        # publishes from it), or staging's latest release tag (ADR-0056), whose
+        # chart's values can trail develop's until the next release. The
+        # branch this run's commit lands on (the pull request's base, or the
+        # pushed branch) is checked out already; any other ref is fetched. staging's tag is the newest
         # vX.Y.Z by version, as Flux's semver "*" picks it (no pre-releases);
         # Flux would also take a tag spelt otherwise (1.2.3, v1.3), which
         # releases never are (cut-release.md).
@@ -659,6 +671,7 @@ jobs:
         shell: bash
         env:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # The file holds other releases (Loki, Alloy): pick the stack's by
           # name, and its repository by the release's sourceRef.
@@ -677,8 +690,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/rendered"
           for release in clusters/onprem/apps/*.yaml; do
             grep -q '^kind: HelmRelease$' "$release" || continue
-            source=$(yq '.spec.chart.spec.sourceRef.name' "$release")
-            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // \"\"" clusters/onprem/apps/sources.yaml)
+            source=$(yq '.spec.chartRef.name // .spec.chart.spec.sourceRef.name' "$release")
+            ref=$(yq --no-doc "select(.metadata.name == \"$source\") | .spec.ref.branch // .spec.ref.tag // \"\"" clusters/onprem/apps/sources.yaml)
+            # develop's OCIRepository follows the chart chart-publish pushed
+            # for that branch's newest commit, under the tag develop, or a
+            # rollback pins the tag <version>_<12> of an older commit's,
+            # fetched by its full hash.
+            if [[ "$ref" =~ _([0-9a-f]{12})$ ]]; then
+              ref=$(gh api "repos/$GITHUB_REPOSITORY/commits/${BASH_REMATCH[1]}" --jq .sha)
+            fi
             if [ -z "$ref" ]; then
               ref=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' \
                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
@@ -793,10 +813,8 @@ jobs:
           done
       - name: Check the rendered manifests against the cluster's policies
         # The policies Flux applies (clusters/onprem/policies) over every
-        # manifest the steps above rendered: what the cluster would report,
-        # or once its policies are enforced refuse, fails here before it
-        # merges. A violation of a policy the cluster only audits still fails,
-        # since --audit-warn is left off. A policy that looks objects up in
+        # manifest the steps above rendered: what the cluster would refuse
+        # fails here before it merges. A policy that looks objects up in
         # the cluster (default-deny-network, its NetworkPolicies) finds the
         # rendered ones, as Flux would apply them. Image signature policies
         # are left to their fixtures below: the chart runs the image of the
@@ -853,6 +871,9 @@ jobs:
     # PRs build only when the image or chart changed.
     if: github.event_name == 'push' || needs.changes.outputs.run_container == 'true'
     runs-on: ubuntu-26.04
+    # The tag of the image it built, which the confinement job runs.
+    outputs:
+      short-sha: ${{ steps.image.outputs.short-sha }}
     permissions:
       contents: read
       # Writing the registry layer cache, on a push.
@@ -894,20 +915,80 @@ jobs:
       # Only a push writes the layer cache, as only a push publishes:
       # container-publish rebuilds from it.
       - name: Build and scan server image
+        id: image
         uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
-  container-publish:
+      - name: Save server image
+        # For the confinement job, which runs the image this job checked.
+        run: >-
+          docker save ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }} | gzip > "$RUNNER_TEMP/augustad.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-image
+          path: ${{ runner.temp }}/augustad.tar.gz
+          retention-days: 1
+  # The image under its own seccomp profile (ADR-0057), as the Node runs it:
+  # Agents play full Matches against it, and a syscall outside the profile
+  # kills it and fails the job. On a failure it records the profile again
+  # (scripts/augustad-seccomp.sh) and uploads it as augustad-seccomp, to
+  # commit once the change that needs it is understood. It runs only when
+  # both the image and the Agents were built, which every change to the
+  # server's sources, the image, the profile or its script asks for
+  # (changes above): an image it skips is built from what it last checked.
+  confinement:
     needs: [server, container-verify]
+    if: needs.server.result == 'success' && needs.container-verify.result == 'success'
+    runs-on: ubuntu-26.04
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ needs.container-verify.outputs.short-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/uv.lock
+      - name: Install the Agents' package
+        # As the server job does; its native module is that job's build.
+        working-directory: tools
+        run: uv sync --locked --no-default-groups --group agent
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agents-native
+          path: tools/agent/src/augusta_agent
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: server-image
+          path: ${{ runner.temp }}
+      - name: Load server image
+        run: gunzip -c "$RUNNER_TEMP/augustad.tar.gz" | docker load
+      - name: Check the server's seccomp profile
+        id: check
+        run: scripts/augustad-seccomp.sh check "$IMAGE"
+      - name: Record the server's seccomp profile again
+        if: failure() && steps.check.outcome == 'failure'
+        run: |
+          sudo apt-get update && sudo apt-get install -y auditd
+          scripts/augustad-seccomp.sh record "$IMAGE"
+      - name: Upload the recorded profile
+        if: failure() && steps.check.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: augustad-seccomp
+          path: clusters/onprem/node/augustad-seccomp.json
+  container-publish:
+    needs: [server, container-verify, confinement]
     # Only main/develop pushes publish, and only once both the server's tests
     # and the image's checks passed. The server job only runs when run_build is
     # true (see changes above), so a skipped result there is fine - only an
-    # actual failure should block publishing. !cancelled() rather than
-    # always(): a run someone cancelled publishes nothing.
+    # actual failure should block publishing. confinement is skipped with it.
+    # !cancelled() rather than always(): a run someone cancelled publishes
+    # nothing.
     if: |
       !cancelled() && github.event_name == 'push' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped')
+      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04
     # What container-index merges with main's arm64 image and debug info.
     outputs:
@@ -966,7 +1047,7 @@ jobs:
       # What the cluster admits an augustad image by (ADR-0057). Signed before
       # it is attested, so the verify after signing sees the signature alone.
       - name: Sign server image
-        uses: ./.github/actions/sign-image
+        uses: ./.github/actions/sign-artifact
         with:
           digest: ${{ steps.publish.outputs.digest }}
       # The published binary's debug info (the Dockerfile's debuginfo stage,
@@ -1020,11 +1101,12 @@ jobs:
   # requests' stay amd64 alone. Its own build is its check: no
   # container-verify runs on arm64, so it writes its own layer cache.
   container-publish-arm64:
-    needs: [server, container-verify]
+    needs: [server, container-verify, confinement]
     if: |
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped')
+      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04-arm
     outputs:
       image: ${{ steps.publish.outputs.digest }}
@@ -1061,7 +1143,7 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # As container-publish's, before it is attested.
       - name: Sign server image
-        uses: ./.github/actions/sign-image
+        uses: ./.github/actions/sign-artifact
         with:
           digest: ${{ steps.publish.outputs.digest }}
       - name: Publish server debug info
@@ -1124,7 +1206,7 @@ jobs:
       # For the signing action alone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions/sign-image
+          sparse-checkout: .github/actions/sign-artifact
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1148,7 +1230,7 @@ jobs:
           echo "image=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
           echo "debuginfo=$(docker buildx imagetools inspect "$image:$tag-debuginfo" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
       - name: Sign image index
-        uses: ./.github/actions/sign-image
+        uses: ./.github/actions/sign-artifact
         with:
           digest: ${{ steps.index.outputs.image }}
       - name: Attest image index provenance
@@ -1163,3 +1245,63 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/augustad
           subject-digest: ${{ steps.index.outputs.debuginfo }}
           push-to-registry: true
+  # develop's chart (ADR-0056), published only once its commit's image is
+  # published and signed, so develop's OCIRepository
+  # (clusters/onprem/apps/sources.yaml) never offers a chart whose image is
+  # missing, nor one of a commit any of whose checks failed: develop keeps its
+  # previous chart. Each check is waited on here, as container-publish lets a
+  # skipped server job through, which a failed format skips. Versioned
+  # <chart version>+<12 characters of the commit>, from which the chart takes
+  # its image's sha-<12> tag (charts/augustad _helpers.tpl), and pushed under
+  # the immutable tag <chart version>_<12> (Helm writes + as _). The cluster
+  # follows the tag develop, moved to it only once it is signed, and only from
+  # the branch's newest commit, as container-publish moves the image's. main's
+  # charts are never published: staging runs its release tag's from Git.
+  chart-publish:
+    needs: [format, client, tools, manifests, container-publish]
+    if: |
+      !cancelled() && github.ref == 'refs/heads/develop' &&
+      needs.container-publish.result == 'success' &&
+      !contains(needs.*.result, 'failure')
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      # Signing the chart (Sigstore, through the workflow's OIDC token).
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+      # Docker's login, which cosign and oras read, and Helm's own.
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the chart
+        id: publish
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin <<< "$TOKEN"
+          version="$(yq '.version' charts/augustad/Chart.yaml)+${GITHUB_SHA::12}"
+          helm package charts/augustad --version "$version" --destination "$RUNNER_TEMP/chart"
+          helm push "$RUNNER_TEMP/chart/augustad-$version.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          echo "digest=$(oras resolve "ghcr.io/${{ github.repository_owner }}/charts/augustad:${version/+/_}")" >> "$GITHUB_OUTPUT"
+      - name: Sign the chart
+        uses: ./.github/actions/sign-artifact
+        with:
+          digest: ${{ steps.publish.outputs.digest }}
+          repository: charts/augustad
+          branches: develop
+      - name: Tag the chart develop
+        run: |
+          chart="ghcr.io/${{ github.repository_owner }}/charts/augustad@${{ steps.publish.outputs.digest }}"
+          head=$(git ls-remote --exit-code origin "$GITHUB_REF")
+          if [ "${head%%[[:space:]]*}" = "$GITHUB_SHA" ]; then
+            oras tag "$chart" develop
+          else
+            echo "develop has moved on to ${head%%[[:space:]]*}: leaving the chart's tag alone"
+          fi
