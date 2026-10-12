@@ -29,16 +29,19 @@ request that breaks them fails before it merges.
 **Packs and captures are local PersistentVolumes, not `hostPath`.** `baseline`,
 let alone `restricted`, forbids a pod's `hostPath` volume. The chart makes, for
 each server, a `local` PersistentVolume on the same folder of the Node
-(`<scenario>/<packVersion>/`, read-only; the capture directory, read-write) and
-the claim bound to it, so adding or moving a server is still one line in its
-`HelmRelease` (ADR-0026).
+(`<environment>/<scenario>/<packVersion>/`, read-only; the capture directory,
+read-write) and the claim bound to it, so adding or moving a server is still one
+line in its `HelmRelease` (ADR-0026).
 
 **Publishing a pack needs no root.** `augusta-publish` logs in as the Node's
 `augusta-publish` user, which owns the pack folder, is not the Servers' user nor
 in their group, and has no `sudo`. Its key is restricted in `authorized_keys`
 (`restrict`, no shell, PTY or forwarding) to a forced command that only writes a
-new `<scenario>/<packVersion>/` folder and leaves it read-only, so a stolen
-publish key can add a pack and nothing else: never replace one a Server runs.
+new `<environment>/<scenario>/<packVersion>/` folder, for a known Environment
+alone, and leaves it read-only, so a stolen publish key can add a pack and
+nothing else: never replace one a Server runs. Each Environment has its own
+tree, its packs signed with its own key, so one cook published for `develop` and
+for `staging` is two folders, not one that only the first could write.
 
 **The cluster holds no Secret.** Nothing in it needs one: Grafana has no login
 at all, anonymous viewers only, its dashboards, data sources and alerts all from

@@ -1,14 +1,19 @@
 """augusta-publish.
 
 Puts a scenario's server pack where the cluster's servers read it (ADR-0026), on
-the k3s node's shared asset-pack volume, at
-/srv/augusta/asset-packs/<scenario>/<version>/{server.pack,signing.pub}.
+the k3s node's shared asset-pack volume, in the tree of the Environment that
+serves it, at
+/srv/augusta/asset-packs/<environment>/<scenario>/<version>/{server.pack,signing.pub}.
+Each Environment signs its packs with its own key (keys/<environment>.key), so
+one cook signed for develop and for staging is two folders, each with its own
+signing.pub.
 
 Before anything is copied, both packs of the scenario's cook verify against
 the public key and the server pack names that client pack in its header
 (ADR-0031): a server pack is never published without the client pack players
 need to join it. The version is the first 12 hex characters of the server
-pack's BLAKE3 hash, so a folder is never overwritten: a new cook is a new
+pack's BLAKE3 hash, which does not cover the signature, so a folder is
+never overwritten: a new cook is a new
 folder, and the old one stays in place as the rollback. Publishing a version
 already on the node checks it holds the same files and changes nothing.
 
@@ -21,7 +26,8 @@ The node is reached with the OpenSSH client (ssh) on PATH, as the node's
 augusta-publish user, whose key does nothing but run the node's end of
 publishing (clusters/onprem/node/augusta-publish-receive.sh, ADR-0057): no
 shell, no sudo. A publish is one connection, so one touch of a FIDO2 key. That
-end writes a version's folder once, and leaves it read-only.
+end writes a version's folder once, and leaves it read-only. It takes the
+Environments below alone.
 """
 
 import argparse
@@ -44,6 +50,9 @@ VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.pack"
 PUBLIC_KEY_NAME = "signing.pub"
 VERSION_LENGTH = 12
+# The Environments the node serves, each from its own tree: the node's end
+# (augusta-publish-receive.sh) and scripts/bootstrap-node.sh name them too.
+ENVIRONMENTS = ("develop", "staging")
 
 # What the chart can name a server by (charts/augustad): a DNS label short
 # enough for augustad-<scenario>-metrics to stay one.
@@ -58,6 +67,7 @@ class PublishError(Exception):
 class Release:
     """A verified server pack ready to publish, and where it goes."""
 
+    environment: str
     scenario: str
     version: str
     # Name on the node -> local file.
@@ -66,7 +76,7 @@ class Release:
     @property
     def folder(self) -> str:
         """The release's folder, relative to the volume."""
-        return f"{self.scenario}/{self.version}"
+        return f"{self.environment}/{self.scenario}/{self.version}"
 
     @property
     def directory(self) -> str:
@@ -93,13 +103,23 @@ class Node(Protocol):
 
 
 def prepare(
-    scenario: str, client_pack: Path, server_pack: Path, public_key_path: Path
+    environment: str,
+    scenario: str,
+    client_pack: Path,
+    server_pack: Path,
+    public_key_path: Path,
 ) -> Release:
-    """Checks the scenario can be published, and names its folder.
+    """Checks the scenario can be published to environment; names its folder.
 
     Raises:
-        PublishError: the packs or the key can't be published.
+        PublishError: the environment is not one the node serves, or the packs
+            or the key can't be published.
     """
+    if environment not in ENVIRONMENTS:
+        raise PublishError(
+            f"{environment!r} is not an Environment the node serves: "
+            f"{', '.join(ENVIRONMENTS)}"
+        )
     if not _SCENARIO_PATTERN.fullmatch(scenario):
         raise PublishError(
             f"scenario {scenario!r} cannot name a server: lowercase letters, "
@@ -125,6 +145,7 @@ def prepare(
             f"not {client.hash.hex()}"
         )
     return Release(
+        environment=environment,
         scenario=scenario,
         version=server.hash.hex()[:VERSION_LENGTH],
         files={SERVER_PACK_NAME: server_pack, PUBLIC_KEY_NAME: public_key_path},
@@ -258,6 +279,13 @@ def main(argv: list[str] | None = None) -> int:
         "augusta-pack writes them.",
     )
     parser.add_argument(
+        "--environment",
+        required=True,
+        choices=ENVIRONMENTS,
+        help="The Environment that serves the pack, which names its tree on "
+        "the node and the key its packs are signed with.",
+    )
+    parser.add_argument(
         "--host",
         required=True,
         help="The k3s node as its augusta-publish user, as ssh names it "
@@ -288,17 +316,19 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="The key both packs are signed with, published as signing.pub. "
-        "Default: <assets-root>/keys/signing.pub",
+        "Default: <assets-root>/keys/<environment>.pub",
     )
     args = parser.parse_args(argv)
 
     packs = args.assets_root / "packs" / args.scenario
     try:
         release = prepare(
+            args.environment,
             args.scenario,
             args.client_pack or packs / "client.pack",
             args.server_pack or packs / "server.pack",
-            args.public_key or args.assets_root / "keys" / "signing.pub",
+            args.public_key
+            or args.assets_root / "keys" / f"{args.environment}.pub",
         )
         copied = publish(release, SshNode(args.host))
     except PublishError as error:
@@ -312,7 +342,8 @@ def main(argv: list[str] | None = None) -> int:
     # Quoted: a version of digits alone would read as a number in YAML.
     print(
         f"  serve it with servers.{release.scenario}.packVersion: "
-        f'"{release.version}"'
+        f'"{release.version}" in '
+        f"clusters/onprem/apps/{release.environment}.yaml"
     )
     return 0
 

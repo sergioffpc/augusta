@@ -406,8 +406,8 @@ What runs on the node, and who reaches it:
                           |   Flux: a GitRepository + HelmRelease per env   |
                           |                                                 |
                           | hostPath                                        |
-                          |   /srv/augusta/asset-packs/<scenario>/<ver>/    |
-                          |     server.pack + signing.pub, mounted ro       |
+                          |   /srv/augusta/asset-packs/<env>/<scenario>/    |
+                          |     <ver>/server.pack + signing.pub, mounted ro |
                           |   /srv/augusta/captures/<ns>/<scenario>/        |
                           |     Match captures, develop only                |
                           | systemd-coredump        keeps server core dumps |
@@ -419,7 +419,8 @@ What runs on the node, and who reaches it:
   environment's range (`develop` 30700-30799, `staging` 30800-30899), and its
   own metrics Service. A client connects to the node's address and that port.
 - **Packs:** a server mounts only the folder of the pack version its
-  environment's values name. The client pack is not on the node: the client
+  environment's values name, in its environment's own tree of the volume, signed
+  with its environment's own key. The client pack is not on the node: the client
   loads its own copy, which must come from the same cook (ADR-0019).
 - **Observability:** Prometheus scrapes each server's `/metrics` and the
   Deployment probes its `/livez` (ADR-0049); Alloy ships container logs to Loki
@@ -447,7 +448,7 @@ How each piece reaches the node or the player:
 |                  |      | release, on a v* tag     |      |                |
 |                  |      |  -> GitHub Release       |      |                |
 | cook + sign      |      +--------------------------+      |                |
-| (signing key)    |                  |                     |                |
+| (env's key)      |                  |                     |                |
 |                  | augusta-publish (ssh + scp)            |                |
 |  server.pack ----+--------------------------------------->| asset-packs/   |
 |  client.pack ... |                  |                     +----------------+
@@ -465,9 +466,10 @@ How each piece reaches the node or the player:
   commit. No CI runner reaches the cluster; Flux only pulls.
 - **Server packs:** cooked and signed on the developer's machine, never in CI.
   `augusta-publish` copies a server pack and its `signing.pub` to the node, in a
-  new folder named by its version, which changes nothing that runs. A pull
-  request then sets that `packVersion` in the environment's `HelmRelease`, and
-  Flux deploys it like any other change.
+  new folder of its environment's tree named by its version, which changes
+  nothing that runs. Each environment signs with its own key, `develop`'s or the
+  release key, `staging`'s. A pull request then sets that `packVersion` in the
+  environment's `HelmRelease`, and Flux deploys it like any other change.
 - **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.exe`
   and its `.pdb` to the GitHub Release (ADR-0055;
   [cut-release](runbooks/cut-release.md)).

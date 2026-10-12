@@ -10,7 +10,8 @@
 # own dependencies, plus the small native _native extension module built
 # and placed into that same project - ADR-0030's cooker is pure Python
 # otherwise, including the pack format and key
-# generation), a signing keypair, and the authoring/packs/keys content dirs
+# generation), develop's signing keypair, and the authoring/packs/keys content
+# dirs
 # (the cooker reads stages from authoring/, relative to it). Everything the
 # installed `augusta-pack` command needs to run lives under this one root, so
 # it never depends on what's on PATH in whatever shell it's invoked from.
@@ -204,13 +205,17 @@ main() {
   # every pack already signed with the old key and the public key already
   # deployed for verification (main.cpp's <public_key_path> argument,
   # ADR-0018). Goes through the augusta-keygen entry point (pack/keys.py,
-  # pynacl - pure Python, no native module or CLI binary involved).
-  local signing_key_prefix="${keys_dir}/signing"
+  # pynacl - pure Python, no native module or CLI binary involved). One key
+  # per Environment (docs/ENGINEERING.md, Release signing): develop's, made
+  # here; staging's is the release key, made offline with augusta-keygen, as
+  # <keys>/staging.key/.pub.
+  local signing_key_prefix="${keys_dir}/develop"
   if [[ -f "${signing_key_prefix}.key" ]]; then
-    echo "Signing keypair already exists at ${signing_key_prefix}.key/.pub -" \
-      "leaving it as is."
+    echo "develop's signing keypair already exists at" \
+      "${signing_key_prefix}.key/.pub - leaving it as is."
   else
-    echo "Generating Ed25519 signing keypair at ${signing_key_prefix}.key/.pub..."
+    echo "Generating develop's Ed25519 signing keypair at" \
+      "${signing_key_prefix}.key/.pub..."
     "${bin_dir}/augusta-keygen${exe_suffix}" \
       "$(native_path "${signing_key_prefix}")"
   fi
@@ -222,7 +227,8 @@ main() {
     "each) - a convenient place to keep them, not a boundary the cooker" \
     "enforces"
   echo "  - ${packs_dir}: signed packs cooked via the cooker"
-  echo "  - ${keys_dir}: Ed25519 signing keypair (signing.key/signing.pub)"
+  echo "  - ${keys_dir}: Ed25519 signing keypairs, one per Environment:" \
+    "develop.key/.pub, and staging.key/.pub, the release key, once made"
   echo "  - ${bin_dir}: augusta-pack, augusta-keygen, augusta-inspect," \
     "augusta-verify, augusta-publish"
   echo "  - ${python_dir}: hermetic Python venv (uv tool), pack installed" \

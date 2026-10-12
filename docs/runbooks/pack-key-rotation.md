@@ -1,7 +1,9 @@
 # Rotate the Pack Signing Key and Re-sign Packs
 
 Replaces the Ed25519 key that signs an environment's asset packs and deploys
-packs signed with the new one. What a pack is and how it is signed is ADR-0018
+packs signed with the new one. Each environment has its own key, `develop`'s
+(`keys\develop.key`) and `staging`'s, the release key (`keys\staging.key`), so a
+rotation is one environment's. What a pack is and how it is signed is ADR-0018
 ([runtime asset format](../adr/0018-runtime-asset-format.md)) and ADR-0031
 ([pack container](../adr/0031-pack-container-format.md)); who signs release
 packs, and where, is [ENGINEERING.md's Release signing](../ENGINEERING.md#cicd).
@@ -20,9 +22,10 @@ There is no command that re-signs an existing pack: `augusta-pack` signs as it
 cooks. Re-signing is a fresh cook of the scenario with the new key, and the
 client and server packs must come from that one cook run, since Join refuses a
 client pack not cooked with the server pack (ADR-0019, ADR-0038). Each server
-reads its pack from its own folder of the node's shared volume,
-`/srv/augusta/asset-packs/<scenario>/<packVersion>/`, holding `server.pack` and
-the `signing.pub` it is signed with
+reads its pack from its own folder of its environment's tree of the node's
+shared volume,
+`/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/`, holding
+`server.pack` and the `signing.pub` it is signed with
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). A new cook
 has a new `packVersion`, so `augusta-publish` puts it in a new folder, and the
 server is pointed at it through Git, which keeps the old folder in place as the
@@ -38,18 +41,22 @@ and `signing.pub` from it
 
 ```text
 /srv/augusta/asset-packs/
-└── <scenario>/
-    └── <packVersion>/    # the server pack's BLAKE3 hash, first 12 hex characters
-        ├── server.pack   # the server pack of one cook run
-        └── signing.pub   # the 32-byte public key that cook was signed with,
-                          # renamed to signing.pub whatever its name was locally
+└── <environment>/            # develop or staging, its assetPacks.hostPath
+    └── <scenario>/
+        └── <packVersion>/    # the server pack's BLAKE3 hash, first 12 hex
+            │                 # characters
+            ├── server.pack   # the server pack of one cook run
+            └── signing.pub   # the 32-byte public key that cook was signed
+                              # with, renamed to signing.pub whatever its name
+                              # was locally
 ```
 
-`augusta-publish` writes exactly this, and never over a folder that exists,
-owned by `augusta-publish:augusta`, the version's folder `0550` and its files
-`0440`: only the servers' group reads it, and once written the publish key
-cannot change it ([The server's user](k3s-node-recovery.md#the-servers-user)).
-The server mounts the folder as a `local` PersistentVolume
+`augusta-publish --environment <environment>` writes exactly this, in that
+environment's tree alone, and never over a folder that exists, owned by
+`augusta-publish:augusta`, the version's folder `0550` and its files `0440`:
+only the servers' group reads it, and once written the publish key cannot change
+it ([The server's user](k3s-node-recovery.md#the-servers-user)). The server
+mounts the folder as a `local` PersistentVolume
 ([Volumes](k3s-node-recovery.md#volumes)): until the folder is there, the pod
 waits in `ContainerCreating` and its `FailedMount` event names the missing path.
 A pack that does not verify against `signing.pub` makes the server exit at
@@ -89,7 +96,8 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     ```
 
 2. Generate the new keypair under a new prefix. `augusta-keygen` overwrites
-   whatever is at the prefix, so never reuse `keys\signing` or an existing one:
+   whatever is at the prefix, so never reuse `keys\develop`, `keys\staging` or
+   an existing one:
 
     ```powershell
     & "$AssetsRoot\bin\augusta-keygen.exe" "$AssetsRoot\keys\$Id"
@@ -116,11 +124,11 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     ```powershell
     & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\$Id.pub"
     & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\client.pack" --public-key "$AssetsRoot\keys\$Id.pub"
-    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\signing.pub"
+    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\develop.pub"
     ```
 
     The first two print `OK:`; the third must exit 1 (substitute the old key's
-    path if it is not `keys\signing.pub`).
+    path if it is not `keys\develop.pub`; `staging`'s is `keys\staging.pub`).
 
 5. Smoke-test locally: run `augustad` and `augustac` with configs
    ([`config/augustad.example.yaml`](../../config/augustad.example.yaml),
@@ -129,17 +137,20 @@ startup, and the pod crash-loops. The client pack never goes on the node.
    `keys\<Id>.pub`. Both log `event=pack_verified`, and the client is admitted
    at Join.
 
-6. Publish the server pack and the new public key to the node. This first
-   verifies both packs against the key, and that they come from one cook:
+6. Publish the server pack and the new public key to the environment's tree on
+   the node. This first verifies both packs against the key, and that they come
+   from one cook:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-publish.exe" firebase --host augusta-publish `
+    & "$AssetsRoot\bin\augusta-publish.exe" firebase --environment develop `
+      --host augusta-publish `
       --public-key "$AssetsRoot\keys\$Id.pub" `
       --client-pack "$AssetsRoot\packs\$Id\client.pack" `
       --server-pack "$AssetsRoot\packs\$Id\server.pack"
     ```
 
-    Replace `firebase` with the scenario. It prints the folder it wrote and the
+    Replace `firebase` with the scenario, and `develop` with the environment
+    (`staging` for the release key). It prints the folder it wrote and the
     `packVersion` to serve it with.
 
 7. Point the scenario's server at the new version: on a `feature/*` branch off
@@ -164,10 +175,12 @@ startup, and the pod crash-loops. The client pack never goes on the node.
 
 10. Retire the old key once no environment names a version signed with it
     (`git grep -n packVersion -- clusters/`): remove those folders from the
-    node, and destroy or archive the old private key.
+    node, and destroy or archive the old private key. The new key is now the
+    environment's: rename `keys\<Id>.*` to `keys\<environment>.*`, the names
+    `augusta-pack` and `augusta-publish` default to.
 
     ```sh
-    ssh <node> "sudo rm -r /srv/augusta/asset-packs/<scenario>/<old-packVersion>"
+    ssh <node> "sudo rm -r /srv/augusta/asset-packs/<environment>/<scenario>/<old-packVersion>"
     ```
 
 ## Verification
@@ -187,7 +200,7 @@ against `signing.pub`. A client with the new `client.pack` and `<Id>.pub` logs
 ## Rollback / abort
 
 - Before step 7, nothing is deployed: delete `packs\<Id>\`, `keys\<Id>.*` and
-  the node's `/srv/augusta/asset-packs/<scenario>/<packVersion>/`.
+  the node's `/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/`.
 - After step 7, revert the `packVersion` commit on `develop`
   ([Roll Back a Bad Deploy with Flux](flux-rollback.md), steps 4 to 6). The old
   folder is still on the node, so the pod restarts on the old pack. Do not start

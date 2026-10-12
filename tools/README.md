@@ -108,7 +108,7 @@ The assets root looks like this:
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `authoring/` | `maps/` (ADR-0015), `characters/` (ADR-0040), `sounds/` (ADR-0020), `scripts/parameters/` (ADR-0039), `scripts/rules/` (ADR-0022), `scenarios/<name>.yaml` (ADR-0041) - resolved by `augusta-pack`          |
 | `packs/`     | Cooked, signed packs                                                                                                                                                                                        |
-| `keys/`      | `signing.key` / `signing.pub` (Ed25519). Never commit these.                                                                                                                                                |
+| `keys/`      | One Ed25519 keypair per environment: `develop.key` / `develop.pub`, and `staging.key` / `staging.pub`, the release key. Never commit these.                                                                 |
 | `bin/`       | `augusta-pack`, `augusta-keygen`, `augusta-inspect`, `augusta-verify`, `augusta-publish` (`.exe` on Windows; installed here by `uv tool install`), plus `augusta-composer.sh` if the Composer bootstrap ran |
 | `python/`    | The uv tool venv (`python/augusta-pack`), with this project installed editable                                                                                                                              |
 | `tools/`     | Composer and Adobe plugins (installed by the Composer bootstrap)                                                                                                                                            |
@@ -233,19 +233,24 @@ augusta-pack [-h] [--assets-root ASSETS_ROOT]
 | `--assets-root ASSETS_ROOT`               | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`: `scenario` must sit under its `authoring/`, and it's used for the three defaults below. |
 | `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.pack`     | Where to write the client pack. Missing parent directories are created.                                                                         |
 | `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.pack`     | Where to write the server pack. Missing parent directories are created.                                                                         |
-| `--signing-key SIGNING_KEY`               | `<assets-root>/keys/signing.key`                                        | Ed25519 private key (64 bytes) the packs are signed with.                                                                                       |
+| `--signing-key SIGNING_KEY`               | `<assets-root>/keys/develop.key`                                        | Ed25519 private key (64 bytes) the packs are signed with: `develop`'s by default, `keys/staging.key` for a release.                             |
 | `--skip-validation`                       | off                                                                     | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run.                                       |
 
 Exit status is `0` on success and `1` if any step fails.
 
 ### Signing keys
 
-The bootstrap already generates `keys\signing.key` / `signing.pub`, so you only
-need `augusta-keygen` to create an additional keypair:
+Each environment signs its packs with its own key, and its servers refuse a pack
+another environment's key signed. The bootstrap generates `develop`'s,
+`keys\develop.key` / `develop.pub`, the default of `augusta-pack` and
+`augusta-verify`. `staging`'s is the release key, `keys\staging.key` /
+`staging.pub`, generated offline with `augusta-keygen`
+([ENGINEERING.md, Release signing](../docs/ENGINEERING.md#cicd)). A cook for
+both is two runs, one per key:
 
 ```powershell
 augusta-keygen <key-prefix>   # writes <key-prefix>.key and <key-prefix>.pub
-augusta-pack <scenario> --signing-key <key-prefix>.key
+augusta-pack <scenario> --signing-key <assets-root>\keys\staging.key
 ```
 
 #### `augusta-keygen` reference
@@ -323,7 +328,7 @@ augusta-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 | `pack` (required)           |                                            | Pack file (see above).                                           |
 | `-h`, `--help`              |                                            | Print the usage and option list, then exit.                      |
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root, for the `--public-key` default only.                |
-| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/signing.pub`           | Ed25519 public key (32 bytes) the signature must verify against. |
+| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/develop.pub`           | Ed25519 public key (32 bytes) the signature must verify against. |
 
 It recomputes the BLAKE3 hash of everything but the trailer, compares it with
 the trailer's hash, verifies the trailer's Ed25519 signature over that hash, and
@@ -340,26 +345,29 @@ failure it prints the reason to stderr and exits `1`:
 ### Publishing a server pack
 
 ```powershell
-augusta-publish <scenario> --host <node>
+augusta-publish <scenario> --environment <develop|staging> --host <node>
 ```
 
-Puts a scenario's server pack on the k3s node's shared asset-pack volume, where
-the cluster's servers read it (ADR-0026). It publishes; it does not deploy: a
-server serves the pack once its environment's `HelmRelease` in
-`clusters/onprem/apps/` names the version it prints
+Puts a scenario's server pack on the k3s node's shared asset-pack volume, in the
+tree of the environment that serves it, where its servers read it (ADR-0026). It
+publishes; it does not deploy: a server serves the pack once its environment's
+`HelmRelease` in `clusters/onprem/apps/` names the version it prints
 ([Rotate the Pack Signing Key](../docs/runbooks/pack-key-rotation.md), step 7).
 
 Before copying anything it verifies both packs of the scenario's cook against
 the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
 `server.pack` and `signing.pub`, into
-`/srv/augusta/asset-packs/<scenario>/<version>/`, `<version>` being the first 12
-hex characters of the server pack's BLAKE3 hash, in the `augusta` group so only
-the servers' group reads it. The folder is assembled beside its final place and
-renamed into it, so it never exists half-written, and a folder that exists is
-never written again: publishing the same cook twice checks the node holds the
-same files and copies nothing, and a folder holding other files is an error.
-Once written, the folder is read-only, to the publish user too.
+`/srv/augusta/asset-packs/<environment>/<scenario>/<version>/`, `<version>`
+being the first 12 hex characters of the server pack's BLAKE3 hash, which does
+not cover the signature: one cook signed with `develop`'s key and with
+`staging`'s is one version in two folders. The node takes `develop` and
+`staging` alone. The folder is in the `augusta` group so only the servers' group
+reads it. The folder is assembled beside its final place and renamed into it, so
+it never exists half-written, and a folder that exists is never written again:
+publishing the same cook twice checks the node holds the same files and copies
+nothing, and a folder holding other files is an error. Once written, the folder
+is read-only, to the publish user too.
 
 It runs `ssh` from `PATH` (on Windows, the OpenSSH client), as the node's
 `augusta-publish` user, with no `sudo`. That user's key runs nothing but the
@@ -371,19 +379,21 @@ ADR-0057); setting it up is
 #### `augusta-publish` reference
 
 ```text
-augusta-publish [-h] --host HOST [--assets-root ASSETS_ROOT] [--client-pack CLIENT_PACK]
+augusta-publish [-h] --environment {develop,staging} --host HOST
+                [--assets-root ASSETS_ROOT] [--client-pack CLIENT_PACK]
                 [--server-pack SERVER_PACK] [--public-key PUBLIC_KEY] scenario
 ```
 
-| Argument                    | Default                                      | Description                                                                                                                     |
-| --------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `scenario` (required)       |                                              | Scenario name (ADR-0041), which also names its server in the cluster: lowercase letters, digits and `-`, at most 46 characters. |
-| `--host HOST` (required)    |                                              | The k3s node as its `augusta-publish` user, as `ssh` names it (`augusta-publish@<node>`, or an alias in `~/.ssh/config`).       |
-| `-h`, `--help`              |                                              | Print the usage and option list, then exit.                                                                                     |
-| `--assets-root ASSETS_ROOT` | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
-| `--client-pack CLIENT_PACK` | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |
-| `--server-pack SERVER_PACK` | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish.                                                                                                     |
-| `--public-key PUBLIC_KEY`   | `<assets-root>/keys/signing.pub`             | The key both packs are signed with, published as `signing.pub`.                                                                 |
+| Argument                                     | Default                                      | Description                                                                                                                     |
+| -------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `scenario` (required)                        |                                              | Scenario name (ADR-0041), which also names its server in the cluster: lowercase letters, digits and `-`, at most 46 characters. |
+| `--environment {develop,staging}` (required) |                                              | The environment that serves the pack: its tree on the node, and the key its packs are signed with.                              |
+| `--host HOST` (required)                     |                                              | The k3s node as its `augusta-publish` user, as `ssh` names it (`augusta-publish@<node>`, or an alias in `~/.ssh/config`).       |
+| `-h`, `--help`                               |                                              | Print the usage and option list, then exit.                                                                                     |
+| `--assets-root ASSETS_ROOT`                  | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
+| `--client-pack CLIENT_PACK`                  | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |
+| `--server-pack SERVER_PACK`                  | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish.                                                                                                     |
+| `--public-key PUBLIC_KEY`                    | `<assets-root>/keys/<environment>.pub`       | The key both packs are signed with, published as `signing.pub`.                                                                 |
 
 On success it prints the folder on the node and the line to put under the
 scenario's server in the `HelmRelease`

@@ -163,12 +163,15 @@ decisions already made in ARCHITECTURE.md:
   bootstraps install.
 - **Release signing:** release packs are signed by the developer, on the
   developer's machine, never by a workflow. The release Ed25519 keypair is
-  generated offline with `augusta-keygen`. It is distinct from the committed
-  test key and from any development key. Its private key is kept off the repo
-  and out of every CI secret. The client and server packs of a release come from
-  one cook run signed with it, since Join refuses a client pack not cooked with
-  the server pack (ADR-0019, ADR-0038). Only the public key, `signing.pub`,
-  travels with the packs, named by each executable's config (ADR-0034).
+  generated offline with `augusta-keygen`, as `staging.key`/`staging.pub`: it is
+  `staging`'s key, as `develop.key`/`develop.pub` is `develop`'s, and a
+  `staging` server refuses a pack `develop`'s key signed. It is distinct from
+  the committed test key and from any development key. Its private key is kept
+  off the repo and out of every CI secret. The client and server packs of a
+  release come from one cook run signed with it, since Join refuses a client
+  pack not cooked with the server pack (ADR-0019, ADR-0038). Only the public
+  key, `signing.pub`, travels with the packs, named by each executable's config
+  (ADR-0034).
 - **Provenance and SBOMs:** what packs get from their signature, the release
   executables and every published server image get from GitHub artifact
   attestations, signed keylessly (Sigstore) by the workflow that built them:
@@ -290,17 +293,20 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Access:** LAN-only — no public exposure, no VPN/tunnel needed for now.
 - **Asset packs:** built and signed manually, separately from the CD pipeline
   (see ADR-0018, CI/CD above). Packs are versioned independently of code deploys
-  and can be shared across multiple server instances/versions. Stored in a
-  folder of the k3s node, `assetPacks.hostPath` (`/srv/augusta/asset-packs`),
-  which `augusta-publish` fills after signing (ADR-0026):
+  and can be shared across multiple server instances/versions. Each
+  environment's are stored in its own folder of the k3s node,
+  `/srv/augusta/asset-packs/<environment>`, its `assetPacks.hostPath`, which
+  `augusta-publish --environment <environment>` fills after signing (ADR-0026):
   `<scenario>/<packVersion>/` in it holds a scenario's `server.pack` and the
   `signing.pub` key it is signed with, `<packVersion>` being the first 12 hex
-  characters of the server pack's BLAKE3 hash. A published folder is never
-  rewritten. Each environment's Helm values list its servers, one per scenario,
-  each naming the `packVersion` it runs; the chart makes, for each server, a
-  `local` PersistentVolume on that folder alone, read-only and pinned to the
-  node, and the claim bound to it (ADR-0057), both named by the version:
-  `<namespace>-augustad-<scenario>-pack-<packVersion>` and
+  characters of the server pack's BLAKE3 hash. Each environment signs with its
+  own key, `develop`'s or `staging`'s (Release signing above). The hash does not
+  cover the signature, so one cook signed for both is one `packVersion` in two
+  folders. A published folder is never rewritten. Each environment's Helm values
+  list its servers, one per scenario, each naming the `packVersion` it runs; the
+  chart makes, for each server, a `local` PersistentVolume on that folder alone,
+  read-only and pinned to the node, and the claim bound to it (ADR-0057), both
+  named by the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
   `augustad-<scenario>-pack-<packVersion>`. A new version is a new volume and
   claim, and the previous ones stay, so reverting the line goes back to them;
   Helm never deletes either, nor Kubernetes the folder

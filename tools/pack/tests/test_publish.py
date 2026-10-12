@@ -79,16 +79,18 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
     client_pack, server_pack, public_key, server_hash = cook
     node = LocalNode(tmp_path / "node")
 
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     copied = publish.publish(release, node)
 
     assert copied
     assert release.version == server_hash.hex()[:12]
     assert (
         release.directory
-        == f"/srv/augusta/asset-packs/firebase/{release.version}"
+        == f"/srv/augusta/asset-packs/develop/firebase/{release.version}"
     )
-    folder = node.root / "firebase" / release.version
+    folder = node.root / "develop" / "firebase" / release.version
     assert sorted(path.name for path in folder.iterdir()) == [
         "server.pack",
         "signing.pub",
@@ -97,12 +99,60 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
     assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
 
 
+def cook_signed_by(folder: Path, private_key: bytes) -> tuple[Path, Path]:
+    """The client and server packs of ENTRIES, signed by private_key."""
+    folder.mkdir()
+    client_hash = pack.write_pack(folder / "client.pack", ENTRIES, private_key)
+    pack.write_pack(folder / "server.pack", ENTRIES, private_key, client_hash)
+    return folder / "client.pack", folder / "server.pack"
+
+
+def test_one_cook_signed_by_each_environments_key_goes_to_two_folders(
+    tmp_path,
+):
+    node = LocalNode(tmp_path / "node")
+    releases = {}
+    for environment in ("develop", "staging"):
+        public_key, private_key = keys.generate_keypair()
+        key = tmp_path / f"{environment}.pub"
+        key.write_bytes(public_key)
+        client_pack, server_pack = cook_signed_by(
+            tmp_path / environment, private_key
+        )
+        releases[environment] = publish.prepare(
+            environment, "firebase", client_pack, server_pack, key
+        )
+        assert publish.publish(releases[environment], node)
+
+    # The version does not cover the signature: one cook, one version.
+    assert releases["develop"].version == releases["staging"].version
+    for environment, release in releases.items():
+        folder = node.root / environment / "firebase" / release.version
+        assert (folder / "signing.pub").read_bytes() == (
+            tmp_path / f"{environment}.pub"
+        ).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "environment", ["production", "Develop", "", "../develop", "develop/x"]
+)
+def test_an_environment_the_node_does_not_serve_is_refused(environment, cook):
+    client_pack, server_pack, public_key, _ = cook
+
+    with pytest.raises(PublishError, match="not an Environment"):
+        publish.prepare(
+            environment, "firebase", client_pack, server_pack, public_key
+        )
+
+
 def test_publishing_a_version_already_on_the_node_copies_nothing(
     tmp_path, cook
 ):
     client_pack, server_pack, public_key, _ = cook
     node = LocalNode(tmp_path / "node")
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     publish.publish(release, node)
 
     assert not publish.publish(release, node)
@@ -114,8 +164,10 @@ def test_a_version_folder_holding_other_files_is_never_overwritten(
 ):
     client_pack, server_pack, public_key, _ = cook
     node = LocalNode(tmp_path / "node")
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
-    folder = node.root / "firebase" / release.version
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
+    folder = node.root / "develop" / "firebase" / release.version
     folder.mkdir(parents=True)
     (folder / "server.pack").write_bytes(b"something else")
 
@@ -142,14 +194,18 @@ def test_a_server_pack_from_another_cook_is_refused(tmp_path, cook, key_pair):
     )
 
     with pytest.raises(PublishError, match="not from the same cook"):
-        publish.prepare("firebase", client_pack, other_server, public_key)
+        publish.prepare(
+            "develop", "firebase", client_pack, other_server, public_key
+        )
 
 
 def test_a_client_pack_given_as_the_server_pack_is_refused(cook):
     client_pack, _, public_key, _ = cook
 
     with pytest.raises(PublishError, match="not a server pack"):
-        publish.prepare("firebase", client_pack, client_pack, public_key)
+        publish.prepare(
+            "develop", "firebase", client_pack, client_pack, public_key
+        )
 
 
 def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
@@ -158,7 +214,9 @@ def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
     other_key.write_bytes(keys.generate_keypair()[0])
 
     with pytest.raises(PublishError, match="signature is not valid"):
-        publish.prepare("firebase", client_pack, server_pack, other_key)
+        publish.prepare(
+            "develop", "firebase", client_pack, server_pack, other_key
+        )
 
 
 def test_a_missing_pack_is_refused(tmp_path, cook):
@@ -166,7 +224,11 @@ def test_a_missing_pack_is_refused(tmp_path, cook):
 
     with pytest.raises(PublishError):
         publish.prepare(
-            "firebase", client_pack, tmp_path / "missing.pack", public_key
+            "develop",
+            "firebase",
+            client_pack,
+            tmp_path / "missing.pack",
+            public_key,
         )
 
 
@@ -178,7 +240,9 @@ def test_a_scenario_name_no_server_can_be_named_by_is_refused(scenario, cook):
     client_pack, server_pack, public_key, _ = cook
 
     with pytest.raises(PublishError, match="cannot name a server"):
-        publish.prepare(scenario, client_pack, server_pack, public_key)
+        publish.prepare(
+            "develop", scenario, client_pack, server_pack, public_key
+        )
 
 
 RECEIVER = (
@@ -260,7 +324,7 @@ def leftovers(node_volume: Path) -> list[Path]:
 
     A scenario's folder itself may stay: a server is never pointed at one.
     """
-    return [path for path in node_volume.glob("*/*")]
+    return [path for path in node_volume.glob("*/*/*")]
 
 
 @node_only
@@ -268,14 +332,16 @@ def test_a_cook_is_published_through_the_forced_command_in_one_connection(
     node_volume, cook
 ):
     client_pack, server_pack, public_key, _ = cook
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
 
     assert publish.publish(release, publish.SshNode("node"))
 
     assert connections(node_volume) == 1
-    folder = node_volume / "firebase" / release.version
+    folder = node_volume / "develop" / "firebase" / release.version
     assert sorted(
-        path.name for path in (node_volume / "firebase").iterdir()
+        path.name for path in (node_volume / "develop" / "firebase").iterdir()
     ) == [release.version]
     assert (folder / "server.pack").read_bytes() == server_pack.read_bytes()
     assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
@@ -286,7 +352,9 @@ def test_republishing_a_version_takes_one_connection_and_copies_nothing(
     node_volume, cook
 ):
     client_pack, server_pack, public_key, _ = cook
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     publish.publish(release, publish.SshNode("node"))
 
     assert not publish.publish(release, publish.SshNode("node"))
@@ -299,7 +367,9 @@ def test_a_version_holding_other_files_is_refused_in_one_connection(
     node_volume, cook
 ):
     client_pack, server_pack, public_key, _ = cook
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     command, stdin = publish_command(
         release.folder, {"server.pack": b"other", "signing.pub": b"key"}
     )
@@ -310,7 +380,7 @@ def test_a_version_holding_other_files_is_refused_in_one_connection(
         publish.publish(release, publish.SshNode("node"))
 
     assert connections(node_volume) == before + 1
-    folder = node_volume / "firebase" / release.version
+    folder = node_volume / "develop" / "firebase" / release.version
     assert (folder / "server.pack").read_bytes() == b"other"
 
 
@@ -319,9 +389,11 @@ def test_a_published_folder_is_read_only_to_the_publish_user(node_volume, cook):
     if os.geteuid() == 0:
         pytest.skip("root writes whatever the modes say")
     client_pack, server_pack, public_key, _ = cook
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     publish.publish(release, publish.SshNode("node"))
-    folder = node_volume / "firebase" / release.version
+    folder = node_volume / "develop" / "firebase" / release.version
 
     assert folder.stat().st_mode & 0o777 == 0o550
     for name in ("server.pack", "signing.pub"):
@@ -337,9 +409,11 @@ def test_the_forced_command_never_writes_into_a_published_version(
     node_volume, cook
 ):
     client_pack, server_pack, public_key, _ = cook
-    release = publish.prepare("firebase", client_pack, server_pack, public_key)
+    release = publish.prepare(
+        "develop", "firebase", client_pack, server_pack, public_key
+    )
     publish.publish(release, publish.SshNode("node"))
-    folder = node_volume / "firebase" / release.version
+    folder = node_volume / "develop" / "firebase" / release.version
     before = (folder / "server.pack").read_bytes()
 
     result = forced(
@@ -362,14 +436,15 @@ def test_a_publish_not_matching_what_was_sent_writes_nothing(
     node_volume, stdin
 ):
     command, _ = publish_command(
-        f"firebase/{VERSION}", {"server.pack": b"pack", "signing.pub": b"key"}
+        f"develop/firebase/{VERSION}",
+        {"server.pack": b"pack", "signing.pub": b"key"},
     )
 
     result = forced(command, stdin)
 
     assert result.returncode == 1, result.stderr
     assert leftovers(node_volume) == []
-    assert not (node_volume / "firebase" / VERSION).exists()
+    assert not (node_volume / "develop" / "firebase" / VERSION).exists()
 
 
 @node_only
@@ -382,9 +457,11 @@ def test_files_larger_than_a_pipe_arrive_whole(node_volume, tmp_path):
     files = {"server.pack": server_pack, "signing.pub": public_key}
     digests = {name: sha256(path.read_bytes()) for name, path in files.items()}
 
-    assert publish.SshNode("node").put(f"firebase/{VERSION}", files, digests)
+    assert publish.SshNode("node").put(
+        f"develop/firebase/{VERSION}", files, digests
+    )
 
-    folder = node_volume / "firebase" / VERSION
+    folder = node_volume / "develop" / "firebase" / VERSION
     for name, path in files.items():
         assert (folder / name).read_bytes() == path.read_bytes()
 
@@ -392,12 +469,12 @@ def test_files_larger_than_a_pipe_arrive_whole(node_volume, tmp_path):
 @node_only
 def test_a_publish_after_a_failed_one_is_published(node_volume):
     files = {"server.pack": b"pack", "signing.pub": b"key"}
-    command, stdin = publish_command(f"firebase/{VERSION}", files)
+    command, stdin = publish_command(f"develop/firebase/{VERSION}", files)
     forced(command, stdin[:-1])
 
     assert forced(command, stdin).returncode == 0
 
-    folder = node_volume / "firebase" / VERSION
+    folder = node_volume / "develop" / "firebase" / VERSION
     assert (folder / "server.pack").read_bytes() == b"pack"
     assert (folder / "signing.pub").read_bytes() == b"key"
 
@@ -406,7 +483,8 @@ def test_a_publish_after_a_failed_one_is_published(node_volume):
 @pytest.mark.usefixtures("node_volume")
 def test_the_forced_command_reports_a_version_published_with_those_files():
     command, stdin = publish_command(
-        f"firebase/{VERSION}", {"server.pack": b"pack", "signing.pub": b"key"}
+        f"develop/firebase/{VERSION}",
+        {"server.pack": b"pack", "signing.pub": b"key"},
     )
     forced(command, stdin)
 
@@ -416,7 +494,7 @@ def test_the_forced_command_reports_a_version_published_with_those_files():
 @node_only
 def test_two_publishes_of_one_version_take_turns(node_volume):
     files = {"server.pack": os.urandom(4 * 65536), "signing.pub": b"key"}
-    command, stdin = publish_command(f"firebase/{VERSION}", files)
+    command, stdin = publish_command(f"develop/firebase/{VERSION}", files)
     publishes = [
         subprocess.Popen(
             ["ssh", "node", command],
@@ -438,7 +516,9 @@ def test_two_publishes_of_one_version_take_turns(node_volume):
         feeder.join()
 
     assert sorted(process.returncode for process in publishes) == [0, 3]
-    assert leftovers(node_volume) == [node_volume / "firebase" / VERSION]
+    assert leftovers(node_volume) == [
+        node_volume / "develop" / "firebase" / VERSION
+    ]
 
 
 @node_only
@@ -456,7 +536,7 @@ def test_a_publish_whose_rename_fails_leaves_no_staging_place(
 
     result = forced(
         *publish_command(
-            f"firebase/{VERSION}",
+            f"develop/firebase/{VERSION}",
             {"server.pack": b"pack", "signing.pub": b"key"},
         )
     )
@@ -476,7 +556,9 @@ def test_a_file_that_cannot_be_read_publishes_nothing(node_volume, tmp_path):
     digests = {"server.pack": sha256(b"pack"), "signing.pub": DIGEST}
 
     with pytest.raises(PublishError, match=f"cannot read {unreadable}"):
-        publish.SshNode("node").put(f"firebase/{VERSION}", files, digests)
+        publish.SshNode("node").put(
+            f"develop/firebase/{VERSION}", files, digests
+        )
 
     assert leftovers(node_volume) == []
 
@@ -492,36 +574,36 @@ def test_a_file_that_cannot_be_read_publishes_nothing(node_volume, tmp_path):
         f"digests firebase/{VERSION}",
         f"receive firebase/{VERSION} server.pack",
         f"commit firebase/{VERSION} server.pack={DIGEST} signing.pub={DIGEST}",
-        f"publish ../firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"publish ../develop/firebase/{VERSION} server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION}/.. server.pack={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION}/.. server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/../../etc server.pack={DIGEST}:0 "
+        f"publish develop/firebase/../../etc server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/0123456789AB server.pack={DIGEST}:0 "
+        f"publish develop/firebase/0123456789AB server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish Firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"publish develop/Firebase/{VERSION} server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} ../escape={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION} ../escape={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} other.pack={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION} other.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:0",
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:0 "
         f"server.pack={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack=nothex:0 "
+        f"publish develop/firebase/{VERSION} server.pack=nothex:0 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST} "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST} "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:-1 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:-1 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:0x10 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:0x10 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:010 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:010 "
         f"signing.pub={DIGEST}:0",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0 extra",
-        f"publish firebase/{VERSION} server.pack={DIGEST}:0 "
+        f"publish develop/firebase/{VERSION} server.pack={DIGEST}:0 "
         f"signing.pub={DIGEST}:0\nsh",
     ],
 )
@@ -533,3 +615,27 @@ def test_the_forced_command_refuses_anything_but_publishing(
     assert result.returncode == 2, result.stderr
     assert list(node_volume.rglob("*")) == []
     assert not (node_volume.parent / "escape").exists()
+
+
+@node_only
+@pytest.mark.parametrize(
+    "folder",
+    [
+        f"production/firebase/{VERSION}",
+        f"Develop/firebase/{VERSION}",
+        f"firebase/{VERSION}",
+        f"develop/{VERSION}",
+        f"develop/staging/firebase/{VERSION}",
+    ],
+)
+def test_the_forced_command_refuses_a_folder_of_no_known_environment(
+    node_volume, folder
+):
+    result = forced(
+        *publish_command(
+            folder, {"server.pack": b"pack", "signing.pub": b"key"}
+        )
+    )
+
+    assert result.returncode == 2, result.stderr
+    assert list(node_volume.rglob("*")) == []

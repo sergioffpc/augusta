@@ -28,6 +28,11 @@ spec:
       nodePortRange:
         first: 30700
         last: 30799
+    # develop's own tree of the node's asset-pack volume, where
+    # augusta-publish --environment develop puts its packs, signed with
+    # develop's key (charts/augustad values.yaml).
+    assetPacks:
+      hostPath: /srv/augusta/asset-packs/develop
     # A server per scenario (ADR-0026), each running the pack version
     # augusta-publish printed for it.
     servers:
