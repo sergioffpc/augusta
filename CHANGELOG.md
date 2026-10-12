@@ -24,6 +24,7 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **pack:** address review of the per-Environment pack trees
 - **release:** check the client runs, and keep it out of a plain install
 - **release:** list only what the client ships, with valid SPDX IDs
+- **release:** read Falcor's ports from a prebuilt Falcor too
 
 ### Documentation
 
