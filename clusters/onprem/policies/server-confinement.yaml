@@ -24,8 +24,7 @@ spec:
         resources: [pods]
   # staging is exempt until it runs a release whose chart confines its
   # servers, the first tagged after #535: CI checks staging with the latest
-  # release's chart, as Flux runs it. staging then leaves this condition, as
-  # it leaves host-path-volumes.yaml's list.
+  # release's chart, as Flux runs it. staging then leaves this condition.
   matchConditions:
     - name: outside-staging
       expression: request.namespace != "staging"
