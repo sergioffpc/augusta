@@ -10,7 +10,9 @@
 #   bin/                    Falcor's runtime output directory, without .pdb/.ilk
 #   lib/                    Falcor.lib and Falcor's own fmt library
 #   packman/                the packman headers and import libraries augusta_renderer
-#                           builds against, at their paths under external/packman
+#                           builds against, and the vcpkg port documents of
+#                           deps/share the client's SBOM names Falcor's ports
+#                           by (ADR-0058), at their paths under external/packman
 #   compile_commands.json   Falcor's, for cmake/CheckFalcorFeatures.cmake
 #
 # Included, it defines the functions below. Run as a script (cmake -P), it makes
@@ -24,11 +26,12 @@ include_guard(GLOBAL)
 
 # Bumped when the layout above changes, so no build reads a package of the old
 # one.
-set(AUGUSTA_FALCOR_PREBUILT_FORMAT 1)
+set(AUGUSTA_FALCOR_PREBUILT_FORMAT 2)
 
 # What packman/ holds, relative to external/packman.
 set(
   AUGUSTA_FALCOR_PREBUILT_PACKMAN
+  deps/share
   nanovdb/include
   rtxdi/rtxdi-sdk/include
   python/Include

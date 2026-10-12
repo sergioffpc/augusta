@@ -199,7 +199,12 @@ if(WIN32)
     set(FALCOR_BIN_DIR ${FALCOR_PREBUILT_DIR}/bin CACHE INTERNAL "Falcor's own build output directory")
     set(FALCOR_LIB ${FALCOR_PREBUILT_DIR}/lib/Falcor.lib)
     set(FALCOR_FMT_LIB ${FALCOR_PREBUILT_DIR}/lib/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib)
-    set(FALCOR_PACKMAN_DIR ${FALCOR_PREBUILT_DIR}/packman)
+    set(
+      FALCOR_PACKMAN_DIR
+      ${FALCOR_PREBUILT_DIR}/packman
+      CACHE INTERNAL
+      "Falcor's packman packages, which the release's SBOM reads"
+    )
     add_custom_command(
       OUTPUT ${FALCOR_STAMP} ${FALCOR_PATCH_COMMANDS}
       COMMAND
@@ -217,7 +222,12 @@ if(WIN32)
     # fmt's own CMakeLists applies a "d" debug postfix to its output name
     # (fmtd.lib) - unlike Falcor.lib itself, which doesn't get one.
     set(FALCOR_FMT_LIB ${FALCOR_BUILD_DIR}/external/fmt/${CMAKE_BUILD_TYPE}/$<IF:$<CONFIG:Debug>,fmtd,fmt>.lib)
-    set(FALCOR_PACKMAN_DIR ${FALCOR_DIR}/external/packman)
+    set(
+      FALCOR_PACKMAN_DIR
+      ${FALCOR_DIR}/external/packman
+      CACHE INTERNAL
+      "Falcor's packman packages, which the release's SBOM reads"
+    )
     add_custom_command(
       OUTPUT ${FALCOR_STAMP} ${FALCOR_PATCH_COMMANDS}
       # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
