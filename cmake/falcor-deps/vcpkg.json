@@ -1,0 +1,20 @@
+{
+  "$comment": "Falcor's own dependencies (external/CMakeLists.txt), built by src/modules/renderer/CMakeLists.txt in place of Falcor's packman bundle, whose versions have CVEs (#593). Triplet: x64-windows-falcor.cmake beside this file.",
+  "name": "augusta-falcor-deps",
+  "version": "1.0.0",
+  "dependencies": [
+    "assimp",
+    "freeimage",
+    "imath",
+    "lz4",
+    "openexr",
+    {
+      "name": "opensubdiv",
+      "default-features": false
+    },
+    "openvdb",
+    "pugixml",
+    "tbb",
+    "zlib"
+  ]
+}

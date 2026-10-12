@@ -7,4 +7,110 @@ ignore:
       name: ^zlib$
       version: 1.3.2#2
     reason: >-
-      gz_vacate() is reached only through zlib's gzFile API (gzprintf or gzvprintf after a stalled non-blocking gzwrite). Nothing in augustac calls it: zlib reaches it only through steam-audio's libmysofa, whose one use of zlib (src/hdf/gunzip.c, v1.3.5) is an in-memory inflate().
+      gz_vacate() is reached only through zlib's gzFile API (gzprintf or gzvprintf after a stalled non-blocking gzwrite). Nothing in augustac calls it: zlib reaches it only through steam-audio's libmysofa, whose one use of zlib (src/hdf/gunzip.c, v1.3.5) is an in-memory inflate(), and through Falcor's own dependency tree (cmake/falcor-deps), where Falcor.dll's one use (Core/Platform/OS.cpp) is an in-memory inflate() too and the loaders that link zlib (assimp, FreeImage, OpenEXR, OpenVDB) are never called.
+  - vulnerability: CVE-2019-12211
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    # FreeImage's last release, which no newer vcpkg port replaces; these are
+    # its CVEs at any severity, so a rescoring doesn't turn the scan red.
+    reason: &freeimage-unreached >-
+      FreeImage 3.18.0 is Falcor's image loader (Utils/Image/Bitmap.cpp), loaded with Falcor.dll, and augustac never calls it: augusta_renderer bypasses Falcor's SampleApp and loads no image, texture, scene or volume through Falcor - its geometry is built in code (src/modules/renderer/renderer.cpp), and its HUD (debug_hud.cpp) draws no image and has Falcor's TrueType fonts read by ImGui itself. No file reaches a FreeImage plugin.
+  - vulnerability: CVE-2019-12212
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2019-12213
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2019-12214
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2020-21426
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2020-21427
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2020-21428
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2021-33367
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47992
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47993
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47994
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47995
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47996
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2023-47997
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2024-31570
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2025-65803
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2025-70968
+    package:
+      name: ^freeimage$
+      version: 3.18.0#27
+    reason: *freeimage-unreached
+  - vulnerability: CVE-2020-29396
+    package:
+      name: ^python$
+      version: 3.10.21+nv3-windows-x86_64
+    reason: >-
+      Odoo's safe_eval sandbox, not CPython: the NVD's CPE names every CPython from 3.6 as the platform it ran on. augustac ships no Odoo.
+  - vulnerability: CVE-2023-36632
+    package:
+      name: ^python$
+      version: 3.10.21+nv3-windows-x86_64
+    reason: >-
+      email.utils.parseaddr() recursion. augustac never starts Falcor's embedded interpreter (only Falcor's SampleApp and unit tests call Scripting::start(), and augusta_renderer bypasses SampleApp), so python310.dll is loaded with Falcor.dll but runs no Python code, email's included.
+  - vulnerability: CVE-2026-4519
+    package:
+      name: ^python$
+      version: 3.10.21+nv3-windows-x86_64
+    reason: >-
+      webbrowser.open() taking a leading dash as a browser option, fixed in 3.13.13 and not in 3.10. augustac never starts Falcor's embedded interpreter (only Falcor's SampleApp and unit tests call Scripting::start(), and augusta_renderer bypasses SampleApp), so python310.dll is loaded with Falcor.dll but runs no Python code, webbrowser's included.

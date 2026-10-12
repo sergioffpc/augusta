@@ -11,6 +11,8 @@ on:
     paths:
       - third_party/falcor
       - cmake/patches/falcor.patch
+      - cmake/falcor-deps/**
+      - third_party/vcpkg
       - cmake/FalcorPrebuilt.cmake
       - src/modules/renderer/CMakeLists.txt
       - .github/workflows/falcor-prebuilt.yml

@@ -122,9 +122,27 @@ if(WIN32)
     FALCOR_HAS_RTXDI=1
   )
 
+  # Falcor's own dependencies (external/CMakeLists.txt): a vcpkg tree built
+  # from cmake/falcor-deps/vcpkg.json by the vcpkg submodule, in place of the
+  # packman bundle falcor.patch drops, whose versions have CVEs (#593). It is
+  # shared by every outer preset, as Falcor's build directory is.
+  set(FALCOR_DEPS_MANIFEST_DIR ${CMAKE_SOURCE_DIR}/cmake/falcor-deps)
+  set(FALCOR_DEPS_TRIPLET x64-windows-falcor)
+  set(FALCOR_DEPS_DIR ${FALCOR_DIR}/build/deps/${FALCOR_DEPS_TRIPLET})
+  # What Falcor is built from besides its checkout: a change to any of them
+  # rebuilds it and names another prebuilt. vcpkg's baseline changes with any
+  # port's version.
+  set(
+    FALCOR_INPUTS
+    ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
+    ${FALCOR_DEPS_MANIFEST_DIR}/vcpkg.json
+    ${FALCOR_DEPS_MANIFEST_DIR}/${FALCOR_DEPS_TRIPLET}.cmake
+    ${CMAKE_SOURCE_DIR}/third_party/vcpkg/versions/baseline.json
+  )
+
   # A prebuilt Falcor (cmake/FalcorPrebuilt.cmake) when the repository's
-  # releases have one matching this checkout, patch and features; Falcor built
-  # from source below otherwise. AUGUSTA_FALCOR_PREBUILT_TAG/_PACKAGE are what
+  # releases have one matching this checkout, its inputs and features; Falcor
+  # built from source below otherwise. AUGUSTA_FALCOR_PREBUILT_TAG/_PACKAGE are what
   # .github/workflows/falcor-prebuilt.yml reads to publish one.
   option(AUGUSTA_FALCOR_PREBUILT "Download a prebuilt Falcor from the repository's releases when one matches" ON)
   set(
@@ -136,7 +154,7 @@ if(WIN32)
   include(${CMAKE_SOURCE_DIR}/cmake/FalcorPrebuilt.cmake)
   augusta_falcor_prebuilt_name(
     ${FALCOR_DIR}
-    ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch
+    "${FALCOR_INPUTS}"
     "${AUGUSTA_FALCOR_FEATURES}"
     ${CMAKE_BUILD_TYPE}
     falcor_tag
@@ -186,6 +204,9 @@ if(WIN32)
     CMakePresets.json
     Source/Falcor/Core/Window.h
     Source/Falcor/Core/Window.cpp
+    dependencies.xml
+    external/CMakeLists.txt
+    build_scripts/deploycommon.bat
     COMMAND
     ${GIT_EXECUTABLE}
     -C
@@ -220,6 +241,12 @@ if(WIN32)
     set(FALCOR_PACKMAN_DIR ${FALCOR_DIR}/external/packman)
     add_custom_command(
       OUTPUT ${FALCOR_STAMP} ${FALCOR_PATCH_COMMANDS}
+      # Falcor's dependencies, at FALCOR_DEPS_DIR, before Falcor's configure
+      # imports them from there.
+      COMMAND
+        ${CMAKE_SOURCE_DIR}/third_party/vcpkg/vcpkg.exe install --x-manifest-root=${FALCOR_DEPS_MANIFEST_DIR}
+        --overlay-triplets=${FALCOR_DEPS_MANIFEST_DIR} --triplet=${FALCOR_DEPS_TRIPLET}
+        --x-install-root=${FALCOR_DIR}/build/deps --no-print-usage
       # windows-ninja-msvc-base's CMAKE_MAKE_PROGRAM points at
       # tools/.packman/ninja/ninja.exe, needed immediately by project() - but
       # Falcor's own root CMakeLists.txt only pulls packman dependencies
@@ -253,7 +280,9 @@ if(WIN32)
         # explicitly here makes it immune to that, regardless of which path
         # triggers the reconfigure.
         ${FALCOR_AFTERMATH_SYNC_COMMAND}
-      COMMAND ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      COMMAND
+        ${CMAKE_COMMAND} -S ${FALCOR_DIR} --preset ${FALCOR_PRESET} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        -DFALCOR_DEPS_DIR=${FALCOR_DEPS_DIR}
       COMMAND
         ${CMAKE_COMMAND} --build ${FALCOR_BUILD_DIR} --config ${CMAKE_BUILD_TYPE} --target Falcor
         ${FALCOR_AFTERMATH_DEPLOY_COMMAND}
@@ -279,7 +308,7 @@ if(WIN32)
       # cache variable inside its patched hunk) left falcor.stamp looking
       # up to date and silently skipped re-applying it, even though
       # `git apply` above references the file.
-      DEPENDS ${CMAKE_SOURCE_DIR}/cmake/patches/falcor.patch ${FALCOR_AFTERMATH_DEPENDS}
+      DEPENDS ${FALCOR_INPUTS} ${FALCOR_AFTERMATH_DEPENDS}
       VERBATIM
     )
     add_custom_target(

@@ -2,9 +2,11 @@
 # .github/workflows/falcor-prebuilt.yml, and published as an asset of this
 # repository's release <tag>, which a build downloads instead of building
 # Falcor itself. The tag names everything the package's contents depend on: the
-# submodule's commit, cmake/patches/falcor.patch, and the FALCOR_HAS_* features
-# augusta_renderer compiles Falcor's headers with (an Aftermath-enabled build,
-# which CI can't make, never finds one). The asset is one per build type.
+# submodule's commit, the files it is built from (cmake/patches/falcor.patch,
+# and its dependencies' vcpkg manifest, triplet and baseline), and the
+# FALCOR_HAS_* features augusta_renderer compiles Falcor's headers with (an
+# Aftermath-enabled build, which CI can't make, never finds one). The asset is
+# one per build type.
 #
 # Layout of a package:
 #   bin/                    Falcor's runtime output directory, without .pdb/.ilk
@@ -39,12 +41,12 @@ set(
 )
 
 # Sets <out_tag> to the release tag of the package matching this Falcor
-# checkout, falcor.patch and <features>, and <out_asset> to its asset name for
-# <build_type>.
+# checkout, the contents of <inputs> (files, ';'-separated) and <features>, and
+# <out_asset> to its asset name for <build_type>.
 function(
   augusta_falcor_prebuilt_name
   falcor_dir
-  patch
+  inputs
   features
   build_type
   out_tag
@@ -56,12 +58,16 @@ function(
     OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY
   )
-  file(SHA256 "${patch}" patch_hash)
+  set(input_hashes)
+  foreach(input ${inputs})
+    file(SHA256 "${input}" input_hash)
+    list(APPEND input_hashes ${input_hash})
+  endforeach()
   list(SORT features)
-  string(SHA256 inputs "${AUGUSTA_FALCOR_PREBUILT_FORMAT};${patch_hash};${features}")
+  string(SHA256 contents "${AUGUSTA_FALCOR_PREBUILT_FORMAT};${input_hashes};${features}")
   string(SUBSTRING "${commit}" 0 12 commit)
-  string(SUBSTRING "${inputs}" 0 12 inputs)
-  set(${out_tag} "falcor-${commit}-${inputs}" PARENT_SCOPE)
+  string(SUBSTRING "${contents}" 0 12 contents)
+  set(${out_tag} "falcor-${commit}-${contents}" PARENT_SCOPE)
   set(${out_asset} "falcor-${build_type}.zip" PARENT_SCOPE)
 endfunction()
 

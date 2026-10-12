@@ -50,6 +50,13 @@ The PDB stays a separate asset (ADR-0055).
   the check does not show that the bundled MSVC runtime is complete either.
 - The SBOM lists what the zip ships beside `augustac`'s own ports: Falcor's
   vcpkg ports, packman packages and fetched SDKs, and the MSVC runtime
-  (`scripts/vcpkg-sbom.py`). Falcor's ports are years older than `augustac`'s.
-  Nightly `sbom-scan` matches their CVEs, which fail it until each one is fixed
-  or assessed.
+  (`scripts/vcpkg-sbom.py`). Nightly `sbom-scan` matches their CVEs, which fail
+  it until each one is fixed or assessed.
+- Falcor's vcpkg ports are built by augusta, from `cmake/falcor-deps/vcpkg.json`
+  on augusta's own vcpkg baseline, in place of Falcor's packman bundle, whose
+  ports were years older (#593). Its packman Python is pinned to 3.10's latest
+  release. What stays vulnerable is assessed in `.grype.yaml`: FreeImage, which
+  has no newer release, and Python CVEs that 3.10 does not fix. `augustac`
+  reaches neither. It loads no image, scene or volume through Falcor, and never
+  starts Falcor's Python interpreter. A client that does either voids that
+  assessment.

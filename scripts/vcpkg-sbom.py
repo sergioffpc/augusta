@@ -11,8 +11,8 @@ every target. A dependency vcpkg doesn't provide (a submodule: Falcor, NVTX)
 is named with --git-package, at its checked-out commit.
 
 The client ships Falcor's own dependencies beside it (ADR-0058), which
---falcor names from the Falcor checkout they were fetched into: the ports of
-the vcpkg tree its packman bundle is (external/packman/deps), every packman
+--falcor names from the Falcor checkout they were built and fetched into: the
+ports of the vcpkg tree augusta builds them in (_FALCOR_DEPS), every packman
 package of dependencies.xml, and every FetchPackage URL of
 external/CMakeLists.txt. --msvc-runtime names the MSVC runtime the client
 bundles, at the version of its vcruntime140.dll.
@@ -50,9 +50,12 @@ _PACKMAN_PLATFORM = "windows-x86_64"
 # Where a packman dependency the build links is put; Falcor's tools and sample
 # media go elsewhere, and ship in no executable.
 _PACKMAN_LINKED = "external/packman/"
-# The packman dependencies the build links but the client does not ship: the
-# vcpkg tree whose ports are listed one by one, and debug builds.
-_PACKMAN_UNSHIPPED = {"falcor_dependencies", "nv-usd-debug"}
+# The packman dependencies the build links but the client does not ship: debug
+# builds.
+_PACKMAN_UNSHIPPED = {"nv-usd-debug"}
+# The vcpkg tree of Falcor's own dependencies in its checkout, where
+# src/modules/renderer/CMakeLists.txt installs cmake/falcor-deps/vcpkg.json.
+_FALCOR_DEPS = pathlib.Path("build", "deps", "x64-windows-falcor")
 # A FetchPackage URL's version: a release's number (v1.8.2505, 1.717.0-preview,
 # v310.1.0.zip), or the commit an archive is of.
 _URL_VERSION = re.compile(
@@ -199,9 +202,7 @@ def fetched_packages(cmake_lists):
 def falcor_packages(checkout):
     """Falcor's own dependencies, from its checkout (the module's doc)."""
     return (
-        port_packages(
-            checkout / "external" / "packman" / "deps", "falcor-vcpkg"
-        )
+        port_packages(checkout / _FALCOR_DEPS, "falcor-vcpkg")
         + packman_packages(checkout / "dependencies.xml")
         + fetched_packages(checkout / "external" / "CMakeLists.txt")
     )
