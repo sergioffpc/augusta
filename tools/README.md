@@ -240,11 +240,11 @@ Exit status is `0` on success and `1` if any step fails.
 
 ### Signing keys
 
-Each environment signs its packs with its own key, and its servers refuse a pack
-another environment's key signed. The bootstrap generates `develop`'s,
-`keys\develop.key` / `develop.pub`, the default of `augusta-pack` and
-`augusta-verify`. `staging`'s is the release key, `keys\staging.key` /
-`staging.pub`, generated offline with `augusta-keygen`
+Each environment signs its packs with its own key, published beside them, and
+its servers refuse a pack that does not verify against it. The bootstrap
+generates `develop`'s, `keys\develop.key` / `develop.pub`, the default of
+`augusta-pack` and `augusta-verify`. `staging`'s is the release key,
+`keys\staging.key` / `staging.pub`, generated offline with `augusta-keygen`
 ([ENGINEERING.md, Release signing](../docs/ENGINEERING.md#cicd)). A cook for
 both is two runs, one per key:
 
@@ -268,8 +268,9 @@ On success it prints the two paths it wrote and exits `0`. The public key is
 what the runtime verifies packs against (ADR-0018).
 
 It **overwrites** existing `<prefix>.key` / `<prefix>.pub` without asking. Never
-point it at `keys\signing`: that would invalidate every pack already signed with
-the current key and the public key already deployed for verification.
+point it at `keys\develop` or `keys\staging`: that would invalidate every pack
+already signed with the current key and the public key already deployed for
+verification.
 
 ### Inspecting and verifying packs
 

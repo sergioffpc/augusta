@@ -165,13 +165,13 @@ decisions already made in ARCHITECTURE.md:
   developer's machine, never by a workflow. The release Ed25519 keypair is
   generated offline with `augusta-keygen`, as `staging.key`/`staging.pub`: it is
   `staging`'s key, as `develop.key`/`develop.pub` is `develop`'s, and a
-  `staging` server refuses a pack `develop`'s key signed. It is distinct from
-  the committed test key and from any development key. Its private key is kept
-  off the repo and out of every CI secret. The client and server packs of a
-  release come from one cook run signed with it, since Join refuses a client
-  pack not cooked with the server pack (ADR-0019, ADR-0038). Only the public
-  key, `signing.pub`, travels with the packs, named by each executable's config
-  (ADR-0034).
+  `staging` server refuses a pack that does not verify against the `staging.pub`
+  published beside it. It is distinct from the committed test key and from any
+  development key. Its private key is kept off the repo and out of every CI
+  secret. The client and server packs of a release come from one cook run signed
+  with it, since Join refuses a client pack not cooked with the server pack
+  (ADR-0019, ADR-0038). Only the public key, `signing.pub`, travels with the
+  packs, named by each executable's config (ADR-0034).
 - **Provenance and SBOMs:** what packs get from their signature, the release
   executables and every published server image get from GitHub artifact
   attestations, signed keylessly (Sigstore) by the workflow that built them:

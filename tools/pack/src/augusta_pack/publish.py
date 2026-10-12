@@ -13,8 +13,8 @@ the public key and the server pack names that client pack in its header
 (ADR-0031): a server pack is never published without the client pack players
 need to join it. The version is the first 12 hex characters of the server
 pack's BLAKE3 hash, which does not cover the signature, so a folder is
-never overwritten: a new cook is a new
-folder, and the old one stays in place as the rollback. Publishing a version
+never overwritten: a new cook is a new folder, and the old one stays in place
+as the rollback. Publishing a version
 already on the node checks it holds the same files and changes nothing.
 
 Only the server pack and the public key go to the node, the key renamed to

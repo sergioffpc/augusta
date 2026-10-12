@@ -955,10 +955,14 @@ Until #583 every environment's packs shared one tree,
 `signing.pub`. Each environment now has its own tree and key
 ([The server's user](#the-servers-user)). A node from before needs, once:
 
-1. Before the pull request merges, the publish key's new forced command and the
-   environments' trees, from its branch, as a user with `sudo`:
+1. Before the pull request merges, suspend both environments' `HelmRelease`s, so
+   Flux does not upgrade them onto folders that are not there yet, then install
+   the publish key's new forced command and the environments' trees, from its
+   branch, as a user with `sudo`:
 
     ```sh
+    flux suspend helmrelease augustad-develop -n flux-system
+    flux suspend helmrelease augustad-staging -n flux-system
     scp clusters/onprem/node/augusta-publish-receive.sh <node>:/tmp/
     ssh <node> "sudo install -o root -g root -m 0755 /tmp/augusta-publish-receive.sh /usr/local/bin/augusta-publish-receive && sudo install -d -o augusta-publish -g augusta -m 2750 /srv/augusta/asset-packs/develop /srv/augusta/asset-packs/staging; rm /tmp/augusta-publish-receive.sh"
     ```
@@ -968,16 +972,19 @@ Until #583 every environment's packs shared one tree,
    `augusta-publish <scenario> --environment develop` and
    `--environment staging`.
 3. Merge. A cook re-signed with another key has the `packVersion` it had, so
-   each server's volume keeps its name and changes its folder, which fails the
-   upgrade (above). For each environment and server, as **cluster-admin**,
-   delete its pack claim and volume, then its Deployment, which frees them, and
-   let Flux make all three again on the new folder:
+   each server's volume keeps its name and changes its folder, which would fail
+   the upgrade (above). For each environment and server, as **cluster-admin**,
+   delete its pack claim and volume, then its Deployment, which frees them, wait
+   until they are gone, and resume the `HelmRelease`, which makes all three
+   again on the new folder:
 
     ```sh
     kubectl -n <environment> delete pvc augustad-<scenario>-pack-<packVersion> --wait=false
     kubectl delete pv <environment>-augustad-<scenario>-pack-<packVersion> --wait=false
     kubectl -n <environment> delete deploy augustad-<scenario>
-    flux reconcile helmrelease augustad-<environment> -n flux-system --force
+    kubectl -n <environment> wait --for=delete pvc/augustad-<scenario>-pack-<packVersion> --timeout 2m
+    kubectl wait --for=delete pv/<environment>-augustad-<scenario>-pack-<packVersion> --timeout 2m
+    flux resume helmrelease augustad-<environment> -n flux-system
     kubectl -n <environment> logs deploy/augustad-<scenario> | grep 'event=pack_verified'
     ```
 
