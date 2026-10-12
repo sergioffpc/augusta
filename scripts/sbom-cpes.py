@@ -18,7 +18,7 @@ import pathlib
 import re
 import sys
 
-# Each port's NVD vendor:product, looked up in the NVD's CPE dictionary.
+# Each package's NVD vendor:product, looked up in the NVD's CPE dictionary.
 # boost's ports, one per library, all release under one CPE.
 _CPES = {
     "abseil": "abseil:common_libraries",
@@ -44,7 +44,6 @@ _CPES = {
     "libpng": "libpng:libpng",
     "libwebp": "webmproject:libwebp",
     "lz4": "lz4_project:lz4",
-    "minizip": "minizip_project:minizip",
     "nv-usd": "pixar:openusd",
     "openexr": "openexr:openexr",
     "openjpeg": "uclouvain:openjpeg",
@@ -89,10 +88,13 @@ _NO_CPE = {
     "vcpkg-msbuild": "a build tool",
     "vcpkg-pkgconfig-get-modules": "a build tool",
     "vcpkg-tool-meson": "a build tool",
-    # Falcor's own (ADR-0058).
+    # What the client's zip ships beside it (ADR-0058): the MSVC runtime, and
+    # Falcor's own vcpkg ports, packman packages and fetched SDKs.
     "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
     "releases, not the runtime's file versions",
     "blosc": "not in the NVD (only c-blosc2 is)",
+    "minizip": "zlib's contrib/minizip, versioned and scanned as zlib "
+    "(minizip_project:minizip is another library)",
     "draco": "not in the NVD",
     "freeglut": "not in the NVD",
     "imath": "not in the NVD",
@@ -107,8 +109,6 @@ _NO_CPE = {
     "stb": "versioned by date, which the NVD's versions are not",
     "szip": "not in the NVD",
     "utfcpp": "not in the NVD",
-    "falcor_dependencies": "the vcpkg tree whose ports are listed one by one",
-    "falcor_media": "Falcor's sample media, not shipped",
     "WinPixEventRuntime": "not in the NVD",
     "nanovdb": "not in the NVD",
     "nrd": "not in the NVD",
@@ -119,14 +119,11 @@ _NO_CPE = {
     "dlss": "not in the NVD",
     "dxc": "not in the NVD",
     "nvapi": "not in the NVD",
-    "clang-format": "a build tool",
-    "cmake": "a build tool",
-    "ninja": "a build tool",
 }
 
 
 def nvd_version(name, version):
-    """The NVD's version for the port at vcpkg's version."""
+    """The NVD's version for the package at its SBOM version."""
     # vcpkg's port revision ("#2") is the recipe's, not the library's.
     version = version.split("#")[0]
     # protobuf's C++ library is 6.33.4 where its release, as the NVD names
@@ -134,7 +131,10 @@ def nvd_version(name, version):
     if name == "protobuf":
         version = version.split(".", 1)[1]
     if name in _PACKMAN_VERSIONED:
-        version = re.match(r"\d+(?:\.\d+)*", version)[0]
+        library = re.match(r"\d+(?:\.\d+)*", version)
+        if not library:
+            sys.exit(f"{name}: no library version in packman's {version}")
+        version = library[0]
     return version
 
 

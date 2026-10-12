@@ -50,6 +50,6 @@ The PDB stays a separate asset (ADR-0055).
   the check does not show that the bundled MSVC runtime is complete either.
 - The SBOM lists what the zip ships beside `augustac`'s own ports: Falcor's
   vcpkg ports, packman packages and fetched SDKs, and the MSVC runtime
-  (`scripts/vcpkg-sbom.py --falcor --msvc-runtime`). Falcor's ports are years
-  older than `augustac`'s. Nightly `sbom-scan` matches their CVEs, which fail it
-  until each one is fixed or assessed.
+  (`scripts/vcpkg-sbom.py`). Falcor's ports are years older than `augustac`'s.
+  Nightly `sbom-scan` matches their CVEs, which fail it until each one is fixed
+  or assessed.

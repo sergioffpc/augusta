@@ -47,12 +47,23 @@ _UNASSERTED = {
 _VCPKG_NO_LICENSE = "LicenseRef-vcpkg-null"
 # The packman platform of the client, the one executable Falcor is in.
 _PACKMAN_PLATFORM = "windows-x86_64"
+# Where a packman dependency the build links is put; Falcor's tools and sample
+# media go elsewhere, and ship in no executable.
+_PACKMAN_LINKED = "external/packman/"
+# The packman dependencies the build links but the client does not ship: the
+# vcpkg tree whose ports are listed one by one, and debug builds.
+_PACKMAN_UNSHIPPED = {"falcor_dependencies", "nv-usd-debug"}
 # A FetchPackage URL's version: a release's number (v1.8.2505, 1.717.0-preview,
 # v310.1.0.zip), or the commit an archive is of.
 _URL_VERSION = re.compile(
     r"/v?(\d+(?:\.\d+)+(?:-[A-Za-z][\w.]*)?)(?:\.zip)?(?=/|$)"
     r"|/([0-9a-f]{40})\.zip$"
 )
+
+
+def spdx_id(*parts):
+    """SPDXRef-<parts>, with what an SPDX ID can't hold (as _) made -."""
+    return "SPDXRef-" + re.sub(r"[^A-Za-z0-9.-]", "-", "-".join(parts))
 
 
 def port_packages(installed, prefix="vcpkg"):
@@ -66,7 +77,7 @@ def port_packages(installed, prefix="vcpkg"):
         port = next(
             p for p in document["packages"] if p["SPDXID"] == "SPDXRef-port"
         )
-        port = {**port, "SPDXID": f"SPDXRef-{prefix}-{port['name']}"}
+        port = {**port, "SPDXID": spdx_id(prefix, port["name"])}
         for field in ("licenseConcluded", "licenseDeclared"):
             if port[field] == _VCPKG_NO_LICENSE:
                 port[field] = _NOASSERTION
@@ -102,37 +113,48 @@ def git_package(path):
 
 
 def packman_packages(manifest):
-    """A package for each of manifest's packman packages for the client.
+    """A package for each packman package of manifest the client ships.
 
-    A package named for other platforms only is left out. Its download
-    location is its remote's URL when it names one; packman's own servers
-    have no public one.
+    That is a dependency the build links (_PACKMAN_LINKED) and ships
+    (_PACKMAN_UNSHIPPED), for the client's platform. Its download location is
+    its remote's URL when it names one; packman's own servers have no public
+    one.
     """
     root = ET.parse(manifest).getroot()
     remotes = {
         remote.get("name"): remote.get("packageLocation")
         for remote in root.iter("remote")
     }
+
+    def on_platform(template, version=""):
+        return template.replace("${platform}", _PACKMAN_PLATFORM).replace(
+            "${version}", version
+        )
+
     packages = []
     for dependency in root.iter("dependency"):
+        name = dependency.get("name")
+        if (
+            not dependency.get("linkPath").startswith(_PACKMAN_LINKED)
+            or name in _PACKMAN_UNSHIPPED
+        ):
+            continue
         for package in dependency.iter("package"):
             platforms = package.get("platforms")
             if platforms and _PACKMAN_PLATFORM not in platforms.split():
                 continue
-            version = package.get("version").replace(
-                "${platform}", _PACKMAN_PLATFORM
-            )
+            version = on_platform(package.get("version"))
             location = remotes.get(package.get("remotes"))
-            if location:
-                location = "https://" + location.replace(
-                    "${version}", version
-                ).replace("${platform}", _PACKMAN_PLATFORM)
             packages.append(
                 {
                     "name": package.get("name"),
-                    "SPDXID": f"SPDXRef-packman-{dependency.get('name')}",
+                    "SPDXID": spdx_id("packman", name),
                     "versionInfo": version,
-                    "downloadLocation": location or _NOASSERTION,
+                    "downloadLocation": (
+                        "https://" + on_platform(location, version)
+                        if location
+                        else _NOASSERTION
+                    ),
                     **_UNASSERTED,
                 }
             )
@@ -143,30 +165,29 @@ def fetched_packages(cmake_lists):
     """A package for each FetchPackage(<name> URL <url>) of cmake_lists.
 
     A ${VAR} in a URL is what set(VAR "<value>") in the same file gives. A URL
-    with no version in it fails, so none is ever listed without one.
+    with no version in it, or a ${VAR} that file does not set to a plain value,
+    fails, so none is ever listed without one.
     """
     text = cmake_lists.read_text(encoding="utf-8")
-    variables = dict(re.findall(r'set\((\w+)\s+"([^"]*)"\)', text))
+    variables = dict(re.findall(r'set\((\w+)\s+"([^"$]*)"\)', text))
 
-    def expanded(value):
-        while "${" in value:
-            value = re.sub(
-                r"\$\{(\w+)\}", lambda match: variables[match[1]], value
-            )
-        return value
+    def value_of(match):
+        if match[1] not in variables:
+            sys.exit(f"{cmake_lists}: no plain set({match[1]} ...) for a URL")
+        return variables[match[1]]
 
     packages = []
     for name, written in re.findall(
         r"FetchPackage\((\w+)\s+URL\s+([^)\s]+)\)", text
     ):
-        url = expanded(written.strip('"'))
+        url = re.sub(r"\$\{(\w+)\}", value_of, written.strip('"'))
         match = _URL_VERSION.search(url)
         if not match:
             sys.exit(f"{cmake_lists}: no version in {name}'s URL {url}")
         packages.append(
             {
                 "name": name,
-                "SPDXID": f"SPDXRef-fetch-{name}",
+                "SPDXID": spdx_id("fetch", name),
                 "versionInfo": match[1] or match[2],
                 "downloadLocation": url,
                 **_UNASSERTED,
@@ -197,10 +218,14 @@ def file_version(dll):
     if not size:
         sys.exit(f"{dll}: no version resource")
     data = ctypes.create_string_buffer(size)
-    version.GetFileVersionInfoW(str(dll), 0, size, data)
     info = ctypes.c_void_p()
     length = ctypes.c_uint()
-    version.VerQueryValueW(data, "\\", ctypes.byref(info), ctypes.byref(length))
+    if not version.GetFileVersionInfoW(
+        str(dll), 0, size, data
+    ) or not version.VerQueryValueW(
+        data, "\\", ctypes.byref(info), ctypes.byref(length)
+    ):
+        sys.exit(f"{dll}: its version resource can't be read")
     # VS_FIXEDFILEINFO's dwFileVersionMS and dwFileVersionLS, after its
     # dwSignature and dwStrucVersion.
     most, least = ctypes.cast(info, ctypes.POINTER(ctypes.c_uint32))[2:4]
