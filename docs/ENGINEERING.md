@@ -393,17 +393,17 @@ no self-hosted GitHub Actions runner in this pipeline).
   runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
   `.github/actions/setup-linux-build` installs (kept in step with it by hand),
   clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
-  CLI, kubectl, helm, Doxygen, the hooks' formatters and linters (uv for
-  yamllint, ruff, shfmt, shellcheck, actionlint, gersemi, Prettier and
-  pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at CI's pinned
-  versions), and CI's Linux vcpkg binary cache configuration (a files provider
-  in the checkout's `.vcpkg-bincache`). The image builds for the host's
-  architecture (amd64 or arm64) rather than emulating CI's amd64. sccache's
-  cache lives in a volume shared by every container of the repository; the build
-  trees in a volume per container, so they never collide with a Windows build of
-  the same checkout. One recipe, not a container beside a separate host
-  bootstrap: two recipes for the same toolchain drift apart. The client has no
-  container equivalent (see below).
+  CLI, kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the
+  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
+  actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua,
+  luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg binary
+  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
+  The image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. The client has no container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -432,7 +432,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
   uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
   clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
-  Ubuntu runner ships so the hooks agree with CI's gates. (A fully hermetic,
+  Ubuntu runner ships so the hooks agree with CI's gates, and kubectl, helm and
+  the flux CLI, for the cluster. It also puts Git's `bin` directory on PATH, so
+  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
+  VS Code settings point the Kubernetes extension and its terminals at the
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`. (A fully hermetic,
   registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
   and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
   stacking an unsupported compiler on top of an already-unmaintained dependency,

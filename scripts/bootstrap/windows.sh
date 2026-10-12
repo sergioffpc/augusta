@@ -76,8 +76,8 @@ winget_install_pinned() {
 }
 
 # The formatters and linters the hooks and CI's format job run at pinned
-# versions, which winget doesn't keep: standalone releases in a user-local bin
-# directory.
+# versions, and the flux CLI at the cluster's, which winget doesn't keep:
+# standalone releases in a user-local bin directory.
 # Arguments:
 #   The bin directory.
 install_formatters() {
@@ -101,11 +101,16 @@ install_formatters() {
     "https://github.com/lunarmodules/luacheck/releases/download/v${LUACHECK_VERSION}/luacheck.exe" \
     0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b \
     "${tmp}/luacheck.exe"
+  download_verified \
+    "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_windows_amd64.zip" \
+    1a23053bf9abbedbdac07237f5c6ae9b0da0bcb77ddbd103faa99839c6a7f562 \
+    "${tmp}/flux.zip"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt.exe
   extract_zip "${tmp}/stylua.zip" "${tmp}"
+  extract_zip "${tmp}/flux.zip" "${tmp}"
   gunzip "${tmp}/taplo.exe.gz"
   cp -f "${tmp}/yamlfmt.exe" "${tmp}/stylua.exe" "${tmp}/taplo.exe" \
-    "${tmp}/luacheck.exe" "${bin}"
+    "${tmp}/luacheck.exe" "${tmp}/flux.exe" "${bin}"
   rm -rf "${tmp}"
   add_to_path User "${bin}"
 }
@@ -142,14 +147,26 @@ install_toolchain() {
   # together with the runner image. The pin keeps `winget upgrade` on that
   # major.
   winget_install_pinned LLVM.LLVM 21.1.8 '21.*'
+  # kubectl and helm, for the server's k3s cluster and its chart
+  # (charts/augustad), and with flux (install_formatters) the cluster
+  # runbooks' day-to-day access (scripts/operator-kubeconfig.sh): each one's
+  # latest stable release, as scripts/bootstrap/linux.sh's.
+  winget_install Kubernetes.kubectl
+  winget_install Helm.Helm
 
   # Unlike the other packages here, LLVM's and Doxygen's installers don't add
   # themselves to PATH under winget's --silent flag (that's an
   # interactive-installer checkbox, unchecked by default in silent mode) - add
   # their default install locations explicitly rather than relying on it.
+  # Git's bin directory too (bash.exe, sh.exe), which Git's installer leaves off
+  # PATH (only its cmd directory is on it): scripts/*.sh then run from
+  # PowerShell, cmd and VS Code as `bash scripts/<script>.sh`. On the Machine
+  # PATH, which Windows puts ahead of the User one, so it wins over WSL's
+  # bash.exe alias in the User PATH's WindowsApps.
   local program_files bin
   program_files="$(windows_dir ProgramFiles)"
-  for bin in "${program_files}/LLVM/bin" "${program_files}/doxygen/bin"; do
+  for bin in "${program_files}/LLVM/bin" "${program_files}/doxygen/bin" \
+    "${program_files}/Git/bin"; do
     if [[ -d "${bin}" ]]; then
       add_to_path Machine "${bin}"
     fi
@@ -163,7 +180,7 @@ install_toolchain() {
   # on PATH - skipping" at commit time, which is easy to miss and leaves every
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-format clang-tidy \
-    doxygen yamlfmt stylua taplo luacheck
+    doxygen yamlfmt stylua taplo luacheck kubectl helm flux
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
