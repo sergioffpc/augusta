@@ -121,6 +121,7 @@ TEST(IntentExecutorTest, AMoveHoldsItsDirectionSprintAndStanceEveryTick) {
   }
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, ALookHoldsItsYawAndPitchEveryTick) {
   IntentExecutor executor;
   executor.SetAim(Look{.yaw = 0.5F, .pitch = -0.25F});
@@ -227,6 +228,7 @@ TEST(IntentExecutorTest, ClearingAChannelEndsItsIntentReplacedAndStopsIt) {
   EXPECT_FALSE(command.fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AReloadThatIsDoneIsNotReplacedAfterwards) {
   IntentExecutor executor;
   Endings endings;
@@ -420,6 +422,7 @@ TEST(IntentExecutorTest, AMoveToEndsBlockedOnceItsBodyMakesNoProgressForAboutASe
   EXPECT_EQ(executor.NextCommand(InMatch(), At(Vec3(0.0F))).movement.direction, Vec3(0.0F));
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AMoveToThatKeepsGainingGroundIsNotBlocked) {
   IntentExecutor executor;
   Endings endings;
@@ -461,6 +464,7 @@ TEST(IntentExecutorTest, AnAimAtFollowsATargetThatMovesBetweenTicks) {
   EXPECT_NEAR(Aim(right).x, 1.0F, 1e-3F);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtLooksUpAtATargetAboveAndDownAtOneBelow) {
   IntentExecutor above;
   IntentExecutor below;
@@ -513,6 +517,7 @@ TEST(IntentExecutorTest, AnAimAtEndsTargetGoneOnceItsMatchIsOver) {
   EXPECT_EQ(endings.seen, std::vector{IntentEnding::kTargetGone});
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, AnAimAtEndsTargetGoneWhenItsTargetDiesAfterThisAgentHas) {
   IntentExecutor executor;
   Endings endings;
@@ -564,6 +569,7 @@ TEST(IntentExecutorTest, FireBurstsHoldsTheTriggerInBurstsAndReleasesItBetween) 
   EXPECT_LT(ticks_firing, kTicks / 2);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, FireBurstsReloadsAnEmptyMagazineInsteadOfFiringAndKeepsOn) {
   IntentExecutor executor;
   Endings endings;
@@ -579,6 +585,7 @@ TEST(IntentExecutorTest, FireBurstsReloadsAnEmptyMagazineInsteadOfFiringAndKeeps
   EXPECT_TRUE(Next(executor).fire);
 }
 
+// Requirements: US-23
 TEST(IntentExecutorTest, FireBurstsDoesNotPressReloadAgainWhileAReloadIsUnderWay) {
   IntentExecutor executor;
   executor.SetTrigger(FireBursts{});
