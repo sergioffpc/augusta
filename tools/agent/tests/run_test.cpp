@@ -25,6 +25,7 @@ using augusta::agent::testing::Verdict;
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =
     ::testing::AddGlobalTestEnvironment(new augusta::agent::testing::NetworkingEnvironment);
 
+// Requirements: US-23
 TEST(PlayMatchesTest, ThePlayerCountOfAgentsPlaysTheExampleForTwoThroughTwoMatchEnds) {
   const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
@@ -49,6 +50,7 @@ TEST(PlayMatchesTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
   EXPECT_EQ(result.verdict, Verdict::kTimedOut);
 }
 
+// Requirements: US-23
 TEST(PlayMatchesTest, ARefusedAgentFailsTheRunWithTheRefusal) {
   const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
