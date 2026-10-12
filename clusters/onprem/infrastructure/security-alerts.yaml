@@ -54,7 +54,8 @@ data:
           # refuses has no event on the object, which does not exist, nor any
           # at all for a pod with no name yet, as one a controller creates:
           # that refusal is the controller's FailedCreate event instead,
-          # quoting the Kyverno webhook that denied it.
+          # quoting the Kyverno webhook that denied it. A webhook Kyverno, down,
+          # could not answer refuses too, but is no violation and is not counted.
           - alert: KyvernoPolicyViolation
             expr: |
               sum by (namespace, kind, name) (

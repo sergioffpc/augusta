@@ -507,13 +507,15 @@ kubectl get pods -A
 flux get all -A
 flux suspend kustomization apps -n flux-system
 flux resume kustomization apps -n flux-system
-kubectl -n develop create deployment probe --image=busybox
+kubectl -n develop create deployment probe \
+  --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
 kubectl create clusterrolebinding probe --clusterrole=cluster-admin --user=probe
 kubectl -n flux-system patch gitrepository flux-system --type merge -p '{"spec":{"interval":"2m"}}'
 ```
 
-The reads and the Flux commands work; the last three are refused, the patch by
-the `augusta-operator-flux` policy.
+The reads and the Flux commands work; the last three are refused, the first two
+`Forbidden` for the identity's role, the patch by the `augusta-operator-flux`
+policy.
 
 ### Use cluster-admin
 
@@ -631,21 +633,26 @@ unsigned=ghcr.io/sergioffpc/augustad:sha-f6e03442e921@sha256:dee0157f2b1985e2d6b
 2. Each of these is refused:
 
     ```sh
-    echo '{"spec": {"containers": [{"name": "policy-probe", "image": "'"${busybox}"'",
-      "securityContext": {"privileged": true}}]}}' | probe "${busybox}"
-    echo '{"spec": {"volumes": [{"name": "node", "hostPath": {"path": "/"}}]}}' \
+    echo '{"spec": {"securityContext": {"runAsNonRoot": true, "runAsUser": 65534},
+      "containers": [{"name": "policy-probe", "image": "'"${busybox}"'",
+      "securityContext": {"privileged": true, "capabilities": {"drop": ["ALL"]},
+      "seccompProfile": {"type": "RuntimeDefault"}}}]}}' | probe "${busybox}"
+    restricted "${busybox}" \
+      | sed 's#^{"spec": {#{"spec": {"volumes": [{"name": "node", "hostPath": {"path": "/"}}], #' \
       | probe "${busybox}"
     restricted docker.io/library/busybox:1.37.0 | probe docker.io/library/busybox:1.37.0
     restricted "${unsigned}" Localhost augusta/augustad.json | probe "${unsigned}"
     echo '{}' | probe "${busybox}" monitoring-node
     ```
 
-    The `privileged` pod and the `hostPath` volume are refused by Pod Security
-    (`violates PodSecurity "restricted:latest"`); the image by tag by
-    `image-digest`, an `augustad` image CI did not sign (v1.0.0's, from before
-    it signed them) by `verify-image-signatures`, and a pod `monitoring-node`
-    does not know by `privileged-namespace-workloads`, each message naming the
-    policy and its Kyverno webhook, which `denied the request`.
+    The `privileged` pod and the `hostPath` volume, each otherwise `restricted`,
+    are refused by Pod Security (`violates PodSecurity "restricted:latest"`),
+    naming `privileged` (with the privilege escalation it implies) and
+    `restricted volume types`; the image by tag by `image-digest`, an `augustad`
+    image CI did not sign (v1.0.0's, from before it signed them) by
+    `verify-image-signatures`, and a pod `monitoring-node` does not know by
+    `privileged-namespace-workloads`, each message naming the policy and its
+    Kyverno webhook, which `denied the request`.
 
 3. With Kyverno's admission controller stopped, the pod of step 1 is refused,
    and Kyverno starts again. Flux would scale it back on its next upgrade, so
