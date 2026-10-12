@@ -109,8 +109,8 @@ each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
 
 - A workload that needs more than `restricted` needs a policy change that a
   reviewer sees, not just a manifest.
-- A reboot that brings Kyverno up late holds every other pod back until it is
-  ready.
+- A reboot that brings Kyverno up late holds every new pod but k3s's and its own
+  back until it is ready; the pods the Node ran start again without admission.
 - An upstream chart upgrade can fail admission until its images' digests are
   updated with it.
 - The node-exporter moves out of `monitoring` into `monitoring-node`, where the

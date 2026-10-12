@@ -3,16 +3,16 @@
 # captures from local PersistentVolumes (charts/augustad volumes.yaml), and a
 # workload that needs the Node's files needs a reviewed change here, not just
 # a manifest. Pod Security Admission refuses the same in every namespace that
-# enforces baseline or restricted; this holds where one does not yet, and
-# reports what one would refuse.
+# enforces baseline or restricted; this holds where one does not yet.
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
   name: host-path-volumes
 spec:
-  # Reported, not refused, until the cluster's policies are enforced.
+  # Refused, and refused too while Kyverno cannot answer (ADR-0057).
   validationActions:
-    - Audit
+    - Deny
+  failurePolicy: Fail
   # Kyverno extends a policy on pods to the pod templates of Deployments,
   # DaemonSets, StatefulSets, Jobs and CronJobs, which CI's rendered manifests
   # hold rather than pods.

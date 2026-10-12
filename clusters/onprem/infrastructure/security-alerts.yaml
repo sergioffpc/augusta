@@ -47,16 +47,30 @@ data:
               severity: warning
             annotations:
               summary: "The cluster-admin identity made requests from {{ $labels.source_ip }} with {{ $labels.user_agent }}."
-          # Kyverno writes an event for every failed policy result, at
-          # admission and in its background scan, on the policy and on the
-          # object that failed it: the PolicyReports' failures as they are
-          # found. The object's alone count here, one alert for each.
+          # Kyverno writes an event on the policy for every failed policy
+          # result, at admission and in its background scan, naming the
+          # object at the start of its message: the object's kind, namespace
+          # and name are read from there, one alert for each. A request it
+          # refuses has no event on the object, which does not exist, nor any
+          # at all for a pod with no name yet, as one a controller creates:
+          # that refusal is the controller's FailedCreate event instead,
+          # quoting the Kyverno webhook that denied it. A webhook Kyverno, down,
+          # could not answer refuses too, but is no violation and is not counted.
           - alert: KyvernoPolicyViolation
             expr: |
               sum by (namespace, kind, name) (
                 count_over_time({job="kubernetes/events"}
                   | logfmt
-                  | reason = "PolicyViolation" and kind !~ ".*Policy"
+                  | reason = "PolicyViolation" and kind =~ ".*Policy"
+                  | regexp `msg="(?P<object_kind>\w+) (?:(?P<object_namespace>[^/ ]+)/)?(?P<object_name>[^: ]+): `
+                  | label_format kind="{{ .object_kind }}", namespace="{{ .object_namespace }}", name="{{ .object_name }}"
+                  [5m])
+              ) > 0
+              or
+              sum by (namespace, kind, name) (
+                count_over_time({job="kubernetes/events"}
+                  | logfmt
+                  | reason = "FailedCreate" and msg =~ `.*admission webhook "[^"]*\.kyverno\.svc[^"]*" denied the request.*`
                   [5m])
               ) > 0
             labels:

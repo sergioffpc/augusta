@@ -800,10 +800,8 @@ jobs:
           done
       - name: Check the rendered manifests against the cluster's policies
         # The policies Flux applies (clusters/onprem/policies) over every
-        # manifest the steps above rendered: what the cluster would report,
-        # or once its policies are enforced refuse, fails here before it
-        # merges. A violation of a policy the cluster only audits still fails,
-        # since --audit-warn is left off. A policy that looks objects up in
+        # manifest the steps above rendered: what the cluster would refuse
+        # fails here before it merges. A policy that looks objects up in
         # the cluster (default-deny-network, its NetworkPolicies) finds the
         # rendered ones, as Flux would apply them. Image signature policies
         # are left to their fixtures below: the chart runs the image of the

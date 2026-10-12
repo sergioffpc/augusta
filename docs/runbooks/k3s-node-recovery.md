@@ -26,6 +26,9 @@ it from the repository. The cluster's design is ADR-0026
 - A change to the node's firewall, SSH, update or audit policy has merged, the
   maintainer's addresses change, or a game port range is to face the internet:
   [The node's OS](#the-nodes-os).
+- Pods are not created, their controllers' `FailedCreate` events naming a
+  Kyverno webhook or policy, after a reboot, a Kyverno upgrade or a change to
+  the policies, or the admission is to be checked: [Admission](#admission).
 - A security alert fires, a security event is to be looked up, or the latest
   `kube-bench` report is wanted:
   [Security logs and alerts](#security-logs-and-alerts).
@@ -540,13 +543,15 @@ kubectl get pods -A
 flux get all -A
 flux suspend kustomization apps -n flux-system
 flux resume kustomization apps -n flux-system
-kubectl -n develop create deployment probe --image=busybox
+kubectl -n develop create deployment probe \
+  --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
 kubectl create clusterrolebinding probe --clusterrole=cluster-admin --user=probe
 kubectl -n flux-system patch gitrepository flux-system --type merge -p '{"spec":{"interval":"2m"}}'
 ```
 
-The reads and the Flux commands work; the last three are refused, the patch by
-the `augusta-operator-flux` policy.
+The reads and the Flux commands work; the last three are refused, the first two
+`Forbidden` for the identity's role, the patch by the `augusta-operator-flux`
+policy.
 
 ### Use cluster-admin
 
@@ -569,6 +574,140 @@ about a year after k3s issued it: replace it by issuing the day-to-day one
 above. Revoking it sooner means rotating k3s's client CA
 ([`k3s certificate rotate-ca`](https://docs.k3s.io/cli/certificate#certificate-authority-ca-certificates)),
 which also ends every node and controller certificate signed by it.
+
+## Admission
+
+Every pod, Service and Secret the API server is asked to create or change passes
+two gates (ADR-0057). Pod Security Admission, inside the API server, holds each
+namespace to its level. Kyverno then refuses what the policies in
+[`clusters/onprem/policies/`](../../clusters/onprem/policies/kustomization.yaml)
+do not admit, each file saying why: an image not pinned by digest, an
+`augustad`, Flux or Kyverno image its publisher did not sign, a `hostPath`
+volume outside the `privileged` namespaces, a pod in one of those that is not
+one of its known ones, a node port outside its Environment's range, a Secret not
+on the list, an unconfined server, a pod in a namespace with no default deny. A
+refused pod that a controller creates (a Deployment's ReplicaSet, a DaemonSet, a
+Job) shows as that controller's `FailedCreate` event, and a refused object Flux
+applies as its `HelmRelease` or Kustomization failing, each with the message of
+the policy that refused it:
+
+```sh
+kubectl get events -A --field-selector reason=FailedCreate
+flux get all -A --status-selector ready=false
+```
+
+**Kyverno's webhooks fail closed.** While Kyverno is down or not yet ready,
+every request they judge is refused, its message naming a `kyverno.svc` webhook
+it could not call, rather than admitted unchecked. They skip `kube-system` and
+`kyverno`, so k3s's own pods and Kyverno's always start, and Pod Security
+Admission holds every namespace meanwhile. A pod already running is not judged
+again.
+
+### Kyverno comes up late
+
+After a reboot, the nightly one of [Updates](#updates) included, the kubelet
+starts again every pod it ran, the servers included, with no admission. What
+needs a new pod before Kyverno is ready, a server's rollout or a `kube-bench`
+run, is refused, and its controller retries with a growing back-off of up to a
+few minutes; a `HelmRelease` that upgraded meanwhile fails, and Flux retries it
+at its interval. Nothing needs doing; to watch it through:
+
+```sh
+kubectl -n kyverno get pods
+kubectl get events -A --field-selector reason=FailedCreate
+flux get helmreleases -n flux-system
+```
+
+Once Kyverno's pods are `Ready`, no new `FailedCreate` names its webhooks, and
+[Verification](#verification) shows every server running.
+
+Kyverno that does not start (its pods crash after an upgrade) holds every new
+pod back, but k3s's and its own. Revert its change in Git: Flux's running
+controllers apply it, as Kyverno's namespace is skipped. If Flux's controllers
+are not running either, nothing can apply it. Then, as **cluster-admin** on the
+node, remove Kyverno's webhooks, which leaves the cluster to Pod Security
+Admission alone until Kyverno starts again and registers them anew:
+
+```sh
+sudo k3s kubectl delete validatingwebhookconfiguration,mutatingwebhookconfiguration \
+  -l webhook.kyverno.io/managed-by=kyverno
+```
+
+### Verify the admission
+
+On the node (**cluster-admin**: the day-to-day identity creates no pod). Each
+probe is a server-side dry run, judged by both gates and never created. `probe`
+asks for a pod running the image given, in `develop` or the namespace given,
+with the rest of the pod read from its input as JSON. `restricted` prints a pod
+that `develop`'s Pod Security level admits, in a user namespace, under the
+runtime's seccomp profile or the one given, so that only Kyverno can refuse it:
+
+```sh
+probe() {
+  sudo k3s kubectl -n "${2:-develop}" run policy-probe --restart=Never \
+    --dry-run=server -o name --image="$1" --overrides="$(cat)"
+}
+restricted() {
+  printf '{"spec": {"hostUsers": false, "securityContext": {"runAsNonRoot": true,
+    "runAsUser": 65534}, "containers": [{"name": "policy-probe", "image": "%s",
+    "securityContext": {"allowPrivilegeEscalation": false, "capabilities":
+    {"drop": ["ALL"]}, "seccompProfile": {"type": "%s"%s}}}]}}' \
+    "$1" "${2:-RuntimeDefault}" "${3:+, \"localhostProfile\": \"$3\"}"
+}
+busybox=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+unsigned=ghcr.io/sergioffpc/augustad:sha-f6e03442e921@sha256:dee0157f2b1985e2d6b11f53ca929748d3cdbf84bed55f926120b74a0a0fdae0
+```
+
+1. A pinned, `restricted` pod is admitted, so a refusal below is the check's:
+
+    ```sh
+    restricted "${busybox}" | probe "${busybox}"
+    ```
+
+    It prints `pod/policy-probe`.
+
+2. Each of these is refused:
+
+    ```sh
+    echo '{"spec": {"securityContext": {"runAsNonRoot": true, "runAsUser": 65534},
+      "containers": [{"name": "policy-probe", "image": "'"${busybox}"'",
+      "securityContext": {"privileged": true, "capabilities": {"drop": ["ALL"]},
+      "seccompProfile": {"type": "RuntimeDefault"}}}]}}' | probe "${busybox}"
+    restricted "${busybox}" \
+      | sed 's#^{"spec": {#{"spec": {"volumes": [{"name": "node", "hostPath": {"path": "/"}}], #' \
+      | probe "${busybox}"
+    restricted docker.io/library/busybox:1.37.0 | probe docker.io/library/busybox:1.37.0
+    restricted "${unsigned}" Localhost augusta/augustad.json | probe "${unsigned}"
+    echo '{}' | probe "${busybox}" monitoring-node
+    ```
+
+    The `privileged` pod and the `hostPath` volume, each otherwise `restricted`,
+    are refused by Pod Security (`violates PodSecurity "restricted:latest"`),
+    naming `privileged` (with the privilege escalation it implies) and
+    `restricted volume types`; the image by tag by `image-digest`, an `augustad`
+    image CI did not sign (v1.0.0's, from before it signed them) by
+    `verify-image-signatures`, and a pod `monitoring-node` does not know by
+    `privileged-namespace-workloads`, each message naming the policy and its
+    Kyverno webhook, which `denied the request`.
+
+3. With Kyverno's admission controller stopped, the pod of step 1 is refused,
+   and Kyverno starts again. Flux would scale it back on its next upgrade, so
+   suspend its `HelmRelease` meanwhile:
+
+    ```sh
+    sudo k3s kubectl -n flux-system patch helmrelease kyverno --type merge -p '{"spec": {"suspend": true}}'
+    sudo k3s kubectl -n kyverno scale deploy kyverno-admission-controller --replicas 0
+    sudo k3s kubectl -n kyverno wait --for=delete pod -l app.kubernetes.io/component=admission-controller --timeout 2m
+    restricted "${busybox}" | probe "${busybox}"
+    sudo k3s kubectl -n kyverno scale deploy kyverno-admission-controller --replicas 1
+    sudo k3s kubectl -n kyverno rollout status deploy kyverno-admission-controller --timeout 5m
+    restricted "${busybox}" | probe "${busybox}"
+    sudo k3s kubectl -n flux-system patch helmrelease kyverno --type merge -p '{"spec": {"suspend": false}}'
+    ```
+
+    The first probe is refused, `failed calling webhook`, as `kyverno-svc` has
+    no endpoints; Kyverno's pod starts, in the namespace its webhooks skip, and
+    the second probe prints `pod/policy-probe`.
 
 ## Network isolation
 
@@ -594,22 +733,23 @@ On the node (**cluster-admin**: the day-to-day identity creates no pod):
 
     ```sh
     pod="$(sudo k3s kubectl -n develop get pod -l app.kubernetes.io/name=augustad,scenario=firebase -o name)"
+    busybox=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
     sudo k3s kubectl -n develop debug "${pod}" --profile=restricted \
-      --image=docker.io/library/busybox:1.37.0 --target=augustad -i --quiet -- \
+      --image="${busybox}" --target=augustad -i --quiet -- \
       sh -c 'nslookup github.com; nc -z -w 5 140.82.121.4 443; echo "exit $?"'
     ```
 
     The lookup times out and `nc` exits `1`.
 
-2. A pod in `develop` reaches neither Loki nor Grafana:
+2. A pod in `develop` reaches neither Loki nor Grafana (`busybox` as in step 1):
 
     ```sh
     loki="$(sudo k3s kubectl -n monitoring get svc loki -o jsonpath='{.spec.clusterIP}')"
     grafana="$(sudo k3s kubectl -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.spec.clusterIP}')"
     sudo k3s kubectl -n develop run netprobe --rm -i --quiet --restart=Never \
-      --image=docker.io/library/busybox:1.37.0 --overrides='{"spec": {
+      --image="${busybox}" --overrides='{"spec": {
         "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
-        "containers": [{"name": "netprobe", "image": "docker.io/library/busybox:1.37.0",
+        "containers": [{"name": "netprobe", "image": "'"${busybox}"'",
           "command": ["sh", "-c", "nc -z -w 5 '"${loki}"' 3100; echo loki $?; nc -z -w 5 '"${grafana}"' 80; echo grafana $?"],
           "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}'
     ```
@@ -704,14 +844,13 @@ Then, at <http://127.0.0.1:9093>, within a couple of minutes of each step:
 
 1. `NodeSSHLogin` and `ClusterAdminUsed` fire: the SSH login and the
    port-forward above.
-2. A policy violation, reported as the cluster's policies are still in audit
-   mode: a pod `monitoring-node` does not know, as **cluster-admin** on the
-   node, removed at once.
+2. A policy violation: a pod `monitoring-node` does not know, as
+   **cluster-admin** on the node. Kyverno refuses it, so nothing is left to
+   remove:
 
     ```sh
-    sudo k3s kubectl -n monitoring-node run policy-probe \
-      --image=docker.io/library/busybox:1.37.0 --restart=Never -- true
-    sudo k3s kubectl -n monitoring-node delete pod policy-probe
+    sudo k3s kubectl -n monitoring-node run policy-probe --restart=Never \
+      --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
     ```
 
     `KyvernoPolicyViolation` fires for `Pod monitoring-node/policy-probe`.
@@ -1270,59 +1409,69 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
   `monitoring-node`, `privileged` (ADR-0057).
 - Every pod in `monitoring` is `Running`, and Grafana answers on node port 30300
   (pinned in `infrastructure/monitoring.yaml`): it opens with no login on every
-  dashboard, offers no way to edit or save one, shows no login form, and refuses
-  `admin`/`admin`, there being no admin user: posting them to its login
-  answers 401.
+  dashboard, offers no way to edit or save one, and shows no login form.
+- After a rebuild, the node also passes
+  [Verify the hardening](#verify-the-hardening) and
+  [Check the alerts](#check-the-alerts).
+- After a reboot, every server is running again once Kyverno is
+  ([Kyverno comes up late](#kyverno-comes-up-late)).
+
+### The protections hold
+
+Then each protection, by what it refuses: a check that is not refused is a
+protection the cluster or the node has lost (ADR-0057).
+
+1. Admission: a `privileged` pod, a `hostPath` volume, an image by tag, an
+   unsigned `augustad` and a pod a `privileged` namespace does not know are
+   refused, and with Kyverno down any pod in `develop` is:
+   [Verify the admission](#verify-the-admission).
+2. The day-to-day kubeconfig changes no workload, Secret or role:
+   [Issue or renew the day-to-day kubeconfig](#issue-or-renew-the-day-to-day-kubeconfig)'s
+   checks.
+3. A server reaches nothing, and a pod in `develop` neither Loki nor Grafana:
+   [Verify the isolation](#verify-the-isolation).
+4. Grafana refuses `admin`/`admin`, there being no admin user: posting them to
+   its login answers 401.
 
     ```bash
     curl -i -X POST -H 'Content-Type: application/json' \
       -d '{"user":"admin","password":"admin"}' http://<node>:30300/login
     ```
 
-- After a rebuild, the node also passes
-  [Verify the hardening](#verify-the-hardening) and
-  [Check the alerts](#check-the-alerts).
-- Each namespace's NetworkPolicies hold:
-  [Verify the isolation](#verify-the-isolation).
+5. From a LAN host that is not one of the maintainer's addresses, the node shows
+   30300 alone open. The game ports are UDP, which this scan does not show: a
+   client on that host still joins a Match in either environment.
 
-Then the OS's hardening. From a LAN host that is not one of the maintainer's
-addresses, scan the node:
+    ```sh
+    nmap -Pn -sT -p- --open <node-address>
+    ```
 
-```sh
-nmap -Pn -sT -p- --open <node-address>
-```
+6. From an admin address, a password login and root's are refused with
+   `Permission denied (publickey)`, with no password prompt; your key and
+   `kubectl` work.
 
-- It shows 30300 alone open. The game ports are UDP, which this scan does not
-  show: a client on that host still joins a Match in either environment.
+    ```sh
+    ssh -o PubkeyAuthentication=no <user>@<node-address>
+    ssh -o PubkeyAuthentication=no root@<node-address>
+    ssh <user>@<node-address> true
+    kubectl get nodes
+    ```
 
-From an admin address, try a password login, root's, and your key:
+    [Updates](#updates)' checks show `Debian-Security` alone, and
+    [The audit trail](#the-audit-trail)'s show the login just made, from that
+    address.
 
-```sh
-ssh -o PubkeyAuthentication=no <user>@<node-address>
-ssh -o PubkeyAuthentication=no root@<node-address>
-ssh <user>@<node-address> true
-kubectl get nodes
-```
+7. The publish key, from the machine that publishes
+   ([The publish user](#the-publish-user)), gets no shell: it prints
+   `only publish` and exits `2`. A port forward fails with
+   `remote port forwarding failed`, and the publish user cannot write a
+   published version's folder, which is read-only to it (`Permission denied`).
 
-- The first two are refused with `Permission denied (publickey)`, with no
-  password prompt; the key login and `kubectl` work.
-
-Then the publish key, from the machine that publishes
-([The publish user](#the-publish-user)):
-
-```sh
-ssh augusta-publish
-ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
-ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
-```
-
-- The first gets no shell: it prints `only publish` and exits `2`. The second
-  fails with `remote port forwarding failed`. The third, for any published
-  version, fails with `Permission denied`: the folder is read-only to the
-  publish user.
-- [Updates](#updates)' checks show `Debian-Security` alone, and
-  [The audit trail](#the-audit-trail)'s show the login just made, from that
-  address.
+    ```sh
+    ssh augusta-publish
+    ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
+    ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
+    ```
 
 ## Rollback / abort
 
