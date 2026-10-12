@@ -20,17 +20,17 @@ all, and adding a scenario is one entry, not one more release.
 
 **Packs are published, then deployed through Git.** A server pack is not in the
 image or the chart: `augusta-publish` (in `tools/pack`) puts it on the node's
-shared `hostPath` volume, at `<scenario>/<version>/`, beside the public key it
-is signed with, after checking both packs of its cook verify against that key
-and that the server pack names that client pack (ADR-0031). The version is the
-first 12 hex characters of the server pack's BLAKE3 hash, so a folder is never
-written twice: a new cook is a new folder. Publishing changes nothing that runs;
-a server takes the pack once its environment's `HelmRelease` names that version,
-merged like any other change, and each server mounts only its own version's
-folder. A rollback reverts that commit, and the older folder is still there to
-go back to. Whoever holds the signing key cooks, publishes and opens that pull
-request; nothing in CI or the cluster can, since neither has the key or the
-node's shell.
+shared `hostPath` volume, at `<environment>/<scenario>/<version>/`, beside the
+public key it is signed with, after checking both packs of its cook verify
+against that key and that the server pack names that client pack (ADR-0031). The
+version is the first 12 hex characters of the server pack's BLAKE3 hash, so a
+folder is never written twice: a new cook is a new folder. Publishing changes
+nothing that runs; a server takes the pack once its environment's `HelmRelease`
+names that version, merged like any other change, and each server mounts only
+its own version's folder. A rollback reverts that commit, and the older folder
+is still there to go back to. Whoever holds the signing key cooks, publishes and
+opens that pull request; nothing in CI or the cluster can, since neither has the
+key or the node's shell.
 
 **A rollout may cut a match in progress.** An upgrade replaces a server's pod
 the Deployment's default way: the new pod starts, and the old one gets SIGTERM

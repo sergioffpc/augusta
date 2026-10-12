@@ -172,12 +172,12 @@ def verify_main(argv: list[str] | None = None) -> int:
         "--public-key",
         type=Path,
         default=None,
-        help="Default: <assets-root>/keys/signing.pub",
+        help="Default: <assets-root>/keys/develop.pub, develop's key",
     )
     args = parser.parse_args(argv)
 
     public_key_path = (
-        args.public_key or args.assets_root / "keys" / "signing.pub"
+        args.public_key or args.assets_root / "keys" / "develop.pub"
     )
     try:
         pack_path = _resolve_pack(args.pack)

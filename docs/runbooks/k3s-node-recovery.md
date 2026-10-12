@@ -47,8 +47,8 @@ public repository over HTTPS with no credentials, so a rebuilt cluster needs no
 deploy key.
 
 The only state not in Git is the asset packs in the node's pack folder:
-`/srv/augusta/asset-packs/<scenario>/<packVersion>/server.pack` and
-`signing.pub` for each server the `HelmRelease` values in
+`/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/server.pack`
+and `signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
 them the servers never start; the layout, and how a missing folder shows, is
@@ -102,17 +102,19 @@ the same user and group, with no login and no home, so its files show that name
 and the node's own users stay out of them:
 
 - **Asset packs:** `/srv/augusta/asset-packs` and everything in it is owned by
-  `augusta-publish:augusta`, readable by the group alone: the volume and each
-  scenario's folder `2750` (setgid, so what is created in them takes the group),
-  each version's folder `0550` and its files `0440`. The servers read it as
-  group `augusta`; only [the publish user](#the-publish-user) writes it, and a
-  version's folder only once.
+  `augusta-publish:augusta`, readable by the group alone: the volume, each
+  environment's tree (`develop/`, `staging/`) and each scenario's folder in it
+  `2750` (setgid, so what is created in them takes the group), each version's
+  folder `0550` and its files `0440`. The servers read it as group `augusta`;
+  only [the publish user](#the-publish-user) writes it, and a version's folder
+  only once.
 - **Captures:** the mounted capture filesystem's root is owned by
   `augusta:augusta` ([The capture filesystem](#the-capture-filesystem)).
 
-`scripts/bootstrap-node.sh` creates the user and an empty volume, and gives
-whatever the volume holds those owners and modes on every run: packs on a node
-from before this layout (`root:augusta`) take it with a run of the bootstrap
+`scripts/bootstrap-node.sh` creates the user and the volume with an empty tree
+per environment, and gives whatever the trees hold those modes, and the whole
+volume those owners, on every run: packs on a node from before this layout
+(`root:augusta`) take it with a run of the bootstrap
 ([The node's OS](#the-nodes-os) has the command).
 
 ## The publish user
@@ -124,8 +126,9 @@ group, and has no `sudo`. Its one key, in
 `/usr/local/bin/augusta-publish-receive`
 ([`augusta-publish-receive.sh`](../../clusters/onprem/node/augusta-publish-receive.sh)),
 whatever its holder asks for, with no shell, PTY, or port, agent or X11
-forwarding (`restrict`). That command writes a new `<scenario>/<packVersion>/`
-folder and leaves it read-only, and never writes one that exists. The user's
+forwarding (`restrict`). That command writes a new
+`<environment>/<scenario>/<packVersion>/` folder, for `develop` or `staging`
+alone, and leaves it read-only, and never writes one that exists. The user's
 home and `authorized_keys` are root's, so neither the user nor its key can add
 another key. A stolen publish key can add a pack, never replace one a server
 runs; a pack it adds runs only once a `HelmRelease` names its version. The user
@@ -900,7 +903,7 @@ mounts, and a claim bound to it by name
 
 - **Pack:** the claim `augustad-<scenario>-pack-<packVersion>` and the volume
   `<namespace>-augustad-<scenario>-pack-<packVersion>`, on
-  `/srv/augusta/asset-packs/<scenario>/<packVersion>/`, read-only.
+  `/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/`, read-only.
 - **Captures,** when the environment turns them on: the claim
   `augustad-<scenario>-captures` and the volume
   `<namespace>-augustad-<scenario>-captures`, on `/srv/augusta/captures`,
@@ -915,7 +918,7 @@ no label of its own. A volume whose folder is missing leaves its pod waiting in
 kubectl -n <environment> get events --field-selector reason=FailedMount
 # MountVolume.NewMounter initialization failed for volume
 # "develop-augustad-firebase-pack-<packVersion>" : path
-# "/srv/augusta/asset-packs/firebase/<packVersion>" does not exist
+# "/srv/augusta/asset-packs/develop/firebase/<packVersion>" does not exist
 ```
 
 Helm never deletes these volumes and claims (`helm.sh/resource-policy: keep`),
@@ -944,6 +947,56 @@ under the old folder are removed as above.
 
 A rebuilt cluster has none of them: Flux makes those of the versions the
 `HelmRelease`s name, from the same folders.
+
+### Move packs into each environment's tree
+
+Until #583 every environment's packs shared one tree,
+`/srv/augusta/asset-packs/<scenario>/<packVersion>/`, signed with one key,
+`signing.pub`. Each environment now has its own tree and key
+([The server's user](#the-servers-user)). A node from before needs, once:
+
+1. Before the pull request merges, suspend both environments' `HelmRelease`s, so
+   Flux does not upgrade them onto folders that are not there yet, then install
+   the publish key's new forced command and the environments' trees, from its
+   branch, as a user with `sudo`:
+
+    ```sh
+    flux suspend helmrelease augustad-develop -n flux-system
+    flux suspend helmrelease augustad-staging -n flux-system
+    scp clusters/onprem/node/augusta-publish-receive.sh <node>:/tmp/
+    ssh <node> "sudo install -o root -g root -m 0755 /tmp/augusta-publish-receive.sh /usr/local/bin/augusta-publish-receive && sudo install -d -o augusta-publish -g augusta -m 2750 /srv/augusta/asset-packs/develop /srv/augusta/asset-packs/staging; rm /tmp/augusta-publish-receive.sh"
+    ```
+
+2. Publish each environment's packs into its tree, each cooked and signed with
+   its environment's key (`develop.key`, `staging.key`; `tools/README.md`):
+   `augusta-publish <scenario> --environment develop` and
+   `--environment staging`.
+3. Merge. A cook re-signed with another key has the `packVersion` it had, so
+   each server's volume keeps its name and changes its folder, which would fail
+   the upgrade (above). For each environment and server, as **cluster-admin**,
+   delete its pack claim and volume, then its Deployment, which frees them, wait
+   until they are gone, and resume the `HelmRelease`, which makes all three
+   again on the new folder:
+
+    ```sh
+    kubectl -n <environment> delete pvc augustad-<scenario>-pack-<packVersion> --wait=false
+    kubectl delete pv <environment>-augustad-<scenario>-pack-<packVersion> --wait=false
+    kubectl -n <environment> delete deploy augustad-<scenario>
+    kubectl -n <environment> wait --for=delete pvc/augustad-<scenario>-pack-<packVersion> --timeout 2m
+    kubectl wait --for=delete pv/<environment>-augustad-<scenario>-pack-<packVersion> --timeout 2m
+    flux resume helmrelease augustad-<environment> -n flux-system
+    kubectl -n <environment> logs deploy/augustad-<scenario> | grep 'event=pack_verified'
+    ```
+
+4. Once no environment serves a folder of the old tree (every volume's path is
+   in `develop/` or `staging/`), remove the old scenario folders, and the claims
+   and volumes of their versions as above, and the publisher's old
+   `keys/signing.*`:
+
+    ```sh
+    kubectl get pv -l app.kubernetes.io/name=augustad -o custom-columns=NAME:.metadata.name,PATH:.spec.local.path
+    ssh <node> "sudo find /srv/augusta/asset-packs -mindepth 1 -maxdepth 1 ! -name develop ! -name staging -exec rm -r {} +"
+    ```
 
 ## The server's confinement
 
@@ -1439,7 +1492,7 @@ protection the cluster or the node has lost (ADR-0057).
     ```sh
     ssh augusta-publish
     ssh -o ExitOnForwardFailure=yes -N -R 0:localhost:22 augusta-publish
-    ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<scenario>/<packVersion>/probe"
+    ssh <node> "sudo -u augusta-publish touch /srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/probe"
     ```
 
 ## Rollback / abort

@@ -85,6 +85,9 @@ readonly SERVER_USER=augusta SERVER_ID=65532
 # nothing but publish. Not the servers' user, nor in their group, and no sudo.
 # Its home and authorized_keys are root's, so it cannot add a key of its own.
 readonly PUBLISH_USER=augusta-publish
+# The Environments the node serves, each from its own tree of the asset-pack
+# volume, as the publish key's forced command takes them (RECEIVER_FILE).
+readonly ENVIRONMENTS=(develop staging)
 readonly PUBLISH_HOME=/var/lib/augusta-publish
 readonly VOLUME=/srv/augusta
 readonly CAPTURE_IMAGE="${VOLUME}/captures.img" CAPTURE_SIZE=4GiB
@@ -191,12 +194,13 @@ write_publish_key() {
   fi
 }
 
-# Creates the asset-pack volume, fills it from an archive if given one, and
-# gives everything in it its owner and modes.
+# Creates the asset-pack volume and each Environment's tree in it, fills it
+# from an archive if given one, and gives everything in it its owner and modes.
 # Arguments:
 #   The archive of asset-packs/, or nothing.
 create_pack_volume() {
-  local packs="${VOLUME}/asset-packs"
+  local packs="${VOLUME}/asset-packs" environment
+  local -a trees=()
   as_root install -d -o root -g root -m 0755 "${VOLUME}"
   as_root install -d -o "${PUBLISH_USER}" -g "${SERVER_USER}" -m 2750 \
     "${packs}"
@@ -207,15 +211,23 @@ create_pack_volume() {
       as_root tar -C "${VOLUME}" -xzf "$1" asset-packs
     fi
   fi
-  # The publish user's, read by the servers' group alone: the scenarios'
-  # folders take new versions, and inherit the group (setgid); a version's
-  # folder and files are read-only, as publishing leaves them. Its staging
-  # folders (.<version>.partial) keep their modes.
+  for environment in "${ENVIRONMENTS[@]}"; do
+    trees+=("${packs}/${environment}")
+  done
+  as_root install -d -o "${PUBLISH_USER}" -g "${SERVER_USER}" -m 2750 \
+    "${trees[@]}"
+  # The publish user's, read by the servers' group alone: an Environment's
+  # tree and its scenarios' folders take new versions, and inherit the group
+  # (setgid); a version's folder and files are read-only, as publishing leaves
+  # them. Its staging folders (.<version>.partial) keep their modes, as does
+  # anything outside the trees, which an archive from before them may hold
+  # (k3s-node-recovery.md).
   as_root chown -R "${PUBLISH_USER}:${SERVER_USER}" "${packs}"
-  as_root find "${packs}" -mindepth 1 -maxdepth 1 -type d -exec chmod 2750 {} +
-  as_root find "${packs}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
+  as_root find "${trees[@]}" -maxdepth 1 -type d ! -name '.*' \
+    -exec chmod 2750 {} +
+  as_root find "${trees[@]}" -mindepth 2 -maxdepth 2 -type d ! -name '.*' \
     -exec chmod 0550 {} +
-  as_root find "${packs}" -mindepth 3 -maxdepth 3 -type f ! -path '*/.*' \
+  as_root find "${trees[@]}" -mindepth 3 -maxdepth 3 -type f ! -path '*/.*' \
     -exec chmod 0440 {} +
 }
 

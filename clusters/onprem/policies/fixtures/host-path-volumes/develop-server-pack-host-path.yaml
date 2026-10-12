@@ -27,5 +27,5 @@ spec:
       volumes:
         - name: pack
           hostPath:
-            path: /srv/augusta/asset-packs/firebase/9d0c7edd5b34
+            path: /srv/augusta/asset-packs/develop/firebase/9d0c7edd5b34
             type: Directory

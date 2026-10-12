@@ -11,17 +11,19 @@
 #
 #   publish <folder> server.pack=<sha256>:<bytes> signing.pub=<sha256>:<bytes>
 #
-# A folder is <scenario>/<version> under the pack volume. stdin holds the
-# files back to back, in the order the command names them, each exactly its
-# size: no archive is parsed here, and the names are the command's alone. They
-# are written to the folder's staging place beside it, checked against their
-# sizes and digests, made read-only and renamed into the folder.
+# A folder is <environment>/<scenario>/<version> under the pack volume, for
+# the Environments below alone: each has its own tree, its packs signed with
+# its own key. stdin holds the files back to back, in the order the command
+# names them, each exactly its size: no archive is parsed here, and the names
+# are the command's alone. They are written to the folder's staging place
+# beside it, checked against their sizes and digests, made read-only and
+# renamed into the folder.
 #
 # A folder that exists is never written again: publish reads nothing into the
 # volume for it, and exits 3 when it holds exactly the files named, 4 when it
 # holds others. A published folder is 0550 with its files 0440, read-only to
 # this user too. The user owns them and could change their modes back, but its
-# key runs nothing but this. Publishes to one scenario take turns.
+# key runs nothing but this. Publishes to one Environment's scenario take turns.
 # The volume's setgid group, the servers' (k3s-node-recovery.md, The server's
 # user), passes to everything created in it. Exits 0 once published, 2 for
 # anything else asked, 1 when a publish fails, leaving no folder and no staging
@@ -30,9 +32,11 @@ set -euo pipefail
 
 readonly PACKS=/srv/augusta/asset-packs
 readonly PUBLISHED=3 OTHER_FILES=4
-# A scenario as augusta-publish takes one, and a version: the first 12 hex
-# characters of the server pack's BLAKE3 hash.
-readonly FOLDER_PATTERN='^[a-z0-9]([a-z0-9-]{0,44}[a-z0-9])?/[0-9a-f]{12}$'
+# An Environment the Node serves (tools/pack's publish.py and
+# scripts/bootstrap-node.sh name them too), a scenario as augusta-publish takes
+# one, and a version: the first 12 hex characters of the server pack's BLAKE3
+# hash.
+readonly FOLDER_PATTERN='^(develop|staging)/[a-z0-9]([a-z0-9-]{0,44}[a-z0-9])?/[0-9a-f]{12}$'
 readonly NAMES=(server.pack signing.pub)
 # <sha256>:<bytes>, the size in decimal with no leading zero.
 readonly FILE_PATTERN='^[0-9a-f]{64}:(0|[1-9][0-9]{0,14})$'
@@ -53,7 +57,8 @@ refuse() {
 #   A folder, as the client named it.
 check_folder() {
   if [[ ! "$1" =~ ${FOLDER_PATTERN} ]]; then
-    refuse "not a <scenario>/<version> folder: $1"
+    refuse "not an <environment>/<scenario>/<version> folder of a known" \
+      "Environment: $1"
   fi
 }
 
@@ -120,8 +125,8 @@ publish() {
   shift
   expected="$(expected_digests "$@")"
   mkdir -p "${PACKS}/${folder%/*}"
-  # One publish to a scenario at a time, held until this exits: two of one
-  # version would share its staging place.
+  # One publish to an Environment's scenario at a time, held until this
+  # exits: two of one version would share its staging place.
   exec {lock}<"${PACKS}/${folder%/*}"
   flock "${lock}"
   refuse_published "${folder}" "${expected}"
@@ -129,7 +134,7 @@ publish() {
   # A hidden sibling no server is pointed at, left by no failure: a folder is
   # there whole or not at all. Writable again before it is removed, should it
   # be sealed when its rename fails.
-  staging="${PACKS}/${folder%/*}/.${folder#*/}.partial"
+  staging="${PACKS}/${folder%/*}/.${folder##*/}.partial"
   # shellcheck disable=SC2064 # staging is set once, here
   trap "chmod u+w -- '${staging}' 2>/dev/null || true
     rm -rf -- '${staging}'" EXIT
