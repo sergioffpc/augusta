@@ -155,15 +155,14 @@ decisions already made in ARCHITECTURE.md:
   Release-config client/server binaries, runs the tests and the asset pipeline
   check against them, and attaches them to a GitHub Release, whose notes are
   generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic. The client is
-  attached as `augustac-windows-x64.zip`, its whole runtime folder: the `.exe`,
-  the DLLs it loads, Falcor's runtime (its shaders, data and plugins) and the
-  MSVC runtime, staged by the client's install rules
-  (`scripts/stage-client.sh`). `augustac.exe` alone loads nothing, and Falcor is
-  a DLL that reads its folder at runtime, so it cannot be linked statically. The
-  workflow unzips the zip into an empty folder and checks that
-  `augustac --version` prints the tag's version from there. CI's client job
-  checks that the staged folder starts on every pull request.
+  cutting a release is a deliberate tag rather than automatic. The client ships
+  as `augustac-windows-x64.zip`, its whole runtime folder, never as a lone
+  `.exe`: Falcor is a DLL that reads its shaders, data and plugins from its
+  folder at runtime, so the client cannot be linked statically, and it carries
+  the MSVC runtime so it needs no redistributable. A release is published only
+  once its unzipped client runs `augustac --version` and prints the tag's
+  version (`scripts/stage-client.sh`). That catches a DLL it imports that is
+  missing, not what Falcor loads once it starts.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`

@@ -144,23 +144,25 @@ add_custom_command(
 # loads itself, and the shaders, data and plugins it reads), and the MSVC
 # runtime, so it starts on a Windows with no Visual C++ redistributable. CMake
 # resolves the DLLs itself, as for augustad. Falcor's PDBs stay out: they are
-# most of its folder, and no player reads them.
+# most of its folder, and no player reads them. EXCLUDE_FROM_ALL: a plain
+# `cmake --install`, augustad's (Dockerfile, `make install`), leaves it out.
 install(
   TARGETS augustac
   RUNTIME_DEPENDENCY_SET augustac_dlls
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
 )
 install(
   RUNTIME_DEPENDENCY_SET augustac_dlls
   PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
   POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
   DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin" "${FALCOR_BIN_DIR}"
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
 )
 install(
   DIRECTORY "${FALCOR_BIN_DIR}/"
   DESTINATION ${CMAKE_INSTALL_BINDIR}
   COMPONENT client
+  EXCLUDE_FROM_ALL
   PATTERN "*.pdb" EXCLUDE
   PATTERN "setpath.*" EXCLUDE
 )
@@ -168,7 +170,13 @@ install(
   DIRECTORY "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders/"
   DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders/Augusta/Renderer
   COMPONENT client
+  EXCLUDE_FROM_ALL
 )
-set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
-set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT client)
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
 include(InstallRequiredSystemLibraries)
+install(
+  PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+  DESTINATION ${CMAKE_INSTALL_BINDIR}
+  COMPONENT client
+  EXCLUDE_FROM_ALL
+)
