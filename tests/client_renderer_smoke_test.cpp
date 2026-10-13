@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -64,6 +65,14 @@ bool IsLitIn(std::span<const std::uint8_t> rgba, std::size_t channel) {
   return rgba[3] == kOpaque;
 }
 
+// The crosshair's grey, 0.9 in linear light, as an sRGB byte.
+constexpr int kCrosshairChannel = 243;
+
+bool IsCrosshairColor(std::span<const std::uint8_t> rgba) {
+  const auto near_crosshair = [](std::uint8_t channel) { return std::abs(channel - kCrosshairChannel) <= kTolerance; };
+  return near_crosshair(rgba[0]) && near_crosshair(rgba[1]) && near_crosshair(rgba[2]) && rgba[3] == kOpaque;
+}
+
 constexpr std::size_t kRed = 0;
 constexpr std::size_t kGreen = 1;
 constexpr std::size_t kBlue = 2;
@@ -90,6 +99,12 @@ constexpr std::uint32_t kCentreY = kHeight / 2;
 constexpr std::uint32_t kLeftX = 76;
 constexpr std::uint32_t kRightX = 244;
 constexpr std::uint32_t kCorner = 4;
+
+// A pixel halfway along each of the crosshair's bars, which start 4 pixels off
+// the frame's centre and run 8 on: the one after the centre's row or column,
+// and the one before it.
+constexpr std::uint32_t kAfterCentreToBar = 8;
+constexpr std::uint32_t kBeforeCentreToBar = 9;
 
 constexpr std::string_view kCharacter = "characters/soldier";
 
@@ -128,11 +143,15 @@ class RendererSmokeTest : public ::testing::Test {
   }
 
   // More frames than are in flight, so that every region of the per-frame
-  // upload buffers and every swapchain image comes round, each with players.
-  CapturedFrame RenderFrames(std::span<const RemotePlayer> players = {}) {
+  // upload buffers and every swapchain image comes round, each with players,
+  // effects and overlay.
+  CapturedFrame RenderFrames(std::span<const RemotePlayer> players = {}, const CombatEffects& effects = {},
+                             const Overlay& overlay = {}) {
     for (int i = 0; i < 4; ++i) {
       renderer_->PumpEvents();
       renderer_->SetRemotePlayers(players);
+      renderer_->SetCombatEffects(effects);
+      renderer_->SetOverlay(overlay);
       renderer_->RenderFrame();
     }
     return renderer_->CaptureFrame();
@@ -247,6 +266,43 @@ TEST_F(RendererSmokeTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
   ASSERT_EQ(frame.width, kWidth);
   EXPECT_TRUE(IsClearColor(Pixel(frame, kCentreX, kCentreY)));
   EXPECT_TRUE(IsLitIn(Pixel(frame, kLeftX, kCentreY), kGreen));
+}
+
+TEST_F(RendererSmokeTest, AddsATracersGlowToTheSceneBehindIt) {
+  SetWorld();
+  const CapturedFrame without = RenderFrames();
+  const std::span<const std::uint8_t> scene = Pixel(without, kRightX, kCentreY);
+  // Across the blue rectangle, a little in front of it, its head past it.
+  const CombatEffects effects{
+      .tracers = {{.head = {2.6F, 0.0F, 0.1F}, .tail = {0.6F, 0.0F, 0.1F}}}, .impacts = {}, .muzzle_flashes = {}};
+
+  const CapturedFrame frame = RenderFrames({}, effects);
+
+  ASSERT_EQ(frame.width, kWidth);
+  const std::span<const std::uint8_t> lit = Pixel(frame, kRightX, kCentreY);
+  // The tracer's warm light, where the rectangle had none, on top of the
+  // rectangle's blue rather than in place of it.
+  EXPECT_GT(lit[kRed], scene[kRed]);
+  EXPECT_GT(lit[kGreen], scene[kGreen]);
+  EXPECT_GT(lit[kBlue], scene[kBlue]);
+  EXPECT_EQ(lit[3], kOpaque);
+}
+
+TEST_F(RendererSmokeTest, DrawsTheCrosshairOverAPlayerAtTheFramesCentre) {
+  SetWorld();
+  const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
+
+  const CapturedFrame frame = RenderFrames(players, {}, {.crosshair = true, .hit_marker = false});
+
+  ASSERT_EQ(frame.width, kWidth);
+  // Its bars, written over the player in their own colour, around a gap that
+  // still shows the player.
+  for (const auto [x, y] :
+       {std::pair{kCentreX + kAfterCentreToBar, kCentreY}, std::pair{kCentreX - kBeforeCentreToBar, kCentreY},
+        std::pair{kCentreX, kCentreY - kBeforeCentreToBar}, std::pair{kCentreX, kCentreY + kAfterCentreToBar}}) {
+    EXPECT_TRUE(IsCrosshairColor(Pixel(frame, x, y))) << x << "," << y;
+  }
+  EXPECT_TRUE(IsLitIn(Pixel(frame, kCentreX, kCentreY), kRed));
 }
 
 TEST_F(RendererSmokeTest, ThrowsOnAnOutOfRangeMeshIndex) {
