@@ -434,15 +434,45 @@ if(WIN32)
   # The Renderer on NVRHI and GLFW (ADR-0059), which replaces Falcor's: built
   # and tested (tests/client_renderer_smoke_test.cpp), but linked by no
   # executable until it draws all that Falcor's does. NVRHI's backend is D3D12
-  # alone, and the manifest has both on Windows only.
+  # alone, and the manifest has both, and the shader compilers below, on
+  # Windows only.
   find_package(nvrhi CONFIG REQUIRED)
   find_package(glfw3 CONFIG REQUIRED)
-  add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp)
-  target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+  # Its shaders, compiled to DXIL at build time and embedded in the renderer as
+  # byte arrays: it compiles nothing at runtime and ships no shader files, and a
+  # shader error fails the build. slangc hands its HLSL to DXC; the manifest has
+  # both as host tools, which nothing ships.
+  find_package(slang CONFIG REQUIRED)
+  find_package(directx-dxc CONFIG REQUIRED)
+  cmake_path(GET DIRECTX_DXC_TOOL PARENT_PATH dxc_dir)
+  set(shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+  set(shader_headers "")
+  # Compiles the entry point entry of shaders/source, for stage, into
+  # <name>.h: the DXIL as the byte array name.
+  function(augusta_compile_shader source entry stage name)
+    set(output ${shader_dir}/${name}.h)
+    add_custom_command(
+      OUTPUT ${output}
+      COMMAND
+        ${SLANGC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source} -target dxil -profile sm_6_0 -entry ${entry}
+        -stage ${stage} -matrix-layout-column-major -warnings-as-errors all -dxc-path ${dxc_dir} -o ${output}
+        -source-embed-style u8 -source-embed-name ${name}
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source}
+      COMMENT "Compiling ${source}'s ${entry} to DXIL"
+      VERBATIM
+    )
+    set(shader_headers ${shader_headers} ${output} PARENT_SCOPE)
+  endfunction()
+  augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
+  augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
+
+  add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp ${shader_headers})
+  target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${shader_dir})
   target_link_libraries(
     augusta_renderer_nvrhi
     PUBLIC augusta_input
-    PRIVATE augusta_logging nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+    PRIVATE augusta_logging augusta_renderer_vertices nvrhi nvrhi_d3d12 glfw d3d12 dxgi
   )
   augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
 endif()

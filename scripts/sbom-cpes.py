@@ -89,6 +89,8 @@ _NO_CPE = {
     "vcpkg-pkgconfig-get-modules": "a build tool",
     "vcpkg-tool-meson": "a build tool",
     "vcpkg-get-python": "a build tool",
+    "shader-slang": "a build tool: compiles the shaders the client embeds",
+    "directx-dxc": "a build tool: compiles the shaders the client embeds",
     # The NVRHI renderer's (ADR-0059), and the ports NVRHI pulls in.
     "glfw3": "not in the NVD",
     "nvrhi": "not in the NVD",
