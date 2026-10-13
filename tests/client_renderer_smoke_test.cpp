@@ -17,13 +17,13 @@ namespace {
 constexpr std::uint32_t kWidth = 320;
 constexpr std::uint32_t kHeight = 240;
 
-// The Renderer's near-black clear colour, 0.016 in linear light, as an sRGB
+// The Renderer's near-black clear color, 0.016 in linear light, as an sRGB
 // byte, give or take the GPU's rounding.
 constexpr int kClearChannel = 34;
 constexpr int kTolerance = 1;
 constexpr std::uint8_t kOpaque = 255;
 
-bool IsClearColour(std::span<const std::uint8_t> rgba) {
+bool IsClearColor(std::span<const std::uint8_t> rgba) {
   const auto near_clear = [](std::uint8_t channel) { return std::abs(channel - kClearChannel) <= kTolerance; };
   return near_clear(rgba[0]) && near_clear(rgba[1]) && near_clear(rgba[2]) && rgba[3] == kOpaque;
 }
@@ -64,7 +64,7 @@ TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
   EXPECT_TRUE(frame.pixels.empty());
 }
 
-TEST_F(RendererSmokeTest, ClearsEveryPixelToTheClearColour) {
+TEST_F(RendererSmokeTest, ClearsEveryPixelToTheClearColor) {
   // More frames than are in flight, so the swapchain's images all come round.
   for (int i = 0; i < 4; ++i) {
     renderer_->PumpEvents();
@@ -78,7 +78,7 @@ TEST_F(RendererSmokeTest, ClearsEveryPixelToTheClearColour) {
   ASSERT_EQ(frame.pixels.size(), std::size_t{kWidth} * kHeight * 4);
   std::size_t other_pixels = 0;
   for (std::size_t i = 0; i < frame.pixels.size(); i += 4) {
-    if (!IsClearColour(std::span(frame.pixels).subspan(i, 4))) {
+    if (!IsClearColor(std::span(frame.pixels).subspan(i, 4))) {
       ++other_pixels;
     }
   }

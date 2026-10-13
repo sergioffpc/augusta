@@ -13,7 +13,7 @@ target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_
 target_link_libraries(
   augusta_renderer_nvrhi
   PUBLIC augusta_input
-  PRIVATE nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+  PRIVATE augusta_logging nvrhi nvrhi_d3d12 glfw d3d12 dxgi
 )
 augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
 

@@ -70,13 +70,13 @@ struct Config {
   std::uint32_t width = kDefaultWidth;
   std::uint32_t height = kDefaultHeight;
   Adapter adapter = Adapter::kHardware;
-  /// True to never show the window, for a test that only reads frames back
-  /// (CaptureFrame).
+  /// True to hide the window, for a test that only reads frames back
+  /// (CaptureFrame). Falcor's Renderer shows it for a moment first.
   bool hidden = false;
 };
 
 /// A frame read back from the GPU: width by height pixels, row by row from the
-/// top, 4 bytes each (red, green, blue, alpha), sRGB-encoded as presented.
+/// top, 4 bytes each (red, green, blue, alpha), sRGB-encoded.
 struct CapturedFrame {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
@@ -195,16 +195,16 @@ struct DebugHudStats {
 class Renderer {
  public:
   /// Creates the window and GPU device per config, and wires this
-  /// Renderer to push keyboard/mouse events to input_sink as Falcor
+  /// Renderer to push keyboard/mouse events to input_sink as the window
   /// delivers them (see input::EventSink). Throws std::runtime_error if
   /// window or device creation fails - there is no recoverable path for a
   /// client that can't render - or if this implementation does not support
   /// config's adapter. input_sink must outlive this Renderer.
   Renderer(const Config& config, input::EventSink& input_sink);
 
-  /// Falcor's Device/Window/Swapchain are unique hardware resources owned
+  /// The window, device and swapchain are unique hardware resources owned
   /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
-  /// before tearing them down, same as Falcor::SampleApp's own destructor.
+  /// before tearing them down.
   ~Renderer();
 
   /// Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
@@ -214,7 +214,7 @@ class Renderer {
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  /// Drains the OS/Falcor event queue and returns immediately - never
+  /// Drains the window's event queue and returns immediately - never
   /// waits for or presents a frame. Updates the state ShouldClose/GetSize
   /// return, and synchronously calls input_sink's matching method for
   /// every keyboard/mouse event seen. Must be called from the same

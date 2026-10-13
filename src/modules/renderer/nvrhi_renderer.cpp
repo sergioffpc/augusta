@@ -2,7 +2,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -22,6 +21,7 @@
 #include <wrl/client.h>
 
 #include "augusta/input.h"
+#include "augusta/logging.h"
 #include "augusta/renderer.h"
 
 // glfw3native.h declares glfwGetWin32Window only for the platforms named before
@@ -63,12 +63,23 @@ void ThrowIfFailed(HRESULT result, const char* what) {
   }
 }
 
-// What NVRHI reports, on standard error: there is no logger in this module.
+// What NVRHI reports, logged at its own severity.
 class MessageCallback final : public nvrhi::IMessageCallback {
  public:
   void message(nvrhi::MessageSeverity severity, const char* text) override {
-    if (severity != nvrhi::MessageSeverity::Info) {
-      std::cerr << "NVRHI: " << text << '\n';
+    switch (severity) {
+      case nvrhi::MessageSeverity::Info:
+        LD("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Warning:
+        LW("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Error:
+        LE("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Fatal:
+        LC("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
     }
   }
 };
