@@ -1,7 +1,7 @@
 # The client's private libraries below use renderer.h's plain types only, so
-# they take that header's directory rather than linking augusta_renderer: their
-# tests need neither Falcor nor a window. renderer.h includes input.h, hence
-# augusta_input.
+# they take that header's directory rather than linking augusta_renderer_nvrhi:
+# their tests need neither a GPU nor a window. renderer.h includes input.h,
+# hence augusta_input.
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see scene_loader.h), the characters other players bring (see
@@ -76,7 +76,7 @@ target_link_libraries(
     augusta_harness
     augusta_input
     augusta_networking
-    augusta_renderer
+    augusta_renderer_nvrhi
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE
@@ -124,53 +124,30 @@ target_compile_definitions(augustac PRIVATE NOMINMAX)
 # /OPT:ICF off unless they are named, so they are: the code is Release's own.
 target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
-# Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
-# dxcompiler, ...) and shader library need to sit next to augustac.exe -
-# FALCOR_BIN_DIR is set by src/modules/renderer/CMakeLists.txt, the only
-# other consumer of the vendored Falcor build.
-add_custom_command(
-  TARGET augustac
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${FALCOR_BIN_DIR}" "$<TARGET_FILE_DIR:augustac>"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders"
-    "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer"
-  COMMENT "Deploying Falcor's runtime (ADR-0009) and shaders next to augustac"
-)
+augusta_stage_aftermath(augustac)
 
 # `cmake --install --component client` stages the client's whole runtime folder,
 # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
-# loads, Falcor's runtime as the build tree has it beside it (its DLLs, those it
-# loads itself, and the shaders, data and plugins it reads), and the MSVC
-# runtime, so it starts on a Windows with no Visual C++ redistributable. CMake
-# resolves the DLLs itself, as for augustad. Falcor's PDBs stay out: they are
-# most of its folder, and no player reads them. EXCLUDE_FROM_ALL: a plain
+# loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
+# redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's, and
+# Aftermath's when the build has it (cmake/Aftermath.cmake). The renderer's
+# shaders are in augustac.exe (ADR-0059). EXCLUDE_FROM_ALL: a plain
 # `cmake --install`, augustad's (Dockerfile, `make install`), leaves it out.
 install(
   TARGETS augustac
   RUNTIME_DEPENDENCY_SET augustac_dlls
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
 )
+set(dll_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
+if(AUGUSTA_AFTERMATH_DIR)
+  list(APPEND dll_directories "${AUGUSTA_AFTERMATH_DIR}/lib/x64")
+endif()
 install(
   RUNTIME_DEPENDENCY_SET augustac_dlls
   PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
   POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
-  DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin" "${FALCOR_BIN_DIR}"
+  DIRECTORIES ${dll_directories}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-)
-install(
-  DIRECTORY "${FALCOR_BIN_DIR}/"
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  COMPONENT client
-  EXCLUDE_FROM_ALL
-  PATTERN "*.pdb" EXCLUDE
-  PATTERN "setpath.*" EXCLUDE
-)
-install(
-  DIRECTORY "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders/"
-  DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders/Augusta/Renderer
-  COMPONENT client
-  EXCLUDE_FROM_ALL
 )
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
 include(InstallRequiredSystemLibraries)

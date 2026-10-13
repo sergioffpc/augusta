@@ -25,16 +25,11 @@ jobs:
     defaults:
       run:
         shell: bash
-    # See ci.yml's client job: packman's cache stays off the workspace's drive
-    # when Falcor is built from source (no prebuilt published for it yet).
-    env:
-      PM_PACKAGES_ROOT: C:\packman-repo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # recursive: third_party/falcor has nested submodules of its own
-          # (see ci.yml's client job).
-          submodules: recursive
+      - name: Fetch the submodules
+        # As ci.yml's client job does: vcpkg and NVTX alone.
+        run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
@@ -63,19 +58,14 @@ jobs:
           # Its PDB, from this same build, so its GUID and age are the ones
           # the zipped augustac.exe's debug directory names (ADR-0055).
           cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
-      # Falcor and NVTX are submodules, not vcpkg ports, so they are named by
-      # their commits. What the zip ships beside them is named too (ADR-0058):
-      # Falcor's own dependencies, as its build fetched them, and the MSVC
-      # runtime, at the version of the staged vcruntime140.dll. Falcor's
-      # packman directory is the prebuilt package's when the build used one
-      # (cmake/FalcorPrebuilt.cmake), so the build's cache names it.
+      # NVTX is a submodule, not a vcpkg port, so it is named by its commit.
+      # The MSVC runtime the zip ships is named too (ADR-0058), at the version
+      # of the staged vcruntime140.dll.
       - name: SBOM
         run: |
-          packman="$(sed -n 's/^FALCOR_PACKMAN_DIR:INTERNAL=//p' build/x64-windows/CMakeCache.txt)"
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
-            --git-package third_party/falcor --git-package third_party/nvtx \
-            --falcor third_party/falcor --falcor-packman "$packman" \
+            --git-package third_party/nvtx \
             --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
       - name: Attest provenance

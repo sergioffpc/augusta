@@ -42,13 +42,13 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA Falcor (D3D12). Server: Linux x86-64 and Linux arm64 in production
+  via NVIDIA's NVRHI (D3D12). Server: Linux x86-64 and Linux arm64 in production
   (Windows x64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
-  PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
-  [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0], Dear ImGui [MIT]), and so
-  must assets kept in the repository (the debug HUD's JetBrains Mono font [OFL
-  1.1], `src/modules/renderer/fonts/`, with its licence)
+  PhysX [BSD-3], GameNetworkingSockets [BSD-3], NVRHI [MIT], GLFW [zlib], Steam
+  Audio [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0], Dear ImGui [MIT]),
+  and so must assets kept in the repository (the debug HUD's JetBrains Mono font
+  [OFL 1.1], `src/modules/renderer/fonts/`, with its licence)
 - **Language:** C++23 (avoid C++23 std modules/`import std` — still immature on
   MSVC and GCC/Clang)
 - **Coding style:** Google C++ Style Guide
@@ -69,8 +69,8 @@ IP:port.
 
 **Technical context:**
 
-- Client executable (Windows only): rendering (Falcor/D3D12), input, audio,
-  local prediction
+- Client executable (Windows only): rendering (NVRHI/D3D12), input, audio, local
+  prediction
 - Dedicated server executable (Linux in production, Windows for development
   only - NFR-04): headless, authoritative simulation
 - Agents (`tools/agent`, Windows and Linux): players a Python script controls,
@@ -101,14 +101,14 @@ IP:port.
   conditions, spawn rules) is encapsulated in sandboxed Lua scripts run in a
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
-- Rendering built on NVIDIA Falcor (D3D12), used exclusively by the Windows
+- Rendering built on NVIDIA's NVRHI (D3D12), used exclusively by the Windows
   client. The server runs in production on Linux only (NFR-04), headless, and
-  entirely decoupled from Falcor/graphics-API concerns.
+  entirely decoupled from graphics-API concerns.
 - Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
   spatial audio; no audio dependency on the headless Linux server.
-- Shaders authored in Slang — already Falcor's default shader compiler (targets
-  D3D12/HLSL); adopting it explicitly formalizes an existing transitive
-  dependency rather than adding a new one.
+- Shaders authored in Slang (ADR-0014), compiled to DXIL at build time and
+  embedded in the client: it compiles no shaders at runtime and ships no shader
+  compiler (ADR-0059).
 - Level/map content authored in OpenUSD (interchange/authoring format only) and
   baked at build time into the engine's own lightweight runtime level format.
   OpenUSD, Hydra, and their toolchain (TBB/Boost/Python) are a content-pipeline
@@ -164,10 +164,10 @@ IP:port.
 **Client-only** (Windows-only)
 
 - Input handling — turns keyboard/mouse events pushed by Renderer into commands
-  for PredictionWorld. There is no separate Window module: Falcor fuses window
-  creation with its GPU device/swapchain into one object (ADR-0009), so Renderer
-  owns the OS window and pushes device events to Input rather than a third
-  module managing the window handle independently
+  for PredictionWorld. There is no separate Window module: Renderer owns the OS
+  window (GLFW) with its GPU device and swapchain (ADR-0059), and pushes device
+  events to Input rather than a third module managing the window handle
+  independently
 - Networking — sends commands, receives authoritative server state
 - ClientRuntime
     - PredictionWorld (ECS) — consumes commands + authoritative server state;
@@ -175,11 +175,11 @@ IP:port.
       immutable prediction state each simulation tick
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
       smooths for display; emits presentation state each render frame
-- Renderer — NVIDIA Falcor (D3D12), shaders authored in Slang; owns the client's
-  single OS window (see Input handling, above) and consumes presentation state.
-  Exposes pumping window/device events and rendering a frame as two separate
-  operations rather than one combined loop, so the Main/Render thread can drain
-  events at a different cadence than it presents frames
+- Renderer — NVIDIA's NVRHI (D3D12), shaders authored in Slang; owns the
+  client's single OS window (see Input handling, above) and consumes
+  presentation state. Exposes pumping window/device events and rendering a frame
+  as two separate operations rather than one combined loop, so the Main/Render
+  thread can drain events at a different cadence than it presents frames
 - Audio — Steam Audio; consumes presentation state
 - HUD/UI
 
@@ -682,8 +682,9 @@ to NFR-07).
   proves who it is, so a man-in-the-middle goes undetected. Acceptable only
   under the stated trusted-LAN assumption; certificates signed by a project
   certificate authority are needed before any non-trusted deployment.
-- **Falcor dependency** (see ADR-0009): a fork/vendor of the source is
-  recommended to insulate against upstream abandonment.
+- **NVRHI dependency** (see ADR-0059): a thin RHI that NVIDIA maintains, from
+  vcpkg. The Renderer's interface keeps it out of every other module, so
+  replacing it touches the Renderer alone.
 - **Cross-OS local development:** building and testing requires both a Windows
   and a Linux environment simultaneously — largely mitigated now that the
   self-hosted k3s cluster (§7) serves as a standing Linux environment for the

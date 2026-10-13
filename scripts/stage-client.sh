@@ -1,15 +1,14 @@
 #!/bin/bash
 # Stages the client's whole runtime folder from a Windows build, with
 # `cmake --install --component client` (src/client/CMakeLists.txt), and checks
-# that augustac runs from it alone. Given a zip and a version, it also zips the
-# folder, unzips it into an empty one, and checks that augustac runs from there
-# and prints that version: what a release attaches (release.yml).
+# that augustac runs from it alone. Given a zip, it also zips the folder, unzips
+# it into an empty one, and checks that augustac runs from there and, given a
+# version, prints it: what a release attaches (release.yml).
 #
 # The check runs `augustac --version` with only Windows' own folders on PATH,
 # so a DLL augustac imports that is missing from the folder fails it rather
-# than being found elsewhere. --version exits before Falcor starts: what Falcor
-# loads at runtime (its shaders, data, plugins and the DLLs it loads itself) is
-# not checked.
+# than being found elsewhere. --version exits before the Renderer starts, so a
+# DLL loaded only once it runs is not checked.
 #
 #   scripts/stage-client.sh build/x64-windows dist/augustac
 #   scripts/stage-client.sh build/x64-windows dist/augustac \
@@ -20,7 +19,7 @@ set -euo pipefail
 unzipped=""
 
 usage() {
-  echo "usage: $0 <build-dir> <staging-dir> [<zip> <version>]" >&2
+  echo "usage: $0 <build-dir> <staging-dir> [<zip> [<version>]]" >&2
   exit 2
 }
 
@@ -57,7 +56,9 @@ check_runs() {
 #   The build directory, the staging directory, and optionally the zip and
 #   the version it must print.
 main() {
-  [[ $# -eq 2 ]] || [[ $# -eq 4 ]] || usage
+  if (($# < 2 || $# > 4)); then
+    usage
+  fi
   local build_dir="$1"
   local staging_dir="$2"
   local zip="${3:-}"
