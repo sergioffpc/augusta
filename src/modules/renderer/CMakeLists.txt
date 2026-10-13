@@ -478,6 +478,8 @@ if(WIN32)
   endfunction()
   augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
   augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
+  augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
+  augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
 
   # The debug HUD's monospace font (fonts/, with its licence), embedded the same
   # way, so there is no font file to ship or find.
@@ -506,7 +508,16 @@ if(WIN32)
   target_link_libraries(
     augusta_renderer_nvrhi
     PUBLIC augusta_input
-    PRIVATE augusta_logging augusta_renderer_debug_hud_text nvrhi nvrhi_d3d12 glfw imgui::imgui d3d12 dxgi
+    PRIVATE
+      augusta_logging
+      augusta_renderer_debug_hud_text
+      augusta_renderer_vertices
+      nvrhi
+      nvrhi_d3d12
+      glfw
+      imgui::imgui
+      d3d12
+      dxgi
   )
   augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
 endif()

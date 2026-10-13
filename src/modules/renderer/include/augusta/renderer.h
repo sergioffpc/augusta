@@ -45,7 +45,8 @@
 ///
 /// Two libraries implement this header, and an executable links one of them:
 /// augusta_renderer on Falcor, which augustac links, and augusta_renderer_nvrhi
-/// on NVRHI, which replaces it (ADR-0059) and so far only clears the frame.
+/// on NVRHI, which replaces it (ADR-0059) and so far draws only the scene and
+/// the remote players.
 namespace augusta::renderer {
 
 /// Default initial client-area size, in pixels (see Config::width/height).
@@ -268,10 +269,11 @@ class Renderer {
   /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
   /// call once every RenderFrame. Draws every instance it is given: how many
   /// players there can be is the protocol's business, not the renderer's. The
-  /// buffer grows (with one GPU wait) only when a call needs more room than
-  /// any before it, so a steady player count never waits or allocates. From
-  /// the Main/Render thread. An empty span draws nothing - how a player who
-  /// left disappears; a player whose character has no mesh is skipped.
+  /// buffer grows (with one GPU wait, on Falcor) only when a call needs more
+  /// room than any before it, so a steady player count never waits or
+  /// allocates. From the Main/Render
+  /// thread. An empty span draws nothing - how a player who left disappears; a
+  /// player whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   /// Replaces the drawn tracers, impacts and muzzle flashes, each turned to

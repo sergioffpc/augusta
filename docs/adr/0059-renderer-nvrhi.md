@@ -30,8 +30,10 @@ unused but keeps a Linux client possible. The alternatives weighed:
   separate Window module. GLFW's callbacks feed `input::EventSink`. Cursor lock
   is GLFW's disabled cursor with raw mouse motion, which needs no patch.
 - **Shaders.** Slang (ADR-0014), compiled to DXIL at build time by `slangc` from
-  vcpkg's `shader-slang`. The client ships compiled shaders, and neither
-  `slang.dll` nor `dxcompiler.dll`.
+  vcpkg's `shader-slang`, through DXC from vcpkg's `directx-dxc`: both are host
+  tools in the manifest. The DXIL is embedded in the executable, so there are no
+  shader files to ship or find, and the client ships neither `slang.dll` nor
+  `dxcompiler.dll`.
 - **Debug HUD.** Dear ImGui from vcpkg, with its GLFW binding, drawn by a small
   ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace font,
   JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
