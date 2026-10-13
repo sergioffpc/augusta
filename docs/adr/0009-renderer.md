@@ -1,5 +1,8 @@
 # Renderer: NVIDIA Falcor
 
+> Superseded by ADR-0059: the client moves to NVRHI, and Falcor is removed once
+> it has.
+
 The Windows client renders via NVIDIA Falcor (D3D12). The server is Linux-only
 and headless, fully decoupled from Falcor, so Falcor's platform limitations
 (Linux/Vulkan support is experimental) never come into play.

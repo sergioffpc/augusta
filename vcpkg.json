@@ -12,12 +12,20 @@
     "boost-program-options",
     "flecs",
     "gamenetworkingsockets",
+    {
+      "name": "glfw3",
+      "platform": "windows"
+    },
     "glm",
     "gtest",
     "libsodium",
     "lua",
     {
       "name": "miniaudio",
+      "platform": "windows"
+    },
+    {
+      "name": "nvrhi",
       "platform": "windows"
     },
     "physx",

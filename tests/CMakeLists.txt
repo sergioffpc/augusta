@@ -706,6 +706,15 @@ if(WIN32)
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
+
+  # Drives the NVRHI Renderer (ADR-0059) on WARP in a hidden window, so it runs
+  # on CI's runner, which has no GPU.
+  add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
+  target_link_libraries(
+    augusta_client_renderer_smoke_tests
+    PRIVATE augusta_renderer_nvrhi GTest::gtest GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_client_renderer_smoke_tests)
 endif()
 
 add_subdirectory(fuzz)

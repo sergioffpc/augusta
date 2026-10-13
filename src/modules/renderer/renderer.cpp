@@ -23,6 +23,7 @@
 #include <Utils/Threading.h>
 #include <Utils/Timing/FrameRate.h>
 #include <nvtx3/nvtx3.hpp>
+#include <windows.h>
 
 #include "augusta/input.h"
 #include "augusta/math.h"
@@ -445,6 +446,9 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
   bool vsync_enabled = false;
 
   Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
+    if (config.adapter == Adapter::kSoftware) {
+      throw std::runtime_error("Falcor's Renderer does not support the software adapter");
+    }
     // Falcor::OSServices::start()/stop() are SampleApp-internal (not
     // FALCOR_API-exported, so not linkable from outside Falcor.dll) -
     // Window/Device construction below doesn't appear to depend on them.
@@ -472,6 +476,12 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     window_desc.title = config.title;
     window_desc.resizableWindow = true;
     window = Falcor::Window::create(window_desc, this);
+    if (config.hidden) {
+      // Falcor's Window always shows itself, and has no hidden mode: its
+      // Minimized one iconifies the window, whose size GLFW then reports
+      // wrongly (Window::resize says so). Its ApiHandle is the HWND.
+      ShowWindow(static_cast<HWND>(window->getApiHandle()), SW_HIDE);
+    }
 
     RecreateSwapchain();
     const auto size = window->getClientAreaSize();
@@ -789,6 +799,20 @@ void Renderer::RenderFrame() {
 
   impl_->swapchain->present();
   impl_->device->endFrame();
+}
+
+CapturedFrame Renderer::CaptureFrame() {
+  if (impl_->frame_index == 0) {
+    return {};
+  }
+  const Falcor::ref<Falcor::Texture> color = impl_->target_fbo->getColorTexture(0);
+  CapturedFrame frame{.width = color->getWidth(), .height = color->getHeight(), .pixels = {}};
+  // target_fbo is BGRA, which readTextureSubresource returns as it is.
+  frame.pixels = impl_->device->getRenderContext()->readTextureSubresource(color.get(), 0);
+  for (std::size_t i = 0; i + 3 < frame.pixels.size(); i += 4) {
+    std::swap(frame.pixels[i], frame.pixels[i + 2]);
+  }
+  return frame;
 }
 
 void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }

@@ -3,6 +3,20 @@ target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE nvtx3-cpp)
 augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
+# The Renderer on NVRHI and GLFW (ADR-0059), which replaces Falcor's: built and
+# tested (tests/client_renderer_smoke_test.cpp), but linked by no executable
+# until it draws all that Falcor's does. NVRHI's backend is D3D12 alone.
+find_package(nvrhi CONFIG REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp)
+target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(
+  augusta_renderer_nvrhi
+  PUBLIC augusta_input
+  PRIVATE nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+)
+augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
+
 if(WIN32)
   # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule
   # (ADR-0025, third_party/falcor, plain upstream - no fork) rather than
