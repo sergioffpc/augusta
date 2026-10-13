@@ -6,12 +6,23 @@ target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOUR
 target_link_libraries(augusta_renderer_vertices PUBLIC augusta_input)
 augusta_set_module_scope(augusta_renderer_vertices CLIENT_ONLY)
 
+# The debug HUD's text (debug_hud_text.h), which both Renderers draw. Free of
+# any GPU API, like the geometry above, and private to the module the same way.
+add_library(augusta_renderer_debug_hud_text STATIC debug_hud_text.cpp)
+target_include_directories(augusta_renderer_debug_hud_text PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_renderer_debug_hud_text PUBLIC augusta_input)
+augusta_set_module_scope(augusta_renderer_debug_hud_text CLIENT_ONLY)
+
 if(WIN32)
   include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
 
   add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE augusta_renderer_vertices nvtx3-cpp)
+  target_link_libraries(
+    augusta_renderer
+    PUBLIC augusta_input
+    PRIVATE augusta_renderer_vertices augusta_renderer_debug_hud_text nvtx3-cpp
+  )
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
   # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule
@@ -403,10 +414,11 @@ if(WIN32)
   # The Renderer on NVRHI and GLFW (ADR-0059), which replaces Falcor's: built
   # and tested (tests/client_renderer_smoke_test.cpp), but linked by no
   # executable until it draws all that Falcor's does. NVRHI's backend is D3D12
-  # alone, and the manifest has both, and the shader compilers below, on
+  # alone, and the manifest has both, ImGui and the shader compilers below on
   # Windows only.
   find_package(nvrhi CONFIG REQUIRED)
   find_package(glfw3 CONFIG REQUIRED)
+  find_package(imgui CONFIG REQUIRED)
 
   # Its shaders, compiled to DXIL at build time and embedded in the renderer as
   # byte arrays: it compiles nothing at runtime and ships no shader files, and a
@@ -433,15 +445,49 @@ if(WIN32)
     )
     set(shader_headers ${shader_headers} ${output} PARENT_SCOPE)
   endfunction()
+  augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
+  augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
   augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
   augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
 
-  add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp gpu_crash_dumps.cpp ${shader_headers})
+  # The debug HUD's monospace font (fonts/, with its licence), embedded the same
+  # way, so there is no font file to ship or find.
+  set(font_header ${shader_dir}/debug_hud_font.h)
+  set(font ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Bold.ttf)
+  add_custom_command(
+    OUTPUT ${font_header}
+    COMMAND
+      ${CMAKE_COMMAND} -DINPUT=${font} -DOUTPUT=${font_header} -DNAME=kDebugHudFont -P
+      ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+    DEPENDS ${font} ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+    COMMENT "Embedding the debug HUD's font"
+    VERBATIM
+  )
+
+  add_library(
+    augusta_renderer_nvrhi
+    STATIC
+    nvrhi_renderer.cpp
+    nvrhi_debug_hud.cpp
+    imgui_renderer.cpp
+    gpu_crash_dumps.cpp
+    ${shader_headers}
+    ${font_header}
+  )
   target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${shader_dir})
   target_link_libraries(
     augusta_renderer_nvrhi
     PUBLIC augusta_input
-    PRIVATE augusta_logging augusta_renderer_vertices nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+    PRIVATE
+      augusta_logging
+      augusta_renderer_debug_hud_text
+      augusta_renderer_vertices
+      nvrhi
+      nvrhi_d3d12
+      glfw
+      imgui::imgui
+      d3d12
+      dxgi
   )
   augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
 

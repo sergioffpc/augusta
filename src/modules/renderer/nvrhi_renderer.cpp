@@ -30,6 +30,7 @@
 #include "augusta/renderer.h"
 #include "frame_regions.h"
 #include "gpu_crash_dumps.h"
+#include "nvrhi_debug_hud.h"
 #include "vertices.h"
 
 // The shaders' DXIL, compiled at build time (CMakeLists.txt).
@@ -44,8 +45,8 @@
 // The Renderer on NVRHI's D3D12 backend, in a GLFW window (ADR-0059). Like
 // Falcor's, it draws into an offscreen target, then copies that to the
 // swapchain's image and presents it. So far it draws the scene and the remote
-// players: combat effects, overlay, debug HUD, input and resizing come next,
-// and their setters do nothing until then.
+// players, and the debug HUD over them: combat effects, overlay, input and
+// resizing come next, and their setters do nothing until then.
 namespace augusta::renderer {
 
 namespace {
@@ -275,6 +276,10 @@ struct Renderer::Impl {
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
+  // Made once the device is, and after the Renderer's own GLFW callbacks: its
+  // ImGui binding chains to them.
+  std::unique_ptr<NvrhiDebugHud> debug_hud;
+  DebugHudStats hud_stats;
 
   // The scene and the remote players, lit by Renderer.3d.slang from the
   // camera's view-projection in per_frame (its PerFrameCB).
@@ -311,6 +316,7 @@ struct Renderer::Impl {
         device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(target).setDepthAttachment(depth));
     commands = device->createCommandList();
     CreateLitPipeline();
+    debug_hud = std::make_unique<NvrhiDebugHud>(*window, *device);
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
@@ -496,6 +502,7 @@ struct Renderer::Impl {
     commands->writeBuffer(per_frame, &view_projection, sizeof(view_projection));
     DrawLit(scene_vertices, scene_vertex_count, 0);
     DrawLit(remote_vertices.buffer, remote_vertices.count, remote_vertices.FirstVertex());
+    debug_hud->Render(*commands, *framebuffer, hud_stats);
     commands->copyTexture(swapchain_images.at(image_index), nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
     commands->close();
     device->executeCommandList(commands);
@@ -575,6 +582,6 @@ void Renderer::SetOverlay(const Overlay& /*overlay*/) {}
 
 void Renderer::SetCursorLocked(bool /*locked*/) {}
 
-void Renderer::SetDebugHudStats(const DebugHudStats& /*stats*/) {}
+void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
 
 }  // namespace augusta::renderer

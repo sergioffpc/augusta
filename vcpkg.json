@@ -23,6 +23,13 @@
     },
     "glm",
     "gtest",
+    {
+      "name": "imgui",
+      "features": [
+        "glfw-binding"
+      ],
+      "platform": "windows"
+    },
     "libsodium",
     "lua",
     {
