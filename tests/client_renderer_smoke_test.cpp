@@ -131,7 +131,7 @@ Config SoftwareHiddenConfig() {
           .height = kHeight,
           .adapter = Adapter::kSoftware,
           .hidden = true,
-          .validation = true};
+          .validation = Validation::kRequired};
 }
 
 class RendererSmokeTest : public ::testing::Test {

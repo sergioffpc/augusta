@@ -55,6 +55,20 @@ enum class Adapter : std::uint8_t {
   kSoftware,
 };
 
+/// Whether the Renderer runs under Vulkan's validation layer,
+/// VK_LAYER_KHRONOS_validation, which the loader finds through
+/// VK_ADD_LAYER_PATH. An error it reports is thrown by the Renderer call it
+/// happened in (see Renderer).
+enum class Validation : std::uint8_t {
+  kOff,
+  /// Under the layer if the loader finds it, else without, after a warning:
+  /// for a Debug build, which a developer may run without it.
+  kIfAvailable,
+  /// Under the layer, or not at all: for a test, which must not pass without
+  /// it.
+  kRequired,
+};
+
 /// Initial window/renderer parameters.
 struct Config {
   /// Window title, shown in the OS title bar and taskbar.
@@ -67,11 +81,7 @@ struct Config {
   /// True to hide the window, for a test that only reads frames back
   /// (CaptureFrame).
   bool hidden = false;
-  /// True to run under Vulkan's validation layer, VK_LAYER_KHRONOS_validation,
-  /// which the loader must find (VK_ADD_LAYER_PATH): for Debug builds and
-  /// tests. An error it reports is logged and thrown by the Renderer call it
-  /// happened in (see Renderer).
-  bool validation = false;
+  Validation validation = Validation::kOff;
 };
 
 /// A frame read back from the GPU: width by height pixels, row by row from the
@@ -198,13 +208,12 @@ class Renderer {
   /// delivers them (see input::EventSink). Throws std::runtime_error if
   /// window or device creation fails - there is no recoverable path for a
   /// client that can't render: no Vulkan 1.3, no device of config's adapter,
-  /// or validation asked for without its layer. input_sink must outlive this
+  /// or Validation::kRequired without its layer. input_sink must outlive this
   /// Renderer.
   ///
-  /// With config.validation, the constructor, RenderFrame and CaptureFrame
-  /// also throw std::runtime_error, after logging it, once the validation
-  /// layer has reported an error: API misuse is a bug, and fails where it is
-  /// found.
+  /// Under validation, the constructor, RenderFrame and CaptureFrame also
+  /// throw std::runtime_error once the validation layer has reported an
+  /// error: API misuse is a bug, and fails where it is found.
   Renderer(const Config& config, input::EventSink& input_sink);
 
   /// The window, device and swapchain are unique hardware resources owned

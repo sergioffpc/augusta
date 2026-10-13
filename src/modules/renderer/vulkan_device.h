@@ -27,9 +27,9 @@ namespace augusta::renderer {
 class VulkanDevice final {
  public:
   /// Throws std::runtime_error if there is no Vulkan 1.3 loader, if validation
-  /// is asked for and the loader finds no validation layer, or if no device is
-  /// the one adapter asks for. window must outlive this device.
-  VulkanDevice(GLFWwindow& window, Adapter adapter, bool validation);
+  /// requires the validation layer and the loader finds none, or if no device
+  /// is the one adapter asks for. window must outlive this device.
+  VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation);
 
   /// Waits for the GPU to finish all it was given.
   ~VulkanDevice();
@@ -57,7 +57,7 @@ class VulkanDevice final {
     void message(nvrhi::MessageSeverity severity, const char* text) override;
   };
 
-  // The validation layer's report: logged, and an error kept for
+  // The validation layer's report: logged as a warning, and an error kept for
   // ThrowValidationErrors, since an exception must not unwind through the
   // Vulkan call the layer reports from. user_data is the VulkanDevice.
   static VKAPI_ATTR vk::Bool32 VKAPI_CALL OnValidationMessage(vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
@@ -65,7 +65,7 @@ class VulkanDevice final {
                                                               const vk::DebugUtilsMessengerCallbackDataEXT* data,
                                                               void* user_data);
 
-  void CreateInstance(bool validation);
+  void CreateInstance(Validation requested);
   void ChoosePhysicalDevice(Adapter adapter);
   void CreateDevice();
 

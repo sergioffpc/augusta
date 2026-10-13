@@ -55,6 +55,32 @@ bool HasValidationLayer() {
   });
 }
 
+// Whether the instance loads the validation layer, as validation asks, given
+// whether the loader finds it. Throws std::runtime_error if it is required and
+// not found.
+bool LoadsValidationLayer(Validation validation, bool layer_found) {
+  switch (validation) {
+    case Validation::kOff:
+      return false;
+    case Validation::kIfAvailable:
+      if (!layer_found) {
+        LW("subsystem=renderer event=vulkan_validation_unavailable layer={} hint=\"add the folder of its JSON manifest "
+           "to VK_ADD_LAYER_PATH\"",
+           kValidationLayer);
+      }
+      return layer_found;
+    case Validation::kRequired:
+      if (!layer_found) {
+        throw std::runtime_error(std::format(
+            "Vulkan validation is required, but the loader finds no {}: add the folder of its JSON manifest, such as "
+            "vcpkg's installed bin, to VK_ADD_LAYER_PATH",
+            kValidationLayer));
+      }
+      return true;
+  }
+  return false;
+}
+
 DeviceType TypeOf(vk::PhysicalDeviceType type) {
   switch (type) {
     case vk::PhysicalDeviceType::eDiscreteGpu:
@@ -108,7 +134,7 @@ std::string_view Describe(Adapter adapter) {
 
 }  // namespace
 
-VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, bool validation) {
+VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation) {
   LoadVulkan();
   CreateInstance(validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -160,7 +186,9 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
     LW("subsystem=renderer event=vulkan_validation_warning message=\"{}\"", data->pMessage);
     return vk::False;
   }
-  LE("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
+  // Warning, not error: the Renderer throws it, and the boundary that catches
+  // it writes the one ERR line (ADR-0033).
+  LW("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
   auto& device = *static_cast<VulkanDevice*>(user_data);
   const std::lock_guard<std::mutex> lock(device.validation_mutex_);
   if (!device.validation_error_) {
@@ -169,21 +197,16 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
   return vk::False;
 }
 
-void VulkanDevice::CreateInstance(bool validation) {
+void VulkanDevice::CreateInstance(Validation requested) {
   std::uint32_t window_extension_count = 0;
   const char** window_extensions = glfwGetRequiredInstanceExtensions(&window_extension_count);
   if (window_extensions == nullptr) {
     throw std::runtime_error("The system's Vulkan loader can't present to a window");
   }
   instance_extensions_.assign(window_extensions, window_extensions + window_extension_count);
+  const bool validation = LoadsValidationLayer(requested, requested != Validation::kOff && HasValidationLayer());
   std::vector<const char*> layers;
   if (validation) {
-    if (!HasValidationLayer()) {
-      throw std::runtime_error(std::format(
-          "Vulkan validation was asked for, but the loader finds no {}: add the folder of its JSON manifest, such as "
-          "vcpkg's installed bin, to VK_ADD_LAYER_PATH",
-          kValidationLayer));
-    }
     layers.push_back(kValidationLayer.data());
     instance_extensions_.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
