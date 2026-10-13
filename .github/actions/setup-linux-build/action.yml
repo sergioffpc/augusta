@@ -17,13 +17,15 @@ runs:
   using: composite
   steps:
     - name: Install build tools
-      # clang: the Linux presets compile with it (ADR-0008), through the Ninja
-      # generator. autoconf/autoconf-archive/automake/libtool: vcpkg's
-      # libsodium port builds via autotools on Linux (vcpkg_run_autoreconf) and
-      # needs these from the system package manager - not bundled with vcpkg
-      # itself.
+      # The LLVM toolchain the Linux presets and triplets build with, through
+      # the Ninja generator (ADR-0008): clang, lld, llvm (its binary tools),
+      # libc++, libc++abi, libunwind, whose -dev package Ubuntu names only by
+      # the distro clang's major, and compiler-rt (libclang-rt-dev).
+      # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
+      # builds via autotools on Linux (vcpkg_run_autoreconf) and needs these
+      # from the system package manager - not bundled with vcpkg itself.
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
+      run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
     - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       if: inputs.sccache == 'true'
     - uses: ./.github/actions/restore-vcpkg-cache

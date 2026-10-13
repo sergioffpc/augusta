@@ -35,9 +35,9 @@
     "vscode": {
       // The Linux-relevant subset of .vscode/extensions.json.
       "extensions": [
-        "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
         "ms-vscode.makefile-tools",
+        "llvm-vs-code-extensions.lldb-dap",
         "llvm-vs-code-extensions.vscode-clangd",
         "editorconfig.editorconfig",
         "redhat.vscode-yaml",

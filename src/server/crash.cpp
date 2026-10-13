@@ -19,12 +19,12 @@
 #else
 #include <cerrno>
 
-#include <execinfo.h>
 // NOLINTNEXTLINE(modernize-deprecated-headers) - SIGBUS is POSIX's, which <csignal> need not declare.
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <unwind.h>
 #endif
 
 namespace augusta::server {
@@ -190,16 +190,36 @@ void WriteToStdout(std::string_view text) {
 #endif
 }
 
+#ifndef _WIN32
+// Where _Unwind_Backtrace's callback stores each frame it walks.
+struct FrameSink {
+  std::span<void*> frames;
+  std::size_t depth = 0;
+};
+
+_Unwind_Reason_Code CollectFrame(_Unwind_Context* context, void* sink_arg) {
+  auto& sink = *static_cast<FrameSink*>(sink_arg);
+  if (sink.depth == sink.frames.size()) {
+    return _URC_END_OF_STACK;
+  }
+  sink.frames[sink.depth] = reinterpret_cast<void*>(_Unwind_GetIP(context));
+  ++sink.depth;
+  return _URC_NO_REASON;
+}
+#endif
+
 // The crashing thread's return addresses, innermost first, this handler's own
-// frames included. On Linux glibc's backtrace unwinds by the binary's unwind
-// tables, so frames compiled without frame pointers are not lost; it is not
-// listed as async-signal-safe only because its first call loads libgcc_s,
-// which InstallCrashHandler does ahead of any crash.
+// frames included. On Linux the statically linked libunwind (ADR-0008) unwinds
+// by the binary's unwind tables, so frames compiled without frame pointers are
+// not lost. It is not listed as async-signal-safe, so InstallCrashHandler walks
+// once ahead of any crash: what it sets up lazily is then already done.
 int CaptureFrames(std::span<void*> frames) {
 #ifdef _WIN32
   return absl::GetStackTrace(frames.data(), static_cast<int>(frames.size()), 0);
 #else
-  return backtrace(frames.data(), static_cast<int>(frames.size()));
+  FrameSink sink{.frames = frames};
+  _Unwind_Backtrace(CollectFrame, &sink);
+  return static_cast<int>(sink.depth);
 #endif
 }
 
@@ -277,7 +297,7 @@ std::string_view FormatCrashFrameLine(CrashLine& line, std::chrono::sys_seconds 
 
 void InstallCrashHandler(const char* argv0) {
   absl::InitializeSymbolizer(argv0);
-  // Its first call loads what it needs (see CaptureFrames).
+  // Its first call sets up what it needs (see CaptureFrames).
   std::array<void*, 1> warm_up{};
   CaptureFrames(warm_up);
 #ifndef _WIN32

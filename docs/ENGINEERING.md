@@ -120,13 +120,13 @@ decisions already made in ARCHITECTURE.md:
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job, saved only when a job built a package it didn't restore -
       except the `tools` job's Linux leg, whose `tools/pack/native` manifest
-      keeps an entry of its own. vcpkg builds its ports with the system compiler
-      (`/usr/bin/c++`, Ubuntu's g++) for the default `x64-linux` triplet; the
-      presets' clang compiles the project alone. So the entry's packages are the
-      same whatever preset a job configures, and the server image's dependency
-      layer, built on the same Ubuntu, restores them too: the container jobs
-      mount the entry read-only into its `vcpkg install`, and it builds from
-      source only the packages the entry lacks.
+      keeps an entry of its own. vcpkg builds its ports through the overlay
+      `x64-linux` triplet with the project's LLVM toolchain (ADR-0008), which no
+      preset changes. So the entry's packages are the same whatever preset a job
+      configures, and the server image's dependency layer, built on the same
+      Ubuntu, restores them too: the container jobs mount the entry read-only
+      into its `vcpkg install`, and it builds from source only the packages the
+      entry lacks.
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
       binaries and sccache objects. The server image's Docker layers live in
@@ -393,13 +393,14 @@ no self-hosted GitHub Actions runner in this pipeline).
   `checkout` step (submodules, vcpkg, hooks), and a host both. It installs CI's
   runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
   `.github/actions/setup-linux-build` installs (kept in step with it by hand),
-  clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
-  CLI, kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the
-  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
-  actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua,
-  luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg binary
-  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
-  The image builds for the host's architecture (amd64 or arm64) rather than
+  LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind, LLVM's binary
+  tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format, GitHub CLI,
+  kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the hooks'
+  formatters and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint,
+  gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and
+  taplo, at CI's pinned versions), and CI's Linux vcpkg binary cache
+  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
+  image builds for the host's architecture (amd64 or arm64) rather than
   emulating CI's amd64. sccache's cache lives in a volume shared by every
   container of the repository; the build trees in a volume per container, so
   they never collide with a Windows build of the same checkout. One recipe, not

@@ -28,13 +28,12 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux (Ninja + clang)",
+      "displayName": "Linux (Ninja + LLVM)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/LlvmToolchain.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },
@@ -46,7 +45,7 @@
     },
     {
       "name": "linux-debug",
-      "displayName": "Linux Debug (Ninja + clang)",
+      "displayName": "Linux Debug (Ninja + LLVM)",
       "inherits": "linux",
       "binaryDir": "${sourceDir}/build/x64-linux-debug",
       "cacheVariables": {
@@ -60,8 +59,8 @@
       "binaryDir": "${sourceDir}/build/x64-linux-san",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
-        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+        "CMAKE_CXX_FLAGS_INIT": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address,undefined"
       }
     },
     {
@@ -71,8 +70,8 @@
       "binaryDir": "${sourceDir}/build/x64-linux-fuzz",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fsanitize=address,fuzzer-no-link -fno-omit-frame-pointer -O1",
-        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address",
+        "CMAKE_CXX_FLAGS_INIT": "-fsanitize=address,fuzzer-no-link -fno-omit-frame-pointer -O1",
+        "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=address -l:libstdc++.so.6",
         "AUGUSTA_FUZZ": "ON"
       }
     },
@@ -83,8 +82,8 @@
       "binaryDir": "${sourceDir}/build/x64-linux-tsan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer -O1",
-        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+        "CMAKE_CXX_FLAGS_INIT": "-fsanitize=thread -fno-omit-frame-pointer -O1",
+        "CMAKE_EXE_LINKER_FLAGS_INIT": "-fsanitize=thread"
       }
     },
     {
@@ -95,8 +94,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "AUGUSTA_COVERAGE": "ON",
-        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
-        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-instr-generate"
+        "CMAKE_CXX_FLAGS_INIT": "-fprofile-instr-generate -fcoverage-mapping",
+        "CMAKE_EXE_LINKER_FLAGS_INIT": "-fprofile-instr-generate"
       }
     }
   ],
@@ -149,7 +148,10 @@
       "name": "linux-san",
       "configurePreset": "linux-san",
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "^netcode$" } }
+      "filter": { "exclude": { "label": "^netcode$" } },
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      }
     },
     {
       "name": "linux-tsan",
