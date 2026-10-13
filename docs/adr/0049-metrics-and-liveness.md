@@ -174,14 +174,16 @@ scenario (ADR-0026), by a `scenario` label the `ServiceMonitor` copies from each
 server's metrics Service.
 
 Dashboards are code: JSON in ConfigMaps that Grafana's sidecar loads, kept in
-the repository next to the chart. There are three, "Server" (tick, Lobby and
+the repository next to the chart. There are four, "Server" (tick, Lobby and
 Match, Sessions, misbehaviour, network, combat), "Connection health" (the
-histograms and one line per Session) and "Match captures" (the capture
-filesystem's use, size and time to full from node-exporter, at the mount point
-the chart's `captures.hostPath` names; each server's capture state, write rate,
-directory and retention; stops, writer queue depth, retention failures and the
-capture subsystem's log lines from Loki, ADR-0053). Each selects its environment
-from the namespace label itself, and then a server, or for captures any number
+histograms and one line per Session), "Match captures" (the capture filesystem's
+use, size and time to full from node-exporter, at the mount point the chart's
+`captures.hostPath` names; each server's capture state, write rate, directory
+and retention; stops, writer queue depth, retention failures and the capture
+subsystem's log lines from Loki, ADR-0053) and "Logs" (the servers' log lines
+from Loki, filtered by level and text, and counted by level: Grafana's anonymous
+Viewers have no Explore, ADR-0057). Each selects its environment from the
+namespace label itself, and then a server, or for captures and logs any number
 of them, from the scenarios that environment runs, so only one release ships
 them, `develop`'s: a second copy would load the same dashboards again. Alert
 rules are `PrometheusRule`s in the `augustad` chart (server down, server

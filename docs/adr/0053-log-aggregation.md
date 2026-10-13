@@ -18,7 +18,8 @@ next to kube-prometheus-stack and in its `monitoring` namespace:
 - **Alloy** (the `grafana/alloy` chart), one replica, tails every container's
   log through the Kubernetes API (`loki.source.kubernetes`) and pushes it to
   Loki, labelled `namespace`, `pod`, `container` and `app`.
-- **Grafana** gets Loki as a second data source (uid `loki`).
+- **Grafana** gets Loki as a second data source (uid `loki`), and the `augustad`
+  chart's "Logs" dashboard reads `augustad`'s lines from it (ADR-0049).
 
 The lines need no new format: ADR-0029's logfmt bodies parse with LogQL's
 `logfmt` stage, so `{namespace="develop"} | logfmt | event="heartbeat"` works as
