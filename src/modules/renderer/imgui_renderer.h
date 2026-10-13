@@ -6,9 +6,10 @@
 
 /// \file
 /// Draws Dear ImGui's output through NVRHI, so the debug HUD takes no
-/// backend-specific ImGui renderer (ADR-0059). Adapted from Donut's ImGui_NVRHI (MIT, see imgui_renderer.cpp),
-/// private to the module, and enough for the HUD's text alone: it draws every
-/// command from the font atlas, and runs no ImGui user callbacks.
+/// backend-specific ImGui renderer (ADR-0059). Adapted from Donut's
+/// ImGui_NVRHI (MIT, see imgui_renderer.cpp), private to the module, and enough
+/// for the HUD's text alone: it draws every command from the font atlas, and
+/// runs no ImGui user callbacks.
 namespace augusta::renderer {
 
 class ImGuiRenderer final {

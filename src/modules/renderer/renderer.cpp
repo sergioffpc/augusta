@@ -82,8 +82,8 @@ std::array<nvrhi::VertexAttributeDesc, 3> VertexAttributes() {
 
 // A vertex buffer the CPU rewrites every frame (the remote players, the fight's
 // effects, the overlay): unlike the scene's (UploadScene), it is in memory the
-// CPU writes, mapped once for good, so a frame's vertices are copied straight into it
-// with no GPU wait.
+// CPU writes, mapped once for good, so a frame's vertices are copied straight
+// into it with no GPU wait.
 //
 // It holds kFramesInFlight regions of region_capacity vertices each, and a
 // frame writes and draws only the region FrameRegion gives it: several frames

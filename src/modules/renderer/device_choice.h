@@ -11,8 +11,8 @@
 /// \file
 /// Decision half of which Vulkan physical device the Renderer draws with
 /// (ADR-0059), private to the module and kept free of any GPU API so it is
-/// tested on every platform: renderer.cpp asks Vulkan what each device is and
-/// creates the one chosen.
+/// tested on every platform: vulkan_device.cpp asks Vulkan what each device is
+/// and creates the one chosen.
 namespace augusta::renderer {
 
 /// What a physical device is, as Vulkan's VkPhysicalDeviceType says.

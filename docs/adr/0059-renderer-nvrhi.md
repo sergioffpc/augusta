@@ -42,11 +42,12 @@ between backends would double what has to be tested, for no gain to a player.
   for one never runs on a GPU or on nothing. Either must support Vulkan 1.3 and
   present to the window. Neither is a setting in the client's config file.
 - **Validation.** `Config::validation` runs the Renderer under Vulkan's
-  validation layer, from vcpkg's `vulkan-validationlayers`: on in Debug builds
-  and in the smoke test, never in a release package. The loader finds it through
-  `VK_ADD_LAYER_PATH`, and a Renderer asked for validation without it fails to
-  start. An error the layer reports is logged and thrown by the Renderer call it
-  happened in, so API misuse fails where it is found.
+  validation layer, from vcpkg's `vulkan-validationlayers`, which the loader
+  finds through `VK_ADD_LAYER_PATH`; it is never in a release package. A Debug
+  build asks for it if available, and runs without it, after a warning, where
+  the loader finds none. The smoke test requires it, and fails to start without
+  it. An error the layer reports is thrown by the Renderer call it happened in,
+  so API misuse fails where it is found.
 - **Window and input.** GLFW, owned by the Renderer: there is no separate Window
   module. GLFW's callbacks feed `input::EventSink`, and its
   `glfwCreateWindowSurface` makes the Vulkan surface, the one thing that differs
@@ -61,20 +62,20 @@ between backends would double what has to be tested, for no gain to a player.
   JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
   with its licence and embedded in the executable at build time. Its text comes
   from code free of any GPU API.
-- **Aftermath.** Optional and autodetected from an installed Nsight Graphics,
-  attached to the Vulkan device through `VK_NV_device_diagnostics_config` and
-  `VK_NV_device_diagnostic_checkpoints`, and a no-op without it.
-- **Dropped.** D3D12, DXGI, DXC, the D3D12 Agility SDK, NVAPI, packman and
-  Falcor's Python.
+- **GPU crash dumps.** They are to come from Nsight Aftermath, attached to the
+  Vulkan device through `VK_NV_device_diagnostics_config` and
+  `VK_NV_device_diagnostic_checkpoints`: optional, autodetected from an
+  installed Nsight Graphics, and a no-op without it.
 - **Testing.** `Config` can choose `kSoftware`, a hidden window and validation,
   and `Renderer::CaptureFrame` reads the last frame back. A smoke test drives
   the Renderer through its interface on Mesa's lavapipe, a software Vulkan
   driver, and checks the pixels it drew, so it runs on CI's runners, which have
   no GPU. On Windows lavapipe comes from vcpkg's `mesa` port, through the
-  manifest's `lavapipe` feature, for tests only, and the test's environment
-  makes it the loader's only driver (`VK_DRIVER_FILES`). The same feature has
-  vcpkg's `vulkan-loader`, which the test loads where no GPU driver installed
-  the system's; nothing links it, and no package ships it.
+  manifest's `lavapipe` feature, for tests only: CI's client job and the
+  `windows-debug` preset turn it on, and a release's build leaves it out. The
+  test's environment makes it the loader's only driver (`VK_DRIVER_FILES`). The
+  same feature has vcpkg's `vulkan-loader`, which the test loads where no GPU
+  driver installed the system's; nothing links it, and no package ships it.
 
 ## Consequences
 
@@ -83,4 +84,3 @@ Nothing of Falcor's is in the repository, the client's zip (ADR-0058) or its
 SBOM, and the zip holds no Vulkan loader, validation layer, DXC or Slang
 library. Building lavapipe on Windows compiles LLVM, which needs Visual Studio's
 ATL component; it is slow once, then served from the vcpkg binary cache.
-Published `falcor-*` releases stay as they are.
