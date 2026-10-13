@@ -29,6 +29,7 @@
 #include "augusta/math.h"
 #include "augusta/renderer.h"
 #include "frame_regions.h"
+#include "gpu_crash_dumps.h"
 #include "nvrhi_debug_hud.h"
 #include "vertices.h"
 
@@ -150,6 +151,11 @@ void ThrowIfFailed(HRESULT result, const char* what) {
   if (FAILED(result)) {
     throw std::runtime_error(std::string(what) + " failed");
   }
+}
+
+// Whether result says the GPU faulted or hung and the device is gone.
+bool IsDeviceLost(HRESULT result) {
+  return result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_HUNG || result == DXGI_ERROR_DEVICE_RESET;
 }
 
 // What NVRHI reports, logged at its own severity.
@@ -324,8 +330,10 @@ struct Renderer::Impl {
   Impl& operator=(Impl&&) = delete;
 
   void CreateDevice(IDXGIAdapter* adapter) {
+    EnableGpuCrashDumps();
     ThrowIfFailed(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d_device)),
                   "Creating the D3D12 device");
+    AttachGpuCrashDumps(*d3d_device.Get());
     const D3D12_COMMAND_QUEUE_DESC queue_desc{.Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
                                               .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
                                               .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
@@ -500,8 +508,14 @@ struct Renderer::Impl {
     device->executeCommandList(commands);
     device->setEventQuery(done, nvrhi::CommandQueue::Graphics);
 
-    // DXGI_STATUS_OCCLUDED, for a hidden or minimized window, is a success.
-    ThrowIfFailed(swapchain->Present(0, 0), "Presenting");
+    // DXGI_STATUS_OCCLUDED, for a hidden or minimized window, is a success. A
+    // GPU fault shows here first, and its crash dump is written before the
+    // throw can end the process.
+    const HRESULT presented = swapchain->Present(0, 0);
+    if (IsDeviceLost(presented)) {
+      AwaitGpuCrashDump();
+    }
+    ThrowIfFailed(presented, "Presenting");
     device->runGarbageCollection();
     ++frame_index;
   }

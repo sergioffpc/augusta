@@ -14,6 +14,8 @@ target_link_libraries(augusta_renderer_debug_hud_text PUBLIC augusta_input)
 augusta_set_module_scope(augusta_renderer_debug_hud_text CLIENT_ONLY)
 
 if(WIN32)
+  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
+
   add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(
@@ -47,19 +49,8 @@ if(WIN32)
   set(FALCOR_BUILD_DIR ${FALCOR_DIR}/build/${FALCOR_PRESET})
   set(FALCOR_DIR ${FALCOR_DIR} CACHE INTERNAL "Vendored Falcor submodule's root directory")
 
-  # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture) - unlike
-  # Falcor's other binary deps it isn't packman-fetchable (EULA-gated on
-  # NVIDIA's developer site), so it can't be fetched here the way those are.
-  # Instead it's autodetected from an installed NVIDIA Nsight Graphics,
-  # which bundles the Aftermath SDK as a component (confirmed present at
-  # "...\Nsight Graphics <version>\SDKs\NsightAftermathSDK\<version>\" on a
-  # real install - both version segments float, hence the globs below). If
-  # several Nsight Graphics installs/SDK versions are present side by side,
-  # the lexicographically last one wins - not a true version-sort, but the
-  # version strings observed in practice (YYYY.M.build.rev) happen to
-  # compare correctly that way. No Nsight Graphics installed means no
-  # Aftermath support - there's nowhere else this looks.
-  # Falcor's own external/CMakeLists.txt autodetects Aftermath purely from
+  # Nsight Aftermath (cmake/Aftermath.cmake). Falcor's own
+  # external/CMakeLists.txt autodetects it purely from
   # ${FALCOR_DIR}/external/packman/aftermath/include/GFSDK_Aftermath.h
   # existing at *its* configure time, so the custom command below syncs the
   # discovered directory into that path first. FALCOR_HAS_AFTERMATH in
@@ -70,24 +61,7 @@ if(WIN32)
   # Device), and a mismatch against what Falcor.lib itself was actually built
   # with would desync struct layouts between this target's object code and
   # Falcor.lib's.
-  file(
-    GLOB AUGUSTA_AFTERMATH_SYSTEM_CANDIDATES
-    "$ENV{ProgramFiles}/NVIDIA Corporation/Nsight Graphics */SDKs/NsightAftermathSDK/*"
-  )
-  set(AUGUSTA_AFTERMATH_SYSTEM_DIRS "")
-  foreach(candidate ${AUGUSTA_AFTERMATH_SYSTEM_CANDIDATES})
-    if(EXISTS "${candidate}/include/GFSDK_Aftermath.h")
-      list(APPEND AUGUSTA_AFTERMATH_SYSTEM_DIRS "${candidate}")
-    endif()
-  endforeach()
-  if(AUGUSTA_AFTERMATH_SYSTEM_DIRS)
-    list(SORT AUGUSTA_AFTERMATH_SYSTEM_DIRS)
-    list(GET AUGUSTA_AFTERMATH_SYSTEM_DIRS -1 AUGUSTA_AFTERMATH_DIR)
-    set(AUGUSTA_AFTERMATH_HEADER ${AUGUSTA_AFTERMATH_DIR}/include/GFSDK_Aftermath.h)
-  endif()
-
-  if(AUGUSTA_AFTERMATH_HEADER AND EXISTS ${AUGUSTA_AFTERMATH_HEADER})
-    message(STATUS "Nsight Aftermath SDK found at ${AUGUSTA_AFTERMATH_DIR} - enabling FALCOR_HAS_AFTERMATH")
+  if(AUGUSTA_AFTERMATH_DIR)
     set(FALCOR_HAS_AFTERMATH_VALUE 1)
     set(
       FALCOR_AFTERMATH_SYNC_COMMAND
@@ -103,12 +77,7 @@ if(WIN32)
     # custom command below only builds `--target Falcor` (see its own
     # comment) - so they're copied next to Falcor.dll directly instead,
     # from where src/client/CMakeLists.txt's own POST_BUILD step already
-    # picks up everything under FALCOR_BIN_DIR. Globbed rather than a fixed
-    # GFSDK_Aftermath_Lib.x64.dll (+ llvm_7_0_1.dll on older SDKs) filename
-    # list: the exact set of runtime DLLs an SDK ships has changed between
-    # versions (the llvm one is gone as of the 2026.3 SDK, statically
-    # linked in instead), and this way it doesn't need updating either way.
-    file(GLOB AUGUSTA_AFTERMATH_RUNTIME_DLLS "${AUGUSTA_AFTERMATH_DIR}/lib/x64/*.dll")
+    # picks up everything under FALCOR_BIN_DIR.
     if(AUGUSTA_AFTERMATH_RUNTIME_DLLS)
       set(
         FALCOR_AFTERMATH_DEPLOY_COMMAND
@@ -120,7 +89,7 @@ if(WIN32)
         ${FALCOR_BIN_DIR}
       )
     endif()
-    set(FALCOR_AFTERMATH_DEPENDS ${AUGUSTA_AFTERMATH_HEADER})
+    set(FALCOR_AFTERMATH_DEPENDS ${AUGUSTA_AFTERMATH_DIR}/include/GFSDK_Aftermath.h)
   else()
     set(FALCOR_HAS_AFTERMATH_VALUE 0)
   endif()
@@ -501,6 +470,7 @@ if(WIN32)
     nvrhi_renderer.cpp
     nvrhi_debug_hud.cpp
     imgui_renderer.cpp
+    gpu_crash_dumps.cpp
     ${shader_headers}
     ${font_header}
   )
@@ -520,4 +490,16 @@ if(WIN32)
       dxgi
   )
   augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
+
+  # GPU crash dumps (gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
+  # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built
+  # without its own Aftermath support, so the Renderer attaches Aftermath to
+  # the D3D12 device itself. An executable linking this target stages the
+  # Aftermath DLLs beside it with augusta_stage_aftermath.
+  if(AUGUSTA_AFTERMATH_DIR)
+    target_link_libraries(augusta_renderer_nvrhi PRIVATE augusta_aftermath augusta_version)
+    target_compile_definitions(augusta_renderer_nvrhi PRIVATE AUGUSTA_HAS_AFTERMATH=1)
+  else()
+    target_compile_definitions(augusta_renderer_nvrhi PRIVATE AUGUSTA_HAS_AFTERMATH=0)
+  endif()
 endif()
