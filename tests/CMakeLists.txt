@@ -720,6 +720,7 @@ if(WIN32)
     augusta_client_renderer_smoke_tests
     PRIVATE augusta_renderer_nvrhi GTest::gtest GTest::gtest_main
   )
+  augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
   gtest_discover_tests(augusta_client_renderer_smoke_tests)
 endif()
 

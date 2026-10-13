@@ -17,10 +17,13 @@ draw-call/pixel inspection, and shader debugging for the D3D12 backend. Launch
 2026.3.1\host\windows-desktop-nomad-x64\ngfx-ui.exe' and attach to (or launch)
 `augustac.exe`.
 
-renderer.cpp also requests `enableAftermath` unconditionally on the Falcor
-`Device::Desc` - on a GPU crash/TDR this writes a `.nv-gpudmp` crash dump next
-to `augustac.exe`, decodable with 'C:\Program Files\NVIDIA Corporation\Nsight
-Graphics 2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe'.
+When the build finds the Aftermath SDK inside Nsight Graphics
+(`cmake/Aftermath.cmake`), both renderers enable Aftermath: renderer.cpp through
+the Falcor `Device::Desc`, and the NVRHI renderer on its own D3D12 device
+(`gpu_crash_dumps.h`). On a GPU crash/TDR this writes a `.nv-gpudmp` crash dump
+next to the executable, decodable with 'C:\Program Files\NVIDIA
+Corporation\Nsight Graphics
+2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe'.
 
 ## Content authoring/physics debugging
 
