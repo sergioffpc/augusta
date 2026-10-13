@@ -1,9 +1,17 @@
-add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
-target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE nvtx3-cpp)
-augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
+# The geometry the Renderer builds on the CPU (vertices.h), free of Falcor so
+# it is built and tested on every platform. Private to the module: its header
+# is reached through this directory, as frame_regions.h is.
+add_library(augusta_renderer_vertices STATIC vertices.cpp)
+target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_renderer_vertices PUBLIC augusta_input)
+augusta_set_module_scope(augusta_renderer_vertices CLIENT_ONLY)
 
 if(WIN32)
+  add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
+  target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(augusta_renderer PUBLIC augusta_input PRIVATE augusta_renderer_vertices nvtx3-cpp)
+  augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
+
   # NVIDIA Falcor (ADR-0009) is vendored as a pinned git submodule
   # (ADR-0025, third_party/falcor, plain upstream - no fork) rather than
   # pulled in via add_subdirectory(): its root CMakeLists.txt relies on

@@ -650,13 +650,19 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer is Windows-only (Falcor, ADR-0009), but which region of its
+# The renderer's Falcor half is Windows-only (ADR-0009), but which region of its
 # per-frame upload buffers a frame uses is a Falcor-free header, private to the
 # module, so it is tested everywhere through a private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
 target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_frame_regions_tests)
+
+# Likewise the geometry the renderer builds on the CPU (vertices.h).
+add_executable(augusta_renderer_vertices_tests renderer_vertices_test.cpp)
+target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_renderer_vertices_tests)
 
 if(WIN32)
   # The client is Windows-only (Falcor, ADR-0009), and so are its private

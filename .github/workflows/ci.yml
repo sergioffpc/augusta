@@ -410,14 +410,17 @@ jobs:
       - name: Lint
         # Both checks run, and the step fails if either does, so one run shows
         # every finding. clang-tidy with .clang-tidy's full profile on src:
-        # src/client and src/modules/renderer are Windows-only (CMakeLists.txt
-        # gates both on WIN32 - the latter since ADR-0009's Falcor backend is
-        # Windows-only), as is the audio module's output device (miniaudio and
+        # src/client and the renderer's Falcor half are Windows-only
+        # (CMakeLists.txt gates both on WIN32 - the latter since ADR-0009's
+        # Falcor backend is Windows-only), as is the audio module's output device (miniaudio and
         # Steam Audio, built only with AUGUSTA_AUDIO_OUTPUT, on only on Windows -
         # src/modules/audio/CMakeLists.txt), and aren't part of this Linux configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
-        # flags. One file per clang-tidy, on every core: a serial run over the
+        # flags. The renderer's vertices.cpp builds here but is skipped too:
+        # it would hold augusta/renderer.h to the full profile, which that
+        # header, linted by include-cleaner alone so far, doesn't pass yet.
+        # One file per clang-tidy, on every core: a serial run over the
         # whole list took most of the job. One file per invocation also
         # keeps a stray Windows-only file to its own error, where a multi-file
         # invocation cascades it onto every file after it.
