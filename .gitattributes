@@ -23,3 +23,7 @@ tests/fixtures/example-packs/*.pack -filter -diff -merge binary
 # (tests/fuzz/README.md).
 tests/fuzz/corpus/** binary
 tests/fuzz/regressions/** binary
+
+# The debug HUD's font is embedded in the client at build time, by jobs that
+# fetch no LFS objects, so it stays plain bytes.
+*.ttf binary

@@ -664,6 +664,15 @@ target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURC
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_renderer_vertices_tests)
 
+# And the debug HUD's text (debug_hud_text.h), which both Renderers draw.
+add_executable(augusta_renderer_debug_hud_text_tests renderer_debug_hud_text_test.cpp)
+target_include_directories(augusta_renderer_debug_hud_text_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(
+  augusta_renderer_debug_hud_text_tests
+  PRIVATE augusta_renderer_debug_hud_text GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_debug_hud_text_tests)
+
 if(WIN32)
   # The client is Windows-only (Falcor, ADR-0009), and so are its private
   # libraries' targets - though none of these links Falcor.
