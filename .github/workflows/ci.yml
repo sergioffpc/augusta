@@ -271,7 +271,9 @@ jobs:
       - name: Configure
         # PYTHON_EXECUTABLE named, so a sync that left no interpreter stops the
         # configure instead of leaving the module out (cmake/AugustaAgentPython.cmake).
-        run: cmake --preset windows "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
+        # AUGUSTA_LAVAPIPE: the renderer smoke test's software Vulkan, which a
+        # release's build leaves out (CMakeLists.txt).
+        run: cmake --preset windows -DAUGUSTA_LAVAPIPE=ON "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
       - name: Build
         # all includes augustad: this job is the build matrix's Windows x64
         # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).

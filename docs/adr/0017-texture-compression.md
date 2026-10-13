@@ -12,4 +12,4 @@ chunks are ignored - the pixels are taken as stored.
 ## Considered Options
 
 KTX2 was evaluated and rejected — it offers no benefit without Basis Universal
-transcoding on a desktop-only client, whose GPUs all sample BC formats.
+transcoding on a D3D12-only client.

@@ -650,9 +650,10 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer's GPU half is Windows-only for now (ADR-0059), but which region of
-# its per-frame upload buffers a frame uses is a GPU-free header, private to the
-# module, so it is tested everywhere through a private include path.
+# The renderer's GPU half builds on Windows alone until the client's Linux build
+# lands (ADR-0059 decides both), but which region of its per-frame upload
+# buffers a frame uses is a GPU-free header, private to the module, so it is
+# tested everywhere through a private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
 target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
@@ -683,8 +684,9 @@ target_link_libraries(
 gtest_discover_tests(augusta_renderer_device_choice_tests)
 
 if(WIN32)
-  # The client is Windows-only for now (ADR-0059), and so are its private
-  # libraries' targets - though only the smoke test below links the Renderer.
+  # The client builds on Windows alone until its Linux build lands (ADR-0059
+  # decides both), and so do its private libraries' targets - though only the
+  # smoke test below links the Renderer.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
@@ -749,6 +751,8 @@ if(WIN32)
           "VK_DRIVER_FILES=${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${vcpkg_installed}/bin"
     )
+  else()
+    message(STATUS "Renderer smoke test not built: AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
   endif()
 
   # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
