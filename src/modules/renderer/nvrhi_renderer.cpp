@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,7 @@
 #include "augusta/input.h"
 #include "augusta/logging.h"
 #include "augusta/renderer.h"
+#include "glfw_keys.h"
 
 // glfw3native.h declares glfwGetWin32Window only for the platforms named before
 // it is included.
@@ -31,9 +33,10 @@
 
 // The Renderer on NVRHI's D3D12 backend, in a GLFW window (ADR-0059). Like
 // Falcor's, it draws into an offscreen target, then copies that to the
-// swapchain's image and presents it. So far it only clears the frame: the
-// scene, remote players, combat effects, overlay, debug HUD, input and resizing
-// come next, and their setters do nothing until then.
+// swapchain's image and presents it, and its window pushes the keyboard and
+// mouse to input::EventSink. So far it only clears the frame: the scene, remote
+// players, combat effects, overlay and debug HUD come next, and their setters
+// do nothing until then.
 namespace augusta::renderer {
 
 namespace {
@@ -105,8 +108,6 @@ using GlfwWindow = std::unique_ptr<GLFWwindow, GlfwWindowDeleter>;
 
 GlfwWindow OpenWindow(const Config& config) {
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  // Until the swapchain follows a resize, the window keeps its size.
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
   glfwWindowHint(GLFW_VISIBLE, config.hidden ? GLFW_FALSE : GLFW_TRUE);
   GlfwWindow window(glfwCreateWindow(static_cast<int>(config.width), static_cast<int>(config.height),
                                      config.title.c_str(), nullptr, nullptr));
@@ -121,6 +122,42 @@ Size FramebufferSize(GLFWwindow& window) {
   int height = 0;
   glfwGetFramebufferSize(&window, &width, &height);
   return {.width = static_cast<std::uint32_t>(width), .height = static_cast<std::uint32_t>(height)};
+}
+
+// The window's user pointer is the EventSink its callbacks push to.
+input::EventSink& SinkOf(GLFWwindow* window) {
+  return *static_cast<input::EventSink*>(glfwGetWindowUserPointer(window));
+}
+
+void OnKey(GLFWwindow* window, int glfw_key, int /*scancode*/, int action, int /*mods*/) {
+  const std::optional<input::Key> key = KeyFromGlfw(glfw_key);
+  const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
+  if (key && state) {
+    SinkOf(window).OnKeyEvent({.key = *key, .state = *state});
+  }
+}
+
+void OnMouseButton(GLFWwindow* window, int glfw_button, int action, int /*mods*/) {
+  const std::optional<input::Key> button = MouseButtonFromGlfw(glfw_button);
+  const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
+  if (button && state) {
+    SinkOf(window).OnKeyEvent({.key = *button, .state = *state});
+  }
+}
+
+// In client-area pixels; unbounded while the cursor is locked, when GLFW moves
+// a virtual cursor instead.
+void OnCursorMove(GLFWwindow* window, double x, double y) {
+  SinkOf(window).OnMouseMoveEvent({.x = static_cast<float>(x), .y = static_cast<float>(y)});
+}
+
+// The window's keyboard and mouse, from now on pushed to sink as glfwPollEvents
+// delivers them. Not the wheel: EventSink, like Falcor's Renderer, takes none.
+void ForwardInput(GLFWwindow& window, input::EventSink& sink) {
+  glfwSetWindowUserPointer(&window, &sink);
+  glfwSetKeyCallback(&window, OnKey);
+  glfwSetMouseButtonCallback(&window, OnMouseButton);
+  glfwSetCursorPosCallback(&window, OnCursorMove);
 }
 
 // The adapter config names: WARP, or null, which D3D12 takes as the system's
@@ -148,12 +185,12 @@ nvrhi::TextureDesc TargetDesc(std::uint32_t width, std::uint32_t height) {
 }  // namespace
 
 struct Renderer::Impl {
-  // Unused until the window's events are mapped to it.
-  input::EventSink& input_sink;
-
   // Declared in the order they are made, so they are destroyed in reverse.
   GlfwLibrary glfw;
   GlfwWindow window;
+  // The client area as of the last PumpEvents, which a minimized window, at
+  // 0 by 0, leaves as it was: the swapchain can't be empty.
+  Size size;
   ComPtr<IDXGIFactory4> factory;
   ComPtr<ID3D12Device> d3d_device;
   ComPtr<ID3D12CommandQueue> queue;
@@ -170,17 +207,19 @@ struct Renderer::Impl {
   std::array<nvrhi::EventQueryHandle, kFramesInFlight> frame_done;
   std::uint64_t frame_index = 0;
 
-  Impl(const Config& config, input::EventSink& sink) : input_sink(sink), window(OpenWindow(config)) {
+  // size starts as the window's own, which Windows may have widened past
+  // config's.
+  Impl(const Config& config, input::EventSink& input_sink)
+      : window(OpenWindow(config)), size(FramebufferSize(*window)) {
     ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "Creating the DXGI factory");
     CreateDevice(ChooseAdapter(*factory.Get(), config.adapter).Get());
     CreateSwapchain();
-    // The window's own size, which Windows may have widened past config's.
-    const Size size = FramebufferSize(*window);
     target = device->createTexture(TargetDesc(size.width, size.height));
     commands = device->createCommandList();
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
+    ForwardInput(*window, input_sink);
   }
 
   ~Impl() { device->waitForIdle(); }
@@ -206,7 +245,6 @@ struct Renderer::Impl {
   }
 
   void CreateSwapchain() {
-    const Size size = FramebufferSize(*window);
     const DXGI_SWAP_CHAIN_DESC1 desc{.Width = size.width,
                                      .Height = size.height,
                                      .Format = nvrhi::d3d12::convertFormat(kSwapchainFormat),
@@ -225,10 +263,14 @@ struct Renderer::Impl {
     // GLFW's window has no exclusive fullscreen, so neither does DXGI's Alt+Enter.
     ThrowIfFailed(factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER), "Associating the window");
     ThrowIfFailed(swapchain1.As(&swapchain), "Getting IDXGISwapChain3");
+    WrapSwapchainImages();
+  }
 
+  // The swapchain's images, as NVRHI textures of the swapchain's size.
+  void WrapSwapchainImages() {
     const nvrhi::TextureDesc image_desc = nvrhi::TextureDesc()
-                                              .setWidth(desc.Width)
-                                              .setHeight(desc.Height)
+                                              .setWidth(size.width)
+                                              .setHeight(size.height)
                                               .setFormat(kSwapchainFormat)
                                               .setInitialState(nvrhi::ResourceStates::Present)
                                               .setKeepInitialState(true)
@@ -241,7 +283,44 @@ struct Renderer::Impl {
     }
   }
 
+  void PumpEvents() {
+    glfwPollEvents();
+    const Size client_area = FramebufferSize(*window);
+    if (client_area.width != 0 && client_area.height != 0) {
+      size = client_area;
+    }
+  }
+
+  // Resizes the swapchain and the target to size. DXGI resizes only a swapchain
+  // whose images nothing holds, so this waits for the frames in flight and
+  // lets NVRHI drop what they held.
+  void Resize() {
+    device->waitForIdle();
+    device->runGarbageCollection();
+    for (nvrhi::TextureHandle& image : swapchain_images) {
+      image = nullptr;
+    }
+    ThrowIfFailed(swapchain->ResizeBuffers(kFramesInFlight, size.width, size.height, DXGI_FORMAT_UNKNOWN, 0),
+                  "Resizing the swapchain");
+    WrapSwapchainImages();
+    target = device->createTexture(TargetDesc(size.width, size.height));
+  }
+
+  void SetCursorLocked(bool locked) const {
+    glfwSetInputMode(window.get(), GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    // Without raw motion, GLFW's disabled cursor still moves as the OS's
+    // pointer settings (acceleration) make it.
+    if (glfwRawMouseMotionSupported() == GLFW_TRUE) {
+      glfwSetInputMode(window.get(), GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
+    }
+  }
+
   void RenderFrame() {
+    const nvrhi::TextureDesc& target_desc = target->getDesc();
+    if (target_desc.width != size.width || target_desc.height != size.height) {
+      Resize();
+    }
+
     const UINT image_index = swapchain->GetCurrentBackBufferIndex();
     nvrhi::IEventQuery* done = frame_done.at(image_index);
     device->waitEventQuery(done);
@@ -294,11 +373,11 @@ Renderer::Renderer(const Config& config, input::EventSink& input_sink)
 
 Renderer::~Renderer() = default;
 
-void Renderer::PumpEvents() { glfwPollEvents(); }
+void Renderer::PumpEvents() { impl_->PumpEvents(); }
 
 bool Renderer::ShouldClose() const { return glfwWindowShouldClose(impl_->window.get()) == GLFW_TRUE; }
 
-Size Renderer::GetSize() const { return FramebufferSize(*impl_->window); }
+Size Renderer::GetSize() const { return impl_->size; }
 
 void Renderer::RenderFrame() { impl_->RenderFrame(); }
 
@@ -316,7 +395,7 @@ void Renderer::SetCombatEffects(const CombatEffects& /*effects*/) {}
 
 void Renderer::SetOverlay(const Overlay& /*overlay*/) {}
 
-void Renderer::SetCursorLocked(bool /*locked*/) {}
+void Renderer::SetCursorLocked(bool locked) { impl_->SetCursorLocked(locked); }
 
 void Renderer::SetDebugHudStats(const DebugHudStats& /*stats*/) {}
 

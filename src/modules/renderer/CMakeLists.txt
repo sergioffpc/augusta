@@ -437,12 +437,19 @@ if(WIN32)
   # alone, and the manifest has both on Windows only.
   find_package(nvrhi CONFIG REQUIRED)
   find_package(glfw3 CONFIG REQUIRED)
+
+  # Which input::Key a GLFW key is (glfw_keys.h), apart from the window so it is
+  # tested without one. Private to the module, as vertices.h is.
+  add_library(augusta_renderer_glfw_keys STATIC glfw_keys.cpp)
+  target_link_libraries(augusta_renderer_glfw_keys PUBLIC augusta_input PRIVATE glfw)
+  augusta_set_module_scope(augusta_renderer_glfw_keys CLIENT_ONLY)
+
   add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp)
   target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(
     augusta_renderer_nvrhi
     PUBLIC augusta_input
-    PRIVATE augusta_logging nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+    PRIVATE augusta_renderer_glfw_keys augusta_logging nvrhi nvrhi_d3d12 glfw d3d12 dxgi
   )
   augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
 endif()

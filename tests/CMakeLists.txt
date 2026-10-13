@@ -721,6 +721,17 @@ if(WIN32)
     PRIVATE augusta_renderer_nvrhi GTest::gtest GTest::gtest_main
   )
   gtest_discover_tests(augusta_client_renderer_smoke_tests)
+
+  # The NVRHI Renderer's GLFW key mapping (glfw_keys.h), private to the module.
+  # The test names keys by GLFW's own constants.
+  find_package(glfw3 CONFIG REQUIRED)
+  add_executable(augusta_renderer_glfw_keys_tests renderer_glfw_keys_test.cpp)
+  target_include_directories(augusta_renderer_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+  target_link_libraries(
+    augusta_renderer_glfw_keys_tests
+    PRIVATE augusta_renderer_glfw_keys glfw GTest::gtest GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_renderer_glfw_keys_tests)
 endif()
 
 add_subdirectory(fuzz)
