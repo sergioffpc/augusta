@@ -420,6 +420,12 @@ if(WIN32)
   find_package(glfw3 CONFIG REQUIRED)
   find_package(imgui CONFIG REQUIRED)
 
+  # Which input::Key a GLFW key is (glfw_keys.h), apart from the window so it is
+  # tested without one. Private to the module, as vertices.h is.
+  add_library(augusta_renderer_glfw_keys STATIC glfw_keys.cpp)
+  target_link_libraries(augusta_renderer_glfw_keys PUBLIC augusta_input PRIVATE glfw)
+  augusta_set_module_scope(augusta_renderer_glfw_keys CLIENT_ONLY)
+
   # Its shaders, compiled to DXIL at build time and embedded in the renderer as
   # byte arrays: it compiles nothing at runtime and ships no shader files, and a
   # shader error fails the build. slangc hands its HLSL to DXC; the manifest has
@@ -482,6 +488,7 @@ if(WIN32)
     PUBLIC augusta_input
     PRIVATE
       augusta_logging
+      augusta_renderer_glfw_keys
       augusta_renderer_debug_hud_text
       augusta_renderer_vertices
       nvrhi
