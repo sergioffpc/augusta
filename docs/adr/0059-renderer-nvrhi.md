@@ -49,8 +49,8 @@ unused but keeps a Linux client possible. The alternatives weighed:
 
 ## Consequences
 
-The NVRHI Renderer is its own library target, `augusta_renderer_nvrhi`, built
-and tested in CI beside Falcor's but linked by no executable until it draws all
-that Falcor's does. Then `augustac` switches to it and Falcor is removed from
-the repository. The two are never a runtime choice. Published `falcor-*`
-releases stay as they are.
+The NVRHI Renderer is its own library target, `augusta_renderer_nvrhi`, which
+`augustac` links. The client's zip (ADR-0058) and SBOM drop Falcor and all it
+shipped. Falcor's Renderer is built only on request (`AUGUSTA_FALCOR`), linked
+by nothing, until Falcor is removed from the repository; the two are never a
+runtime choice. Published `falcor-*` releases stay as they are.

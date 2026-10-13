@@ -160,10 +160,9 @@ if(AUGUSTA_COVERAGE)
     USES_TERMINAL
   )
 endif()
-# NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
-# implementation only builds there (src/modules/renderer/CMakeLists.txt), as
-# does the client that links it; the geometry it builds on the CPU builds
-# everywhere.
+# The client renders through NVRHI on D3D12 (ADR-0059), so its Renderer only
+# builds on Windows (src/modules/renderer/CMakeLists.txt), as does the client
+# that links it; the geometry it builds on the CPU builds everywhere.
 add_subdirectory(src/modules/renderer)
 if(WIN32)
   add_subdirectory(src/client)

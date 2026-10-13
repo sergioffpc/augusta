@@ -13,7 +13,11 @@ target_include_directories(augusta_renderer_debug_hud_text PUBLIC ${CMAKE_CURREN
 target_link_libraries(augusta_renderer_debug_hud_text PUBLIC augusta_input)
 augusta_set_module_scope(augusta_renderer_debug_hud_text CLIENT_ONLY)
 
-if(WIN32)
+# Falcor's Renderer (ADR-0009), which nothing links since augustac draws through
+# NVRHI's (ADR-0059). It stays, built only on request, until Falcor is removed
+# from the repository, so the switch reverts on its own.
+option(AUGUSTA_FALCOR "Build Falcor's Renderer, which nothing links (ADR-0059)" OFF)
+if(WIN32 AND AUGUSTA_FALCOR)
   include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
 
   add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
@@ -411,11 +415,12 @@ if(WIN32)
 endif()
 
 if(WIN32)
-  # The Renderer on NVRHI and GLFW (ADR-0059), which replaces Falcor's: built
-  # and tested (tests/client_renderer_smoke_test.cpp), but linked by no
-  # executable until it draws all that Falcor's does. NVRHI's backend is D3D12
-  # alone, and the manifest has both, ImGui and the shader compilers below on
-  # Windows only.
+  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
+
+  # The Renderer on NVRHI and GLFW (ADR-0059), which augustac links and
+  # tests/client_renderer_smoke_test.cpp drives. NVRHI's backend is D3D12 alone,
+  # and the manifest has both, ImGui and the shader compilers below on Windows
+  # only.
   find_package(nvrhi CONFIG REQUIRED)
   find_package(glfw3 CONFIG REQUIRED)
   find_package(imgui CONFIG REQUIRED)

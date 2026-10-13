@@ -127,20 +127,18 @@ decisions already made in ARCHITECTURE.md:
       layer, built on the same Ubuntu, restores them too: the container jobs
       mount the entry read-only into its `vcpkg install`, and it builds from
       source only the packages the entry lacks.
-    - Falcor is not built on every run: the `falcor-prebuilt` workflow builds it
-      once for each combination of submodule commit, `falcor.patch` and Falcor
-      features, and publishes it as an asset of a `falcor-*` release, which the
-      Windows builds download at configure time (`cmake/FalcorPrebuilt.cmake`).
-      A build with no matching package — a pull request that changes Falcor, or
-      an Aftermath-enabled local build — builds Falcor from source.
+    - Falcor, which nothing links (ADR-0059), is built only with
+      `AUGUSTA_FALCOR`: the `falcor-prebuilt` workflow builds it once for each
+      combination of submodule commit, `falcor.patch` and Falcor features, and
+      publishes it as an asset of a `falcor-*` release
+      (`cmake/FalcorPrebuilt.cmake`).
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
-      binaries, packman's downloads for a Falcor built from source, sccache
-      objects. The server image's Docker layers live in GHCR
-      (`augustad:buildcache`) instead: at several GB they would evict the rest,
-      and every pull request would rebuild its dependencies from source. Only a
-      push's `container-verify` writes them; a pull request reads them, and a
-      fork's reads nothing.
+      binaries and sccache objects. The server image's Docker layers live in
+      GHCR (`augustad:buildcache`) instead: at several GB they would evict the
+      rest, and every pull request would rebuild its dependencies from source.
+      Only a push's `container-verify` writes them; a pull request reads them,
+      and a fork's reads nothing.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, and the hot-path
@@ -157,12 +155,12 @@ decisions already made in ARCHITECTURE.md:
   generated from the commits (Git Workflow below) — not run on every push, so
   cutting a release is a deliberate tag rather than automatic. The client ships
   as `augustac-windows-x64.zip`, its whole runtime folder, never as a lone
-  `.exe`: Falcor is a DLL that reads its shaders, data and plugins from its
-  folder at runtime, so the client cannot be linked statically, and it carries
-  the MSVC runtime so it needs no redistributable. A release is published only
-  once its unzipped client runs `augustac --version` and prints the tag's
-  version (`scripts/stage-client.sh`, ADR-0058). That catches a DLL it imports
-  that is missing, not what Falcor loads once it starts.
+  `.exe`: some of its dependencies ship only as DLLs, so the client cannot be
+  linked statically, and it carries the MSVC runtime so it needs no
+  redistributable. A release is published only once its unzipped client runs
+  `augustac --version` and prints the tag's version (`scripts/stage-client.sh`,
+  ADR-0058). That catches a DLL it imports that is missing, not one loaded only
+  once it runs.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -191,9 +189,9 @@ decisions already made in ARCHITECTURE.md:
   alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
   was built with, taken from vcpkg's own per-port SPDX documents
   (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
-  nothing in a statically linked C++ binary. The client's also lists what its
-  zip ships beside it: Falcor's own dependencies and the MSVC runtime
-  (ADR-0058). The image's SBOM is syft's, of its Ubuntu packages. Verified with:
+  nothing in a statically linked C++ binary. The client's also lists the MSVC
+  runtime its zip ships beside it (ADR-0058). The image's SBOM is syft's, of its
+  Ubuntu packages. Verified with:
 
     ```sh
     gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta

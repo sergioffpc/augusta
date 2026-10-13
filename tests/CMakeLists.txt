@@ -674,8 +674,8 @@ target_link_libraries(
 gtest_discover_tests(augusta_renderer_debug_hud_text_tests)
 
 if(WIN32)
-  # The client is Windows-only (Falcor, ADR-0009), and so are its private
-  # libraries' targets - though none of these links Falcor.
+  # The client is Windows-only (D3D12, ADR-0059), and so are its private
+  # libraries' targets - though only the smoke test below links the Renderer.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)

@@ -242,19 +242,12 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      # packman, which fetches Falcor's binary dependencies when Falcor is built
-      # from source, keeps its cache on the drive its own script is on unless
-      # told otherwise - the workspace's D: on this runner, where the cache
-      # below would never find it.
-      PM_PACKAGES_ROOT: C:\packman-repo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # recursive, not just true: third_party/falcor (ADR-0009) has its
-          # own nested submodules (glfw, imgui, fmt, ...) that need pulling
-          # too - see .gitmodules.
-          submodules: recursive
+      - name: Fetch the submodules
+        # vcpkg and NVTX: the client builds against no other submodule, and
+        # third_party/falcor, which nothing links (ADR-0059), is large.
+        run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
@@ -280,38 +273,10 @@ jobs:
         # PYTHON_EXECUTABLE named, so a sync that left no interpreter stops the
         # configure instead of leaving the module out (cmake/AugustaAgentPython.cmake).
         run: cmake --preset windows "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
-        # Configure downloads the prebuilt Falcor published for this Falcor
-        # (cmake/FalcorPrebuilt.cmake, falcor-prebuilt.yml). Without one - a pull
-        # request that changes Falcor, or before that workflow has published it -
-        # the build builds Falcor from source, and only then needs packman's
-        # downloads, cached here.
-      - name: Check for a prebuilt Falcor
-        id: falcor
-        run: echo "prebuilt=$(sed -n 's/^AUGUSTA_FALCOR_PREBUILT_USED:INTERNAL=//p' build/x64-windows/CMakeCache.txt)" >> "$GITHUB_OUTPUT"
-      - name: Restore packman's downloads
-        id: packman-cache
-        if: steps.falcor.outputs.prebuilt != 'TRUE'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: C:\packman-repo
-          key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
       - name: Build
         # all includes augustad: this job is the build matrix's Windows x64
         # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset windows --target all augusta_tests
-        # Saved right after the Build that downloaded them, so a failing test
-        # can't keep it from saving.
-      - name: Save packman's downloads
-        if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: C:\packman-repo
-          key: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
-      - if: steps.falcor.outputs.prebuilt != 'TRUE' && steps.packman-cache.outputs.cache-hit != 'true'
-        uses: ./.github/actions/prune-cache
-        with:
-          prefix: falcor-packman-
-          keep: falcor-packman-${{ hashFiles('third_party/falcor/dependencies.xml', 'cmake/patches/falcor.patch') }}
       - name: Check augustac's PDB
         # Each release publishes it (ADR-0055): the build leaves it beside
         # augustac.exe, whose debug directory names it. -headers rather than
@@ -319,22 +284,20 @@ jobs:
         run: |
           test -f build/x64-windows/src/client/augustac.pdb
           dumpbin -nologo -headers build/x64-windows/src/client/augustac.exe | grep -E 'Format: RSDS, .*augustac\.pdb'
-      - name: Check the client's runtime folder
-        # What each release zips (release.yml): staged by the client's install
-        # rules, augustac starts from it alone. Checked here so a DLL the
-        # rules miss fails the pull request that adds it, not the release.
-        run: scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac"
+      - name: Check the client's zip
+        # What each release publishes (release.yml): the folder the client's
+        # install rules stage, zipped, with augustac started from its unzipped
+        # copy alone. Checked here so a DLL the rules miss fails the pull
+        # request that adds it, not the release.
+        run: scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-windows-x64.zip"
       - name: Check the client's SBOM
         # release.yml's SBOM of that folder, and the CPEs nightly-jobs.yml's
         # sbom-scan adds to it: a dependency the build gains with neither a
-        # CPE nor a reason, or a Falcor the SBOM can't read, fails here rather
-        # than the release.
+        # CPE nor a reason fails here rather than the release.
         run: |
-          packman="$(sed -n 's/^FALCOR_PACKMAN_DIR:INTERNAL=//p' build/x64-windows/CMakeCache.txt)"
           python scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
-            --git-package third_party/falcor --git-package third_party/nvtx \
-            --falcor third_party/falcor --falcor-packman "$packman" \
+            --git-package third_party/nvtx \
             --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
@@ -359,10 +322,11 @@ jobs:
       - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
-        # Windows-only sources and tests. After Build, which generates headers
-        # Falcor's own include.
+        # Windows-only sources and tests. After Build, which generates the
+        # headers the renderer embeds its shaders and font from. Not Falcor's
+        # Renderer, which the build leaves out (ADR-0059).
         run: >-
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' ':!src/modules/renderer/renderer.cpp' ':!src/modules/renderer/debug_hud.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
       - name: Test the Agents' package (pytest)
