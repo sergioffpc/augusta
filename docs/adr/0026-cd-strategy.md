@@ -52,17 +52,12 @@ probe: a single replica takes no balanced traffic, so the pod is Ready once its
 container runs. A server that fails to start exits (ADR-0005) and shows as a
 crash-looping pod.
 
-**A release publishes nothing until its tagged commit passes everything.** A
-`v*` tag starts the release workflow, which publishes the GitHub Release (the
-executables, their debug info and SBOMs) only once that commit passes all of
-these: the Release-config builds of the client and of both server architectures
-with their `ctest` runs, the cooker's half of the pack contract, and every job
-the nightly runs (ADR-0013). The last include the SBOM scan of the executables
-about to be published, so a high or critical CVE not assessed in `.grype.yaml`
-blocks the release too. One failure publishes nothing, never part of a release.
-It does not hold `staging` back: Flux follows the signed tag itself (ADR-0056),
-running the image `main`'s CI already tested, scanned and signed, so a failing
-release run is fixed by moving the tag (`docs/runbooks/cut-release.md`).
+**A failing release run blocks the GitHub Release, not `staging`.** What a `v*`
+tag's run must pass before it publishes the executables is ADR-0013's; one
+failure publishes nothing, never part of a release. `staging` does not wait on
+it: Flux follows the signed tag itself (ADR-0056), running the image `main`'s CI
+already tested, scanned and signed, so a failing release run is fixed by moving
+the tag (`docs/runbooks/cut-release.md`).
 
 ## Considered Options
 

@@ -207,18 +207,14 @@ jobs:
         working-directory: tools/pack
         run: uv run pytest
   nightly:
-    # Everything the nightly runs, on the commit this run builds (ADR-0013): a
-    # job added to nightly-jobs.yml gates releases with nothing changed here.
-    # By SHA rather than the tag's name, so a tag the runbook moves while this
-    # run is still going doesn't change what its later jobs test. After client
-    # and server, whose SBOMs sbom-scan scans, so it judges what is about to be
-    # published rather than the latest release: a called workflow's job can't
-    # wait on its caller's, so the whole call waits, and the nightly's duration
-    # comes after the builds'. Its benchmarks are compared and not recorded, as
-    # on any ref but develop, and its failure fails this run without opening
-    # the nightly-failure issue. Outside nightly.yml's concurrency group, it
-    # may overlap a night, which is safe: it records no benchmark and saves no
-    # fuzz corpus, so it writes nothing a night reads.
+    # Every nightly job on this run's commit, gating publish (ADR-0013), so a
+    # job added to the nightly gates releases with nothing changed here. By SHA,
+    # not the tag's name, so a tag moved while the run is going doesn't change
+    # what later jobs test. After client and server because sbom-scan scans
+    # their SBOMs, and a called workflow's job can't wait on its caller's. It
+    # may overlap a night outside nightly.yml's concurrency group: with release
+    # set it records no benchmark and saves no fuzz corpus, so it writes
+    # nothing a night reads.
     needs: [client, server]
     uses: ./.github/workflows/nightly-jobs.yml
     # A caller must grant every permission a called job declares, or the run is
@@ -233,8 +229,7 @@ jobs:
       issues: write
     with:
       ref: ${{ github.sha }}
-      report-failure: false
-      sbom-artifacts: true
+      release: true
   publish:
     # Not on a dry run, which publishes nothing.
     if: github.event_name == 'push'

@@ -3,8 +3,7 @@ name: Nightly jobs
 # nightly.yml every night and by release.yml on every release, which publishes
 # only if they all pass. They live here rather than in nightly.yml so a
 # scheduled run uses develop's copy of them: a change to how develop builds or
-# tests lands with the jobs that run it, not when main next catches up. The
-# inputs' defaults are the night's; release.yml sets them.
+# tests lands with the jobs that run it, not when main next catches up.
 on:
   workflow_call:
     inputs:
@@ -12,13 +11,8 @@ on:
         description: The branch, or a release's commit, every job checks out and tests. Benchmarks are recorded only for develop.
         required: true
         type: string
-      report-failure:
-        description: Whether a failing job opens or updates the nightly-failure issue. A release turns it off; its own run is where its failure shows.
-        required: false
-        type: boolean
-        default: true
-      sbom-artifacts:
-        description: Whether sbom-scan scans the SBOMs this run produced, each uploaded by the caller as an artifact named sbom-<executable> before the call starts, instead of the latest release's. A release turns it on, to scan what it is about to publish.
+      release:
+        description: Whether release.yml is the caller. Then a failure opens no nightly-failure issue (the release's own run is where it shows), sbom-scan scans the SBOMs the caller uploaded as sbom-<executable> artifacts before the call instead of the latest release's, and the fuzz corpus is not saved.
         required: false
         type: boolean
         default: false
@@ -117,19 +111,19 @@ jobs:
           "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" -merge=1 minimized "$CORPUS"
           rm -rf "$CORPUS"
           mv minimized "$CORPUS"
-      # Not from a tag (a release): a cache saved on a tag is restored only by
-      # runs on that same tag, so it would be no later night's corpus, only
-      # room taken from the caches that are. A scheduled night saves on main,
-      # the default branch, whose caches a tag's run restores in turn.
+      # Not from a release, tag or dry run: a night restores only main's
+      # caches (scheduled runs are on main, the default branch), never a tag's
+      # or a branch's, so the entry would be no later night's corpus, only
+      # room taken from the caches that are. A release restores main's in turn.
       - name: Save the corpus
-        if: success() && github.ref_type != 'tag'
+        if: success() && !inputs.release
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CORPUS }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
       # Each night's corpus holds the one before, minimized: the older entries
       # are superseded.
-      - if: success() && github.ref_type != 'tag'
+      - if: success() && !inputs.release
         uses: ./.github/actions/prune-cache
         with:
           prefix: fuzz-corpus-${{ matrix.target }}-
@@ -348,7 +342,7 @@ jobs:
   sbom-scan:
     # The latest release's executables, by their SBOMs, against the night's
     # vulnerability data: a CVE published after the release fails here with
-    # nothing rebuilt. From a release (sbom-artifacts), the executables that
+    # nothing rebuilt. From a release (inputs.release), the executables that
     # release is about to publish instead, by the SBOMs its own build jobs
     # uploaded. Each SBOM gets its dependencies' CPEs first
     # (scripts/sbom-cpes.py), which grype matches against the NVD; no
@@ -371,10 +365,10 @@ jobs:
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Download the latest release's SBOM
-        if: ${{ !inputs.sbom-artifacts }}
+        if: ${{ !inputs.release }}
         run: gh release download --pattern "${{ matrix.executable }}.spdx.json"
       - name: Download this run's SBOM
-        if: inputs.sbom-artifacts
+        if: inputs.release
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sbom-${{ matrix.executable }}
@@ -429,10 +423,10 @@ jobs:
           path: test-report/
   # A new nightly job adds itself to `needs` here, and nothing else: this job
   # reports on every job it waits for, and release.yml waits for the whole
-  # call. Not from a release (report-failure), whose failure fails its run.
+  # call. Not from a release (inputs.release), whose failure fails its run.
   report-failure:
     needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, sbom-scan, test-report]
-    if: always() && inputs.report-failure && contains(needs.*.result, 'failure')
+    if: always() && !inputs.release && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:
       issues: write
