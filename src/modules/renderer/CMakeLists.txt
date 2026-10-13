@@ -429,3 +429,20 @@ if(WIN32)
       /wd5311>
   )
 endif()
+
+if(WIN32)
+  # The Renderer on NVRHI and GLFW (ADR-0059), which replaces Falcor's: built
+  # and tested (tests/client_renderer_smoke_test.cpp), but linked by no
+  # executable until it draws all that Falcor's does. NVRHI's backend is D3D12
+  # alone, and the manifest has both on Windows only.
+  find_package(nvrhi CONFIG REQUIRED)
+  find_package(glfw3 CONFIG REQUIRED)
+  add_library(augusta_renderer_nvrhi STATIC nvrhi_renderer.cpp)
+  target_include_directories(augusta_renderer_nvrhi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(
+    augusta_renderer_nvrhi
+    PUBLIC augusta_input
+    PRIVATE augusta_logging nvrhi nvrhi_d3d12 glfw d3d12 dxgi
+  )
+  augusta_set_module_scope(augusta_renderer_nvrhi CLIENT_ONLY)
+endif()

@@ -612,10 +612,12 @@ not affect numbering.
 
 ### Rendering & Audio
 
-- [ADR-0009](./adr/0009-renderer.md) — Renderer: NVIDIA Falcor
+- [ADR-0009](./adr/0009-renderer.md) — Renderer: NVIDIA Falcor (superseded by
+  ADR-0059)
 - [ADR-0010](./adr/0010-audio.md) — Audio: Steam Audio
 - [ADR-0014](./adr/0014-shading-language.md) — Shading language: Slang
 - [ADR-0028](./adr/0028-audio-output.md) — Audio output: miniaudio
+- [ADR-0059](./adr/0059-renderer-nvrhi.md) — Renderer: NVRHI
 
 ### Asset Pipeline
 

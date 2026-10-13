@@ -42,11 +42,24 @@
 /// (SetOverlay): the Presentation State it consumes (ADR-0024), drawn with
 /// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
 /// weapon model, and skeletal animation.
+///
+/// Two libraries implement this header, and an executable links one of them:
+/// augusta_renderer on Falcor, which augustac links, and augusta_renderer_nvrhi
+/// on NVRHI, which replaces it (ADR-0059) and so far only clears the frame.
 namespace augusta::renderer {
 
 /// Default initial client-area size, in pixels (see Config::width/height).
 constexpr std::uint32_t kDefaultWidth = 1920;
 constexpr std::uint32_t kDefaultHeight = 1080;
+
+/// Which GPU the Renderer draws with.
+enum class Adapter : std::uint8_t {
+  /// The system's default GPU.
+  kHardware,
+  /// WARP, Windows' software rasterizer: for a test on a machine with no GPU,
+  /// such as CI's runner. Falcor's Renderer does not support it.
+  kSoftware,
+};
 
 /// Initial window/renderer parameters.
 struct Config {
@@ -56,6 +69,18 @@ struct Config {
   /// user afterward via standard OS chrome.
   std::uint32_t width = kDefaultWidth;
   std::uint32_t height = kDefaultHeight;
+  Adapter adapter = Adapter::kHardware;
+  /// True to hide the window, for a test that only reads frames back
+  /// (CaptureFrame). Falcor's Renderer shows it for a moment first.
+  bool hidden = false;
+};
+
+/// A frame read back from the GPU: width by height pixels, row by row from the
+/// top, 4 bytes each (red, green, blue, alpha), sRGB-encoded.
+struct CapturedFrame {
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  std::vector<std::uint8_t> pixels;
 };
 
 /// A client-area size, in pixels.
@@ -170,15 +195,16 @@ struct DebugHudStats {
 class Renderer {
  public:
   /// Creates the window and GPU device per config, and wires this
-  /// Renderer to push keyboard/mouse events to input_sink as Falcor
+  /// Renderer to push keyboard/mouse events to input_sink as the window
   /// delivers them (see input::EventSink). Throws std::runtime_error if
   /// window or device creation fails - there is no recoverable path for a
-  /// client that can't render. input_sink must outlive this Renderer.
+  /// client that can't render - or if this implementation does not support
+  /// config's adapter. input_sink must outlive this Renderer.
   Renderer(const Config& config, input::EventSink& input_sink);
 
-  /// Falcor's Device/Window/Swapchain are unique hardware resources owned
+  /// The window, device and swapchain are unique hardware resources owned
   /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
-  /// before tearing them down, same as Falcor::SampleApp's own destructor.
+  /// before tearing them down.
   ~Renderer();
 
   /// Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
@@ -188,7 +214,7 @@ class Renderer {
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  /// Drains the OS/Falcor event queue and returns immediately - never
+  /// Drains the window's event queue and returns immediately - never
   /// waits for or presents a frame. Updates the state ShouldClose/GetSize
   /// return, and synchronously calls input_sink's matching method for
   /// every keyboard/mouse event seen. Must be called from the same
@@ -213,6 +239,11 @@ class Renderer {
   /// Draws the scene last passed to SetScene (just the cleared frame and the
   /// debug HUD until then).
   void RenderFrame();
+
+  /// Reads back the frame the last RenderFrame drew, waiting for the GPU to
+  /// finish it; empty (0 by 0) before the first RenderFrame. Slow: for tests
+  /// and screenshots, not for every frame. From the Main/Render thread.
+  [[nodiscard]] CapturedFrame CaptureFrame();
 
   /// Replaces the drawn scene, uploading its geometry to the GPU. From the
   /// Main/Render thread. Throws std::runtime_error if a mesh index is out
