@@ -281,7 +281,7 @@ struct Renderer::Impl final : public Falcor::Window::ICallbacks {
     // own Device ctor (Device.cpp) already handles the "compiled without
     // Aftermath support" case itself (a logWarning, not a hard failure)
     // when no Nsight Graphics install was found to source the SDK from
-    // (see this module's own CMakeLists.txt) - nothing else to guard here.
+    // (cmake/Aftermath.cmake) - nothing else to guard here.
     device_desc.enableAftermath = true;
     device = Falcor::make_ref<Falcor::Device>(device_desc);
 
