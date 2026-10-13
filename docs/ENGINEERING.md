@@ -144,18 +144,21 @@ decisions already made in ARCHITECTURE.md:
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
-- **Releases:** a separate workflow, triggered only on `v*` tags, builds
+- **Releases:** a separate workflow, triggered by `v*` tags, builds
   Release-config client/server binaries, runs the tests and the asset pipeline
-  check against them, and attaches them to a GitHub Release, whose notes are
+  check against them, runs every nightly job on the tagged commit, and attaches
+  the binaries to a GitHub Release only once all of it passes, its notes
   generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic. The client ships
-  as `augustac-windows-x64.zip`, its whole runtime folder, never as a lone
-  `.exe`: some of its dependencies ship only as DLLs, so the client cannot be
-  linked statically, and it carries the MSVC runtime so it needs no
-  redistributable. A release is published only once its unzipped client runs
-  `augustac --version` and prints the tag's version (`scripts/stage-client.sh`,
-  ADR-0058). That catches a DLL it imports that is missing, not one loaded only
-  once it runs.
+  cutting a release is a deliberate tag rather than automatic (ADR-0013,
+  ADR-0026). Started by hand on a branch, the same workflow is a dry run that
+  publishes nothing: how a change to it, or to the nightly jobs, is tried before
+  it merges (`gh workflow run release.yml --ref <branch>`). The client ships as
+  `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
+  some of its dependencies ship only as DLLs, so the client cannot be linked
+  statically, and it carries the MSVC runtime so it needs no redistributable. A
+  release is published only once its unzipped client runs `augustac --version`
+  and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
+  catches a DLL it imports that is missing, not one loaded only once it runs.
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -218,14 +221,15 @@ decisions already made in ARCHITECTURE.md:
     ```
 
 - **Vulnerability scanning:** the server image is scanned by trivy as CI builds
-  it, and is published only if clean. The latest release's executables are
-  scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
-  `sbom-scan`), so a CVE published after the release still fails a run. No
-  vulnerability database knows vcpkg's purls, so `scripts/sbom-cpes.py` first
-  adds each port's NVD CPE, and fails on a port that has neither a CPE nor a
-  written reason for having none. Both fail on a high or critical CVE; the image
-  only on one with a fix available, the executables on any, since the NVD gives
-  most of its ranges with no fixed version.
+  it, and is published only if clean. A release's executables are scanned by
+  grype, from their SBOMs (`nightly-jobs.yml`'s `sbom-scan`), before the release
+  publishes them, and the latest release's again every night, so a CVE published
+  after the release still fails a run. No vulnerability database knows vcpkg's
+  purls, so `scripts/sbom-cpes.py` first adds each port's NVD CPE, and fails on
+  a port that has neither a CPE nor a written reason for having none. Both fail
+  on a high or critical CVE; the image only on one with a fix available, the
+  executables on any, since the NVD gives most of its ranges with no fixed
+  version.
 
 ## Git Workflow
 

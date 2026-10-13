@@ -163,8 +163,13 @@ skipped: a branch cut from `main` already has everything `main` has.
     once its image is published.
 
 9. Watch the workflow. Its `client`, `server` and `tools` jobs rebuild and test
-   the Release binaries; `publish` creates the GitHub Release only if all three
-   pass:
+   the Release binaries. Once `client` and `server` pass, its `nightly` job runs
+   every nightly job on the tagged commit (ADR-0013), the scan of the SBOMs just
+   built among them. `publish` creates the GitHub Release only if all of them
+   pass. Plan for the builds' time and then a night's on top, over an hour in
+   all: the fuzzing alone takes 30 minutes per target, the targets side by side.
+   A failing nightly job here fails the run and opens no `nightly-failure`
+   issue; the run is where it shows:
 
     ```sh
     gh run list --workflow release.yml --limit 1
@@ -229,11 +234,13 @@ flux get helmreleases -n flux-system     # augustad-staging at X.Y.Z+<12>
 - **Before step 7:** close the pull request and delete the branch
   (`git push origin --delete release/vX.Y.Z`); nothing is published.
 - **The release workflow fails after the tag is pushed:** no GitHub Release
-  exists (`publish` needs every job). Fix on a `hotfix/*` branch off `main`
-  through a pull request to `main`, re-cutting the changelog there
-  (`scripts/changelog.sh vX.Y.Z`) if the fix belongs in the notes, then move the
-  tag to the new merge commit once its image is published, waiting as step 8
-  does:
+  exists (`publish` needs every job, the nightly's included). A job that failed
+  for its runner rather than the code, such as a benchmark on a noisy one, can
+  be rerun alone (`gh run rerun <run-id> --failed`). Otherwise fix on a
+  `hotfix/*` branch off `main` through a pull request to `main`, re-cutting the
+  changelog there (`scripts/changelog.sh vX.Y.Z`) if the fix belongs in the
+  notes, then move the tag to the new merge commit once its image is published,
+  waiting as step 8 does:
 
     ```sh
     git tag -d vX.Y.Z
