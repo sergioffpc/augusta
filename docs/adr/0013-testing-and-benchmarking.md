@@ -9,21 +9,21 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 
 ## Stages
 
-| Kind                                            | Pre-push            | Pull request        | Nightly                   | Release tag                 |
-| ----------------------------------------------- | ------------------- | ------------------- | ------------------------- | --------------------------- |
-| `clang-tidy`                                    | changed `src/*.cpp` | ✅                  |                           |                             |
-| Unit, integration, and boundary tests (`ctest`) |                     | ✅ Windows + Linux  |                           | ✅                          |
-| Property-based tests (RapidCheck)               |                     | ✅ 100 cases        | ✅ ~10 000 cases          |                             |
-| pytest (`tools/pack`)                           |                     | ✅                  |                           |                             |
-| Pack contract (golden packs)                    |                     | ✅                  |                           | ✅                          |
-| ASan + UBSan                                    |                     | ✅                  |                           |                             |
-| Fuzzing                                         |                     | ✅ ~60 s per target | ✅ ~30 min per target     |                             |
-| TSan                                            |                     |                     | ✅                        |                             |
-| Netcode under an impaired link                  |                     |                     | ✅                        |                             |
-| Coverage report (`llvm-cov`)                    |                     |                     | ✅                        |                             |
-| Test report (HTML)                              |                     |                     | ✅                        |                             |
-| NFR-01 (tick rate under load)                   |                     |                     |                           | manual, on the r630 cluster |
-| Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× |                             |
+| Kind                                            | Pre-push            | Pull request        | Nightly                   | Release tag                    |
+| ----------------------------------------------- | ------------------- | ------------------- | ------------------------- | ------------------------------ |
+| `clang-tidy`                                    | changed `src/*.cpp` | ✅                  |                           |                                |
+| Unit, integration, and boundary tests (`ctest`) |                     | ✅ Windows + Linux  |                           | ✅                             |
+| Property-based tests (RapidCheck)               |                     | ✅ 100 cases        | ✅ ~10 000 cases          | ✅ ~10 000 cases               |
+| pytest (`tools/pack`)                           |                     | ✅                  |                           |                                |
+| Pack contract (golden packs)                    |                     | ✅                  |                           | ✅                             |
+| ASan + UBSan                                    |                     | ✅                  |                           |                                |
+| Fuzzing                                         |                     | ✅ ~60 s per target | ✅ ~30 min per target     | ✅ ~30 min per target          |
+| TSan                                            |                     |                     | ✅                        | ✅                             |
+| Netcode under an impaired link                  |                     |                     | ✅                        | ✅                             |
+| Coverage report (`llvm-cov`)                    |                     |                     | ✅                        | ✅ run artifact                |
+| Test report (HTML)                              |                     |                     | ✅                        | ✅ run artifact                |
+| NFR-01 (tick rate under load)                   |                     |                     |                           | manual, on the r630 cluster    |
+| Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× | ✅ not recorded, fails past 2× |
 
 - **Pre-push** is a `.githooks/pre-push` hook running `clang-tidy` only: it is
   what MSVC does not catch and CI would, and a hook that builds and runs the
@@ -37,7 +37,17 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   anyone to notice.
 - **The release tag** runs `ctest` and the asset pipeline check again on the
   binaries it publishes: they come from a fresh build, not the one the commit's
-  push tested.
+  push tested. It also runs every nightly job on the tagged commit, by calling
+  the same jobs the nightly calls (`nightly-jobs.yml`), and publishes only once
+  all of them pass: a release is never gated by less than a night is, and a job
+  added to the nightly gates releases with no further change. Called from a
+  release, they differ from a night in four ways. A failure fails the release
+  run and opens no `nightly-failure` issue, since that run is where it shows.
+  The micro-benchmarks are compared with `develop`'s history, on the same
+  threshold, and not recorded. The SBOM scan reads the SBOMs that release run
+  built, judging what it is about to publish rather than the latest release. The
+  coverage and test reports stay artifacts of the run. So a release takes as
+  long as its builds and then a night's jobs, fuzzing included.
 - **No stage runs after a deploy to k3s.** ADR-0026 keeps runners out of the
   cluster, so only something running inside it could test a deployed server.
 
@@ -153,7 +163,8 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   each result linked to its output; the requirements matrix; and the coverage
   report beside them, with its totals on the report's first page. It is a run
   artifact, and the documentation site publishes the latest scheduled night's
-  (ADR-0046). It reports; the jobs' own results are what fail the nightly.
+  (ADR-0046), never a release's. It reports; the jobs' own results are what fail
+  the nightly.
 - **Micro-benchmarks** time the hot paths, through their public interfaces: a
   server tick through every phase of SimulationWorld in a full Match, alone and
   with Host writing its Match capture; that tick's Authoritative State
@@ -168,17 +179,17 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   `docs/`; the first night on `develop` starts that branch itself, with an empty
   commit, and the documentation site charts its history (ADR-0046). Of the
   nightly's jobs, only this one may push. Only `develop`'s nights are recorded:
-  a manual run on another branch is compared with them and leaves no trace. A
-  shared runner is noisy, so the threshold is generous: a benchmark more than
-  twice as slow as the night before fails the nightly, reported like any other
-  failure. The slower result is recorded all the same, so one regression fails
-  one night per CPU model, not every night after it. The runners of one label
-  come on several CPU models, the fastest about twice as quick as the slowest,
-  so each model keeps its own history, named after it, and "the night before" is
-  the last night on the same model; a model's first night has nothing to compare
-  with. Benchmarks are also run by hand when a profile (NVTX in Nsight Systems)
-  points at a hot spot. They never gate a pull request, and NFR-01 stays the
-  only formal performance target.
+  a manual run on another branch, or a release, is compared with them and leaves
+  no trace. A shared runner is noisy, so the threshold is generous: a benchmark
+  more than twice as slow as the night before fails the nightly, reported like
+  any other failure. The slower result is recorded all the same, so one
+  regression fails one night per CPU model, not every night after it. The
+  runners of one label come on several CPU models, the fastest about twice as
+  quick as the slowest, so each model keeps its own history, named after it, and
+  "the night before" is the last night on the same model; a model's first night
+  has nothing to compare with. Benchmarks are also run by hand when a profile
+  (NVTX in Nsight Systems) points at a hot spot. They never gate a pull request,
+  and NFR-01 stays the only formal performance target.
 
 ## Out of scope
 
@@ -188,6 +199,11 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 
 ## Considered Options
 
+- **Gating a release on the last night's result** instead of running the
+  nightly's jobs on its tag: rejected, a night tests `develop`'s head, which is
+  not the commit a release tags, and its SBOM scan reads the previous release,
+  not the one being published. Running them on the tag costs the release a
+  night's duration, which a deliberate, occasional tag can afford.
 - **Gating pull requests on micro-benchmarks** by a regression percentage:
   rejected, a shared runner is too noisy to block a merge on; the nightly
   catches a regression the day after it lands.
