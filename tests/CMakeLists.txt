@@ -586,7 +586,7 @@ add_test(
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
 )
 
-# The headless server has no client Input dependency (ARCHITECTURE.md §5):
+# The headless server has no client Input dependency (ARCHITECTURE.md Â§5):
 # augusta_input stays client-only so the configure-time scope check covers it,
 # that check rejects a fixture build graph where a server-only target reaches a
 # client-only one, and no server source or server config header names Input.
@@ -725,13 +725,13 @@ if(WIN32)
   # The NVRHI Renderer's GLFW key mapping (glfw_keys.h), private to the module.
   # The test names keys by GLFW's own constants.
   find_package(glfw3 CONFIG REQUIRED)
-  add_executable(augusta_renderer_glfw_keys_tests renderer_glfw_keys_test.cpp)
-  target_include_directories(augusta_renderer_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+  add_executable(augusta_client_renderer_glfw_keys_tests client_renderer_glfw_keys_test.cpp)
+  target_include_directories(augusta_client_renderer_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
   target_link_libraries(
-    augusta_renderer_glfw_keys_tests
+    augusta_client_renderer_glfw_keys_tests
     PRIVATE augusta_renderer_glfw_keys glfw GTest::gtest GTest::gtest_main
   )
-  gtest_discover_tests(augusta_renderer_glfw_keys_tests)
+  gtest_discover_tests(augusta_client_renderer_glfw_keys_tests)
 endif()
 
 add_subdirectory(fuzz)
