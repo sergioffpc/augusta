@@ -46,7 +46,9 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
   (Windows x64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], Falcor [BSD-3], Steam Audio
-  [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0])
+  [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0], Dear ImGui [MIT]), and so
+  must assets kept in the repository (the debug HUD's JetBrains Mono font [OFL
+  1.1], `src/modules/renderer/fonts/`, with its licence)
 - **Language:** C++23 (avoid C++23 std modules/`import std` — still immature on
   MSVC and GCC/Clang)
 - **Coding style:** Google C++ Style Guide
