@@ -42,8 +42,8 @@ Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 ## 2. Architecture Constraints
 
 - **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA's NVRHI (D3D12). Server: Linux x86-64 and Linux arm64 in production
-  (Windows x64 builds for development only, NFR-04), headless.
+  via NVIDIA's NVRHI (Vulkan). Server: Linux x86-64 and Linux arm64 in
+  production (Windows x64 builds for development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], NVRHI [MIT], GLFW [zlib], Steam
   Audio [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0], Dear ImGui [MIT]),
@@ -69,8 +69,8 @@ IP:port.
 
 **Technical context:**
 
-- Client executable (Windows only): rendering (NVRHI/D3D12), input, audio, local
-  prediction
+- Client executable (Windows only): rendering (NVRHI/Vulkan), input, audio,
+  local prediction
 - Dedicated server executable (Linux in production, Windows for development
   only - NFR-04): headless, authoritative simulation
 - Agents (`tools/agent`, Windows and Linux): players a Python script controls,
@@ -101,12 +101,12 @@ IP:port.
   conditions, spawn rules) is encapsulated in sandboxed Lua scripts run in a
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
-- Rendering built on NVIDIA's NVRHI (D3D12), used exclusively by the Windows
+- Rendering built on NVIDIA's NVRHI (Vulkan), used exclusively by the Windows
   client. The server runs in production on Linux only (NFR-04), headless, and
   entirely decoupled from graphics-API concerns.
 - Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
   spatial audio; no audio dependency on the headless Linux server.
-- Shaders authored in Slang (ADR-0014), compiled to DXIL at build time and
+- Shaders authored in Slang (ADR-0014), compiled to SPIR-V at build time and
   embedded in the client: it compiles no shaders at runtime and ships no shader
   compiler (ADR-0059).
 - Level/map content authored in OpenUSD (interchange/authoring format only) and
@@ -175,7 +175,7 @@ IP:port.
       immutable prediction state each simulation tick
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
       smooths for display; emits presentation state each render frame
-- Renderer — NVIDIA's NVRHI (D3D12), shaders authored in Slang; owns the
+- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; owns the
   client's single OS window (see Input handling, above) and consumes
   presentation state. Exposes pumping window/device events and rendering a frame
   as two separate operations rather than one combined loop, so the Main/Render
