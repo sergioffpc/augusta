@@ -22,7 +22,6 @@
 // NOLINTNEXTLINE(modernize-deprecated-headers) - SIGBUS is POSIX's, which <csignal> need not declare.
 #include <signal.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <unwind.h>
 #endif
@@ -178,7 +177,7 @@ void WriteToStdout(std::string_view text) {
   WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
 #else
   while (!text.empty()) {
-    const ssize_t written = write(STDOUT_FILENO, text.data(), text.size());
+    const auto written = write(STDOUT_FILENO, text.data(), text.size());
     if (written < 0 && errno == EINTR) {
       continue;
     }
