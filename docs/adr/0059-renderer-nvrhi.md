@@ -32,9 +32,11 @@ unused but keeps a Linux client possible. The alternatives weighed:
 - **Shaders.** Slang (ADR-0014), compiled to DXIL at build time by `slangc` from
   vcpkg's `shader-slang`. The client ships compiled shaders, and neither
   `slang.dll` nor `dxcompiler.dll`.
-- **Debug HUD.** Dear ImGui from vcpkg, drawn by a small ImGui renderer on NVRHI
-  adapted from Donut's (MIT), with a freely licensed monospace font kept in the
-  repository.
+- **Debug HUD.** Dear ImGui from vcpkg, with its GLFW binding, drawn by a small
+  ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace font,
+  JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
+  with its licence and embedded in the executable at build time. Both Renderers
+  draw the same text, from code free of any GPU API.
 - **Aftermath.** Optional, autodetected from an installed Nsight Graphics as
   before, and attached to the D3D12 device NVRHI exposes.
 - **Dropped.** The D3D12 Agility SDK, NVAPI, packman and Falcor's Python.

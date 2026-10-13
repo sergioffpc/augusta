@@ -10,6 +10,11 @@
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
+    {
+      "name": "directx-dxc",
+      "host": true,
+      "platform": "windows"
+    },
     "flecs",
     "gamenetworkingsockets",
     {
@@ -18,6 +23,13 @@
     },
     "glm",
     "gtest",
+    {
+      "name": "imgui",
+      "features": [
+        "glfw-binding"
+      ],
+      "platform": "windows"
+    },
     "libsodium",
     "lua",
     {
@@ -34,6 +46,11 @@
       "default-features": false
     },
     "rapidcheck",
+    {
+      "name": "shader-slang",
+      "host": true,
+      "platform": "windows"
+    },
     "sol2",
     {
       "name": "steam-audio",

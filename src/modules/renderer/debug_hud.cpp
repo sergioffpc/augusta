@@ -4,55 +4,17 @@
 // fine against its import lib (same as Falcor's own ProfilerUI.cpp). Used for
 // the two things Falcor::Gui's own wrappers don't expose: text color and a
 // see-through, borderless window.
-#include <cmath>
 #include <cstdint>
-#include <format>
 #include <memory>
-#include <optional>
-#include <string>
 
 #include <imgui.h>
 
 #include "augusta/renderer.h"
+#include "debug_hud_text.h"
 
 namespace augusta::renderer {
 
 namespace {
-
-// Frame time in seconds -> "FPS: 144 (6.9ms)". No measured frame time yet
-// (zero, negative or non-finite) reads "FPS: --" rather than a bogus number.
-std::string FormatFps(double average_frame_time_s) {
-  if (!(average_frame_time_s > 0.0) || !std::isfinite(average_frame_time_s)) {
-    return "FPS: --";
-  }
-  return std::format("FPS: {} ({:.1f}ms)", std::lround(1.0 / average_frame_time_s), average_frame_time_s * 1000.0);
-}
-
-// Bytes per second -> "512B/s", "1.2KB/s" or "3.4MB/s".
-std::string FormatRate(float bytes_per_sec) {
-  constexpr float kKiB = 1024.0F;
-  constexpr float kMiB = kKiB * 1024.0F;
-  if (bytes_per_sec >= kMiB) {
-    return std::format("{:.1f}MB/s", bytes_per_sec / kMiB);
-  }
-  if (bytes_per_sec >= kKiB) {
-    return std::format("{:.1f}KB/s", bytes_per_sec / kKiB);
-  }
-  return std::format("{:.0f}B/s", bytes_per_sec);
-}
-
-// The connection part of the line: "RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% |
-// In: 1.2KB/s | Out: 512B/s". Not connected reads just "RTT: --"; a value not
-// measured yet reads "--".
-std::string FormatNet(const std::optional<DebugHudNetStats>& net) {
-  if (!net.has_value()) {
-    return "RTT: --";
-  }
-  const std::string jitter = net->jitter_ms.has_value() ? std::format("{:.1f}ms", *net->jitter_ms) : "--";
-  const std::string loss = net->loss_percent.has_value() ? std::format("{:.1f}%", *net->loss_percent) : "--";
-  return std::format("RTT: {}ms | Jitter: {} | Loss: {} | In: {} | Out: {}", net->rtt_ms, jitter, loss,
-                     FormatRate(net->in_bytes_per_sec), FormatRate(net->out_bytes_per_sec));
-}
 
 constexpr ImVec4 kGreen(0.0F, 1.0F, 0.0F, 1.0F);
 constexpr Falcor::uint2 kWindowPos(10, 10);
@@ -83,7 +45,7 @@ void DebugHud::Render(Falcor::RenderContext* render_context, const Falcor::ref<F
     Falcor::Gui::Window window(gui_.get(), "Debug", Falcor::uint2(0, 0), kWindowPos, kWindowFlags);
     ImGui::PopStyleVar();
     ImGui::PushStyleColor(ImGuiCol_Text, kGreen);
-    window.text(FormatFps(stats.average_frame_time_s) + " | " + FormatNet(stats.net));
+    window.text(DebugHudText(stats.average_frame_time_s, stats.net));
     ImGui::PopStyleColor();
   }
   gui_->render(render_context, target_fbo, stats.delta_time_s);

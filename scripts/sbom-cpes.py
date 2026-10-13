@@ -91,9 +91,12 @@ _NO_CPE = {
     "vcpkg-get-python": "a build tool",
     # The NVRHI renderer's (ADR-0059), and the ports NVRHI pulls in.
     "glfw3": "not in the NVD",
+    "imgui": "not in the NVD",
     "nvrhi": "not in the NVD",
     "directx-headers": "not in the NVD",
     "vulkan-headers": "not in the NVD",
+    "directx-dxc": "a build tool: the shaders' compiler, which nothing ships",
+    "shader-slang": "a build tool: the shaders' compiler, which nothing ships",
     # The manifest's agent feature, which CI turns on for the Agents' Python
     # module (tools/agent) and a release doesn't: pybind11 and the python3
     # port it pulls in, with python3's own dependencies.
