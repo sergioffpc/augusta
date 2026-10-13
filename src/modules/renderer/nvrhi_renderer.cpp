@@ -129,20 +129,20 @@ input::EventSink& SinkOf(GLFWwindow* window) {
   return *static_cast<input::EventSink*>(glfwGetWindowUserPointer(window));
 }
 
-void OnKey(GLFWwindow* window, int glfw_key, int /*scancode*/, int action, int /*mods*/) {
-  const std::optional<input::Key> key = KeyFromGlfw(glfw_key);
+// A key's or mouse button's GLFW action, pushed if both are ones Input takes.
+void PushKeyEvent(GLFWwindow* window, std::optional<input::Key> key, int action) {
   const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
   if (key && state) {
     SinkOf(window).OnKeyEvent({.key = *key, .state = *state});
   }
 }
 
+void OnKey(GLFWwindow* window, int glfw_key, int /*scancode*/, int action, int /*mods*/) {
+  PushKeyEvent(window, KeyFromGlfw(glfw_key), action);
+}
+
 void OnMouseButton(GLFWwindow* window, int glfw_button, int action, int /*mods*/) {
-  const std::optional<input::Key> button = MouseButtonFromGlfw(glfw_button);
-  const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
-  if (button && state) {
-    SinkOf(window).OnKeyEvent({.key = *button, .state = *state});
-  }
+  PushKeyEvent(window, MouseButtonFromGlfw(glfw_button), action);
 }
 
 // In client-area pixels; unbounded while the cursor is locked, when GLFW moves

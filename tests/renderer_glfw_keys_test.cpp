@@ -28,7 +28,7 @@ TEST(GlfwKeysTest, MapsEveryLetter) {
   }
 }
 
-TEST(GlfwKeysTest, MapsEveryDigitAboveTheLetters) {
+TEST(GlfwKeysTest, MapsEveryTopRowDigit) {
   for (int i = 0; i < kDigitCount; ++i) {
     EXPECT_EQ(KeyFromGlfw(GLFW_KEY_0 + i), KeyAfter(Key::k0, i)) << "digit " << i;
   }
