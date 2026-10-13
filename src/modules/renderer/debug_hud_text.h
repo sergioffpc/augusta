@@ -27,7 +27,7 @@ class FrameTimeWindow {
  public:
   using Clock = std::chrono::steady_clock;
 
-  /// Falcor::FrameRate's window, which the Falcor HUD reads.
+  /// A second's worth at 60 FPS.
   static constexpr std::size_t kFrames = 60;
 
   /// Ends a frame at now: the first call only starts the first frame.

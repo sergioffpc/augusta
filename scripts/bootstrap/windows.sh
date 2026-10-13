@@ -202,13 +202,10 @@ install_toolchain() {
   fi
 }
 
-# vcpkg and NVIDIA Falcor (ADR-0009, pinned per ADR-0025 - plain upstream, no
-# fork) are pinned git submodules; --recursive also pulls in Falcor's own
-# nested submodules (glfw, imgui, ...). src/modules/renderer/CMakeLists.txt's
-# own build step applies cmake/patches/falcor.patch and pulls Falcor's
-# remaining packman-fetched binary dependencies lazily, on first build.
+# vcpkg and NVTX are pinned git submodules (ADR-0025 - plain upstream, no
+# fork).
 update_submodules() {
-  git submodule update --init --recursive
+  git submodule update --init third_party/vcpkg third_party/nvtx
 }
 
 bootstrap_vcpkg() {
@@ -217,10 +214,10 @@ bootstrap_vcpkg() {
 
 bootstrap_done() {
   # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture - see
-  # src/modules/renderer/CMakeLists.txt, mirroring its own detection).
+  # cmake/Aftermath.cmake, mirroring its own detection).
   # Autodetected from an installed Nsight Graphics, which bundles it as a
   # component, so this only reminds you if there is none. Builds work fine
-  # without it (FALCOR_HAS_AFTERMATH=0).
+  # without it (AUGUSTA_HAS_AFTERMATH=0).
   if ! compgen -G "$(windows_dir ProgramFiles)/NVIDIA Corporation/Nsight Graphics */SDKs/NsightAftermathSDK/*/include/GFSDK_Aftermath.h" \
     >/dev/null; then
     echo "No NVIDIA Nsight Graphics install with a bundled Aftermath SDK was" \

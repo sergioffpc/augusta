@@ -1,8 +1,10 @@
 #include "augusta/renderer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -12,571 +14,709 @@
 #include <utility>
 #include <vector>
 
-#include <Core/API/Fence.h>
-#include <Core/API/Swapchain.h>
-#include <Core/Pass/RasterPass.h>
-#include <Core/Window.h>
-#include <Falcor.h>
-#include <Utils/Math/Matrix.h>
-#include <Utils/Threading.h>
-#include <Utils/Timing/FrameRate.h>
-#include <nvtx3/nvtx3.hpp>
+#include <GLFW/glfw3.h>
+#include <d3d12.h>
+#include <dxgi.h>
+#include <dxgi1_2.h>
+#include <dxgi1_4.h>
+#include <dxgiformat.h>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <nvrhi/common/resource.h>
+#include <nvrhi/d3d12.h>
+#include <nvrhi/nvrhi.h>
 #include <windows.h>
+#include <wrl/client.h>
 
 #include "augusta/input.h"
+#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "debug_hud.h"
 #include "frame_regions.h"
+#include "glfw_keys.h"
+#include "gpu_crash_dumps.h"
 #include "vertices.h"
 
-// ADR-0009: the first real (non-stub) body for this module.
-// Bypasses Falcor::SampleApp entirely - per ADR-0009, SampleApp fuses
-// window/device/swapchain/main-loop into one blocking run() call, which
-// can't give PumpEvents()/RenderFrame() the independent cadences
-// renderer.h's header comment requires. Falcor::Window, Falcor::Device,
-// and Falcor::Swapchain are, however, separately constructible - this
-// reimplements the slice of SampleApp's constructor/renderFrame/
-// handleWindowSizeChange (Source/Falcor/Core/SampleApp.cpp) needed to
-// drive them directly: render into an offscreen Fbo, then copy to the
-// acquired swapchain image and present, exactly as SampleApp does.
+// The shaders' DXIL, compiled at build time (CMakeLists.txt).
+#include "kEffectsPs.h"
+#include "kEffectsVs.h"
+#include "kScenePs.h"
+#include "kSceneVs.h"
+
+// glfw3native.h declares glfwGetWin32Window only for the platforms named before
+// it is included.
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+// The Renderer on NVRHI's D3D12 backend, in a GLFW window (ADR-0059). It draws
+// into an offscreen target, then copies that to the swapchain's image and
+// presents it, and its window pushes the keyboard and mouse to
+// input::EventSink. It draws the scene, the remote players, the fight's effects
+// and the overlay, and the debug HUD over them.
 namespace augusta::renderer {
 
 namespace {
 
-// Default clear color - near-black, close to this editor's own chrome.
-constexpr float kDefaultClearColorChannel = 0.016F;
+using Microsoft::WRL::ComPtr;
 
-// How many frames the GPU may be working on at once, and so how many
-// swapchain images there are: Device::endFrame keeps the CPU no further ahead.
-constexpr std::uint32_t kFramesInFlight = Falcor::Device::kInFlightFrameCount;
+// Near-black, in linear light.
+constexpr float kClearColorChannel = 0.016F;
 
-// MakeVertexLayout reads each of Vertex's members as one RGB32Float.
-static_assert(sizeof(Vertex) == 9 * sizeof(float), "Vertex must be three packed float triples");
+nvrhi::Color ClearColor() { return {kClearColorChannel, kClearColorChannel, kClearColorChannel, 1.0F}; }
 
-// Vertex's layout, for every Vao drawn from Vertex buffers.
-Falcor::ref<Falcor::VertexLayout> MakeVertexLayout() {
-  auto buffer_layout = Falcor::VertexBufferLayout::create();
-  buffer_layout->addElement("POSITION", offsetof(Vertex, position), Falcor::ResourceFormat::RGB32Float, 1, 0);
-  buffer_layout->addElement("NORMAL", offsetof(Vertex, normal), Falcor::ResourceFormat::RGB32Float, 1, 1);
-  buffer_layout->addElement("COLOR", offsetof(Vertex, color), Falcor::ResourceFormat::RGB32Float, 1, 2);
-  auto layout = Falcor::VertexLayout::create();
-  layout->addBufferLayout(0, buffer_layout);
-  return layout;
+// How many frames the GPU may be working on at once, and so how many swapchain
+// images and regions of a per-frame upload buffer (FrameRegion) there are.
+constexpr std::uint32_t kFramesInFlight = 3;
+
+// The target is sRGB, so the clear colour and shading stay linear; the
+// swapchain's images can't be (flip-model swapchains take no sRGB format), and
+// a copy between the two keeps the bytes as they are.
+constexpr nvrhi::Format kTargetFormat = nvrhi::Format::SRGBA8_UNORM;
+constexpr nvrhi::Format kSwapchainFormat = nvrhi::Format::RGBA8_UNORM;
+constexpr nvrhi::Format kDepthFormat = nvrhi::Format::D32;
+
+constexpr std::size_t kBytesPerPixel = 4;
+
+// The depth range, in metres from the camera.
+constexpr float kNearPlane = 0.1F;
+constexpr float kFarPlane = 1000.0F;
+
+// How many times a frame may rewrite the per-frame constants (NVRHI's volatile
+// constant buffer) before the GPU has used them; the Renderer writes them once.
+constexpr std::uint32_t kConstantVersions = 16;
+
+// VertexAttributes reads each of Vertex's members as one RGB32_FLOAT.
+static_assert(sizeof(Vertex) == 3 * sizeof(math::Vec3), "Vertex must be three packed float triples");
+
+// Vertex's layout, as the shaders' VsIn reads it.
+std::array<nvrhi::VertexAttributeDesc, 3> VertexAttributes() {
+  const auto attribute = [](const char* semantic, std::size_t offset) {
+    return nvrhi::VertexAttributeDesc()
+        .setName(semantic)
+        .setFormat(nvrhi::Format::RGB32_FLOAT)
+        .setOffset(static_cast<std::uint32_t>(offset))
+        .setElementStride(sizeof(Vertex));
+  };
+  return {attribute("POSITION", offsetof(Vertex, position)), attribute("NORMAL", offsetof(Vertex, normal)),
+          attribute("COLOR", offsetof(Vertex, color))};
 }
 
-// GLM matrices are column-major (m[column][row]); Falcor's are row-major
-// (m[row][column]) - same math, transposed storage.
-Falcor::float4x4 ToFalcor(const math::Mat4& matrix) {
-  auto result = Falcor::float4x4::zeros();
-  for (int row = 0; row < 4; ++row) {
-    for (int column = 0; column < 4; ++column) {
-      result[row][column] = matrix[column][row];
-    }
-  }
-  return result;
-}
-
-// Falcor's key in the run [falcor_first, falcor_first + count) as the key at
-// the same offset from first, if it is in the run. Both enums keep letters,
-// digits and F1-F12 contiguous and in the same order.
-std::optional<input::Key> MapRun(Falcor::Input::Key key, Falcor::Input::Key falcor_first, input::Key first, int count) {
-  const int offset = static_cast<int>(key) - static_cast<int>(falcor_first);
-  if (offset < 0 || offset >= count) {
-    return std::nullopt;
-  }
-  return static_cast<input::Key>(static_cast<int>(first) + offset);
-}
-
-constexpr int kLetterCount = 26;
-constexpr int kDigitCount = 10;
-constexpr int kFunctionKeyCount = 12;
-
-std::optional<input::Key> MapNamedKey(Falcor::Input::Key key) {
-  switch (key) {
-    case Falcor::Input::Key::Space:
-      return input::Key::kSpace;
-    case Falcor::Input::Key::Tab:
-      return input::Key::kTab;
-    case Falcor::Input::Key::Enter:
-      return input::Key::kEnter;
-    case Falcor::Input::Key::Backspace:
-      return input::Key::kBackspace;
-    case Falcor::Input::Key::Escape:
-      return input::Key::kEscape;
-    case Falcor::Input::Key::LeftShift:
-      return input::Key::kLeftShift;
-    case Falcor::Input::Key::RightShift:
-      return input::Key::kRightShift;
-    case Falcor::Input::Key::LeftControl:
-      return input::Key::kLeftControl;
-    case Falcor::Input::Key::RightControl:
-      return input::Key::kRightControl;
-    case Falcor::Input::Key::LeftAlt:
-      return input::Key::kLeftAlt;
-    case Falcor::Input::Key::RightAlt:
-      return input::Key::kRightAlt;
-    case Falcor::Input::Key::Up:
-      return input::Key::kUp;
-    case Falcor::Input::Key::Down:
-      return input::Key::kDown;
-    case Falcor::Input::Key::Left:
-      return input::Key::kLeft;
-    case Falcor::Input::Key::Right:
-      return input::Key::kRight;
-    default:
-      return std::nullopt;
-  }
-}
-
-std::optional<input::Key> MapKey(Falcor::Input::Key key) {
-  if (const auto letter = MapRun(key, Falcor::Input::Key::A, input::Key::kA, kLetterCount)) {
-    return letter;
-  }
-  if (const auto digit = MapRun(key, Falcor::Input::Key::Key0, input::Key::k0, kDigitCount)) {
-    return digit;
-  }
-  if (const auto function_key = MapRun(key, Falcor::Input::Key::F1, input::Key::kF1, kFunctionKeyCount)) {
-    return function_key;
-  }
-  return MapNamedKey(key);
-}
-
-std::optional<input::Key> MapMouseButton(Falcor::Input::MouseButton button) {
-  switch (button) {
-    case Falcor::Input::MouseButton::Left:
-      return input::Key::kMouseLeft;
-    case Falcor::Input::MouseButton::Right:
-      return input::Key::kMouseRight;
-    case Falcor::Input::MouseButton::Middle:
-      return input::Key::kMouseMiddle;
-    default:
-      return std::nullopt;
-  }
-}
-
-// A vertex buffer the CPU rewrites every frame (remote players, the fight's
-// effects, the overlay): unlike a scene's DeviceLocal buffer (UploadScene), it
-// is kept as MemoryType::Upload - a persistently-mappable heap Write can
-// memcpy into every frame via Buffer::setBlob with no GPU wait - and sized by
-// what Write has needed so far (the most vertices any call wrote). Null until
-// the first call with something to draw.
+// A vertex buffer the CPU rewrites every frame (the remote players, the fight's
+// effects, the overlay): unlike the scene's (UploadScene), it is in an upload
+// heap, mapped once for good, so a frame's vertices are copied straight into it
+// with no GPU wait.
 //
 // It holds kFramesInFlight regions of region_capacity vertices each, and a
-// frame writes and draws only the region FrameRegion gives it: with vsync off
-// several frames are in flight, and rewriting the one region a previous frame
-// is still drawing from tears that frame's drawing. The caller waits for the
-// GPU to finish the last frame drawn from a region before writing there
+// frame writes and draws only the region FrameRegion gives it: several frames
+// are in flight, and rewriting the one region a previous frame is still drawing
+// from tears that frame's drawing. The caller waits for the GPU to finish the
+// last frame drawn from a region before writing there
 // (Renderer::Impl::ReadyRegion).
+//
+// It grows into a new buffer only when a call needs more room than any before
+// it. Frames in flight keep drawing from the old one, which NVRHI keeps alive
+// until they are done, so growing waits for nothing either.
 struct StreamedVertices {
-  Falcor::ref<Falcor::Buffer> buffer;
-  Falcor::ref<Falcor::Vao> vao;
+  nvrhi::BufferHandle buffer;
+  std::span<Vertex> mapped;
   std::uint32_t region_capacity = 0;
   std::uint32_t count = 0;
   std::uint32_t region = 0;
 
-  // Writes vertices into region, first growing the buffer to fit them (with
-  // one GPU wait) if a region holds fewer. Nothing is drawn if there are none.
-  void Write(Falcor::Device& device, const std::vector<Vertex>& vertices, std::uint32_t frame_region) {
+  // Writes vertices into region, first growing the buffer to fit them if a
+  // region holds fewer. Nothing is drawn if there are none.
+  void Write(nvrhi::IDevice& device, const std::vector<Vertex>& vertices, std::uint32_t frame_region) {
     count = static_cast<std::uint32_t>(vertices.size());
     region = frame_region;
     if (vertices.empty()) {
       return;
     }
     if (count > region_capacity) {
-      if (buffer != nullptr) {
-        // The previous buffer may still be in flight on the GPU.
-        device.wait();
+      const std::size_t capacity = std::size_t{count} * kFramesInFlight;
+      buffer = device.createBuffer(nvrhi::BufferDesc()
+                                       .setByteSize(capacity * sizeof(Vertex))
+                                       .setIsVertexBuffer(true)
+                                       .setCpuAccess(nvrhi::CpuAccessMode::Write)
+                                       .setInitialState(nvrhi::ResourceStates::VertexBuffer)
+                                       .setKeepInitialState(true)
+                                       .setDebugName("Streamed vertices"));
+      auto* data = static_cast<Vertex*>(device.mapBuffer(buffer, nvrhi::CpuAccessMode::Write));
+      if (data == nullptr) {
+        throw std::runtime_error("Mapping a per-frame vertex buffer failed");
       }
-      buffer = device.createBuffer(std::size_t{count} * kFramesInFlight * sizeof(Vertex),
-                                   Falcor::ResourceBindFlags::Vertex, Falcor::MemoryType::Upload);
+      mapped = {data, capacity};
       region_capacity = count;
-      vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, MakeVertexLayout(), {buffer});
     }
-    buffer->setBlob(vertices.data(), FirstVertex() * sizeof(Vertex), vertices.size() * sizeof(Vertex));
+    std::ranges::copy(vertices, mapped.subspan(FirstVertex(), count).begin());
   }
 
   // Where region starts in buffer, in vertices.
   [[nodiscard]] std::uint32_t FirstVertex() const { return region * region_capacity; }
+};
 
-  // Draws what the last Write wrote through pass, if anything.
-  void Draw(Falcor::RasterPass& pass, Falcor::RenderContext* render_context) const {
-    if (count == 0) {
-      return;
+void ThrowIfFailed(HRESULT result, const char* what) {
+  if (FAILED(result)) {
+    throw std::runtime_error(std::string(what) + " failed");
+  }
+}
+
+// Whether result says the GPU faulted or hung and the device is gone.
+bool IsDeviceLost(HRESULT result) {
+  return result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_HUNG || result == DXGI_ERROR_DEVICE_RESET;
+}
+
+// What NVRHI reports, logged at its own severity.
+class MessageCallback final : public nvrhi::IMessageCallback {
+ public:
+  void message(nvrhi::MessageSeverity severity, const char* text) override {
+    switch (severity) {
+      case nvrhi::MessageSeverity::Info:
+        LD("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Warning:
+        LW("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Error:
+        LE("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
+      case nvrhi::MessageSeverity::Fatal:
+        LC("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+        return;
     }
-    pass.getState()->setVao(vao);
-    pass.draw(render_context, count, FirstVertex());
   }
 };
 
+// GLFW's library, initialized for as long as one is alive.
+struct GlfwLibrary {
+  GlfwLibrary() {
+    if (glfwInit() != GLFW_TRUE) {
+      throw std::runtime_error("GLFW failed to initialize");
+    }
+  }
+  ~GlfwLibrary() { glfwTerminate(); }
+  GlfwLibrary(const GlfwLibrary&) = delete;
+  GlfwLibrary& operator=(const GlfwLibrary&) = delete;
+  GlfwLibrary(GlfwLibrary&&) = delete;
+  GlfwLibrary& operator=(GlfwLibrary&&) = delete;
+};
+
+struct GlfwWindowDeleter {
+  void operator()(GLFWwindow* window) const { glfwDestroyWindow(window); }
+};
+using GlfwWindow = std::unique_ptr<GLFWwindow, GlfwWindowDeleter>;
+
+GlfwWindow OpenWindow(const Config& config) {
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_VISIBLE, config.hidden ? GLFW_FALSE : GLFW_TRUE);
+  GlfwWindow window(glfwCreateWindow(static_cast<int>(config.width), static_cast<int>(config.height),
+                                     config.title.c_str(), nullptr, nullptr));
+  if (window == nullptr) {
+    throw std::runtime_error("GLFW failed to create the window");
+  }
+  return window;
+}
+
+Size FramebufferSize(GLFWwindow& window) {
+  int width = 0;
+  int height = 0;
+  glfwGetFramebufferSize(&window, &width, &height);
+  return {.width = static_cast<std::uint32_t>(width), .height = static_cast<std::uint32_t>(height)};
+}
+
+// The window's user pointer is the EventSink its callbacks push to.
+input::EventSink& SinkOf(GLFWwindow* window) {
+  return *static_cast<input::EventSink*>(glfwGetWindowUserPointer(window));
+}
+
+// A key's or mouse button's GLFW action, pushed if both are ones Input takes.
+void PushKeyEvent(GLFWwindow* window, std::optional<input::Key> key, int action) {
+  const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
+  if (key && state) {
+    SinkOf(window).OnKeyEvent({.key = *key, .state = *state});
+  }
+}
+
+void OnKey(GLFWwindow* window, int glfw_key, int /*scancode*/, int action, int /*mods*/) {
+  PushKeyEvent(window, KeyFromGlfw(glfw_key), action);
+}
+
+void OnMouseButton(GLFWwindow* window, int glfw_button, int action, int /*mods*/) {
+  PushKeyEvent(window, MouseButtonFromGlfw(glfw_button), action);
+}
+
+// In client-area pixels; unbounded while the cursor is locked, when GLFW moves
+// a virtual cursor instead.
+void OnCursorMove(GLFWwindow* window, double x, double y) {
+  SinkOf(window).OnMouseMoveEvent({.x = static_cast<float>(x), .y = static_cast<float>(y)});
+}
+
+// The window's keyboard and mouse, from now on pushed to sink as glfwPollEvents
+// delivers them. Not the wheel: EventSink takes none.
+void ForwardInput(GLFWwindow& window, input::EventSink& sink) {
+  glfwSetWindowUserPointer(&window, &sink);
+  glfwSetKeyCallback(&window, OnKey);
+  glfwSetMouseButtonCallback(&window, OnMouseButton);
+  glfwSetCursorPosCallback(&window, OnCursorMove);
+}
+
+// The adapter config names: WARP, or null, which D3D12 takes as the system's
+// default GPU.
+ComPtr<IDXGIAdapter> ChooseAdapter(IDXGIFactory4& factory, Adapter adapter) {
+  ComPtr<IDXGIAdapter> chosen;
+  if (adapter == Adapter::kSoftware) {
+    ThrowIfFailed(factory.EnumWarpAdapter(IID_PPV_ARGS(&chosen)), "Finding the WARP adapter");
+  }
+  return chosen;
+}
+
+nvrhi::TextureDesc TargetDesc(std::uint32_t width, std::uint32_t height) {
+  return nvrhi::TextureDesc()
+      .setWidth(width)
+      .setHeight(height)
+      .setFormat(kTargetFormat)
+      .setIsRenderTarget(true)
+      .setInitialState(nvrhi::ResourceStates::RenderTarget)
+      .setKeepInitialState(true)
+      .setClearValue(ClearColor())
+      .setDebugName("Renderer target");
+}
+
+nvrhi::TextureDesc DepthDesc(std::uint32_t width, std::uint32_t height) {
+  return nvrhi::TextureDesc()
+      .setWidth(width)
+      .setHeight(height)
+      .setFormat(kDepthFormat)
+      .setIsRenderTarget(true)
+      .setInitialState(nvrhi::ResourceStates::DepthWrite)
+      .setKeepInitialState(true)
+      .setClearValue(nvrhi::Color(1.0F))
+      .setDebugName("Renderer depth");
+}
+
+// Neither the scene nor the effects are culled: cooked meshes' winding
+// (ADR-0032) is not verified end to end, and a billboard's depends on how it
+// was turned. Depth-tested and written otherwise, as the scene and the remote
+// players are drawn.
+nvrhi::RenderState UnculledState() {
+  nvrhi::RenderState state;
+  state.rasterState.setCullNone();
+  return state;
+}
+
+// The fight's effects glow: each adds its light to what is behind it, and is
+// hidden by what is in front without hiding anything itself.
+nvrhi::RenderState AdditiveState() {
+  nvrhi::RenderState state = UnculledState();
+  state.blendState.setRenderTarget(0, nvrhi::BlendState::RenderTarget()
+                                          .setBlendEnable(true)
+                                          .setSrcBlend(nvrhi::BlendFactor::One)
+                                          .setDestBlend(nvrhi::BlendFactor::One)
+                                          .setSrcBlendAlpha(nvrhi::BlendFactor::One)
+                                          .setDestBlendAlpha(nvrhi::BlendFactor::One));
+  state.depthStencilState.disableDepthWrite();
+  return state;
+}
+
+// The overlay is written over everything.
+nvrhi::RenderState OverlayState() {
+  nvrhi::RenderState state = UnculledState();
+  state.depthStencilState.disableDepthTest().disableDepthWrite();
+  return state;
+}
+
+nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const unsigned char> dxil) {
+  return device.createShader(nvrhi::ShaderDesc().setShaderType(type), dxil.data(), dxil.size());
+}
+
 }  // namespace
 
-// final: Falcor::Window::ICallbacks (a pure-virtual interface) has no
-// virtual destructor of its own, so a non-final Impl deleted through
-// unique_ptr<Impl> trips -Wdelete-non-abstract-non-virtual-dtor - Impl is
-// never subclassed, so final is both the fix and the correct contract.
-struct Renderer::Impl final : public Falcor::Window::ICallbacks {
-  input::EventSink& input_sink;
+struct Renderer::Impl {
+  // Declared in the order they are made, so they are destroyed in reverse.
+  GlfwLibrary glfw;
+  GlfwWindow window;
+  // The client area as of the last PumpEvents, which a minimized window, at
+  // 0 by 0, leaves as it was: the swapchain can't be empty.
+  Size size;
+  ComPtr<IDXGIFactory4> factory;
+  ComPtr<ID3D12Device> d3d_device;
+  ComPtr<ID3D12CommandQueue> queue;
+  MessageCallback messages;
+  nvrhi::DeviceHandle device;
+  ComPtr<IDXGISwapChain3> swapchain;
+  std::array<nvrhi::TextureHandle, kFramesInFlight> swapchain_images;
+  nvrhi::TextureHandle target;
+  nvrhi::TextureHandle depth;
+  nvrhi::FramebufferHandle framebuffer;
+  nvrhi::CommandListHandle commands;
+  // Made once the device is, and after the Renderer's own GLFW callbacks: its
+  // ImGui binding chains to them.
+  std::unique_ptr<DebugHud> debug_hud;
+  DebugHudStats hud_stats;
 
-  Falcor::ref<Falcor::Device> device;
-  Falcor::ref<Falcor::Window> window;
-  Falcor::ref<Falcor::Swapchain> swapchain;
-  Falcor::ref<Falcor::Fbo> target_fbo;
-  Falcor::ref<Falcor::RasterPass> raster_pass;
-  Falcor::ref<Falcor::Vao> vao;
-  std::uint32_t vertex_count = 0;
+  // The scene and the remote players, lit by Renderer.3d.slang, and the
+  // fight's effects, by Effects.3d.slang, all from the camera's
+  // view-projection in per_frame (their PerFrameCB). The overlay is drawn by
+  // Effects.3d.slang too, but is already in clip space: overlay_per_frame holds
+  // the identity.
+  nvrhi::BufferHandle per_frame;
+  nvrhi::BufferHandle overlay_per_frame;
+  nvrhi::BindingSetHandle bindings;
+  nvrhi::BindingSetHandle overlay_bindings;
+  nvrhi::GraphicsPipelineHandle lit_pipeline;
+  nvrhi::GraphicsPipelineHandle effects_pipeline;
+  nvrhi::GraphicsPipelineHandle overlay_pipeline;
+
+  // The scene's vertices, uploaded once by SetScene; null when it has none.
+  nvrhi::BufferHandle scene_vertices;
+  std::uint32_t scene_vertex_count = 0;
   Camera camera;
 
   // Each character's mesh (ADR-0042), flat-shaded in its own local space and
   // keyed by character name - set by SetCharacterMesh; empty until the first
   // call.
   CharacterVertices character_vertices;
-
-  // Rewritten every frame (see StreamedVertices): the remote players (lit, by
-  // raster_pass), the fight's effects (added to what is behind them, by
-  // effects_pass) and the overlay (over everything, by overlay_pass).
-  // frame_fence is signaled after every frame's submit, and
-  // region_fence_values holds, per region, the value signaled after the last
-  // frame drawn from it: ReadyRegion waits for that before a region is written
-  // - normally already reached, since that frame is kFramesInFlight back.
   StreamedVertices remote_vertices;
   StreamedVertices effect_vertices;
   StreamedVertices overlay_vertices;
-  Falcor::ref<Falcor::RasterPass> effects_pass;
-  Falcor::ref<Falcor::RasterPass> overlay_pass;
-  Falcor::ref<Falcor::Fence> frame_fence;
-  std::array<std::uint64_t, kFramesInFlight> region_fence_values{};
+
+  // Signaled after each frame's work, per frame region (FrameRegion): a frame
+  // waits on its region's before writing there or drawing, which keeps the CPU
+  // at most kFramesInFlight frames ahead.
+  std::array<nvrhi::EventQueryHandle, kFramesInFlight> frame_done;
   std::uint64_t frame_index = 0;
 
-  // Debug HUD (FPS, RTT) - see debug_hud.h. frame_rate is ticked once
-  // per RenderFrame; hud_stats carries what the caller supplies.
-  std::unique_ptr<DebugHud> debug_hud;
-  Falcor::FrameRate frame_rate;
-  DebugHudStats hud_stats;
-
-  // Render settings - fixed defaults for now (no in-app editor; use
-  // NVIDIA Nsight/Tracy for profiling instead).
-  Falcor::float4 clear_color{kDefaultClearColorChannel, kDefaultClearColorChannel, kDefaultClearColorChannel, 1.0F};
-  Falcor::RasterizerState::CullMode cull_mode = Falcor::RasterizerState::CullMode::None;
-  bool wireframe_enabled = false;
-  bool vsync_enabled = false;
-
-  Impl(const Config& config, input::EventSink& sink) : input_sink(sink) {
-    if (config.adapter == Adapter::kSoftware) {
-      throw std::runtime_error("Falcor's Renderer does not support the software adapter");
+  // size starts as the window's own, which Windows may have widened past
+  // config's.
+  Impl(const Config& config, input::EventSink& input_sink)
+      : window(OpenWindow(config)), size(FramebufferSize(*window)) {
+    ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "Creating the DXGI factory");
+    CreateDevice(ChooseAdapter(*factory.Get(), config.adapter).Get());
+    CreateSwapchain();
+    CreateFramebuffer();
+    commands = device->createCommandList();
+    CreatePipelines();
+    debug_hud = std::make_unique<DebugHud>(*window, *device);
+    for (nvrhi::EventQueryHandle& query : frame_done) {
+      query = device->createEventQuery();
     }
-    // Falcor::OSServices::start()/stop() are SampleApp-internal (not
-    // FALCOR_API-exported, so not linkable from outside Falcor.dll) -
-    // Window/Device construction below doesn't appear to depend on them.
-    Falcor::Threading::start();
+    ForwardInput(*window, input_sink);
+  }
 
-    // Requested explicitly rather than left at Type::Default, even though
-    // Falcor.lib is itself now built with FALCOR_HAS_VULKAN=OFF
-    // (cmake/patches/falcor.patch) so getDefaultDeviceType()
-    // could only ever resolve to D3D12 anyway - this documents the
-    // choice at the call site instead of relying on that patch being
-    // read. D3D12 is the only backend this renderer targets (ADR-0009).
-    Falcor::Device::Desc device_desc;
-    device_desc.type = Falcor::Device::Type::D3D12;
-    // Always requested, not gated on FALCOR_HAS_AFTERMATH here: Falcor's
-    // own Device ctor (Device.cpp) already handles the "compiled without
-    // Aftermath support" case itself (a logWarning, not a hard failure)
-    // when no Nsight Graphics install was found to source the SDK from
-    // (cmake/Aftermath.cmake) - nothing else to guard here.
-    device_desc.enableAftermath = true;
-    device = Falcor::make_ref<Falcor::Device>(device_desc);
+  ~Impl() { device->waitForIdle(); }
 
-    Falcor::Window::Desc window_desc;
-    window_desc.width = config.width;
-    window_desc.height = config.height;
-    window_desc.title = config.title;
-    window_desc.resizableWindow = true;
-    window = Falcor::Window::create(window_desc, this);
-    if (config.hidden) {
-      // Falcor's Window always shows itself, and has no hidden mode: its
-      // Minimized one iconifies the window, whose size GLFW then reports
-      // wrongly (Window::resize says so). Its ApiHandle is the HWND.
-      ShowWindow(static_cast<HWND>(window->getApiHandle()), SW_HIDE);
+  Impl(const Impl&) = delete;
+  Impl& operator=(const Impl&) = delete;
+  Impl(Impl&&) = delete;
+  Impl& operator=(Impl&&) = delete;
+
+  void CreateDevice(IDXGIAdapter* adapter) {
+    EnableGpuCrashDumps();
+    ThrowIfFailed(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d_device)),
+                  "Creating the D3D12 device");
+    AttachGpuCrashDumps(*d3d_device.Get());
+    const D3D12_COMMAND_QUEUE_DESC queue_desc{.Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                              .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
+                                              .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
+                                              .NodeMask = 0};
+    ThrowIfFailed(d3d_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&queue)), "Creating the command queue");
+    nvrhi::d3d12::DeviceDesc device_desc;
+    device_desc.errorCB = &messages;
+    device_desc.pDevice = d3d_device.Get();
+    device_desc.pGraphicsCommandQueue = queue.Get();
+    device = nvrhi::d3d12::createDevice(device_desc);
+  }
+
+  void CreateSwapchain() {
+    const DXGI_SWAP_CHAIN_DESC1 desc{.Width = size.width,
+                                     .Height = size.height,
+                                     .Format = nvrhi::d3d12::convertFormat(kSwapchainFormat),
+                                     .Stereo = FALSE,
+                                     .SampleDesc = {.Count = 1, .Quality = 0},
+                                     .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                                     .BufferCount = kFramesInFlight,
+                                     .Scaling = DXGI_SCALING_STRETCH,
+                                     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                                     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
+                                     .Flags = 0};
+    HWND hwnd = glfwGetWin32Window(window.get());
+    ComPtr<IDXGISwapChain1> swapchain1;
+    ThrowIfFailed(factory->CreateSwapChainForHwnd(queue.Get(), hwnd, &desc, nullptr, nullptr, &swapchain1),
+                  "Creating the swapchain");
+    // GLFW's window has no exclusive fullscreen, so neither does DXGI's Alt+Enter.
+    ThrowIfFailed(factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER), "Associating the window");
+    ThrowIfFailed(swapchain1.As(&swapchain), "Getting IDXGISwapChain3");
+    WrapSwapchainImages();
+  }
+
+  // The swapchain's images, as NVRHI textures of the swapchain's size.
+  void WrapSwapchainImages() {
+    const nvrhi::TextureDesc image_desc = nvrhi::TextureDesc()
+                                              .setWidth(size.width)
+                                              .setHeight(size.height)
+                                              .setFormat(kSwapchainFormat)
+                                              .setInitialState(nvrhi::ResourceStates::Present)
+                                              .setKeepInitialState(true)
+                                              .setDebugName("Swapchain image");
+    for (std::uint32_t i = 0; i < kFramesInFlight; ++i) {
+      ComPtr<ID3D12Resource> image;
+      ThrowIfFailed(swapchain->GetBuffer(i, IID_PPV_ARGS(&image)), "Getting a swapchain image");
+      swapchain_images.at(i) = device->createHandleForNativeTexture(nvrhi::ObjectTypes::D3D12_Resource,
+                                                                    nvrhi::Object(image.Get()), image_desc);
     }
-
-    RecreateSwapchain();
-    const auto size = window->getClientAreaSize();
-    CreateTargetFbo(size.x, size.y);
-    debug_hud = std::make_unique<DebugHud>(device, Falcor::uint2(size.x, size.y));
-    BuildRasterPass();
-    BuildEffectPasses();
-    // The StreamedVertices buffers are created lazily by their first Write
-    // instead, once the vertex count they're sized from is known.
-    frame_fence = device->createFence();
   }
 
-  ~Impl() {
-    device->wait();
-    Falcor::Threading::shutdown();
+  // The target and its depth, at size, and the framebuffer drawing into both.
+  void CreateFramebuffer() {
+    target = device->createTexture(TargetDesc(size.width, size.height));
+    depth = device->createTexture(DepthDesc(size.width, size.height));
+    framebuffer =
+        device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(target).setDepthAttachment(depth));
   }
 
-  void CreateTargetFbo(std::uint32_t width, std::uint32_t height) {
-    target_fbo = Falcor::Fbo::create2D(device, width, height, Falcor::ResourceFormat::BGRA8UnormSrgb,
-                                       Falcor::ResourceFormat::D32Float);
+  void PumpEvents() {
+    glfwPollEvents();
+    const Size client_area = FramebufferSize(*window);
+    if (client_area.width != 0 && client_area.height != 0) {
+      size = client_area;
+    }
   }
 
-  // Swapchain::Desc::enableVSync can only be set at construction (no
-  // runtime setter on Swapchain itself), so changing vsync_enabled means
-  // tearing down and recreating the whole swapchain - same as
-  // handleWindowSizeChange does for a size change.
-  void RecreateSwapchain() {
-    device->wait();
-    // The old swapchain's underlying DXGI swap chain is bound to the
-    // window's HWND; explicitly drop it (rather than letting the
-    // assignment below replace it, which would briefly construct the
-    // new one while the old one is still alive) so it's fully torn down
-    // before a second swap chain is created against the same HWND.
-    swapchain.reset();
-    // Dropping the ref above only *enqueues* the back buffers' GPU
-    // resources for release (Texture::~Texture() -> Device::
-    // releaseResource(), deferred until a later fence signal - see
-    // Device::executeDeferredReleases()) rather than freeing them on the
-    // spot. A second wait() signals the fence again and flushes that
-    // queue, so the old swap chain's DXGI resources are actually gone
-    // before creating a new one on the same HWND - without this,
-    // createSwapchain() fails with E_ACCESSDENIED.
-    device->wait();
-    const auto size = window->getClientAreaSize();
-    Falcor::Swapchain::Desc desc;
-    desc.format = Falcor::ResourceFormat::BGRA8UnormSrgb;
-    desc.width = size.x;
-    desc.height = size.y;
-    desc.imageCount = kFramesInFlight;
-    desc.enableVSync = vsync_enabled;
-    swapchain = Falcor::make_ref<Falcor::Swapchain>(device, desc, window->getApiHandle());
+  // Resizes the swapchain and the framebuffer to size. DXGI resizes only a
+  // swapchain whose images nothing holds, so this waits for the frames in
+  // flight and lets NVRHI drop what they held.
+  void Resize() {
+    device->waitForIdle();
+    device->runGarbageCollection();
+    for (nvrhi::TextureHandle& image : swapchain_images) {
+      image = nullptr;
+    }
+    ThrowIfFailed(swapchain->ResizeBuffers(kFramesInFlight, size.width, size.height, DXGI_FORMAT_UNKNOWN, 0),
+                  "Resizing the swapchain");
+    WrapSwapchainImages();
+    CreateFramebuffer();
   }
 
-  void RebuildRasterizerState() const {
-    auto rasterizer_desc = Falcor::RasterizerState::Desc().setCullMode(cull_mode).setFillMode(
-        wireframe_enabled ? Falcor::RasterizerState::FillMode::Wireframe : Falcor::RasterizerState::FillMode::Solid);
-    raster_pass->getState()->setRasterizerState(Falcor::RasterizerState::create(rasterizer_desc));
+  void SetCursorLocked(bool locked) const {
+    glfwSetInputMode(window.get(), GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    // Without raw motion, GLFW's disabled cursor still moves as the OS's
+    // pointer settings (acceleration) make it.
+    if (glfwRawMouseMotionSupported() == GLFW_TRUE) {
+      glfwSetInputMode(window.get(), GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
+    }
   }
 
-  // Replaces the drawn geometry with scene's, as one vertex buffer drawn in
-  // a single call. Nothing is touched if scene is invalid (the throw comes
-  // before any member is assigned).
+  // The pipelines, which all read Vertex and one PerFrameCB.
+  void CreatePipelines() {
+    per_frame = CreatePerFrame("PerFrameCB");
+    overlay_per_frame = CreatePerFrame("Overlay PerFrameCB");
+    const nvrhi::BindingLayoutHandle binding_layout =
+        device->createBindingLayout(nvrhi::BindingLayoutDesc()
+                                        .setVisibility(nvrhi::ShaderType::All)
+                                        .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)));
+    bindings = device->createBindingSet(
+        nvrhi::BindingSetDesc().addItem(nvrhi::BindingSetItem::ConstantBuffer(0, per_frame)), binding_layout);
+    overlay_bindings = device->createBindingSet(
+        nvrhi::BindingSetDesc().addItem(nvrhi::BindingSetItem::ConstantBuffer(0, overlay_per_frame)), binding_layout);
+
+    const nvrhi::ShaderHandle scene_vs = CreateShader(*device, nvrhi::ShaderType::Vertex, kSceneVs);
+    const nvrhi::ShaderHandle scene_ps = CreateShader(*device, nvrhi::ShaderType::Pixel, kScenePs);
+    const nvrhi::ShaderHandle effects_vs = CreateShader(*device, nvrhi::ShaderType::Vertex, kEffectsVs);
+    const nvrhi::ShaderHandle effects_ps = CreateShader(*device, nvrhi::ShaderType::Pixel, kEffectsPs);
+    const std::array<nvrhi::VertexAttributeDesc, 3> attributes = VertexAttributes();
+    const nvrhi::InputLayoutHandle input_layout =
+        device->createInputLayout(attributes.data(), static_cast<std::uint32_t>(attributes.size()), scene_vs);
+
+    const auto create = [&](nvrhi::IShader* vertex_shader, nvrhi::IShader* pixel_shader,
+                            const nvrhi::RenderState& state) {
+      nvrhi::GraphicsPipelineDesc desc;
+      desc.setInputLayout(input_layout)
+          .setVertexShader(vertex_shader)
+          .setPixelShader(pixel_shader)
+          .addBindingLayout(binding_layout)
+          .setRenderState(state);
+      return device->createGraphicsPipeline(desc, framebuffer->getFramebufferInfo());
+    };
+    lit_pipeline = create(scene_vs, scene_ps, UnculledState());
+    effects_pipeline = create(effects_vs, effects_ps, AdditiveState());
+    overlay_pipeline = create(effects_vs, effects_ps, OverlayState());
+  }
+
+  // A float4x4 of constants, rewritten every frame.
+  [[nodiscard]] nvrhi::BufferHandle CreatePerFrame(const char* name) const {
+    return device->createBuffer(nvrhi::BufferDesc()
+                                    .setByteSize(sizeof(math::Mat4))
+                                    .setIsConstantBuffer(true)
+                                    .setIsVolatile(true)
+                                    .setMaxVersions(kConstantVersions)
+                                    .setDebugName(name));
+  }
+
+  // Replaces the drawn geometry with scene's, as one vertex buffer drawn in a
+  // single call. Nothing is touched if scene is invalid (the throw comes before
+  // any member is assigned). Frames in flight keep drawing the previous scene's
+  // buffer, which NVRHI keeps alive until they are done.
   void UploadScene(const Scene& scene) {
     const std::vector<Vertex> vertices = BuildFlatShadedVertices(scene);
     if (vertices.size() > std::numeric_limits<std::uint32_t>::max()) {
       throw std::runtime_error("scene has too many vertices to draw");
     }
-    // Only the initial camera - a real caller overwrites this via SetCamera
-    // every frame from then on (see that method's doc comment).
+    // Only the initial camera: a real caller overwrites it with SetCamera every
+    // frame from then on.
     camera = scene.camera;
-    vertex_count = static_cast<std::uint32_t>(vertices.size());
+    scene_vertex_count = static_cast<std::uint32_t>(vertices.size());
     if (vertices.empty()) {
-      vao = nullptr;
+      scene_vertices = nullptr;
       return;
     }
-
-    // The previous scene's buffers may still be in flight on the GPU.
-    device->wait();
-    auto vertex_buffer = device->createBuffer(vertices.size() * sizeof(Vertex), Falcor::ResourceBindFlags::Vertex,
-                                              Falcor::MemoryType::DeviceLocal, vertices.data());
-
-    // Draw() sets the active Vao itself before every draw call (it alternates
-    // between this one and the StreamedVertices'), so there's nothing more to
-    // bind here.
-    vao = Falcor::Vao::create(Falcor::Vao::Topology::TriangleList, MakeVertexLayout(), {vertex_buffer});
+    const std::size_t byte_size = vertices.size() * sizeof(Vertex);
+    scene_vertices = device->createBuffer(nvrhi::BufferDesc()
+                                              .setByteSize(byte_size)
+                                              .setIsVertexBuffer(true)
+                                              .setInitialState(nvrhi::ResourceStates::VertexBuffer)
+                                              .setKeepInitialState(true)
+                                              .setDebugName("Scene vertices"));
+    commands->open();
+    commands->writeBuffer(scene_vertices, vertices.data(), byte_size);
+    commands->close();
+    device->executeCommandList(commands);
   }
 
-  // Builds character's local vertices from mesh - the same
-  // BuildFlatShadedVertices triangle expansion UploadScene uses, reused via
-  // a one-mesh Scene rather than duplicated. Nothing is touched if mesh is
-  // invalid (the throw comes before any member is assigned, same as
-  // UploadScene).
+  // Builds character's local vertices from mesh, as UploadScene does a scene's.
+  // Nothing is touched if mesh is invalid.
   void UploadCharacterMesh(const std::string& character, const SceneMesh& mesh) {
     std::vector<Vertex> vertices = BuildFlatShadedVertices(Scene{.meshes = {mesh}, .camera = {}});
     character_vertices.insert_or_assign(character, std::move(vertices));
   }
 
-  // This frame's region of every StreamedVertices, once the GPU has finished
-  // the last frame drawn from it - normally at once (see region_fence_values).
+  // Writes every remote player's vertices into this frame's region.
+  void UploadRemotePlayers(std::span<const RemotePlayer> remote_players) {
+    const std::uint32_t region = ReadyRegion();
+    remote_vertices.Write(*device, BuildRemoteVertices(remote_players, character_vertices), region);
+  }
+
+  // Writes the fight's effects into this frame's region, facing the camera as
+  // it is now.
+  void UploadCombatEffects(const CombatEffects& effects) {
+    const std::uint32_t region = ReadyRegion();
+    effect_vertices.Write(*device, BuildEffectVertices(effects, camera), region);
+  }
+
+  // Writes the overlay into this frame's region, sized for the frame's pixels:
+  // size's, which RenderFrame resizes the target to before drawing it.
+  void UploadOverlay(const Overlay& overlay) {
+    const std::uint32_t region = ReadyRegion();
+    overlay_vertices.Write(*device, BuildOverlayVertices(overlay, size.width, size.height), region);
+  }
+
+  // This frame's region of the per-frame upload buffers, once the GPU has
+  // finished the last frame drawn from it: normally at once, since that frame
+  // is kFramesInFlight back.
   std::uint32_t ReadyRegion() {
     const std::uint32_t region = FrameRegion(frame_index, kFramesInFlight);
-    frame_fence->wait(region_fence_values[region]);
+    device->waitEventQuery(frame_done.at(region));
     return region;
   }
 
-  // Records that the frame just submitted draws from its region, so the next
-  // write there waits for the GPU to finish it, and moves on to the next frame.
-  void EndFrame(Falcor::RenderContext* render_context) {
-    region_fence_values[FrameRegion(frame_index, kFramesInFlight)] = render_context->signal(frame_fence.get());
+  // World-to-clip transform of the current camera: the inverse of the camera's
+  // own placement, then a right-handed perspective projection onto D3D's depth
+  // range of 0 to 1.
+  [[nodiscard]] math::Mat4 ViewProjection() const {
+    const math::Mat4 camera_to_world = math::ToMat4(camera.position, camera.rotation, math::Vec3(1.0F));
+    const nvrhi::TextureDesc& desc = target->getDesc();
+    const float aspect = static_cast<float>(desc.width) / static_cast<float>(desc.height);
+    return glm::perspectiveRH_ZO(camera.vertical_fov, aspect, kNearPlane, kFarPlane) * math::Inverse(camera_to_world);
+  }
+
+  // Draws count vertices of buffer from first on, with pipeline and the
+  // constants it reads, if there are any.
+  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants, nvrhi::IBuffer* buffer,
+            std::uint32_t count, std::uint32_t first) const {
+    if (count == 0) {
+      return;
+    }
+    nvrhi::GraphicsState state;
+    state.setPipeline(pipeline)
+        .setFramebuffer(framebuffer)
+        .addBindingSet(constants)
+        .addVertexBuffer(nvrhi::VertexBufferBinding().setBuffer(buffer).setSlot(0).setOffset(0));
+    state.viewport.addViewportAndScissorRect(framebuffer->getFramebufferInfo().getViewport());
+    commands->setGraphicsState(state);
+    commands->draw(nvrhi::DrawArguments().setVertexCount(count).setStartVertexLocation(first));
+  }
+
+  // Draws the region of vertices the last frame wrote.
+  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants, const StreamedVertices& vertices) const {
+    Draw(pipeline, constants, vertices.buffer, vertices.count, vertices.FirstVertex());
+  }
+
+  void RenderFrame() {
+    const nvrhi::TextureDesc& target_desc = target->getDesc();
+    if (target_desc.width != size.width || target_desc.height != size.height) {
+      Resize();
+    }
+
+    nvrhi::IEventQuery* done = frame_done.at(ReadyRegion());
+    device->resetEventQuery(done);
+    const UINT image_index = swapchain->GetCurrentBackBufferIndex();
+
+    commands->open();
+    commands->clearTextureFloat(target, nvrhi::AllSubresources, ClearColor());
+    commands->clearDepthStencilTexture(depth, nvrhi::AllSubresources, true, 1.0F, false, 0);
+    const math::Mat4 view_projection = ViewProjection();
+    commands->writeBuffer(per_frame, &view_projection, sizeof(view_projection));
+    // Volatile constants last one command list, so even the overlay's constant
+    // identity is written in every frame's.
+    const math::Mat4 identity(1.0F);
+    commands->writeBuffer(overlay_per_frame, &identity, sizeof(identity));
+    Draw(lit_pipeline, bindings, scene_vertices, scene_vertex_count, 0);
+    Draw(lit_pipeline, bindings, remote_vertices);
+    // After everything opaque, so the depth buffer hides the effects behind it.
+    Draw(effects_pipeline, bindings, effect_vertices);
+    Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
+    debug_hud->Render(*commands, *framebuffer, hud_stats);
+    commands->copyTexture(swapchain_images.at(image_index), nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
+    commands->close();
+    device->executeCommandList(commands);
+    device->setEventQuery(done, nvrhi::CommandQueue::Graphics);
+
+    // DXGI_STATUS_OCCLUDED, for a hidden or minimized window, is a success. A
+    // GPU fault shows here first, and its crash dump is written before the
+    // throw can end the process.
+    const HRESULT presented = swapchain->Present(0, 0);
+    if (IsDeviceLost(presented)) {
+      AwaitGpuCrashDump();
+    }
+    ThrowIfFailed(presented, "Presenting");
+    device->runGarbageCollection();
     ++frame_index;
   }
 
-  // World-to-clip transform of the current camera: the inverse of the
-  // camera's own placement, then a right-handed perspective projection.
-  [[nodiscard]] Falcor::float4x4 ViewProjection() const {
-    const math::Mat4 camera_to_world = math::ToMat4(camera.position, camera.rotation, math::Vec3(1.0F));
-    const Falcor::float4x4 view = ToFalcor(math::Inverse(camera_to_world));
-    const float aspect = static_cast<float>(target_fbo->getWidth()) / static_cast<float>(target_fbo->getHeight());
-    const Falcor::float4x4 projection = Falcor::math::perspective(camera.vertical_fov, aspect, 0.1F, 1000.0F);
-    return Falcor::math::mul(projection, view);
-  }
-
-  void BuildRasterPass() {
-    raster_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Renderer.3d.slang", "vsMain", "psMain");
-
-    // Cooked meshes carry their authored winding through the cooker's
-    // handedness fix (ADR-0032), but nothing has verified it end to end
-    // yet, so cull_mode defaults to None rather than risk a scene
-    // rendering as invisible from every angle.
-    RebuildRasterizerState();
-  }
-
-  // The fight's effects glow: each adds its light to what is behind it, and is
-  // hidden by what is in front without hiding anything itself. The overlay is
-  // written over everything. Neither is culled: a billboard's winding depends
-  // on how it was turned.
-  void BuildEffectPasses() {
-    const auto no_culling = Falcor::RasterizerState::create(
-        Falcor::RasterizerState::Desc().setCullMode(Falcor::RasterizerState::CullMode::None));
-
-    effects_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Effects.3d.slang", "vsMain", "psMain");
-    Falcor::BlendState::Desc additive;
-    additive.setRtBlend(0, true).setRtParams(0, Falcor::BlendState::BlendOp::Add, Falcor::BlendState::BlendOp::Add,
-                                             Falcor::BlendState::BlendFunc::One, Falcor::BlendState::BlendFunc::One,
-                                             Falcor::BlendState::BlendFunc::One, Falcor::BlendState::BlendFunc::One);
-    effects_pass->getState()->setBlendState(Falcor::BlendState::create(additive));
-    effects_pass->getState()->setDepthStencilState(Falcor::DepthStencilState::create(
-        Falcor::DepthStencilState::Desc().setDepthEnabled(true).setDepthWriteMask(false)));
-    effects_pass->getState()->setRasterizerState(no_culling);
-
-    overlay_pass = Falcor::RasterPass::create(device, "Augusta/Renderer/Effects.3d.slang", "vsMain", "psMain");
-    overlay_pass->getState()->setDepthStencilState(Falcor::DepthStencilState::create(
-        Falcor::DepthStencilState::Desc().setDepthEnabled(false).setDepthWriteMask(false)));
-    overlay_pass->getState()->setRasterizerState(no_culling);
-  }
-
-  // Points every pass at target_fbo and at the frame's camera, the same for
-  // the whole frame; the overlay is already in clip space.
-  void BindPasses() const {
-    const Falcor::float4x4 view_projection = ViewProjection();
-    raster_pass->getRootVar()["PerFrameCB"]["gViewProj"] = view_projection;
-    raster_pass->getState()->setFbo(target_fbo);
-    effects_pass->getRootVar()["PerFrameCB"]["gViewProj"] = view_projection;
-    effects_pass->getState()->setFbo(target_fbo);
-    overlay_pass->getRootVar()["PerFrameCB"]["gViewProj"] = Falcor::float4x4::identity();
-    overlay_pass->getState()->setFbo(target_fbo);
-  }
-
-  void Draw() {
-    auto* render_context = device->getRenderContext();
-
-    {
-      // Named to match the FALCOR_PROFILE scopes below (GPU-side, read by
-      // Falcor's own Profiler/ProfilerUI) - these are the CPU-side
-      // command-recording durations for the same spans, visible in
-      // Nsight Systems, so the two can be lined up on one timeline.
-      const nvtx3::scoped_range frame_range{"Frame"};
-      FALCOR_PROFILE(render_context, "Frame");
-
-      {
-        const nvtx3::scoped_range clear_range{"Clear"};
-        FALCOR_PROFILE(render_context, "Clear");
-        render_context->clearFbo(target_fbo.get(), clear_color, 1.0F, 0, Falcor::FboAttachmentType::All);
-      }
-
-      BindPasses();
-
-      if (vertex_count > 0) {
-        const nvtx3::scoped_range scene_range{"Scene"};
-        FALCOR_PROFILE(render_context, "Scene");
-
-        raster_pass->getState()->setVao(vao);
-        raster_pass->draw(render_context, vertex_count, 0);
-      }
-
-      {
-        const nvtx3::scoped_range remote_range{"RemotePlayers"};
-        FALCOR_PROFILE(render_context, "RemotePlayers");
-        remote_vertices.Draw(*raster_pass, render_context);
-      }
-
-      // After everything opaque, so the depth buffer hides the effects behind it.
-      {
-        const nvtx3::scoped_range effects_range{"CombatEffects"};
-        FALCOR_PROFILE(render_context, "CombatEffects");
-        effect_vertices.Draw(*effects_pass, render_context);
-      }
-
-      {
-        const nvtx3::scoped_range overlay_range{"Overlay"};
-        FALCOR_PROFILE(render_context, "Overlay");
-        overlay_vertices.Draw(*overlay_pass, render_context);
-      }
+  [[nodiscard]] CapturedFrame CaptureFrame() const {
+    if (frame_index == 0) {
+      return {};
     }
+    const nvrhi::TextureDesc& desc = target->getDesc();
+    const nvrhi::StagingTextureHandle staging = device->createStagingTexture(desc, nvrhi::CpuAccessMode::Read);
+    commands->open();
+    commands->copyTexture(staging, nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
+    commands->close();
+    device->executeCommandList(commands);
+    device->waitForIdle();
 
-    device->getProfiler()->endFrame(render_context);
-
-    frame_rate.newFrame();
-    debug_hud->Render(render_context, target_fbo,
-                      {.average_frame_time_s = frame_rate.getAverageFrameTime(),
-                       .net = hud_stats.net,
-                       .delta_time_s = static_cast<float>(frame_rate.getLastFrameTime())});
-  }
-
-  void handleWindowSizeChange() override {
-    const auto size = window->getClientAreaSize();
-    if (size.x == 0 || size.y == 0) {
-      // Minimized - Vulkan/D3D12 both reject a zero-size swapchain.
-      return;
+    std::size_t row_pitch = 0;
+    const auto* mapped = static_cast<const std::uint8_t*>(
+        device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &row_pitch));
+    if (mapped == nullptr) {
+      throw std::runtime_error("Mapping the captured frame failed");
     }
-    device->wait();
-    swapchain->resize(size.x, size.y);
-    CreateTargetFbo(size.x, size.y);
-    debug_hud->OnWindowResize(size.x, size.y);
-  }
-
-  void handleRenderFrame() override {
-    // Unused: Window only invokes this from its own blocking msgLoop(),
-    // which this Renderer never calls (see the file header comment) -
-    // RenderFrame() below is called directly by ClientRuntime instead.
-  }
-
-  void handleKeyboardEvent(const Falcor::KeyboardEvent& event) override {
-    input::KeyState state;
-    if (event.type == Falcor::KeyboardEvent::Type::KeyPressed) {
-      state = input::KeyState::kPressed;
-    } else if (event.type == Falcor::KeyboardEvent::Type::KeyReleased) {
-      state = input::KeyState::kReleased;
-    } else {
-      return;
+    CapturedFrame frame{.width = desc.width, .height = desc.height, .pixels = {}};
+    const std::size_t row_size = std::size_t{desc.width} * kBytesPerPixel;
+    frame.pixels.resize(row_size * desc.height);
+    for (std::uint32_t row = 0; row < desc.height; ++row) {
+      std::memcpy(&frame.pixels[row * row_size], mapped + (row * row_pitch), row_size);
     }
-    if (const auto key = MapKey(event.key)) {
-      input_sink.OnKeyEvent({.key = *key, .state = state});
-    }
+    device->unmapStagingTexture(staging);
+    return frame;
   }
-
-  void handleMouseEvent(const Falcor::MouseEvent& event) override {
-    switch (event.type) {
-      case Falcor::MouseEvent::Type::Move:
-        input_sink.OnMouseMoveEvent({.x = event.screenPos.x, .y = event.screenPos.y});
-        return;
-      case Falcor::MouseEvent::Type::ButtonDown:
-      case Falcor::MouseEvent::Type::ButtonUp: {
-        const auto button = MapMouseButton(event.button);
-        if (!button) {
-          return;
-        }
-        const auto state =
-            event.type == Falcor::MouseEvent::Type::ButtonDown ? input::KeyState::kPressed : input::KeyState::kReleased;
-        input_sink.OnKeyEvent({.key = *button, .state = state});
-        return;
-      }
-      default:
-        return;
-    }
-  }
-
-  void handleGamepadEvent(const Falcor::GamepadEvent& /*event*/) override {}
-  void handleGamepadState(const Falcor::GamepadState& /*state*/) override {}
-  void handleDroppedFile(const std::filesystem::path& /*path*/) override {}
 };
 
 Renderer::Renderer(const Config& config, input::EventSink& input_sink)
@@ -584,51 +724,15 @@ Renderer::Renderer(const Config& config, input::EventSink& input_sink)
 
 Renderer::~Renderer() = default;
 
-void Renderer::PumpEvents() { impl_->window->pollForEvents(); }
+void Renderer::PumpEvents() { impl_->PumpEvents(); }
 
-bool Renderer::ShouldClose() const { return impl_->window->shouldClose(); }
+bool Renderer::ShouldClose() const { return glfwWindowShouldClose(impl_->window.get()) == GLFW_TRUE; }
 
-Size Renderer::GetSize() const {
-  const auto size = impl_->window->getClientAreaSize();
-  return {.width = size.x, .height = size.y};
-}
+Size Renderer::GetSize() const { return impl_->size; }
 
-void Renderer::RenderFrame() {
-  impl_->Draw();
+void Renderer::RenderFrame() { impl_->RenderFrame(); }
 
-  auto* render_context = impl_->device->getRenderContext();
-  const int image_index = impl_->swapchain->acquireNextImage();
-  if (image_index >= 0) {
-    const Falcor::Texture* swapchain_image = impl_->swapchain->getImage(image_index).get();
-    render_context->copyResource(swapchain_image, impl_->target_fbo->getColorTexture(0).get());
-    render_context->resourceBarrier(swapchain_image, Falcor::Resource::State::Present);
-  }
-  // Submitted even when not presenting, so the fence EndFrame signals comes
-  // after this frame's draws.
-  render_context->submit();
-  impl_->EndFrame(render_context);
-  if (image_index < 0) {
-    // Swapchain out of date (e.g. mid-resize) - skip presenting this frame.
-    return;
-  }
-
-  impl_->swapchain->present();
-  impl_->device->endFrame();
-}
-
-CapturedFrame Renderer::CaptureFrame() {
-  if (impl_->frame_index == 0) {
-    return {};
-  }
-  const Falcor::ref<Falcor::Texture> color = impl_->target_fbo->getColorTexture(0);
-  CapturedFrame frame{.width = color->getWidth(), .height = color->getHeight(), .pixels = {}};
-  // target_fbo is BGRA, which readTextureSubresource returns as it is.
-  frame.pixels = impl_->device->getRenderContext()->readTextureSubresource(color.get(), 0);
-  for (std::size_t i = 0; i + 3 < frame.pixels.size(); i += 4) {
-    std::swap(frame.pixels[i], frame.pixels[i + 2]);
-  }
-  return frame;
-}
+CapturedFrame Renderer::CaptureFrame() { return impl_->CaptureFrame(); }
 
 void Renderer::SetScene(const Scene& scene) { impl_->UploadScene(scene); }
 
@@ -639,24 +743,15 @@ void Renderer::SetCharacterMesh(const std::string& character, const SceneMesh& m
 }
 
 void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
-  const std::uint32_t region = impl_->ReadyRegion();
-  impl_->remote_vertices.Write(*impl_->device, BuildRemoteVertices(remote_players, impl_->character_vertices), region);
+  impl_->UploadRemotePlayers(remote_players);
 }
 
-void Renderer::SetCombatEffects(const CombatEffects& effects) {
-  const std::uint32_t region = impl_->ReadyRegion();
-  impl_->effect_vertices.Write(*impl_->device, BuildEffectVertices(effects, impl_->camera), region);
-}
+void Renderer::SetCombatEffects(const CombatEffects& effects) { impl_->UploadCombatEffects(effects); }
 
-void Renderer::SetOverlay(const Overlay& overlay) {
-  const std::uint32_t region = impl_->ReadyRegion();
-  const Falcor::ref<Falcor::Fbo>& target = impl_->target_fbo;
-  impl_->overlay_vertices.Write(*impl_->device, BuildOverlayVertices(overlay, target->getWidth(), target->getHeight()),
-                                region);
-}
+void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay); }
+
+void Renderer::SetCursorLocked(bool locked) { impl_->SetCursorLocked(locked); }
 
 void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
-
-void Renderer::SetCursorLocked(bool locked) { impl_->window->setCursorLocked(locked); }
 
 }  // namespace augusta::renderer

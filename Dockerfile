@@ -66,7 +66,7 @@ RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
 
 # The build scripts come in only now, after the dependencies: copied before
 # them, a CMake-only change rebuilt every vcpkg package. vcpkg reads none of
-# cmake/ (its patches are Falcor's, the Windows-only renderer's).
+# cmake/.
 COPY cmake cmake
 COPY CMakeLists.txt CMakePresets.json ./
 COPY src src

@@ -11,7 +11,7 @@ a binary never waits on the test suite.
 Linux (the server and the shared core, including the sanitizer and fuzzing
 builds) compiles with clang, so libFuzzer, `llvm-cov`, and the sanitizers come
 from one toolchain, the same one `clang-tidy` and `clang-format` already are.
-Windows compiles with MSVC `cl`: Falcor supports only MSVC (ADR-0009), and
-clang-cl was rejected for that reason (see ENGINEERING.md, Developer
-Environment). The shared core therefore builds with two compilers, which the
-NFR-03 golden trajectories compare (ADR-0013).
+Windows compiles with MSVC `cl`, which vcpkg's `x64-windows` triplet and
+NVIDIA's SDKs are built and tested with; clang-cl was rejected for that reason
+(see ENGINEERING.md, Developer Environment). The shared core therefore builds
+with two compilers, which the NFR-03 golden trajectories compare (ADR-0013).

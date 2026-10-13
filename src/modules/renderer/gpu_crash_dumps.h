@@ -4,7 +4,7 @@
 #include <d3d12.h>
 
 /// \file
-/// GPU crash dumps for the NVRHI Renderer's D3D12 device (ADR-0059), with Nsight
+/// GPU crash dumps for the Renderer's D3D12 device (ADR-0059), with Nsight
 /// Aftermath when the build found its SDK (cmake/Aftermath.cmake); without it,
 /// each of these does nothing. A dump is a .nv-gpudmp, which Nsight Graphics
 /// opens, written beside the executable. Aftermath that fails to start (no

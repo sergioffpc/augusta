@@ -7,9 +7,9 @@
 
 /// \file
 /// Which input::Key a GLFW key or mouse button is, and which KeyState a GLFW
-/// action is: what nvrhi_renderer.cpp's window callbacks push to
-/// input::EventSink (ADR-0059), the same keys Falcor's Renderer maps. Kept apart
-/// from the window, which needs a display, so the mapping is tested on its own.
+/// action is: what renderer.cpp's window callbacks push to input::EventSink
+/// (ADR-0059). Kept apart from the window, which needs a display, so the
+/// mapping is tested on its own.
 /// Private to the module, like vertices.h.
 namespace augusta::renderer {
 

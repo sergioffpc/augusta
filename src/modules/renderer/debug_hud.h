@@ -1,44 +1,44 @@
 #ifndef AUGUSTA_RENDERER_DEBUG_HUD_H_
 #define AUGUSTA_RENDERER_DEBUG_HUD_H_
 
-#include <cstdint>
-#include <memory>
-#include <optional>
-
-#include <Falcor.h>
-#include <Utils/UI/Gui.h>
+#include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <nvrhi/nvrhi.h>
 
 #include "augusta/renderer.h"
+#include "debug_hud_text.h"
+#include "imgui_renderer.h"
 
 /// \file
-/// The renderer's debug HUD, private to the module: a small always-on readout of
-/// frame time and connection quality, drawn as green text over the frame through
-/// Falcor's own ImGui wrapper (Falcor::Gui). System metrics only, never gameplay
-/// state; frame capture, profiling and render-state inspection are Nsight's. It
-/// owns every ImGui concern, so Renderer::Impl only hands it the numbers.
+/// The Renderer's debug HUD (ADR-0059), private to the module: its line
+/// (debug_hud_text.h) as green text in the frame's top left, drawn with Dear
+/// ImGui through ImGuiRenderer. System metrics only, never gameplay state. It owns
+/// every ImGui concern, so Renderer::Impl only hands it the numbers.
 namespace augusta::renderer {
 
 class DebugHud final {
  public:
-  struct Stats {
-    /// Seconds per frame, averaged over Falcor::FrameRate's window.
-    double average_frame_time_s = 0.0;
-    /// Connection numbers, if connected.
-    std::optional<DebugHudNetStats> net;
-    /// Seconds since the previous frame (Falcor::Gui::render's own ImGui
-    /// delta-time parameter).
-    float delta_time_s = 0.0F;
-  };
+  /// Installs ImGui's GLFW callbacks on window. They chain to the callbacks
+  /// already installed, so make this after the Renderer's own: input still
+  /// reaches them. window and device must outlive this HUD.
+  DebugHud(GLFWwindow& window, nvrhi::IDevice& device);
+  ~DebugHud();
 
-  DebugHud(const Falcor::ref<Falcor::Device>& device, Falcor::uint2 window_size);
+  DebugHud(const DebugHud&) = delete;
+  DebugHud& operator=(const DebugHud&) = delete;
+  DebugHud(DebugHud&&) = delete;
+  DebugHud& operator=(DebugHud&&) = delete;
 
-  /// Draws the HUD into target_fbo. Call after the scene is drawn.
-  void Render(Falcor::RenderContext* render_context, const Falcor::ref<Falcor::Fbo>& target_fbo, const Stats& stats);
-
-  void OnWindowResize(std::uint32_t width, std::uint32_t height);
+  /// Records the HUD into commands, over framebuffer's contents. Call once a
+  /// frame, after the scene: each call ends a frame for the FPS it reads.
+  void Render(nvrhi::ICommandList& commands, nvrhi::IFramebuffer& framebuffer, const DebugHudStats& stats);
 
  private:
-  std::unique_ptr<Falcor::Gui> gui_;
+  // Its own, so another ImGui user in the process keeps its state. Made, with
+  // the HUD's font, before renderer_ uploads the font.
+  ImGuiContext* context_;
+  ImGuiRenderer renderer_;
+  FrameTimeWindow frame_times_;
 };
 
 }  // namespace augusta::renderer

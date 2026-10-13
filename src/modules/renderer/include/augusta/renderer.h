@@ -12,12 +12,10 @@
 #include "augusta/math.h"
 
 /// \file
-/// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
-/// by the Windows client. It also owns the client's single OS window:
-/// Falcor fuses window creation, GPU device, and swapchain into one object
-/// (Falcor::SampleApp) rather than offering them as separable pieces, so
-/// there is no clean seam to split a separate augusta::window module out
-/// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
+/// augusta::renderer draws through NVIDIA's NVRHI on D3D12 (ADR-0059), used
+/// exclusively by the Windows client. It also owns the client's single OS
+/// window, a GLFW one: there is no separate augusta::window module
+/// (ADR-0059). The window/device-event vocabulary (Key, KeyEvent, EventSink,
 /// ...) lives in augusta::input instead, even though Renderer is the one
 /// that pushes those events - see input.h's header comment for why the
 /// dependency has to run this direction and not the other.
@@ -27,7 +25,7 @@
 /// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
 /// thread at a fixed rate decoupled from how often a frame is actually
 /// presented on the Main/Render thread. PumpEvents just drains the
-/// OS/Falcor event queue (cheap, safe to call often, e.g. once per
+/// OS's event queue (cheap, safe to call often, e.g. once per
 /// Prediction tick's worth of wall time even though it runs on the
 /// Main/Render thread); RenderFrame does the actual GPU work and should be
 /// called at the app's presentation rate instead. ClientRuntime's Run()
@@ -42,11 +40,6 @@
 /// (SetOverlay): the Presentation State it consumes (ADR-0024), drawn with
 /// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
 /// weapon model, and skeletal animation.
-///
-/// Two libraries implement this header, and an executable links one of them:
-/// augusta_renderer on Falcor, which augustac links, and augusta_renderer_nvrhi
-/// on NVRHI, which replaces it (ADR-0059) and so far draws only the scene and
-/// the remote players.
 namespace augusta::renderer {
 
 /// Default initial client-area size, in pixels (see Config::width/height).
@@ -58,7 +51,7 @@ enum class Adapter : std::uint8_t {
   /// The system's default GPU.
   kHardware,
   /// WARP, Windows' software rasterizer: for a test on a machine with no GPU,
-  /// such as CI's runner. Falcor's Renderer does not support it.
+  /// such as CI's runner.
   kSoftware,
 };
 
@@ -72,7 +65,7 @@ struct Config {
   std::uint32_t height = kDefaultHeight;
   Adapter adapter = Adapter::kHardware;
   /// True to hide the window, for a test that only reads frames back
-  /// (CaptureFrame). Falcor's Renderer shows it for a moment first.
+  /// (CaptureFrame).
   bool hidden = false;
 };
 
@@ -269,11 +262,10 @@ class Renderer {
   /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
   /// call once every RenderFrame. Draws every instance it is given: how many
   /// players there can be is the protocol's business, not the renderer's. The
-  /// buffer grows (with one GPU wait, on Falcor) only when a call needs more
-  /// room than any before it, so a steady player count never waits or
-  /// allocates. From the Main/Render
-  /// thread. An empty span draws nothing - how a player who left disappears; a
-  /// player whose character has no mesh is skipped.
+  /// buffer grows only when a call needs more room than any before it, so a
+  /// steady player count never allocates. From the Main/Render thread. An
+  /// empty span draws nothing - how a player who left disappears; a player
+  /// whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   /// Replaces the drawn tracers, impacts and muzzle flashes, each turned to
@@ -292,10 +284,9 @@ class Renderer {
   /// move events keep reporting a position that never stops at the window
   /// edge (as opposed to the free OS cursor a menu/UI would need - no such
   /// UI exists yet, so callers enable this once and leave it on).
-  /// Idempotent. Falcor exposes no such hook itself (ADR-0009);
-  /// cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
-  /// GLFW's cursor in its disabled mode - GLFW itself releases the capture
-  /// while the window is out of focus and takes it again when it regains it.
+  /// Idempotent. GLFW's disabled cursor, with raw mouse motion where the
+  /// system has it: GLFW itself releases the capture while the window is out
+  /// of focus and takes it again when it regains it.
   void SetCursorLocked(bool locked);
 
   /// Updates the values the debug HUD shows, from the Main/Render

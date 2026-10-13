@@ -23,14 +23,13 @@
 /// to), so this module cannot also need Renderer's header (to implement
 /// something declared there) without a circular module dependency. Since
 /// these shapes are conceptually input's vocabulary anyway (not a
-/// rendering concern - Renderer only sees them because Falcor happens to
-/// fuse window/device delivery with the GPU device it also owns, see
-/// ADR-0009), the dependency runs one way: Renderer depends on Input, not
-/// the reverse. augusta::input::Input is the sole implementation of
-/// EventSink; Renderer pushes events to it from the Main/Render thread as
-/// they occur, and Input is responsible for the thread-safe accumulation
-/// until the Prediction thread - a different thread, on the server's fixed
-/// tick rate (ADR-0005) - samples it.
+/// rendering concern - Renderer only sees them because it owns the window
+/// they arrive through, see ADR-0059), the dependency runs one way: Renderer
+/// depends on Input, not the reverse. augusta::input::Input is the sole
+/// implementation of EventSink; Renderer pushes events to it from the
+/// Main/Render thread as they occur, and Input is responsible for the
+/// thread-safe accumulation until the Prediction thread - a different thread,
+/// on the server's fixed tick rate (ADR-0005) - samples it.
 ///
 /// The Command it samples lives in the shared core (augusta::command), not
 /// here: the server screens, queues and simulates Commands but never samples
@@ -39,8 +38,8 @@ namespace augusta::input {
 
 /// A physical key or mouse button: what a keymap binds a Control to, named in
 /// augustac.yaml by NameOf/KeyNamed. Mouse buttons are keys here so a control
-/// can be bound to either. The engine's own names, not Falcor's: the Renderer
-/// maps Falcor's keys onto these (ADR-0009).
+/// can be bound to either. The engine's own names, not GLFW's: the Renderer
+/// maps GLFW's keys onto these (ADR-0059).
 enum class Key {
   kA,
   kB,
@@ -184,13 +183,13 @@ struct KeyEvent {
 /// The cursor's position within the client area, in pixels, at the time
 /// of one Move event. (0, 0) is the top-left corner. Carries an absolute
 /// position, not a delta - Input computes a delta from consecutive events
-/// itself, the same way Falcor's own MouseEvent::Move works underneath.
+/// itself.
 struct MouseMoveEvent {
   float x = 0.0F;
   float y = 0.0F;
 };
 
-/// Receives keyboard/mouse events as Renderer forwards them from Falcor,
+/// Receives keyboard/mouse events as Renderer forwards them from its window,
 /// on the Main/Render thread. Input is the only implementation; Renderer
 /// holds a reference to one, supplied at construction, and never queries
 /// it back - purely a push destination. The referenced EventSink must

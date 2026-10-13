@@ -1,10 +1,9 @@
 # Shading Language: Slang
 
-Shaders are authored in Slang (Apache 2.0), already Falcor's default shader
-compiler and a transitive dependency. This formalizes it as an explicit,
-deliberate choice rather than an implicit side effect of picking Falcor.
+Shaders are authored in Slang (Apache 2.0), an explicit, deliberate choice of
+shading language independent of the renderer's API.
 
 ## Consequences
 
-Open consideration: pin to Falcor's vendored Slang version, or take an
-independent/newer version if a future need arises.
+Shaders are compiled at build time by `slangc` from vcpkg's `shader-slang`
+(ADR-0059), so its version is the one the vcpkg baseline pins (ADR-0025).

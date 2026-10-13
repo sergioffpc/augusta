@@ -37,8 +37,8 @@ unused but keeps a Linux client possible. The alternatives weighed:
 - **Debug HUD.** Dear ImGui from vcpkg, with its GLFW binding, drawn by a small
   ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace font,
   JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
-  with its licence and embedded in the executable at build time. Both Renderers
-  draw the same text, from code free of any GPU API.
+  with its licence and embedded in the executable at build time. Its text comes
+  from code free of any GPU API.
 - **Aftermath.** Optional, autodetected from an installed Nsight Graphics as
   before, and attached to the D3D12 device NVRHI exposes.
 - **Dropped.** The D3D12 Agility SDK, NVAPI, packman and Falcor's Python.
@@ -49,8 +49,6 @@ unused but keeps a Linux client possible. The alternatives weighed:
 
 ## Consequences
 
-The NVRHI Renderer is its own library target, `augusta_renderer_nvrhi`, which
-`augustac` links. The client's zip (ADR-0058) and SBOM hold nothing of Falcor's.
-Falcor's Renderer is built only on request (`AUGUSTA_FALCOR`), linked by
-nothing, until Falcor is removed from the repository; the two are never a
-runtime choice. Published `falcor-*` releases stay as they are.
+The Renderer is the library target `augusta_renderer`, which `augustac` links.
+Nothing of Falcor's is in the repository, the client's zip (ADR-0058) or its
+SBOM. Published `falcor-*` releases stay as they are.

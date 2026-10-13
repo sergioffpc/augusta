@@ -15,7 +15,7 @@
 #include "frame_mapping.h"
 
 // Unit tests for the conversions ClientRuntime makes at its edges. Links no
-// Falcor or window: they only use renderer.h's plain types.
+// GPU or window: they only use renderer.h's plain types.
 namespace {
 
 using augusta::client::CharactersOf;

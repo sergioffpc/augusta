@@ -183,7 +183,8 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 ## Out of scope
 
 - Rendering, audio, and the client as a whole are validated by eye and ear, with
-  no written checklist; CI's Windows runners have no GPU for Falcor.
+  no written checklist. CI's Windows runners have no GPU: the Renderer's smoke
+  test draws on WARP (ADR-0059), and checks only that it draws.
 
 ## Considered Options
 

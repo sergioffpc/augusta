@@ -7,22 +7,14 @@ document for every port it installs (share/<port>/vcpkg.spdx.json); this joins
 their port packages, each with its vcpkg purl, under one package for the
 executable. It lists every port the manifest installed for the triplet, test
 and build-tool ports included - the manifest has one dependency list for
-every target. A dependency vcpkg doesn't provide (a submodule: Falcor, NVTX)
-is named with --git-package, at its checked-out commit.
-
-The client ships Falcor's own dependencies beside it (ADR-0058), which
---falcor names from the Falcor checkout: every packman package of its
-dependencies.xml, every FetchPackage URL of its external/CMakeLists.txt, and
-the ports of the vcpkg tree its packman bundle is (deps under
---falcor-packman, the checkout's external/packman unless a prebuilt Falcor's
-packman/ holds it: the build's FALCOR_PACKMAN_DIR). --msvc-runtime names the
-MSVC runtime the client bundles, at the version of its vcruntime140.dll.
+every target. A dependency vcpkg doesn't provide (a submodule: NVTX) is named
+with --git-package, at its checked-out commit. --msvc-runtime names the MSVC
+runtime the client bundles (ADR-0058), at the version of its vcruntime140.dll.
 
   scripts/vcpkg-sbom.py --name augustad --version v1.0.0 \
       --repo https://github.com/owner/augusta --commit <commit> \
       build/x64-linux/vcpkg_installed/x64-linux > augustad.spdx.json
-  scripts/vcpkg-sbom.py --name augustac ... --falcor third_party/falcor \
-      --falcor-packman <FALCOR_PACKMAN_DIR> \
+  scripts/vcpkg-sbom.py --name augustac ... --git-package third_party/nvtx \
       --msvc-runtime <staged>/bin/vcruntime140.dll \
       build/x64-windows/vcpkg_installed/x64-windows > augustac.spdx.json
 """
@@ -34,7 +26,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
 _NOASSERTION = "NOASSERTION"
 # The license and copyright fields of a package nothing here makes a claim
@@ -47,20 +38,6 @@ _UNASSERTED = {
 # vcpkg writes this for a port with no license, but never declares it, which
 # makes the document invalid.
 _VCPKG_NO_LICENSE = "LicenseRef-vcpkg-null"
-# The packman platform of the client, the one executable Falcor is in.
-_PACKMAN_PLATFORM = "windows-x86_64"
-# Where a packman dependency the build links is put; Falcor's tools and sample
-# media go elsewhere, and ship in no executable.
-_PACKMAN_LINKED = "external/packman/"
-# The packman dependencies the build links but the client does not ship: the
-# vcpkg tree whose ports are listed one by one, and debug builds.
-_PACKMAN_UNSHIPPED = {"falcor_dependencies", "nv-usd-debug"}
-# A FetchPackage URL's version: a release's number (v1.8.2505, 1.717.0-preview,
-# v310.1.0.zip), or the commit an archive is of.
-_URL_VERSION = re.compile(
-    r"/v?(\d+(?:\.\d+)+(?:-[A-Za-z][\w.]*)?)(?:\.zip)?(?=/|$)"
-    r"|/([0-9a-f]{40})\.zip$"
-)
 
 
 def spdx_id(*parts):
@@ -68,18 +45,15 @@ def spdx_id(*parts):
     return "SPDXRef-" + re.sub(r"[^A-Za-z0-9.-]", "-", "-".join(parts))
 
 
-def port_packages(installed, prefix="vcpkg"):
-    """The port package of each vcpkg.spdx.json under installed/share.
-
-    Each is SPDXRef-<prefix>-<port>, so two vcpkg trees' ports stay apart.
-    """
+def port_packages(installed):
+    """The port package of each vcpkg.spdx.json under installed/share."""
     packages = []
     for path in sorted(installed.glob("share/*/vcpkg.spdx.json")):
         document = json.loads(path.read_text(encoding="utf-8"))
         port = next(
             p for p in document["packages"] if p["SPDXID"] == "SPDXRef-port"
         )
-        port = {**port, "SPDXID": spdx_id(prefix, port["name"])}
+        port = {**port, "SPDXID": spdx_id("vcpkg", port["name"])}
         for field in ("licenseConcluded", "licenseDeclared"):
             if port[field] == _VCPKG_NO_LICENSE:
                 port[field] = _NOASSERTION
@@ -112,99 +86,6 @@ def git_package(path):
         "downloadLocation": f"git+{origin}@{commit}",
         **_UNASSERTED,
     }
-
-
-def packman_packages(manifest):
-    """A package for each packman package of manifest the client ships.
-
-    That is a dependency the build links (_PACKMAN_LINKED) and ships
-    (_PACKMAN_UNSHIPPED), for the client's platform. Its download location is
-    its remote's URL when it names one; packman's own servers have no public
-    one.
-    """
-    root = ET.parse(manifest).getroot()
-    remotes = {
-        remote.get("name"): remote.get("packageLocation")
-        for remote in root.iter("remote")
-    }
-
-    def on_platform(template, version=""):
-        return template.replace("${platform}", _PACKMAN_PLATFORM).replace(
-            "${version}", version
-        )
-
-    packages = []
-    for dependency in root.iter("dependency"):
-        name = dependency.get("name")
-        if (
-            not dependency.get("linkPath").startswith(_PACKMAN_LINKED)
-            or name in _PACKMAN_UNSHIPPED
-        ):
-            continue
-        for package in dependency.iter("package"):
-            platforms = package.get("platforms")
-            if platforms and _PACKMAN_PLATFORM not in platforms.split():
-                continue
-            version = on_platform(package.get("version"))
-            location = remotes.get(package.get("remotes"))
-            packages.append(
-                {
-                    "name": package.get("name"),
-                    "SPDXID": spdx_id("packman", name),
-                    "versionInfo": version,
-                    "downloadLocation": (
-                        "https://" + on_platform(location, version)
-                        if location
-                        else _NOASSERTION
-                    ),
-                    **_UNASSERTED,
-                }
-            )
-    return packages
-
-
-def fetched_packages(cmake_lists):
-    """A package for each FetchPackage(<name> URL <url>) of cmake_lists.
-
-    A ${VAR} in a URL is what set(VAR "<value>") in the same file gives. A URL
-    with no version in it, or a ${VAR} that file does not set to a plain value,
-    fails, so none is ever listed without one.
-    """
-    text = cmake_lists.read_text(encoding="utf-8")
-    variables = dict(re.findall(r'set\((\w+)\s+"([^"$]*)"\)', text))
-
-    def value_of(match):
-        if match[1] not in variables:
-            sys.exit(f"{cmake_lists}: no plain set({match[1]} ...) for a URL")
-        return variables[match[1]]
-
-    packages = []
-    for name, written in re.findall(
-        r"FetchPackage\((\w+)\s+URL\s+([^)\s]+)\)", text
-    ):
-        url = re.sub(r"\$\{(\w+)\}", value_of, written.strip('"'))
-        match = _URL_VERSION.search(url)
-        if not match:
-            sys.exit(f"{cmake_lists}: no version in {name}'s URL {url}")
-        packages.append(
-            {
-                "name": name,
-                "SPDXID": spdx_id("fetch", name),
-                "versionInfo": match[1] or match[2],
-                "downloadLocation": url,
-                **_UNASSERTED,
-            }
-        )
-    return packages
-
-
-def falcor_packages(checkout, packman):
-    """Falcor's own dependencies, from its checkout and packman directory."""
-    return (
-        port_packages(packman / "deps", "falcor-vcpkg")
-        + packman_packages(checkout / "dependencies.xml")
-        + fetched_packages(checkout / "external" / "CMakeLists.txt")
-    )
 
 
 def file_version(dll):
@@ -301,16 +182,6 @@ def main():
         help="a dependency checked out with git rather than installed by vcpkg",
     )
     parser.add_argument(
-        "--falcor",
-        type=pathlib.Path,
-        help="the Falcor checkout whose dependencies ship beside it",
-    )
-    parser.add_argument(
-        "--falcor-packman",
-        type=pathlib.Path,
-        help="Falcor's packman directory (default: external/packman in it)",
-    )
-    parser.add_argument(
         "--msvc-runtime",
         type=pathlib.Path,
         help="the vcruntime140.dll the executable ships with",
@@ -322,9 +193,6 @@ def main():
     dependencies = port_packages(args.installed) + [
         git_package(p) for p in args.git_package
     ]
-    if args.falcor:
-        packman = args.falcor_packman or args.falcor / "external" / "packman"
-        dependencies += falcor_packages(args.falcor, packman)
     if args.msvc_runtime:
         dependencies.append(msvc_runtime_package(args.msvc_runtime))
     json.dump(

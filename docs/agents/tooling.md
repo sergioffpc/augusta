@@ -18,8 +18,7 @@ draw-call/pixel inspection, and shader debugging for the D3D12 backend. Launch
 `augustac.exe`.
 
 When the build finds the Aftermath SDK inside Nsight Graphics
-(`cmake/Aftermath.cmake`), both renderers enable Aftermath: renderer.cpp through
-the Falcor `Device::Desc`, and the NVRHI renderer on its own D3D12 device
+(`cmake/Aftermath.cmake`), the renderer enables Aftermath on its D3D12 device
 (`gpu_crash_dumps.h`). On a GPU crash/TDR this writes a `.nv-gpudmp` crash dump
 next to the executable, decodable with 'C:\Program Files\NVIDIA
 Corporation\Nsight Graphics
