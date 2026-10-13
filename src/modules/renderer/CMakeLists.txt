@@ -480,6 +480,8 @@ if(WIN32)
   augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
   augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
   augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
+  augusta_compile_shader(Effects.3d.slang vsMain vertex kEffectsVs)
+  augusta_compile_shader(Effects.3d.slang psMain fragment kEffectsPs)
 
   # The debug HUD's monospace font (fonts/, with its licence), embedded the same
   # way, so there is no font file to ship or find.

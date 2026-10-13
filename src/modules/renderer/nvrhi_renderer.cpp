@@ -33,6 +33,8 @@
 #include "vertices.h"
 
 // The shaders' DXIL, compiled at build time (CMakeLists.txt).
+#include "kEffectsPs.h"
+#include "kEffectsVs.h"
 #include "kScenePs.h"
 #include "kSceneVs.h"
 
@@ -43,8 +45,8 @@
 
 // The Renderer on NVRHI's D3D12 backend, in a GLFW window (ADR-0059). Like
 // Falcor's, it draws into an offscreen target, then copies that to the
-// swapchain's image and presents it. So far it draws the scene and the remote
-// players, and the debug HUD over them: combat effects, overlay, input and
+// swapchain's image and presents it. It draws the scene, the remote players,
+// the fight's effects and the overlay, and the debug HUD over them: input and
 // resizing come next, and their setters do nothing until then.
 namespace augusta::renderer {
 
@@ -94,9 +96,10 @@ std::array<nvrhi::VertexAttributeDesc, 3> VertexAttributes() {
           attribute("COLOR", offsetof(Vertex, color))};
 }
 
-// A vertex buffer the CPU rewrites every frame (the remote players): unlike the
-// scene's (UploadScene), it is in an upload heap, mapped once for good, so a
-// frame's vertices are copied straight into it with no GPU wait.
+// A vertex buffer the CPU rewrites every frame (the remote players, the fight's
+// effects, the overlay): unlike the scene's (UploadScene), it is in an upload
+// heap, mapped once for good, so a frame's vertices are copied straight into it
+// with no GPU wait.
 //
 // It holds kFramesInFlight regions of region_capacity vertices each, and a
 // frame writes and draws only the region FrameRegion gives it: several frames
@@ -246,6 +249,37 @@ nvrhi::TextureDesc DepthDesc(std::uint32_t width, std::uint32_t height) {
       .setDebugName("Renderer depth");
 }
 
+// Neither the scene nor the effects are culled: cooked meshes' winding
+// (ADR-0032) is not verified end to end, and a billboard's depends on how it
+// was turned. Depth-tested and written otherwise, as the scene and the remote
+// players are drawn.
+nvrhi::RenderState UnculledState() {
+  nvrhi::RenderState state;
+  state.rasterState.setCullNone();
+  return state;
+}
+
+// The fight's effects glow: each adds its light to what is behind it, and is
+// hidden by what is in front without hiding anything itself.
+nvrhi::RenderState AdditiveState() {
+  nvrhi::RenderState state = UnculledState();
+  state.blendState.setRenderTarget(0, nvrhi::BlendState::RenderTarget()
+                                          .setBlendEnable(true)
+                                          .setSrcBlend(nvrhi::BlendFactor::One)
+                                          .setDestBlend(nvrhi::BlendFactor::One)
+                                          .setSrcBlendAlpha(nvrhi::BlendFactor::One)
+                                          .setDestBlendAlpha(nvrhi::BlendFactor::One));
+  state.depthStencilState.disableDepthWrite();
+  return state;
+}
+
+// The overlay is written over everything.
+nvrhi::RenderState OverlayState() {
+  nvrhi::RenderState state = UnculledState();
+  state.depthStencilState.disableDepthTest().disableDepthWrite();
+  return state;
+}
+
 nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const unsigned char> dxil) {
   return device.createShader(nvrhi::ShaderDesc().setShaderType(type), dxil.data(), dxil.size());
 }
@@ -275,11 +309,18 @@ struct Renderer::Impl {
   std::unique_ptr<NvrhiDebugHud> debug_hud;
   DebugHudStats hud_stats;
 
-  // The scene and the remote players, lit by Renderer.3d.slang from the
-  // camera's view-projection in per_frame (its PerFrameCB).
+  // The scene and the remote players, lit by Renderer.3d.slang, and the
+  // fight's effects, by Effects.3d.slang, all from the camera's
+  // view-projection in per_frame (their PerFrameCB). The overlay is drawn by
+  // Effects.3d.slang too, but is already in clip space: overlay_per_frame holds
+  // the identity.
   nvrhi::BufferHandle per_frame;
+  nvrhi::BufferHandle overlay_per_frame;
   nvrhi::BindingSetHandle bindings;
+  nvrhi::BindingSetHandle overlay_bindings;
   nvrhi::GraphicsPipelineHandle lit_pipeline;
+  nvrhi::GraphicsPipelineHandle effects_pipeline;
+  nvrhi::GraphicsPipelineHandle overlay_pipeline;
 
   // The scene's vertices, uploaded once by SetScene; null when it has none.
   nvrhi::BufferHandle scene_vertices;
@@ -291,6 +332,8 @@ struct Renderer::Impl {
   // call.
   CharacterVertices character_vertices;
   StreamedVertices remote_vertices;
+  StreamedVertices effect_vertices;
+  StreamedVertices overlay_vertices;
 
   // Signaled after each frame's work, per frame region (FrameRegion): a frame
   // waits on its region's before writing there or drawing, which keeps the CPU
@@ -309,7 +352,7 @@ struct Renderer::Impl {
     framebuffer =
         device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(target).setDepthAttachment(depth));
     commands = device->createCommandList();
-    CreateLitPipeline();
+    CreatePipelines();
     debug_hud = std::make_unique<NvrhiDebugHud>(*window, *device);
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
@@ -374,35 +417,50 @@ struct Renderer::Impl {
     }
   }
 
-  // Falcor's Renderer's: depth-tested, and not culled, since cooked meshes'
-  // winding (ADR-0032) is not verified end to end.
-  void CreateLitPipeline() {
-    const nvrhi::ShaderHandle vertex_shader = CreateShader(*device, nvrhi::ShaderType::Vertex, kSceneVs);
-    const nvrhi::ShaderHandle pixel_shader = CreateShader(*device, nvrhi::ShaderType::Pixel, kScenePs);
-    const std::array<nvrhi::VertexAttributeDesc, 3> attributes = VertexAttributes();
-    const nvrhi::InputLayoutHandle input_layout =
-        device->createInputLayout(attributes.data(), static_cast<std::uint32_t>(attributes.size()), vertex_shader);
-
-    per_frame = device->createBuffer(nvrhi::BufferDesc()
-                                         .setByteSize(sizeof(math::Mat4))
-                                         .setIsConstantBuffer(true)
-                                         .setIsVolatile(true)
-                                         .setMaxVersions(kConstantVersions)
-                                         .setDebugName("PerFrameCB"));
+  // The pipelines, which all read Vertex and one PerFrameCB.
+  void CreatePipelines() {
+    per_frame = CreatePerFrame("PerFrameCB");
+    overlay_per_frame = CreatePerFrame("Overlay PerFrameCB");
     const nvrhi::BindingLayoutHandle binding_layout =
         device->createBindingLayout(nvrhi::BindingLayoutDesc()
                                         .setVisibility(nvrhi::ShaderType::All)
                                         .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)));
     bindings = device->createBindingSet(
         nvrhi::BindingSetDesc().addItem(nvrhi::BindingSetItem::ConstantBuffer(0, per_frame)), binding_layout);
+    overlay_bindings = device->createBindingSet(
+        nvrhi::BindingSetDesc().addItem(nvrhi::BindingSetItem::ConstantBuffer(0, overlay_per_frame)), binding_layout);
 
-    nvrhi::GraphicsPipelineDesc desc;
-    desc.setInputLayout(input_layout)
-        .setVertexShader(vertex_shader)
-        .setPixelShader(pixel_shader)
-        .addBindingLayout(binding_layout);
-    desc.renderState.rasterState.setCullNone();
-    lit_pipeline = device->createGraphicsPipeline(desc, framebuffer->getFramebufferInfo());
+    const nvrhi::ShaderHandle scene_vs = CreateShader(*device, nvrhi::ShaderType::Vertex, kSceneVs);
+    const nvrhi::ShaderHandle scene_ps = CreateShader(*device, nvrhi::ShaderType::Pixel, kScenePs);
+    const nvrhi::ShaderHandle effects_vs = CreateShader(*device, nvrhi::ShaderType::Vertex, kEffectsVs);
+    const nvrhi::ShaderHandle effects_ps = CreateShader(*device, nvrhi::ShaderType::Pixel, kEffectsPs);
+    const std::array<nvrhi::VertexAttributeDesc, 3> attributes = VertexAttributes();
+    const nvrhi::InputLayoutHandle input_layout =
+        device->createInputLayout(attributes.data(), static_cast<std::uint32_t>(attributes.size()), scene_vs);
+
+    const auto create = [&](nvrhi::IShader* vertex_shader, nvrhi::IShader* pixel_shader,
+                            const nvrhi::RenderState& state) {
+      nvrhi::GraphicsPipelineDesc desc;
+      desc.setInputLayout(input_layout)
+          .setVertexShader(vertex_shader)
+          .setPixelShader(pixel_shader)
+          .addBindingLayout(binding_layout)
+          .setRenderState(state);
+      return device->createGraphicsPipeline(desc, framebuffer->getFramebufferInfo());
+    };
+    lit_pipeline = create(scene_vs, scene_ps, UnculledState());
+    effects_pipeline = create(effects_vs, effects_ps, AdditiveState());
+    overlay_pipeline = create(effects_vs, effects_ps, OverlayState());
+  }
+
+  // A float4x4 of constants, rewritten every frame.
+  [[nodiscard]] nvrhi::BufferHandle CreatePerFrame(const char* name) const {
+    return device->createBuffer(nvrhi::BufferDesc()
+                                    .setByteSize(sizeof(math::Mat4))
+                                    .setIsConstantBuffer(true)
+                                    .setIsVolatile(true)
+                                    .setMaxVersions(kConstantVersions)
+                                    .setDebugName(name));
   }
 
   // Replaces the drawn geometry with scene's, as one vertex buffer drawn in a
@@ -448,6 +506,20 @@ struct Renderer::Impl {
     remote_vertices.Write(*device, BuildRemoteVertices(remote_players, character_vertices), region);
   }
 
+  // Writes the fight's effects into this frame's region, facing the camera as
+  // it is now.
+  void UploadCombatEffects(const CombatEffects& effects) {
+    const std::uint32_t region = ReadyRegion();
+    effect_vertices.Write(*device, BuildEffectVertices(effects, camera), region);
+  }
+
+  // Writes the overlay into this frame's region, sized for the frame's pixels.
+  void UploadOverlay(const Overlay& overlay) {
+    const std::uint32_t region = ReadyRegion();
+    const nvrhi::TextureDesc& desc = target->getDesc();
+    overlay_vertices.Write(*device, BuildOverlayVertices(overlay, desc.width, desc.height), region);
+  }
+
   // This frame's region of the per-frame upload buffers, once the GPU has
   // finished the last frame drawn from it: normally at once, since that frame
   // is kFramesInFlight back.
@@ -467,19 +539,26 @@ struct Renderer::Impl {
     return glm::perspectiveRH_ZO(camera.vertical_fov, aspect, kNearPlane, kFarPlane) * math::Inverse(camera_to_world);
   }
 
-  // Draws count vertices of buffer from first on, lit, if there are any.
-  void DrawLit(nvrhi::IBuffer* buffer, std::uint32_t count, std::uint32_t first) const {
+  // Draws count vertices of buffer from first on, with pipeline and the
+  // constants it reads, if there are any.
+  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants, nvrhi::IBuffer* buffer,
+            std::uint32_t count, std::uint32_t first) const {
     if (count == 0) {
       return;
     }
     nvrhi::GraphicsState state;
-    state.setPipeline(lit_pipeline)
+    state.setPipeline(pipeline)
         .setFramebuffer(framebuffer)
-        .addBindingSet(bindings)
+        .addBindingSet(constants)
         .addVertexBuffer(nvrhi::VertexBufferBinding().setBuffer(buffer).setSlot(0).setOffset(0));
     state.viewport.addViewportAndScissorRect(framebuffer->getFramebufferInfo().getViewport());
     commands->setGraphicsState(state);
     commands->draw(nvrhi::DrawArguments().setVertexCount(count).setStartVertexLocation(first));
+  }
+
+  // Draws the region of vertices the last frame wrote.
+  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants, const StreamedVertices& vertices) const {
+    Draw(pipeline, constants, vertices.buffer, vertices.count, vertices.FirstVertex());
   }
 
   void RenderFrame() {
@@ -492,8 +571,15 @@ struct Renderer::Impl {
     commands->clearDepthStencilTexture(depth, nvrhi::AllSubresources, true, 1.0F, false, 0);
     const math::Mat4 view_projection = ViewProjection();
     commands->writeBuffer(per_frame, &view_projection, sizeof(view_projection));
-    DrawLit(scene_vertices, scene_vertex_count, 0);
-    DrawLit(remote_vertices.buffer, remote_vertices.count, remote_vertices.FirstVertex());
+    // Volatile constants last one command list, so even the overlay's constant
+    // identity is written in every frame's.
+    const math::Mat4 identity(1.0F);
+    commands->writeBuffer(overlay_per_frame, &identity, sizeof(identity));
+    Draw(lit_pipeline, bindings, scene_vertices, scene_vertex_count, 0);
+    Draw(lit_pipeline, bindings, remote_vertices);
+    // After everything opaque, so the depth buffer hides the effects behind it.
+    Draw(effects_pipeline, bindings, effect_vertices);
+    Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
     debug_hud->Render(*commands, *framebuffer, hud_stats);
     commands->copyTexture(swapchain_images.at(image_index), nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
     commands->close();
@@ -562,9 +648,9 @@ void Renderer::SetRemotePlayers(std::span<const RemotePlayer> remote_players) {
   impl_->UploadRemotePlayers(remote_players);
 }
 
-void Renderer::SetCombatEffects(const CombatEffects& /*effects*/) {}
+void Renderer::SetCombatEffects(const CombatEffects& effects) { impl_->UploadCombatEffects(effects); }
 
-void Renderer::SetOverlay(const Overlay& /*overlay*/) {}
+void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay); }
 
 void Renderer::SetCursorLocked(bool /*locked*/) {}
 
