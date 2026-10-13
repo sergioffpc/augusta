@@ -20,17 +20,19 @@ overlay triplets (`triplets/x64-linux.cmake`, `triplets/arm64-linux.cmake`) for
 every port, so the dependencies are built with the compiler and standard library
 they are linked with rather than the system's g++ and libstdc++. The sanitizer,
 fuzzing and coverage presets give their flags as `CMAKE_<LANG>_FLAGS_INIT`,
-which the toolchain's add to; a `CMAKE_CXX_FLAGS` would replace them. The
-`linux-san` tests run with ASan's container-overflow check off: libc++ marks its
-containers' unused capacity for it, which holds only when every caller is
-instrumented, and the dependencies are not, so GameNetworkingSockets filling a
-vector it just resized reads as an overflow. libc++, libc++abi and libunwind
-link statically: `augustad` needs nothing from the system but glibc (ADR-0054),
-which stays, as nothing in LLVM replaces it. The one GNU library a build still
-links is the fuzzing build's: Ubuntu builds libFuzzer against libstdc++, so the
-`linux-fuzz` preset links `libstdc++.so.6` beside libc++, whose own names, in
-`std::__1`, never collide with it. Windows compiles with MSVC `cl`, which
-vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and tested with;
-clang-cl was rejected for that reason (see ENGINEERING.md, Developer
-Environment). The shared core therefore builds with two compilers, which the
-NFR-03 golden trajectories compare (ADR-0013).
+which the toolchain's add to; a `CMAKE_CXX_FLAGS` would replace them. Every
+binary of an ASan build (`linux-san`, `linux-fuzz`) runs with ASan's
+container-overflow check off, compiled into it
+(`cmake/asan_default_options.cpp`) so that it holds however the binary is run:
+libc++ marks its containers' unused capacity for it, which holds only when every
+caller is instrumented, and the dependencies are not, so GameNetworkingSockets
+or GoogleTest using a vector reads as an overflow. libc++, libc++abi and
+libunwind link statically: `augustad` needs nothing from the system but glibc
+(ADR-0054), which stays, as nothing in LLVM replaces it. The one GNU library a
+build still links is the fuzzing build's: Ubuntu builds libFuzzer against
+libstdc++, so the `linux-fuzz` preset links `libstdc++.so.6` beside libc++,
+whose own names, in `std::__1`, never collide with it. Windows compiles with
+MSVC `cl`, which vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and
+tested with; clang-cl was rejected for that reason (see ENGINEERING.md,
+Developer Environment). The shared core therefore builds with two compilers,
+which the NFR-03 golden trajectories compare (ADR-0013).

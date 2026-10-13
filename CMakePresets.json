@@ -148,10 +148,7 @@
       "name": "linux-san",
       "configurePreset": "linux-san",
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "^netcode$" } },
-      "environment": {
-        "ASAN_OPTIONS": "detect_container_overflow=0"
-      }
+      "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
       "name": "linux-tsan",
