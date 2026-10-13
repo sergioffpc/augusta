@@ -1,19 +1,32 @@
 name: Nightly jobs
 # The checks too slow or noisy for every pull request (ADR-0013), called by
-# nightly.yml. They live here rather than there so a scheduled run uses
-# develop's copy of them: a change to how develop builds or tests lands with
-# the jobs that run it, not when main next catches up.
+# nightly.yml every night and by release.yml on every release, which publishes
+# only if they all pass. They live here rather than in nightly.yml so a
+# scheduled run uses develop's copy of them: a change to how develop builds or
+# tests lands with the jobs that run it, not when main next catches up. The
+# inputs' defaults are the night's; release.yml sets them.
 on:
   workflow_call:
     inputs:
       ref:
-        description: The branch every job checks out and tests.
+        description: The branch, or a release's commit, every job checks out and tests. Benchmarks are recorded only for develop.
         required: true
         type: string
+      report-failure:
+        description: Whether a failing job opens or updates the nightly-failure issue. A release turns it off; its own run is where its failure shows.
+        required: false
+        type: boolean
+        default: true
+      sbom-artifacts:
+        description: Whether sbom-scan scans the SBOMs this run produced, each uploaded by the caller as an artifact named sbom-<executable> before the call starts, instead of the latest release's. A release turns it on, to scan what it is about to publish.
+        required: false
+        type: boolean
+        default: false
 # No workflow-level permissions: in a called workflow they are also the most
 # any of its jobs may ask for, which would keep benchmarks from pushing and
 # report-failure from writing issues. Each job names its own instead, within
-# what nightly.yml's calling job grants.
+# what the calling job grants: nightly.yml's and release.yml's, each of which
+# must grant them all.
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
@@ -104,15 +117,19 @@ jobs:
           "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" -merge=1 minimized "$CORPUS"
           rm -rf "$CORPUS"
           mv minimized "$CORPUS"
+      # Not from a tag (a release): a cache saved on a tag is restored only by
+      # runs on that same tag, so it would be no later night's corpus, only
+      # room taken from the caches that are. A scheduled night saves on main,
+      # the default branch, whose caches a tag's run restores in turn.
       - name: Save the corpus
-        if: success()
+        if: success() && github.ref_type != 'tag'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CORPUS }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
       # Each night's corpus holds the one before, minimized: the older entries
       # are superseded.
-      - if: success()
+      - if: success() && github.ref_type != 'tag'
         uses: ./.github/actions/prune-cache
         with:
           prefix: fuzz-corpus-${{ matrix.target }}-
@@ -251,7 +268,9 @@ jobs:
     # model. A shared runner is noisy, so only a benchmark more than twice as
     # slow as the last night on the same CPU fails the job, which opens the
     # nightly-failure issue like any other; the slower result is recorded all
-    # the same, so the next night compares with it.
+    # the same, so the next night compares with it. A release's ref is a
+    # commit, never develop, so it is compared on the same threshold and
+    # recorded nowhere: the history stays develop's nights.
     runs-on: ubuntu-26.04
     permissions:
       # Pushing the night's results to the benchmarks branch.
@@ -329,7 +348,9 @@ jobs:
   sbom-scan:
     # The latest release's executables, by their SBOMs, against the night's
     # vulnerability data: a CVE published after the release fails here with
-    # nothing rebuilt. Each SBOM gets its dependencies' CPEs first
+    # nothing rebuilt. From a release (sbom-artifacts), the executables that
+    # release is about to publish instead, by the SBOMs its own build jobs
+    # uploaded. Each SBOM gets its dependencies' CPEs first
     # (scripts/sbom-cpes.py), which grype matches against the NVD; no
     # database has advisories for the vcpkg purls the SBOM names them by.
     # augustad-linux-arm64's SBOM names the same ports at the same versions as
@@ -349,8 +370,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
-      - name: Download the SBOM
+      - name: Download the latest release's SBOM
+        if: ${{ !inputs.sbom-artifacts }}
         run: gh release download --pattern "${{ matrix.executable }}.spdx.json"
+      - name: Download this run's SBOM
+        if: inputs.sbom-artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-${{ matrix.executable }}
       - name: Add the CPEs
         run: python3 scripts/sbom-cpes.py "${{ matrix.executable }}.spdx.json" > sbom.spdx.json
       - name: Scan
@@ -370,7 +397,8 @@ jobs:
     # every ctest run above, a row per test and a column per job, and the
     # coverage job's llvm-cov report. Uploaded as a run artifact; the
     # documentation site publishes the latest scheduled night's under tests/
-    # (ADR-0046). Also after a failing test, which is when it is read.
+    # (ADR-0046), so a release's stays an artifact of its run. Also after a
+    # failing test, which is when it is read.
     needs: [property-tests, tsan, netcode, coverage]
     if: always()
     runs-on: ubuntu-26.04
@@ -400,10 +428,11 @@ jobs:
           name: test-report
           path: test-report/
   # A new nightly job adds itself to `needs` here, and nothing else: this job
-  # reports on every job it waits for.
+  # reports on every job it waits for, and release.yml waits for the whole
+  # call. Not from a release (report-failure), whose failure fails its run.
   report-failure:
     needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, sbom-scan, test-report]
-    if: always() && contains(needs.*.result, 'failure')
+    if: always() && inputs.report-failure && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:
       issues: write

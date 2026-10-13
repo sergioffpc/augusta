@@ -2,6 +2,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # A dry run: started by hand on a branch, it builds, tests and runs the
+  # nightly jobs as a tag does, and publishes nothing. How a change to this
+  # workflow, or to the nightly jobs it calls, is tried before it merges.
+  workflow_dispatch:
 permissions:
   contents: write
   packages: write
@@ -16,8 +20,9 @@ env:
   SCCACHE_GHA_ENABLED: "true"
 # What is published is tested first (ADR-0013): each build job runs ctest on
 # the Release binaries it stages, which includes the C++ half of the pack
-# contract (the golden packs), and the tools job runs the cooker's half. publish
-# needs all three, so a failing test publishes nothing.
+# contract (the golden packs), the tools job runs the cooker's half, and the
+# nightly job runs every nightly check on the same commit. publish needs them
+# all, so a failing test publishes nothing.
 jobs:
   client:
     runs-on: windows-2025
@@ -51,10 +56,15 @@ jobs:
       - name: Stage the client
         # Its whole runtime folder, zipped: augustac.exe alone loads nothing.
         # The zip is checked to start on its own and print the tag's version
-        # (scripts/stage-client.sh).
+        # (scripts/stage-client.sh); a dry run's branch names no version, so
+        # there any version passes.
         run: |
+          version=""
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
           scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac" \
-            dist/augustac-windows-x64.zip "${GITHUB_REF_NAME#v}"
+            dist/augustac-windows-x64.zip "$version"
           # Its PDB, from this same build, so its GUID and age are the ones
           # the zipped augustac.exe's debug directory names (ADR-0055).
           cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
@@ -83,7 +93,12 @@ jobs:
           path: |
             dist/augustac-windows-x64.zip
             dist/augustac-windows-x64.pdb
-            dist/augustac-windows-x64.spdx.json
+      # An artifact of its own, named sbom-<executable>, which the nightly
+      # jobs' sbom-scan downloads by that name, without the zip.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-augustac-windows-x64
+          path: dist/augustac-windows-x64.spdx.json
   server:
     # Both production architectures (NFR-04), each built and tested natively.
     strategy:
@@ -145,7 +160,11 @@ jobs:
           path: |
             dist/${{ env.BINARY }}
             dist/${{ env.BINARY }}.debug
-            dist/${{ env.BINARY }}.spdx.json
+      # As the client's: sbom-<executable>, for the nightly jobs' sbom-scan.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ env.BINARY }}
+          path: dist/${{ env.BINARY }}.spdx.json
   tools:
     # The cooker's half of the pack contract: its pytest suite, which requires
     # that cooking the example scenario still gives the golden packs the
@@ -187,8 +206,39 @@ jobs:
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
+  nightly:
+    # Everything the nightly runs, on the commit this run builds (ADR-0013): a
+    # job added to nightly-jobs.yml gates releases with nothing changed here.
+    # By SHA rather than the tag's name, so a tag the runbook moves while this
+    # run is still going doesn't change what its later jobs test. After client
+    # and server, whose SBOMs sbom-scan scans, so it judges what is about to be
+    # published rather than the latest release: a called workflow's job can't
+    # wait on its caller's, so the whole call waits, and the nightly's duration
+    # comes after the builds'. Its benchmarks are compared and not recorded, as
+    # on any ref but develop, and its failure fails this run without opening
+    # the nightly-failure issue. Outside nightly.yml's concurrency group, it
+    # may overlap a night, which is safe: it records no benchmark and saves no
+    # fuzz corpus, so it writes nothing a night reads.
+    needs: [client, server]
+    uses: ./.github/workflows/nightly-jobs.yml
+    # A caller must grant every permission a called job declares, or the run is
+    # invalid before it starts, even for a job its inputs skip. So this grants
+    # what nightly.yml does, issues: write included for report-failure, which
+    # never runs here. The grant is a ceiling, not a token: each called job
+    # gets only what it declares, so no job of a release holds issues: write,
+    # and benchmarks alone holds contents: write, which pushes only for develop.
+    permissions:
+      contents: write
+      actions: write
+      issues: write
+    with:
+      ref: ${{ github.sha }}
+      report-failure: false
+      sbom-artifacts: true
   publish:
-    needs: [client, server, tools]
+    # Not on a dry run, which publishes nothing.
+    if: github.event_name == 'push'
+    needs: [client, server, tools, nightly]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,6 +246,8 @@ jobs:
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
       - name: Release notes
         run: scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
+      # Every artifact of the run, the nightly jobs' reports among them: only
+      # the files named below are attached.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
@@ -206,13 +258,13 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             dist/client-binary/augustac-windows-x64.zip \
             dist/client-binary/augustac-windows-x64.pdb \
-            dist/client-binary/augustac-windows-x64.spdx.json \
+            dist/sbom-augustac-windows-x64/augustac-windows-x64.spdx.json \
             dist/server-binary-x64/augustad-linux-x64 \
             dist/server-binary-x64/augustad-linux-x64.debug \
-            dist/server-binary-x64/augustad-linux-x64.spdx.json \
+            dist/sbom-augustad-linux-x64/augustad-linux-x64.spdx.json \
             dist/server-binary-arm64/augustad-linux-arm64 \
             dist/server-binary-arm64/augustad-linux-arm64.debug \
-            dist/server-binary-arm64/augustad-linux-arm64.spdx.json \
+            dist/sbom-augustad-linux-arm64/augustad-linux-arm64.spdx.json \
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --notes-file "$RUNNER_TEMP/notes.md"
