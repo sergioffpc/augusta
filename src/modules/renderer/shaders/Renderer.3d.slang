@@ -5,7 +5,7 @@
 // position read on an otherwise untextured surface, darkening the base color
 // on alternate cells.
 
-cbuffer PerFrameCB
+cbuffer PerFrameCB : register(b0)
 {
     float4x4 gViewProj;
 };

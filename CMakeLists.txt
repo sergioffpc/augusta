@@ -39,6 +39,18 @@ if(AUGUSTA_TOOLS)
   endif()
 endif()
 
+# Mesa's lavapipe, the software Vulkan driver the renderer smoke test draws on
+# (tests/CMakeLists.txt), on Windows, where the client builds. On by default, so
+# the smoke test runs wherever the client's tests do: CI's Windows runner has no
+# GPU. Its first build compiles LLVM, which needs Visual Studio's ATL; off, the
+# smoke test is left out of ctest. Before project(), as AUGUSTA_TOOLS is.
+if(CMAKE_HOST_WIN32)
+  option(AUGUSTA_LAVAPIPE "Install Mesa's lavapipe for the renderer smoke test" ON)
+  if(AUGUSTA_LAVAPIPE)
+    list(APPEND VCPKG_MANIFEST_FEATURES lavapipe)
+  endif()
+endif()
+
 project(augusta LANGUAGES CXX)
 augusta_require_server_platform()
 
@@ -160,9 +172,9 @@ if(AUGUSTA_COVERAGE)
     USES_TERMINAL
   )
 endif()
-# The client renders through NVRHI on D3D12 (ADR-0059), so its Renderer only
-# builds on Windows (src/modules/renderer/CMakeLists.txt), as does the client
-# that links it; the geometry it builds on the CPU builds everywhere.
+# The client renders through NVRHI on Vulkan (ADR-0059). Its Renderer builds on
+# Windows only for now (src/modules/renderer/CMakeLists.txt), as does the client
+# that links it; what it decides apart from the GPU builds everywhere.
 add_subdirectory(src/modules/renderer)
 if(WIN32)
   add_subdirectory(src/client)

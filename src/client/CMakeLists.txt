@@ -124,24 +124,20 @@ target_compile_definitions(augustac PRIVATE NOMINMAX)
 # /OPT:ICF off unless they are named, so they are: the code is Release's own.
 target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
-augusta_stage_aftermath(augustac)
-
 # `cmake --install --component client` stages the client's whole runtime folder,
 # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
 # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
-# redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's, and
-# Aftermath's when the build has it (cmake/Aftermath.cmake). The renderer's
-# shaders are in augustac.exe (ADR-0059). EXCLUDE_FROM_ALL: a plain
-# `cmake --install`, augustad's (Dockerfile, `make install`), leaves it out.
+# redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's. The
+# renderer's shaders are in augustac.exe, and the Vulkan loader is the system's,
+# which augustac loads at runtime rather than imports (ADR-0059).
+# EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
+# `make install`), leaves it out.
 install(
   TARGETS augustac
   RUNTIME_DEPENDENCY_SET augustac_dlls
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
 )
 set(dll_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
-if(AUGUSTA_AFTERMATH_DIR)
-  list(APPEND dll_directories "${AUGUSTA_AFTERMATH_DIR}/lib/x64")
-endif()
 install(
   RUNTIME_DEPENDENCY_SET augustac_dlls
   PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"

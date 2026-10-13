@@ -74,6 +74,14 @@
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
+      // A Debug client runs under Vulkan's validation layer, vcpkg's
+      // (ADR-0059), which the system's loader finds through this.
+      "environment": [
+        {
+          "name": "VK_ADD_LAYER_PATH",
+          "value": "${workspaceFolder}\\build\\x64-windows-debug\\vcpkg_installed\\x64-windows\\debug\\bin"
+        }
+      ],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     }

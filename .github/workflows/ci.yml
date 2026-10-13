@@ -326,6 +326,10 @@ jobs:
         run: >-
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
+        # The renderer smoke test among them, on lavapipe and under the
+        # validation layer, both from vcpkg, as is the Vulkan loader the
+        # runner, with no GPU driver, lacks: the test's ctest environment
+        # points it at them (tests/CMakeLists.txt, ADR-0059).
         run: ctest --preset windows
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent

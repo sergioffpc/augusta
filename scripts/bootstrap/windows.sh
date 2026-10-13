@@ -122,8 +122,10 @@ install_toolchain() {
     exit 1
   fi
 
+  # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
+  # Vulkan driver) builds on, needs it.
   winget_install Microsoft.VisualStudio.BuildTools --override \
-    "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+    "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended"
   winget_install Microsoft.WindowsSDK.10.0.26100
   winget_install Kitware.CMake
   winget_install Ninja-build.Ninja
@@ -213,19 +215,6 @@ bootstrap_vcpkg() {
 }
 
 bootstrap_done() {
-  # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture - see
-  # cmake/Aftermath.cmake, mirroring its own detection).
-  # Autodetected from an installed Nsight Graphics, which bundles it as a
-  # component, so this only reminds you if there is none. Builds work fine
-  # without it (AUGUSTA_HAS_AFTERMATH=0).
-  if ! compgen -G "$(windows_dir ProgramFiles)/NVIDIA Corporation/Nsight Graphics */SDKs/NsightAftermathSDK/*/include/GFSDK_Aftermath.h" \
-    >/dev/null; then
-    echo "No NVIDIA Nsight Graphics install with a bundled Aftermath SDK was" \
-      "found - GPU crash dumps stay disabled. To enable: install Nsight" \
-      "Graphics (developer.nvidia.com/nsight-graphics), which bundles the" \
-      "Aftermath SDK as a component; augusta picks it up automatically on" \
-      "the next cmake reconfigure."
-  fi
   echo "bootstrap: done. Open a new terminal (this one's PATH predates the" \
     "tools just installed) before running make."
 }

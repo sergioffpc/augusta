@@ -650,7 +650,7 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer's GPU half is Windows-only (D3D12, ADR-0059), but which region of
+# The renderer's GPU half is Windows-only for now (ADR-0059), but which region of
 # its per-frame upload buffers a frame uses is a GPU-free header, private to the
 # module, so it is tested everywhere through a private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
@@ -673,8 +673,17 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_renderer_debug_hud_text_tests)
 
+# And which Vulkan device it draws with (device_choice.h).
+add_executable(augusta_renderer_device_choice_tests renderer_device_choice_test.cpp)
+target_include_directories(augusta_renderer_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(
+  augusta_renderer_device_choice_tests
+  PRIVATE augusta_renderer_device_choice GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_device_choice_tests)
+
 if(WIN32)
-  # The client is Windows-only (D3D12, ADR-0059), and so are its private
+  # The client is Windows-only for now (ADR-0059), and so are its private
   # libraries' targets - though only the smoke test below links the Renderer.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
@@ -722,12 +731,25 @@ if(WIN32)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
-  # Drives the Renderer (ADR-0059) on WARP in a hidden window, so it runs
-  # on CI's runner, which has no GPU.
-  add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
-  target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
-  augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
-  gtest_discover_tests(augusta_client_renderer_smoke_tests)
+  # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
+  # in a hidden window, so it runs on CI's runner, which has no GPU; under the
+  # validation layer, whose errors fail it. Both come from vcpkg (the manifest's
+  # lavapipe feature, AUGUSTA_LAVAPIPE), and ctest points the Vulkan loader at
+  # them: lavapipe as its only driver, so the test never runs on a GPU. vcpkg's
+  # folder, put on PATH, has their DLLs' own dependencies, and a loader for a
+  # machine whose GPU driver installed none in System32, as CI's runner's.
+  if(AUGUSTA_LAVAPIPE)
+    set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
+    target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
+    gtest_discover_tests(
+      augusta_client_renderer_smoke_tests
+      PROPERTIES
+        ENVIRONMENT
+          "VK_DRIVER_FILES=${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${vcpkg_installed}/bin"
+    )
+  endif()
 
   # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
   # The test names keys by GLFW's own constants.

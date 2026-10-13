@@ -7,8 +7,8 @@ struct Constants
     float2 invDisplaySize;
 };
 
-// NVRHI's push constants: root constants at b0 on D3D12.
-[[vk::push_constant]] ConstantBuffer<Constants> gConstants : register(b0);
+// NVRHI's push constants.
+[[vk::push_constant]] ConstantBuffer<Constants> gConstants;
 Texture2D gTexture : register(t0);
 SamplerState gSampler : register(s0);
 
