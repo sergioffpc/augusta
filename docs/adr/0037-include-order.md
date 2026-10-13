@@ -12,7 +12,7 @@ one blank line, each block sorted alphabetically:
 2. **C++ standard library** — `<vector>`, `<cstdint>`. Use the `<c…>` wrappers,
    never `<stdint.h>`-style C headers.
 3. **Third-party and system** — everything else in angle brackets: `<boost/…>`,
-   `<steam/…>`, `<Falcor.h>`, `<nvtx3/…>`, `<gtest/gtest.h>`, `<flecs.h>`.
+   `<steam/…>`, `<nvrhi/nvrhi.h>`, `<nvtx3/…>`, `<gtest/gtest.h>`, `<flecs.h>`.
 4. **Project** — everything in this repo, in quotes: `"augusta/<module>.h"` for
    a module's public header, `"decoder.h"` for one private to the module or
    executable.

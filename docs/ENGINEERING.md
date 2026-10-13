@@ -127,11 +127,6 @@ decisions already made in ARCHITECTURE.md:
       layer, built on the same Ubuntu, restores them too: the container jobs
       mount the entry read-only into its `vcpkg install`, and it builds from
       source only the packages the entry lacks.
-    - Falcor, which nothing links (ADR-0059), is built only with
-      `AUGUSTA_FALCOR`: the `falcor-prebuilt` workflow builds it once for each
-      combination of submodule commit, `falcor.patch` and Falcor features, and
-      publishes it as an asset of a `falcor-*` release
-      (`cmake/FalcorPrebuilt.cmake`).
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
       binaries and sccache objects. The server image's Docker layers live in
@@ -426,8 +421,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
-  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
+  from Linux (not viable given D3D12's and the Windows SDK's MSVC-specific
+  toolchain assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
   Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
   winget-driven; one entry point and one `checkout` step and set of pinned
   formatter versions for both platforms, and no PowerShell: Git for Windows is
@@ -444,9 +439,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   VS Code settings point the Kubernetes extension and its terminals at the
   day-to-day kubeconfig, `~/.kube/augusta.yaml`. (A fully hermetic,
   registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
-  and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
-  stacking an unsupported compiler on top of an already-unmaintained dependency,
-  ADR-0009, isn't worth the purity.)
+  and rejected: vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and
+  tested with MSVC, and a second Windows compiler isn't worth the purity.)
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen

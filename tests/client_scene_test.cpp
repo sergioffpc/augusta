@@ -12,7 +12,7 @@
 #include "scene_loader.h"
 
 // Unit tests for the cooked-scene -> renderer::Scene conversion. Links no
-// Falcor or window: the loader only uses renderer.h's plain scene types.
+// GPU or window: the loader only uses renderer.h's plain scene types.
 namespace {
 
 using augusta::assets::MeshData;

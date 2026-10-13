@@ -15,7 +15,6 @@ dependency is never left out of the scan without a reason saying why.
 import argparse
 import json
 import pathlib
-import re
 import sys
 
 # Each package's NVD vendor:product, looked up in the NVD's CPE dictionary.
@@ -31,41 +30,14 @@ _CPES = {
     "protobuf": "google:protobuf",
     "yaml-cpp": "yaml-cpp_project:yaml-cpp",
     "zlib": "zlib:zlib",
-    # Falcor's own, which the client ships beside it (ADR-0058): its vcpkg
-    # tree's ports and its packman packages.
-    "assimp": "assimp:assimp",
-    "bzip2": "bzip:bzip2",
-    "freeimage": "freeimage_project:freeimage",
-    "hdf5": "hdfgroup:hdf5",
-    "jasper": "jasper_project:jasper",
-    "lcms": "littlecms:little_cms_color_engine",
-    "libjpeg-turbo": "libjpeg-turbo:libjpeg-turbo",
-    "liblzma": "tukaani:xz",
-    "libpng": "libpng:libpng",
-    "libwebp": "webmproject:libwebp",
-    "lz4": "lz4_project:lz4",
-    "nv-usd": "pixar:openusd",
-    "openexr": "openexr:openexr",
-    "openjpeg": "uclouvain:openjpeg",
-    "pugixml": "pugixml_project:pugixml",
-    "python": "python:python",
-    "snappy": "google:snappy",
-    "tbb": "intel:threading_building_blocks",
-    "tiff": "libtiff:libtiff",
-    "zstd": "facebook:zstandard",
 }
 _BOOST_CPE = "boost:boost"
-# Packman's packages whose version carries NVIDIA's build and platform after
-# the library's own: python's 3.10.11+nv1-windows-x86_64, nv-usd's
-# 22.11.nv.0.2.424.27f22922-win64_...
-_PACKMAN_VERSIONED = {"python", "nv-usd"}
 
 # The packages with no CPE, and why each one is left unscanned.
 _NO_CPE = {
     "augustac": "the executable itself",
     "augustad": "the executable itself",
     "blake3": "not in the NVD",
-    "falcor": "not in the NVD",
     "flecs": "not in the NVD",
     "glm": "not in the NVD",
     "libsodium": "not in the NVD: its CVEs have no CPE assigned",
@@ -91,7 +63,7 @@ _NO_CPE = {
     "vcpkg-get-python": "a build tool",
     "shader-slang": "a build tool: compiles the shaders the client embeds",
     "directx-dxc": "a build tool: compiles the shaders the client embeds",
-    # The NVRHI renderer's (ADR-0059), and the ports NVRHI pulls in.
+    # The renderer's (ADR-0059), and the ports NVRHI pulls in.
     "glfw3": "not in the NVD",
     "imgui": "not in the NVD",
     "nvrhi": "not in the NVD",
@@ -102,41 +74,16 @@ _NO_CPE = {
     # port it pulls in, with python3's own dependencies.
     "pybind11": "the Agents' module's, linked into no executable shipped",
     "python3": "pybind11's, linked into no executable shipped",
+    "bzip2": "python3's, linked into no executable shipped",
     "expat": "python3's, linked into no executable shipped",
     "libffi": "python3's, linked into no executable shipped",
+    "liblzma": "python3's, linked into no executable shipped",
     "mpdecimal": "python3's, linked into no executable shipped",
     "sqlite3": "python3's, linked into no executable shipped",
-    # What the client's zip ships beside it (ADR-0058): the MSVC runtime, and
-    # Falcor's own vcpkg ports, packman packages and fetched SDKs.
+    "zstd": "python3's, linked into no executable shipped",
+    # What the client's zip ships beside it (ADR-0058): the MSVC runtime.
     "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
     "releases, not the runtime's file versions",
-    "blosc": "not in the NVD (only c-blosc2 is)",
-    "minizip": "zlib's contrib/minizip, versioned and scanned as zlib "
-    "(minizip_project:minizip is another library)",
-    "draco": "not in the NVD",
-    "freeglut": "not in the NVD",
-    "imath": "not in the NVD",
-    "jxrlib": "not in the NVD",
-    "kubazip": "not in the NVD",
-    "libraw": "versioned by date (201903), which the NVD's versions are not",
-    "opengl": "the system's OpenGL, which vcpkg's port only finds",
-    "opensubdiv": "not in the NVD",
-    "openvdb": "not in the NVD",
-    "poly2tri": "not in the NVD",
-    "rapidjson": "versioned by date, which the NVD's versions are not",
-    "stb": "versioned by date, which the NVD's versions are not",
-    "szip": "not in the NVD",
-    "utfcpp": "not in the NVD",
-    "WinPixEventRuntime": "not in the NVD",
-    "nanovdb": "not in the NVD",
-    "nrd": "not in the NVD",
-    "nvtt": "not in the NVD",
-    "rtxdi": "not in the NVD",
-    "slang": "not in the NVD",
-    "agility_sdk": "not in the NVD",
-    "dlss": "not in the NVD",
-    "dxc": "not in the NVD",
-    "nvapi": "not in the NVD",
 }
 
 
@@ -148,11 +95,6 @@ def nvd_version(name, version):
     # it, is 33.4.
     if name == "protobuf":
         version = version.split(".", 1)[1]
-    if name in _PACKMAN_VERSIONED:
-        library = re.match(r"\d+(?:\.\d+)*", version)
-        if not library:
-            sys.exit(f"{name}: no library version in packman's {version}")
-        version = library[0]
     return version
 
 

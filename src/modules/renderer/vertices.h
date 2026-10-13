@@ -12,7 +12,7 @@
 
 /// \file
 /// The CPU-side geometry the Renderer draws, built from what its callers pass
-/// it, and kept free of Falcor so it is built and tested on every platform:
+/// it, and kept free of any GPU API so it is built and tested on every platform:
 /// renderer.cpp uploads and draws it.
 namespace augusta::renderer {
 

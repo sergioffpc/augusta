@@ -128,7 +128,7 @@ install_toolchain() {
     | as_root bash
 }
 
-# The submodules the Linux build uses; Falcor is the Windows client's alone.
+# The repository's submodules.
 update_submodules() {
   git submodule update --init third_party/vcpkg third_party/nvtx
 }

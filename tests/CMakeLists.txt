@@ -722,17 +722,14 @@ if(WIN32)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
-  # Drives the NVRHI Renderer (ADR-0059) on WARP in a hidden window, so it runs
+  # Drives the Renderer (ADR-0059) on WARP in a hidden window, so it runs
   # on CI's runner, which has no GPU.
   add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
-  target_link_libraries(
-    augusta_client_renderer_smoke_tests
-    PRIVATE augusta_renderer_nvrhi GTest::gtest GTest::gtest_main
-  )
+  target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
   augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
   gtest_discover_tests(augusta_client_renderer_smoke_tests)
 
-  # The NVRHI Renderer's GLFW key mapping (glfw_keys.h), private to the module.
+  # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
   # The test names keys by GLFW's own constants.
   find_package(glfw3 CONFIG REQUIRED)
   add_executable(augusta_client_renderer_glfw_keys_tests client_renderer_glfw_keys_test.cpp)

@@ -6,7 +6,7 @@
 #include "augusta/networking.h"
 #include "net_stats.h"
 
-// Unit tests for what the debug HUD shows of the connection. Links no Falcor or
+// Unit tests for what the debug HUD shows of the connection. Links no GPU or
 // window: they only use renderer.h's plain types.
 namespace {
 

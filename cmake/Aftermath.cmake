@@ -10,9 +10,8 @@
 #
 # Sets AUGUSTA_AFTERMATH_DIR to the SDK's root, empty when none is found, and
 # AUGUSTA_AFTERMATH_RUNTIME_DLLS to the DLLs an executable linking it loads,
-# both cached so augusta_stage_aftermath sees them from any directory. Both
-# renderers read these until Falcor's goes (ADR-0059). With the SDK, the
-# imported target augusta_aftermath links it.
+# both cached so augusta_stage_aftermath sees them from any directory. With the
+# SDK, the imported target augusta_aftermath links it.
 include_guard(GLOBAL)
 
 set(aftermath_dir "")

@@ -245,8 +245,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fetch the submodules
-        # vcpkg and NVTX: the client builds against no other submodule, and
-        # third_party/falcor, which nothing links (ADR-0059), is large.
+        # vcpkg and NVTX, the only submodules.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -323,10 +322,9 @@ jobs:
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the
         # Windows-only sources and tests. After Build, which generates the
-        # headers the renderer embeds its shaders and font from. Not Falcor's
-        # Renderer, which the build leaves out (ADR-0059).
+        # headers the renderer embeds its shaders and font from.
         run: >-
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' ':!src/modules/renderer/renderer.cpp' ':!src/modules/renderer/debug_hud.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
       - name: Test
         run: ctest --preset windows
       - name: Test the Agents' package (pytest)
@@ -443,8 +441,7 @@ jobs:
         with:
           lfs: true
       - name: Fetch vcpkg
-        # Only vcpkg: the native module builds against no other submodule,
-        # and third_party/falcor is large.
+        # Only vcpkg: the native module builds against no other submodule.
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: runner.os == 'Windows'

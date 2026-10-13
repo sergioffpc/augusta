@@ -73,10 +73,10 @@ runs:
           ${{ github.event_name == 'push' && inputs.arch-suffix == '' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
         # A commit that leaves src/ alone reuses the cached build. The layers
         # live in GHCR, next to the image, not in the Actions cache: at several
-        # GB they took most of its 10 GB, and GitHub evicted the vcpkg and
-        # Falcor caches every pull request restores from develop. A fork's pull
-        # request, not logged in, reads nothing and builds from scratch. Each
-        # architecture has its own: one's layers are all the other's misses.
+        # GB they took most of its 10 GB, and GitHub evicted the vcpkg caches
+        # every pull request restores from develop. A fork's pull request, not
+        # logged in, reads nothing and builds from scratch. Each architecture
+        # has its own: one's layers are all the other's misses.
         cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache${{ inputs.arch-suffix }}
         cache-to: ${{ inputs.cache-to == 'true' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache{1},mode=max', github.repository_owner, inputs.arch-suffix) || '' }}
     - name: Scan server image

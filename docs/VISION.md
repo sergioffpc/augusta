@@ -17,7 +17,7 @@ and systems programming.
 
 ## Product
 
-- Client: Windows-only, rendering via NVIDIA Falcor (D3D12)
+- Client: Windows-only, rendering via NVIDIA NVRHI (D3D12)
 - Server: Linux in production (Windows for development only), headless (no
   rendering dependency)
 - Multiplayer only, dedicated authoritative server — no singleplayer, no enemy

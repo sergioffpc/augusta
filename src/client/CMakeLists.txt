@@ -1,5 +1,5 @@
 # The client's private libraries below use renderer.h's plain types only, so
-# they take that header's directory rather than linking augusta_renderer_nvrhi:
+# they take that header's directory rather than linking augusta_renderer:
 # their tests need neither a GPU nor a window. renderer.h includes input.h,
 # hence augusta_input.
 
@@ -76,7 +76,7 @@ target_link_libraries(
     augusta_harness
     augusta_input
     augusta_networking
-    augusta_renderer_nvrhi
+    augusta_renderer
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE

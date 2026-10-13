@@ -11,7 +11,7 @@
 #include "character_loader.h"
 
 // Unit tests for resolving what the client needs of a character. Links no
-// Falcor or window: the loader only uses renderer.h's plain mesh types.
+// GPU or window: the loader only uses renderer.h's plain mesh types.
 namespace {
 
 using augusta::assets::EyeData;
