@@ -9,7 +9,6 @@
 
 #include <imgui.h>
 
-#include "augusta/renderer.h"
 #include "debug_hud_text.h"
 
 namespace augusta::renderer {
