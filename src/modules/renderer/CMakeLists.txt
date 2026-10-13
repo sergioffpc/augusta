@@ -451,14 +451,6 @@ if(WIN32)
   # the D3D12 device itself. An executable linking this target stages the
   # Aftermath DLLs beside it with augusta_stage_aftermath.
   if(AUGUSTA_AFTERMATH_DIR)
-    add_library(augusta_aftermath SHARED IMPORTED)
-    set_target_properties(
-      augusta_aftermath
-      PROPERTIES
-        IMPORTED_IMPLIB ${AUGUSTA_AFTERMATH_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.lib
-        IMPORTED_LOCATION ${AUGUSTA_AFTERMATH_DIR}/lib/x64/GFSDK_Aftermath_Lib.x64.dll
-        INTERFACE_INCLUDE_DIRECTORIES ${AUGUSTA_AFTERMATH_DIR}/include
-    )
     target_link_libraries(augusta_renderer_nvrhi PRIVATE augusta_aftermath augusta_version)
     target_compile_definitions(augusta_renderer_nvrhi PRIVATE AUGUSTA_HAS_AFTERMATH=1)
   else()

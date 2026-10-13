@@ -11,7 +11,8 @@
 # Sets AUGUSTA_AFTERMATH_DIR to the SDK's root, empty when none is found, and
 # AUGUSTA_AFTERMATH_RUNTIME_DLLS to the DLLs an executable linking it loads,
 # both cached so augusta_stage_aftermath sees them from any directory. Both
-# renderers read these until Falcor's goes (ADR-0059).
+# renderers read these until Falcor's goes (ADR-0059). With the SDK, the
+# imported target augusta_aftermath links it.
 include_guard(GLOBAL)
 
 set(aftermath_dir "")
@@ -31,6 +32,14 @@ if(aftermath_dirs)
   # (the llvm one is gone as of the 2026.3 SDK, statically linked in instead).
   file(GLOB aftermath_dlls "${aftermath_dir}/lib/x64/*.dll")
   message(STATUS "Nsight Aftermath SDK found at ${aftermath_dir}")
+  add_library(augusta_aftermath SHARED IMPORTED GLOBAL)
+  set_target_properties(
+    augusta_aftermath
+    PROPERTIES
+      IMPORTED_IMPLIB ${aftermath_dir}/lib/x64/GFSDK_Aftermath_Lib.x64.lib
+      IMPORTED_LOCATION ${aftermath_dir}/lib/x64/GFSDK_Aftermath_Lib.x64.dll
+      INTERFACE_INCLUDE_DIRECTORIES ${aftermath_dir}/include
+  )
 endif()
 set(AUGUSTA_AFTERMATH_DIR "${aftermath_dir}" CACHE INTERNAL "Nsight Aftermath SDK's root, empty without one")
 set(AUGUSTA_AFTERMATH_RUNTIME_DLLS "${aftermath_dlls}" CACHE INTERNAL "Nsight Aftermath SDK's runtime DLLs")

@@ -38,7 +38,7 @@ constexpr std::chrono::seconds kDumpTimeout{5};
 constexpr std::chrono::milliseconds kDumpPoll{50};
 
 // Whether EnableGpuCrashDumps started Aftermath; read by Attach and Await.
-std::atomic<bool> enabled{false};
+std::atomic<bool> crash_dumps_enabled{false};
 
 std::filesystem::path ExecutablePath() {
   std::wstring path(MAX_PATH, L'\0');
@@ -86,12 +86,12 @@ void EnableGpuCrashDumps() {
       LW("subsystem=renderer event=gpu_crash_dumps_unavailable result={:#x}", static_cast<std::uint32_t>(result));
       return;
     }
-    enabled = true;
+    crash_dumps_enabled = true;
   });
 }
 
 void AttachGpuCrashDumps(ID3D12Device& device) {
-  if (!enabled) {
+  if (!crash_dumps_enabled) {
     return;
   }
   // Call stacks need markers, though the Renderer sets none.
@@ -108,7 +108,7 @@ void AttachGpuCrashDumps(ID3D12Device& device) {
 }
 
 void AwaitGpuCrashDump() {
-  if (!enabled) {
+  if (!crash_dumps_enabled) {
     return;
   }
   const auto deadline = std::chrono::steady_clock::now() + kDumpTimeout;
