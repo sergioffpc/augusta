@@ -1,5 +1,5 @@
-# The geometry the Renderer builds on the CPU (vertices.h), free of Falcor so
-# it is built and tested on every platform. Private to the module: its header
+# The geometry the Renderer builds on the CPU (vertices.h), free of any GPU API
+# so it is built and tested on every platform. Private to the module: its header
 # is reached through this directory, as frame_regions.h is.
 add_library(augusta_renderer_vertices STATIC vertices.cpp)
 target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -13,13 +13,14 @@ target_include_directories(augusta_renderer_debug_hud_text PUBLIC ${CMAKE_CURREN
 target_link_libraries(augusta_renderer_debug_hud_text PUBLIC augusta_input)
 augusta_set_module_scope(augusta_renderer_debug_hud_text CLIENT_ONLY)
 
-# Falcor's Renderer (ADR-0009), which nothing links since augustac draws through
-# NVRHI's (ADR-0059). It stays, built only on request, until Falcor is removed
-# from the repository, so the switch reverts on its own.
+if(WIN32)
+  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
+endif()
+
+# Falcor's Renderer (ADR-0009), which nothing links: augustac draws through
+# NVRHI's (ADR-0059). Built only on request, until Falcor leaves the repository.
 option(AUGUSTA_FALCOR "Build Falcor's Renderer, which nothing links (ADR-0059)" OFF)
 if(WIN32 AND AUGUSTA_FALCOR)
-  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
-
   add_library(augusta_renderer STATIC renderer.cpp debug_hud.cpp)
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(
@@ -415,8 +416,6 @@ if(WIN32 AND AUGUSTA_FALCOR)
 endif()
 
 if(WIN32)
-  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
-
   # The Renderer on NVRHI and GLFW (ADR-0059), which augustac links and
   # tests/client_renderer_smoke_test.cpp drives. NVRHI's backend is D3D12 alone,
   # and the manifest has both, ImGui and the shader compilers below on Windows

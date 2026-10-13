@@ -650,8 +650,8 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer's Falcor half is Windows-only (ADR-0009), but which region of its
-# per-frame upload buffers a frame uses is a Falcor-free header, private to the
+# The renderer's GPU half is Windows-only (D3D12, ADR-0059), but which region of
+# its per-frame upload buffers a frame uses is a GPU-free header, private to the
 # module, so it is tested everywhere through a private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
 target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)

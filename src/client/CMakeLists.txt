@@ -1,7 +1,7 @@
 # The client's private libraries below use renderer.h's plain types only, so
 # they take that header's directory rather than linking augusta_renderer_nvrhi:
-# their tests need neither a GPU nor a window. renderer.h includes input.h, hence
-# augusta_input.
+# their tests need neither a GPU nor a window. renderer.h includes input.h,
+# hence augusta_input.
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see scene_loader.h), the characters other players bring (see
