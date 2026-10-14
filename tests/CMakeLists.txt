@@ -740,17 +740,23 @@ if(WIN32)
   # them: lavapipe as its only driver, so the test never runs on a GPU. vcpkg's
   # folder, put on PATH, has their DLLs' own dependencies, and a loader for a
   # machine whose GPU driver installed none in System32, as CI's runner's.
+  # Set by a cmake -E env launcher rather than gtest_discover_tests' PROPERTIES,
+  # which splits a list-valued ENVIRONMENT into separate properties and drops
+  # all but its first variable. gtest_discover_tests runs the launcher, the
+  # target's CROSSCOMPILING_EMULATOR, before discovery and before each test,
+  # cross-compiling or not, under CMP0158's OLD behavior, which
+  # cmake_minimum_required gives.
   if(AUGUSTA_LAVAPIPE)
     set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
     add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
     target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
-    gtest_discover_tests(
+    set_target_properties(
       augusta_client_renderer_smoke_tests
       PROPERTIES
-        ENVIRONMENT
-          "VK_DRIVER_FILES=${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin"
-        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${vcpkg_installed}/bin"
+        CROSSCOMPILING_EMULATOR
+          "${CMAKE_COMMAND};-E;env;VK_DRIVER_FILES=${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin;--"
     )
+    gtest_discover_tests(augusta_client_renderer_smoke_tests)
   else()
     message(STATUS "Renderer smoke test not built: AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
   endif()
