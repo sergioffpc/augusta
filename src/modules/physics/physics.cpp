@@ -12,7 +12,31 @@
 #include <utility>
 #include <vector>
 
-#include <PxPhysicsAPI.h>
+// The headers this file uses, not PxPhysicsAPI.h: that one also pulls in
+// PxVecMath.h, whose Windows SIMD path reads cl's __m128 union members
+// (m128_u16), which clang-cl's __m128 doesn't have.
+#include <PxMaterial.h>
+#include <PxPhysics.h>
+#include <PxQueryFiltering.h>
+#include <PxQueryReport.h>
+#include <PxRigidDynamic.h>
+#include <PxRigidStatic.h>
+#include <PxScene.h>
+#include <PxSceneDesc.h>
+#include <characterkinematic/PxCapsuleController.h>
+#include <characterkinematic/PxControllerManager.h>
+#include <common/PxTolerancesScale.h>
+#include <cooking/PxCooking.h>
+#include <extensions/PxDefaultAllocator.h>
+#include <extensions/PxDefaultCpuDispatcher.h>
+#include <extensions/PxDefaultSimulationFilterShader.h>
+#include <extensions/PxRigidActorExt.h>
+#include <foundation/PxErrorCallback.h>
+#include <foundation/PxFoundation.h>
+#include <foundation/PxPhysicsVersion.h>
+#include <geometry/PxCapsuleGeometry.h>
+#include <geometry/PxTriangleMesh.h>
+#include <geometry/PxTriangleMeshGeometry.h>
 
 #include "augusta/grid.h"
 #include "augusta/logging.h"
