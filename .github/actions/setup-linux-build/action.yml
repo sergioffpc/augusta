@@ -1,20 +1,31 @@
 name: Set up a Linux build
 description: >
-  Installs the Linux toolchain the presets expect, starts sccache (unless told not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a Linux job needs before `cmake --preset`. Assumes the repository is checked out with its submodules and the job sets VCPKG_BINARY_SOURCES to the .vcpkg-bincache files provider (see ci.yml's server job for why not the NuGet feed). A job saves the cache with save-vcpkg-cache after it configures.
-
+  Installs the Linux toolchain the presets expect, starts sccache (unless told
+  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
+  Linux job needs before `cmake --preset`. Assumes the repository is checked out
+  with its submodules and the job sets VCPKG_BINARY_SOURCES to the
+  .vcpkg-bincache files provider (see ci.yml's server-x64-linux job for why not
+  the NuGet feed). A job saves the cache with save-vcpkg-cache after it
+  configures.
 inputs:
   extra-packages:
-    description: Additional apt packages a job needs on top of the build toolchain (e.g. clang-tidy).
+    description: >
+      Additional apt packages a job needs on top of the build toolchain (e.g.
+      clang-tidy).
     required: false
     default: ""
   sccache:
     description: >
-      Whether to put sccache on PATH, where the root CMakeLists.txt picks it up as the compiler launcher. "false" for CodeQL: a cache hit never runs the compiler, so CodeQL's tracer would see nothing to extract.
-
+      Whether to put sccache on PATH, where the root CMakeLists.txt picks it up
+      as the compiler launcher. "false" for CodeQL: a cache hit never runs the
+      compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
   vcpkg-cache-prefix:
-    description: A vcpkg binary cache of the job's own, by its key prefix (see restore-vcpkg-cache), for a job installing ports the others don't. Empty for the one every Linux job of the runner's architecture shares.
+    description: >
+      A vcpkg binary cache of the job's own, by its key prefix (see
+      restore-vcpkg-cache), for a job installing ports the others don't. Empty
+      for the one every Linux job of the runner's architecture shares.
     required: false
     default: ""
 runs:

@@ -20,7 +20,8 @@ permissions:
   actions: write
 jobs:
   analyze:
-    # Pinned rather than ubuntu-latest - see ci.yml's client job comment.
+    # Pinned rather than ubuntu-latest - see the comment on ci.yml's
+    # client-x64-windows job.
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,7 +39,7 @@ jobs:
       # its tracer, building the vcpkg dependencies took over an hour, for
       # third-party code nothing here analyzes.
       - name: Configure
-        # Without the client, as ci.yml's server job (which says why).
+        # Without the client, as ci.yml's server-x64-linux job (which says why).
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
         env:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"

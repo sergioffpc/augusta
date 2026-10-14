@@ -44,7 +44,7 @@ endif()
 # and its tests too. With it, vcpkg installs the manifest's client feature,
 # whose GLFW needs the system's X11, Wayland and xkbcommon development files on
 # Linux (scripts/bootstrap/linux.sh). The server image, and every Linux CI job
-# but the nightly's client-linux, turn it off: they build and test what
+# but the nightly's client-x64-linux, turn it off: they build and test what
 # augustad is built from, and the Linux client is the nightly's alone
 # (ADR-0013). Before project(), as AUGUSTA_TOOLS is.
 option(AUGUSTA_CLIENT "Build the client (augustac), its Renderer and their tests" ON)
@@ -55,10 +55,10 @@ endif()
 # Mesa's lavapipe, the software Vulkan driver the renderer smoke test draws on
 # (tests/CMakeLists.txt), on Windows, where vcpkg builds it: the manifest's
 # lavapipe feature, for tests only. Off by default, so a release's build
-# installs none of it and its SBOM names none; CI's client job and the
-# windows-debug preset turn it on. Its first build compiles LLVM, which needs
-# Visual Studio's ATL; off, the smoke test is not built. Before project(), as
-# AUGUSTA_TOOLS is.
+# installs none of it and its SBOM names none; CI's client-x64-windows job and
+# the windows-debug preset turn it on. Its first build compiles LLVM, which
+# needs Visual Studio's ATL; off, the smoke test is not built. Before project(),
+# as AUGUSTA_TOOLS is.
 if(CMAKE_HOST_WIN32)
   option(AUGUSTA_LAVAPIPE "Install Mesa's lavapipe for the renderer smoke test" OFF)
   if(AUGUSTA_LAVAPIPE)
