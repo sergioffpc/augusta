@@ -69,6 +69,26 @@ _NO_CPE = {
     "nvrhi": "not in the NVD",
     "directx-headers": "not in the NVD",
     "vulkan-headers": "not in the NVD",
+    # GLFW's X11 and Wayland ports on Linux, and what they are built with:
+    # GLFW loads the system's X11 and Wayland libraries at runtime, so their
+    # code is in no executable shipped, only their headers (ADR-0058).
+    "libx11": "headers only: the client loads the system's at runtime",
+    "libxcb": "headers only: the client loads the system's at runtime",
+    "libxau": "libxcb's, linked into no executable shipped",
+    "libxdmcp": "libxcb's, linked into no executable shipped",
+    "wayland": "headers and wayland-scanner: the client loads the "
+    "system's library at runtime",
+    "libxml2": "a build tool's: wayland-scanner's and libxcb's",
+    "libxslt": "a build tool's: libxcb's",
+    "libiconv": "a build tool's: libxml2's",
+    "xcb-proto": "a build tool: libxcb's",
+    "xcb-util-m4": "a build tool: libxcb's",
+    "xorg-macros": "a build tool: the X11 ports'",
+    "xproto": "headers only: the X11 ports'",
+    "xtrans": "headers only: libx11's",
+    "pthread": "vcpkg's stand-in for the system's pthreads",
+    "pthreads": "vcpkg's stand-in for the system's pthreads",
+    "pthread-stubs": "libxcb's, linked into no executable shipped",
     # Vulkan's validation layer, which Debug builds and the renderer smoke test
     # load, and the ports it pulls in (ADR-0059): never in the client's zip.
     "vulkan-validationlayers": "a development layer, shipped in no package",
@@ -92,10 +112,10 @@ _NO_CPE = {
     # port it pulls in, with python3's own dependencies.
     "pybind11": "the Agents' module's, linked into no executable shipped",
     "python3": "pybind11's, linked into no executable shipped",
-    "bzip2": "python3's, linked into no executable shipped",
+    "bzip2": "python3's and libxml2's, linked into no executable shipped",
     "expat": "python3's, linked into no executable shipped",
     "libffi": "python3's, linked into no executable shipped",
-    "liblzma": "python3's, linked into no executable shipped",
+    "liblzma": "python3's and libxml2's, linked into no executable shipped",
     "mpdecimal": "python3's, linked into no executable shipped",
     "sqlite3": "python3's, linked into no executable shipped",
     "zstd": "python3's, linked into no executable shipped",

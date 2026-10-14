@@ -161,6 +161,9 @@ decisions already made in ARCHITECTURE.md:
   release is published only once its unzipped client runs `augustac --version`
   and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
   catches a DLL it imports that is missing, not one loaded only once it runs.
+  The Linux client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder
+  checked the same way, and for linking nothing from the system beyond an
+  allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -332,7 +335,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
   a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
   `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
-  by GUID and age (`dumpbin /headers`, ADR-0055).
+  by GUID and age (`dumpbin /headers`, ADR-0055). The Linux client's is
+  `augustac-linux-x64.debug`, matched by build ID, as `augustad`'s is.
 - **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
   privilege escalation, every capability dropped, augustad's own seccomp profile
   and a read-only root filesystem; augustad writes only to its capture volume,
