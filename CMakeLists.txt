@@ -127,6 +127,7 @@ add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
 include(cmake/AugustaModule.cmake)
+include(cmake/AugustaDebugInfo.cmake)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
