@@ -20,10 +20,10 @@ static, but that saves a few DLLs of a folder that must exist anyway.
 folder (`cmake --install --component client`). They are `EXCLUDE_FROM_ALL`, so
 `augustad`'s own install is unchanged. `scripts/stage-client.sh` stages and zips
 the folder, and runs `augustac --version` from its unzipped copy with only
-Windows' own folders on `PATH`. CI's client job runs it on every pull request.
-The release workflow publishes the zip only once that copy prints the tag's
-version. The zip has the release's provenance and SBOM attestations. The PDB
-stays a separate asset (ADR-0055).
+Windows' own folders on `PATH`. CI's `client-x64-windows` job runs it on every
+pull request. The release workflow publishes the zip only once that copy prints
+the tag's version. The zip has the release's provenance and SBOM attestations.
+The PDB stays a separate asset (ADR-0055).
 
 ## The Linux Tarball
 
@@ -52,12 +52,12 @@ no launcher script.
   with no `LD_LIBRARY_PATH` or `LD_PRELOAD`, checking the printed version when
   given one. It checks each file's `NEEDED` entries against the folder and the
   allowlist, and that `augustac.debug` has the build ID of the `augustac` in the
-  folder (ADR-0055). The nightly `client-linux` job runs it, and the release's
-  `client-linux` job before it publishes the tarball, its `.debug` and its SBOM,
-  with the same provenance and SBOM attestations as the zip. Both jobs also run
-  the extracted `augustac --version` in a clean `ubuntu:26.04` container, so
-  none of the build runner's libraries can stand in for one the folder lacks.
-  ctest checks the check itself, against a stand-in build
+  folder (ADR-0055). The nightly `client-x64-linux` job runs it, and the
+  release's `client-x64-linux` job before it publishes the tarball, its `.debug`
+  and its SBOM, with the same provenance and SBOM attestations as the zip. Both
+  jobs also run the extracted `augustac --version` in a clean `ubuntu:26.04`
+  container, so none of the build runner's libraries can stand in for one the
+  folder lacks. ctest checks the check itself, against a stand-in build
   (`tests/stage_client_linux.cmake`), on every pull request's Linux build.
 
 ## Considered Options
