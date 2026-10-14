@@ -44,15 +44,18 @@ PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pyma
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 
-# What CI's Lint step runs clang-tidy on: every src .cpp except the two
-# Windows-only trees and the audio module's Windows-only output device, which
-# its Linux build graph has no compile commands for, and the C++ tools'
-# (tools/agent), built with them.
+# What CI's Lint step runs clang-tidy on: every src .cpp except the client's
+# trees and the audio module's output device, which its Linux build (without the
+# client, AUGUSTA_CLIENT) has no compile commands for, and the C++ tools'
+# (tools/agent), built with them. The silent output CI lints there is left out
+# too: either platform's default build has the client, so compiles the device
+# instead.
 TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
+TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 # PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
-# linted by CI's Linux run alone, as is the audio output every other build has.
-TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
+# linted by CI's Linux run alone.
+TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp"
 else
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif

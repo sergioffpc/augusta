@@ -650,10 +650,10 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer's GPU half builds on Windows alone until the client's Linux build
-# lands (ADR-0059 decides both), but which region of its per-frame upload
-# buffers a frame uses is a GPU-free header, private to the module, so it is
-# tested everywhere through a private include path.
+# The renderer's GPU half builds only with the client (AUGUSTA_CLIENT), but
+# which region of its per-frame upload buffers a frame uses is a GPU-free
+# header, private to the module, so it is tested in every build through a
+# private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
 target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
@@ -683,10 +683,9 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_renderer_device_choice_tests)
 
-if(WIN32)
-  # The client builds on Windows alone until its Linux build lands (ADR-0059
-  # decides both), and so do its private libraries' targets - though only the
-  # smoke test below links the Renderer.
+if(AUGUSTA_CLIENT)
+  # The client's private libraries' targets build with the client, on Windows
+  # and Linux - though only the smoke test below links the Renderer.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
@@ -734,26 +733,31 @@ if(WIN32)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
-  # in a hidden window, so it runs on CI's runner, which has no GPU; under the
-  # validation layer, whose errors fail it. Both come from vcpkg (the manifest's
-  # lavapipe feature, AUGUSTA_LAVAPIPE), and ctest points the Vulkan loader at
-  # them: lavapipe as its only driver, so the test never runs on a GPU. vcpkg's
-  # folder, put on PATH, has their DLLs' own dependencies, and a loader for a
-  # machine whose GPU driver installed none in System32, as CI's runner's.
+  # in a hidden window, so it runs on CI's runners, which have no GPU; under the
+  # validation layer, whose errors fail it. The layer comes from vcpkg (the
+  # manifest's client feature), and ctest points the Vulkan loader at it and at
+  # lavapipe, as its only driver, so the test never runs on a GPU. The loader
+  # logs its errors and warnings, so a driver it can't load says why.
   # Set by a cmake -E env launcher rather than gtest_discover_tests' PROPERTIES,
   # which splits a list-valued ENVIRONMENT into separate properties and drops
   # all but its first variable. gtest_discover_tests runs the launcher, the
   # target's CROSSCOMPILING_EMULATOR, before discovery and before each test,
   # cross-compiling or not, under CMP0158's OLD behavior, which
   # cmake_minimum_required gives.
-  # The loader is given a copy of lavapipe's ICD manifest whose library_path is
-  # the driver in vcpkg's bin: Mesa writes that path when it builds the port, in
-  # vcpkg's build folder, which a binary-cached package may not share. The
-  # loader logs its errors and warnings, so a driver it can't load says why.
-  # An elevated process's loader ignores VK_DRIVER_FILES and VK_ADD_LAYER_PATH,
-  # so CI's runner, whose processes are, registers both instead (ci.yml).
-  if(AUGUSTA_LAVAPIPE)
-    set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+  set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+  set(smoke_test_environment "")
+  if(WIN32 AND AUGUSTA_LAVAPIPE)
+    # On Windows lavapipe comes from vcpkg too (the manifest's lavapipe
+    # feature, AUGUSTA_LAVAPIPE). vcpkg's folder, put on PATH, has the DLLs'
+    # own dependencies, and a loader for a machine whose GPU driver installed
+    # none in System32, as CI's runner's.
+    # The loader is given a copy of lavapipe's ICD manifest whose library_path
+    # is the driver in vcpkg's bin: Mesa writes that path when it builds the
+    # port, in vcpkg's build folder, which a binary-cached package may not
+    # share.
+    # An elevated process's loader ignores VK_DRIVER_FILES and
+    # VK_ADD_LAYER_PATH, so CI's runner, whose processes are, registers both
+    # instead (ci.yml).
     set(lavapipe_icd "${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json")
     if(NOT EXISTS "${lavapipe_icd}" OR NOT EXISTS "${vcpkg_installed}/bin/vulkan-1.dll")
       message(FATAL_ERROR "AUGUSTA_LAVAPIPE is on, but vcpkg installed no ${lavapipe_icd} or vulkan-1.dll")
@@ -768,18 +772,43 @@ if(WIN32)
     endif()
     string(JSON icd SET "${icd}" ICD library_path "\"${lavapipe_library}\"")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json" "${icd}")
-
+    set(
+      smoke_test_environment
+      "VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;VK_LOADER_DEBUG=error,warn;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin"
+    )
+  elseif(NOT WIN32)
+    # On Linux lavapipe is the system's (Mesa's Vulkan drivers, which
+    # scripts/bootstrap/linux.sh installs), through the system's loader, as the
+    # client itself runs, and its window needs a display: CI's runner gives it
+    # a virtual X server (xvfb-run, nightly-jobs.yml). The layer's manifest
+    # names its library without a folder, which the loader then looks for on
+    # the library path: vcpkg's lib, put on it.
+    find_file(
+      AUGUSTA_LAVAPIPE_ICD
+      NAMES lvp_icd.json lvp_icd.x86_64.json
+      PATHS /usr/share/vulkan/icd.d
+      NO_DEFAULT_PATH
+      DOC "The system's lavapipe ICD manifest, which the renderer smoke test draws on"
+    )
+    if(AUGUSTA_LAVAPIPE_ICD)
+      set(
+        smoke_test_environment
+        "VK_DRIVER_FILES=${AUGUSTA_LAVAPIPE_ICD};VK_ADD_LAYER_PATH=${vcpkg_installed}/share/vulkan/explicit_layer.d;VK_LOADER_DEBUG=error,warn;--modify;LD_LIBRARY_PATH=path_list_prepend:${vcpkg_installed}/lib"
+      )
+    endif()
+  endif()
+  if(smoke_test_environment)
     add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
     target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
     set_target_properties(
       augusta_client_renderer_smoke_tests
-      PROPERTIES
-        CROSSCOMPILING_EMULATOR
-          "${CMAKE_COMMAND};-E;env;VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;VK_LOADER_DEBUG=error,warn;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin;--"
+      PROPERTIES CROSSCOMPILING_EMULATOR "${CMAKE_COMMAND};-E;env;${smoke_test_environment};--"
     )
     gtest_discover_tests(augusta_client_renderer_smoke_tests)
-  else()
+  elseif(WIN32)
     message(STATUS "Renderer smoke test not built: AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
+  else()
+    message(STATUS "Renderer smoke test not built: no lavapipe in /usr/share/vulkan/icd.d (Mesa's Vulkan drivers)")
   endif()
 
   # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
