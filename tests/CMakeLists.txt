@@ -746,15 +746,34 @@ if(WIN32)
   # target's CROSSCOMPILING_EMULATOR, before discovery and before each test,
   # cross-compiling or not, under CMP0158's OLD behavior, which
   # cmake_minimum_required gives.
+  # The loader is given a copy of lavapipe's ICD manifest whose library_path is
+  # the driver in vcpkg's bin: Mesa writes that path when it builds the port, in
+  # vcpkg's build folder, which a binary-cached package may not share. The
+  # loader logs its errors and warnings, so a driver it can't load says why.
   if(AUGUSTA_LAVAPIPE)
     set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    set(lavapipe_icd "${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json")
+    if(NOT EXISTS "${lavapipe_icd}" OR NOT EXISTS "${vcpkg_installed}/bin/vulkan-1.dll")
+      message(FATAL_ERROR "AUGUSTA_LAVAPIPE is on, but vcpkg installed no ${lavapipe_icd} or vulkan-1.dll")
+    endif()
+    file(READ "${lavapipe_icd}" icd)
+    string(JSON lavapipe_library GET "${icd}" ICD library_path)
+    file(TO_CMAKE_PATH "${lavapipe_library}" lavapipe_library)
+    cmake_path(GET lavapipe_library FILENAME lavapipe_library)
+    set(lavapipe_library "${vcpkg_installed}/bin/${lavapipe_library}")
+    if(NOT EXISTS "${lavapipe_library}")
+      message(FATAL_ERROR "lavapipe's ICD manifest names ${lavapipe_library}, which vcpkg didn't install")
+    endif()
+    string(JSON icd SET "${icd}" ICD library_path "\"${lavapipe_library}\"")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json" "${icd}")
+
     add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
     target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
     set_target_properties(
       augusta_client_renderer_smoke_tests
       PROPERTIES
         CROSSCOMPILING_EMULATOR
-          "${CMAKE_COMMAND};-E;env;VK_DRIVER_FILES=${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin;--"
+          "${CMAKE_COMMAND};-E;env;VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;VK_LOADER_DEBUG=error,warn;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin;--"
     )
     gtest_discover_tests(augusta_client_renderer_smoke_tests)
   else()
