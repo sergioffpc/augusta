@@ -13,6 +13,10 @@ inputs:
 
     required: false
     default: "true"
+  vcpkg-cache-prefix:
+    description: A vcpkg binary cache of the job's own, by its key prefix (see restore-vcpkg-cache), for a job installing ports the others don't. Empty for the one every Linux job of the runner's architecture shares.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -29,6 +33,8 @@ runs:
     - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       if: inputs.sccache == 'true'
     - uses: ./.github/actions/restore-vcpkg-cache
+      with:
+        prefix: ${{ inputs.vcpkg-cache-prefix }}
     - name: Bootstrap vcpkg
       shell: bash
       run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics

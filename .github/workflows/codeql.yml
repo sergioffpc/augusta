@@ -38,7 +38,8 @@ jobs:
       # its tracer, building the vcpkg dependencies took over an hour, for
       # third-party code nothing here analyzes.
       - name: Configure
-        run: cmake --preset linux
+        # Without the client, as ci.yml's server job (which says why).
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
         env:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
       - uses: ./.github/actions/save-vcpkg-cache

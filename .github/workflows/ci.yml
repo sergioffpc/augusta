@@ -389,16 +389,18 @@ jobs:
         working-directory: tools
         run: uv sync --locked --no-default-groups --group agent
       - name: Configure
-        run: cmake --preset linux "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
+        # Without the client: pull requests build and test it on Windows alone,
+        # and the Linux client is the nightly's (nightly-jobs.yml, client-linux).
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Lint
         # Both checks run, and the step fails if either does, so one run shows
         # every finding. clang-tidy with .clang-tidy's full profile on src:
-        # src/client and the renderer's D3D12 half are Windows-only
-        # (CMakeLists.txt gates both on WIN32 - the latter since ADR-0059's
-        # NVRHI backend is D3D12 alone), as is the audio module's output device (miniaudio and
-        # Steam Audio, built only with AUGUSTA_AUDIO_OUTPUT, on only on Windows -
-        # src/modules/audio/CMakeLists.txt), and aren't part of this Linux configure's build graph
+        # src/client and the renderer's GPU half build only with the client
+        # (AUGUSTA_CLIENT), which this job leaves off, as does the audio
+        # module's output device (miniaudio and Steam Audio, built only with
+        # AUGUSTA_AUDIO_OUTPUT, which follows it -
+        # src/modules/audio/CMakeLists.txt), and aren't part of this configure's build graph
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
         # flags. The renderer's vertices.cpp builds here but is skipped too:
@@ -411,8 +413,8 @@ jobs:
         # The C++ tools (tools/agent) are built with them, so
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
-        # Makefile's tidy target runs it (which says why -w); the Windows-only
-        # client tests are the client job's.
+        # Makefile's tidy target runs it (which says why -w); the client tests
+        # are the client job's.
         run: |
           status=0
           find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
@@ -540,7 +542,8 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (ASan + UBSan)
-        run: cmake --preset linux-san
+        # Without the client, as the server job (which says why).
+        run: cmake --preset linux-san -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-san --target all augusta_tests
@@ -564,7 +567,8 @@ jobs:
           # libFuzzer ships with the clang package this installs.
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
-        run: cmake --preset linux-fuzz
+        # Without the client, as the server job (which says why).
+        run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
