@@ -54,9 +54,11 @@ no launcher script.
   allowlist, and that `augustac.debug` has the build ID of the `augustac` in the
   folder (ADR-0055). The nightly `client-linux` job runs it, and the release's
   `client-linux` job before it publishes the tarball, its `.debug` and its SBOM,
-  with the same provenance and SBOM attestations as the zip. ctest checks the
-  check itself, against a stand-in build (`tests/stage_client_linux.cmake`), on
-  every pull request's Linux build.
+  with the same provenance and SBOM attestations as the zip. Both jobs also run
+  the extracted `augustac --version` in a clean `ubuntu:26.04` container, so
+  none of the build runner's libraries can stand in for one the folder lacks.
+  ctest checks the check itself, against a stand-in build
+  (`tests/stage_client_linux.cmake`), on every pull request's Linux build.
 
 ## Considered Options
 

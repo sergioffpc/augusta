@@ -311,6 +311,15 @@ jobs:
         # allowlist, and its debug info matched by build ID
         # (scripts/stage-client.sh, ADR-0058).
         run: scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+      - name: Run the client on a clean Ubuntu 26.04
+        # As release.yml does: the extracted tarball on Ubuntu's base image
+        # alone, read-only and offline, so none of the runner's libraries can
+        # stand in for one the folder lacks.
+        run: |
+          mkdir "$RUNNER_TEMP/clean"
+          tar -C "$RUNNER_TEMP/clean" -xzf "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+          docker run --rm --network none -v "$RUNNER_TEMP/clean/augustac:/augustac:ro" \
+            ubuntu:26.04 /augustac/augustac --version
       - name: Check the client's SBOM
         # release.yml's SBOM of it, and the CPEs sbom-scan adds to it, as
         # ci.yml checks the Windows client's: a dependency the build gains with
@@ -438,7 +447,10 @@ jobs:
         if: ${{ !inputs.release }}
         run: |
           sbom="${{ matrix.executable }}.spdx.json"
-          if ! gh release view --json assets --jq '.assets[].name' | grep -qxF "$sbom"; then
+          # Listed first, so a gh failure fails the step rather than reading
+          # as an asset not published.
+          assets="$(gh release view --json assets --jq '.assets[].name')"
+          if ! grep -qxF "$sbom" <<< "$assets"; then
             echo "::notice::The latest release publishes no $sbom: nothing to scan."
             echo "published=false" >> "$GITHUB_OUTPUT"
             exit 0

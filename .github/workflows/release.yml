@@ -141,6 +141,20 @@ jobs:
           # Its debug info, split off by this same build, whose build ID the
           # staging check matched to the tarred augustac's (ADR-0055).
           cp build/x64-linux/src/client/augustac.debug dist/augustac-linux-x64.debug
+      - name: Run the client on a clean Ubuntu 26.04
+        # The extracted tarball on Ubuntu's base image alone, read-only and
+        # offline: none of the runner's own libraries can stand in for one the
+        # folder lacks. ubuntu:26.04, by tag, as the Dockerfiles take it.
+        run: |
+          mkdir "$RUNNER_TEMP/clean"
+          tar -C "$RUNNER_TEMP/clean" -xzf dist/augustac-linux-x64.tar.gz
+          printed="$(docker run --rm --network none -v "$RUNNER_TEMP/clean/augustac:/augustac:ro" \
+            ubuntu:26.04 /augustac/augustac --version)"
+          echo "$printed"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$printed" != "augustac ${GITHUB_REF_NAME#v}" ]; then
+            echo "augustac prints '$printed', not 'augustac ${GITHUB_REF_NAME#v}'" >&2
+            exit 1
+          fi
       - name: SBOM
         run: |
           python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
