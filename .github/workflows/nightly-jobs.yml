@@ -261,7 +261,9 @@ jobs:
     # preset with the client on, as a Linux developer builds it, and its whole
     # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
     # virtual X server. So a change that breaks augustac on Linux, or the shared
-    # code under the client's build, surfaces within a night.
+    # code under the client's build, surfaces within a night. Then the same
+    # suite again under ASan and UBSan (linux-san), since no pull request's
+    # sanitizers job builds the client or the Renderer.
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -293,9 +295,37 @@ jobs:
         # where it finds no lavapipe.
         run: test -x build/x64-linux/tests/augusta_client_renderer_smoke_tests
       - name: Test
+        id: test
         # In a virtual X server, where the smoke test opens its hidden window:
         # GLFW picks X11, as there is no Wayland session.
         run: xvfb-run --auto-servernum ctest --preset linux --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
+      # The sanitized pass in this job rather than a matrix entry of its own:
+      # it reuses this job's vcpkg cache and uploads in its junit artifact.
+      - name: Configure (ASan + UBSan)
+        # Also after a failing test above, so it hides no sanitizer report.
+        id: configure-san
+        if: |
+          !cancelled() && (success() || steps.test.outcome == 'failure')
+        run: cmake --preset linux-san
+      - name: Build (ASan + UBSan)
+        id: build-san
+        if: |
+          !cancelled() && steps.configure-san.outcome == 'success'
+        run: cmake --build --preset linux-san --target all augusta_tests
+      - name: Check that the sanitized smoke test is built
+        id: check-san
+        if: |
+          !cancelled() && steps.build-san.outcome == 'success'
+        run: test -x build/x64-linux-san/tests/augusta_client_renderer_smoke_tests
+      - name: Test (ASan + UBSan)
+        # A report fails the test it came from: ASan's and LeakSanitizer's do
+        # by themselves, UBSan's only with halt_on_error, as it otherwise
+        # prints its report and lets the test pass.
+        if: |
+          !cancelled() && steps.check-san.outcome == 'success'
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: xvfb-run --auto-servernum ctest --preset linux-san --output-junit "$GITHUB_WORKSPACE/junit/client-linux-san.xml"
       - name: Upload the test results
         # For test-report below, also after a failing test.
         if: success() || failure()
@@ -436,11 +466,11 @@ jobs:
           output-format: table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
-    # every ctest run above, a row per test and a column per job, and the
-    # coverage job's llvm-cov report. Uploaded as a run artifact; the
-    # documentation site publishes the latest scheduled night's under tests/
-    # (ADR-0046), so a release's stays an artifact of its run. Also after a
-    # failing test, which is when it is read.
+    # every ctest run above, a row per test and a column per run (client-linux
+    # has two, linux and linux-san), and the coverage job's llvm-cov report.
+    # Uploaded as a run artifact; the documentation site publishes the latest
+    # scheduled night's under tests/ (ADR-0046), so a release's stays an
+    # artifact of its run. Also after a failing test, which is when it is read.
     needs: [property-tests, tsan, netcode, coverage, client-linux]
     if: always()
     runs-on: ubuntu-26.04
