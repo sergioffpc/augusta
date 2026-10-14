@@ -153,16 +153,15 @@ EOF
     | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
 
   # src/client and src/modules/renderer build only with the client, which
-  # CI's Linux run leaves off, so it has no compile commands for them; PhysX's
-  # SSE headers break clang-tidy under MSVC's flags, so physics.cpp is linted
-  # by CI's Linux run alone. The audio module's output device builds from
-  # different sources with the client and without it, and a local build has
-  # the client while CI's Linux run hasn't, so each side skips what the other
-  # lints (as the Makefile's tidy target does).
+  # CI's Linux run leaves off, so it has no compile commands for them. The
+  # audio module's output device builds from different sources with the
+  # client and without it, and a local build has the client while CI's Linux
+  # run hasn't, so each side skips what the other lints (as the Makefile's
+  # tidy target does).
   local changed_files="${files}"
   local other_platform
   if [[ "${windows}" = 1 ]]; then
-    other_platform='src/modules/(physics/physics|audio/output_none)\.cpp'
+    other_platform='src/modules/audio/output_none\.cpp'
   else
     other_platform='src/modules/audio/(output_none|output_miniaudio|miniaudio)\.cpp'
   fi
@@ -175,16 +174,14 @@ EOF
   # include-cleaner alone (as the Makefile's tidy target runs it, which says
   # why -w): the tests and, on Windows, the Windows-only sources - those the
   # debug build has compile commands for (its paths are absolute, with \\ for
-  # separators on Windows), so not the other platform's, and not physics.cpp
-  # under MSVC's flags.
+  # separators on Windows), so not the other platform's.
   local include_files="" compiled
   if [[ -f "${build_dir}/compile_commands.json" ]]; then
     # shellcheck disable=SC1003 # a literal backslash, not an escaped quote
     compiled=$(tr '\\' '/' <"${build_dir}/compile_commands.json" \
       | tr -s '/' | grep '"file": ')
     include_files=$(echo "${changed_files}" | grep -E '^(src|tests)/.*\.cpp$' \
-      | grep -vxF \
-        "$(printf '%s\n' "${files}" src/modules/physics/physics.cpp)" \
+      | grep -vxF "$(printf '%s\n' "${files}")" \
       | existing \
       | while IFS= read -r f; do
         echo "${compiled}" | grep -qF "/${f}\"" && echo "${f}"
