@@ -43,6 +43,7 @@
         "llvm-vs-code-extensions.vscode-clangd",
         "shader-slang.slang-language-extension",
         "editorconfig.editorconfig",
+        "esbenp.prettier-vscode",
         "redhat.vscode-yaml",
         "ms-kubernetes-tools.vscode-kubernetes-tools",
         "sumneko.lua",
@@ -55,7 +56,12 @@
         "timonwong.shellcheck",
         "tamasfe.even-better-toml",
         "github.vscode-github-actions"
-      ]
+      ],
+      // .vscode/settings.json names the Windows venv's interpreter; uv sync
+      // makes Linux's under bin/.
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/tools/.venv/bin/python"
+      }
     }
   }
 }
