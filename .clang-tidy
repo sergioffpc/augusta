@@ -50,8 +50,8 @@ Checks: >
 # instance state yet only because there's no real state to touch, not
 # because they're meant to be static. Chasing this check per stub would
 # just mean undoing it the moment each real implementation lands.
-# (renderer::Renderer is real, ADR-0059 - but it's Windows-only and this
-# clang-tidy run is Linux-only, so it's moot there.)
+# (renderer::Renderer is real, ADR-0059, and linted by the Windows client job;
+# the check stays off there too, so every module is held to one profile.)
 #
 # readability-identifier-length is disabled because the Google style guide sets
 # no minimum name length, and a short name is the natural one in a small scope
@@ -71,9 +71,11 @@ WarningsAsErrors: "*"
 # commands give it, which is absolute (/home/runner/work/augusta/augusta/src/...
 # on CI, C:\...\augusta\src\... on Windows), so the pattern must allow a
 # prefix and either separator. third_party is excluded: its vendored sources
-# have src/ directories of their own.
+# have src/ directories of their own. So is build: the headers the build
+# generates there (the Renderer's embedded shaders and font) sit under a src/ of
+# their own, and are byte arrays, not code anyone writes.
 HeaderFilterRegex: '.*[/\\](src|tests)[/\\].*\.h$'
-ExcludeHeaderFilterRegex: '.*[/\\]third_party[/\\].*'
+ExcludeHeaderFilterRegex: '.*[/\\](third_party|build)[/\\].*'
 
 CheckOptions:
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }

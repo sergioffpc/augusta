@@ -73,6 +73,8 @@ struct Client {
 
 // How long `augustac --replays` waits for the replay server's list.
 constexpr auto kReplayListPatience = std::chrono::seconds(10);
+// How often it pumps the connection while it waits.
+constexpr auto kReplayListPollInterval = std::chrono::milliseconds(10);
 
 // augustac --replays (ADR-0051): asks the server file_config names for the
 // captures it replays and prints them, or says why it could not.
@@ -87,7 +89,7 @@ augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& f
     if (std::optional<augusta::failure::Failure> failed = query.TakeTransportFailure()) {
       return std::move(*failed);
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(kReplayListPollInterval);
   }
   if (const std::optional<std::vector<augusta::harness::ReplayListing>>& list = query.List()) {
     std::println("{}", augusta::harness::DescribeReplayList(*list));

@@ -75,7 +75,9 @@ decisions already made in ARCHITECTURE.md:
        (`needs:`), so a formatting slip fails in seconds instead of after a full
        Windows + Linux + sanitizers build
     2. Build + test the client on a Windows runner (`clang-cl` and `lld-link`,
-       ADR-0008), with the server's development-only Windows x64 build (NFR-04)
+       ADR-0008), with the server's development-only Windows x64 build (NFR-04).
+       Plus `clang-tidy` with the full profile on the client, the Renderer and
+       their tests, which the Linux run below builds without
     3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
        x86-64, one of its two production platforms: Linux arm64 is built only
        for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google

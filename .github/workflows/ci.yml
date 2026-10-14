@@ -306,12 +306,19 @@ jobs:
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
       - name: Lint
-        # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
-        # says why -w) on what the server job's Linux build can't lint: the
-        # Windows-only sources and tests. After Build, which generates the
-        # headers the renderer embeds its shaders and font from.
-        run: >-
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
+        # What the server job's Linux build can't lint, as it builds without
+        # the client. The client, the Renderer and their tests get .clang-tidy's
+        # full profile, from clang-cl's compile commands (tests/.clang-tidy
+        # leaves the tests' literals alone); the audio module's output device
+        # gets misc-include-cleaner alone (the Makefile's tidy target says why
+        # -w). Both run, and the step fails if either does. One file per
+        # clang-tidy, as the server job runs it. After Build, which generates
+        # the headers the renderer embeds its shaders and font from.
+        run: |
+          status=0
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy --quiet -p=build/x64-windows || status=1
+          git ls-files 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
+          exit "$status"
       - name: Register lavapipe and the validation layer
         # The Vulkan loader ignores the smoke test's VK_DRIVER_FILES and
         # VK_ADD_LAYER_PATH in an elevated process, which the runner's are, so
@@ -389,8 +396,7 @@ jobs:
         # at all, so they have no compile_commands.json entry here - excluded
         # rather than linted against the wrong platform's (missing) compile
         # flags. The renderer's vertices.cpp builds here but is skipped too:
-        # it would hold augusta/renderer.h to the full profile, which that
-        # header, linted by include-cleaner alone so far, doesn't pass yet.
+        # the client job lints the whole Renderer, from its own build.
         # One file per clang-tidy, on every core: a serial run over the
         # whole list took most of the job. One file per invocation also
         # keeps a stray Windows-only file to its own error, where a multi-file
