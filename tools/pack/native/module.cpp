@@ -2,9 +2,12 @@
 // Python equivalent, the mesh pass (mesh.h) and the texture compression
 // (texture.h), called from augusta_pack.cook.
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -20,7 +23,8 @@ namespace py = pybind11;
 PYBIND11_MODULE(_native, module) {
   module.doc() =
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
-      "(ADR-0016), and stb_image + libktx's PNG/JPEG load, BC7/BC5/BC4 encode and KTX2 write (ADR-0017).";
+      "(ADR-0016), and stb_image + stb_image_resize2 + libktx's PNG/JPEG load, mip chain, BC7/BC5/BC4 encode and KTX2 "
+      "write (ADR-0017).";
   module.def(
       "optimize_mesh",
       [](std::vector<float> points, std::vector<std::uint32_t> indices) {
@@ -38,5 +42,29 @@ PYBIND11_MODULE(_native, module) {
         return py::bytes(reinterpret_cast<const char*>(ktx2.data()), ktx2.size());
       },
       py::arg("image_path"), py::arg("format") = "bc7",
-      "Loads image_path (PNG/JPEG), encodes it to a KTX2 in `format` (bc7/bc5/bc4), returns the KTX2's bytes.");
+      "Loads image_path (PNG/JPEG), encodes it to a KTX2 in `format` (bc7/bc5/bc4) with its full mip chain, returns "
+      "the KTX2's bytes.");
+  module.def(
+      "generate_mip_chain",
+      [](const py::bytes& rgba, std::uint32_t width, std::uint32_t height, const std::string& format) {
+        const std::string_view pixels(rgba);
+        // A buffer shorter than its dimensions would be read past its end.
+        if (width == 0 || height == 0 || pixels.size() != std::size_t{width} * height * 4) {
+          throw py::value_error(std::format("rgba holds {} bytes, not the {}x{}x4 a {}x{} RGBA image needs",
+                                            pixels.size(), width, height, width, height));
+        }
+        const std::vector<augusta::pack::Image> levels =
+            augusta::pack::GenerateMipChain({.width = width, .height = height, .rgba = {pixels.begin(), pixels.end()}},
+                                            augusta::pack::ContentOf(format));
+        py::list chain;
+        for (const augusta::pack::Image& level : levels) {
+          chain.append(py::make_tuple(level.width, level.height,
+                                      py::bytes(reinterpret_cast<const char*>(level.rgba.data()), level.rgba.size())));
+        }
+        return chain;
+      },
+      py::arg("rgba"), py::arg("width"), py::arg("height"), py::arg("format") = "bc7",
+      "rgba: a width x height 8-bit RGBA image, row by row from the top. Returns the mip chain compress_texture "
+      "encodes for `format`, as [(width, height, rgba)], level 0 (the image itself) first. Exposed so the filtering "
+      "can be checked before BC encoding.");
 }
