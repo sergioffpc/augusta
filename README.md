@@ -11,8 +11,8 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, with a Windows client and a headless Linux dedicated
-server.
+server-authoritative, with a Windows and Linux client and a headless Linux
+dedicated server.
 
 ## Contents
 
@@ -29,8 +29,8 @@ server.
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of
-  truth for all gameplay state; the Windows client predicts locally and
-  reconciles against authoritative snapshots (no exact replay).
+  truth for all gameplay state; the client predicts locally and reconciles
+  against authoritative snapshots (no exact replay).
 - **Physics-based ballistics** — real bullet drop and travel time, not hitscan;
   hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes

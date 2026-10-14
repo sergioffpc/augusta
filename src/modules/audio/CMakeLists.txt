@@ -11,14 +11,21 @@ target_include_directories(augusta_audio PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 target_link_libraries(augusta_audio PUBLIC augusta_assets augusta_math PRIVATE augusta_logging)
 augusta_set_module_scope(augusta_audio CLIENT_ONLY)
 
-# The output device, through miniaudio and Steam Audio (ADR-0010, ADR-0028).
-# Both libraries are cross-platform, but only the Windows client makes sound,
-# so vcpkg.json installs them for Windows alone and the option is on there
-# only: every other build - the Linux one, whose tests link this module through
-# augusta_presentation - has an Engine that is always silent, and no audio
-# dependency. Turning it on elsewhere needs vcpkg.json's platform filters too.
-option(AUGUSTA_AUDIO_OUTPUT "Play sound through miniaudio and Steam Audio" ${WIN32})
+# The output device, through miniaudio and Steam Audio (ADR-0010, ADR-0028), on
+# whenever the client is built, on Windows and Linux: both libraries are the
+# manifest's client feature, which AUGUSTA_CLIENT installs. A build without the
+# client - the server image's, and CI's Linux jobs', whose tests link this
+# module through augusta_presentation - has an Engine that is always silent,
+# and no audio dependency. augustad links none of it either way.
+option(AUGUSTA_AUDIO_OUTPUT "Play sound through miniaudio and Steam Audio" ${AUGUSTA_CLIENT})
 if(AUGUSTA_AUDIO_OUTPUT)
+  # Linux's Steam Audio is a static library, whose CMake config names the
+  # libraries it links but finds none of them: found first, as it would.
+  if(NOT WIN32)
+    find_package(flatbuffers CONFIG REQUIRED)
+    find_package(pffft CONFIG REQUIRED)
+    find_package(mysofa CONFIG REQUIRED)
+  endif()
   find_package(steam-audio CONFIG REQUIRED)
   find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
   target_sources(augusta_audio PRIVATE miniaudio.cpp output_miniaudio.cpp)

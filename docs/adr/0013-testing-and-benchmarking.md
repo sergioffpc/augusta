@@ -17,6 +17,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 | pytest (`tools/pack`)                           |                     | ✅                  |                           |                                |
 | Pack contract (golden packs)                    |                     | ✅                  |                           | ✅                             |
 | ASan + UBSan                                    |                     | ✅                  |                           |                                |
+| Linux client build and `ctest`                  |                     |                     | ✅                        | ✅                             |
 | Fuzzing                                         |                     | ✅ ~60 s per target | ✅ ~30 min per target     | ✅ ~30 min per target          |
 | TSan                                            |                     |                     | ✅                        | ✅                             |
 | Netcode under an impaired link                  |                     |                     | ✅                        | ✅                             |
@@ -48,6 +49,14 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   built, judging what it is about to publish rather than the latest release. The
   coverage and test reports stay artifacts of the run. So a release takes as
   long as its builds and then a night's jobs, fuzzing included.
+- **The client is built and tested on Windows by every pull request, and on
+  Linux by the nightly alone** (`client-linux`, and so by every release): the
+  pull request's Linux jobs configure without it (`AUGUSTA_CLIENT`, ADR-0008),
+  so Windows, the client's reference platform (ADR-0006), sets the pace of
+  review. `client-linux` builds the `linux` preset with the client and runs the
+  whole `ctest` suite with it, the Renderer's smoke test among it on Ubuntu's
+  lavapipe in a virtual X server (`xvfb-run`), and fails if the smoke test was
+  not built.
 - **No stage runs after a deploy to k3s.** ADR-0026 keeps runners out of the
   cluster, so only something running inside it could test a deployed server.
 
@@ -194,9 +203,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 ## Out of scope
 
 - Rendering, audio, and the client as a whole are validated by eye and ear, with
-  no written checklist. CI's Windows runners have no GPU: the Renderer's smoke
-  test draws on lavapipe, Mesa's software Vulkan driver (ADR-0059), and checks
-  only that it draws.
+  no written checklist. CI's runners have no GPU: the Renderer's smoke test
+  draws on lavapipe, Mesa's software Vulkan driver (ADR-0059), on Windows in
+  every pull request and on Linux in the nightly, and checks only that it draws.
+  It runs on X11 only: no CI stage runs the client on Wayland.
 
 ## Considered Options
 

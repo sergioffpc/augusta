@@ -39,8 +39,21 @@ if(AUGUSTA_TOOLS)
   endif()
 endif()
 
+# The client (src/client) and its Renderer (src/modules/renderer), on Windows
+# and Linux (ADR-0006): on by default, so `cmake --preset linux` builds augustac
+# and its tests too. With it, vcpkg installs the manifest's client feature,
+# whose GLFW needs the system's X11, Wayland and xkbcommon development files on
+# Linux (scripts/bootstrap/linux.sh). The server image, and every Linux CI job
+# but the nightly's client-linux, turn it off: they build and test what
+# augustad is built from, and the Linux client is the nightly's alone
+# (ADR-0013). Before project(), as AUGUSTA_TOOLS is.
+option(AUGUSTA_CLIENT "Build the client (augustac), its Renderer and their tests" ON)
+if(AUGUSTA_CLIENT)
+  list(APPEND VCPKG_MANIFEST_FEATURES client)
+endif()
+
 # Mesa's lavapipe, the software Vulkan driver the renderer smoke test draws on
-# (tests/CMakeLists.txt), on Windows, where the client builds: the manifest's
+# (tests/CMakeLists.txt), on Windows, where vcpkg builds it: the manifest's
 # lavapipe feature, for tests only. Off by default, so a release's build
 # installs none of it and its SBOM names none; CI's client job and the
 # windows-debug preset turn it on. Its first build compiles LLVM, which needs
@@ -185,11 +198,10 @@ if(AUGUSTA_COVERAGE)
   )
 endif()
 # The client renders through NVRHI on Vulkan, on Windows and Linux (ADR-0059).
-# The build has its Renderer (src/modules/renderer/CMakeLists.txt), and the
-# client that links it, on Windows alone until the client's Linux build lands;
-# what it decides apart from the GPU builds everywhere.
+# What its Renderer decides apart from the GPU builds and is tested in every
+# build; the Renderer itself and the client that links it, with AUGUSTA_CLIENT.
 add_subdirectory(src/modules/renderer)
-if(WIN32)
+if(AUGUSTA_CLIENT)
   add_subdirectory(src/client)
 endif()
 

@@ -114,42 +114,47 @@ target_link_libraries(
     augustac_content
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
-# winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
-# life of the process, so the Prediction thread's sleeps keep its tick schedule.
-# NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
-target_link_libraries(augustac PRIVATE winmm)
-target_compile_definitions(augustac PRIVATE NOMINMAX)
-# Release writes augustac.pdb beside augustac.exe, what a released client's
-# crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
-# /OPT:ICF off unless they are named, so they are: the code is Release's own.
-target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
+# What only Windows' augustac needs: its timer resolution, its PDB, and its
+# runtime folder, which a release zips. Linux's main.cpp has no timer to raise,
+# and no release packages the Linux client: its build has no install rules.
+if(WIN32)
+  # winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
+  # life of the process, so the Prediction thread's sleeps keep its tick schedule.
+  # NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
+  target_link_libraries(augustac PRIVATE winmm)
+  target_compile_definitions(augustac PRIVATE NOMINMAX)
+  # Release writes augustac.pdb beside augustac.exe, what a released client's
+  # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
+  # /OPT:ICF off unless they are named, so they are: the code is Release's own.
+  target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
-# `cmake --install --component client` stages the client's whole runtime folder,
-# which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
-# loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
-# redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's. The
-# renderer's shaders are in augustac.exe, and the Vulkan loader is the system's,
-# which augustac loads at runtime rather than imports (ADR-0059).
-# EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
-# `make install`), leaves it out.
-install(
-  TARGETS augustac
-  RUNTIME_DEPENDENCY_SET augustac_dlls
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-)
-set(dll_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
-install(
-  RUNTIME_DEPENDENCY_SET augustac_dlls
-  PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
-  POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
-  DIRECTORIES ${dll_directories}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-)
-set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-include(InstallRequiredSystemLibraries)
-install(
-  PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  COMPONENT client
-  EXCLUDE_FROM_ALL
-)
+  # `cmake --install --component client` stages the client's whole runtime folder,
+  # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
+  # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
+  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's. The
+  # renderer's shaders are in augustac.exe, and the Vulkan loader is the system's,
+  # which augustac loads at runtime rather than imports (ADR-0059).
+  # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
+  # `make install`), leaves it out.
+  install(
+    TARGETS augustac
+    RUNTIME_DEPENDENCY_SET augustac_dlls
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+  set(dll_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
+  install(
+    RUNTIME_DEPENDENCY_SET augustac_dlls
+    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+    POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
+    DIRECTORIES ${dll_directories}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+  include(InstallRequiredSystemLibraries)
+  install(
+    PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT client
+    EXCLUDE_FROM_ALL
+  )
+endif()

@@ -124,7 +124,9 @@ jobs:
       # the Linux toolchain.
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        # augustad and what it is built from, without the client, whose Linux
+        # build the nightly jobs below test.
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests

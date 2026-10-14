@@ -32,6 +32,16 @@ install_toolchain() {
   # every architecture, unlike luacheck's own release. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
   # for development.
+  # The client's (AUGUSTA_CLIENT), as the nightly's client-linux job installs
+  # them: vcpkg's GLFW builds against the system's X11 (libx11-dev,
+  # libxcursor-dev, libxi-dev, libxinerama-dev, libxrandr-dev), Wayland
+  # (libwayland-dev, with wayland-scanner) and xkbcommon (libxkbcommon-dev)
+  # development files, and its header includes OpenGL's (libgl-dev), as ImGui's
+  # GLFW binding builds it. GLFW loads those libraries at runtime, as miniaudio
+  # does PipeWire's, PulseAudio's or ALSA's, which need no headers. The
+  # renderer smoke test draws on Mesa's lavapipe (mesa-vulkan-drivers) through
+  # the system's Vulkan loader (libvulkan1), in a virtual X server where there
+  # is no display (xvfb, and xauth for xvfb-run).
   as_root apt-get update
   as_root apt-get install -y --no-install-recommends \
     autoconf \
@@ -50,19 +60,31 @@ install_toolchain() {
     libc++-dev \
     libc++abi-dev \
     libclang-rt-dev \
+    libgl-dev \
     libtool \
     libunwind-21-dev \
+    libvulkan1 \
+    libwayland-dev \
+    libx11-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxinerama-dev \
+    libxkbcommon-dev \
+    libxrandr-dev \
     lld \
     lldb \
     llvm \
     lua-check \
     make \
+    mesa-vulkan-drivers \
     ninja-build \
     pkg-config \
     sccache \
     sudo \
     tar \
     unzip \
+    xauth \
+    xvfb \
     zip
 
   # The hooks' and CI's format job's formatters and linters that Ubuntu doesn't
