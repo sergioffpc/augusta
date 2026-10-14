@@ -65,7 +65,7 @@ TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" $(TIDY_C
 
 # The rest of src and tests that this platform's build has compile commands
 # for, which tidy holds to include-cleaner alone (.clang-tidy's
-# misc-include-cleaner): the tests but, on Windows, the client's.
+# misc-include-cleaner): the tests, except the client's on Windows.
 # -w because the presets compile with -Werror (/WX), which turns warnings in
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.

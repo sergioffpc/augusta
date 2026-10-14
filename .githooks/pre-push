@@ -175,7 +175,7 @@ EOF
 
   # The rest of the changed src and tests .cpp files, which get
   # include-cleaner alone (as the Makefile's tidy target runs it, which says
-  # why -w): the tests but, on Windows, the client's - those the
+  # why -w): the tests, except the client's on Windows - those the
   # debug build has compile commands for (its paths are absolute, with \\ for
   # separators on Windows), so not the other platform's, and not physics.cpp
   # under MSVC's flags.
