@@ -99,6 +99,75 @@ jobs:
         with:
           name: sbom-augustac-windows-x64
           path: dist/augustac-windows-x64.spdx.json
+  client-linux:
+    # The Linux client (ADR-0058): built as the nightly's client-linux job
+    # builds it, on the runner the server's x64 binary is built on, whose glibc
+    # is the oldest the tarball runs on (README).
+    runs-on: ubuntu-26.04
+    # See ci.yml's server job for why this isn't the NuGet feed.
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup-linux-build
+        with:
+          # The client's system packages, as nightly-jobs.yml's client-linux
+          # job installs them.
+          extra-packages: >-
+            libgl-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libvulkan1 mesa-vulkan-drivers xauth xvfb
+          vcpkg-cache-prefix: vcpkg-bincache-client-linux-
+      - name: Configure
+        run: cmake --preset linux
+      - uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset linux --target all augusta_tests
+      - name: Test
+        # In a virtual X server, for the renderer smoke test's window, as the
+        # nightly's client-linux job runs it.
+        run: xvfb-run --auto-servernum ctest --preset linux
+      - name: Stage the client
+        # Its runtime folder, tarred as one augustac/ folder, checked as the
+        # Windows zip is, and for what it links and its debug info
+        # (scripts/stage-client.sh); a dry run's branch names no version.
+        run: |
+          version=""
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" \
+            dist/augustac-linux-x64.tar.gz "$version"
+          # Its debug info, split off by this same build, whose build ID the
+          # staging check matched to the tarred augustac's (ADR-0055).
+          cp build/x64-linux/src/client/augustac.debug dist/augustac-linux-x64.debug
+      - name: SBOM
+        run: |
+          python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --git-package third_party/nvtx \
+            build/x64-linux/vcpkg_installed/x64-linux > dist/augustac-linux-x64.spdx.json
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-linux-x64.tar.gz
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/augustac-linux-x64.tar.gz
+          sbom-path: dist/augustac-linux-x64.spdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: client-linux-binary
+          path: |
+            dist/augustac-linux-x64.tar.gz
+            dist/augustac-linux-x64.debug
+      # As the Windows client's: sbom-<executable>, for the nightly jobs'
+      # sbom-scan.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-augustac-linux-x64
+          path: dist/augustac-linux-x64.spdx.json
   server:
     # Both production architectures (NFR-04), each built and tested natively.
     strategy:
@@ -212,12 +281,12 @@ jobs:
     # Every nightly job on this run's commit, gating publish (ADR-0013), so a
     # job added to the nightly gates releases with nothing changed here. By SHA,
     # not the tag's name, so a tag moved while the run is going doesn't change
-    # what later jobs test. After client and server because sbom-scan scans
+    # what later jobs test. After the build jobs because sbom-scan scans
     # their SBOMs, and a called workflow's job can't wait on its caller's. It
     # may overlap a night outside nightly.yml's concurrency group: with release
     # set it records no benchmark and saves no fuzz corpus, so it writes
     # nothing a night reads.
-    needs: [client, server]
+    needs: [client, client-linux, server]
     uses: ./.github/workflows/nightly-jobs.yml
     # A caller must grant every permission a called job declares, or the run is
     # invalid before it starts, even for a job its inputs skip. So this grants
@@ -235,14 +304,17 @@ jobs:
   publish:
     # Not on a dry run, which publishes nothing.
     if: github.event_name == 'push'
-    needs: [client, server, tools, nightly]
+    needs: [client, client-linux, server, tools, nightly]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The tag's CHANGELOG.md section, cut on its release/* or hotfix/* branch
       # (docs/ENGINEERING.md, Git Workflow); a tag without one publishes nothing.
+      # The Linux client's baseline follows them, as the README states it.
       - name: Release notes
-        run: scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
+        run: |
+          scripts/changelog.sh "${{ github.ref_name }}" --notes > "$RUNNER_TEMP/notes.md"
+          printf '\n%s\n' "The Linux client (augustac-linux-x64.tar.gz) runs on the glibc of Ubuntu 26.04 or newer." >> "$RUNNER_TEMP/notes.md"
       # Every artifact of the run, the nightly jobs' reports among them: only
       # the files named below are attached.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -256,6 +328,9 @@ jobs:
             dist/client-binary/augustac-windows-x64.zip \
             dist/client-binary/augustac-windows-x64.pdb \
             dist/sbom-augustac-windows-x64/augustac-windows-x64.spdx.json \
+            dist/client-linux-binary/augustac-linux-x64.tar.gz \
+            dist/client-linux-binary/augustac-linux-x64.debug \
+            dist/sbom-augustac-linux-x64/augustac-linux-x64.spdx.json \
             dist/server-binary-x64/augustad-linux-x64 \
             dist/server-binary-x64/augustad-linux-x64.debug \
             dist/sbom-augustad-linux-x64/augustad-linux-x64.spdx.json \

@@ -304,6 +304,23 @@ jobs:
           name: junit-client-linux
           path: junit/
           if-no-files-found: ignore
+      - name: Check the client's tarball
+        # What each release publishes (release.yml): the folder the client's
+        # install rules stage, tarred, with augustac started from its extracted
+        # copy with only the system's libraries, what it links held to the
+        # allowlist, and its debug info matched by build ID
+        # (scripts/stage-client.sh, ADR-0058).
+        run: scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+      - name: Check the client's SBOM
+        # release.yml's SBOM of it, and the CPEs sbom-scan adds to it, as
+        # ci.yml checks the Windows client's: a dependency the build gains with
+        # neither a CPE nor a reason fails here rather than the release.
+        run: |
+          python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --git-package third_party/nvtx \
+            build/x64-linux/vcpkg_installed/x64-linux > "$RUNNER_TEMP/augustac.spdx.json"
+          python3 scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the
     # nights before kept on the benchmarks branch, one history per runner CPU
@@ -404,7 +421,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        executable: [augustac-windows-x64, augustad-linux-x64]
+        executable: [augustac-windows-x64, augustac-linux-x64, augustad-linux-x64]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -413,16 +430,30 @@ jobs:
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Download the latest release's SBOM
+        # An executable no release has published yet (augustac-linux-x64
+        # before the first release that ships it) has nothing to scan: a
+        # notice, not a failure. A release publishes all its assets or none,
+        # so once one has it, every later one does.
+        id: latest
         if: ${{ !inputs.release }}
-        run: gh release download --pattern "${{ matrix.executable }}.spdx.json"
+        run: |
+          sbom="${{ matrix.executable }}.spdx.json"
+          if ! gh release view --json assets --jq '.assets[].name' | grep -qxF "$sbom"; then
+            echo "::notice::The latest release publishes no $sbom: nothing to scan."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release download --pattern "$sbom"
       - name: Download this run's SBOM
         if: inputs.release
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sbom-${{ matrix.executable }}
       - name: Add the CPEs
+        if: steps.latest.outputs.published != 'false'
         run: python3 scripts/sbom-cpes.py "${{ matrix.executable }}.spdx.json" > sbom.spdx.json
       - name: Scan
+        if: steps.latest.outputs.published != 'false'
         # Fails on a high or critical CVE, fixed or not - unlike the server
         # image's scan (ci.yml): a CPE match comes from the NVD, which gives
         # most ranges as "up to and including" with no fixed version, so only
