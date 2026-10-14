@@ -115,9 +115,8 @@ target_link_libraries(
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
 # What only Windows' augustac needs: its timer resolution, its PDB, and its
-# runtime folder, which a release zips. The Linux client's main.cpp has no
-# timer to raise, and its debug info and package are not yet split off or
-# staged.
+# runtime folder, which a release zips. Linux's main.cpp has no timer to raise,
+# and no release packages the Linux client: its build has no install rules.
 if(WIN32)
   # winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
   # life of the process, so the Prediction thread's sleeps keep its tick schedule.

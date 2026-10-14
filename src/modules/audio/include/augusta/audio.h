@@ -25,7 +25,8 @@
 ///
 /// No output device is not an error. An Engine that cannot open one - no
 /// device on the machine, or a build with no audio output at all (one without
-/// AUGUSTA_AUDIO_OUTPUT, as the Linux one, with no audio dependency, ADR-0010) -
+/// AUGUSTA_AUDIO_OUTPUT, as a build without the client, with no audio
+/// dependency, ADR-0028) -
 /// logs why at WARN and is silent: every method below still works and plays
 /// nothing, so the client runs the same with or without sound.
 ///

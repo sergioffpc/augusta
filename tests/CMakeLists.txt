@@ -746,6 +746,7 @@ if(AUGUSTA_CLIENT)
   # cmake_minimum_required gives.
   set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
   set(smoke_test_environment "")
+  set(no_smoke_test_reason "AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
   if(WIN32 AND AUGUSTA_LAVAPIPE)
     # On Windows lavapipe comes from vcpkg too (the manifest's lavapipe
     # feature, AUGUSTA_LAVAPIPE). vcpkg's folder, put on PATH, has the DLLs'
@@ -790,6 +791,7 @@ if(AUGUSTA_CLIENT)
       NO_DEFAULT_PATH
       DOC "The system's lavapipe ICD manifest, which the renderer smoke test draws on"
     )
+    set(no_smoke_test_reason "no lavapipe in /usr/share/vulkan/icd.d (Mesa's Vulkan drivers)")
     if(AUGUSTA_LAVAPIPE_ICD)
       set(
         smoke_test_environment
@@ -805,10 +807,8 @@ if(AUGUSTA_CLIENT)
       PROPERTIES CROSSCOMPILING_EMULATOR "${CMAKE_COMMAND};-E;env;${smoke_test_environment};--"
     )
     gtest_discover_tests(augusta_client_renderer_smoke_tests)
-  elseif(WIN32)
-    message(STATUS "Renderer smoke test not built: AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
   else()
-    message(STATUS "Renderer smoke test not built: no lavapipe in /usr/share/vulkan/icd.d (Mesa's Vulkan drivers)")
+    message(STATUS "Renderer smoke test not built: ${no_smoke_test_reason}")
   endif()
 
   # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
