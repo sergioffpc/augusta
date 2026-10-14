@@ -39,7 +39,7 @@ endif()
 
 # One pybind11 extension module for the asset-cooking pipeline (ADR-0030),
 # augusta_pack._native: the mesh pass over meshoptimizer (ADR-0016, mesh.h)
-# and the texture compression over stb_image + DirectXTex (ADR-0017,
+# and the texture compression over stb_image + libktx (ADR-0017,
 # texture.h), the only two pieces of the pipeline with no Python equivalent,
 # bound in module.cpp. Everything else (USD stage walking, the pack container
 # format, key generation) is pure Python, in ../src/augusta_pack - see that
@@ -51,7 +51,7 @@ endif()
 # why a second, independently-built one (e.g. vcpkg's own) can't coexist
 # with it (a DLL-name collision between the two builds' same-named DLLs).
 find_package(meshoptimizer CONFIG REQUIRED)
-find_package(directxtex CONFIG REQUIRED)
+find_package(Ktx CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
@@ -61,7 +61,7 @@ find_package(pybind11 CONFIG REQUIRED)
 set(AUGUSTA_PACK_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_pack")
 
 pybind11_add_module(augusta_pack_py module.cpp mesh.cpp texture.cpp)
-target_link_libraries(augusta_pack_py PRIVATE meshoptimizer::meshoptimizer Microsoft::DirectXTex)
+target_link_libraries(augusta_pack_py PRIVATE meshoptimizer::meshoptimizer KTX::ktx)
 target_include_directories(augusta_pack_py SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 set_target_properties(
   augusta_pack_py

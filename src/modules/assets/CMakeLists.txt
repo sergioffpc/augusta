@@ -1,7 +1,7 @@
 # BLAKE3 (pack hashing) and libsodium (Ed25519 signing/verification) back
 # every pack's trailer (ADR-0030/ADR-0031) - needed by both the cooker
 # (signs) and the client/server runtime (verifies), so unlike USD/
-# DirectXTex/meshoptimizer (tools-only) these are base vcpkg.json
+# libktx/meshoptimizer (tools-only) these are base vcpkg.json
 # dependencies, not gated behind a feature. Boost.Interprocess (portable
 # mmap) is the same: Pack::Load memory-maps a pack once and every Resolve* call reads
 # straight out of that mapping, on both the client/server (verify) and

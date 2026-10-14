@@ -27,8 +27,7 @@ install_toolchain() {
   # ninja-build, autoconf, autoconf-archive, automake, libtool. From the server
   # job: clang-tidy.
   # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
-  # pkg-config. From the tools job: libomp-dev (DirectXTex's CMake config finds
-  # OpenMP). For the hooks: clang-format, git-lfs (pre-push), and lua-check
+  # pkg-config. For the hooks: clang-format, git-lfs (pre-push), and lua-check
   # (luacheck), which this release packages at CI's pinned LUACHECK_VERSION for
   # every architecture, unlike luacheck's own release. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
@@ -51,7 +50,6 @@ install_toolchain() {
     libc++-dev \
     libc++abi-dev \
     libclang-rt-dev \
-    libomp-dev \
     libtool \
     libunwind-21-dev \
     lld \

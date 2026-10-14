@@ -39,8 +39,8 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeMeshBlob(const MeshData
 /// Encodes scene into the pack's scene-blob byte layout (ADR-0032).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneData& scene);
 
-/// Encodes texture into the pack's texture-blob byte layout (ADR-0031).
-std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture);
+/// Encodes a KTX2 file into the pack's texture-blob byte layout (ADR-0031).
+std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(std::span<const std::byte> ktx2_bytes);
 
 /// Encodes spawn_point into the pack's spawn-point-blob byte layout
 /// (ADR-0031/ADR-0032). Collision blobs need no analogous
