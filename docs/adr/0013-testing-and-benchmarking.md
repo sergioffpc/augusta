@@ -66,8 +66,11 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   or undefined-behaviour bug in that code fails a night, and so a release,
   rather than waiting for a player's crash. Every sanitizer report fails the
   test it came from, UBSan's included (`halt_on_error`, without which UBSan
-  prints its report and the test passes). Nothing is suppressed: lavapipe, the
-  Vulkan loader and the validation layer leak nothing LeakSanitizer reports.
+  prints its report and the test passes). Nothing is suppressed today: lavapipe,
+  the Vulkan loader and the validation layer have so far leaked nothing
+  LeakSanitizer reports. A leak found in third-party code would be suppressed in
+  `tests/lsan.supp`, each entry with its reason, as `tests/tsan.supp` does for
+  TSan.
 - **No stage runs after a deploy to k3s.** ADR-0026 keeps runners out of the
   cluster, so only something running inside it could test a deployed server.
 
