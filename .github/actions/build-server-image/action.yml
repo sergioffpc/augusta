@@ -1,23 +1,34 @@
 name: Build and scan the server image
 description: >
-  Builds the server image into the runner's Docker (loaded, not pushed), from the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on a high or critical CVE trivy finds in it. Every ci.yml container job runs it: container-verify to check the image, container-publish to rebuild the image it then pushes, so what it publishes is an image that was scanned, and on main container-publish-arm64 for the arm64 image. Tags it sha-<12> and, on a push, with the branch name (sha-<12>-arm64 alone with arch-suffix). Assumes the repository is checked out with its submodules and buildx is set up; a job that reads or writes the cache logs in to GHCR first.
-
+  Builds the server image into the runner's Docker (loaded, not pushed), from
+  the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on
+  a high or critical CVE trivy finds in it. Every ci.yml container job runs it:
+  container-verify to check the image, container-publish-x64-linux to rebuild
+  the image it then pushes, so what it publishes is an image that was scanned,
+  and on main container-publish-arm64-linux for the arm64 image. Tags it
+  sha-<12> and, on a push, with the branch name (sha-<12>-arm64 alone with
+  arch-suffix). Assumes the repository is checked out with its submodules and
+  buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 inputs:
   cache-to:
     description: >
-      Whether to write the registry layer cache: "true" only on container-verify's push run, so a push writes it once and a pull request never does.
-
+      Whether to write the registry layer cache: "true" only on
+      container-verify's push run, so a push writes it once and a pull request
+      never does.
     required: false
     default: "false"
   arch-suffix:
     description: >
-      "-arm64" on main's arm64 build (ci.yml's container-publish-arm64): the image is tagged sha-<12>-arm64 alone, with no branch tag, and its layers cached at buildcache-arm64, so the plain tags can become the index of both architectures. Empty, the default, builds the amd64 image as ever.
-
+      "-arm64" on main's arm64 build (ci.yml's container-publish-arm64-linux):
+      the image is tagged sha-<12>-arm64 alone, with no branch tag, and its
+      layers cached at buildcache-arm64, so the plain tags can become the index
+      of both architectures. Empty, the default, builds the amd64 image as ever.
     required: false
     default: ""
 outputs:
   short-sha:
-    description: The first 12 characters of the commit, as the sha-<12> tag has them.
+    description: >
+      The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
 runs:
   using: composite

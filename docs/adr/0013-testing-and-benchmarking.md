@@ -50,17 +50,17 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   coverage and test reports stay artifacts of the run. So a release takes as
   long as its builds and then a night's jobs, fuzzing included.
 - **The client is built and tested on Windows by every pull request, and on
-  Linux by the nightly alone** (`client-linux`, and so by every release): the
-  pull request's Linux jobs configure without it (`AUGUSTA_CLIENT`, ADR-0008),
-  so Windows, the client's reference platform (ADR-0006), sets the pace of
-  review. `client-linux` builds the `linux` preset with the client and runs the
-  whole `ctest` suite with it, the Renderer's smoke test among it on Ubuntu's
-  lavapipe in a virtual X server (`xvfb-run`), and fails if the smoke test was
-  not built.
+  Linux by the nightly alone** (`client-x64-linux`, and so by every release):
+  the pull request's Linux jobs configure without it (`AUGUSTA_CLIENT`,
+  ADR-0008), so Windows, the client's reference platform (ADR-0006), sets the
+  pace of review. `client-x64-linux` builds the `linux` preset with the client
+  and runs the whole `ctest` suite with it, the Renderer's smoke test among it
+  on Ubuntu's lavapipe in a virtual X server (`xvfb-run`), and fails if the
+  smoke test was not built.
 - **ASan and UBSan run on the client in the nightly alone.** The pull request's
   `sanitizers` job builds `linux-san` without the client, as its other Linux
   jobs do, so no sanitizer would ever see the client's and the Renderer's code.
-  `client-linux` therefore builds `linux-san` with the client too, after its
+  `client-x64-linux` therefore builds `linux-san` with the client too, after its
   `linux` build (and also after a failing test there), and runs the same whole
   `ctest` suite under it, the smoke test in the same virtual X server: a memory
   or undefined-behaviour bug in that code fails a night, and so a release,
