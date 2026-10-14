@@ -327,11 +327,27 @@ jobs:
         # headers the renderer embeds its shaders and font from.
         run: >-
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w
+      - name: Register lavapipe and the validation layer
+        # The Vulkan loader ignores the smoke test's VK_DRIVER_FILES and
+        # VK_ADD_LAYER_PATH in an elevated process, which the runner's are, so
+        # they're registered as an installed driver and layer would be: the
+        # test's copy of lavapipe's manifest (tests/CMakeLists.txt) and vcpkg's
+        # layer. MSYS_NO_PATHCONV: Git Bash would otherwise take reg's /v, /t,
+        # /d and /f for paths.
+        env:
+          MSYS_NO_PATHCONV: 1
+        run: |
+          driver=build/x64-windows/tests/lvp_icd.json
+          layer=build/x64-windows/vcpkg_installed/x64-windows/bin/VkLayer_khronos_validation.json
+          test -f "$driver"
+          test -f "$layer"
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\Drivers' /v "$(cygpath -wa "$driver")" /t REG_DWORD /d 0 /f
+          reg add 'HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers' /v "$(cygpath -wa "$layer")" /t REG_DWORD /d 0 /f
       - name: Test
         # The renderer smoke test among them, on lavapipe and under the
         # validation layer, both from vcpkg, as is the Vulkan loader the
         # runner, with no GPU driver, lacks: the test's ctest environment
-        # points it at them (tests/CMakeLists.txt, ADR-0059).
+        # puts the loader on PATH (tests/CMakeLists.txt, ADR-0059).
         run: ctest --preset windows
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent

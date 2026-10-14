@@ -750,6 +750,8 @@ if(WIN32)
   # the driver in vcpkg's bin: Mesa writes that path when it builds the port, in
   # vcpkg's build folder, which a binary-cached package may not share. The
   # loader logs its errors and warnings, so a driver it can't load says why.
+  # An elevated process's loader ignores VK_DRIVER_FILES and VK_ADD_LAYER_PATH,
+  # so CI's runner, whose processes are, registers both instead (ci.yml).
   if(AUGUSTA_LAVAPIPE)
     set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
     set(lavapipe_icd "${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json")
