@@ -37,8 +37,8 @@ set -euo pipefail
 # arm64 too, the dev container's on an Apple silicon Mac, though no release
 # packages that client.
 readonly ALLOWED_SYSTEM_LIBRARIES=(
-  ld-linux-x86-64.so.2 ld-linux-aarch64.so.1 libc.so.6 libm.so.6 libmvec.so.1 libpthread.so.0
-  libdl.so.2 librt.so.1
+  ld-linux-x86-64.so.2 ld-linux-aarch64.so.1
+  libc.so.6 libm.so.6 libmvec.so.1 libpthread.so.0 libdl.so.2 librt.so.1
   libvulkan.so.1
   libX11.so.6 libX11-xcb.so.1 libxcb.so.1 libXcursor.so.1 libXext.so.6
   libXi.so.6 libXinerama.so.1 libXrandr.so.2 libXrender.so.1
@@ -49,6 +49,9 @@ readonly ALLOWED_SYSTEM_LIBRARIES=(
   libjack.so.0
 )
 
+# The platform the script runs on, windows (Git Bash) or linux: set by main.
+platform=""
+
 # The folder the archive is extracted into, removed on exit.
 extracted=""
 
@@ -57,8 +60,10 @@ usage() {
   exit 2
 }
 
-# Prints the platform the script runs on: windows (Git Bash) or linux.
-platform() {
+# Prints the platform the script runs on, and exits 1 on any other.
+# Outputs:
+#   windows (Git Bash) or linux, to stdout.
+detect_platform() {
   case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*) echo windows ;;
     Linux) echo linux ;;
@@ -71,10 +76,12 @@ platform() {
 
 # Runs the current folder's augustac, with no other folder to load libraries
 # from but the system's.
+# Globals:
+#   platform
 # Arguments:
 #   augustac's arguments.
 run_alone() {
-  if [[ "$(platform)" = windows ]]; then
+  if [[ "${platform}" = windows ]]; then
     local system
     system="$(cygpath -u "${SYSTEMROOT}")"
     PATH="${system}/System32:${system}" ./augustac.exe "$@"
@@ -116,7 +123,8 @@ check_no_dev_libraries() {
     -iname 'vulkan-1*.dll' -o -name 'libvulkan.so*' \
     -o -iname 'VkLayer_*' -o -name 'libVkLayer_*' \
     -o -iname 'vulkan_lvp.dll' -o -name 'libvulkan_lvp.so*' \
-    -o -iname 'dxcompiler.dll' -o -iname 'dxil.dll' -o -name 'libdxcompiler.so*' \
+    -o -iname 'dxcompiler.dll' -o -iname 'dxil.dll' \
+    -o -name 'libdxcompiler.so*' \
     -o -iname 'slang*.dll' -o -name 'libslang*.so*' \))"
   if [[ -n "${found}" ]]; then
     echo "$0: ${folder} holds libraries the client never ships:" >&2
@@ -126,21 +134,30 @@ check_no_dev_libraries() {
 }
 
 # Exits 1 if a file in a folder links a library that is neither in the folder
-# nor on ALLOWED_SYSTEM_LIBRARIES.
+# nor on ALLOWED_SYSTEM_LIBRARIES, or if an ELF file's dynamic table cannot be
+# read.
+# Globals:
+#   ALLOWED_SYSTEM_LIBRARIES
 # Arguments:
 #   The folder augustac is in.
 check_needed() {
   local folder="$1"
-  local file needed unlisted=""
-  while IFS= read -r -d '' file; do
+  local files file table needed unlisted=""
+  files="$(find "${folder}" -type f)"
+  while IFS= read -r file; do
+    [[ -n "${file}" ]] || continue
     [[ "$(head -c 4 "${file}")" = $'\x7fELF' ]] || continue
+    if ! table="$(llvm-readelf --dynamic-table "${file}")"; then
+      echo "$0: cannot read the libraries ${file} links" >&2
+      exit 1
+    fi
     while IFS= read -r needed; do
+      [[ -n "${needed}" ]] || continue
       [[ -e "${folder}/${needed}" ]] && continue
       [[ " ${ALLOWED_SYSTEM_LIBRARIES[*]} " = *" ${needed} "* ]] && continue
       unlisted+="  ${file#"${folder}"/} links ${needed}"$'\n'
-    done < <(llvm-readelf --dynamic-table "${file}" \
-      | sed -n 's/.*(NEEDED).*\[\(.*\)\]$/\1/p')
-  done < <(find "${folder}" -type f -print0)
+    done <<<"$(sed -n 's/.*(NEEDED).*\[\(.*\)\]$/\1/p' <<<"${table}")"
+  done <<<"${files}"
   if [[ -n "${unlisted}" ]]; then
     echo "$0: ${folder} links libraries neither in it nor on" \
       "ALLOWED_SYSTEM_LIBRARIES: bundle them, or allow them there" >&2
@@ -149,12 +166,25 @@ check_needed() {
   fi
 }
 
-# Prints an ELF file's build ID.
+# Prints an ELF file's build ID, and exits 1 if it has none or cannot be read.
 # Arguments:
 #   The file.
+# Outputs:
+#   The build ID, in hex, to stdout.
 build_id() {
-  # A .debug file's dynamic table is empty, which llvm-readelf warns about.
-  llvm-readelf --notes "$1" 2>/dev/null | sed -n 's/^ *Build ID: *//p'
+  local notes id
+  # With its warnings: a .debug file's empty dynamic table gives one.
+  if ! notes="$(llvm-readelf --notes "$1" 2>&1)"; then
+    echo "$0: cannot read the notes of $1:" >&2
+    echo "${notes}" >&2
+    exit 1
+  fi
+  id="$(sed -n 's/^ *Build ID: *//p' <<<"${notes}")"
+  if [[ -z "${id}" ]]; then
+    echo "$0: $1 has no build ID" >&2
+    exit 1
+  fi
+  echo "${id}"
 }
 
 # Exits 1 unless debug info is that of the augustac in a folder: the same
@@ -170,9 +200,10 @@ check_debug_info() {
     exit 1
   fi
   local binary_id debug_id
+  # Assigned apart from local, so a failure exits.
   binary_id="$(build_id "${folder}/augustac")"
   debug_id="$(build_id "${debug}")"
-  if [[ -z "${binary_id}" ]] || [[ "${binary_id}" != "${debug_id}" ]]; then
+  if [[ "${binary_id}" != "${debug_id}" ]]; then
     echo "$0: ${debug} has build ID '${debug_id}', not the build ID" \
       "'${binary_id}' of ${folder}/augustac" >&2
     exit 1
@@ -188,45 +219,55 @@ check_debug_info() {
 }
 
 # Runs every check on a folder.
+# Globals:
+#   platform
 # Arguments:
 #   The build directory, the folder augustac is in, and optionally the version
 #   it must print.
+# Outputs:
+#   check_runs's, to stdout.
 check_folder() {
   local build_dir="$1"
   local folder="$2"
   local version="${3:-}"
   check_no_dev_libraries "${folder}"
-  if [[ "$(platform)" = linux ]]; then
+  if [[ "${platform}" = linux ]]; then
     check_needed "${folder}"
     check_debug_info "${folder}" "${build_dir}/src/client/augustac.debug"
   fi
   check_runs "${folder}" "${version}"
 }
 
-# Archives a folder, and extracts it into an empty one.
+# Archives a folder, and extracts the archive into an empty folder.
 # Globals:
+#   platform
 #   extracted: set to the folder it is extracted into, removed on exit.
 # Arguments:
-#   The folder and the archive.
-archive() {
+#   The folder and the archive's path.
+archive_and_extract() {
   local folder="$1"
-  local archive="$2"
-  archive="$(realpath -m "${archive}")"
-  mkdir -p "$(dirname "${archive}")"
-  rm -f "${archive}"
+  local archive_path
+  archive_path="$(realpath -m "$2")"
+  mkdir -p "$(dirname "${archive_path}")"
+  rm -f "${archive_path}"
   extracted="$(mktemp -d)"
   trap 'rm -rf "${extracted}"' EXIT
-  if [[ "$(platform)" = windows ]]; then
-    (cd "${folder}" && cmake -E tar cf "${archive}" --format=zip .)
-    (cd "${extracted}" && cmake -E tar xf "${archive}")
+  if [[ "${platform}" = windows ]]; then
+    (cd "${folder}" && cmake -E tar cf "${archive_path}" --format=zip .)
+    (cd "${extracted}" && cmake -E tar xf "${archive_path}")
     return
   fi
-  tar -C "$(dirname "${folder}")" --transform "s,^$(basename "${folder}"),augustac," \
-    -czf "${archive}" "$(basename "${folder}")"
-  tar -C "${extracted}" -xzf "${archive}"
+  local name
+  name="$(basename "${folder}")"
+  tar -C "$(dirname "${folder}")" --transform "s,^${name},augustac," \
+    -czf "${archive_path}" "${name}"
+  tar -C "${extracted}" -xzf "${archive_path}"
 }
 
 # Stages and checks the folder, then, given an archive, archives and checks it.
+# Globals:
+#   platform: set to the platform the script runs on.
+#   extracted
 # Arguments:
 #   The build directory, the staging directory, and optionally the archive and
 #   the version it must print.
@@ -236,19 +277,20 @@ main() {
   fi
   local build_dir="$1"
   local staging_dir="$2"
-  local archive="${3:-}"
+  local archive_path="${3:-}"
   local version="${4:-}"
-  platform >/dev/null
+  platform="$(detect_platform)"
+  readonly platform
 
   rm -rf "${staging_dir}"
   cmake --install "${build_dir}" --component client --prefix "${staging_dir}"
   local folder="${staging_dir}/bin"
   check_folder "${build_dir}" "${folder}"
-  [[ -n "${archive}" ]] || return 0
+  [[ -n "${archive_path}" ]] || return 0
 
-  archive "${folder}" "${archive}"
+  archive_and_extract "${folder}" "${archive_path}"
   local copy="${extracted}"
-  [[ "$(platform)" = windows ]] || copy+="/augustac"
+  [[ "${platform}" = windows ]] || copy+="/augustac"
   check_folder "${build_dir}" "${copy}" "${version}"
 }
 

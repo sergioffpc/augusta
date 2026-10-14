@@ -18,14 +18,16 @@ if(GENERATOR)
   set(generator -G "${GENERATOR}")
 endif()
 
-# Builds the fixture into ${root}/<name>, bundling its shared library or not.
-function(build_fixture name bundled)
+# Builds the fixture into ${root}/<name>, bundling its shared library or not,
+# and with a file whose libraries cannot be read or not. The name is compiled
+# in, so each build has its own build ID.
+function(build_fixture name bundled corrupt)
   set(build "${root}/${name}")
   execute_process(
     COMMAND
       ${CMAKE_COMMAND} -S "${SOURCE_DIR}/tests/stage_client_fixture" -B "${build}" ${generator}
       -DCMAKE_TOOLCHAIN_FILE=${SOURCE_DIR}/cmake/LlvmToolchain.cmake -DCMAKE_BUILD_TYPE=Release
-      -DAUGUSTA_SOURCE_DIR=${SOURCE_DIR} -DVERSION=1.2.3 -DBUNDLED=${bundled}
+      -DAUGUSTA_SOURCE_DIR=${SOURCE_DIR} -DVERSION=1.2.3 -DBUNDLED=${bundled} -DCORRUPT=${corrupt} -DBUILD=${name}
     COMMAND_ERROR_IS_FATAL ANY
     OUTPUT_QUIET
   )
@@ -53,7 +55,7 @@ endfunction()
 
 set(report "")
 
-build_fixture(bundled ON)
+build_fixture(bundled ON OFF)
 stage(bundled 1.2.3 failed output)
 if(failed)
   string(APPEND report "a folder that bundles what augustac loads fails the check:\n${output}\n")
@@ -83,16 +85,22 @@ if(NOT failed OR NOT output MATCHES "not 'augustac 9.9.9'")
   string(APPEND report "the check passes an augustac that prints another version:\n${output}\n")
 endif()
 
-build_fixture(unbundled OFF)
+build_fixture(unbundled OFF OFF)
 stage(unbundled "" failed output)
 if(NOT failed OR NOT output MATCHES "augustac links libfixture_bundled\\.so")
   string(APPEND report "the check passes a dependency neither bundled nor allowed:\n${output}\n")
 endif()
 
+build_fixture(corrupt ON ON)
+stage(corrupt "" failed output)
+if(NOT failed OR NOT output MATCHES "cannot read the libraries .*libcorrupt\\.so")
+  string(APPEND report "the check passes a file whose libraries it cannot read:\n${output}\n")
+endif()
+
 # Another build's debug info, under the name augustac's .gnu_debuglink gives.
 file(COPY_FILE "${root}/unbundled/src/client/augustac.debug" "${root}/bundled/src/client/augustac.debug")
 stage(bundled 1.2.3 failed output)
-if(NOT failed OR NOT output MATCHES "build ID")
+if(NOT failed OR NOT output MATCHES "has build ID '[0-9a-f]+', not the build ID '[0-9a-f]+'")
   string(APPEND report "the check passes debug info of another build:\n${output}\n")
 endif()
 
