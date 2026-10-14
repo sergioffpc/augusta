@@ -40,11 +40,18 @@
         "ms-vscode.makefile-tools",
         "llvm-vs-code-extensions.lldb-dap",
         "llvm-vs-code-extensions.vscode-clangd",
+        "shader-slang.slang-language-extension",
         "editorconfig.editorconfig",
         "redhat.vscode-yaml",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
         "sumneko.lua",
         "dwenegar.vscode-luacheck",
         "JohnnyMorganz.stylua",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "mkhl.shfmt",
+        "timonwong.shellcheck",
         "tamasfe.even-better-toml",
         "github.vscode-github-actions"
       ]
