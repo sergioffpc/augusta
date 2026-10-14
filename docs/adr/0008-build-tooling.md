@@ -66,6 +66,6 @@ vcpkg's GLFW builds against the system's X11, Wayland and xkbcommon development
 files, which `scripts/bootstrap/linux.sh` installs (and through it the dev
 container), and loads the libraries themselves at runtime, choosing X11 or
 Wayland by the session it finds. A build of the server alone turns the option
-off: the server image, and every Linux CI job but the nightly's `client-linux`,
-so pull requests build the client on Windows only (ADR-0013) and none of them
-needs the client's ports or system packages.
+off: the server image, and every Linux CI job but the nightly's
+`client-x64-linux`, so pull requests build the client on Windows only (ADR-0013)
+and none of them needs the client's ports or system packages.

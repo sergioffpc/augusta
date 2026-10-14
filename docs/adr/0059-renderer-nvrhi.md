@@ -78,11 +78,12 @@ between backends would double what has to be tested, for no gain to a player.
   the Renderer through its interface on Mesa's lavapipe, a software Vulkan
   driver, and checks the pixels it drew, so it runs on CI's runners, which have
   no GPU. On Windows lavapipe comes from vcpkg's `mesa` port, through the
-  manifest's `lavapipe` feature, for tests only: CI's client job and the
-  `windows-debug` preset turn it on, and a release's build leaves it out. The
-  test's environment makes it the loader's only driver (`VK_DRIVER_FILES`). The
-  same feature has vcpkg's `vulkan-loader`, which the test loads where no GPU
-  driver installed the system's; nothing links it, and no package ships it.
+  manifest's `lavapipe` feature, for tests only: CI's `client-x64-windows` job
+  and the `windows-debug` preset turn it on, and a release's build leaves it
+  out. The test's environment makes it the loader's only driver
+  (`VK_DRIVER_FILES`). The same feature has vcpkg's `vulkan-loader`, which the
+  test loads where no GPU driver installed the system's; nothing links it, and
+  no package ships it.
 
 ## Consequences
 
