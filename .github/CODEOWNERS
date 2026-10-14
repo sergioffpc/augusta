@@ -1,9 +1,9 @@
 # Owners requested for review on every PR touching these paths. The last
-# matching pattern wins, so the catch-all comes first. The entries below it
-# name the sensitive areas (runtime, tools incl. pack signing, build and supply
-# chain, cluster manifests, CI, docs) so a future second owner can be scoped
-# to them; branch protection's "Require review from Code Owners" stays off
-# while there is a single owner, who can't approve their own PRs.
+# matching pattern wins, so the catch-all comes first. The entries below it name
+# the sensitive areas (runtime and its tests, tools incl. pack signing, build
+# and supply chain, cluster manifests, CI, docs) so a future second owner can be
+# scoped to them; branch protection's "Require review from Code Owners" stays
+# off while there is a single owner, who can't approve their own PRs.
 
 *                   @sergioffpc
 
@@ -11,6 +11,8 @@
 /src/server/        @sergioffpc
 /src/client/        @sergioffpc
 /src/modules/       @sergioffpc
+/tests/             @sergioffpc
+/config/            @sergioffpc
 
 # Content and dev tools, including pack signing
 # (tools/pack/src/augusta_pack/keys.py).
@@ -21,16 +23,26 @@
 /CMakePresets.json  @sergioffpc
 /cmake/             @sergioffpc
 /vcpkg.json         @sergioffpc
+/triplets/          @sergioffpc
 /third_party/       @sergioffpc
 /Dockerfile         @sergioffpc
+/chisel/            @sergioffpc
+/Makefile           @sergioffpc
+/scripts/           @sergioffpc
+/.devcontainer/     @sergioffpc
 
 # Deployment.
 /charts/            @sergioffpc
 /clusters/          @sergioffpc
 
-# CI and repo policy.
+# CI and repo policy: the root's formatter, linter and tool configs (ADR-0012)
+# and the git hooks.
+/.*                 @sergioffpc
+/*.toml             @sergioffpc
 /.github/           @sergioffpc
 
 # Decisions and requirements: ADRs, architecture, requirements, roadmap,
 # runbooks, agent docs.
 /docs/              @sergioffpc
+/CONTEXT.md         @sergioffpc
+/CLAUDE.md          @sergioffpc

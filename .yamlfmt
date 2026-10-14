@@ -21,3 +21,4 @@ formatter:
   indent: 2
   line_ending: lf
   eof_newline: true
+  scan_folded_as_literal: true

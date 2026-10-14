@@ -26,7 +26,9 @@ container-overflow check off, compiled into it
 (`cmake/asan_default_options.cpp`) so that it holds however the binary is run:
 libc++ marks its containers' unused capacity for it, which holds only when every
 caller is instrumented, and the dependencies are not, so GameNetworkingSockets
-or GoogleTest using a vector reads as an overflow. libc++, libc++abi and
+or GoogleTest using a vector reads as an overflow. Every binary of a UBSan build
+(`linux-san`) halts on UBSan's first report, with a stack trace, compiled in the
+same way (`cmake/ubsan_default_options.cpp`, ADR-0013). libc++, libc++abi and
 libunwind link statically: `augustad` needs nothing from the system but glibc
 (ADR-0054), which stays, as nothing in LLVM replaces it, and `augustac` nothing
 more than glibc and the libraries it loads at runtime (the Vulkan loader, X11 or
@@ -48,15 +50,21 @@ unchanged. Its `/W4 /WX` is clang's `-Wall -Wextra -Werror`, Linux's warning
 set; `/Wall` would be `-Weverything`. The dependencies stay on MSVC `cl`, under
 vcpkg's stock `x64-windows` triplet (`mesa[lavapipe]` included), with no custom
 triplet: `clang-cl` is ABI-compatible with what `cl` builds, the same STL and
-CRT, and those ports are built and tested upstream with `cl`. Our code is then
-compiled by one compiler family everywhere: code that clang rejects or warns on
-fails the pull request's Windows build rather than the nightly's Linux client, a
-clean build on one platform is clean on the other, and `clang-tidy` on Windows
-reads compile commands written for the compiler that builds the code. `clang-cl`
-defines both `_MSC_VER` and `__clang__`; no check in our code takes either.
-`clang-cl` was rejected while Windows built Falcor from source with its own
-toolchain; with Falcor gone (ADR-0059) and the dependencies left on `cl`, none
-of our code needs it.
+CRT, and those ports are built and tested upstream with `cl`. The presets
+require CMake 3.29, the first to read `CMAKE_LINKER_TYPE`. The root project, the
+server, the client and their tests are then compiled by one compiler family
+everywhere: code that clang rejects or warns on fails the pull request's Windows
+build rather than the nightly's Linux client, a clean build on one platform is
+clean on the other, and `clang-tidy` on Windows reads compile commands written
+for the compiler that builds the code. The asset cooker's native module
+(`tools/pack/native`), a project of its own with its own presets, still builds
+with `cl` on Windows. `clang-cl` defines both `_MSC_VER` and `__clang__`; no
+check in our code takes either. `clang-cl` was rejected twice before: first
+because Falcor supported only MSVC (ADR-0009), then, with Falcor gone
+(ADR-0059), because vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built
+and tested with MSVC. Neither holds for our own code: the dependencies, NVIDIA's
+included, stay on `cl` and its triplet, and `clang-cl` links against what they
+build.
 
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so
@@ -66,6 +74,6 @@ vcpkg's GLFW builds against the system's X11, Wayland and xkbcommon development
 files, which `scripts/bootstrap/linux.sh` installs (and through it the dev
 container), and loads the libraries themselves at runtime, choosing X11 or
 Wayland by the session it finds. A build of the server alone turns the option
-off: the server image, and every Linux CI job but the nightly's `client-linux`,
-so pull requests build the client on Windows only (ADR-0013) and none of them
-needs the client's ports or system packages.
+off: the server image, and every Linux CI job but the nightly's
+`client-x64-linux`, so pull requests build the client on Windows only (ADR-0013)
+and none of them needs the client's ports or system packages.

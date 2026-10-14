@@ -53,9 +53,6 @@ PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 # device.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
-# PhysX's SSE headers break clang-tidy under MSVC's flags, so this one is
-# linted by CI's Linux run alone.
-TIDY_EXCLUDES += ":(exclude)src/modules/physics/physics.cpp"
 TIDY_CLIENT_TESTS := "tests/client_*.cpp"
 else
 TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
@@ -70,7 +67,7 @@ TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" $(TIDY_C
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.
 ifeq ($(OS),Windows_NT)
-INCLUDE_EXCLUDES := ":(exclude)src/modules/physics/physics.cpp" ":(exclude)src/modules/audio/output_none.cpp"
+INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 JOBS ?= $(NUMBER_OF_PROCESSORS)
 else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"

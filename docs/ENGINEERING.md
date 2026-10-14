@@ -54,6 +54,12 @@ decisions already made in ARCHITECTURE.md:
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match the
   client/server platform split exactly.
+- **Job names:** a job that builds a deliverable (the client, the server, the
+  server image) for one platform ends in that platform's vcpkg triplet,
+  `<name>-<arch>-<os>`: `client-x64-windows`, `client-x64-linux`,
+  `server-x64-linux`, `container-publish-arm64-linux`. A matrix job names each
+  of its instances that way. A job that builds no single platform's deliverable
+  (`format`, `changes`, `container-index`) has no suffix.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
@@ -102,19 +108,19 @@ decisions already made in ARCHITECTURE.md:
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
        every push, and on a pull request when the image or chart changed.
-       `container-publish`, on a push only, waits for both it and the server
-       job, rebuilds the image from the layer cache `container-verify` just
-       wrote (every stage but `rootfs`, ADR-0054, is a cache hit), scans it
-       again, and only then pushes it with its `-debuginfo` image and
-       attestations - so a published image is always a scanned one, of a commit
-       whose tests passed. On a push to `main` alone, whose image is the one a
-       release runs, `container-publish-arm64` builds, scans and pushes the
-       arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
-       its own debug info and attestations, and `container-index` then makes
-       `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
-       architectures (NFR-04). On a push to `develop` alone, `chart-publish`
-       then pushes the chart, versioned `<chart version>+<12>`, to
-       `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
+       `container-publish-x64-linux`, on a push only, waits for both it and the
+       server-x64-linux job, rebuilds the image from the layer cache
+       `container-verify` just wrote (every stage but `rootfs`, ADR-0054, is a
+       cache hit), scans it again, and only then pushes it with its `-debuginfo`
+       image and attestations - so a published image is always a scanned one, of
+       a commit whose tests passed. On a push to `main` alone, whose image is
+       the one a release runs, `container-publish-arm64-linux` builds, scans and
+       pushes the arm64 image too, natively on an arm64 runner, as
+       `sha-<12>-arm64` with its own debug info and attestations, and
+       `container-index` then makes `sha-<12>`, `main` and `sha-<12>-debuginfo`
+       the index of both architectures (NFR-04). On a push to `develop` alone,
+       `chart-publish` then pushes the chart, versioned `<chart version>+<12>`,
+       to `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
        what the `develop` environment runs (ADR-0056)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
@@ -140,11 +146,12 @@ decisions already made in ARCHITECTURE.md:
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, the Linux client's build and
-  tests, again under ASan and UBSan (`client-linux`: no pull request builds it),
-  and the hot-path micro-benchmarks, whose history is kept on the `benchmarks`
-  branch (started by the first night if absent) and charted on the documentation
-  site; a failure, a benchmark more than twice as slow as the night before among
-  them, opens or updates a `nightly-failure` issue (ADR-0013).
+  tests, again under ASan and UBSan (`client-x64-linux`: no pull request builds
+  it), and the hot-path micro-benchmarks, whose history is kept on the
+  `benchmarks` branch (started by the first night if absent) and charted on the
+  documentation site; a failure, a benchmark more than twice as slow as the
+  night before among them, opens or updates a `nightly-failure` issue
+  (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
@@ -438,22 +445,22 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux: vcpkg's dependencies build with MSVC `cl`. Our code compiles with
-  `clang-cl` and links with `lld-link`, from the same pinned LLVM as the hooks'
-  `clang-format` and `clang-tidy`, inside the Build Tools' developer environment
-  (`scripts/vcenv.cmd`, which the Makefile runs every command through), whose
-  MSVC STL, CRT and Windows SDK they build against; the dependencies stay on
-  `cl` under vcpkg's `x64-windows` triplet (ADR-0008). The same
-  `scripts/bootstrap.sh`, run in Git Bash as Administrator (its Windows half,
-  `scripts/bootstrap/windows.sh`, winget-driven; one entry point and one
-  `checkout` step and set of pinned formatter versions for both platforms, and
-  no PowerShell: Git for Windows is the one prerequisite, which cloning needs
-  anyway) installs Visual Studio Build Tools system-wide (default install
-  location) — simpler than pinning a project-specific path, at the cost of not
-  being able to side-by-side independent Build Tools versions per project — plus
-  the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and the
-  formatters and linters uv runs, below), standalone yamlfmt, StyLua, luacheck
-  and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
+  from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
+  and their tests compile with `clang-cl` and links with `lld-link`, from the
+  same pinned LLVM as the hooks' `clang-format` and `clang-tidy`, inside the
+  Build Tools' developer environment (`scripts/vcenv.cmd`, which the Makefile
+  runs every command through), whose MSVC STL, CRT and Windows SDK they build
+  against; the dependencies stay on `cl` under vcpkg's `x64-windows` triplet
+  (ADR-0008). The same `scripts/bootstrap.sh`, run in Git Bash as Administrator
+  (its Windows half, `scripts/bootstrap/windows.sh`, winget-driven; one entry
+  point and one `checkout` step and set of pinned formatter versions for both
+  platforms, and no PowerShell: Git for Windows is the one prerequisite, which
+  cloning needs anyway) installs Visual Studio Build Tools system-wide (default
+  install location) — simpler than pinning a project-specific path, at the cost
+  of not being able to side-by-side independent Build Tools versions per project
+  — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
+  and the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
+  luacheck and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
   `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
   CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
   the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
@@ -465,8 +472,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
-  installed editable, its native module, signing keys and sample authoring
-  content.
+  installed editable, its native module (built with MSVC `cl`, under its own
+  presets), signing keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's

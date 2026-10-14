@@ -9,9 +9,9 @@ else()
   # symbols (e.g. Cct::Controller needs PxRigidBodyExt, PxMeshOverlapUtil
   # needs Cct-side callbacks); GNU ld's single left-to-right archive pass
   # can't resolve that circular dependency in a fixed topological order
-  # the way MSVC's linker tolerates, so the whole PhysX SDK needs
-  # --start-group/--end-group here (MSVC has no equivalent flag, hence
-  # the branch above).
+  # the way the Windows linker (lld-link) tolerates, so the whole PhysX SDK
+  # needs --start-group/--end-group here (lld-link has no equivalent flag,
+  # hence the branch above).
   target_link_libraries(augusta_physics PRIVATE -Wl,--start-group unofficial::omniverse-physx-sdk::sdk -Wl,--end-group)
 endif()
 augusta_set_module_scope(augusta_physics SHARED)

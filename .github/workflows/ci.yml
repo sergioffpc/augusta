@@ -232,7 +232,7 @@ jobs:
             | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
           git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
             | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
-  client:
+  client-x64-windows:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
     # Pinned rather than windows-latest, so the toolchain doesn't shift
@@ -306,14 +306,15 @@ jobs:
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
       - name: Lint
-        # What the server job's Linux build can't lint, as it builds without
-        # the client. The client, the Renderer and their tests get .clang-tidy's
-        # full profile, from clang-cl's compile commands (tests/.clang-tidy
-        # leaves the tests' literals alone); the audio module's output device
-        # gets misc-include-cleaner alone (the Makefile's tidy target says why
-        # -w). Both run, and the step fails if either does. One file per
-        # clang-tidy, as the server job runs it. After Build, which generates
-        # the headers the renderer embeds its shaders and font from.
+        # What the server-x64-linux job's Linux build can't lint, as it builds
+        # without the client. The client, the Renderer and their tests get
+        # .clang-tidy's full profile, from clang-cl's compile commands
+        # (tests/.clang-tidy leaves the tests' literals alone); the audio
+        # module's output device gets misc-include-cleaner alone (the
+        # Makefile's tidy target says why -w). Both run, and the step fails if
+        # either does. One file per clang-tidy, as server-x64-linux runs it.
+        # After Build, which generates the headers the renderer embeds its
+        # shaders and font from.
         run: |
           status=0
           git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy --quiet -p=build/x64-windows || status=1
@@ -344,24 +345,23 @@ jobs:
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
         run: uv run --locked --no-default-groups --group agent pytest
-  server:
+  server-x64-linux:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
-    # Pinned rather than ubuntu-latest - see the client job. This also makes
-    # clang-tidy's version stable without needing to pull it from
-    # apt.llvm.org (a stable runner image already gives a stable distro
-    # package version).
+    # Pinned rather than ubuntu-latest - see the client-x64-windows job. This
+    # also makes clang-tidy's version stable without needing to pull it from
+    # apt.llvm.org (a stable runner image already gives a stable distro package
+    # version).
     runs-on: ubuntu-26.04
-    # Overrides the workflow-level NuGet/GitHubPackages default (Windows-
-    # only, see the client job): that path runs nuget.exe under Mono here,
-    # and Mono's own bundled cert store is untrusted-by-default on a
-    # fresh runner image, failing every restore/push with
-    # CERTIFICATE_VERIFY_FAILED (silently - vcpkg just rebuilds from
-    # source instead of erroring). x-gha (GitHub Actions' own cache
-    # backend for vcpkg) would have sidestepped Mono entirely, but it was
-    # removed upstream (microsoft/vcpkg-tool#1662); actions/cache over
-    # the local files provider is GitHub Actions' own recommended
-    # replacement.
+    # Overrides the workflow-level NuGet/GitHubPackages default (Windows-only,
+    # see the client-x64-windows job): that path runs nuget.exe under Mono here,
+    # and Mono's own bundled cert store is untrusted-by-default on a fresh
+    # runner image, failing every restore/push with CERTIFICATE_VERIFY_FAILED
+    # (silently - vcpkg just rebuilds from source instead of erroring). x-gha
+    # (GitHub Actions' own cache backend for vcpkg) would have sidestepped Mono
+    # entirely, but it was removed upstream (microsoft/vcpkg-tool#1662);
+    # actions/cache over the local files provider is GitHub Actions' own
+    # recommended replacement.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -377,12 +377,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
       - name: Install the Agents' package
-        # As the client job does.
+        # As the client-x64-windows job does.
         working-directory: tools
         run: uv sync --locked --no-default-groups --group agent
       - name: Configure
         # Without the client: pull requests build and test it on Windows alone,
-        # and the Linux client is the nightly's (nightly-jobs.yml, client-linux).
+        # and the Linux client is the nightly's (nightly-jobs.yml,
+        # client-x64-linux).
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Lint
@@ -405,7 +406,7 @@ jobs:
         # linted alike, and their tests like the runtime's.
         # Then the tests get .clang-tidy's misc-include-cleaner alone, as the
         # Makefile's tidy target runs it (which says why -w); the client tests
-        # are the client job's.
+        # are the client-x64-windows job's.
         run: |
           status=0
           find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy -p build/x64-linux || status=1
@@ -482,11 +483,11 @@ jobs:
           "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
       - name: Use a local vcpkg binary cache
         if: runner.os == 'Linux'
-        # The local files provider, as the server job does (see there why not
-        # the NuGet feed) - but a cache of its own, not setup-linux-build's:
-        # tools/pack/native's manifest isn't the root one every job sharing that
-        # cache installs, and save-vcpkg-cache drops whatever the root build
-        # didn't install.
+        # The local files provider, as the server-x64-linux job does (see there
+        # why not the NuGet feed) - but a cache of its own, not
+        # setup-linux-build's: tools/pack/native's manifest isn't the root one
+        # every job sharing that cache installs, and save-vcpkg-cache drops
+        # whatever the root build didn't install.
         run: |
           echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
           echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}" >> "$GITHUB_ENV"
@@ -522,8 +523,8 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
-    # See the server job's env override for why this isn't the workflow-
-    # level NuGet default.
+    # See the server-x64-linux job's env override for why this isn't the
+    # workflow-level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -532,7 +533,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (ASan + UBSan)
-        # Without the client, as the server job (which says why).
+        # Without the client, as the server-x64-linux job (which says why).
         run: cmake --preset linux-san -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
@@ -546,8 +547,8 @@ jobs:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-26.04
-    # See the server job's env override for why this isn't the workflow-
-    # level NuGet default.
+    # See the server-x64-linux job's env override for why this isn't the
+    # workflow-level NuGet default.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -557,7 +558,7 @@ jobs:
           # libFuzzer ships with the clang package this installs.
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
-        # Without the client, as the server job (which says why).
+        # Without the client, as the server-x64-linux job (which says why).
         run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
@@ -859,11 +860,11 @@ jobs:
   container-verify:
     needs: changes
     # Needs nothing but changes, so on a pull request the image builds and is
-    # scanned alongside the server job rather than after it; container-publish
-    # waits for both. A push to main/develop always builds (and publishes),
-    # since the deployed chart runs the image of its own commit
-    # (charts/augustad/values.yaml): a commit with no image would never start.
-    # PRs build only when the image or chart changed.
+    # scanned alongside the server-x64-linux job rather than after it;
+    # container-publish-x64-linux waits for both. A push to main/develop always
+    # builds (and publishes), since the deployed chart runs the image of its own
+    # commit (charts/augustad/values.yaml): a commit with no image would never
+    # start. PRs build only when the image or chart changed.
     if: github.event_name == 'push' || needs.changes.outputs.run_container == 'true'
     runs-on: ubuntu-26.04
     # The tag of the image it built, which the confinement job runs.
@@ -908,7 +909,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Only a push writes the layer cache, as only a push publishes:
-      # container-publish rebuilds from it.
+      # container-publish-x64-linux rebuilds from it.
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
@@ -932,8 +933,8 @@ jobs:
   # server's sources, the image, the profile or its script asks for
   # (changes above): an image it skips is built from what it last checked.
   confinement:
-    needs: [server, container-verify]
-    if: needs.server.result == 'success' && needs.container-verify.result == 'success'
+    needs: [server-x64-linux, container-verify]
+    if: needs.server-x64-linux.result == 'success' && needs.container-verify.result == 'success'
     runs-on: ubuntu-26.04
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ needs.container-verify.outputs.short-sha }}
@@ -944,7 +945,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
       - name: Install the Agents' package
-        # As the server job does; its native module is that job's build.
+        # As the server-x64-linux job does; its native module is that job's
+        # build.
         working-directory: tools
         run: uv sync --locked --no-default-groups --group agent
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -971,18 +973,18 @@ jobs:
         with:
           name: augustad-seccomp
           path: clusters/onprem/node/augustad-seccomp.json
-  container-publish:
-    needs: [server, container-verify, confinement]
+  container-publish-x64-linux:
+    needs: [server-x64-linux, container-verify, confinement]
     # Only main/develop pushes publish, and only once both the server's tests
-    # and the image's checks passed. The server job only runs when run_build is
-    # true (see changes above), so a skipped result there is fine - only an
-    # actual failure should block publishing. confinement is skipped with it.
-    # !cancelled() rather than always(): a run someone cancelled publishes
-    # nothing.
+    # and the image's checks passed. The server-x64-linux job only runs when
+    # run_build is true (see changes above), so a skipped result there is fine -
+    # only an actual failure should block publishing. confinement is skipped
+    # with it. !cancelled() rather than always(): a run someone cancelled
+    # publishes nothing.
     if: |
       !cancelled() && github.event_name == 'push' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.server-x64-linux.result == 'success' || needs.server-x64-linux.result == 'skipped') &&
       (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04
     # What container-index merges with main's arm64 image and debug info.
@@ -1095,12 +1097,12 @@ jobs:
   # production architectures, natively, on an arm64 runner. develop's and pull
   # requests' stay amd64 alone. Its own build is its check: no
   # container-verify runs on arm64, so it writes its own layer cache.
-  container-publish-arm64:
-    needs: [server, container-verify, confinement]
+  container-publish-arm64-linux:
+    needs: [server-x64-linux, container-verify, confinement]
     if: |
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.container-verify.result == 'success' &&
-      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.server-x64-linux.result == 'success' || needs.server-x64-linux.result == 'skipped') &&
       (needs.confinement.result == 'success' || needs.confinement.result == 'skipped')
     runs-on: ubuntu-26.04-arm
     outputs:
@@ -1136,7 +1138,7 @@ jobs:
           docker push "$image:sha-${{ steps.image.outputs.short-sha }}-arm64"
           digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.image.outputs.short-sha }}-arm64" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      # As container-publish's, before it is attested.
+      # As container-publish-x64-linux's, before it is attested.
       - name: Sign server image
         uses: ./.github/actions/sign-artifact
         with:
@@ -1184,12 +1186,12 @@ jobs:
   # own architecture's manifest from it, but the cluster resolves the sha-<12>
   # tag it runs to the index, so the index's signature is the one it checks.
   # Until it runs (or if it fails), those tags are amd64's alone, as
-  # container-publish pushed them.
+  # container-publish-x64-linux pushed them.
   container-index:
-    needs: [container-publish, container-publish-arm64]
+    needs: [container-publish-x64-linux, container-publish-arm64-linux]
     if: |
-      !cancelled() && needs.container-publish.result == 'success' &&
-      needs.container-publish-arm64.result == 'success'
+      !cancelled() && needs.container-publish-x64-linux.result == 'success' &&
+      needs.container-publish-arm64-linux.result == 'success'
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -1217,11 +1219,11 @@ jobs:
           tag="sha-${GITHUB_SHA::12}"
           docker buildx imagetools create \
             --tag "$image:$tag" --tag "$image:${{ github.ref_name }}" \
-            "$image@${{ needs.container-publish.outputs.image }}" \
-            "$image@${{ needs.container-publish-arm64.outputs.image }}"
+            "$image@${{ needs.container-publish-x64-linux.outputs.image }}" \
+            "$image@${{ needs.container-publish-arm64-linux.outputs.image }}"
           docker buildx imagetools create --tag "$image:$tag-debuginfo" \
-            "$image@${{ needs.container-publish.outputs.debuginfo }}" \
-            "$image@${{ needs.container-publish-arm64.outputs.debuginfo }}"
+            "$image@${{ needs.container-publish-x64-linux.outputs.debuginfo }}" \
+            "$image@${{ needs.container-publish-arm64-linux.outputs.debuginfo }}"
           echo "image=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
           echo "debuginfo=$(docker buildx imagetools inspect "$image:$tag-debuginfo" --format '{{.Manifest.Digest}}')" >> "$GITHUB_OUTPUT"
       - name: Sign image index
@@ -1244,19 +1246,20 @@ jobs:
   # published and signed, so develop's OCIRepository
   # (clusters/onprem/apps/sources.yaml) never offers a chart whose image is
   # missing, nor one of a commit any of whose checks failed: develop keeps its
-  # previous chart. Each check is waited on here, as container-publish lets a
-  # skipped server job through, which a failed format skips. Versioned
-  # <chart version>+<12 characters of the commit>, from which the chart takes
-  # its image's sha-<12> tag (charts/augustad _helpers.tpl), and pushed under
-  # the immutable tag <chart version>_<12> (Helm writes + as _). The cluster
-  # follows the tag develop, moved to it only once it is signed, and only from
-  # the branch's newest commit, as container-publish moves the image's. main's
-  # charts are never published: staging runs its release tag's from Git.
+  # previous chart. Each check is waited on here, as container-publish-x64-linux
+  # lets a skipped server-x64-linux job through, which a failed format skips.
+  # Versioned <chart version>+<12 characters of the commit>, from which the
+  # chart takes its image's sha-<12> tag (charts/augustad _helpers.tpl), and
+  # pushed under the immutable tag <chart version>_<12> (Helm writes + as _).
+  # The cluster follows the tag develop, moved to it only once it is signed, and
+  # only from the branch's newest commit, as container-publish-x64-linux moves
+  # the image's. main's charts are never published: staging runs its release
+  # tag's from Git.
   chart-publish:
-    needs: [format, client, tools, manifests, container-publish]
+    needs: [format, client-x64-windows, tools, manifests, container-publish-x64-linux]
     if: |
       !cancelled() && github.ref == 'refs/heads/develop' &&
-      needs.container-publish.result == 'success' &&
+      needs.container-publish-x64-linux.result == 'success' &&
       !contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

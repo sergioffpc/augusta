@@ -7,6 +7,8 @@
     "dwenegar.vscode-luacheck",
     // All files: apply .editorconfig (indent, line endings, final newline).
     "editorconfig.editorconfig",
+    // Markdown: format against .prettierrc.yaml.
+    "esbenp.prettier-vscode",
     // CI: edit and validate .github/workflows, view runs.
     "github.vscode-github-actions",
     // Lua: format against stylua.toml.

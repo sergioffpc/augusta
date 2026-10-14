@@ -1,9 +1,9 @@
-// The Linux build environment CI's server job runs in (see Dockerfile), with
-// the Linux client's system packages too, for VS Code or Codespaces: `make test`
-// builds and tests the linux preset, augustac among it, with nothing else to
-// install. The Windows client runs scripts/bootstrap.sh natively (MSVC has no
-// container). scripts/dev-container.sh runs the
-// same image from a terminal (macOS's git hooks run through it), with its own
+// The Linux build environment CI's server-x64-linux job runs in (see
+// Dockerfile), with the Linux client's system packages too, for VS Code or
+// Codespaces: `make test` builds and tests the linux preset, augustac among it,
+// with nothing else to install. The Windows client runs scripts/bootstrap.sh
+// natively (MSVC has no container). scripts/dev-container.sh runs the same
+// image from a terminal (macOS's git hooks run through it), with its own
 // mounts: there the checkout keeps its host path.
 {
   "name": "Augusta (Linux)",
@@ -15,8 +15,9 @@
   },
   "remoteUser": "ubuntu",
   "containerEnv": {
-    // CI's server job's binary cache: a files provider in the checkout's
-    // gitignored .vcpkg-bincache (the job's env says why not the NuGet feed).
+    // CI's server-x64-linux job's binary cache: a files provider in the
+    // checkout's gitignored .vcpkg-bincache (the job's env says why not the
+    // NuGet feed).
     "VCPKG_BINARY_SOURCES": "clear;files,${containerWorkspaceFolder}/.vcpkg-bincache,readwrite"
   },
   "mounts": [
@@ -40,14 +41,27 @@
         "ms-vscode.makefile-tools",
         "llvm-vs-code-extensions.lldb-dap",
         "llvm-vs-code-extensions.vscode-clangd",
+        "shader-slang.slang-language-extension",
         "editorconfig.editorconfig",
+        "esbenp.prettier-vscode",
         "redhat.vscode-yaml",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
         "sumneko.lua",
         "dwenegar.vscode-luacheck",
         "JohnnyMorganz.stylua",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "mkhl.shfmt",
+        "timonwong.shellcheck",
         "tamasfe.even-better-toml",
         "github.vscode-github-actions"
-      ]
+      ],
+      // .vscode/settings.json names the Windows venv's interpreter; uv sync
+      // makes Linux's under bin/.
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/tools/.venv/bin/python"
+      }
     }
   }
 }

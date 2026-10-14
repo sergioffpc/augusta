@@ -8,11 +8,18 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: The branch, or a release's commit, every job checks out and tests. Benchmarks are recorded only for develop.
+        description: >
+          The branch, or a release's commit, every job checks out and tests.
+          Benchmarks are recorded only for develop.
         required: true
         type: string
       release:
-        description: Whether release.yml is the caller. Then a failure opens no nightly-failure issue (the release's own run is where it shows), sbom-scan scans the SBOMs the caller uploaded as sbom-<executable> artifacts before the call instead of the latest release's, and the fuzz corpus is not saved.
+        description: >
+          Whether release.yml is the caller. Then a failure opens no
+          nightly-failure issue (the release's own run is where it shows),
+          sbom-scan scans the SBOMs the caller uploaded as sbom-<executable>
+          artifacts before the call instead of the latest release's, and the
+          fuzz corpus is not saved.
         required: false
         type: boolean
         default: false
@@ -24,9 +31,10 @@ on:
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
-# Every job but client-linux configures with the client off (AUGUSTA_CLIENT):
-# each checks what augustad and the shared core are built from, as ci.yml's
-# Linux jobs do, and client-linux alone builds the Linux client.
+# Every job but client-x64-linux configures with the client off
+# (AUGUSTA_CLIENT): each checks what augustad and the shared core are built
+# from, as ci.yml's Linux jobs do, and client-x64-linux alone builds the Linux
+# client.
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
@@ -34,7 +42,7 @@ jobs:
       contents: read
       # Deleting superseded cache entries (.github/actions/prune-cache).
       actions: write
-    # See ci.yml's server job for why this isn't the NuGet feed.
+    # See ci.yml's server-x64-linux job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -256,7 +264,7 @@ jobs:
           name: coverage-report
           path: coverage-report/
           if-no-files-found: ignore
-  client-linux:
+  client-x64-linux:
     # The Linux client (ADR-0006), which no pull request builds: the linux
     # preset with the client on, as a Linux developer builds it, and its whole
     # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
@@ -319,12 +327,9 @@ jobs:
         run: test -x build/x64-linux-san/tests/augusta_client_renderer_smoke_tests
       - name: Test (ASan + UBSan)
         # A report fails the test it came from: ASan's and LeakSanitizer's do
-        # by themselves, UBSan's only with halt_on_error, as it otherwise
-        # prints its report and lets the test pass.
+        # by themselves, UBSan's from cmake/ubsan_default_options.cpp.
         if: |
           !cancelled() && steps.check-san.outcome == 'success'
-        env:
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: xvfb-run --auto-servernum ctest --preset linux-san --output-junit "$GITHUB_WORKSPACE/junit/client-linux-san.xml"
       - name: Upload the test results
         # For test-report below, also after a failing test.
@@ -509,12 +514,13 @@ jobs:
           output-format: table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
-    # every ctest run above, a row per test and a column per run (client-linux
-    # has two, linux and linux-san), and the coverage job's llvm-cov report.
-    # Uploaded as a run artifact; the documentation site publishes the latest
-    # scheduled night's under tests/ (ADR-0046), so a release's stays an
-    # artifact of its run. Also after a failing test, which is when it is read.
-    needs: [property-tests, tsan, netcode, coverage, client-linux]
+    # every ctest run above, a row per test and a column per run
+    # (client-x64-linux has two, linux and linux-san), and the coverage job's
+    # llvm-cov report. Uploaded as a run artifact; the documentation site
+    # publishes the latest scheduled night's under tests/ (ADR-0046), so a
+    # release's stays an artifact of its run. Also after a failing test, which
+    # is when it is read.
+    needs: [property-tests, tsan, netcode, coverage, client-x64-linux]
     if: always()
     runs-on: ubuntu-26.04
     permissions:
@@ -546,7 +552,7 @@ jobs:
   # reports on every job it waits for, and release.yml waits for the whole
   # call. Not from a release (inputs.release), whose failure fails its run.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, client-linux, benchmarks, sbom-scan, test-report]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, client-x64-linux, benchmarks, sbom-scan, test-report]
     if: always() && !inputs.release && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

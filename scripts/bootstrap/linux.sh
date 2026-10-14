@@ -24,16 +24,16 @@ install_toolchain() {
 
   # From .github/actions/setup-linux-build (which says why each): clang, lld,
   # llvm, libc++-dev, libc++abi-dev, libunwind-21-dev, libclang-rt-dev,
-  # ninja-build, autoconf, autoconf-archive, automake, libtool. From the server
-  # job: clang-tidy.
+  # ninja-build, autoconf, autoconf-archive, automake, libtool. From the
+  # server-x64-linux job: clang-tidy.
   # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
   # pkg-config. For the hooks: clang-format, git-lfs (pre-push), and lua-check
   # (luacheck), which this release packages at CI's pinned LUACHECK_VERSION for
   # every architecture, unlike luacheck's own release. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
   # for development.
-  # The client's (AUGUSTA_CLIENT), as the nightly's client-linux job installs
-  # them: vcpkg's GLFW builds against the system's X11 (libx11-dev,
+  # The client's (AUGUSTA_CLIENT), as the nightly's client-x64-linux job
+  # installs them: vcpkg's GLFW builds against the system's X11 (libx11-dev,
   # libxcursor-dev, libxi-dev, libxinerama-dev, libxrandr-dev), Wayland
   # (libwayland-dev, with wayland-scanner) and xkbcommon (libxkbcommon-dev)
   # development files, and its header includes OpenGL's (libgl-dev), as ImGui's
