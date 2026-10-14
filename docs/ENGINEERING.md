@@ -426,8 +426,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux (not viable given D3D12's and the Windows SDK's MSVC-specific
-  toolchain assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
+  from Linux (not viable given the Windows SDK's MSVC-specific toolchain
+  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
   Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
   winget-driven; one entry point and one `checkout` step and set of pinned
   formatter versions for both platforms, and no PowerShell: Git for Windows is

@@ -18,7 +18,7 @@
 namespace augusta::renderer {
 namespace {
 
-// Small, so WARP draws it fast, but wider than Windows' narrowest window with a
+// Small, so lavapipe draws it fast, but wider than Windows' narrowest window with a
 // title bar.
 constexpr std::uint32_t kWidth = 320;
 constexpr std::uint32_t kHeight = 240;
@@ -123,13 +123,15 @@ class IgnoredInput final : public input::EventSink {
   void OnMouseMoveEvent(const input::MouseMoveEvent& /*event*/) override {}
 };
 
-// What CI's runner, which has no GPU, can run.
+// What CI's runner, which has no GPU, can run, with every misuse of Vulkan an
+// error the Renderer throws.
 Config SoftwareHiddenConfig() {
   return {.title = "augusta renderer smoke test",
           .width = kWidth,
           .height = kHeight,
           .adapter = Adapter::kSoftware,
-          .hidden = true};
+          .hidden = true,
+          .validation = Validation::kRequired};
 }
 
 class RendererSmokeTest : public ::testing::Test {

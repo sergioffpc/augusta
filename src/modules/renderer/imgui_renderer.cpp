@@ -54,8 +54,8 @@ nvrhi::BlendState::RenderTarget AlphaBlend() {
       .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
 }
 
-nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const unsigned char> dxil) {
-  return device.createShader(nvrhi::ShaderDesc().setShaderType(type), dxil.data(), dxil.size());
+nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const std::uint32_t> spirv) {
+  return device.createShader(nvrhi::ShaderDesc().setShaderType(type), spirv.data(), spirv.size_bytes());
 }
 
 nvrhi::TextureHandle UploadFontAtlas(nvrhi::IDevice& device) {

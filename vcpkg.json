@@ -10,11 +10,6 @@
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
-    {
-      "name": "directx-dxc",
-      "host": true,
-      "platform": "windows"
-    },
     "flecs",
     "gamenetworkingsockets",
     {
@@ -56,6 +51,14 @@
       "name": "steam-audio",
       "platform": "windows"
     },
+    {
+      "name": "vulkan-headers",
+      "platform": "windows"
+    },
+    {
+      "name": "vulkan-validationlayers",
+      "platform": "windows"
+    },
     "yaml-cpp"
   ],
   "features": {
@@ -63,6 +66,28 @@
       "description": "The Agents' Python module (tools/agent): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python",
       "dependencies": [
         "pybind11"
+      ]
+    },
+    "lavapipe": {
+      "description": "The software Vulkan the renderer smoke test runs on (tests/CMakeLists.txt), which the root CMakeLists.txt turns on with AUGUSTA_LAVAPIPE: Mesa's lavapipe, and a Vulkan loader for a machine with no GPU driver to install one, such as CI's runner. LLVM without its default features: lavapipe needs its x86 code generator, not clang or lld",
+      "dependencies": [
+        {
+          "name": "llvm",
+          "default-features": false,
+          "platform": "windows"
+        },
+        {
+          "name": "mesa",
+          "default-features": false,
+          "features": [
+            "lavapipe"
+          ],
+          "platform": "windows"
+        },
+        {
+          "name": "vulkan-loader",
+          "platform": "windows"
+        }
       ]
     }
   },

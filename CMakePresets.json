@@ -23,7 +23,8 @@
       "inherits": "windows",
       "binaryDir": "${sourceDir}/build/x64-windows-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AUGUSTA_LAVAPIPE": "ON"
       }
     },
     {

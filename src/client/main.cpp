@@ -19,6 +19,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/reenactment.h"
+#include "augusta/renderer.h"
 #include "augusta/version.h"
 #include "runtime.h"
 
@@ -116,6 +117,11 @@ std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClien
 
   augusta::client::RuntimeConfig config;
   config.renderer.title = "augusta";
+#ifndef NDEBUG
+  // A Debug build runs under Vulkan's validation layer (ADR-0059) wherever the
+  // loader finds it through VK_ADD_LAYER_PATH.
+  config.renderer.validation = augusta::renderer::Validation::kIfAvailable;
+#endif
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config.server_address;
   config.input = file_config.input;

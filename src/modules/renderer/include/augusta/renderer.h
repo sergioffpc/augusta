@@ -12,8 +12,8 @@
 #include "augusta/math.h"
 
 /// \file
-/// augusta::renderer draws through NVIDIA's NVRHI on D3D12 (ADR-0059), used
-/// exclusively by the Windows client. It also owns the client's single OS
+/// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
+/// exclusively by the client. It also owns the client's single OS
 /// window, a GLFW one: there is no separate augusta::window module
 /// (ADR-0059). The window/device-event vocabulary (Key, KeyEvent, EventSink,
 /// ...) lives in augusta::input instead, even though Renderer is the one
@@ -46,13 +46,27 @@ namespace augusta::renderer {
 constexpr std::uint32_t kDefaultWidth = 1920;
 constexpr std::uint32_t kDefaultHeight = 1080;
 
-/// Which GPU the Renderer draws with.
+/// Which Vulkan device the Renderer draws with.
 enum class Adapter : std::uint8_t {
-  /// The system's default GPU.
+  /// A discrete GPU when there is one, else an integrated one.
   kHardware,
-  /// WARP, Windows' software rasterizer: for a test on a machine with no GPU,
-  /// such as CI's runner.
+  /// The first CPU-type device, a software rasterizer such as Mesa's lavapipe:
+  /// for a test on a machine with no GPU, such as CI's runner. Never a GPU.
   kSoftware,
+};
+
+/// Whether the Renderer runs under Vulkan's validation layer,
+/// VK_LAYER_KHRONOS_validation, which the loader finds through
+/// VK_ADD_LAYER_PATH. An error it reports is thrown by the Renderer call it
+/// happened in (see Renderer).
+enum class Validation : std::uint8_t {
+  kOff,
+  /// Under the layer if the loader finds it, else without, after a warning:
+  /// for a Debug build, which a developer may run without it.
+  kIfAvailable,
+  /// Under the layer, or not at all: for a test, which must not pass without
+  /// it.
+  kRequired,
 };
 
 /// Initial window/renderer parameters.
@@ -67,6 +81,7 @@ struct Config {
   /// True to hide the window, for a test that only reads frames back
   /// (CaptureFrame).
   bool hidden = false;
+  Validation validation = Validation::kOff;
 };
 
 /// A frame read back from the GPU: width by height pixels, row by row from the
@@ -192,8 +207,13 @@ class Renderer {
   /// Renderer to push keyboard/mouse events to input_sink as the window
   /// delivers them (see input::EventSink). Throws std::runtime_error if
   /// window or device creation fails - there is no recoverable path for a
-  /// client that can't render - or if this implementation does not support
-  /// config's adapter. input_sink must outlive this Renderer.
+  /// client that can't render: no Vulkan 1.3, no device of config's adapter,
+  /// or Validation::kRequired without its layer. input_sink must outlive this
+  /// Renderer.
+  ///
+  /// Under validation, the constructor, RenderFrame and CaptureFrame also
+  /// throw std::runtime_error once the validation layer has reported an
+  /// error: API misuse is a bug, and fails where it is found.
   Renderer(const Config& config, input::EventSink& input_sink);
 
   /// The window, device and swapchain are unique hardware resources owned
@@ -259,7 +279,7 @@ class Renderer {
   void SetCharacterMesh(const std::string& character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
-  /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
+  /// host-visible buffer - unlike SetScene/SetCharacterMesh, cheap enough to
   /// call once every RenderFrame. Draws every instance it is given: how many
   /// players there can be is the protocol's business, not the renderer's. The
   /// buffer grows only when a call needs more room than any before it, so a

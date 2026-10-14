@@ -61,14 +61,32 @@ _NO_CPE = {
     "vcpkg-pkgconfig-get-modules": "a build tool",
     "vcpkg-tool-meson": "a build tool",
     "vcpkg-get-python": "a build tool",
+    "vcpkg-get-python-packages": "a build tool",
     "shader-slang": "a build tool: compiles the shaders the client embeds",
-    "directx-dxc": "a build tool: compiles the shaders the client embeds",
     # The renderer's (ADR-0059), and the ports NVRHI pulls in.
     "glfw3": "not in the NVD",
     "imgui": "not in the NVD",
     "nvrhi": "not in the NVD",
     "directx-headers": "not in the NVD",
     "vulkan-headers": "not in the NVD",
+    # Vulkan's validation layer, which Debug builds and the renderer smoke test
+    # load, and the ports it pulls in (ADR-0059): never in the client's zip.
+    "vulkan-validationlayers": "a development layer, shipped in no package",
+    "vulkan-utility-libraries": "the validation layer's, shipped in no package",
+    "spirv-cross": "the validation layer's, shipped in no package",
+    "spirv-headers": "the validation layer's, shipped in no package",
+    "spirv-reflect": "the validation layer's, shipped in no package",
+    "spirv-tools": "the validation layer's, shipped in no package",
+    "mimalloc": "the validation layer's, shipped in no package",
+    "parallel-hashmap": "the validation layer's, shipped in no package",
+    # The manifest's lavapipe feature: Mesa's software Vulkan driver, which the
+    # renderer smoke test draws on, the ports it pulls in, and a Vulkan loader
+    # for a test machine without one.
+    "mesa": "a test port, linked into no executable shipped",
+    "llvm": "mesa's, linked into no executable shipped",
+    "glslang": "a build tool: mesa's",
+    "atl": "a build tool: llvm's, from Visual Studio",
+    "vulkan-loader": "a test port: the client uses the system's loader",
     # The manifest's agent feature, which CI turns on for the Agents' Python
     # module (tools/agent) and a release doesn't: pybind11 and the python3
     # port it pulls in, with python3's own dependencies.

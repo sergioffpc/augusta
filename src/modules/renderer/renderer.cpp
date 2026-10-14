@@ -15,63 +15,43 @@
 #include <vector>
 
 #include <GLFW/glfw3.h>
-#include <d3d12.h>
-#include <dxgi.h>
-#include <dxgi1_2.h>
-#include <dxgi1_4.h>
-#include <dxgiformat.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <nvrhi/common/resource.h>
-#include <nvrhi/d3d12.h>
 #include <nvrhi/nvrhi.h>
-#include <windows.h>
-#include <wrl/client.h>
 
 #include "augusta/input.h"
-#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "debug_hud.h"
 #include "frame_regions.h"
 #include "glfw_keys.h"
-#include "gpu_crash_dumps.h"
+#include "swapchain.h"
 #include "vertices.h"
+#include "vulkan_device.h"
 
-// The shaders' DXIL, compiled at build time (CMakeLists.txt).
+// The shaders' SPIR-V, compiled at build time (CMakeLists.txt).
 #include "kEffectsPs.h"
 #include "kEffectsVs.h"
 #include "kScenePs.h"
 #include "kSceneVs.h"
 
-// glfw3native.h declares glfwGetWin32Window only for the platforms named before
-// it is included.
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-
-// The Renderer on NVRHI's D3D12 backend, in a GLFW window (ADR-0059). It draws
+// The Renderer on NVRHI's Vulkan backend, in a GLFW window (ADR-0059). It draws
 // into an offscreen target, then copies that to the swapchain's image and
-// presents it, and its window pushes the keyboard and mouse to
+// presents it (swapchain.h), and its window pushes the keyboard and mouse to
 // input::EventSink. It draws the scene, the remote players, the fight's effects
 // and the overlay, and the debug HUD over them.
 namespace augusta::renderer {
 
 namespace {
 
-using Microsoft::WRL::ComPtr;
-
 // Near-black, in linear light.
 constexpr float kClearColorChannel = 0.016F;
 
 nvrhi::Color ClearColor() { return {kClearColorChannel, kClearColorChannel, kClearColorChannel, 1.0F}; }
 
-// How many frames the GPU may be working on at once, and so how many swapchain
-// images and regions of a per-frame upload buffer (FrameRegion) there are.
-constexpr std::uint32_t kFramesInFlight = 3;
+// How many frames the GPU may be working on at once, and so how many regions of
+// a per-frame upload buffer (FrameRegion) there are.
+constexpr std::uint32_t kFramesInFlight = Swapchain::kFramesInFlight;
 
-// The target is sRGB, so the clear colour and shading stay linear; the
-// swapchain's images can't be (flip-model swapchains take no sRGB format), and
-// a copy between the two keeps the bytes as they are.
-constexpr nvrhi::Format kTargetFormat = nvrhi::Format::SRGBA8_UNORM;
-constexpr nvrhi::Format kSwapchainFormat = nvrhi::Format::RGBA8_UNORM;
 constexpr nvrhi::Format kDepthFormat = nvrhi::Format::D32;
 
 constexpr std::size_t kBytesPerPixel = 4;
@@ -101,9 +81,9 @@ std::array<nvrhi::VertexAttributeDesc, 3> VertexAttributes() {
 }
 
 // A vertex buffer the CPU rewrites every frame (the remote players, the fight's
-// effects, the overlay): unlike the scene's (UploadScene), it is in an upload
-// heap, mapped once for good, so a frame's vertices are copied straight into it
-// with no GPU wait.
+// effects, the overlay): unlike the scene's (UploadScene), it is in memory the
+// CPU writes, mapped once for good, so a frame's vertices are copied straight
+// into it with no GPU wait.
 //
 // It holds kFramesInFlight regions of region_capacity vertices each, and a
 // frame writes and draws only the region FrameRegion gives it: several frames
@@ -151,38 +131,6 @@ struct StreamedVertices {
 
   // Where region starts in buffer, in vertices.
   [[nodiscard]] std::uint32_t FirstVertex() const { return region * region_capacity; }
-};
-
-void ThrowIfFailed(HRESULT result, const char* what) {
-  if (FAILED(result)) {
-    throw std::runtime_error(std::string(what) + " failed");
-  }
-}
-
-// Whether result says the GPU faulted or hung and the device is gone.
-bool IsDeviceLost(HRESULT result) {
-  return result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_HUNG || result == DXGI_ERROR_DEVICE_RESET;
-}
-
-// What NVRHI reports, logged at its own severity.
-class MessageCallback final : public nvrhi::IMessageCallback {
- public:
-  void message(nvrhi::MessageSeverity severity, const char* text) override {
-    switch (severity) {
-      case nvrhi::MessageSeverity::Info:
-        LD("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
-        return;
-      case nvrhi::MessageSeverity::Warning:
-        LW("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
-        return;
-      case nvrhi::MessageSeverity::Error:
-        LE("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
-        return;
-      case nvrhi::MessageSeverity::Fatal:
-        LC("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
-        return;
-    }
-  }
 };
 
 // GLFW's library, initialized for as long as one is alive.
@@ -258,21 +206,13 @@ void ForwardInput(GLFWwindow& window, input::EventSink& sink) {
   glfwSetCursorPosCallback(&window, OnCursorMove);
 }
 
-// The adapter config names: WARP, or null, which D3D12 takes as the system's
-// default GPU.
-ComPtr<IDXGIAdapter> ChooseAdapter(IDXGIFactory4& factory, Adapter adapter) {
-  ComPtr<IDXGIAdapter> chosen;
-  if (adapter == Adapter::kSoftware) {
-    ThrowIfFailed(factory.EnumWarpAdapter(IID_PPV_ARGS(&chosen)), "Finding the WARP adapter");
-  }
-  return chosen;
-}
-
-nvrhi::TextureDesc TargetDesc(std::uint32_t width, std::uint32_t height) {
+// In the swapchain's format, which is sRGB, so the clear colour and shading stay
+// linear, and which a copy into its images keeps byte for byte.
+nvrhi::TextureDesc TargetDesc(Size size, nvrhi::Format format) {
   return nvrhi::TextureDesc()
-      .setWidth(width)
-      .setHeight(height)
-      .setFormat(kTargetFormat)
+      .setWidth(size.width)
+      .setHeight(size.height)
+      .setFormat(format)
       .setIsRenderTarget(true)
       .setInitialState(nvrhi::ResourceStates::RenderTarget)
       .setKeepInitialState(true)
@@ -280,10 +220,10 @@ nvrhi::TextureDesc TargetDesc(std::uint32_t width, std::uint32_t height) {
       .setDebugName("Renderer target");
 }
 
-nvrhi::TextureDesc DepthDesc(std::uint32_t width, std::uint32_t height) {
+nvrhi::TextureDesc DepthDesc(Size size) {
   return nvrhi::TextureDesc()
-      .setWidth(width)
-      .setHeight(height)
+      .setWidth(size.width)
+      .setHeight(size.height)
       .setFormat(kDepthFormat)
       .setIsRenderTarget(true)
       .setInitialState(nvrhi::ResourceStates::DepthWrite)
@@ -323,8 +263,15 @@ nvrhi::RenderState OverlayState() {
   return state;
 }
 
-nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const unsigned char> dxil) {
-  return device.createShader(nvrhi::ShaderDesc().setShaderType(type), dxil.data(), dxil.size());
+nvrhi::ShaderHandle CreateShader(nvrhi::IDevice& device, nvrhi::ShaderType type, std::span<const std::uint32_t> spirv) {
+  return device.createShader(nvrhi::ShaderDesc().setShaderType(type), spirv.data(), spirv.size_bytes());
+}
+
+// frame's pixels from blue-first to red-first order, as CapturedFrame has them.
+void SwapRedAndBlue(CapturedFrame& frame) {
+  for (std::size_t i = 0; i < frame.pixels.size(); i += kBytesPerPixel) {
+    std::swap(frame.pixels[i], frame.pixels[i + 2]);
+  }
 }
 
 }  // namespace
@@ -334,15 +281,12 @@ struct Renderer::Impl {
   GlfwLibrary glfw;
   GlfwWindow window;
   // The client area as of the last PumpEvents, which a minimized window, at
-  // 0 by 0, leaves as it was: the swapchain can't be empty.
+  // 0 by 0, leaves as it was.
   Size size;
-  ComPtr<IDXGIFactory4> factory;
-  ComPtr<ID3D12Device> d3d_device;
-  ComPtr<ID3D12CommandQueue> queue;
-  MessageCallback messages;
-  nvrhi::DeviceHandle device;
-  ComPtr<IDXGISwapChain3> swapchain;
-  std::array<nvrhi::TextureHandle, kFramesInFlight> swapchain_images;
+  VulkanDevice vulkan;
+  nvrhi::IDevice* device;
+  Swapchain swapchain;
+  // Drawn into at the swapchain's size, or at size while it has none.
   nvrhi::TextureHandle target;
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
@@ -387,11 +331,12 @@ struct Renderer::Impl {
   // size starts as the window's own, which Windows may have widened past
   // config's.
   Impl(const Config& config, input::EventSink& input_sink)
-      : window(OpenWindow(config)), size(FramebufferSize(*window)) {
-    ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "Creating the DXGI factory");
-    CreateDevice(ChooseAdapter(*factory.Get(), config.adapter).Get());
-    CreateSwapchain();
-    CreateFramebuffer();
+      : window(OpenWindow(config)),
+        size(FramebufferSize(*window)),
+        vulkan(*window, config.adapter, config.validation),
+        device(&vulkan.Nvrhi()),
+        swapchain(vulkan, size) {
+    CreateFramebuffer(swapchain.ImageSize().value_or(size));
     commands = device->createCommandList();
     CreatePipelines();
     debug_hud = std::make_unique<DebugHud>(*window, *device);
@@ -399,6 +344,7 @@ struct Renderer::Impl {
       query = device->createEventQuery();
     }
     ForwardInput(*window, input_sink);
+    vulkan.ThrowValidationErrors();
   }
 
   ~Impl() { device->waitForIdle(); }
@@ -408,66 +354,12 @@ struct Renderer::Impl {
   Impl(Impl&&) = delete;
   Impl& operator=(Impl&&) = delete;
 
-  void CreateDevice(IDXGIAdapter* adapter) {
-    EnableGpuCrashDumps();
-    ThrowIfFailed(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&d3d_device)),
-                  "Creating the D3D12 device");
-    AttachGpuCrashDumps(*d3d_device.Get());
-    const D3D12_COMMAND_QUEUE_DESC queue_desc{.Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                              .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL,
-                                              .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
-                                              .NodeMask = 0};
-    ThrowIfFailed(d3d_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&queue)), "Creating the command queue");
-    nvrhi::d3d12::DeviceDesc device_desc;
-    device_desc.errorCB = &messages;
-    device_desc.pDevice = d3d_device.Get();
-    device_desc.pGraphicsCommandQueue = queue.Get();
-    device = nvrhi::d3d12::createDevice(device_desc);
-  }
-
-  void CreateSwapchain() {
-    const DXGI_SWAP_CHAIN_DESC1 desc{.Width = size.width,
-                                     .Height = size.height,
-                                     .Format = nvrhi::d3d12::convertFormat(kSwapchainFormat),
-                                     .Stereo = FALSE,
-                                     .SampleDesc = {.Count = 1, .Quality = 0},
-                                     .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                                     .BufferCount = kFramesInFlight,
-                                     .Scaling = DXGI_SCALING_STRETCH,
-                                     .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
-                                     .AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED,
-                                     .Flags = 0};
-    HWND hwnd = glfwGetWin32Window(window.get());
-    ComPtr<IDXGISwapChain1> swapchain1;
-    ThrowIfFailed(factory->CreateSwapChainForHwnd(queue.Get(), hwnd, &desc, nullptr, nullptr, &swapchain1),
-                  "Creating the swapchain");
-    // GLFW's window has no exclusive fullscreen, so neither does DXGI's Alt+Enter.
-    ThrowIfFailed(factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER), "Associating the window");
-    ThrowIfFailed(swapchain1.As(&swapchain), "Getting IDXGISwapChain3");
-    WrapSwapchainImages();
-  }
-
-  // The swapchain's images, as NVRHI textures of the swapchain's size.
-  void WrapSwapchainImages() {
-    const nvrhi::TextureDesc image_desc = nvrhi::TextureDesc()
-                                              .setWidth(size.width)
-                                              .setHeight(size.height)
-                                              .setFormat(kSwapchainFormat)
-                                              .setInitialState(nvrhi::ResourceStates::Present)
-                                              .setKeepInitialState(true)
-                                              .setDebugName("Swapchain image");
-    for (std::uint32_t i = 0; i < kFramesInFlight; ++i) {
-      ComPtr<ID3D12Resource> image;
-      ThrowIfFailed(swapchain->GetBuffer(i, IID_PPV_ARGS(&image)), "Getting a swapchain image");
-      swapchain_images.at(i) = device->createHandleForNativeTexture(nvrhi::ObjectTypes::D3D12_Resource,
-                                                                    nvrhi::Object(image.Get()), image_desc);
-    }
-  }
-
-  // The target and its depth, at size, and the framebuffer drawing into both.
-  void CreateFramebuffer() {
-    target = device->createTexture(TargetDesc(size.width, size.height));
-    depth = device->createTexture(DepthDesc(size.width, size.height));
+  // The target and its depth, at frame_size, and the framebuffer drawing into
+  // both. Frames in flight keep drawing into the ones they had, which NVRHI
+  // keeps alive until they are done.
+  void CreateFramebuffer(Size frame_size) {
+    target = device->createTexture(TargetDesc(frame_size, swapchain.Format()));
+    depth = device->createTexture(DepthDesc(frame_size));
     framebuffer =
         device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(target).setDepthAttachment(depth));
   }
@@ -480,19 +372,15 @@ struct Renderer::Impl {
     }
   }
 
-  // Resizes the swapchain and the framebuffer to size. DXGI resizes only a
-  // swapchain whose images nothing holds, so this waits for the frames in
-  // flight and lets NVRHI drop what they held.
+  // Makes the swapchain again if the window's size changed, and the framebuffer
+  // with it.
   void Resize() {
-    device->waitForIdle();
-    device->runGarbageCollection();
-    for (nvrhi::TextureHandle& image : swapchain_images) {
-      image = nullptr;
+    swapchain.Update(size);
+    const Size frame_size = swapchain.ImageSize().value_or(size);
+    const nvrhi::TextureDesc& target_desc = target->getDesc();
+    if (target_desc.width != frame_size.width || target_desc.height != frame_size.height) {
+      CreateFramebuffer(frame_size);
     }
-    ThrowIfFailed(swapchain->ResizeBuffers(kFramesInFlight, size.width, size.height, DXGI_FORMAT_UNKNOWN, 0),
-                  "Resizing the swapchain");
-    WrapSwapchainImages();
-    CreateFramebuffer();
   }
 
   void SetCursorLocked(bool locked) const {
@@ -617,8 +505,9 @@ struct Renderer::Impl {
   }
 
   // World-to-clip transform of the current camera: the inverse of the camera's
-  // own placement, then a right-handed perspective projection onto D3D's depth
-  // range of 0 to 1.
+  // own placement, then a right-handed perspective projection onto a depth
+  // range of 0 to 1, Vulkan's. NVRHI flips Vulkan's viewport, so clip space's
+  // +Y is up, as the shaders have it.
   [[nodiscard]] math::Mat4 ViewProjection() const {
     const math::Mat4 camera_to_world = math::ToMat4(camera.position, camera.rotation, math::Vec3(1.0F));
     const nvrhi::TextureDesc& desc = target->getDesc();
@@ -649,14 +538,11 @@ struct Renderer::Impl {
   }
 
   void RenderFrame() {
-    const nvrhi::TextureDesc& target_desc = target->getDesc();
-    if (target_desc.width != size.width || target_desc.height != size.height) {
-      Resize();
-    }
-
-    nvrhi::IEventQuery* done = frame_done.at(ReadyRegion());
+    Resize();
+    const std::uint32_t region = ReadyRegion();
+    nvrhi::IEventQuery* done = frame_done.at(region);
     device->resetEventQuery(done);
-    const UINT image_index = swapchain->GetCurrentBackBufferIndex();
+    nvrhi::ITexture* image = swapchain.Acquire(region);
 
     commands->open();
     commands->clearTextureFloat(target, nvrhi::AllSubresources, ClearColor());
@@ -673,24 +559,23 @@ struct Renderer::Impl {
     Draw(effects_pipeline, bindings, effect_vertices);
     Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
     debug_hud->Render(*commands, *framebuffer, hud_stats);
-    commands->copyTexture(swapchain_images.at(image_index), nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
+    // None while the window is minimized: the frame is drawn, not shown.
+    if (image != nullptr) {
+      // The copy overwrites the whole image, so what it held, and the layout it
+      // was left in, don't matter.
+      commands->beginTrackingTextureState(image, nvrhi::AllSubresources, nvrhi::ResourceStates::Common);
+      commands->copyTexture(image, nvrhi::TextureSlice(), target, nvrhi::TextureSlice());
+    }
     commands->close();
     device->executeCommandList(commands);
     device->setEventQuery(done, nvrhi::CommandQueue::Graphics);
-
-    // DXGI_STATUS_OCCLUDED, for a hidden or minimized window, is a success. A
-    // GPU fault shows here first, and its crash dump is written before the
-    // throw can end the process.
-    const HRESULT presented = swapchain->Present(0, 0);
-    if (IsDeviceLost(presented)) {
-      AwaitGpuCrashDump();
-    }
-    ThrowIfFailed(presented, "Presenting");
+    swapchain.Present();
+    vulkan.ThrowValidationErrors();
     device->runGarbageCollection();
     ++frame_index;
   }
 
-  [[nodiscard]] CapturedFrame CaptureFrame() const {
+  [[nodiscard]] CapturedFrame CaptureFrame() {
     if (frame_index == 0) {
       return {};
     }
@@ -715,6 +600,10 @@ struct Renderer::Impl {
       std::memcpy(&frame.pixels[row * row_size], mapped + (row * row_pitch), row_size);
     }
     device->unmapStagingTexture(staging);
+    if (desc.format == nvrhi::Format::SBGRA8_UNORM) {
+      SwapRedAndBlue(frame);
+    }
+    vulkan.ThrowValidationErrors();
     return frame;
   }
 };
