@@ -115,6 +115,38 @@ install_formatters() {
   add_to_path User "${bin}"
 }
 
+# Adds Visual Studio components to the latest Build Tools install that lacks
+# any of them: winget_install skips an existing install, so a component added
+# here after a machine was bootstrapped would otherwise never reach it.
+# Arguments:
+#   The component and workload ids.
+add_build_tools_components() {
+  local installer vs_install
+  installer="$(windows_dir 'ProgramFiles(x86)')/Microsoft Visual Studio/Installer"
+  if [[ -n "$("${installer}/vswhere.exe" -latest -products '*' -requires "$@" \
+    -property installationPath | tr -d '\r')" ]]; then
+    return
+  fi
+  vs_install="$("${installer}/vswhere.exe" -latest -products '*' \
+    -property installationPath | tr -d '\r')"
+  echo "Adding $* to ${vs_install}..."
+  # No --wait: that is the bootstrapper's (winget's vs_buildtools.exe);
+  # the installer's own setup.exe rejects it, and returns once it is done.
+  local args=(modify --installPath "${vs_install}" --quiet --norestart
+    --includeRecommended)
+  local component
+  for component in "$@"; do
+    args+=(--add "${component}")
+  done
+  # Its output is silenced: it logs the channel refreshes --quiet cancels as
+  # errors, which they are not. Its real logs are dd_setup_* in %TEMP%.
+  if ! "${installer}/setup.exe" "${args[@]}" >/dev/null; then
+    echo "bootstrap: the Visual Studio Installer failed; see its" \
+      "dd_setup_*.log files in $(windows_dir TEMP)." >&2
+    exit 1
+  fi
+}
+
 install_toolchain() {
   if ! net session >/dev/null 2>&1; then
     echo "bootstrap: run Git Bash as Administrator (VS Build Tools and the" \
@@ -124,8 +156,11 @@ install_toolchain() {
 
   # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
   # Vulkan driver) builds on, needs it.
+  local vs_components=(Microsoft.VisualStudio.Workload.VCTools
+    Microsoft.VisualStudio.Component.VC.ATL)
   winget_install Microsoft.VisualStudio.BuildTools --override \
-    "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended"
+    "--wait --quiet --add ${vs_components[0]} --add ${vs_components[1]} --includeRecommended"
+  add_build_tools_components "${vs_components[@]}"
   winget_install Microsoft.WindowsSDK.10.0.26100
   winget_install Kitware.CMake
   winget_install Ninja-build.Ninja
@@ -193,11 +228,14 @@ install_toolchain() {
   vs_install="$("${program_files_x86}/Microsoft Visual Studio/Installer/vswhere.exe" \
     -latest -products '*' \
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+    Microsoft.VisualStudio.Component.VC.ATL \
     -property installationPath | tr -d '\r')"
   if [[ -z "${vs_install}" ]]; then
     echo "bootstrap: Visual Studio Build Tools is installed, but its VC C++" \
-      "toolset is missing. Add the Microsoft.VisualStudio.Workload.VCTools" \
-      "workload and re-run this script." >&2
+      "toolset or ATL is missing. Add the" \
+      "Microsoft.VisualStudio.Workload.VCTools workload and the" \
+      "Microsoft.VisualStudio.Component.VC.ATL component and re-run this" \
+      "script." >&2
     exit 1
   fi
   local sdk_include="${program_files_x86}/Windows Kits/10/Include/10.0.26100.0"
