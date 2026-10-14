@@ -114,6 +114,9 @@ target_link_libraries(
     augustac_content
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
+# The Aftermath shared libraries beside augustac, on both platforms, when the
+# build has them (cmake/Aftermath.cmake).
+augusta_stage_aftermath(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
 # runtime folder, which a release archives (ADR-0055, ADR-0058); and on Windows
 # its timer resolution, which Linux's main.cpp has no need to raise.
@@ -127,8 +130,6 @@ if(WIN32)
   # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
   # /OPT:ICF off unless they are named, so they are: the code is Release's own.
   target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
-
-  augusta_stage_aftermath(augustac)
 
   # `cmake --install --component client` stages the client's whole runtime folder,
   # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
@@ -177,8 +178,9 @@ else()
   # which a release tars (scripts/stage-client.sh): augustac and the shared
   # libraries it links that are not the system's. vcpkg links its ports
   # statically, and the toolchain the C++ runtime (cmake/LlvmToolchain.cmake),
-  # so the folder bundles only a shared library a dependency ships alone. What
-  # it links from the system is held to an allowlist by the staging check.
+  # so the folder bundles only a shared library a dependency ships alone:
+  # Aftermath's when the build has it. What it links from the system is held to
+  # an allowlist by the staging check.
   # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
   # `make install`), leaves it out.
   install(
@@ -186,10 +188,14 @@ else()
     RUNTIME_DEPENDENCY_SET augustac_libraries
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
   )
+  set(library_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib")
+  if(AUGUSTA_AFTERMATH_DIR)
+    list(APPEND library_directories "${AUGUSTA_AFTERMATH_DIR}/lib/x64")
+  endif()
   install(
     RUNTIME_DEPENDENCY_SET augustac_libraries
     POST_EXCLUDE_REGEXES "^/lib/" "^/lib64/" "^/usr/lib/" "^/usr/lib64/"
-    DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib"
+    DIRECTORIES ${library_directories}
     LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
   )
 endif()
