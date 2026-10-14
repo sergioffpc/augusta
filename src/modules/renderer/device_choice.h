@@ -5,14 +5,17 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
+#include <vector>
 
 #include "augusta/renderer.h"
 
 /// \file
-/// Decision half of which Vulkan physical device the Renderer draws with
-/// (ADR-0059), private to the module and kept free of any GPU API so it is
-/// tested on every platform: vulkan_device.cpp asks Vulkan what each device is
-/// and creates the one chosen.
+/// Decision half of which Vulkan physical device the Renderer draws with, and
+/// which of its extensions it turns on (ADR-0059), private to the module and
+/// kept free of any GPU API so it is tested on every platform:
+/// vulkan_device.cpp asks Vulkan what each device is and has, and creates the
+/// one chosen with the extensions chosen.
 namespace augusta::renderer {
 
 /// What a physical device is, as Vulkan's VkPhysicalDeviceType says.
@@ -39,6 +42,18 @@ struct DeviceCandidate {
 /// for kSoftware the first CPU device. A device without Vulkan 1.3, or which
 /// can't present to the window, is passed over.
 std::optional<std::size_t> ChooseDevice(std::span<const DeviceCandidate> candidates, Adapter adapter);
+
+/// What Vulkan names the device extensions the Renderer may turn on.
+constexpr const char* kSwapchainExtension = "VK_KHR_swapchain";
+constexpr const char* kDiagnosticsConfigExtension = "VK_NV_device_diagnostics_config";
+constexpr const char* kDiagnosticCheckpointsExtension = "VK_NV_device_diagnostic_checkpoints";
+
+/// The device extensions that the Renderer turns on for a device that has
+/// available: the swapchain's, and, when gpu_crash_dumps says Aftermath is
+/// watching (gpu_crash_dumps.h), whichever of the two extensions Aftermath
+/// reads the device has, diagnostics config and diagnostic checkpoints. Each
+/// is one of the names above.
+std::vector<const char*> DeviceExtensions(bool gpu_crash_dumps, std::span<const std::string_view> available);
 
 }  // namespace augusta::renderer
 

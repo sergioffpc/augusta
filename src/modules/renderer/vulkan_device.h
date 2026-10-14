@@ -19,7 +19,8 @@
 /// reached through the system's loader, which the client never links or ships,
 /// a Vulkan 1.3 instance with or without the validation layer, the window's
 /// surface, the physical device the Config's Adapter asks for (decided by
-/// device_choice.h) with its graphics queue, and the NVRHI device over them.
+/// device_choice.h) with its graphics queue, watched for GPU crash dumps
+/// (gpu_crash_dumps.h), and the NVRHI device over them.
 /// renderer.cpp draws through it, and swapchain.h presents with it. Made and
 /// used on the Main/Render thread.
 namespace augusta::renderer {
@@ -67,7 +68,9 @@ class VulkanDevice final {
 
   void CreateInstance(Validation requested);
   void ChoosePhysicalDevice(Adapter adapter);
-  void CreateDevice();
+  // gpu_crash_dumps: whether Aftermath is watching, so the device turns on what
+  // it reads.
+  void CreateDevice(bool gpu_crash_dumps);
 
   // The first validation error since the last ThrowValidationErrors. Before
   // the messenger, which reports into it.
