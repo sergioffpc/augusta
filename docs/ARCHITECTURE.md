@@ -322,7 +322,7 @@ after the tick.
 - Asset cooker (`tools/pack`, a pure-Python project - `augusta-pack`
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
-  compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small native
+  compresses textures via libktx (BC7/BC5/BC4, KTX2) through two small native
   pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
   links OpenUSD, see ADR-0030), and packages everything into signed, verified
   pack files (separate client and server packs) via a pure-Python

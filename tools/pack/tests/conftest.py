@@ -6,7 +6,9 @@ on what was cooked; the C++ runtime stays the reference decoder.
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 import struct
+import subprocess
 import wave
 
 from augusta_pack import keys
@@ -15,6 +17,18 @@ import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXAMPLES_ROOT = Path(__file__).parents[2] / "composer" / "examples"
+# Where the native module's build installs its vcpkg dependencies, ktx[tools]
+# among them (tools/pack/native/vcpkg.json).
+NATIVE_BUILD_DIR = Path(__file__).parents[1] / "native" / "build"
+
+# The twelve bytes every KTX2 file starts with.
+KTX2_IDENTIFIER = b"\xabKTX 20\xbb\r\n\x1a\n"
+# The VkFormat values of the block formats the cooker writes (ADR-0017).
+VK_FORMAT_BC4_UNORM_BLOCK = 139
+VK_FORMAT_BC5_UNORM_BLOCK = 141
+VK_FORMAT_BC7_SRGB_BLOCK = 146
+# A KTX2 header's supercompressionScheme for Zstandard.
+KTX2_SUPERCOMPRESSION_ZSTD = 2
 
 
 @dataclass(frozen=True)
@@ -139,6 +153,62 @@ def decode_audio(blob: bytes) -> tuple[int, int, bytes]:
     """
     sample_rate, bits_per_sample, size = struct.unpack_from("<IBI", blob, 0)
     return sample_rate, bits_per_sample, blob[9 : 9 + size]
+
+
+@dataclass(frozen=True)
+class Ktx2Header:
+    vk_format: int
+    supercompression_scheme: int
+
+
+def decode_texture(blob: bytes) -> bytes:
+    """A texture blob's KTX2 file: a u32 byte count, then the file, alone."""
+    (size,) = struct.unpack_from("<I", blob, 0)
+    assert len(blob) == 4 + size
+    return blob[4:]
+
+
+def read_ktx2_header(ktx2: bytes) -> Ktx2Header:
+    """The header fields of a KTX2 file the tests assert on."""
+    assert ktx2[:12] == KTX2_IDENTIFIER
+    # identifier, then vkFormat, typeSize, pixelWidth, pixelHeight,
+    # pixelDepth, layerCount, faceCount, levelCount and
+    # supercompressionScheme, u32 each.
+    fields = struct.unpack_from("<9I", ktx2, 12)
+    return Ktx2Header(
+        vk_format=fields[0],
+        supercompression_scheme=fields[8],
+    )
+
+
+def _find_ktx() -> str:
+    """Khronos' ktx tool, from the same vcpkg ktx port as the encoder."""
+    for name in ("ktx.exe", "ktx"):
+        found = sorted(
+            NATIVE_BUILD_DIR.glob(f"*/vcpkg_installed/*/tools/ktx/{name}")
+        )
+        if found:
+            return str(found[0])
+    on_path = shutil.which("ktx")
+    if on_path is None:
+        pytest.fail(
+            "ktx not found: build tools/pack/native, whose vcpkg manifest "
+            "installs it (ktx[tools])"
+        )
+    return on_path
+
+
+def ktx_validate(ktx2: bytes, tmp_path: Path) -> None:
+    """Fails the test unless `ktx validate` accepts the KTX2 file."""
+    path = tmp_path / "texture.ktx2"
+    path.write_bytes(ktx2)
+    result = subprocess.run(
+        [_find_ktx(), "validate", "--warnings-as-errors", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def decode_string(blob: bytes) -> str:

@@ -474,9 +474,8 @@ jobs:
         # The LLVM toolchain the linux preset and triplets build with, as
         # setup-linux-build installs it. autoconf/autoconf-archive/
         # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
-        # via autotools on Linux. libomp-dev: DirectXTex's CMake config finds
-        # OpenMP, and clang's runtime isn't on the runner image.
-        run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev libomp-dev ninja-build autoconf autoconf-archive automake libtool
+        # via autotools on Linux.
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg (Windows)
         if: runner.os == 'Windows'

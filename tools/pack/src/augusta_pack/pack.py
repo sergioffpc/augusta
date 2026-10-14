@@ -84,17 +84,12 @@ CHARACTERS_PATH = "Characters"
 # are addressed under (assets.h's kSoundsPath).
 SOUNDS_PATH = "Sounds"
 
-# TextureFormat (assets.h `enum class TextureFormat : uint8_t`).
-TEXTURE_FORMAT_BC7 = 0
-TEXTURE_FORMAT_BC5 = 1
-TEXTURE_FORMAT_BC4 = 2
-
 # Sentinel parent_index for a SceneNode with no parent (assets.h's
 # kSceneNodeNoParent).
 NO_PARENT = 0xFFFFFFFF
 
 MAGIC = b"AUGP"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 BLAKE3_HASH_SIZE = 32
 # The header's flags byte (assets.cpp's kHeaderHasClientPack): whether it names
 # the hash of the client pack cooked with this one.
@@ -218,14 +213,13 @@ def encode_scene_blob(nodes: list[SceneNode]) -> bytes:
     return writer.getvalue()
 
 
-def encode_texture_blob(dds_bytes: bytes, texture_format: int) -> bytes:
-    """A texture blob: u8 format, then the DDS as a u32 byte count and bytes."""
-    if len(dds_bytes) > MAX_TEXTURE_BYTES:
+def encode_texture_blob(ktx2_bytes: bytes) -> bytes:
+    """A texture blob: the KTX2 file as a u32 byte count, then its bytes."""
+    if len(ktx2_bytes) > MAX_TEXTURE_BYTES:
         raise EncodeError("texture exceeds pack size limits")
     writer = ByteWriter()
-    writer.u8(texture_format)
-    writer.u32(len(dds_bytes))
-    writer.raw(dds_bytes)
+    writer.u32(len(ktx2_bytes))
+    writer.raw(ktx2_bytes)
     return writer.getvalue()
 
 
