@@ -123,7 +123,7 @@ if(AUGUSTA_CLIENT)
   # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built
   # without its own Aftermath support, so the Renderer attaches Aftermath to
   # the Vulkan device itself. An executable linking this target stages the
-  # Aftermath DLLs beside it with augusta_stage_aftermath.
+  # Aftermath shared libraries beside it with augusta_stage_aftermath.
   include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
   if(AUGUSTA_AFTERMATH_DIR)
     find_package(boost_dll CONFIG REQUIRED)

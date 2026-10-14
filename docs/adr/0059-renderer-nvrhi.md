@@ -71,8 +71,8 @@ between backends would double what has to be tested, for no gain to a player.
   without them, such as lavapipe or a GPU not NVIDIA's, is made exactly as
   without Aftermath. Once Vulkan reports the device lost, the Renderer waits a
   few seconds for the dump before it throws. A dump is a `.nv-gpudmp` beside the
-  executable. The build stages the SDK's DLLs beside the executable and in the
-  client's package. The code is the same on both platforms.
+  executable. The build stages the SDK's shared libraries beside the executable
+  and in the client's package. The code is the same on both platforms.
 - **Testing.** `Config` can choose `kSoftware`, a hidden window and validation,
   and `Renderer::CaptureFrame` reads the last frame back. A smoke test drives
   the Renderer through its interface on Mesa's lavapipe, a software Vulkan
