@@ -10,14 +10,13 @@ runs:
     # archive by its package's ABI hash, so an entry holding packages this job
     # doesn't need costs nothing but the download.
     #
-    # The ABI hash covers the compiler that built a package, and vcpkg builds
-    # its ports with the system compiler (/usr/bin/c++, Ubuntu 26.04's g++) for
-    # the default x64-linux triplet - the presets' clang compiles the project
-    # alone. So every Linux job, and the server image's dependency layer on the
-    # same Ubuntu, can share the entry; an archive another compiler built just
-    # never matches - as when Ubuntu updates g++ and the runner image and the
-    # image's cached apt layer hold different builds of it, until both catch up. The key's "clang" predates that being written down: it
-    # stays, as renaming it would drop every entry already saved.
+    # The ABI hash covers the compiler that built a package and the toolchain
+    # file it built through: vcpkg builds its ports with the project's own
+    # LLVM toolchain (triplets/, ADR-0008). So every Linux job, and the server
+    # image's dependency layer on the same Ubuntu, can share the entry; an
+    # archive another compiler built just never matches - as when Ubuntu
+    # updates clang and the runner image and the image's cached apt layer
+    # hold different builds of it, until both catch up.
     #
     # An arm64 runner's packages (the release's and main's arm64 builds) never
     # match an x64 job's ABI hashes, so they get a prefix of their own:

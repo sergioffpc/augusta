@@ -100,7 +100,7 @@ configure the Conventional Commits `commit-msg` hook.
 **k3s node (the cluster's server, Debian 13):**
 [scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
 runs `develop` and `staging`, through sudo, without a checkout: the crash-core
-handler, Podman and gdb to read a core, the server's `augusta` user, the
+handler, Podman and lldb to read a core, the server's `augusta` user, the
 asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
 by key only, unattended security updates, auditd), k3s at the cluster's release,
 and Flux, which then installs the monitoring stack and both environments from

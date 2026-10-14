@@ -101,7 +101,7 @@ main() {
     venv_python=bin/python
     module_suffix=so
     exe_suffix=
-    compiler=(clang++)
+    compiler=(clang++ ld.lld)
   else
     echo "bootstrap: the cooker runs on Windows (Git Bash) or Linux only -" \
       "vcpkg's DirectXTex port, which its _native module wraps" \
@@ -111,8 +111,8 @@ main() {
 
   # uv manages its own Python interpreters - no system-wide Python install
   # needed. The VC++ runtime usd-optimize's USD DLLs import on Windows, and
-  # the clang the Linux preset compiles with, come from scripts/bootstrap.sh
-  # too.
+  # the LLVM toolchain the Linux preset builds with, come from
+  # scripts/bootstrap.sh too.
   local missing=() command
   for command in git uv cmake ninja "${compiler[@]}"; do
     command -v "${command}" >/dev/null 2>&1 || missing+=("${command}")

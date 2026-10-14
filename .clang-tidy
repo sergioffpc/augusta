@@ -41,7 +41,7 @@ Checks: >
 # (assets::Pack::Load) ORs two of xfilesystem_abi.h's __std_fs_stats_flags
 # bit flags into a value no single enumerator names. Not a bug in our code,
 # and not fixable from the call site since it's the STL's own header; the
-# Linux lint, on libstdc++, never reaches it.
+# Linux lint, on libc++, never reaches it.
 #
 # readability-convert-member-functions-to-static is disabled because most
 # module classes (physics::World, networking::Client, ...) are still

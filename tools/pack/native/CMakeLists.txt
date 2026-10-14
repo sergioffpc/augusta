@@ -5,7 +5,9 @@ cmake_minimum_required(VERSION 3.25)
 # native code the asset-cooking pipeline (tools/pack, ADR-0030,
 # a pure-Python project otherwise) needs, so building it never requires
 # configuring the client/server runtime (or its flecs/GameNetworkingSockets/
-# PhysX dependencies) at all.
+# PhysX dependencies) at all. Only the Linux toolchain is the root's
+# (cmake/LlvmToolchain.cmake and triplets/, ADR-0008), so the module and its
+# dependencies build as the engine's do.
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   set(
     CMAKE_TOOLCHAIN_FILE

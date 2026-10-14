@@ -121,7 +121,7 @@ check_os() {
 
 install_packages() {
   # systemd-coredump: the kernel's core handler, which keeps a crashed
-  # server's core (ADR-0047). podman and gdb read it on the node: podman takes
+  # server's core (ADR-0047). podman and lldb read it on the node: podman takes
   # the binary and its debug info out of the sha-<12> and sha-<12>-debuginfo
   # images, daemonless; k3s runs its pods on its own containerd and needs
   # neither podman nor Docker.
@@ -131,8 +131,8 @@ install_packages() {
     ca-certificates \
     curl \
     e2fsprogs \
-    gdb \
     irqbalance \
+    lldb \
     nftables \
     openssh-server \
     podman \

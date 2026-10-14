@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <exception>  // IWYU pragma: keep - rapidcheck/Gen.hpp uses it without including it
 #include <map>
 #include <optional>
 #include <ostream>

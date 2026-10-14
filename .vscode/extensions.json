@@ -11,6 +11,8 @@
     "github.vscode-github-actions",
     // Lua: format against stylua.toml.
     "JohnnyMorganz.stylua",
+    // C++: the Linux debugger (lldb), for the (lldb) launch configs.
+    "llvm-vs-code-extensions.lldb-dap",
     // C/C++: language server and clang-format/clang-tidy integration.
     "llvm-vs-code-extensions.vscode-clangd",
     // Shell: format scripts with shfmt.
@@ -25,7 +27,8 @@
     "ms-vscode-remote.remote-containers",
     // C++: CMake configure/build/test from presets.
     "ms-vscode.cmake-tools",
-    // C++: debugger only; IntelliSense is disabled in favour of clangd.
+    // C++: the Windows debugger (MSVC) only; IntelliSense is disabled in
+    // favour of clangd.
     "ms-vscode.cpptools",
     // Root Makefile: run its targets from the editor.
     "ms-vscode.makefile-tools",

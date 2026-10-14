@@ -19,12 +19,12 @@
     },
     {
       "name": "linux",
-      "displayName": "Linux (Ninja + clang)",
+      "displayName": "Linux (Ninja + LLVM)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/x64-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/../../../cmake/LlvmToolchain.cmake",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "VCPKG_INSTALL_OPTIONS": "--x-packages-root=$env{HOME}/.cache/augusta-vcpkg/packages;--x-buildtrees-root=$env{HOME}/.cache/augusta-vcpkg/buildtrees;--downloads-root=$env{HOME}/.cache/augusta-vcpkg/downloads"
       },

@@ -65,5 +65,10 @@
         "pybind11"
       ]
     }
+  },
+  "vcpkg-configuration": {
+    "overlay-triplets": [
+      "./triplets"
+    ]
   }
 }

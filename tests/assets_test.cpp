@@ -397,7 +397,9 @@ class HitboxPackTest : public PackTest {
     };
     const auto blob = augusta::assets::EncodeHitboxBlob(hitbox);
     EXPECT_TRUE(blob.has_value());
-    return {.type = augusta::assets::AssetType::kHitbox, .path = std::move(path), .data = blob.value_or({})};
+    return {.type = augusta::assets::AssetType::kHitbox,
+            .path = std::move(path),
+            .data = blob.value_or(std::vector<std::byte>{})};
   }
 
   augusta::assets::Pack Write(const std::vector<augusta::assets::AssetEntry>& entries) {
