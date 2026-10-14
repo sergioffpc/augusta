@@ -17,6 +17,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/renderer.h"
+#include "gpu_crash_dumps.h"
 #include "vulkan_device.h"
 
 namespace augusta::renderer {
@@ -78,7 +79,12 @@ std::uint32_t ImageCountFor(const vk::SurfaceCapabilitiesKHR& capabilities) {
   return capabilities.maxImageCount == 0 ? count : std::min(count, capabilities.maxImageCount);
 }
 
+// A GPU fault shows here first, as the device lost: its crash dump is written
+// before the throw can end the process.
 void ThrowIfFailed(VkResult result, const char* what) {
+  if (result == VK_ERROR_DEVICE_LOST) {
+    AwaitGpuCrashDump();
+  }
   if (result != VK_SUCCESS) {
     throw std::runtime_error(std::format("{} failed: {}", what, nvrhi::vulkan::resultToString(result)));
   }

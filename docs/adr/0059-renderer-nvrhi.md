@@ -62,20 +62,28 @@ between backends would double what has to be tested, for no gain to a player.
   JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
   with its licence and embedded in the executable at build time. Its text comes
   from code free of any GPU API.
-- **GPU crash dumps.** They are to come from Nsight Aftermath, attached to the
-  Vulkan device through `VK_NV_device_diagnostics_config` and
-  `VK_NV_device_diagnostic_checkpoints`: optional, autodetected from an
-  installed Nsight Graphics, and a no-op without it.
+- **GPU crash dumps.** Nsight Aftermath, from the SDK an installed Nsight
+  Graphics bundles, which the build autodetects; without it the build and the
+  client are unchanged. With it, the Renderer has Aftermath watch Vulkan devices
+  before it makes its own, and turns on `VK_NV_device_diagnostics_config`
+  (resource tracking and automatic checkpoints) and
+  `VK_NV_device_diagnostic_checkpoints` where the device has them; a device
+  without them, such as lavapipe or a GPU not NVIDIA's, is made exactly as
+  without Aftermath. Once Vulkan reports the device lost, the Renderer waits a
+  few seconds for the dump before it throws. A dump is a `.nv-gpudmp` beside the
+  executable. The build stages the SDK's DLLs beside the executable and in the
+  client's package. The code is the same on both platforms.
 - **Testing.** `Config` can choose `kSoftware`, a hidden window and validation,
   and `Renderer::CaptureFrame` reads the last frame back. A smoke test drives
   the Renderer through its interface on Mesa's lavapipe, a software Vulkan
   driver, and checks the pixels it drew, so it runs on CI's runners, which have
   no GPU. On Windows lavapipe comes from vcpkg's `mesa` port, through the
-  manifest's `lavapipe` feature, for tests only: CI's client job and the
-  `windows-debug` preset turn it on, and a release's build leaves it out. The
-  test's environment makes it the loader's only driver (`VK_DRIVER_FILES`). The
-  same feature has vcpkg's `vulkan-loader`, which the test loads where no GPU
-  driver installed the system's; nothing links it, and no package ships it.
+  manifest's `lavapipe` feature, for tests only: CI's `client-x64-windows` job
+  and the `windows-debug` preset turn it on, and a release's build leaves it
+  out. The test's environment makes it the loader's only driver
+  (`VK_DRIVER_FILES`). The same feature has vcpkg's `vulkan-loader`, which the
+  test loads where no GPU driver installed the system's; nothing links it, and
+  no package ships it.
 
 ## Consequences
 

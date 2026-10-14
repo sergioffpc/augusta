@@ -1,7 +1,13 @@
 name: Set up LLVM on Windows
 description: >
-  Installs LLVM 21.1.8 and puts it ahead of the runner image's own LLVM on PATH, for every later step of the job: clang-cl and lld-link, which the windows presets compile and link with (ADR-0008), and clang-format and clang-tidy. The version the Windows bootstrap pins and the Linux runner's distro package gives, so every platform has one LLVM. Downloaded and checked like the format job's tools, as the image has no winget, the bootstrap's package manager. Run in a job that has loaded the Visual Studio developer environment, which clang-cl and lld-link take the MSVC STL, the CRT and the Windows SDK from.
-
+  Installs LLVM 21.1.8 and puts it ahead of the runner image's own LLVM on PATH,
+  for every later step of the job: clang-cl and lld-link, which the windows
+  presets compile and link with (ADR-0008), and clang-format and clang-tidy. The
+  version the Windows bootstrap pins and the Linux runner's distro package
+  gives, so every platform has one LLVM. Downloaded and checked like the format
+  job's tools, as the image has no winget, the bootstrap's package manager. Run
+  in a job that has loaded the Visual Studio developer environment, which
+  clang-cl and lld-link take the MSVC STL, the CRT and the Windows SDK from.
 runs:
   using: composite
   steps:

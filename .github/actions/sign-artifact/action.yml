@@ -1,7 +1,15 @@
 name: Sign a published artifact
 description: >
-  Signs an artifact published to GHCR by digest with cosign, keyless (a Fulcio certificate for the workflow's GitHub OIDC token, logged in Rekor), and verifies the signature at once against the identity the cluster admits it by, so a publish the cluster would refuse fails here. ci.yml runs it for each augustad image it publishes (container-publish's, container-publish-arm64's and container-index's index of both), which clusters/onprem/policies/verify-image-signatures.yaml admits from develop or main (ADR-0057), and for develop's chart (chart-publish), which develop's OCIRepository (clusters/onprem/apps/sources.yaml) takes from develop alone. The job needs id-token: write and packages: write, and is logged in to GHCR.
-
+  Signs an artifact published to GHCR by digest with cosign, keyless (a Fulcio
+  certificate for the workflow's GitHub OIDC token, logged in Rekor), and
+  verifies the signature at once against the identity the cluster admits it by,
+  so a publish the cluster would refuse fails here. ci.yml runs it for each
+  augustad image it publishes (container-publish-x64-linux's,
+  container-publish-arm64-linux's and container-index's index of both), which
+  clusters/onprem/policies/verify-image-signatures.yaml admits from develop or
+  main (ADR-0057), and for develop's chart (chart-publish), which develop's
+  OCIRepository (clusters/onprem/apps/sources.yaml) takes from develop alone.
+  The job needs id-token: write and packages: write, and is logged in to GHCR.
 inputs:
   digest:
     description: The artifact's manifest digest, sha256:..., as GHCR serves it.
@@ -10,7 +18,9 @@ inputs:
     description: The artifact's repository, under the owner's on GHCR.
     default: augustad
   branches:
-    description: The branches whose ci.yml the cluster admits the artifact from, as alternatives of a regular expression.
+    description: >
+      The branches whose ci.yml the cluster admits the artifact from, as
+      alternatives of a regular expression.
     default: develop|main
 runs:
   using: composite

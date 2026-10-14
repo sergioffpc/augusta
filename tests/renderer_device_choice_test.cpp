@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -62,6 +63,37 @@ TEST(DeviceChoiceTest, PassesOverADeviceThatCannotPresentToTheWindow) {
 TEST(DeviceChoiceTest, ChoosesNothingFromNoDevices) {
   EXPECT_EQ(ChooseDevice({}, Adapter::kHardware), std::nullopt);
   EXPECT_EQ(ChooseDevice({}, Adapter::kSoftware), std::nullopt);
+}
+
+// What Vulkan names the device extensions the Renderer may ask for, spelt out
+// rather than taken from device_choice.h, so a misspelling there fails.
+constexpr std::string_view kSwapchain = "VK_KHR_swapchain";
+constexpr std::string_view kDiagnosticsConfig = "VK_NV_device_diagnostics_config";
+constexpr std::string_view kDiagnosticCheckpoints = "VK_NV_device_diagnostic_checkpoints";
+
+std::vector<std::string_view> Names(const std::vector<const char*>& extensions) {
+  return {extensions.begin(), extensions.end()};
+}
+
+TEST(DeviceExtensionsTest, WithoutGpuCrashDumpsAsksForTheSwapchainAlone) {
+  const std::vector<std::string_view> available{kSwapchain, kDiagnosticsConfig, kDiagnosticCheckpoints};
+
+  EXPECT_EQ(Names(DeviceExtensions(false, available)), std::vector<std::string_view>{kSwapchain});
+}
+
+TEST(DeviceExtensionsTest, WithGpuCrashDumpsAlsoAsksForWhatAftermathReads) {
+  const std::vector<std::string_view> available{kDiagnosticCheckpoints, kSwapchain, kDiagnosticsConfig};
+
+  EXPECT_EQ(Names(DeviceExtensions(true, available)),
+            (std::vector<std::string_view>{kSwapchain, kDiagnosticsConfig, kDiagnosticCheckpoints}));
+}
+
+// lavapipe, or a GPU that is not NVIDIA's: Aftermath may watch, but the device
+// is made as without it.
+TEST(DeviceExtensionsTest, WithGpuCrashDumpsAsksForNoExtensionTheDeviceLacks) {
+  const std::vector<std::string_view> available{kSwapchain};
+
+  EXPECT_EQ(Names(DeviceExtensions(true, available)), std::vector<std::string_view>{kSwapchain});
 }
 
 }  // namespace

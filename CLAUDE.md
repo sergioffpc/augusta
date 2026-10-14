@@ -24,7 +24,7 @@ Git Flow (`docs/ENGINEERING.md`, Branching model): `feature/*` → `develop`;
 `docs/runbooks/cut-release.md` step 10 — a release is done once `develop`
 contains its tag. A stacked PR takes its parent's fixes by merging the parent
 branch. On macOS, build, test and lint through `scripts/dev-container.sh`; only
-CI's `client` job reproduces Windows-only failures.
+CI's `client-x64-windows` job reproduces Windows-only failures.
 
 ### Issue tracker
 

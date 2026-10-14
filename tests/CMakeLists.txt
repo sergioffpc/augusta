@@ -595,6 +595,19 @@ add_test(
     -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
 
+# What the Linux client's tarball is checked for before a release publishes it
+# (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
+# augustac's build, so it runs on every pull request although augustac's Linux
+# build does not.
+if(NOT WIN32)
+  add_test(
+    NAME augusta_stage_client_linux
+    COMMAND
+      ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+      -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/stage_client_linux.cmake
+  )
+endif()
+
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
 # WritePack/Encode*/Pack::Load round-trip coverage (below) exercises
@@ -799,6 +812,7 @@ if(AUGUSTA_CLIENT)
   if(smoke_test_environment)
     add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
     target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
+    augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
     set_target_properties(
       augusta_client_renderer_smoke_tests
       PROPERTIES CROSSCOMPILING_EMULATOR "${CMAKE_COMMAND};-E;env;${smoke_test_environment};--"

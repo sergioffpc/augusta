@@ -10,6 +10,7 @@ import shutil
 import struct
 import subprocess
 import wave
+import zlib
 
 from augusta_pack import keys
 from augusta_pack import reader
@@ -158,6 +159,9 @@ def decode_audio(blob: bytes) -> tuple[int, int, bytes]:
 @dataclass(frozen=True)
 class Ktx2Header:
     vk_format: int
+    width: int
+    height: int
+    level_count: int
     supercompression_scheme: int
 
 
@@ -177,7 +181,63 @@ def read_ktx2_header(ktx2: bytes) -> Ktx2Header:
     fields = struct.unpack_from("<9I", ktx2, 12)
     return Ktx2Header(
         vk_format=fields[0],
+        width=fields[2],
+        height=fields[3],
+        level_count=fields[7],
         supercompression_scheme=fields[8],
+    )
+
+
+def read_ktx2_level_sizes(ktx2: bytes) -> list[int]:
+    """Each level's uncompressedByteLength, from level 0 down.
+
+    The level index follows the header and the DFD/KVD/SGD offsets and
+    lengths, at byte 80: a u64 byteOffset, byteLength and
+    uncompressedByteLength per level.
+    """
+    level_count = max(1, read_ktx2_header(ktx2).level_count)
+    return [
+        struct.unpack_from("<3Q", ktx2, 80 + 24 * level)[2]
+        for level in range(level_count)
+    ]
+
+
+def encode_png(width: int, height: int, rgba: bytes) -> bytes:
+    """An 8-bit RGBA PNG of rgba, row by row from the top."""
+    assert len(rgba) == width * height * 4
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    stride = width * 4
+    # Filter type 0 (none) before each row.
+    raw = b"".join(
+        b"\0" + rgba[row * stride : (row + 1) * stride] for row in range(height)
+    )
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def alternating_texels(
+    width: int, height: int, even: bytes, odd: bytes
+) -> bytes:
+    """A width x height RGBA image whose texels alternate, like a checkerboard.
+
+    even is the texel where x + y is even, odd where it is odd.
+    """
+    return b"".join(
+        even if (x + y) % 2 == 0 else odd
+        for y in range(height)
+        for x in range(width)
     )
 
 

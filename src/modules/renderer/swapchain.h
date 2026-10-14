@@ -58,7 +58,8 @@ class Swapchain final {
 
   /// Presents the image Acquire last gave, once the command list executed
   /// after it is done. Throws std::runtime_error if presenting fails, the
-  /// device lost included.
+  /// device lost included, once its GPU crash dump is written
+  /// (gpu_crash_dumps.h).
   void Present();
 
  private:

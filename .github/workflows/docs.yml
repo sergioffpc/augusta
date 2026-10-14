@@ -19,7 +19,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    # Pinned rather than ubuntu-latest - see ci.yml's client job comment.
+    # Pinned rather than ubuntu-latest - see the comment on ci.yml's
+    # client-x64-windows job.
     runs-on: ubuntu-26.04
     permissions:
       contents: read

@@ -54,6 +54,12 @@ decisions already made in ARCHITECTURE.md:
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match the
   client/server platform split exactly.
+- **Job names:** a job that builds a deliverable (the client, the server, the
+  server image) for one platform ends in that platform's vcpkg triplet,
+  `<name>-<arch>-<os>`: `client-x64-windows`, `client-x64-linux`,
+  `server-x64-linux`, `container-publish-arm64-linux`. A matrix job names each
+  of its instances that way. A job that builds no single platform's deliverable
+  (`format`, `changes`, `container-index`) has no suffix.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
@@ -100,19 +106,19 @@ decisions already made in ARCHITECTURE.md:
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
        every push, and on a pull request when the image or chart changed.
-       `container-publish`, on a push only, waits for both it and the server
-       job, rebuilds the image from the layer cache `container-verify` just
-       wrote (every stage but `rootfs`, ADR-0054, is a cache hit), scans it
-       again, and only then pushes it with its `-debuginfo` image and
-       attestations - so a published image is always a scanned one, of a commit
-       whose tests passed. On a push to `main` alone, whose image is the one a
-       release runs, `container-publish-arm64` builds, scans and pushes the
-       arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
-       its own debug info and attestations, and `container-index` then makes
-       `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
-       architectures (NFR-04). On a push to `develop` alone, `chart-publish`
-       then pushes the chart, versioned `<chart version>+<12>`, to
-       `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
+       `container-publish-x64-linux`, on a push only, waits for both it and the
+       server-x64-linux job, rebuilds the image from the layer cache
+       `container-verify` just wrote (every stage but `rootfs`, ADR-0054, is a
+       cache hit), scans it again, and only then pushes it with its `-debuginfo`
+       image and attestations - so a published image is always a scanned one, of
+       a commit whose tests passed. On a push to `main` alone, whose image is
+       the one a release runs, `container-publish-arm64-linux` builds, scans and
+       pushes the arm64 image too, natively on an arm64 runner, as
+       `sha-<12>-arm64` with its own debug info and attestations, and
+       `container-index` then makes `sha-<12>`, `main` and `sha-<12>-debuginfo`
+       the index of both architectures (NFR-04). On a push to `develop` alone,
+       `chart-publish` then pushes the chart, versioned `<chart version>+<12>`,
+       to `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
        what the `develop` environment runs (ADR-0056)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
@@ -138,11 +144,12 @@ decisions already made in ARCHITECTURE.md:
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, the Linux client's build and
-  tests (`client-linux`: no pull request builds it), and the hot-path
-  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
-  the first night if absent) and charted on the documentation site; a failure, a
-  benchmark more than twice as slow as the night before among them, opens or
-  updates a `nightly-failure` issue (ADR-0013).
+  tests, again under ASan and UBSan (`client-x64-linux`: no pull request builds
+  it), and the hot-path micro-benchmarks, whose history is kept on the
+  `benchmarks` branch (started by the first night if absent) and charted on the
+  documentation site; a failure, a benchmark more than twice as slow as the
+  night before among them, opens or updates a `nightly-failure` issue
+  (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
@@ -161,6 +168,9 @@ decisions already made in ARCHITECTURE.md:
   release is published only once its unzipped client runs `augustac --version`
   and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
   catches a DLL it imports that is missing, not one loaded only once it runs.
+  The Linux client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder
+  checked the same way, and for linking nothing from the system beyond an
+  allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -332,7 +342,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
   a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
   `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
-  by GUID and age (`dumpbin /headers`, ADR-0055).
+  by GUID and age (`dumpbin /headers`, ADR-0055). The Linux client's is
+  `augustac-linux-x64.debug`, matched by build ID, as `augustad`'s is.
 - **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
   privilege escalation, every capability dropped, augustad's own seccomp profile
   and a read-only root filesystem; augustad writes only to its capture volume,
