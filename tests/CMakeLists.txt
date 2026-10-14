@@ -771,6 +771,7 @@ if(WIN32)
 
     add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
     target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
+    augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
     set_target_properties(
       augusta_client_renderer_smoke_tests
       PROPERTIES

@@ -24,11 +24,16 @@ when not: the "Debug Client - Debug (MSVC)" launch configuration points it at
 layer reports is logged as `event=vulkan_validation_error` and stops the client.
 
 GPU crash dumps are Nsight Aftermath's on the Vulkan device (ADR-0059), from the
-Aftermath SDK inside Nsight Graphics, which `cmake/Aftermath.cmake` finds. The
-renderer does not attach Aftermath yet, so none is written today. A dump is a
-`.nv-gpudmp` next to the executable, decodable with 'C:\Program Files\NVIDIA
+Aftermath SDK inside Nsight Graphics, which `cmake/Aftermath.cmake` finds; a
+build with it stages the SDK's DLLs beside `augustac.exe`. The renderer
+(`gpu_crash_dumps.h`) logs `event=gpu_crash_dumps_enabled` once Aftermath
+watches, and `event=gpu_crash_dumps_attached` once its device has
+`VK_NV_device_diagnostics_config` (an NVIDIA GPU, not lavapipe). On a GPU
+crash/TDR, seen as `VK_ERROR_DEVICE_LOST`, it writes
+`<executable>-<UTC time>-<n>.nv-gpudmp` next to the executable, logged as
+`event=gpu_crash_dump`, which Nsight Graphics opens and 'C:\Program Files\NVIDIA
 Corporation\Nsight Graphics
-2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe'.
+2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe' decodes.
 
 ## Content authoring/physics debugging
 

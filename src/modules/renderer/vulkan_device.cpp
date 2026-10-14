@@ -20,6 +20,7 @@
 #include "augusta/logging.h"
 #include "augusta/renderer.h"
 #include "device_choice.h"
+#include "gpu_crash_dumps.h"
 
 // Vulkan-Hpp's dispatcher, which this module and NVRHI's Vulkan backend both
 // call Vulkan through, once LoadVulkan has pointed it at the system's loader.
@@ -128,6 +129,29 @@ std::string Describe(std::span<const vk::PhysicalDevice> devices) {
   return described;
 }
 
+// The extensions device is made with (device_choice.h), of those it has.
+std::vector<const char*> ExtensionsFor(vk::PhysicalDevice device, bool gpu_crash_dumps) {
+  const std::vector<vk::ExtensionProperties> properties = device.enumerateDeviceExtensionProperties();
+  std::vector<std::string_view> available;
+  available.reserve(properties.size());
+  for (const vk::ExtensionProperties& extension : properties) {
+    available.emplace_back(extension.extensionName.data());
+  }
+  return DeviceExtensions(gpu_crash_dumps, available);
+}
+
+// Whether extensions has the diagnostics config extension, and device the
+// feature it brings, which Aftermath's settings for the device need.
+bool HasDiagnosticsConfig(vk::PhysicalDevice device, std::span<const char* const> extensions) {
+  if (!std::ranges::contains(extensions, std::string_view(kDiagnosticsConfigExtension),
+                             [](const char* name) { return std::string_view(name); })) {
+    return false;
+  }
+  const auto features =
+      device.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceDiagnosticsConfigFeaturesNV>();
+  return features.get<vk::PhysicalDeviceDiagnosticsConfigFeaturesNV>().diagnosticsConfig == vk::True;
+}
+
 std::string_view Describe(Adapter adapter) {
   return adapter == Adapter::kSoftware ? "CPU device" : "discrete or integrated GPU";
 }
@@ -135,6 +159,8 @@ std::string_view Describe(Adapter adapter) {
 }  // namespace
 
 VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation) {
+  // Aftermath watches only the devices made after it starts.
+  const bool gpu_crash_dumps = EnableGpuCrashDumps();
   LoadVulkan();
   CreateInstance(validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -144,7 +170,7 @@ VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, Validation valid
   }
   surface_ = vk::UniqueSurfaceKHR(surface, *instance_);
   ChoosePhysicalDevice(adapter);
-  CreateDevice();
+  CreateDevice(gpu_crash_dumps);
   ThrowValidationErrors();
 }
 
@@ -255,8 +281,8 @@ void VulkanDevice::ChoosePhysicalDevice(Adapter adapter) {
   LI("subsystem=renderer event=vulkan_device name=\"{}\"", physical_device_.getProperties().deviceName.data());
 }
 
-void VulkanDevice::CreateDevice() {
-  device_extensions_ = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+void VulkanDevice::CreateDevice(bool gpu_crash_dumps) {
+  device_extensions_ = ExtensionsFor(physical_device_, gpu_crash_dumps);
   const float priority = 1.0F;
   const vk::DeviceQueueCreateInfo queue =
       vk::DeviceQueueCreateInfo().setQueueFamilyIndex(queue_family_).setQueuePriorities(priority);
@@ -265,6 +291,18 @@ void VulkanDevice::CreateDevice() {
       vk::PhysicalDeviceVulkan13Features().setDynamicRendering(vk::True).setSynchronization2(vk::True);
   vk::PhysicalDeviceVulkan12Features features12 =
       vk::PhysicalDeviceVulkan12Features().setTimelineSemaphore(vk::True).setPNext(&features13);
+  // What Aftermath puts in a dump: the resources a faulting address belongs to,
+  // and a checkpoint after each command, with the call stack that recorded it,
+  // which VK_NV_device_diagnostic_checkpoints carries.
+  vk::DeviceDiagnosticsConfigCreateInfoNV diagnostics = vk::DeviceDiagnosticsConfigCreateInfoNV().setFlags(
+      vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking |
+      vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints);
+  vk::PhysicalDeviceDiagnosticsConfigFeaturesNV diagnostics_feature =
+      vk::PhysicalDeviceDiagnosticsConfigFeaturesNV().setDiagnosticsConfig(vk::True).setPNext(&diagnostics);
+  if (HasDiagnosticsConfig(physical_device_, device_extensions_)) {
+    features13.setPNext(&diagnostics_feature);
+    LI("subsystem=renderer event=gpu_crash_dumps_attached");
+  }
   device_ = physical_device_.createDeviceUnique(vk::DeviceCreateInfo()
                                                     .setQueueCreateInfos(queue)
                                                     .setPEnabledExtensionNames(device_extensions_)

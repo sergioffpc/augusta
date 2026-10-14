@@ -86,6 +86,7 @@ if(WIN32)
     renderer.cpp
     vulkan_device.cpp
     swapchain.cpp
+    gpu_crash_dumps.cpp
     debug_hud.cpp
     imgui_renderer.cpp
     ${shader_headers}
@@ -116,4 +117,18 @@ if(WIN32)
   # std::numeric_limits<>::max().
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 GLFW_INCLUDE_VULKAN NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
+
+  # GPU crash dumps (gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
+  # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built
+  # without its own Aftermath support, so the Renderer attaches Aftermath to
+  # the Vulkan device itself. An executable linking this target stages the
+  # Aftermath DLLs beside it with augusta_stage_aftermath.
+  include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
+  if(AUGUSTA_AFTERMATH_DIR)
+    find_package(boost_dll CONFIG REQUIRED)
+    target_link_libraries(augusta_renderer PRIVATE augusta_aftermath augusta_version Boost::dll)
+    target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=1)
+  else()
+    target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=0)
+  endif()
 endif()
