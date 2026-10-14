@@ -248,6 +248,9 @@ jobs:
         # vcpkg and NVTX, the only submodules.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      # clang-cl and lld-link, which the windows preset builds with (ADR-0008),
+      # and the clang-tidy the Lint step runs.
+      - uses: ./.github/actions/setup-windows-llvm
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
@@ -302,24 +305,6 @@ jobs:
             --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
-      - name: Install clang-tidy
-        # LLVM 21.1.8, the version the server job's distro package and the
-        # Windows bootstrap give, so both platforms agree on which header
-        # provides what; the image's own is 20.1.8. Downloaded and checked
-        # like the format job's tools, as the image has no winget, the
-        # bootstrap's package manager. Installed beside the image's LLVM and
-        # put ahead of it on PATH.
-        # MSYS_NO_PATHCONV: Git Bash would otherwise take the NSIS installer's
-        # /S and /D= for paths and rewrite them.
-        env:
-          MSYS_NO_PATHCONV: 1
-        run: |
-          installer="$RUNNER_TEMP/LLVM-21.1.8-win64.exe"
-          curl -fsSLo "$installer" https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe
-          printf '%s  %s\n' 7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113 \
-            "$installer" | sha256sum --check --status
-          "$installer" /S "/D=$(cygpath -w "$RUNNER_TEMP/llvm")"
-          cygpath -w "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
       - name: Lint
         # .clang-tidy's misc-include-cleaner alone (the Makefile's tidy target
         # says why -w) on what the server job's Linux build can't lint: the

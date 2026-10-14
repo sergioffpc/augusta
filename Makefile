@@ -10,7 +10,7 @@
 #   make install prefix=/opt/augusta DESTDIR=/tmp/stage
 #
 # On Windows every command runs through scripts\vcenv.cmd, which loads the
-# Visual Studio Build Tools environment first (cl.exe needs it, see README).
+# Visual Studio Build Tools environment first (clang-cl needs it, see README).
 # GNU make for Windows: `winget install ezwinports.make`.
 
 ifeq ($(OS),Windows_NT)

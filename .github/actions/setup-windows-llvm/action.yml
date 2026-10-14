@@ -1,0 +1,30 @@
+name: Set up LLVM on Windows
+description: >
+  Installs LLVM 21.1.8 and puts it ahead of the runner image's own LLVM on PATH, for every later step of the job: clang-cl and lld-link, which the windows presets compile and link with (ADR-0008), and clang-format and clang-tidy. The version the Windows bootstrap pins and the Linux runner's distro package gives, so every platform has one LLVM. Downloaded and checked like the format job's tools, as the image has no winget, the bootstrap's package manager. Run in a job that has loaded the Visual Studio developer environment, which clang-cl and lld-link take the MSVC STL, the CRT and the Windows SDK from.
+
+runs:
+  using: composite
+  steps:
+    - name: Install LLVM
+      shell: bash
+      # MSYS_NO_PATHCONV: Git Bash would otherwise take the NSIS installer's /S
+      # and /D= for paths and rewrite them.
+      env:
+        MSYS_NO_PATHCONV: 1
+      run: |
+        installer="$RUNNER_TEMP/LLVM-21.1.8-win64.exe"
+        curl -fsSLo "$installer" https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/LLVM-21.1.8-win64.exe
+        printf '%s  %s\n' 7a5386c26497db1691f320121e5b113364dd0274b98e55f15f4dbc00c0450113 \
+          "$installer" | sha256sum --check --status
+        "$installer" /S "/D=$(cygpath -w "$RUNNER_TEMP/llvm")"
+        cygpath -w "$RUNNER_TEMP/llvm/bin" >> "$GITHUB_PATH"
+    # A step of its own, which sees the PATH the one above wrote: the compiler
+    # and linker the presets find by name are this LLVM's, not the image's or
+    # Visual Studio's.
+    - name: Check the LLVM on PATH
+      shell: bash
+      run: |
+        for tool in clang-cl lld-link; do
+          command -v "$tool"
+          "$tool" --version | grep -F 21.1.8
+        done

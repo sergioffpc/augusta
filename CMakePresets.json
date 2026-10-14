@@ -4,11 +4,13 @@
   "configurePresets": [
     {
       "name": "windows",
-      "displayName": "Windows (Ninja + cl)",
+      "displayName": "Windows (Ninja + clang-cl)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/x64-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_LINKER_TYPE": "LLD",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "condition": {
@@ -19,7 +21,7 @@
     },
     {
       "name": "windows-debug",
-      "displayName": "Windows Debug (Ninja + cl)",
+      "displayName": "Windows Debug (Ninja + clang-cl)",
       "inherits": "windows",
       "binaryDir": "${sourceDir}/build/x64-windows-debug",
       "cacheVariables": {

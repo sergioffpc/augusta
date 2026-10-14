@@ -36,6 +36,8 @@ jobs:
         # As ci.yml's client job does: vcpkg and NVTX alone.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
+      - uses: ./.github/actions/setup-windows-llvm
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
