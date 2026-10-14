@@ -111,6 +111,12 @@ if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*address")
   add_library(augusta_asan_default_options OBJECT cmake/asan_default_options.cpp)
   link_libraries(augusta_asan_default_options)
 endif()
+# And every binary of a UBSan build (linux-san) with cmake/ubsan_default_options.cpp's,
+# so a UBSan report fails it however it is run (ADR-0013).
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
+  add_library(augusta_ubsan_default_options OBJECT cmake/ubsan_default_options.cpp)
+  link_libraries(augusta_ubsan_default_options)
+endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
 # (ECS worlds, networking transport, physics - ADR-0001/0002/0003).

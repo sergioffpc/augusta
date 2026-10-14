@@ -26,7 +26,9 @@ container-overflow check off, compiled into it
 (`cmake/asan_default_options.cpp`) so that it holds however the binary is run:
 libc++ marks its containers' unused capacity for it, which holds only when every
 caller is instrumented, and the dependencies are not, so GameNetworkingSockets
-or GoogleTest using a vector reads as an overflow. libc++, libc++abi and
+or GoogleTest using a vector reads as an overflow. Every binary of a UBSan build
+(`linux-san`) halts on UBSan's first report, with a stack trace, compiled in the
+same way (`cmake/ubsan_default_options.cpp`, ADR-0013). libc++, libc++abi and
 libunwind link statically: `augustad` needs nothing from the system but glibc
 (ADR-0054), which stays, as nothing in LLVM replaces it, and `augustac` nothing
 more than glibc and the libraries it loads at runtime (the Vulkan loader, X11 or
