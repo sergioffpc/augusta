@@ -44,13 +44,12 @@ constexpr ktx_uint32_t kVkFormatR8G8B8A8Srgb = 43;
 // a cook is reproducible and no author-facing knob exists.
 constexpr ktx_uint32_t kZstdLevel = 18;
 
-// What augusta:textureFormat (ADR-0017) cooks a texture to: whether it is
-// colour (sRGB, its mips filtered in linear light) or data (linear, filtered as
-// stored), the RGBA format its pixels are handed to libktx as, the swizzle that
+// What augusta:textureFormat (ADR-0017) cooks a texture to: what its texels
+// hold, which decides how its mips are filtered, the RGBA format its pixels are handed to libktx as, the swizzle that
 // places the channels the BC format keeps where its transcode reads them, and
 // the BC format the UASTC is transcoded to.
 struct Target {
-  bool colour;
+  Content content;
   ktx_uint32_t source_format;
   std::string_view input_swizzle;
   ktx_transcode_fmt_e transcode_format;
@@ -60,18 +59,18 @@ struct Target {
 // red and alpha; bc4 keeps one, read from red. Any other value is bc7.
 Target ToTarget(const std::string& format) {
   if (format == "bc5") {
-    return {.colour = false,
+    return {.content = Content::kData,
             .source_format = kVkFormatR8G8B8A8Unorm,
             .input_swizzle = "rrrg",
             .transcode_format = KTX_TTF_BC5_RG};
   }
   if (format == "bc4") {
-    return {.colour = false,
+    return {.content = Content::kData,
             .source_format = kVkFormatR8G8B8A8Unorm,
             .input_swizzle = "rrr1",
             .transcode_format = KTX_TTF_BC4_R};
   }
-  return {.colour = true,
+  return {.content = Content::kColour,
           .source_format = kVkFormatR8G8B8A8Srgb,
           .input_swizzle = "",
           .transcode_format = KTX_TTF_BC7_RGBA};
@@ -112,9 +111,9 @@ std::uint32_t MipLevelCount(std::uint32_t width, std::uint32_t height) {
   return static_cast<std::uint32_t>(std::bit_width(std::max(width, height)));
 }
 
-// base box-filtered to width x height: in linear light for colour, whose
-// alpha weights its colour, and as stored, every channel alike, for data.
-Image Downsample(const Image& base, std::uint32_t width, std::uint32_t height, bool colour) {
+// base box-filtered to width x height, as content says.
+Image Downsample(const Image& base, std::uint32_t width, std::uint32_t height, Content content) {
+  const bool colour = content == Content::kColour;
   Image level{
       .width = width, .height = height, .rgba = std::vector<std::uint8_t>(std::size_t{width} * height * kRgbaChannels)};
   const bool resized =
@@ -190,20 +189,21 @@ void EncodeUastc(ktxTexture2* texture, std::string_view input_swizzle, const std
 
 }  // namespace
 
-std::vector<Image> GenerateMipChain(const Image& base, const std::string& format) {
-  const bool colour = ToTarget(format).colour;
+Content ContentOf(const std::string& format) { return ToTarget(format).content; }
+
+std::vector<Image> GenerateMipChain(const Image& base, Content content) {
   const std::uint32_t level_count = MipLevelCount(base.width, base.height);
   std::vector<Image> levels{base};
   levels.reserve(level_count);
   for (std::uint32_t level = 1; level < level_count; ++level) {
-    levels.push_back(Downsample(base, std::max(1U, base.width >> level), std::max(1U, base.height >> level), colour));
+    levels.push_back(Downsample(base, std::max(1U, base.width >> level), std::max(1U, base.height >> level), content));
   }
   return levels;
 }
 
 std::vector<std::uint8_t> CompressTexture(const std::filesystem::path& image_path, const std::string& format) {
   const Target target = ToTarget(format);
-  const std::vector<Image> levels = GenerateMipChain(LoadImageRgba8(image_path), format);
+  const std::vector<Image> levels = GenerateMipChain(LoadImageRgba8(image_path), target.content);
 
   const Ktx2Texture texture = CreateTexture(levels, target.source_format, image_path);
   EncodeUastc(texture.get(), target.input_swizzle, image_path);

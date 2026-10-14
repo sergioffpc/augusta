@@ -41,9 +41,9 @@ endif()
 # augusta_pack._native: the mesh pass over meshoptimizer (ADR-0016, mesh.h)
 # and the texture compression over stb_image, stb_image_resize2 and libktx
 # (ADR-0017, texture.h), the only two pieces of the pipeline with no Python
-# equivalent, bound in module.cpp. Everything else (USD stage walking, the pack container
-# format, key generation) is pure Python, in ../src/augusta_pack - see that
-# project's cook.py/pack.py/keys.py.
+# equivalent, bound in module.cpp. Everything else (USD stage walking, the
+# pack container format, key generation) is pure Python, in
+# ../src/augusta_pack - see that project's cook.py/pack.py/keys.py.
 #
 # The module doesn't link USD. The pipeline's own USD access goes through
 # usd-optimize's pip-installed pxr build instead (cook.py), so that there

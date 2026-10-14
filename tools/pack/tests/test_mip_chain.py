@@ -71,3 +71,14 @@ def test_level_0_is_the_image_itself():
     levels = _native.generate_mip_chain(image, 4, 4, "bc7")
 
     assert levels[0] == (4, 4, image)
+
+
+@pytest.mark.parametrize(
+    ("byte_count", "width", "height"),
+    [(4 * 4 * 4 - 1, 4, 4), (4 * 4 * 4 + 1, 4, 4), (0, 0, 4), (0, 4, 0)],
+)
+def test_an_image_whose_size_disagrees_with_its_bytes_is_refused(
+    byte_count, width, height
+):
+    with pytest.raises(ValueError):
+        _native.generate_mip_chain(bytes(byte_count), width, height, "bc7")

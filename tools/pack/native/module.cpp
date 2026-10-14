@@ -2,8 +2,10 @@
 // Python equivalent, the mesh pass (mesh.h) and the texture compression
 // (texture.h), called from augusta_pack.cook.
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -46,8 +48,14 @@ PYBIND11_MODULE(_native, module) {
       "generate_mip_chain",
       [](const py::bytes& rgba, std::uint32_t width, std::uint32_t height, const std::string& format) {
         const std::string_view pixels(rgba);
-        const std::vector<augusta::pack::Image> levels = augusta::pack::GenerateMipChain(
-            {.width = width, .height = height, .rgba = {pixels.begin(), pixels.end()}}, format);
+        // A buffer shorter than its dimensions would be read past its end.
+        if (width == 0 || height == 0 || pixels.size() != std::size_t{width} * height * 4) {
+          throw py::value_error(std::format("rgba holds {} bytes, not the {}x{}x4 a {}x{} RGBA image needs",
+                                            pixels.size(), width, height, width, height));
+        }
+        const std::vector<augusta::pack::Image> levels =
+            augusta::pack::GenerateMipChain({.width = width, .height = height, .rgba = {pixels.begin(), pixels.end()}},
+                                            augusta::pack::ContentOf(format));
         py::list chain;
         for (const augusta::pack::Image& level : levels) {
           chain.append(py::make_tuple(level.width, level.height,

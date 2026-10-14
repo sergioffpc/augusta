@@ -18,15 +18,23 @@ struct Image {
   std::vector<std::uint8_t> rgba;
 };
 
-/// The full mip chain of base for a texture in `format` (as CompressTexture
-/// takes it): level 0 is base itself, and level n is max(1, floor(size / 2^n))
-/// on each axis, the KTX2 specification's sizes, down to 1x1. Each level is
-/// box-filtered from base, in linear light for colour (`bc7`, and any value
-/// but `bc5`/`bc4`) and as stored for data (`bc5`/`bc4`), whose alpha weights
-/// no other channel. Exposed apart from CompressTexture so the filtering can be
-/// checked before the levels are BC-encoded. Throws std::runtime_error on
-/// failure.
-std::vector<Image> GenerateMipChain(const Image& base, const std::string& format);
+/// What a texture's texels hold, which decides how its levels are filtered.
+enum class Content {
+  /// sRGB colour, filtered in linear light, alpha weighting the colour.
+  kColour,
+  /// Linear data, filtered as stored, every channel independent.
+  kData,
+};
+
+/// What augusta:textureFormat `format` holds, as CompressTexture cooks it.
+Content ContentOf(const std::string& format);
+
+/// The full mip chain of base: level 0 is base itself, and level n is
+/// max(1, floor(size / 2^n)) on each axis, the KTX2 specification's sizes,
+/// down to 1x1. Each level is box-filtered from base, as `content` says.
+/// Exposed apart from CompressTexture so the filtering can be checked before
+/// the levels are BC-encoded. Throws std::runtime_error on failure.
+std::vector<Image> GenerateMipChain(const Image& base, Content content);
 
 /// Loads image_path (PNG/JPEG, via stb_image) and encodes it with libktx to a
 /// KTX2 file in `format` ("bc7"/"bc5"/"bc4", augusta:textureFormat; sRGB BC7
