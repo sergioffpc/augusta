@@ -327,12 +327,9 @@ jobs:
         run: test -x build/x64-linux-san/tests/augusta_client_renderer_smoke_tests
       - name: Test (ASan + UBSan)
         # A report fails the test it came from: ASan's and LeakSanitizer's do
-        # by themselves, UBSan's only with halt_on_error, as it otherwise
-        # prints its report and lets the test pass.
+        # by themselves, UBSan's from cmake/ubsan_default_options.cpp.
         if: |
           !cancelled() && steps.check-san.outcome == 'success'
-        env:
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: xvfb-run --auto-servernum ctest --preset linux-san --output-junit "$GITHUB_WORKSPACE/junit/client-linux-san.xml"
       - name: Upload the test results
         # For test-report below, also after a failing test.

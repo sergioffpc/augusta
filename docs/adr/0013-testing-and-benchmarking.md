@@ -57,6 +57,13 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   and runs the whole `ctest` suite with it, the Renderer's smoke test among it
   on Ubuntu's lavapipe in a virtual X server (`xvfb-run`), and fails if the
   smoke test was not built.
+- **Every sanitizer report fails the test it came from**, in a pull request, a
+  night or a local `ctest --preset linux-san` alike. ASan and LeakSanitizer halt
+  on their first report by themselves. UBSan by default prints its report and
+  carries on, so the test passes; every binary of a UBSan build is therefore
+  linked with UBSan's options (`halt_on_error` and `print_stacktrace`, in
+  `cmake/ubsan_default_options.cpp`, as ADR-0008 does ASan's) rather than
+  relying on each runner to set `UBSAN_OPTIONS`.
 - **ASan and UBSan run on the client in the nightly alone.** The pull request's
   `sanitizers` job builds `linux-san` without the client, as its other Linux
   jobs do, so no sanitizer would ever see the client's and the Renderer's code.
@@ -64,13 +71,11 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   `linux` build (and also after a failing test there), and runs the same whole
   `ctest` suite under it, the smoke test in the same virtual X server: a memory
   or undefined-behaviour bug in that code fails a night, and so a release,
-  rather than waiting for a player's crash. Every sanitizer report fails the
-  test it came from, UBSan's included (`halt_on_error`, without which UBSan
-  prints its report and the test passes). Nothing is suppressed today: lavapipe,
-  the Vulkan loader and the validation layer have so far leaked nothing
-  LeakSanitizer reports. A leak found in third-party code would be suppressed in
-  `tests/lsan.supp`, each entry with its reason, as `tests/tsan.supp` does for
-  TSan.
+  rather than waiting for a player's crash. Nothing is suppressed today:
+  lavapipe, the Vulkan loader and the validation layer have so far leaked
+  nothing LeakSanitizer reports. A leak found in third-party code would be
+  suppressed in `tests/lsan.supp`, each entry with its reason, as
+  `tests/tsan.supp` does for TSan.
 - **No stage runs after a deploy to k3s.** ADR-0026 keeps runners out of the
   cluster, so only something running inside it could test a deployed server.
 
