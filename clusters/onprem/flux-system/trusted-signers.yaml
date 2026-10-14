@@ -15,7 +15,7 @@ metadata:
   namespace: flux-system
 type: Opaque
 stringData:
-  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJUBWQ7QeYvR2o/QM1ZU1AnIl6VY79vz9oXWTz8EFFdT
   p620-windows.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgO2/wam7B4kcqDznXR6JzrEM9wvlIhihbsxAM4AWkO
   p620-wsl-ubuntu.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZ+FquOxp894wstvT4hlINyMel1y39C8u8tF5Bw6ICt
   web-flow.asc: |
@@ -70,6 +70,6 @@ metadata:
   namespace: flux-system
 type: Opaque
 stringData:
-  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICaMfwnkMczYH+rpkwEOxepA0UVLkKuOqZVNg+KL5eml
+  macbook-pro-macos.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJUBWQ7QeYvR2o/QM1ZU1AnIl6VY79vz9oXWTz8EFFdT
   p620-windows.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHgO2/wam7B4kcqDznXR6JzrEM9wvlIhihbsxAM4AWkO
   p620-wsl-ubuntu.sshpub: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZ+FquOxp894wstvT4hlINyMel1y39C8u8tF5Bw6ICt
