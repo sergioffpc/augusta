@@ -312,12 +312,12 @@ jobs:
         # (tests/.clang-tidy leaves the tests' literals alone); the audio
         # module's output device gets misc-include-cleaner alone (the
         # Makefile's tidy target says why -w). Both run, and the step fails if
-        # either does. One file per clang-tidy, as server-x64-linux runs it.
-        # After Build, which generates the headers the renderer embeds its
-        # shaders and font from.
+        # either does. The full profile takes one file per clang-tidy, as
+        # server-x64-linux runs it. After Build, which generates the headers
+        # the renderer embeds its shaders and font from.
         run: |
           status=0
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'tests/client_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy --quiet -p=build/x64-windows || status=1
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy --quiet -p=build/x64-windows || status=1
           git ls-files 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 4 clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - name: Register lavapipe and the validation layer

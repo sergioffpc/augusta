@@ -110,6 +110,16 @@ TEST(RemoteVerticesTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
   ExpectNear(vertices[0].position, Vec3(5.0F, 2.0F, -1.0F));
 }
 
+// A tracer along -Z seen from above is widened only across both its own line
+// and the line to the eye: along X, off whichever end the vertex is at.
+void ExpectWidenedAlongX(const Tracer& tracer, const Vertex& vertex) {
+  const Vec3 end = std::abs(vertex.position.z - tracer.head.z) < kTolerance ? tracer.head : tracer.tail;
+  const Vec3 offset = vertex.position - end;
+  EXPECT_NEAR(offset.y, 0.0F, kTolerance);
+  EXPECT_NEAR(offset.z, 0.0F, kTolerance);
+  EXPECT_GT(std::abs(offset.x), 0.0F);
+}
+
 TEST(EffectVerticesTest, TracerIsAQuadAcrossItsLineFacingTheCamera) {
   const Tracer tracer{.head = Vec3(0.0F, 0.0F, -10.0F), .tail = Vec3(0.0F, 0.0F, -5.0F)};
   const Camera camera{.position = Vec3(0.0F, 3.0F, 0.0F)};
@@ -119,12 +129,7 @@ TEST(EffectVerticesTest, TracerIsAQuadAcrossItsLineFacingTheCamera) {
 
   ASSERT_EQ(vertices.size(), 6U);
   for (const Vertex& vertex : vertices) {
-    // Widened only across both its own line and the line to the eye: along X.
-    const Vec3 end = std::abs(vertex.position.z - tracer.head.z) < kTolerance ? tracer.head : tracer.tail;
-    const Vec3 offset = vertex.position - end;
-    EXPECT_NEAR(offset.y, 0.0F, kTolerance);
-    EXPECT_NEAR(offset.z, 0.0F, kTolerance);
-    EXPECT_GT(std::abs(offset.x), 0.0F);
+    ExpectWidenedAlongX(tracer, vertex);
   }
   // So it lies flat in y = 0, facing the eye above it.
   const Vec3 face =
