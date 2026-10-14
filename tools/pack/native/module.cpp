@@ -20,7 +20,7 @@ namespace py = pybind11;
 PYBIND11_MODULE(_native, module) {
   module.doc() =
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
-      "(ADR-0016), and stb_image + DirectXTex's PNG/JPEG load, BC7/BC5/BC4 compression and DDS encode (ADR-0017).";
+      "(ADR-0016), and stb_image + libktx's PNG/JPEG load, BC7/BC5/BC4 encode and KTX2 write (ADR-0017).";
   module.def(
       "optimize_mesh",
       [](std::vector<float> points, std::vector<std::uint32_t> indices) {
@@ -34,9 +34,9 @@ PYBIND11_MODULE(_native, module) {
   module.def(
       "compress_texture",
       [](const std::filesystem::path& image_path, const std::string& format) {
-        const std::vector<std::uint8_t> dds = augusta::pack::CompressTexture(image_path, format);
-        return py::bytes(reinterpret_cast<const char*>(dds.data()), dds.size());
+        const std::vector<std::uint8_t> ktx2 = augusta::pack::CompressTexture(image_path, format);
+        return py::bytes(reinterpret_cast<const char*>(ktx2.data()), ktx2.size());
       },
       py::arg("image_path"), py::arg("format") = "bc7",
-      "Loads image_path (PNG/JPEG), BC-compresses to `format` (bc7/bc5/bc4), returns SaveToDDSMemory bytes.");
+      "Loads image_path (PNG/JPEG), encodes it to a KTX2 in `format` (bc7/bc5/bc4), returns the KTX2's bytes.");
 }

@@ -447,7 +447,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   and rejected: vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and
   tested with MSVC, and a second Windows compiler isn't worth the purity.)
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
-  Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
+  Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
   installed editable, its native module, signing keys and sample authoring
@@ -458,10 +458,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/native`'s
-  own C++ build dependencies (two small pybind11 modules, no OpenUSD - see
-  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
-  codebase, not fetched by this script.
+  authors need them. `meshoptimizer` and libktx are `tools/pack/native`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
+  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
+  fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the

@@ -63,7 +63,7 @@ __pycache__/
 
 # The native _native extension module (tools/pack/native) and any runtime
 # DLLs it needs alongside it
-# (DirectXTex, meshoptimizer, ...) - CMake builds these straight into this
+# (libktx, zstd, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.
 # _native.cp312-win_amd64.pyd, or a .so on Linux) - Python resolves

@@ -38,7 +38,7 @@ inline constexpr std::uint32_t kMaxMeshPoints = 16'000'000;
 inline constexpr std::uint32_t kMaxMeshIndices = 48'000'000;
 inline constexpr std::uint32_t kMaxSceneNodes = 1'000'000;
 inline constexpr std::uint32_t kMaxProperties = 256;
-/// A single BC7-compressed 8K DDS is well under this; comfortably above
+/// A single BC7-compressed 8K KTX2 is well under this; comfortably above
 /// any real texture while still rejecting a hostile/corrupt blob long
 /// before an oversized allocation.
 inline constexpr std::uint32_t kMaxTextureBytes = 256U * 1024 * 1024;
