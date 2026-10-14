@@ -443,22 +443,22 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux: vcpkg's dependencies build with MSVC `cl`. Our code compiles with
-  `clang-cl` and links with `lld-link`, from the same pinned LLVM as the hooks'
-  `clang-format` and `clang-tidy`, inside the Build Tools' developer environment
-  (`scripts/vcenv.cmd`, which the Makefile runs every command through), whose
-  MSVC STL, CRT and Windows SDK they build against; the dependencies stay on
-  `cl` under vcpkg's `x64-windows` triplet (ADR-0008). The same
-  `scripts/bootstrap.sh`, run in Git Bash as Administrator (its Windows half,
-  `scripts/bootstrap/windows.sh`, winget-driven; one entry point and one
-  `checkout` step and set of pinned formatter versions for both platforms, and
-  no PowerShell: Git for Windows is the one prerequisite, which cloning needs
-  anyway) installs Visual Studio Build Tools system-wide (default install
-  location) — simpler than pinning a project-specific path, at the cost of not
-  being able to side-by-side independent Build Tools versions per project — plus
-  the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and the
-  formatters and linters uv runs, below), standalone yamlfmt, StyLua, luacheck
-  and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
+  from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
+  and their tests compile with `clang-cl` and links with `lld-link`, from the
+  same pinned LLVM as the hooks' `clang-format` and `clang-tidy`, inside the
+  Build Tools' developer environment (`scripts/vcenv.cmd`, which the Makefile
+  runs every command through), whose MSVC STL, CRT and Windows SDK they build
+  against; the dependencies stay on `cl` under vcpkg's `x64-windows` triplet
+  (ADR-0008). The same `scripts/bootstrap.sh`, run in Git Bash as Administrator
+  (its Windows half, `scripts/bootstrap/windows.sh`, winget-driven; one entry
+  point and one `checkout` step and set of pinned formatter versions for both
+  platforms, and no PowerShell: Git for Windows is the one prerequisite, which
+  cloning needs anyway) installs Visual Studio Build Tools system-wide (default
+  install location) — simpler than pinning a project-specific path, at the cost
+  of not being able to side-by-side independent Build Tools versions per project
+  — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
+  and the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
+  luacheck and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
   `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
   CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
   the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
@@ -470,8 +470,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
-  installed editable, its native module, signing keys and sample authoring
-  content.
+  installed editable, its native module (built with MSVC `cl`, under its own
+  presets), signing keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
