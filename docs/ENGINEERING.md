@@ -74,8 +74,8 @@ decisions already made in ARCHITECTURE.md:
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
        Windows + Linux + sanitizers build
-    2. Build + test the client on a Windows runner (MSVC), with the server's
-       development-only Windows x64 build (NFR-04)
+    2. Build + test the client on a Windows runner (`clang-cl` and `lld-link`,
+       ADR-0008), with the server's development-only Windows x64 build (NFR-04)
     3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
        x86-64, one of its two production platforms: Linux arm64 is built only
        for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google
@@ -87,7 +87,8 @@ decisions already made in ARCHITECTURE.md:
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
-    5. Compile with a strict warning set, treated as errors
+    5. Compile with a strict warning set, treated as errors: clang's
+       `-Wall -Wextra -Werror` on both platforms (`/W4 /WX` to `clang-cl`)
     6. the `tools` job, when `tools/` changed: on a Windows runner, build the
        asset cooker's native module and run its pytest suite, which also
        requires that cooking the example scenario still gives the golden packs
@@ -431,26 +432,29 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux (not viable given the Windows SDK's MSVC-specific toolchain
-  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
-  Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
-  winget-driven; one entry point and one `checkout` step and set of pinned
-  formatter versions for both platforms, and no PowerShell: Git for Windows is
-  the one prerequisite, which cloning needs anyway) installs Visual Studio Build
-  Tools system-wide (default install location) — simpler than pinning a
-  project-specific path, at the cost of not being able to side-by-side
-  independent Build Tools versions per project — plus the Windows SDK, CMake,
-  Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
-  uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
-  clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
-  Ubuntu runner ships so the hooks agree with CI's gates, and kubectl, helm and
-  the flux CLI, for the cluster. It also puts Git's `bin` directory on PATH, so
+  from Linux: vcpkg's dependencies build with MSVC `cl`. Our code compiles with
+  `clang-cl` and links with `lld-link`, from the same pinned LLVM as the hooks'
+  `clang-format` and `clang-tidy`, inside the Build Tools' developer environment
+  (`scripts/vcenv.cmd`, which the Makefile runs every command through), whose
+  MSVC STL, CRT and Windows SDK they build against; the dependencies stay on
+  `cl` under vcpkg's `x64-windows` triplet (ADR-0008). The same
+  `scripts/bootstrap.sh`, run in Git Bash as Administrator (its Windows half,
+  `scripts/bootstrap/windows.sh`, winget-driven; one entry point and one
+  `checkout` step and set of pinned formatter versions for both platforms, and
+  no PowerShell: Git for Windows is the one prerequisite, which cloning needs
+  anyway) installs Visual Studio Build Tools system-wide (default install
+  location) — simpler than pinning a project-specific path, at the cost of not
+  being able to side-by-side independent Build Tools versions per project — plus
+  the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint and the
+  formatters and linters uv runs, below), standalone yamlfmt, StyLua, luacheck
+  and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
+  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
+  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
+  the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
+  cluster. It also puts Git's `bin` directory on PATH, so
   `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
   VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`. (A fully hermetic,
-  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
-  and rejected: vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and
-  tested with MSVC, and a second Windows compiler isn't worth the purity.)
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen

@@ -383,8 +383,9 @@ TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
 
 // NFR-03: every golden shot, fired again here, follows its recorded trajectory
 // within the tolerance, tick for tick, and ends on the same tick. It runs on the
-// Windows (MSVC) and Linux runners alike, so a compiler that computes a
-// different trajectory fails its own runner (ADR-0013).
+// Windows and Linux runners alike, so a platform (its C runtime and math
+// library, its target) that computes a different trajectory fails its own
+// runner (ADR-0013).
 // Requirements: US-10, NFR-03
 TEST(BallisticsGoldenTest, TrajectoriesMatchTheGoldenFileWithinNfr03Tolerance) {
   const std::vector<Trajectory> golden = ReadGolden(AUGUSTA_GOLDEN_TRAJECTORIES);

@@ -27,8 +27,8 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 | Micro-benchmarks                                | by hand             |                     | ✅ history, fails past 2× | ✅ not recorded, fails past 2× |
 
 - **Pre-push** is a `.githooks/pre-push` hook running `clang-tidy` only: it is
-  what MSVC does not catch and CI would, and a hook that builds and runs the
-  whole suite would take minutes and get skipped with `--no-verify`.
+  what the compiler does not catch and CI would, and a hook that builds and runs
+  the whole suite would take minutes and get skipped with `--no-verify`.
 - **The push** that lands a merged pull request on `develop`/`main` repeats the
   pull request's build and tests, without the sanitizers; it adds no kind of its
   own.
@@ -112,12 +112,14 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
     room for a noisy runner, with a regression still well past them.
 
 - **NFR-03 through a golden file.** Reference trajectories live in the
-  repository, and the test, on both the Windows (MSVC) and Linux (clang)
-  runners, compares what it computes against them within a tolerance defined in
-  the test itself. If the two compilers disagree, at least one runner fails,
-  without either job needing the other's output. A deliberate change to the
-  ballistics model regenerates the file with one build target, and the diff is
-  reviewed like code.
+  repository, and the test, on both the Windows and Linux runners, compares what
+  it computes against them within a tolerance defined in the test itself. Both
+  compile with clang (ADR-0008), so the file guards against the platforms
+  diverging, not the compilers: each one's C runtime and math library, and its
+  target (`x86_64-pc-windows-msvc`, `x86_64-linux-gnu`). If the two platforms
+  disagree, at least one runner fails, without either job needing the other's
+  output. A deliberate change to the ballistics model regenerates the file with
+  one build target, and the diff is reviewed like code.
 - **No golden match.** ADR-0048's golden match, a recorded duel replayed on
   every runner, is dropped with the Match recording (ADR-0050): a Replay
   (ADR-0051) checks only Deaths and the Match end, and only on the build that

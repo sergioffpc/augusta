@@ -78,6 +78,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(GNUInstallDirs)
 
 if(MSVC)
+  # clang-cl, which sets MSVC (ADR-0008): its /W4 is clang's -Wall -Wextra and
+  # /WX its -Werror, Linux's warning set below. Not /Wall, which clang-cl takes
+  # for -Weverything.
   add_compile_options(/W4 /WX /EHsc)
   # Every configuration keeps its debug info, embedded in each object file
   # (/Z7), which sccache caches - not /Zi's PDB shared between compiles, which

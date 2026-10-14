@@ -33,11 +33,30 @@ more than glibc and the libraries it loads at runtime (the Vulkan loader, X11 or
 Wayland, and the sound server). The one GNU library a build still links is the
 fuzzing build's: Ubuntu builds libFuzzer against libstdc++, so the `linux-fuzz`
 preset links `libstdc++.so.6` beside libc++, whose own names, in `std::__1`,
-never collide with it. Windows compiles with MSVC `cl`, which vcpkg's
-`x64-windows` triplet and NVIDIA's SDKs are built and tested with; clang-cl was
-rejected for that reason (see ENGINEERING.md, Developer Environment). The shared
-core therefore builds with two compilers, which the NFR-03 golden trajectories
-compare (ADR-0013).
+never collide with it.
+
+Windows compiles our code with `clang-cl` and links it with `lld-link`, from
+LLVM 21.1.8, the version that already gives `clang-format` and `clang-tidy` on
+both platforms: one LLVM version to bump. The `windows` and `windows-debug`
+presets name them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`);
+the Windows bootstrap installs that LLVM, and CI's and the release's Windows
+client jobs install it through `.github/actions/setup-windows-llvm`. The Visual
+Studio Build Tools and their developer environment (`scripts/vcenv.cmd`, CI's
+`msvc-dev-cmd`) stay: `clang-cl` takes the MSVC STL, the CRT and the Windows SDK
+from them, and sets CMake's `MSVC`, so the MSVC build settings apply to it
+unchanged. Its `/W4 /WX` is clang's `-Wall -Wextra -Werror`, Linux's warning
+set; `/Wall` would be `-Weverything`. The dependencies stay on MSVC `cl`, under
+vcpkg's stock `x64-windows` triplet (`mesa[lavapipe]` included), with no custom
+triplet: `clang-cl` is ABI-compatible with what `cl` builds, the same STL and
+CRT, and those ports are built and tested upstream with `cl`. Our code is then
+compiled by one compiler family everywhere: code that clang rejects or warns on
+fails the pull request's Windows build rather than the nightly's Linux client, a
+clean build on one platform is clean on the other, and `clang-tidy` on Windows
+reads compile commands written for the compiler that builds the code. `clang-cl`
+defines both `_MSC_VER` and `__clang__`; no check in our code takes either.
+`clang-cl` was rejected while Windows built Falcor from source with its own
+toolchain; with Falcor gone (ADR-0059) and the dependencies left on `cl`, none
+of our code needs it.
 
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so

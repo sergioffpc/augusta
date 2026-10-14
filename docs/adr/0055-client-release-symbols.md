@@ -7,18 +7,19 @@ the same: each release publishes `augustac-windows-x64.pdb` beside
 build. A crash of a released client, or the Aftermath `.nv-gpudmp` that
 `renderer.cpp` writes on a GPU crash/TDR, is read with it.
 
-**The build.** MSVC builds compile every target with `/Z7`
-(`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT` `Embedded`, set in the root
-`CMakeLists.txt` for every configuration): the debug info goes into each object
-file, which sccache caches, rather than into one PDB shared between compiles
-(`/Zi`), which it cannot. Every target, as on Linux: a crash's frames are mostly
-in the module libraries `augustac` links. In Release, `augustac` links with
-`/DEBUG:FULL /OPT:REF /OPT:ICF`: `/DEBUG:FULL` gathers the objects' debug info
-into `augustac.pdb` beside `augustac.exe`, and `/OPT:REF` and `/OPT:ICF` are
-named because `/DEBUG` turns them off otherwise. The code is the Release build's
-own: `/Z7` changes no code generation, and the `.exe` differs only by its debug
-directory, which names the PDB. The other executables, `augustad`'s development
-Windows build and the tests among them, link no PDB.
+**The build.** The Windows build (`clang-cl` and `lld-link`, ADR-0008) compiles
+every target with `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT` `Embedded`, set
+in the root `CMakeLists.txt` for every configuration): the debug info goes into
+each object file, which sccache caches, rather than into one PDB shared between
+compiles (`/Zi`), which it cannot. Every target, as on Linux: a crash's frames
+are mostly in the module libraries `augustac` links. In Release, `augustac`
+links with `/DEBUG:FULL /OPT:REF /OPT:ICF`: `/DEBUG:FULL` has `lld-link` gather
+the objects' debug info into `augustac.pdb` beside `augustac.exe`, and
+`/OPT:REF` and `/OPT:ICF` are named because `/DEBUG` turns them off otherwise.
+The code is the Release build's own: `/Z7` changes no code generation, and the
+`.exe` differs only by its debug directory, which names the PDB. The other
+executables, `augustad`'s development Windows build and the tests among them,
+link no PDB.
 
 **The release.** The release workflow's client job stages `augustac.pdb` from
 the build it publishes as `augustac-windows-x64.pdb`, uploads it with the client
@@ -62,7 +63,7 @@ each module it loaded, so the tag a dump came from is the one whose PDB matches.
 
 ## Consequences
 
-- Every MSVC object file is larger, carrying its debug info, and the Release
+- Every Windows object file is larger, carrying its debug info, and the Release
   link of `augustac` is slower, writing the PDB. sccache caches the objects as
   before.
 - The release gains a large asset, the PDB, which no player needs to run the
