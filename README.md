@@ -45,6 +45,12 @@ dedicated server.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
+Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
+the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
+(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
+its folder. The Linux client needs the glibc of Ubuntu 26.04 or newer, a Vulkan
+1.3 driver, and an X11 or Wayland session.
+
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
