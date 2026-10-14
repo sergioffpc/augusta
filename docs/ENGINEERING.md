@@ -137,11 +137,11 @@ decisions already made in ARCHITECTURE.md:
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, the Linux client's build and
-  tests (`client-linux`: no pull request builds it), and the hot-path
-  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
-  the first night if absent) and charted on the documentation site; a failure, a
-  benchmark more than twice as slow as the night before among them, opens or
-  updates a `nightly-failure` issue (ADR-0013).
+  tests, again under ASan and UBSan (`client-linux`: no pull request builds it),
+  and the hot-path micro-benchmarks, whose history is kept on the `benchmarks`
+  branch (started by the first night if absent) and charted on the documentation
+  site; a failure, a benchmark more than twice as slow as the night before among
+  them, opens or updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).

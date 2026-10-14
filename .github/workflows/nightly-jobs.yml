@@ -261,7 +261,9 @@ jobs:
     # preset with the client on, as a Linux developer builds it, and its whole
     # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
     # virtual X server. So a change that breaks augustac on Linux, or the shared
-    # code under the client's build, surfaces within a night.
+    # code under the client's build, surfaces within a night. Then the same
+    # suite again under ASan and UBSan (linux-san), the client's and the
+    # Renderer's code being what no pull request's sanitizers job builds.
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -293,9 +295,30 @@ jobs:
         # where it finds no lavapipe.
         run: test -x build/x64-linux/tests/augusta_client_renderer_smoke_tests
       - name: Test
+        id: test
         # In a virtual X server, where the smoke test opens its hidden window:
         # GLFW picks X11, as there is no Wayland session.
         run: xvfb-run --auto-servernum ctest --preset linux --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
+      - name: Configure (ASan + UBSan)
+        # Also after a failing test above, so it hides no sanitizer report.
+        if: success() || steps.test.conclusion == 'failure'
+        id: configure-san
+        run: cmake --preset linux-san
+      - name: Build (ASan + UBSan)
+        if: ${{ !cancelled() && steps.configure-san.conclusion == 'success' }}
+        id: build-san
+        run: cmake --build --preset linux-san --target all augusta_tests
+      - name: Check that the sanitized smoke test is built
+        if: ${{ !cancelled() && steps.build-san.conclusion == 'success' }}
+        run: test -x build/x64-linux-san/tests/augusta_client_renderer_smoke_tests
+      - name: Test (ASan + UBSan)
+        # A report fails the test it came from: ASan's and LeakSanitizer's do
+        # by themselves, UBSan's only with halt_on_error, as it otherwise
+        # prints its report and lets the test pass.
+        if: ${{ !cancelled() && steps.build-san.conclusion == 'success' }}
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: xvfb-run --auto-servernum ctest --preset linux-san --output-junit "$GITHUB_WORKSPACE/junit/client-linux-san.xml"
       - name: Upload the test results
         # For test-report below, also after a failing test.
         if: success() || failure()
