@@ -12,8 +12,10 @@ the next one.
 Keeps the codebase and issue list healthy and feeds work into the main flow; its
 skills are used as needed, in no order. The user runs
 `/improve-codebase-architecture` (refactoring candidates), `/triage` (raw issues
-into workable ones) and `/implement-spec` (a whole spec at once with parallel
-subagents, in place of `/implement`). Yours to invoke: `/diagnosing-bugs` for a
+into workable ones), `/implement-spec` (a whole spec at once with parallel
+subagents, in place of `/implement`) and `/engineering-review` (a read-only
+audit of standing code into a findings report; profile in
+`docs/agents/engineering-review.md`). Yours to invoke: `/diagnosing-bugs` for a
 hard bug, from a failing repro; `/wizard` for setup steps only a human can
 perform.
 
