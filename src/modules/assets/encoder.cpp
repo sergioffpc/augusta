@@ -99,16 +99,16 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSceneBlob(const SceneDa
   return blob;
 }
 
-std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(const TextureData& texture) {
-  if (texture.dds_bytes.size() > kMaxTextureBytes) {
+// Texture blob wire format: the KTX2 file as a u32 byte count, then its bytes.
+std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(std::span<const std::byte> ktx2_bytes) {
+  if (ktx2_bytes.size() > kMaxTextureBytes) {
     return std::unexpected(EncodeError::kTooLarge);
   }
 
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
-  writer.WriteU8(static_cast<std::uint8_t>(texture.format));
-  writer.WriteU32(static_cast<std::uint32_t>(texture.dds_bytes.size()));
-  writer.WriteBytes(texture.dds_bytes);
+  writer.WriteU32(static_cast<std::uint32_t>(ktx2_bytes.size()));
+  writer.WriteBytes(ktx2_bytes);
   return blob;
 }
 

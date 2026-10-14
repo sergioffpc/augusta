@@ -20,10 +20,11 @@ target_include_directories(augusta_renderer_device_choice PUBLIC ${CMAKE_CURRENT
 target_link_libraries(augusta_renderer_device_choice PUBLIC augusta_input)
 augusta_set_module_scope(augusta_renderer_device_choice CLIENT_ONLY)
 
-if(WIN32)
+if(AUGUSTA_CLIENT)
   # The Renderer on NVRHI's Vulkan backend and GLFW (ADR-0059), which augustac
-  # links and tests/client_renderer_smoke_test.cpp drives. The manifest has
-  # NVRHI, GLFW, ImGui and the shader compiler below on Windows only.
+  # links and tests/client_renderer_smoke_test.cpp drives. NVRHI, GLFW, ImGui
+  # and the shader compiler below are the manifest's client feature, which
+  # AUGUSTA_CLIENT installs.
   find_package(nvrhi CONFIG REQUIRED)
   find_package(glfw3 CONFIG REQUIRED)
   find_package(imgui CONFIG REQUIRED)
@@ -112,8 +113,8 @@ if(WIN32)
   )
   # Vulkan-Hpp calls Vulkan through a dispatcher filled in at runtime, as NVRHI
   # does (vulkan_device.cpp); GLFW declares its Vulkan functions once
-  # vulkan.h is included first. NOMINMAX: NVRHI's Vulkan target has vulkan.h
-  # include <windows.h>, whose min/max macros would break
+  # vulkan.h is included first. NOMINMAX: on Windows, NVRHI's Vulkan target
+  # has vulkan.h include <windows.h>, whose min/max macros would break
   # std::numeric_limits<>::max().
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 GLFW_INCLUDE_VULKAN NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)

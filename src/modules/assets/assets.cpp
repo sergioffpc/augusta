@@ -35,7 +35,7 @@ namespace augusta::assets {
 namespace {
 
 constexpr std::array<char, 4> kMagic = {'A', 'U', 'G', 'P'};
-constexpr std::uint32_t kFormatVersion = 2;
+constexpr std::uint32_t kFormatVersion = 3;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -472,16 +472,6 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kCharacters:
     case AssetType::kEye:
     case AssetType::kSounds:
-      return true;
-  }
-  return false;
-}
-
-bool IsValidTextureFormat(std::uint8_t value) {
-  switch (static_cast<TextureFormat>(value)) {
-    case TextureFormat::kBC7:
-    case TextureFormat::kBC5:
-    case TextureFormat::kBC4:
       return true;
   }
   return false;

@@ -30,20 +30,21 @@
 
 See [VISION.md](./VISION.md) for full vision. Summary: a realistic,
 physics-driven, server-authoritative multiplayer FPS simulator engine, built in
-C++ with a Windows client and a headless Linux server.
+C++ with a Windows and Linux client and a headless Linux server.
 
 Top quality goals (see [REQUIREMENTS.md](./REQUIREMENTS.md) for full NFR list):
 
 1. Server-authoritative correctness (NFR-05)
 2. Realistic, consistent ballistics (NFR-03)
 3. Stable performance under load (NFR-01, NFR-06)
-4. Platform targeting, Windows client + Linux server (NFR-04)
+4. Platform targeting, Windows and Linux client + Linux server (NFR-04)
 
 ## 2. Architecture Constraints
 
-- **Technical:** C++, CMake + Ninja + sccache. Client: Windows-only, rendering
-  via NVIDIA's NVRHI (Vulkan). Server: Linux x86-64 and Linux arm64 in
-  production (Windows x64 builds for development only, NFR-04), headless.
+- **Technical:** C++, CMake + Ninja + sccache. Client: Windows x64 (the
+  reference platform) and Linux x86-64, rendering via NVIDIA's NVRHI (Vulkan).
+  Server: Linux x86-64 and Linux arm64 in production (Windows x64 builds for
+  development only, NFR-04), headless.
 - **Licensing:** third-party dependencies must be free/open-source (Flecs [MIT],
   PhysX [BSD-3], GameNetworkingSockets [BSD-3], NVRHI [MIT], GLFW [zlib], Steam
   Audio [Apache 2.0], miniaudio [MIT], Slang [Apache 2.0], Dear ImGui [MIT]),
@@ -69,7 +70,7 @@ IP:port.
 
 **Technical context:**
 
-- Client executable (Windows only): rendering (NVRHI/Vulkan), input, audio,
+- Client executable (Windows and Linux): rendering (NVRHI/Vulkan), input, audio,
   local prediction
 - Dedicated server executable (Linux in production, Windows for development
   only - NFR-04): headless, authoritative simulation
@@ -101,11 +102,11 @@ IP:port.
   conditions, spawn rules) is encapsulated in sandboxed Lua scripts run in a
   dedicated Scripts/Behaviours phase; tunable balance values are data-driven
   configuration — a third category (see §8, ADR-0022, ADR-0023)
-- Rendering built on NVIDIA's NVRHI (Vulkan), used exclusively by the Windows
-  client. The server runs in production on Linux only (NFR-04), headless, and
-  entirely decoupled from graphics-API concerns.
-- Audio via Valve's Steam Audio (Apache 2.0), used by the Windows client for
-  spatial audio; no audio dependency on the headless Linux server.
+- Rendering built on NVIDIA's NVRHI (Vulkan), used exclusively by the client.
+  The server runs in production on Linux only (NFR-04), headless, and entirely
+  decoupled from graphics-API concerns.
+- Audio via Valve's Steam Audio (Apache 2.0), used by the client for spatial
+  audio; no audio dependency on the headless Linux server.
 - Shaders authored in Slang (ADR-0014), compiled to SPIR-V at build time and
   embedded in the client: it compiles no shaders at runtime and ships no shader
   compiler (ADR-0059).
@@ -161,7 +162,7 @@ IP:port.
   by one shared module (augusta_map), so PredictionWorld and SimulationWorld
   collide against the same map
 
-**Client-only** (Windows-only)
+**Client-only** (Windows and Linux)
 
 - Input handling — turns keyboard/mouse events pushed by Renderer into commands
   for PredictionWorld. There is no separate Window module: Renderer owns the OS
@@ -321,7 +322,7 @@ after the tick.
 - Asset cooker (`tools/pack`, a pure-Python project - `augusta-pack`
   console-script entry point) — walks the cleaned OpenUSD stage via
   usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
-  compresses textures via DirectXTex (BC7/BC5/BC4, DDS) through two small native
+  compresses textures via libktx (BC7/BC5/BC4, KTX2) through two small native
   pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
   links OpenUSD, see ADR-0030), and packages everything into signed, verified
   pack files (separate client and server packs) via a pure-Python

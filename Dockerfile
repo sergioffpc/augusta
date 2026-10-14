@@ -84,9 +84,10 @@ COPY tests tests
 
 # The install is staged under DESTDIR with the prefix the runtime stage runs
 # it from, so this file never names a path inside the build tree.
-# Without the C++ tools (AUGUSTA_TOOLS): the image builds augustad alone and
-# does not copy tools/.
-RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF \
+# Without the C++ tools (AUGUSTA_TOOLS) or the client (AUGUSTA_CLIENT): the
+# image builds augustad alone, does not copy tools/, and installs none of the
+# client's ports or the system packages they need.
+RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF -DAUGUSTA_CLIENT=OFF \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 

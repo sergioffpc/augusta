@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds the hermetic cooking environment for the Asset Pipeline (ADR-0030)
 # entirely under <assets-root>, in Git Bash on Windows or on Linux - the
-# platforms vcpkg's DirectXTex port, which the cooker's _native module wraps
+# platforms vcpkg's ktx port, which the cooker's _native module wraps
 # (ADR-0017), builds for.
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
@@ -104,7 +104,7 @@ main() {
     compiler=(clang++ ld.lld)
   else
     echo "bootstrap: the cooker runs on Windows (Git Bash) or Linux only -" \
-      "vcpkg's DirectXTex port, which its _native module wraps" \
+      "vcpkg's ktx port, which its _native module wraps" \
       "(ADR-0017), builds for no other platform." >&2
     exit 1
   fi

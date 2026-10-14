@@ -363,16 +363,33 @@ TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATyped
 // whichever wins the race, Run returns with both threads joined before the Host
 // they use goes, and a failure it returns is the transport's. Each round lands
 // the two a little later; under the sanitizers (ADR-0013) a failure during a
-// concurrent shutdown shows here as a race or a use after free.
+// concurrent shutdown shows here as a race or a use after free. The stops are
+// spread over twice the time Run takes to fail when nothing stops it, which
+// the metrics endpoint's start, before the Network I/O thread's, makes differ
+// from machine to machine: the first rounds stop before the failure, the last
+// ones after.
 TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideEndsRunWithEveryThreadJoined) {
   constexpr int kRounds = 8;
+  std::chrono::steady_clock::duration unstopped_run{};
+  {
+    Faults faults;
+    faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
+    ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
+    const auto start = std::chrono::steady_clock::now();
+    const std::optional<Failure> failure = runtime.Run();
+    unstopped_run = std::chrono::steady_clock::now() - start;
+    ASSERT_TRUE(failure.has_value());
+    ASSERT_EQ(failure->code, Code::kTransportReceiveFailed);
+  }
+
   int failed = 0;
   for (int round = 0; round < kRounds; ++round) {
     Faults faults;
     faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
     ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
-    std::thread outside([&runtime, round] {
-      std::this_thread::sleep_for(std::chrono::milliseconds(round));
+    const auto delay = unstopped_run * 2 * round / (kRounds - 1);
+    std::thread outside([&runtime, delay] {
+      std::this_thread::sleep_for(delay);
       runtime.Stop();
     });
 
@@ -384,7 +401,7 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
       ++failed;
     }
   }
-  // The later rounds give the failure time to land first: the race is run, not only the stop.
+  // The last rounds give the failure time to land first: the race is run, not only the stop.
   EXPECT_GT(failed, 0);
 }
 

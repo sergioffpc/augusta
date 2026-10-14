@@ -136,7 +136,8 @@ decisions already made in ARCHITECTURE.md:
       and a fork's reads nothing.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
-  high case count, a `llvm-cov` coverage report, and the hot-path
+  high case count, a `llvm-cov` coverage report, the Linux client's build and
+  tests (`client-linux`: no pull request builds it), and the hot-path
   micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
   the first night if absent) and charted on the documentation site; a failure, a
   benchmark more than twice as slow as the night before among them, opens or
@@ -388,28 +389,32 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
-- **Server / shared core (Linux, dev container or host):** `.devcontainer/`
-  gives this side as a container, for VS Code or Codespaces, without mutating a
-  host, and `scripts/bootstrap.sh` installs the same on an Ubuntu 26.04 host
-  (its Linux half, `scripts/bootstrap/linux.sh`; the image hashes only the two,
-  so a Windows-only change doesn't rebuild it). The script is the one recipe for
-  it: the image runs its `toolchain` step, the container's post-create its
-  `checkout` step (submodules, vcpkg, hooks), and a host both. It installs CI's
-  runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
-  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
-  LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind, LLVM's binary
-  tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format, GitHub CLI,
-  kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the hooks'
-  formatters and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint,
-  gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and
-  taplo, at CI's pinned versions), and CI's Linux vcpkg binary cache
-  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
-  image builds for the host's architecture (amd64 or arm64) rather than
-  emulating CI's amd64. sccache's cache lives in a volume shared by every
-  container of the repository; the build trees in a volume per container, so
-  they never collide with a Windows build of the same checkout. One recipe, not
-  a container beside a separate host bootstrap: two recipes for the same
-  toolchain drift apart. The client has no container equivalent (see below).
+- **Server, shared core and Linux client (Linux, dev container or host):**
+  `.devcontainer/` gives this side as a container, for VS Code or Codespaces,
+  without mutating a host, and `scripts/bootstrap.sh` installs the same on an
+  Ubuntu 26.04 host (its Linux half, `scripts/bootstrap/linux.sh`; the image
+  hashes only the two, so a Windows-only change doesn't rebuild it). The script
+  is the one recipe for it: the image runs its `toolchain` step, the container's
+  post-create its `checkout` step (submodules, vcpkg, hooks), and a host both.
+  It installs CI's runner Ubuntu release's packages, whose LLVM major is CI's,
+  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
+  with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
+  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format,
+  GitHub CLI, kubectl, helm, the flux CLI at the cluster's Flux version,
+  Doxygen, the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
+  shellcheck, actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt,
+  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg
+  binary cache configuration (a files provider in the checkout's
+  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
+  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
+  shared by every container of the repository; the build trees in a volume per
+  container, so they never collide with a Windows build of the same checkout.
+  One recipe, not a container beside a separate host bootstrap: two recipes for
+  the same toolchain drift apart. With them come the Linux client's system
+  packages (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's
+  Vulkan drivers and Xvfb for the Renderer's smoke test), so the `linux` presets
+  build and test `augustac` in the container too. The Windows client has no
+  container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -447,7 +452,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   and rejected: vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built and
   tested with MSVC, and a second Windows compiler isn't worth the purity.)
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
-  Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
+  Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
   installed editable, its native module, signing keys and sample authoring
@@ -458,10 +463,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/native`'s
-  own C++ build dependencies (two small pybind11 modules, no OpenUSD - see
-  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
-  codebase, not fetched by this script.
+  authors need them. `meshoptimizer` and libktx are `tools/pack/native`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
+  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
+  fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the

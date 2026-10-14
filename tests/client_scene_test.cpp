@@ -173,8 +173,10 @@ TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
 }
 
 TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
-  const auto scene = DescribeSceneError(
-      {.code = SceneErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
+  const auto scene = DescribeSceneError({.code = SceneErrorCode::kSceneUnresolved,
+                                         .node = {},
+                                         .subject = "Scene",
+                                         .resolve_error = ResolveError::kTypeMismatch});
   const auto mesh = DescribeSceneError({.code = SceneErrorCode::kMeshUnresolved,
                                         .node = "Root",
                                         .subject = "Root/Missing",

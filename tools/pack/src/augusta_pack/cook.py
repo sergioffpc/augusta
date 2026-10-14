@@ -55,9 +55,6 @@ from augusta_pack.pack import MeshData
 from augusta_pack.pack import NO_PARENT
 from augusta_pack.pack import SceneNode
 from augusta_pack.pack import SOUNDS_PATH
-from augusta_pack.pack import TEXTURE_FORMAT_BC4
-from augusta_pack.pack import TEXTURE_FORMAT_BC5
-from augusta_pack.pack import TEXTURE_FORMAT_BC7
 from augusta_pack.pack import write_pack
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import SOUNDS_PREFIX
@@ -88,20 +85,14 @@ CHARACTER_ROOT_PRIM = "Character"
 # where the local player's camera sits and its Shots leave from (ADR-0040):
 # client and server read it at <character name>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
-# augusta:textureFormat: selects which BC format a UsdUVTexture prim
-# compresses to (ADR-0017/issue #49). Defaults to BC7 when absent/
-# unrecognized.
+# augusta:textureFormat: selects which BC format a UsdUVTexture prim's KTX2
+# holds (ADR-0017): "bc7", "bc5" or "bc4". The native module cooks any other
+# value, or none, as "bc7".
 _TEXTURE_FORMAT_ATTR = "augusta:textureFormat"
 _USD_UV_TEXTURE_SHADER_ID = "UsdUVTexture"
 
 # Z-up -> Y-up is a quarter turn about the X axis.
 _Z_UP_TO_Y_UP_DEGREES = -90.0
-
-_TEXTURE_FORMAT_NAMES = {
-    TEXTURE_FORMAT_BC7: "bc7",
-    TEXTURE_FORMAT_BC5: "bc5",
-    TEXTURE_FORMAT_BC4: "bc4",
-}
 
 
 class CookError(RuntimeError):
@@ -150,14 +141,10 @@ def _has_collision_enabled(prim: Usd.Prim) -> bool:
     return enabled is None or bool(enabled)
 
 
-def _read_texture_format(prim: Usd.Prim) -> int:
+def _read_texture_format(prim: Usd.Prim) -> str:
     attr = prim.GetAttribute(_TEXTURE_FORMAT_ATTR)
     value = attr.Get() if attr else None
-    if value == "bc5":
-        return TEXTURE_FORMAT_BC5
-    if value == "bc4":
-        return TEXTURE_FORMAT_BC4
-    return TEXTURE_FORMAT_BC7
+    return str(value) if value is not None else ""
 
 
 def _resolve_texture_file_path(
@@ -170,9 +157,7 @@ def _resolve_texture_file_path(
     return resolved_path
 
 
-def _cook_texture(
-    prim: Usd.Prim, prim_path: str, stage_path: Path
-) -> tuple[bytes, int]:
+def _cook_texture(prim: Usd.Prim, prim_path: str, stage_path: Path) -> bytes:
     shader = UsdShade.Shader(prim)
     file_input = shader.GetInput("file")
     asset_path = file_input.Get() if file_input else None
@@ -184,14 +169,12 @@ def _cook_texture(
         )
 
     texture_path = _resolve_texture_file_path(asset_path, stage_path)
-    texture_format = _read_texture_format(prim)
     try:
-        dds_bytes = _native.compress_texture(
-            texture_path, _TEXTURE_FORMAT_NAMES[texture_format]
+        return _native.compress_texture(
+            texture_path, _read_texture_format(prim)
         )
     except RuntimeError as error:
         raise CookError("texture_load_failed", prim_path, str(error)) from error
-    return dds_bytes, texture_format
 
 
 def _read_bool_attr(prim: Usd.Prim, attr_name: str) -> bool:
@@ -724,12 +707,12 @@ def _maybe_cook_texture_prim(
     if shader.GetShaderId() != _USD_UV_TEXTURE_SHADER_ID:
         return
 
-    dds_bytes, texture_format = _cook_texture(prim, prim_path, stage_path)
+    ktx2_bytes = _cook_texture(prim, prim_path, stage_path)
     entries.append(
         AssetEntry(
             type=_TYPE_TEXTURE,
             path=prim_path,
-            data=encode_texture_blob(dds_bytes, texture_format),
+            data=encode_texture_blob(ktx2_bytes),
         )
     )
 

@@ -24,6 +24,9 @@ on:
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
+# Every job but client-linux configures with the client off (AUGUSTA_CLIENT):
+# each checks what augustad and the shared core are built from, as ci.yml's
+# Linux jobs do, and client-linux alone builds the Linux client.
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
@@ -41,7 +44,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
@@ -82,7 +85,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
-        run: cmake --preset linux-fuzz
+        run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
@@ -158,7 +161,7 @@ jobs:
         # "unexpected memory mapping" before a test runs.
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Configure (TSan)
-        run: cmake --preset linux-tsan
+        run: cmake --preset linux-tsan -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
@@ -193,7 +196,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
@@ -226,7 +229,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (coverage)
-        run: cmake --preset linux-coverage
+        run: cmake --preset linux-coverage -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
@@ -253,6 +256,54 @@ jobs:
           name: coverage-report
           path: coverage-report/
           if-no-files-found: ignore
+  client-linux:
+    # The Linux client (ADR-0006), which no pull request builds: the linux
+    # preset with the client on, as a Linux developer builds it, and its whole
+    # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
+    # virtual X server. So a change that breaks augustac on Linux, or the shared
+    # code under the client's build, surfaces within a night.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+      - uses: ./.github/actions/setup-linux-build
+        with:
+          # The client's system packages, as scripts/bootstrap/linux.sh
+          # installs them (which says why each).
+          extra-packages: >-
+            libgl-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libvulkan1 mesa-vulkan-drivers xauth xvfb
+          # It installs the client's ports, which no other Linux job does and
+          # whose saves would drop: a cache of its own.
+          vcpkg-cache-prefix: vcpkg-bincache-client-linux-
+      - name: Configure
+        run: cmake --preset linux
+      - uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset linux --target all augusta_tests
+      - name: Check that the smoke test is built
+        # tests/CMakeLists.txt leaves it out, with only a configure message,
+        # where it finds no lavapipe.
+        run: test -x build/x64-linux/tests/augusta_client_renderer_smoke_tests
+      - name: Test
+        # In a virtual X server, where the smoke test opens its hidden window:
+        # GLFW picks X11, as there is no Wayland session.
+        run: xvfb-run --auto-servernum ctest --preset linux --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-client-linux
+          path: junit/
+          if-no-files-found: ignore
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the
     # nights before kept on the benchmarks branch, one history per runner CPU
@@ -276,7 +327,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_benchmarks
@@ -390,7 +441,7 @@ jobs:
     # documentation site publishes the latest scheduled night's under tests/
     # (ADR-0046), so a release's stays an artifact of its run. Also after a
     # failing test, which is when it is read.
-    needs: [property-tests, tsan, netcode, coverage]
+    needs: [property-tests, tsan, netcode, coverage, client-linux]
     if: always()
     runs-on: ubuntu-26.04
     permissions:
@@ -422,7 +473,7 @@ jobs:
   # reports on every job it waits for, and release.yml waits for the whole
   # call. Not from a release (inputs.release), whose failure fails its run.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, sbom-scan, test-report]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, client-linux, benchmarks, sbom-scan, test-report]
     if: always() && !inputs.release && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

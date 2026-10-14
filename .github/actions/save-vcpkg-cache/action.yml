@@ -10,8 +10,9 @@ runs:
       # first two characters, and the install root's status file lists the ABI
       # of every package it installed. An archive it doesn't list is a package
       # an older manifest or baseline needed: kept, it would be saved forever,
-      # since every save starts from the one before. Every Linux job installs
-      # the same manifest, so none drops a package another needs.
+      # since every save starts from the one before. Every Linux job sharing a
+      # cache installs the same ports, so none drops a package another needs:
+      # a job installing more has a cache of its own (restore-vcpkg-cache).
       shell: bash
       run: |
         status="$(find build -path '*/vcpkg_installed/vcpkg/status' | head -n 1)"

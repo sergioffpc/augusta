@@ -18,7 +18,7 @@ namespace augusta::client {
 namespace {
 
 renderer::SceneMesh ToWorldSpace(const assets::MeshData& mesh, const math::Mat4& world) {
-  renderer::SceneMesh result{.indices = mesh.indices};
+  renderer::SceneMesh result{.positions = {}, .indices = mesh.indices};
   result.positions.reserve(mesh.points.size());
   for (const math::Vec3& point : mesh.points) {
     result.positions.push_back(math::TransformPoint(world, point));
@@ -107,8 +107,10 @@ std::expected<renderer::Scene, SceneError> LoadRenderScene(const assets::Pack& p
                                                            std::string_view scene_path) {
   const auto scene = pack.ResolveScene(scene_path);
   if (!scene) {
-    return std::unexpected(SceneError{
-        .code = SceneErrorCode::kSceneUnresolved, .subject = std::string(scene_path), .resolve_error = scene.error()});
+    return std::unexpected(SceneError{.code = SceneErrorCode::kSceneUnresolved,
+                                      .node = {},
+                                      .subject = std::string(scene_path),
+                                      .resolve_error = scene.error()});
   }
   return BuildRenderScene(*scene, [&pack](std::string_view path) { return pack.ResolveMesh(path); }, eye);
 }

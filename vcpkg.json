@@ -12,53 +12,17 @@
     "boost-program-options",
     "flecs",
     "gamenetworkingsockets",
-    {
-      "name": "glfw3",
-      "platform": "windows"
-    },
     "glm",
     "gtest",
-    {
-      "name": "imgui",
-      "features": [
-        "glfw-binding"
-      ],
-      "platform": "windows"
-    },
     "libsodium",
     "lua",
-    {
-      "name": "miniaudio",
-      "platform": "windows"
-    },
-    {
-      "name": "nvrhi",
-      "platform": "windows"
-    },
     "physx",
     {
       "name": "prometheus-cpp",
       "default-features": false
     },
     "rapidcheck",
-    {
-      "name": "shader-slang",
-      "host": true,
-      "platform": "windows"
-    },
     "sol2",
-    {
-      "name": "steam-audio",
-      "platform": "windows"
-    },
-    {
-      "name": "vulkan-headers",
-      "platform": "windows"
-    },
-    {
-      "name": "vulkan-validationlayers",
-      "platform": "windows"
-    },
     "yaml-cpp"
   ],
   "features": {
@@ -66,6 +30,35 @@
       "description": "The Agents' Python module (tools/agent): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python",
       "dependencies": [
         "pybind11"
+      ]
+    },
+    "client": {
+      "description": "The client and its Renderer (src/client, src/modules/renderer), which the root CMakeLists.txt turns on with AUGUSTA_CLIENT: GLFW (with Wayland beside X11 on Linux), ImGui, NVRHI on Vulkan, the Vulkan headers and validation layers, Slang's shader compiler as a host tool, and miniaudio and Steam Audio for the audio output",
+      "dependencies": [
+        {
+          "name": "glfw3",
+          "features": [
+            {
+              "name": "wayland",
+              "platform": "linux"
+            }
+          ]
+        },
+        {
+          "name": "imgui",
+          "features": [
+            "glfw-binding"
+          ]
+        },
+        "miniaudio",
+        "nvrhi",
+        {
+          "name": "shader-slang",
+          "host": true
+        },
+        "steam-audio",
+        "vulkan-headers",
+        "vulkan-validationlayers"
       ]
     },
     "lavapipe": {
