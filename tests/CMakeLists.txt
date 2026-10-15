@@ -38,7 +38,6 @@ target_link_libraries(
     augusta_presentation
     augusta_primitives
     augusta_protocol
-    augusta_replication
     augusta_simulation
     augusta_version
     augustad_host
@@ -214,8 +213,8 @@ target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::
 gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_replication_tests replication_test.cpp)
-target_link_libraries(augusta_replication_tests PRIVATE augusta_replication GTest::gtest GTest::gtest_main)
-# Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
+target_link_libraries(augusta_replication_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
+# Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_simulation_tests simulation_test.cpp)

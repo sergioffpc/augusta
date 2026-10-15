@@ -151,7 +151,6 @@ target_link_libraries(
     augusta_protocol
     augusta_capture
     augusta_shared_wire
-    augusta_replication
     augusta_tick
     augustad_lock_free_metrics
     prometheus-cpp::core
