@@ -159,8 +159,8 @@ IP:port.
   client input code
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
-  by one shared module (augusta_map), so PredictionWorld and SimulationWorld
-  collide against the same map
+  by the shared Physics module (augusta_physics), so PredictionWorld and
+  SimulationWorld collide against the same map
 
 **Client-only** (Windows and Linux)
 
