@@ -13,12 +13,13 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #ifndef _WIN32
+#include <thread>
+
 #include <sys/stat.h>
 #endif
 
