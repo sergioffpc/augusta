@@ -348,6 +348,9 @@ std::expected<parameters::Parameters, ParametersLoadError> LoadParameters(std::s
     const sol::error failure = result;
     return Fail(ParametersLoadErrorCode::kScriptError, failure.what());
   }
+  // Reading the answer is outside a protected call, where a refused allocation
+  // would abort the process rather than fail the load.
+  const scripting::MemoryLimitScope unlimited(lua, false);
   if (result.get_type() != sol::type::table) {
     return Fail(ParametersLoadErrorCode::kNotATable);
   }

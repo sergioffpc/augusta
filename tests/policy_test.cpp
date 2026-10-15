@@ -167,6 +167,8 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
            FailingHook{.rules = "function on_tick() local t = {} t[1] = t return t end", .logged = "not plain data"},
            FailingHook{.rules = "function on_tick() return {1, x = 2} end", .logged = "not plain data"},
            FailingHook{.rules = "on_tick = 5", .logged = "not a function"},
+           FailingHook{.rules = "function on_tick() return #string.rep('x', 1 << 30) end",
+                       .logged = "not enough memory"},
            FailingHook{.rules = "function on_tick() return {winner = 1} end",
                        .logged = "not a player alive in the Match"},
            FailingHook{.rules = "function on_tick() return {winner = 11.5} end",
@@ -237,6 +239,61 @@ TEST_F(PolicyTest, AScriptThatUsesWhatTheSandboxLeavesOutAtItsTopLevelDoesNotLoa
     ASSERT_FALSE(engine.has_value()) << use;
     EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos) << use;
   }
+}
+
+// Memory is bounded per Lua state, as instructions are per call: an allocation
+// past the bound is refused, which fails the call as any error does.
+TEST_F(PolicyTest, AScriptWhoseTopLevelAllocatesPastTheMemoryLimitDoesNotLoad) {
+  const auto engine = Engine::Load("local huge = string.rep('x', 1 << 30)");
+
+  ASSERT_FALSE(engine.has_value());
+  EXPECT_NE(engine.error().message.find("not enough memory"), std::string::npos) << engine.error().message;
+}
+
+// A hook that keeps what it allocates, every view it is handed among it, fills
+// its Lua state over the calls. Each call stops well short of the instruction
+// limit, so what stops it once the state is full is the memory limit: the call
+// fails as any error does, the next still gets its view, and the Match goes on.
+TEST_F(PolicyTest, AHookThatHoardsMemoryFailsOnceItsStateIsFullAndTheTicksGoOn) {
+  World world = WithAlice(WithRules(R"(
+    local views, chunks, crumbs = nil, nil, nil
+    function on_tick(match)
+      views = {views, match}
+      for i = 1, 64 do chunks = {chunks, string.rep('x', 1 << 16)} end
+      for i = 1, 2000 do crumbs = {crumbs} end
+    end
+  )"));
+
+  testing::internal::CaptureStdout();
+  TickResult result;
+  for (int i = 0; i < 30; ++i) {
+    result = world.Tick(Walking(), kTick);
+  }
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  EXPECT_NE(log.find("not enough memory"), std::string::npos) << log;
+  EXPECT_EQ(log.find("instruction limit"), std::string::npos) << log;
+  EXPECT_EQ(result.state.tick, 30U);
+  EXPECT_TRUE(result.actions.empty());
+  ASSERT_EQ(result.state.bodies.size(), 1U);
+  EXPECT_EQ(result.state.bodies[0].body.position, WalkedTo(Engine{}, 30));
+}
+
+// Lua's warn writes to stderr, outside the server's log (ADR-0029), once a
+// script turns it on: the sandbox has none, so a script that calls it fails as
+// it does for anything else the sandbox leaves out, and writes nothing.
+TEST_F(PolicyTest, TheSandboxHasNoWarnSoAScriptWritesNothingToStderr) {
+  constexpr std::string_view kWarns = "warn('@on') warn('x')";
+
+  testing::internal::CaptureStderr();
+  const auto engine = Engine::Load(kWarns);
+  World world = WithAlice(WithRules("function on_tick() " + std::string(kWarns) + " end"));
+  const std::string log = LogOfTicks(world, 1);
+  const std::string written = testing::internal::GetCapturedStderr();
+
+  EXPECT_FALSE(engine.has_value());
+  EXPECT_NE(log.find("event=policy_hook_failed"), std::string::npos) << log;
+  EXPECT_EQ(written, "");
 }
 
 TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {

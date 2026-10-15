@@ -526,9 +526,9 @@ How each piece reaches the node or the player:
   mechanism nor the policy scripts. Keeping these separate means gameplay rules
   and balance numbers can change without touching engine internals.
 - **Scripting sandbox:** Lua scripts run with a restricted global environment —
-  no `io`, `os`, `package`, `require`, or filesystem/ network access — and an
-  instruction limit per hook call, upholding "no I/O inside ECS worlds"
-  structurally, not just by convention (ADR-0022).
+  no `io`, `os`, `package`, `require`, or filesystem/ network access — an
+  instruction limit per hook call and a memory limit per Lua state, upholding
+  "no I/O inside ECS worlds" structurally, not just by convention (ADR-0022).
 - **Asset packaging & integrity:** runtime assets ship as a single signed pack
   file per target (client/server), never as loose files. Content is hashed with
   BLAKE3 and signed with Ed25519; both the client and server take the pack path

@@ -24,9 +24,10 @@ keeps game policy separate from mechanism code.
 - **The sandbox** is ADR-0039's: the rules have a Lua state of their own,
   sharing no globals with the Parameters script, holding only the base, math,
   string and table libraries. There is no `io`, `os`, `package`, `require`,
-  `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `math.random`,
-  and no `pcall`/`xpcall`, so a script cannot catch the instruction limit's
-  stop.
+  `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `print` or
+  `warn` (which writes to stderr, outside ADR-0029's log), no `math.random`, and
+  no `pcall`/`xpcall`, so a script cannot catch the instruction limit's stop or
+  a refused allocation.
 - **Hooks** are global functions a script defines, called by name from
   SimulationWorld. A hook a script does not define is a no-op, and the mechanism
   decides that concern alone. The catalogue is fixed in C++ and grows only with
@@ -71,6 +72,16 @@ keeps game policy separate from mechanism code.
 - **Each call has an instruction limit** of 100 000 Lua instructions, counted
   afresh per call, so a hook takes well under a millisecond of the tick
   (NFR-01). A top level has ADR-0039's limit of 1 000 000.
+- **Each Lua state has a memory limit** of 32 MiB, beside the instruction limit
+  and for the life of the state: an allocation past it is refused and raises
+  "not enough memory", which fails the call or the load as any error does. A
+  script needs kilobytes, and the limit is a small part of the server's
+  container memory limit, so a script that allocates without bound
+  (`string.rep("x", 1 << 30)`, a table that only grows) fails its own calls
+  instead of taking the server down. The limit holds while the script runs; the
+  server's own work in the state (looking a hook up, building its view, reading
+  its answer) runs with it lifted, since a refusal outside a protected call
+  would abort the process rather than fail the script.
 - **Failure inside a Match is contained.** A hook that raises an error, runs
   past its limit or returns something invalid is logged at WARN with its script,
   hook and tick (at most once a second, ADR-0029) and treated as having decided

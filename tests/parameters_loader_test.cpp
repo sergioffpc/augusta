@@ -480,11 +480,24 @@ TEST(ParametersLoaderServerTest, AScriptReadsTheTickRateItIsLoadedFor) {
 // Requirements: US-22
 TEST(ParametersLoaderServerTest, AWarningReachesTheCallerAndTheScriptStillLoads) {
   std::vector<std::string> warnings;
+  testing::internal::CaptureStderr();
   const auto loaded = Load("warn('fires at ', 30, ' Hz')\n" + std::string(kValid),
                            [&warnings](std::string_view message) { warnings.emplace_back(message); });
+  const std::string written = testing::internal::GetCapturedStderr();
 
   EXPECT_TRUE(loaded.has_value());
   EXPECT_EQ(warnings, std::vector<std::string>{"fires at 30 Hz"});
+  EXPECT_EQ(written, "");
+}
+
+// The script's Lua state has the sandbox's memory limit: an allocation past it
+// is a script error, not memory taken from the server.
+TEST(ParametersLoaderServerTest, AScriptThatAllocatesPastTheMemoryLimitIsAScriptError) {
+  const auto loaded = Load("local huge = string.rep('x', 1 << 30)\n" + std::string(kValid));
+
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
+  EXPECT_NE(loaded.error().subject.find("not enough memory"), std::string::npos) << loaded.error().subject;
 }
 
 // Requirements: US-22
