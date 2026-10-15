@@ -44,22 +44,26 @@ PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pyma
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 
-# What CI's Lint step runs clang-tidy on: every src .cpp except the client's
-# trees and the audio module's output device, which its Linux build (without the
-# client, AUGUSTA_CLIENT) has no compile commands for, and the C++ tools'
-# (tools/agent), built with them. The silent output CI lints there is left out
-# too: either platform's default build has the client, so compiles the device
-# instead.
-TIDY_EXCLUDES := ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
-TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_none.cpp"
-ifneq ($(OS),Windows_NT)
+# What CI's Lint steps run clang-tidy's full profile on: every src .cpp and the
+# C++ tools' (tools/agent), built with them, except the audio module's silent
+# output, which CI's Linux build compiles without the client: either platform's
+# default build has the client, so compiles the output device instead. On
+# Windows, the client's and the Renderer's tests too, as CI's client job lints
+# them; elsewhere, not the client's trees or the output device, which CI's Linux
+# build (without the client, AUGUSTA_CLIENT) has no compile commands for.
+TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
+ifeq ($(OS),Windows_NT)
+TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
+else
+TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 endif
-TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
+TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" $(TIDY_CLIENT_TESTS) ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
 
 # The rest of src and tests that this platform's build has compile commands
 # for, which tidy holds to include-cleaner alone (.clang-tidy's
-# misc-include-cleaner): the tests and, on Windows, the client's sources.
+# misc-include-cleaner): the tests, except the client's and the Renderer's on
+# Windows.
 # -w because the presets compile with -Werror (/WX), which turns warnings in
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.

@@ -102,19 +102,29 @@ struct Size {
 /// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
 /// from the front face.
 struct SceneMesh {
+  /// The light grey a mesh is drawn in unless given a color.
+  static constexpr float kDefaultGrey = 0.8F;
+
   std::vector<math::Vec3> positions;
   std::vector<std::uint32_t> indices;
   /// Base color, linear RGB in [0, 1].
-  math::Vec3 color{0.8F, 0.8F, 0.8F};
+  math::Vec3 color{kDefaultGrey, kDefaultGrey, kDefaultGrey};
 };
 
 /// The viewpoint a Scene is drawn from. The camera looks down its local -Z
 /// axis with +Y up, before rotation is applied.
 struct Camera {
-  math::Vec3 position{0.0F, 1.7F, 5.0F};
+  /// An unset camera's height, in metres: a standing player's eyes.
+  static constexpr float kDefaultEyeHeight = 1.7F;
+  /// How far back from the origin an unset camera stands, in metres.
+  static constexpr float kDefaultDistance = 5.0F;
+  /// An unset camera's vertical field of view, in radians (about 52 degrees).
+  static constexpr float kDefaultVerticalFov = 0.9F;
+
+  math::Vec3 position{0.0F, kDefaultEyeHeight, kDefaultDistance};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
   /// Vertical field of view, in radians.
-  float vertical_fov = 0.9F;
+  float vertical_fov = kDefaultVerticalFov;
 };
 
 /// Everything the renderer draws: static geometry plus the camera it is
