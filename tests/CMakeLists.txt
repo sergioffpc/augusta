@@ -250,7 +250,7 @@ gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
 # What a hook's answer becomes once C++ validates it, apart from any script.
 add_executable(augusta_policy_actions_tests policy_actions_test.cpp)
 target_link_libraries(augusta_policy_actions_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
-# Links PhysX, so the same first-launch cost applies as below.
+# Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 
 # The example scenario's shipped rules, loaded out of a pack built with

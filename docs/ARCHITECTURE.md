@@ -263,9 +263,9 @@ exclusively server-authoritative.
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours
       phase (Lua, sandboxed — Match lifecycle, win conditions, spawn rules);
-      emits authoritative state each tick. One server-only module
-      (augusta_simulation) with Replication, which decides what each client is
-      sent of that state (ADR-0044)
+      emits authoritative state each tick. Built as one server-only module,
+      augusta_simulation, together with Replication, which decides what each
+      client is sent of that state (ADR-0044)
 
 ```text
 +------------+
