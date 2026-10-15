@@ -1,4 +1,6 @@
-add_library(augusta_simulation STATIC hitbox_history.cpp policy_actions.cpp simulation.cpp)
+# The server's authoritative World (SimulationWorld, ADR-0023) and what each
+# client is sent of it (augusta::replication, ADR-0044; see replication.h).
+add_library(augusta_simulation STATIC hitbox_history.cpp policy_actions.cpp replication.cpp simulation.cpp)
 target_include_directories(augusta_simulation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_simulation

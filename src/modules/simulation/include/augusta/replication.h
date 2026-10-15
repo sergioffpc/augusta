@@ -14,9 +14,9 @@
 #include "augusta/weapon.h"
 
 /// \file
-/// augusta::replication decides what SimulationWorld's per-tick Authoritative
-/// State (augusta::simulation::State, ADR-0023) means for each connected
-/// client: which of them is sent what. It stops at what each is sent, in the
+/// augusta::replication (ADR-0044) decides what SimulationWorld's per-tick
+/// Authoritative State (augusta::simulation::State, ADR-0023) means for each
+/// connected client: which of them is sent what. It stops at what each is sent, in the
 /// engine's own types; turning that into a message, encoding it and putting it
 /// on the wire is the caller's mechanism (server::Host), so the decision is a
 /// pure function tested without a network (docs/agents/coding-standards.md).

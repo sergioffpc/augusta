@@ -1,7 +1,8 @@
 # Keeps the shared core's base below the network layer and the client's device
-# input: no public header of physics or SimulationWorld may name a protocol type
-# or the input sampler's module, or include either's header. The grids a body
-# lives on are augusta::math's (augusta/grid.h) and the Command SimulationWorld consumes is
+# input: no public header of physics or of the simulation module
+# (SimulationWorld and Replication) may name a protocol type or the input
+# sampler's module, or include either's header. The grids a body lives on are
+# augusta::math's (augusta/grid.h) and the Command SimulationWorld consumes is
 # augusta::command's, so neither needs them.
 #
 # Keeps the neutral primitives (augusta/primitives.h) below everything: the
@@ -105,7 +106,7 @@ if(violations)
   list(JOIN violations "\n" core_report)
   string(
     APPEND report
-    "physics or SimulationWorld names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${core_report}\n"
+    "physics or the simulation module names the protocol or the input sampler - use augusta/grid.h or augusta::command instead:\n${core_report}\n"
   )
 endif()
 if(primitives_violations)

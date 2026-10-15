@@ -136,7 +136,8 @@ IP:port.
   interface used identically by PredictionWorld and SimulationWorld. Props are
   simulated only by the server and moved kinematically on the client; Cosmetic
   bodies (ragdolls, debris) only on the client (ADR-0045). Particles are the
-  renderer's, not physics'
+  renderer's, not physics'. It also builds a map's static collision from a
+  verified Pack (augusta/map.h), so it depends on augusta_assets
 - WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules (augusta_weapon);
   one interface used identically by both Worlds. The client/server difference
   isn't in this module's logic, it's in what each World does with the result:
@@ -159,8 +160,8 @@ IP:port.
   client input code
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
-  by one shared module (augusta_map), so PredictionWorld and SimulationWorld
-  collide against the same map
+  by the shared Physics module (augusta_physics), so PredictionWorld and
+  SimulationWorld collide against the same map
 - Lifecycle — how an executable starts, runs its worker threads, stops and ends
   (augusta_lifecycle): the runtime supervisor both runtimes and the Harness run
   their threads under (ADR-0005) and the application boundary each executable's
@@ -181,7 +182,9 @@ IP:port.
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-      smooths for display; emits presentation state each render frame
+      smooths for display; emits presentation state each render frame. One
+      module (augusta_presentation) holds it and its phases, including the
+      animation engine behind its Animation phase
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; owns the
   client's single OS window (see Input handling, above) and consumes
   presentation state. Exposes pumping window/device events and rendering a frame
@@ -269,7 +272,9 @@ exclusively server-authoritative.
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours
       phase (Lua, sandboxed — Match lifecycle, win conditions, spawn rules);
-      emits authoritative state each tick
+      emits authoritative state each tick. Built as one server-only module,
+      augusta_simulation, together with Replication, which decides what each
+      client is sent of that state (ADR-0044)
 
 ```text
 +------------+
