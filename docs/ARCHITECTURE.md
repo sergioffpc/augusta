@@ -142,7 +142,7 @@ IP:port.
   (augusta_gameplay) with a header and namespace per concept. It builds on
   Physics and the Primitives and stays below the Networking Protocol and the
   client's Input handling: the protocol links none of it, and Input builds its
-  Command
+  Commands with it. Its concepts:
     - Command — one tick's player intent (augusta/command.h): what the client's
       Input handling samples and the server screens and simulates, so the server
       links no client input code

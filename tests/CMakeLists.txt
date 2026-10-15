@@ -57,7 +57,8 @@ gtest_discover_tests(augusta_primitives_tests)
 
 add_executable(augusta_tick_tests tick_test.cpp)
 target_link_libraries(augusta_tick_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_tick_tests)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_tick_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(
@@ -104,7 +105,7 @@ target_link_libraries(
   augusta_parameters_tests
   PRIVATE augusta_gameplay augusta_primitives GTest::gtest GTest::gtest_main
 )
-# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
@@ -320,7 +321,7 @@ target_compile_definitions(
   augusta_ballistics_tests
   PRIVATE AUGUSTA_GOLDEN_TRAJECTORIES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_trajectories.txt"
 )
-# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_ballistics_tests DISCOVERY_TIMEOUT 30)
 add_custom_target(
   augusta_golden_trajectories
