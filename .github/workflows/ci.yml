@@ -487,9 +487,11 @@ jobs:
         # why not the NuGet feed) - but a cache of its own, not
         # setup-linux-build's: tools/pack/native's manifest isn't the root one
         # every job sharing that cache installs, and save-vcpkg-cache drops
-        # whatever the root build didn't install.
+        # whatever the root build didn't install. vcpkg's tools pinned as
+        # setup-linux-build pins them, for the same reason.
         run: |
           echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
+          echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
           echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}" >> "$GITHUB_ENV"
       - name: Restore and save vcpkg binaries
         if: runner.os == 'Linux'
