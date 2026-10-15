@@ -6,8 +6,10 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <initializer_list>
 #include <limits>
+#include <new>
 #include <string>
 #include <utility>
 #include <variant>
@@ -18,6 +20,25 @@
 #include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/primitives.h"
+
+// Every byte operator new has handed out in this binary. Decode gives back no
+// message when it refuses one, so this is the only way to see what it
+// allocated on the way.
+namespace {
+std::size_t bytes_allocated = 0;
+}  // namespace
+
+void* operator new(std::size_t size) {
+  bytes_allocated += size;
+  if (void* block = std::malloc(size == 0 ? 1 : size)) {
+    return block;
+  }
+  throw std::bad_alloc();
+}
+
+void operator delete(void* block) noexcept { std::free(block); }
+
+void operator delete(void* block, std::size_t /*size*/) noexcept { std::free(block); }
 
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
@@ -95,6 +116,7 @@ constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
 constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
 constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
 constexpr auto kReplayListRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest);
+constexpr auto kReplayListType = static_cast<std::uint8_t>(MessageTypeWire::kReplayList);
 constexpr auto kReenactRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest);
 // How many bytes a tick takes on the wire: as many as primitives::Tick has.
 constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
@@ -701,6 +723,25 @@ TEST(ProtocolTest, AReplayListsLongNamesAndListsAreTooLong) {
   ReplayListWire many;
   many.replays.resize(augusta::protocol::kMaxReplayListings + 1);
   EXPECT_EQ(Encode(many).error(), EncodeError::kFieldTooLong);
+}
+
+// How many bytes Decode allocates for payload, whatever it makes of it.
+std::size_t BytesDecodeAllocates(const BytesWire& payload) {
+  const std::size_t before = bytes_allocated;
+  static_cast<void>(Decode(payload));
+  return bytes_allocated - before;
+}
+
+// A list's count is a claim the bytes after it must back: two bytes claiming
+// 255 listings allocate no more than two claiming one.
+// Requirements: NFR-12
+TEST(ProtocolTest, AListCountingPastTheEndOfThePayloadIsTruncatedWithoutAllocatingForIt) {
+  const BytesWire claims_one = BytesOf({kReplayListType, 1});
+  const BytesWire claims_most =
+      BytesOf({kReplayListType, static_cast<std::uint8_t>(augusta::protocol::kMaxReplayListings)});
+
+  EXPECT_EQ(Decode(claims_most).error(), DecodeError::kTruncated);
+  EXPECT_EQ(BytesDecodeAllocates(claims_most), BytesDecodeAllocates(claims_one));
 }
 
 TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackAndCapture) {
