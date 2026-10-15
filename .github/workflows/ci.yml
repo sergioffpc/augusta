@@ -305,6 +305,14 @@ jobs:
             --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
             build/x64-windows/vcpkg_installed/x64-windows > "$RUNNER_TEMP/augustac.spdx.json"
           python scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
+          # And that a package in neither of sbom-cpes.py's maps still fails it.
+          jq '.packages += [{"name": "unmapped", "versionInfo": "1.0"}]' \
+            "$RUNNER_TEMP/augustac.spdx.json" > "$RUNNER_TEMP/unmapped.spdx.json"
+          if error="$(python scripts/sbom-cpes.py "$RUNNER_TEMP/unmapped.spdx.json" 2>&1 > /dev/null)" ||
+            ! grep -q '^unmapped: neither a CPE nor a reason' <<< "$error"; then
+            echo "::error::sbom-cpes.py didn't fail on a package in neither _CPES nor _NO_CPE"
+            exit 1
+          fi
       - name: Lint
         # What the server-x64-linux job's Linux build can't lint, as it builds
         # without the client. The client, the Renderer and their tests get
