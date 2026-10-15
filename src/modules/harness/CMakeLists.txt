@@ -26,8 +26,8 @@ target_link_libraries(
     augusta_physics
     augusta_protocol
     augusta_capture
+    augusta_lifecycle
     augusta_shared_wire
-    augusta_supervisor
     augusta_version
   # nvtx3-cpp: runner.cpp names the Prediction and Network I/O loops for Nsight Systems.
   # augusta_input: intent.cpp aims within the pitch a player may look at.

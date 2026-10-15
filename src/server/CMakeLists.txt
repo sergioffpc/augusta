@@ -161,7 +161,7 @@ target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
   PUBLIC augustad_host augusta_failure augusta_gameplay augusta_networking augusta_physics augusta_simulation
-  PRIVATE augusta_assets augusta_logging augusta_supervisor augustad_connection_health augustad_metrics
+  PRIVATE augusta_assets augusta_lifecycle augusta_logging augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
@@ -172,7 +172,7 @@ add_library(augustad_application STATIC application.cpp)
 target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_application
-  PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augustad_runtime
+  PUBLIC augusta_config augusta_failure augusta_lifecycle augusta_server_config augustad_runtime
   PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host augustad_policy_loader
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
@@ -193,8 +193,8 @@ add_executable(augustad main.cpp)
 target_link_libraries(
   augustad
   PRIVATE
-    augusta_application
     augusta_config
+    augusta_lifecycle
     augusta_server_config
     augustad_application
     augustad_crash
