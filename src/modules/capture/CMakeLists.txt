@@ -6,7 +6,7 @@ add_library(augusta_capture STATIC capture.cpp)
 target_include_directories(augusta_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_capture
-  PUBLIC augusta_assets augusta_command augusta_failure augusta_math augusta_protocol
+  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_protocol
   PRIVATE augusta_shared_wire
 )
 augusta_set_module_scope(augusta_capture SHARED)

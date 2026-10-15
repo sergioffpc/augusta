@@ -4,7 +4,7 @@
 # never links the interpreter.
 add_library(augustad_parameters_loader STATIC parameters_loader.cpp)
 target_include_directories(augustad_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_parameters_loader PUBLIC augusta_parameters PRIVATE augusta_lua_sandbox)
+target_link_libraries(augustad_parameters_loader PUBLIC augusta_gameplay PRIVATE augusta_lua_sandbox)
 augusta_set_module_scope(augustad_parameters_loader SERVER_ONLY)
 
 # Reads the scenario's Game policy scripts out of the server pack into the
@@ -21,7 +21,7 @@ add_library(augustad_content STATIC content.cpp)
 target_include_directories(augustad_content PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_content
-  PUBLIC augusta_assets augusta_failure augusta_math augusta_parameters augusta_physics augusta_scripting
+  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_scripting
   PRIVATE augusta_logging augustad_parameters_loader augustad_policy_loader
 )
 augusta_set_module_scope(augustad_content SERVER_ONLY)
@@ -37,7 +37,7 @@ augusta_set_module_scope(augustad_match SERVER_ONLY)
 # tested without a network (see command_queue.h).
 add_library(augustad_commands STATIC command_queue.cpp)
 target_include_directories(augustad_commands PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_commands PUBLIC augusta_command)
+target_link_libraries(augustad_commands PUBLIC augusta_gameplay)
 augusta_set_module_scope(augustad_commands SERVER_ONLY)
 
 # The count of each peer's misbehaviour that decides when it is disconnected;
@@ -63,7 +63,7 @@ augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
 # without HTTP (see liveness.h).
 add_library(augustad_liveness STATIC liveness.cpp)
 target_include_directories(augustad_liveness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_liveness PUBLIC augusta_tick)
+target_link_libraries(augustad_liveness PUBLIC augusta_gameplay)
 augusta_set_module_scope(augustad_liveness SERVER_ONLY)
 
 # The lock-free counter, gauge and histogram the server's threads write in
@@ -83,7 +83,7 @@ add_library(augustad_metrics STATIC metrics.cpp)
 target_include_directories(augustad_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_metrics
-  PUBLIC augusta_failure augusta_tick prometheus-cpp::core
+  PUBLIC augusta_failure augusta_gameplay prometheus-cpp::core
   PRIVATE augustad_liveness augusta_logging augusta_version Boost::beast
 )
 # std::getenv reads the commit the image stamps in; MSVC deprecates it for
@@ -135,10 +135,9 @@ target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_host
   PUBLIC
-    augusta_ballistics
     augusta_failure
+    augusta_gameplay
     augusta_networking
-    augusta_parameters
     augusta_physics
     augusta_simulation
     augustad_content
@@ -151,7 +150,6 @@ target_link_libraries(
     augusta_protocol
     augusta_capture
     augusta_shared_wire
-    augusta_tick
     augustad_lock_free_metrics
     prometheus-cpp::core
   PRIVATE augusta_logging augusta_version
@@ -162,8 +160,8 @@ add_library(augustad_runtime STATIC runtime.cpp)
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
-  PUBLIC augustad_host augusta_failure augusta_networking augusta_parameters augusta_physics augusta_simulation
-  PRIVATE augusta_assets augusta_logging augusta_supervisor augusta_tick augustad_connection_health augustad_metrics
+  PUBLIC augustad_host augusta_failure augusta_gameplay augusta_networking augusta_physics augusta_simulation
+  PRIVATE augusta_assets augusta_logging augusta_supervisor augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
 
