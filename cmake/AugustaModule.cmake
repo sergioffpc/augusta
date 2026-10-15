@@ -33,7 +33,7 @@ function(augusta_check_module_scopes)
 
   foreach(target ${modules})
     # Not every tagged target exists on every platform (augusta_renderer
-    # and augustac_runtime are only added under WIN32 - see the root
+    # and augustac_runtime are only added with AUGUSTA_CLIENT - see the root
     # CMakeLists.txt).
     if(NOT TARGET ${target})
       continue()

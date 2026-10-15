@@ -4,8 +4,8 @@
 #include <cstdint>
 
 /// \file
-/// Decision half of the renderer's per-frame upload buffers, kept free of
-/// Falcor so it is tested on every platform: renderer.cpp does the writing,
+/// Decision half of the renderer's per-frame upload buffers, kept free of any
+/// GPU API so it is tested on every platform: renderer.cpp does the writing,
 /// fencing and drawing around it.
 namespace augusta::renderer {
 

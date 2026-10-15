@@ -10,9 +10,13 @@ voices into the period it fills.
 
 A client that cannot open an output device logs why at WARN and runs with a
 silent engine: a missing headset never stops play, and CI runners, which have no
-audio device, run unchanged. Only the Windows client links miniaudio and Steam
-Audio; every other build's engine is always silent, so the Linux build has no
-audio dependency (ADR-0010).
+audio device, run unchanged. The client links miniaudio and Steam Audio on
+Windows and Linux (`AUGUSTA_AUDIO_OUTPUT` follows `AUGUSTA_CLIENT`); on Linux
+miniaudio loads PipeWire, PulseAudio or ALSA at runtime, whichever the system
+has, so the client links none of them. A build without the client, such as the
+server image's, has an engine that is always silent and no audio dependency, and
+`augustad` links no audio in any build (ADR-0010). No test loads a sound, so the
+tests a client build links with an output device are silent too.
 
 ## Consequences
 

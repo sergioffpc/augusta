@@ -1,22 +1,40 @@
 name: Nightly jobs
 # The checks too slow or noisy for every pull request (ADR-0013), called by
-# nightly.yml. They live here rather than there so a scheduled run uses
-# develop's copy of them: a change to how develop builds or tests lands with
-# the jobs that run it, not when main next catches up.
+# nightly.yml every night and by release.yml on every release, which publishes
+# only if they all pass. They live here rather than in nightly.yml so a
+# scheduled run uses develop's copy of them: a change to how develop builds or
+# tests lands with the jobs that run it, not when main next catches up.
 on:
   workflow_call:
     inputs:
       ref:
-        description: The branch every job checks out and tests.
+        description: >
+          The branch, or a release's commit, every job checks out and tests.
+          Benchmarks are recorded only for develop.
         required: true
         type: string
+      release:
+        description: >
+          Whether release.yml is the caller. Then a failure opens no
+          nightly-failure issue (the release's own run is where it shows),
+          sbom-scan scans the SBOMs the caller uploaded as sbom-<executable>
+          artifacts before the call instead of the latest release's, and the
+          fuzz corpus is not saved.
+        required: false
+        type: boolean
+        default: false
 # No workflow-level permissions: in a called workflow they are also the most
 # any of its jobs may ask for, which would keep benchmarks from pushing and
 # report-failure from writing issues. Each job names its own instead, within
-# what nightly.yml's calling job grants.
+# what the calling job grants: nightly.yml's and release.yml's, each of which
+# must grant them all.
 env:
   SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
+# Every job but client-x64-linux configures with the client off
+# (AUGUSTA_CLIENT): each checks what augustad and the shared core are built
+# from, as ci.yml's Linux jobs do, and client-x64-linux alone builds the Linux
+# client.
 jobs:
   property-tests:
     runs-on: ubuntu-26.04
@@ -24,7 +42,7 @@ jobs:
       contents: read
       # Deleting superseded cache entries (.github/actions/prune-cache).
       actions: write
-    # See ci.yml's server job for why this isn't the NuGet feed.
+    # See ci.yml's server-x64-linux job for why this isn't the NuGet feed.
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
     steps:
@@ -34,7 +52,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
@@ -75,7 +93,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
-        run: cmake --preset linux-fuzz
+        run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
@@ -104,15 +122,19 @@ jobs:
           "build/x64-linux-fuzz/tests/fuzz/augusta_${{ matrix.target }}_fuzz" -merge=1 minimized "$CORPUS"
           rm -rf "$CORPUS"
           mv minimized "$CORPUS"
+      # Not from a release, tag or dry run: a night restores only main's
+      # caches (scheduled runs are on main, the default branch), never a tag's
+      # or a branch's, so the entry would be no later night's corpus, only
+      # room taken from the caches that are. A release restores main's in turn.
       - name: Save the corpus
-        if: success()
+        if: success() && !inputs.release
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CORPUS }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
       # Each night's corpus holds the one before, minimized: the older entries
       # are superseded.
-      - if: success()
+      - if: success() && !inputs.release
         uses: ./.github/actions/prune-cache
         with:
           prefix: fuzz-corpus-${{ matrix.target }}-
@@ -147,7 +169,7 @@ jobs:
         # "unexpected memory mapping" before a test runs.
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Configure (TSan)
-        run: cmake --preset linux-tsan
+        run: cmake --preset linux-tsan -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
@@ -182,7 +204,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
@@ -214,11 +236,8 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
       - uses: ./.github/actions/setup-linux-build
-        with:
-          # llvm-profdata and llvm-cov, the same version as the clang.
-          extra-packages: llvm
       - name: Configure (coverage)
-        run: cmake --preset linux-coverage
+        run: cmake --preset linux-coverage -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
@@ -245,13 +264,116 @@ jobs:
           name: coverage-report
           path: coverage-report/
           if-no-files-found: ignore
+  client-x64-linux:
+    # The Linux client (ADR-0006), which no pull request builds: the linux
+    # preset with the client on, as a Linux developer builds it, and its whole
+    # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
+    # virtual X server. So a change that breaks augustac on Linux, or the shared
+    # code under the client's build, surfaces within a night. Then the same
+    # suite again under ASan and UBSan (linux-san), since no pull request's
+    # sanitizers job builds the client or the Renderer.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+      - uses: ./.github/actions/setup-linux-build
+        with:
+          # The client's system packages, as scripts/bootstrap/linux.sh
+          # installs them (which says why each).
+          extra-packages: >-
+            libgl-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libvulkan1 mesa-vulkan-drivers xauth xvfb
+          # It installs the client's ports, which no other Linux job does and
+          # whose saves would drop: a cache of its own.
+          vcpkg-cache-prefix: vcpkg-bincache-client-linux-
+      - name: Configure
+        run: cmake --preset linux
+      - uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset linux --target all augusta_tests
+      - name: Check that the smoke test is built
+        # tests/CMakeLists.txt leaves it out, with only a configure message,
+        # where it finds no lavapipe.
+        run: test -x build/x64-linux/tests/augusta_client_renderer_smoke_tests
+      - name: Test
+        id: test
+        # In a virtual X server, where the smoke test opens its hidden window:
+        # GLFW picks X11, as there is no Wayland session.
+        run: xvfb-run --auto-servernum ctest --preset linux --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
+      # The sanitized pass in this job rather than a matrix entry of its own:
+      # it reuses this job's vcpkg cache and uploads in its junit artifact.
+      - name: Configure (ASan + UBSan)
+        # Also after a failing test above, so it hides no sanitizer report.
+        id: configure-san
+        if: |
+          !cancelled() && (success() || steps.test.outcome == 'failure')
+        run: cmake --preset linux-san
+      - name: Build (ASan + UBSan)
+        id: build-san
+        if: |
+          !cancelled() && steps.configure-san.outcome == 'success'
+        run: cmake --build --preset linux-san --target all augusta_tests
+      - name: Check that the sanitized smoke test is built
+        id: check-san
+        if: |
+          !cancelled() && steps.build-san.outcome == 'success'
+        run: test -x build/x64-linux-san/tests/augusta_client_renderer_smoke_tests
+      - name: Test (ASan + UBSan)
+        # A report fails the test it came from: ASan's and LeakSanitizer's do
+        # by themselves, UBSan's from cmake/ubsan_default_options.cpp.
+        if: |
+          !cancelled() && steps.check-san.outcome == 'success'
+        run: xvfb-run --auto-servernum ctest --preset linux-san --output-junit "$GITHUB_WORKSPACE/junit/client-linux-san.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-client-linux
+          path: junit/
+          if-no-files-found: ignore
+      - name: Check the client's tarball
+        # What each release publishes (release.yml): the folder the client's
+        # install rules stage, tarred, with augustac started from its extracted
+        # copy with only the system's libraries, what it links held to the
+        # allowlist, and its debug info matched by build ID
+        # (scripts/stage-client.sh, ADR-0058).
+        run: scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+      - name: Run the client on a clean Ubuntu 26.04
+        # As release.yml does: the extracted tarball on Ubuntu's base image
+        # alone, read-only and offline, so none of the runner's libraries can
+        # stand in for one the folder lacks.
+        run: |
+          mkdir "$RUNNER_TEMP/clean"
+          tar -C "$RUNNER_TEMP/clean" -xzf "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+          docker run --rm --network none -v "$RUNNER_TEMP/clean/augustac:/augustac:ro" \
+            ubuntu:26.04 /augustac/augustac --version
+      - name: Check the client's SBOM
+        # release.yml's SBOM of it, and the CPEs sbom-scan adds to it, as
+        # ci.yml checks the Windows client's: a dependency the build gains with
+        # neither a CPE nor a reason fails here rather than the release.
+        run: |
+          python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
+            --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --git-package third_party/nvtx \
+            build/x64-linux/vcpkg_installed/x64-linux > "$RUNNER_TEMP/augustac.spdx.json"
+          python3 scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the
     # nights before kept on the benchmarks branch, one history per runner CPU
     # model. A shared runner is noisy, so only a benchmark more than twice as
     # slow as the last night on the same CPU fails the job, which opens the
     # nightly-failure issue like any other; the slower result is recorded all
-    # the same, so the next night compares with it.
+    # the same, so the next night compares with it. A release's ref is a
+    # commit, never develop, so it is compared on the same threshold and
+    # recorded nowhere: the history stays develop's nights.
     runs-on: ubuntu-26.04
     permissions:
       # Pushing the night's results to the benchmarks branch.
@@ -266,7 +388,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_benchmarks
@@ -329,7 +451,9 @@ jobs:
   sbom-scan:
     # The latest release's executables, by their SBOMs, against the night's
     # vulnerability data: a CVE published after the release fails here with
-    # nothing rebuilt. Each SBOM gets its dependencies' CPEs first
+    # nothing rebuilt. From a release (inputs.release), the executables that
+    # release is about to publish instead, by the SBOMs its own build jobs
+    # uploaded. Each SBOM gets its dependencies' CPEs first
     # (scripts/sbom-cpes.py), which grype matches against the NVD; no
     # database has advisories for the vcpkg purls the SBOM names them by.
     # augustad-linux-arm64's SBOM names the same ports at the same versions as
@@ -341,7 +465,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        executable: [augustac-windows-x64, augustad-linux-x64]
+        executable: [augustac-windows-x64, augustac-linux-x64, augustad-linux-x64]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -349,11 +473,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
-      - name: Download the SBOM
-        run: gh release download --pattern "${{ matrix.executable }}.spdx.json"
+      - name: Download the latest release's SBOM
+        # An executable no release has published yet (augustac-linux-x64
+        # before the first release that ships it) has nothing to scan: a
+        # notice, not a failure. A release publishes all its assets or none,
+        # so once one has it, every later one does.
+        id: latest
+        if: ${{ !inputs.release }}
+        run: |
+          sbom="${{ matrix.executable }}.spdx.json"
+          # Listed first, so a gh failure fails the step rather than reading
+          # as an asset not published.
+          assets="$(gh release view --json assets --jq '.assets[].name')"
+          if ! grep -qxF "$sbom" <<< "$assets"; then
+            echo "::notice::The latest release publishes no $sbom: nothing to scan."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release download --pattern "$sbom"
+      - name: Download this run's SBOM
+        if: inputs.release
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-${{ matrix.executable }}
       - name: Add the CPEs
+        if: steps.latest.outputs.published != 'false'
         run: python3 scripts/sbom-cpes.py "${{ matrix.executable }}.spdx.json" > sbom.spdx.json
       - name: Scan
+        if: steps.latest.outputs.published != 'false'
         # Fails on a high or critical CVE, fixed or not - unlike the server
         # image's scan (ci.yml): a CPE match comes from the NVD, which gives
         # most ranges as "up to and including" with no fixed version, so only
@@ -367,11 +514,13 @@ jobs:
           output-format: table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
-    # every ctest run above, a row per test and a column per job, and the
-    # coverage job's llvm-cov report. Uploaded as a run artifact; the
-    # documentation site publishes the latest scheduled night's under tests/
-    # (ADR-0046). Also after a failing test, which is when it is read.
-    needs: [property-tests, tsan, netcode, coverage]
+    # every ctest run above, a row per test and a column per run
+    # (client-x64-linux has two, linux and linux-san), and the coverage job's
+    # llvm-cov report. Uploaded as a run artifact; the documentation site
+    # publishes the latest scheduled night's under tests/ (ADR-0046), so a
+    # release's stays an artifact of its run. Also after a failing test, which
+    # is when it is read.
+    needs: [property-tests, tsan, netcode, coverage, client-x64-linux]
     if: always()
     runs-on: ubuntu-26.04
     permissions:
@@ -400,10 +549,11 @@ jobs:
           name: test-report
           path: test-report/
   # A new nightly job adds itself to `needs` here, and nothing else: this job
-  # reports on every job it waits for.
+  # reports on every job it waits for, and release.yml waits for the whole
+  # call. Not from a release (inputs.release), whose failure fails its run.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, benchmarks, sbom-scan, test-report]
-    if: always() && contains(needs.*.result, 'failure')
+    needs: [property-tests, fuzz, tsan, netcode, coverage, client-x64-linux, benchmarks, sbom-scan, test-report]
+    if: always() && !inputs.release && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:
       issues: write

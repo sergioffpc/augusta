@@ -2,6 +2,82 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 3.2.0 - 2026-10-15
+
+### Features
+
+- **chart:** add the Logs dashboard
+- **renderer:** add an NVRHI renderer that clears the frame
+- **renderer:** give the NVRHI renderer Falcor's window and input
+- **renderer:** draw the scene and remote players on NVRHI
+- **renderer:** draw the debug HUD in the NVRHI renderer with Dear ImGui
+- **renderer:** keep optional Aftermath crash dumps on NVRHI
+- **renderer:** draw combat effects and the overlay on NVRHI
+- **client:** render augustac through NVRHI and drop Falcor from its zip
+- **renderer:** render through NVRHI's Vulkan backend
+- **renderer:** write Aftermath GPU crash dumps on the Vulkan device
+- **build:** build the client, its Renderer and their tests on Linux
+- **pack:** cook textures to KTX2 through libktx
+- **pack:** cook every texture with its full mip chain
+- **release:** check the Linux client's tarball in the staging script
+- **build:** stage the Linux client with its debug info and $ORIGIN
+- **client:** find the Aftermath SDK on Linux too
+
+### Bug Fixes
+
+- **renderer:** build the NVRHI renderer on Windows alone
+- **renderer:** drop the Falcor HUD's unused renderer.h include
+- **scripts:** drop the duplicate shader-compiler CPE exemptions
+- **build:** compile ASan's options into every ASan binary
+- **server:** lint crash.cpp clean under libc++, drop stray fuzz inputs
+- **renderer:** start a Debug client without the validation layer
+- **tests:** give the renderer smoke test its whole Vulkan environment
+- **tests:** point lavapipe's ICD manifest at vcpkg's installed driver
+- **pack:** address review of the texture mip chain
+- **physics:** include PhysX's headers one by one, not PxPhysicsAPI.h
+- **release:** fail the Linux staging check when it cannot read a file
+- **build:** halt every UBSan build on its first report
+- **cluster:** trust the MacBook's new signing key
+- **bootstrap:** add missing Build Tools components on Windows
+
+### Refactoring
+
+- **renderer:** log NVRHI's messages and describe either renderer
+- **renderer:** build the Renderer's vertices outside Falcor's types
+- **renderer:** push key and button events through one helper
+- **renderer:** keep the Aftermath SDK's layout in one file
+- **renderer:** fix comments the switch to NVRHI left stale
+- **renderer:** remove Falcor from the repository
+- drop the last statements of a Windows-only client
+- **build:** split debug info through a function augustac can share
+
+### Documentation
+
+- **release:** state that releases run the nightly's jobs
+- **adr:** state the renderer on Vulkan
+- state the Vulkan renderer's decisions, not its history
+- state the client on Windows and Linux
+- **adr:** bake textures to KTX2 through libktx
+- state the Linux client release and its glibc baseline
+- **agents:** add the engineering-review skill and its profile
+- **agents:** map the triage roles to this repo's labels
+- **reviews:** add the first full-repository review and its ledger
+
+### Tests
+
+- **renderer:** run the GLFW key tests as a client test
+- **server:** time the transport-failure race from how long Run takes
+
+### Build
+
+- **agent:** drop the CMP0148 default that never took effect
+- **linux:** build with LLVM's toolchain alone and debug with lldb
+- **client:** refuse a zip holding a development-only library
+- keep lavapipe out of release builds
+- restore the Aftermath SDK's detection, unwired
+- **windows:** compile with clang-cl and link with lld-link
+- **windows:** address review of the clang-cl switch
+- **windows:** have CMake Tools load the developer environment
 ## 3.1.0 - 2026-10-12
 
 ### Features

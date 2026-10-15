@@ -8,7 +8,9 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
 - `UsdGeomMesh` prims: points/normals/UVs/indices read via the OpenUSD API
   (ADR-0016), optimized with meshoptimizer, written as one mesh blob.
 - Textures referenced by `UsdShadeMaterial`/`UsdUVTexture`: compressed to
-  BC7/BC5/BC4 DDS via DirectXTex (ADR-0017), one blob each.
+  BC7/BC5/BC4 KTX2 via libktx (ADR-0017), one blob each: the KTX2 file as a u32
+  byte count, then its bytes, and nothing else. Its block format is read from
+  the KTX2 header's `VkFormat`, not stored again beside it.
 - Lua scripts (ADR-0022, ADR-0039): each script the scenario's manifest names,
   stored as its text with no framing, one blob each. Written to the server pack
   only (ADR-0019): a client is sent the values a script decides, never the

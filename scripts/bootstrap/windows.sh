@@ -115,6 +115,38 @@ install_formatters() {
   add_to_path User "${bin}"
 }
 
+# Adds Visual Studio components to the latest Build Tools install that lacks
+# any of them: winget_install skips an existing install, so a component added
+# here after a machine was bootstrapped would otherwise never reach it.
+# Arguments:
+#   The component and workload ids.
+add_build_tools_components() {
+  local installer vs_install
+  installer="$(windows_dir 'ProgramFiles(x86)')/Microsoft Visual Studio/Installer"
+  if [[ -n "$("${installer}/vswhere.exe" -latest -products '*' -requires "$@" \
+    -property installationPath | tr -d '\r')" ]]; then
+    return
+  fi
+  vs_install="$("${installer}/vswhere.exe" -latest -products '*' \
+    -property installationPath | tr -d '\r')"
+  echo "Adding $* to ${vs_install}..."
+  # No --wait: that is the bootstrapper's (winget's vs_buildtools.exe);
+  # the installer's own setup.exe rejects it, and returns once it is done.
+  local args=(modify --installPath "${vs_install}" --quiet --norestart
+    --includeRecommended)
+  local component
+  for component in "$@"; do
+    args+=(--add "${component}")
+  done
+  # Its output is silenced: it logs the channel refreshes --quiet cancels as
+  # errors, which they are not. Its real logs are dd_setup_* in %TEMP%.
+  if ! "${installer}/setup.exe" "${args[@]}" >/dev/null; then
+    echo "bootstrap: the Visual Studio Installer failed; see its" \
+      "dd_setup_*.log files in $(windows_dir TEMP)." >&2
+    exit 1
+  fi
+}
+
 install_toolchain() {
   if ! net session >/dev/null 2>&1; then
     echo "bootstrap: run Git Bash as Administrator (VS Build Tools and the" \
@@ -122,8 +154,13 @@ install_toolchain() {
     exit 1
   fi
 
+  # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
+  # Vulkan driver) builds on, needs it.
+  local vs_components=(Microsoft.VisualStudio.Workload.VCTools
+    Microsoft.VisualStudio.Component.VC.ATL)
   winget_install Microsoft.VisualStudio.BuildTools --override \
-    "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+    "--wait --quiet --add ${vs_components[0]} --add ${vs_components[1]} --includeRecommended"
+  add_build_tools_components "${vs_components[@]}"
   winget_install Microsoft.WindowsSDK.10.0.26100
   winget_install Kitware.CMake
   winget_install Ninja-build.Ninja
@@ -140,12 +177,15 @@ install_toolchain() {
   # Doxygen builds the documentation site's C++ API reference (`make docs`,
   # ADR-0046), as the docs workflow does with the runner's own.
   winget_install DimitriVanHeesch.Doxygen
-  # clang-format and clang-tidy, see docs/ENGINEERING.md, Code Quality. Back
-  # the .githooks/pre-commit and .githooks/pre-push hooks. Pinned to the clang
-  # CI runs (the ubuntu-26.04 runner's distro package): another major formats
-  # and lints differently, so the hooks would disagree with CI's gates. Bump it
-  # together with the runner image. The pin keeps `winget upgrade` on that
-  # major.
+  # LLVM: clang-cl and lld-link, which the windows presets compile and link
+  # with (ADR-0008), taking the MSVC STL, the CRT and the Windows SDK from the
+  # Build Tools above, and clang-format and clang-tidy, see docs/ENGINEERING.md,
+  # Code Quality, which back the .githooks/pre-commit and .githooks/pre-push
+  # hooks. Pinned to the clang CI runs (the ubuntu-26.04 runner's distro
+  # package, and the version .github/actions/setup-windows-llvm installs):
+  # another version compiles, formats and lints differently, so a local build
+  # and the hooks would disagree with CI's gates. Bump it together with the
+  # runner image. The pin keeps `winget upgrade` on that major.
   winget_install_pinned LLVM.LLVM 21.1.8 '21.*'
   # kubectl and helm, for the server's k3s cluster and its chart
   # (charts/augustad), and with flux (install_formatters) the cluster
@@ -179,19 +219,23 @@ install_toolchain() {
   # clang-format's absence only shows up as ".githooks/pre-commit: not found
   # on PATH - skipping" at commit time, which is easy to miss and leaves every
   # local commit unformatted. Check now, once, instead.
-  require_commands cmake ninja make git sccache uv clang-format clang-tidy \
-    doxygen yamlfmt stylua taplo luacheck kubectl helm flux
+  require_commands cmake ninja make git sccache uv clang-cl lld-link \
+    clang-format clang-tidy doxygen yamlfmt stylua taplo luacheck kubectl helm \
+    flux
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
   vs_install="$("${program_files_x86}/Microsoft Visual Studio/Installer/vswhere.exe" \
     -latest -products '*' \
     -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+    Microsoft.VisualStudio.Component.VC.ATL \
     -property installationPath | tr -d '\r')"
   if [[ -z "${vs_install}" ]]; then
     echo "bootstrap: Visual Studio Build Tools is installed, but its VC C++" \
-      "toolset is missing. Add the Microsoft.VisualStudio.Workload.VCTools" \
-      "workload and re-run this script." >&2
+      "toolset or ATL is missing. Add the" \
+      "Microsoft.VisualStudio.Workload.VCTools workload and the" \
+      "Microsoft.VisualStudio.Component.VC.ATL component and re-run this" \
+      "script." >&2
     exit 1
   fi
   local sdk_include="${program_files_x86}/Windows Kits/10/Include/10.0.26100.0"
@@ -202,13 +246,10 @@ install_toolchain() {
   fi
 }
 
-# vcpkg and NVIDIA Falcor (ADR-0009, pinned per ADR-0025 - plain upstream, no
-# fork) are pinned git submodules; --recursive also pulls in Falcor's own
-# nested submodules (glfw, imgui, ...). src/modules/renderer/CMakeLists.txt's
-# own build step applies cmake/patches/falcor.patch and pulls Falcor's
-# remaining packman-fetched binary dependencies lazily, on first build.
+# vcpkg and NVTX are pinned git submodules (ADR-0025 - plain upstream, no
+# fork).
 update_submodules() {
-  git submodule update --init --recursive
+  git submodule update --init third_party/vcpkg third_party/nvtx
 }
 
 bootstrap_vcpkg() {
@@ -217,17 +258,16 @@ bootstrap_vcpkg() {
 
 bootstrap_done() {
   # NVIDIA Nsight Aftermath SDK (optional, GPU crash dump capture - see
-  # src/modules/renderer/CMakeLists.txt, mirroring its own detection).
+  # cmake/Aftermath.cmake, mirroring its own detection).
   # Autodetected from an installed Nsight Graphics, which bundles it as a
   # component, so this only reminds you if there is none. Builds work fine
-  # without it (FALCOR_HAS_AFTERMATH=0).
+  # without it.
   if ! compgen -G "$(windows_dir ProgramFiles)/NVIDIA Corporation/Nsight Graphics */SDKs/NsightAftermathSDK/*/include/GFSDK_Aftermath.h" \
     >/dev/null; then
     echo "No NVIDIA Nsight Graphics install with a bundled Aftermath SDK was" \
-      "found - GPU crash dumps stay disabled. To enable: install Nsight" \
-      "Graphics (developer.nvidia.com/nsight-graphics), which bundles the" \
-      "Aftermath SDK as a component; augusta picks it up automatically on" \
-      "the next cmake reconfigure."
+      "found - GPU crash dumps (ADR-0059) need it. To have it: install" \
+      "Nsight Graphics (developer.nvidia.com/nsight-graphics), which bundles" \
+      "the Aftermath SDK as a component."
   fi
   echo "bootstrap: done. Open a new terminal (this one's PATH predates the" \
     "tools just installed) before running make."

@@ -11,8 +11,8 @@
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits)](https://www.conventionalcommits.org)
 
 A realistic, physics-driven multiplayer FPS simulator engine —
-server-authoritative, with a Windows client and a headless Linux dedicated
-server.
+server-authoritative, with a Windows and Linux client and a headless Linux
+dedicated server.
 
 ## Contents
 
@@ -29,8 +29,8 @@ server.
 ## Highlights
 
 - **Server-authoritative** — the Linux dedicated server is the single source of
-  truth for all gameplay state; the Windows client predicts locally and
-  reconciles against authoritative snapshots (no exact replay).
+  truth for all gameplay state; the client predicts locally and reconciles
+  against authoritative snapshots (no exact replay).
 - **Physics-based ballistics** — real bullet drop and travel time, not hitscan;
   hit location and body part determine damage (no regenerating health).
 - **Match-based, tactical** — no respawn until the match ends; movement includes
@@ -44,6 +44,12 @@ server.
 ## Status
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
+
+Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
+the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
+(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
+its folder. The Linux client needs the glibc of Ubuntu 26.04 or newer, a Vulkan
+1.3 driver, and an X11 or Wayland session.
 
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
@@ -100,7 +106,7 @@ configure the Conventional Commits `commit-msg` hook.
 **k3s node (the cluster's server, Debian 13):**
 [scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
 runs `develop` and `staging`, through sudo, without a checkout: the crash-core
-handler, Podman and gdb to read a core, the server's `augusta` user, the
+handler, Podman and lldb to read a core, the server's `augusta` user, the
 asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
 by key only, unattended security updates, auditd), k3s at the cluster's release,
 and Flux, which then installs the monitoring stack and both environments from

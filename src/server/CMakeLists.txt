@@ -209,19 +209,9 @@ target_link_libraries(
 # linked straight into it fails the configure (tests/server_boundary.cmake).
 augusta_set_module_scope(augustad SERVER_ONLY)
 
-# On Linux the debug info is split off into augustad.debug beside it (ADR-0047):
-# the binary keeps its symbol table, which the crash handler symbolizes with,
-# and a .gnu_debuglink naming the file. The build ID is what matches a core
-# dump to the binary and its debug info.
+# On Linux the debug info is split off into augustad.debug beside it (ADR-0047).
 if(NOT WIN32)
-  target_link_options(augustad PRIVATE -Wl,--build-id=sha1)
-  add_custom_command(
-    TARGET augustad
-    POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} --only-keep-debug $<TARGET_FILE:augustad> $<TARGET_FILE:augustad>.debug
-    COMMAND ${CMAKE_OBJCOPY} --strip-debug --add-gnu-debuglink=$<TARGET_FILE:augustad>.debug $<TARGET_FILE:augustad>
-    VERBATIM
-  )
+  augusta_split_debug_info(augustad)
 endif()
 
 # `cmake --install` puts augustad in the prefix's bin directory (DESTDIR

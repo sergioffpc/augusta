@@ -1,6 +1,7 @@
 #include "augusta/client_config.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -87,9 +88,10 @@ TEST(ReadClientRunTest, AReenactmentAloneIsPlayed) {
 }
 
 TEST(ReadClientRunTest, TheClientsOptionsAreItsReplayOnes) {
-  const char* const args[] = {"augustac", "--replay", "a.capture"};
+  const std::array<const char*, 3> args = {"augustac", "--replay", "a.capture"};
   const auto command_line =
-      augusta::config::ParseCommandLine(3, args, "augustac", "augustac.yaml", "1.2.3", augusta::config::kClientOptions);
+      augusta::config::ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml",
+                                        "1.2.3", augusta::config::kClientOptions);
 
   ASSERT_TRUE(command_line.has_value());
   EXPECT_EQ(ReadClientRun(*command_line)->capture, "a.capture");
@@ -296,7 +298,7 @@ TEST(ParseClientConfigTest, RejectsAKeyWithNoValue) {
 }
 
 TEST(ParseClientConfigTest, RejectsATopLevelThatIsNotAMapping) {
-  for (const auto text : {"- a\n- b\n", "just a string\n", ""}) {
+  for (const auto* const text : {"- a\n- b\n", "just a string\n", ""}) {
     const auto config = ParseClientConfig(text, kFileDir);
 
     ASSERT_FALSE(config.has_value()) << text;
@@ -340,7 +342,7 @@ TEST(ParseClientConfigTest, ReadsTheMouseSensitivity) {
 }
 
 TEST(ParseClientConfigTest, RejectsASensitivityThatIsNotAFiniteNumberAboveZero) {
-  for (const auto value : {"0", "-1", "fast", "inf"}) {
+  for (const auto* const value : {"0", "-1", "fast", "inf"}) {
     const auto config = ParseClient(std::string("input:\n  mouse_sensitivity: ") + value + "\n");
 
     ASSERT_FALSE(config.has_value()) << value;
@@ -423,7 +425,7 @@ TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
 
 // Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAKeysValueThatIsNotAMapping) {
-  for (const auto value : {"input:\n  keys: W\n", "input:\n  keys: [W, S]\n"}) {
+  for (const auto* const value : {"input:\n  keys: W\n", "input:\n  keys: [W, S]\n"}) {
     const auto config = ParseClient(value);
 
     ASSERT_FALSE(config.has_value()) << value;
@@ -453,7 +455,7 @@ TEST(ParseClientConfigTest, FireOnTheButtonAdsStillHasIsBoundTwice) {
 
 TEST(ParseClientConfigTest, AnEmptySectionSetsNothing) {
   // A section written with every entry left out or commented out.
-  for (const auto value : {"input:\n", "input:\n  keys:\n", "network:\nlogging:\n"}) {
+  for (const auto* const value : {"input:\n", "input:\n  keys:\n", "network:\nlogging:\n"}) {
     const auto config = ParseClient(value);
 
     ASSERT_TRUE(config.has_value()) << value;
@@ -464,7 +466,7 @@ TEST(ParseClientConfigTest, AnEmptySectionSetsNothing) {
 
 TEST(ParseClientConfigTest, RejectsADottedNameInPlaceOfASection) {
   // Otherwise `content.pack: b` would stand in for (or silently shadow) `content: {pack: b}`.
-  for (const auto value : {"network.server_address: x\n", "input:\n  keys.sprint: Space\n"}) {
+  for (const auto* const value : {"network.server_address: x\n", "input:\n  keys.sprint: Space\n"}) {
     const auto config = ParseClient(value);
 
     ASSERT_FALSE(config.has_value()) << value;
@@ -581,7 +583,7 @@ class LoadConfigTest : public ::testing::Test {
 
   void TearDown() override { std::filesystem::remove_all(directory_); }
 
-  std::filesystem::path Write(std::string_view name, std::string_view contents) const {
+  [[nodiscard]] std::filesystem::path Write(std::string_view name, std::string_view contents) const {
     const auto path = directory_ / name;
     std::ofstream(path, std::ios::binary) << contents;
     return path;

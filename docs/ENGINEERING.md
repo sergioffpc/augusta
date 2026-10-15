@@ -54,6 +54,12 @@ decisions already made in ARCHITECTURE.md:
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match the
   client/server platform split exactly.
+- **Job names:** a job that builds a deliverable (the client, the server, the
+  server image) for one platform ends in that platform's vcpkg triplet,
+  `<name>-<arch>-<os>`: `client-x64-windows`, `client-x64-linux`,
+  `server-x64-linux`, `container-publish-arm64-linux`. A matrix job names each
+  of its instances that way. A job that builds no single platform's deliverable
+  (`format`, `changes`, `container-index`) has no suffix.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
@@ -74,8 +80,10 @@ decisions already made in ARCHITECTURE.md:
     1. `clang-format` check, alone in its own fast job — gates everything below
        (`needs:`), so a formatting slip fails in seconds instead of after a full
        Windows + Linux + sanitizers build
-    2. Build + test the client on a Windows runner (MSVC), with the server's
-       development-only Windows x64 build (NFR-04)
+    2. Build + test the client on a Windows runner (`clang-cl` and `lld-link`,
+       ADR-0008), with the server's development-only Windows x64 build (NFR-04).
+       Plus `clang-tidy` with the full profile on the client, the Renderer and
+       their tests, which the Linux run below builds without
     3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
        x86-64, one of its two production platforms: Linux arm64 is built only
        for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google
@@ -87,7 +95,8 @@ decisions already made in ARCHITECTURE.md:
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
-    5. Compile with a strict warning set, treated as errors
+    5. Compile with a strict warning set, treated as errors: clang's
+       `-Wall -Wextra -Werror` on both platforms (`/W4 /WX` to `clang-cl`)
     6. the `tools` job, when `tools/` changed: on a Windows runner, build the
        asset cooker's native module and run its pytest suite, which also
        requires that cooking the example scenario still gives the golden packs
@@ -99,19 +108,19 @@ decisions already made in ARCHITECTURE.md:
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
        every push, and on a pull request when the image or chart changed.
-       `container-publish`, on a push only, waits for both it and the server
-       job, rebuilds the image from the layer cache `container-verify` just
-       wrote (every stage but `rootfs`, ADR-0054, is a cache hit), scans it
-       again, and only then pushes it with its `-debuginfo` image and
-       attestations - so a published image is always a scanned one, of a commit
-       whose tests passed. On a push to `main` alone, whose image is the one a
-       release runs, `container-publish-arm64` builds, scans and pushes the
-       arm64 image too, natively on an arm64 runner, as `sha-<12>-arm64` with
-       its own debug info and attestations, and `container-index` then makes
-       `sha-<12>`, `main` and `sha-<12>-debuginfo` the index of both
-       architectures (NFR-04). On a push to `develop` alone, `chart-publish`
-       then pushes the chart, versioned `<chart version>+<12>`, to
-       `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
+       `container-publish-x64-linux`, on a push only, waits for both it and the
+       server-x64-linux job, rebuilds the image from the layer cache
+       `container-verify` just wrote (every stage but `rootfs`, ADR-0054, is a
+       cache hit), scans it again, and only then pushes it with its `-debuginfo`
+       image and attestations - so a published image is always a scanned one, of
+       a commit whose tests passed. On a push to `main` alone, whose image is
+       the one a release runs, `container-publish-arm64-linux` builds, scans and
+       pushes the arm64 image too, natively on an arm64 runner, as
+       `sha-<12>-arm64` with its own debug info and attestations, and
+       `container-index` then makes `sha-<12>`, `main` and `sha-<12>-debuginfo`
+       the index of both architectures (NFR-04). On a push to `develop` alone,
+       `chart-publish` then pushes the chart, versioned `<chart version>+<12>`,
+       to `ghcr.io/sergioffpc/charts/augustad`, signs it, and tags it `develop`:
        what the `develop` environment runs (ADR-0056)
     - Dependency restore: `vcpkg install` (manifest mode) before the build step,
       both runners. Binary cache via a GitHub Packages NuGet feed on Windows
@@ -120,49 +129,50 @@ decisions already made in ARCHITECTURE.md:
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job, saved only when a job built a package it didn't restore -
       except the `tools` job's Linux leg, whose `tools/pack/native` manifest
-      keeps an entry of its own. vcpkg builds its ports with the system compiler
-      (`/usr/bin/c++`, Ubuntu's g++) for the default `x64-linux` triplet; the
-      presets' clang compiles the project alone. So the entry's packages are the
-      same whatever preset a job configures, and the server image's dependency
-      layer, built on the same Ubuntu, restores them too: the container jobs
-      mount the entry read-only into its `vcpkg install`, and it builds from
-      source only the packages the entry lacks.
-    - Falcor is not built on every run: the `falcor-prebuilt` workflow builds it
-      once for each combination of submodule commit, `falcor.patch` and Falcor
-      features, and publishes it as an asset of a `falcor-*` release, which the
-      Windows builds download at configure time (`cmake/FalcorPrebuilt.cmake`).
-      A build with no matching package — a pull request that changes Falcor, or
-      an Aftermath-enabled local build — builds Falcor from source.
+      keeps an entry of its own. vcpkg builds its ports through the overlay
+      `x64-linux` triplet with the project's LLVM toolchain (ADR-0008), which no
+      preset changes. So the entry's packages are the same whatever preset a job
+      configures, and the server image's dependency layer, built on the same
+      Ubuntu, restores them too: the container jobs mount the entry read-only
+      into its `vcpkg install`, and it builds from source only the packages the
+      entry lacks.
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
-      binaries, packman's downloads for a Falcor built from source, sccache
-      objects. The server image's Docker layers live in GHCR
-      (`augustad:buildcache`) instead: at several GB they would evict the rest,
-      and every pull request would rebuild its dependencies from source. Only a
-      push's `container-verify` writes them; a pull request reads them, and a
-      fork's reads nothing.
+      binaries and sccache objects. The server image's Docker layers live in
+      GHCR (`augustad:buildcache`) instead: at several GB they would evict the
+      rest, and every pull request would rebuild its dependencies from source.
+      Only a push's `container-verify` writes them; a pull request reads them,
+      and a fork's reads nothing.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
-  high case count, a `llvm-cov` coverage report, and the hot-path
-  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
-  the first night if absent) and charted on the documentation site; a failure, a
-  benchmark more than twice as slow as the night before among them, opens or
-  updates a `nightly-failure` issue (ADR-0013).
+  high case count, a `llvm-cov` coverage report, the Linux client's build and
+  tests, again under ASan and UBSan (`client-x64-linux`: no pull request builds
+  it), and the hot-path micro-benchmarks, whose history is kept on the
+  `benchmarks` branch (started by the first night if absent) and charted on the
+  documentation site; a failure, a benchmark more than twice as slow as the
+  night before among them, opens or updates a `nightly-failure` issue
+  (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
-- **Releases:** a separate workflow, triggered only on `v*` tags, builds
+- **Releases:** a separate workflow, triggered by `v*` tags, builds
   Release-config client/server binaries, runs the tests and the asset pipeline
-  check against them, and attaches them to a GitHub Release, whose notes are
+  check against them, runs every nightly job on the tagged commit, and attaches
+  the binaries to a GitHub Release only once all of it passes, its notes
   generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic. The client ships
-  as `augustac-windows-x64.zip`, its whole runtime folder, never as a lone
-  `.exe`: Falcor is a DLL that reads its shaders, data and plugins from its
-  folder at runtime, so the client cannot be linked statically, and it carries
-  the MSVC runtime so it needs no redistributable. A release is published only
-  once its unzipped client runs `augustac --version` and prints the tag's
-  version (`scripts/stage-client.sh`, ADR-0058). That catches a DLL it imports
-  that is missing, not what Falcor loads once it starts.
+  cutting a release is a deliberate tag rather than automatic (ADR-0013,
+  ADR-0026). Started by hand on a branch, the same workflow is a dry run that
+  publishes nothing: how a change to it, or to the nightly jobs, is tried before
+  it merges (`gh workflow run release.yml --ref <branch>`). The client ships as
+  `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
+  some of its dependencies ship only as DLLs, so the client cannot be linked
+  statically, and it carries the MSVC runtime so it needs no redistributable. A
+  release is published only once its unzipped client runs `augustac --version`
+  and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
+  catches a DLL it imports that is missing, not one loaded only once it runs.
+  The Linux client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder
+  checked the same way, and for linking nothing from the system beyond an
+  allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -191,9 +201,9 @@ decisions already made in ARCHITECTURE.md:
   alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
   was built with, taken from vcpkg's own per-port SPDX documents
   (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
-  nothing in a statically linked C++ binary. The client's also lists what its
-  zip ships beside it: Falcor's own dependencies and the MSVC runtime
-  (ADR-0058). The image's SBOM is syft's, of its Ubuntu packages. Verified with:
+  nothing in a statically linked C++ binary. The client's also lists the MSVC
+  runtime its zip ships beside it (ADR-0058). The image's SBOM is syft's, of its
+  Ubuntu packages. Verified with:
 
     ```sh
     gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta
@@ -225,14 +235,15 @@ decisions already made in ARCHITECTURE.md:
     ```
 
 - **Vulnerability scanning:** the server image is scanned by trivy as CI builds
-  it, and is published only if clean. The latest release's executables are
-  scanned every night by grype, from their SBOMs (`nightly-jobs.yml`'s
-  `sbom-scan`), so a CVE published after the release still fails a run. No
-  vulnerability database knows vcpkg's purls, so `scripts/sbom-cpes.py` first
-  adds each port's NVD CPE, and fails on a port that has neither a CPE nor a
-  written reason for having none. Both fail on a high or critical CVE; the image
-  only on one with a fix available, the executables on any, since the NVD gives
-  most of its ranges with no fixed version.
+  it, and is published only if clean. A release's executables are scanned by
+  grype, from their SBOMs (`nightly-jobs.yml`'s `sbom-scan`), before the release
+  publishes them, and the latest release's again every night, so a CVE published
+  after the release still fails a run. No vulnerability database knows vcpkg's
+  purls, so `scripts/sbom-cpes.py` first adds each port's NVD CPE, and fails on
+  a port that has neither a CPE nor a written reason for having none. Both fail
+  on a high or critical CVE; the image only on one with a fix available, the
+  executables on any, since the NVD gives most of its ranges with no fixed
+  version.
 
 ## Git Workflow
 
@@ -333,7 +344,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   of the `augustac.exe` in the `augustac-windows-x64.zip` beside it, which reads
   a crash of that client or its Aftermath `.nv-gpudmp`. Rename it
   `augustac.pdb`, the name the `.exe`'s debug directory gives it; the two match
-  by GUID and age (`dumpbin /headers`, ADR-0055).
+  by GUID and age (`dumpbin /headers`, ADR-0055). The Linux client's is
+  `augustac-linux-x64.debug`, matched by build ID, as `augustad`'s is.
 - **Server pod:** runs as UID/GID 65532 in a user namespace of its own, with no
   privilege escalation, every capability dropped, augustad's own seccomp profile
   and a read-only root filesystem; augustad writes only to its capture volume,
@@ -391,27 +403,32 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
-- **Server / shared core (Linux, dev container or host):** `.devcontainer/`
-  gives this side as a container, for VS Code or Codespaces, without mutating a
-  host, and `scripts/bootstrap.sh` installs the same on an Ubuntu 26.04 host
-  (its Linux half, `scripts/bootstrap/linux.sh`; the image hashes only the two,
-  so a Windows-only change doesn't rebuild it). The script is the one recipe for
-  it: the image runs its `toolchain` step, the container's post-create its
-  `checkout` step (submodules, vcpkg, hooks), and a host both. It installs CI's
-  runner Ubuntu release's packages, whose LLVM major is CI's, with the toolchain
-  `.github/actions/setup-linux-build` installs (kept in step with it by hand),
-  clang (ADR-0008), CMake, Ninja, vcpkg, clang-tidy, clang-format, gdb, GitHub
-  CLI, kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the
-  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
-  actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua,
-  luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg binary
-  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
-  The image builds for the host's architecture (amd64 or arm64) rather than
-  emulating CI's amd64. sccache's cache lives in a volume shared by every
-  container of the repository; the build trees in a volume per container, so
-  they never collide with a Windows build of the same checkout. One recipe, not
-  a container beside a separate host bootstrap: two recipes for the same
-  toolchain drift apart. The client has no container equivalent (see below).
+- **Server, shared core and Linux client (Linux, dev container or host):**
+  `.devcontainer/` gives this side as a container, for VS Code or Codespaces,
+  without mutating a host, and `scripts/bootstrap.sh` installs the same on an
+  Ubuntu 26.04 host (its Linux half, `scripts/bootstrap/linux.sh`; the image
+  hashes only the two, so a Windows-only change doesn't rebuild it). The script
+  is the one recipe for it: the image runs its `toolchain` step, the container's
+  post-create its `checkout` step (submodules, vcpkg, hooks), and a host both.
+  It installs CI's runner Ubuntu release's packages, whose LLVM major is CI's,
+  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
+  with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
+  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format,
+  GitHub CLI, kubectl, helm, the flux CLI at the cluster's Flux version,
+  Doxygen, the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
+  shellcheck, actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt,
+  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg
+  binary cache configuration (a files provider in the checkout's
+  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
+  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
+  shared by every container of the repository; the build trees in a volume per
+  container, so they never collide with a Windows build of the same checkout.
+  One recipe, not a container beside a separate host bootstrap: two recipes for
+  the same toolchain drift apart. With them come the Linux client's system
+  packages (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's
+  Vulkan drivers and Xvfb for the Renderer's smoke test), so the `linux` presets
+  build and test `augustac` in the container too. The Windows client has no
+  container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -428,43 +445,45 @@ no self-hosted GitHub Actions runner in this pipeline).
   the hooks' tools for macOS would drift from the container's, as two recipes
   for one toolchain do.
 - **Client (Windows, native):** built and run natively — never cross-compiled
-  from Linux (not viable given Falcor/D3D12/NVIDIA SDK's MSVC-specific toolchain
-  assumptions). The same `scripts/bootstrap.sh`, run in Git Bash as
-  Administrator (its Windows half, `scripts/bootstrap/windows.sh`,
-  winget-driven; one entry point and one `checkout` step and set of pinned
-  formatter versions for both platforms, and no PowerShell: Git for Windows is
-  the one prerequisite, which cloning needs anyway) installs Visual Studio Build
-  Tools system-wide (default install location) — simpler than pinning a
-  project-specific path, at the cost of not being able to side-by-side
-  independent Build Tools versions per project — plus the Windows SDK, CMake,
-  Ninja, GNU make, vcpkg, Git, uv (for yamllint and the formatters and linters
-  uv runs, below), standalone yamlfmt, StyLua, luacheck and taplo, and LLVM's
-  clang-format/clang-tidy (for the hooks below), pinned to the LLVM major CI's
-  Ubuntu runner ships so the hooks agree with CI's gates, and kubectl, helm and
-  the flux CLI, for the cluster. It also puts Git's `bin` directory on PATH, so
+  from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
+  and their tests compile with `clang-cl` and links with `lld-link`, from the
+  same pinned LLVM as the hooks' `clang-format` and `clang-tidy`, inside the
+  Build Tools' developer environment (`scripts/vcenv.cmd`, which the Makefile
+  runs every command through), whose MSVC STL, CRT and Windows SDK they build
+  against; the dependencies stay on `cl` under vcpkg's `x64-windows` triplet
+  (ADR-0008). The same `scripts/bootstrap.sh`, run in Git Bash as Administrator
+  (its Windows half, `scripts/bootstrap/windows.sh`, winget-driven; one entry
+  point and one `checkout` step and set of pinned formatter versions for both
+  platforms, and no PowerShell: Git for Windows is the one prerequisite, which
+  cloning needs anyway) installs Visual Studio Build Tools system-wide (default
+  install location) — simpler than pinning a project-specific path, at the cost
+  of not being able to side-by-side independent Build Tools versions per project
+  — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
+  and the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
+  luacheck and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
+  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
+  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
+  the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
+  cluster. It also puts Git's `bin` directory on PATH, so
   `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
   VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`. (A fully hermetic,
-  registry-free alternative — clang-cl + xwin-extracted SDK/CRT — was considered
-  and rejected: Falcor's CMake presets only test/support MSVC on Windows, and
-  stacking an unsupported compiler on top of an already-unmaintained dependency,
-  ADR-0009, isn't worth the purity.)
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
-  Git Bash, or Linux - the platforms vcpkg's DirectXTex port, which the cooker's
+  Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
-  installed editable, its native module, signing keys and sample authoring
-  content.
+  installed editable, its native module (built with MSVC `cl`, under its own
+  presets), signing keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and DirectXTex are `tools/pack/native`'s
-  own C++ build dependencies (two small pybind11 modules, no OpenUSD - see
-  ADR-0030) — vendored via `vcpkg.json` (ADR-0025) like the rest of the
-  codebase, not fetched by this script.
+  authors need them. `meshoptimizer` and libktx are `tools/pack/native`'s own
+  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
+  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
+  fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the

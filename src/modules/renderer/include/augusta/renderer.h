@@ -12,12 +12,10 @@
 #include "augusta/math.h"
 
 /// \file
-/// augusta::renderer wraps NVIDIA Falcor/D3D12 (ADR-0009), used exclusively
-/// by the Windows client. It also owns the client's single OS window:
-/// Falcor fuses window creation, GPU device, and swapchain into one object
-/// (Falcor::SampleApp) rather than offering them as separable pieces, so
-/// there is no clean seam to split a separate augusta::window module out
-/// of it. The window/device-event vocabulary (Key, KeyEvent, EventSink,
+/// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
+/// exclusively by the client. It also owns the client's single OS
+/// window, a GLFW one: there is no separate augusta::window module
+/// (ADR-0059). The window/device-event vocabulary (Key, KeyEvent, EventSink,
 /// ...) lives in augusta::input instead, even though Renderer is the one
 /// that pushes those events - see input.h's header comment for why the
 /// dependency has to run this direction and not the other.
@@ -27,7 +25,7 @@
 /// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
 /// thread at a fixed rate decoupled from how often a frame is actually
 /// presented on the Main/Render thread. PumpEvents just drains the
-/// OS/Falcor event queue (cheap, safe to call often, e.g. once per
+/// OS's event queue (cheap, safe to call often, e.g. once per
 /// Prediction tick's worth of wall time even though it runs on the
 /// Main/Render thread); RenderFrame does the actual GPU work and should be
 /// called at the app's presentation rate instead. ClientRuntime's Run()
@@ -48,6 +46,29 @@ namespace augusta::renderer {
 constexpr std::uint32_t kDefaultWidth = 1920;
 constexpr std::uint32_t kDefaultHeight = 1080;
 
+/// Which Vulkan device the Renderer draws with.
+enum class Adapter : std::uint8_t {
+  /// A discrete GPU when there is one, else an integrated one.
+  kHardware,
+  /// The first CPU-type device, a software rasterizer such as Mesa's lavapipe:
+  /// for a test on a machine with no GPU, such as CI's runner. Never a GPU.
+  kSoftware,
+};
+
+/// Whether the Renderer runs under Vulkan's validation layer,
+/// VK_LAYER_KHRONOS_validation, which the loader finds through
+/// VK_ADD_LAYER_PATH. An error it reports is thrown by the Renderer call it
+/// happened in (see Renderer).
+enum class Validation : std::uint8_t {
+  kOff,
+  /// Under the layer if the loader finds it, else without, after a warning:
+  /// for a Debug build, which a developer may run without it.
+  kIfAvailable,
+  /// Under the layer, or not at all: for a test, which must not pass without
+  /// it.
+  kRequired,
+};
+
 /// Initial window/renderer parameters.
 struct Config {
   /// Window title, shown in the OS title bar and taskbar.
@@ -56,6 +77,19 @@ struct Config {
   /// user afterward via standard OS chrome.
   std::uint32_t width = kDefaultWidth;
   std::uint32_t height = kDefaultHeight;
+  Adapter adapter = Adapter::kHardware;
+  /// True to hide the window, for a test that only reads frames back
+  /// (CaptureFrame).
+  bool hidden = false;
+  Validation validation = Validation::kOff;
+};
+
+/// A frame read back from the GPU: width by height pixels, row by row from the
+/// top, 4 bytes each (red, green, blue, alpha), sRGB-encoded.
+struct CapturedFrame {
+  std::uint32_t width = 0;
+  std::uint32_t height = 0;
+  std::vector<std::uint8_t> pixels;
 };
 
 /// A client-area size, in pixels.
@@ -68,19 +102,29 @@ struct Size {
 /// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
 /// from the front face.
 struct SceneMesh {
+  /// The light grey a mesh is drawn in unless given a color.
+  static constexpr float kDefaultGrey = 0.8F;
+
   std::vector<math::Vec3> positions;
   std::vector<std::uint32_t> indices;
   /// Base color, linear RGB in [0, 1].
-  math::Vec3 color{0.8F, 0.8F, 0.8F};
+  math::Vec3 color{kDefaultGrey, kDefaultGrey, kDefaultGrey};
 };
 
 /// The viewpoint a Scene is drawn from. The camera looks down its local -Z
 /// axis with +Y up, before rotation is applied.
 struct Camera {
-  math::Vec3 position{0.0F, 1.7F, 5.0F};
+  /// An unset camera's height, in metres: a standing player's eyes.
+  static constexpr float kDefaultEyeHeight = 1.7F;
+  /// How far back from the origin an unset camera stands, in metres.
+  static constexpr float kDefaultDistance = 5.0F;
+  /// An unset camera's vertical field of view, in radians (about 52 degrees).
+  static constexpr float kDefaultVerticalFov = 0.9F;
+
+  math::Vec3 position{0.0F, kDefaultEyeHeight, kDefaultDistance};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
   /// Vertical field of view, in radians.
-  float vertical_fov = 0.9F;
+  float vertical_fov = kDefaultVerticalFov;
 };
 
 /// Everything the renderer draws: static geometry plus the camera it is
@@ -170,15 +214,21 @@ struct DebugHudStats {
 class Renderer {
  public:
   /// Creates the window and GPU device per config, and wires this
-  /// Renderer to push keyboard/mouse events to input_sink as Falcor
+  /// Renderer to push keyboard/mouse events to input_sink as the window
   /// delivers them (see input::EventSink). Throws std::runtime_error if
   /// window or device creation fails - there is no recoverable path for a
-  /// client that can't render. input_sink must outlive this Renderer.
+  /// client that can't render: no Vulkan 1.3, no device of config's adapter,
+  /// or Validation::kRequired without its layer. input_sink must outlive this
+  /// Renderer.
+  ///
+  /// Under validation, the constructor, RenderFrame and CaptureFrame also
+  /// throw std::runtime_error once the validation layer has reported an
+  /// error: API misuse is a bug, and fails where it is found.
   Renderer(const Config& config, input::EventSink& input_sink);
 
-  /// Falcor's Device/Window/Swapchain are unique hardware resources owned
+  /// The window, device and swapchain are unique hardware resources owned
   /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
-  /// before tearing them down, same as Falcor::SampleApp's own destructor.
+  /// before tearing them down.
   ~Renderer();
 
   /// Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
@@ -188,7 +238,7 @@ class Renderer {
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  /// Drains the OS/Falcor event queue and returns immediately - never
+  /// Drains the window's event queue and returns immediately - never
   /// waits for or presents a frame. Updates the state ShouldClose/GetSize
   /// return, and synchronously calls input_sink's matching method for
   /// every keyboard/mouse event seen. Must be called from the same
@@ -214,6 +264,11 @@ class Renderer {
   /// debug HUD until then).
   void RenderFrame();
 
+  /// Reads back the frame the last RenderFrame drew, waiting for the GPU to
+  /// finish it; empty (0 by 0) before the first RenderFrame. Slow: for tests
+  /// and screenshots, not for every frame. From the Main/Render thread.
+  [[nodiscard]] CapturedFrame CaptureFrame();
+
   /// Replaces the drawn scene, uploading its geometry to the GPU. From the
   /// Main/Render thread. Throws std::runtime_error if a mesh index is out
   /// of range for its positions or the scene has too many vertices to draw.
@@ -234,13 +289,13 @@ class Renderer {
   void SetCharacterMesh(const std::string& character, const SceneMesh& mesh);
 
   /// Replaces the drawn remote-player instances via a persistently-mapped
-  /// upload-heap buffer - unlike SetScene/SetCharacterMesh, cheap enough to
+  /// host-visible buffer - unlike SetScene/SetCharacterMesh, cheap enough to
   /// call once every RenderFrame. Draws every instance it is given: how many
   /// players there can be is the protocol's business, not the renderer's. The
-  /// buffer grows (with one GPU wait) only when a call needs more room than
-  /// any before it, so a steady player count never waits or allocates. From
-  /// the Main/Render thread. An empty span draws nothing - how a player who
-  /// left disappears; a player whose character has no mesh is skipped.
+  /// buffer grows only when a call needs more room than any before it, so a
+  /// steady player count never allocates. From the Main/Render thread. An
+  /// empty span draws nothing - how a player who left disappears; a player
+  /// whose character has no mesh is skipped.
   void SetRemotePlayers(std::span<const RemotePlayer> remote_players);
 
   /// Replaces the drawn tracers, impacts and muzzle flashes, each turned to
@@ -259,10 +314,9 @@ class Renderer {
   /// move events keep reporting a position that never stops at the window
   /// edge (as opposed to the free OS cursor a menu/UI would need - no such
   /// UI exists yet, so callers enable this once and leave it on).
-  /// Idempotent. Falcor exposes no such hook itself (ADR-0009);
-  /// cmake/patches/falcor.patch adds Window::setCursorLocked, which puts
-  /// GLFW's cursor in its disabled mode - GLFW itself releases the capture
-  /// while the window is out of focus and takes it again when it regains it.
+  /// Idempotent. GLFW's disabled cursor, with raw mouse motion where the
+  /// system has it: GLFW itself releases the capture while the window is out
+  /// of focus and takes it again when it regains it.
   void SetCursorLocked(bool locked);
 
   /// Updates the values the debug HUD shows, from the Main/Render

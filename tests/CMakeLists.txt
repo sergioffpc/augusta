@@ -135,9 +135,6 @@ target_link_libraries(
   augusta_protocol_property_tests
   PRIVATE augusta_primitives augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main
 )
-# RapidCheck's generator templates, one per message field, outgrow MSVC's
-# default section count for one object file.
-target_compile_options(augusta_protocol_property_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 # RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23. Clang
 # reports it where our code instantiates the template, so its system include
 # path does not silence it; nothing of ours is deprecated in this target.
@@ -586,7 +583,7 @@ add_test(
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
 )
 
-# The headless server has no client Input dependency (ARCHITECTURE.md §5):
+# The headless server has no client Input dependency (ARCHITECTURE.md Â§5):
 # augusta_input stays client-only so the configure-time scope check covers it,
 # that check rejects a fixture build graph where a server-only target reaches a
 # client-only one, and no server source or server config header names Input.
@@ -597,6 +594,19 @@ add_test(
     ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
     -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
+
+# What the Linux client's tarball is checked for before a release publishes it
+# (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
+# augustac's build, so it runs on every pull request although augustac's Linux
+# build does not.
+if(NOT WIN32)
+  add_test(
+    NAME augusta_stage_client_linux
+    COMMAND
+      ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+      -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/stage_client_linux.cmake
+  )
+endif()
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
@@ -650,17 +660,42 @@ target_link_libraries(
 target_compile_options(augusta_crash_property_tests PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-deprecated-declarations>)
 gtest_discover_tests(augusta_crash_property_tests PROPERTIES LABELS property)
 
-# The renderer is Windows-only (Falcor, ADR-0009), but which region of its
-# per-frame upload buffers a frame uses is a Falcor-free header, private to the
-# module, so it is tested everywhere through a private include path.
+# The renderer's GPU half builds only with the client (AUGUSTA_CLIENT), but
+# which region of its per-frame upload buffers a frame uses is a GPU-free
+# header, private to the module, so it is tested in every build through a
+# private include path.
 add_executable(augusta_frame_regions_tests frame_regions_test.cpp)
 target_include_directories(augusta_frame_regions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(augusta_frame_regions_tests PRIVATE GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_frame_regions_tests)
 
-if(WIN32)
-  # The client is Windows-only (Falcor, ADR-0009), and so are its private
-  # libraries' targets - though none of these links Falcor.
+# Likewise the geometry the renderer builds on the CPU (vertices.h).
+add_executable(augusta_renderer_vertices_tests renderer_vertices_test.cpp)
+target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_renderer_vertices_tests)
+
+# And the debug HUD's text (debug_hud_text.h), which both Renderers draw.
+add_executable(augusta_renderer_debug_hud_text_tests renderer_debug_hud_text_test.cpp)
+target_include_directories(augusta_renderer_debug_hud_text_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(
+  augusta_renderer_debug_hud_text_tests
+  PRIVATE augusta_renderer_debug_hud_text GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_debug_hud_text_tests)
+
+# And which Vulkan device it draws with (device_choice.h).
+add_executable(augusta_renderer_device_choice_tests renderer_device_choice_test.cpp)
+target_include_directories(augusta_renderer_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+target_link_libraries(
+  augusta_renderer_device_choice_tests
+  PRIVATE augusta_renderer_device_choice GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_device_choice_tests)
+
+if(AUGUSTA_CLIENT)
+  # The client's private libraries' targets build with the client, on Windows
+  # and Linux - though only the smoke test below links the Renderer.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
   target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
@@ -706,6 +741,97 @@ if(WIN32)
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
+
+  # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
+  # in a hidden window, so it runs on CI's runners, which have no GPU; under the
+  # validation layer, whose errors fail it. The layer comes from vcpkg (the
+  # manifest's client feature), and ctest points the Vulkan loader at it and at
+  # lavapipe, as its only driver, so the test never runs on a GPU. The loader
+  # logs its errors and warnings, so a driver it can't load says why.
+  # Set by a cmake -E env launcher rather than gtest_discover_tests' PROPERTIES,
+  # which splits a list-valued ENVIRONMENT into separate properties and drops
+  # all but its first variable. gtest_discover_tests runs the launcher, the
+  # target's CROSSCOMPILING_EMULATOR, before discovery and before each test,
+  # cross-compiling or not, under CMP0158's OLD behavior, which
+  # cmake_minimum_required gives.
+  set(vcpkg_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+  set(smoke_test_environment "")
+  set(no_smoke_test_reason "AUGUSTA_LAVAPIPE is off, so there is no lavapipe to draw on")
+  if(WIN32 AND AUGUSTA_LAVAPIPE)
+    # On Windows lavapipe comes from vcpkg too (the manifest's lavapipe
+    # feature, AUGUSTA_LAVAPIPE). vcpkg's folder, put on PATH, has the DLLs'
+    # own dependencies, and a loader for a machine whose GPU driver installed
+    # none in System32, as CI's runner's.
+    # The loader is given a copy of lavapipe's ICD manifest whose library_path
+    # is the driver in vcpkg's bin: Mesa writes that path when it builds the
+    # port, in vcpkg's build folder, which a binary-cached package may not
+    # share.
+    # An elevated process's loader ignores VK_DRIVER_FILES and
+    # VK_ADD_LAYER_PATH, so CI's runner, whose processes are, registers both
+    # instead (ci.yml).
+    set(lavapipe_icd "${vcpkg_installed}/share/vulkan/icd.d/lvp_icd.json")
+    if(NOT EXISTS "${lavapipe_icd}" OR NOT EXISTS "${vcpkg_installed}/bin/vulkan-1.dll")
+      message(FATAL_ERROR "AUGUSTA_LAVAPIPE is on, but vcpkg installed no ${lavapipe_icd} or vulkan-1.dll")
+    endif()
+    file(READ "${lavapipe_icd}" icd)
+    string(JSON lavapipe_library GET "${icd}" ICD library_path)
+    file(TO_CMAKE_PATH "${lavapipe_library}" lavapipe_library)
+    cmake_path(GET lavapipe_library FILENAME lavapipe_library)
+    set(lavapipe_library "${vcpkg_installed}/bin/${lavapipe_library}")
+    if(NOT EXISTS "${lavapipe_library}")
+      message(FATAL_ERROR "lavapipe's ICD manifest names ${lavapipe_library}, which vcpkg didn't install")
+    endif()
+    string(JSON icd SET "${icd}" ICD library_path "\"${lavapipe_library}\"")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json" "${icd}")
+    set(
+      smoke_test_environment
+      "VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;VK_LOADER_DEBUG=error,warn;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin"
+    )
+  elseif(NOT WIN32)
+    # On Linux lavapipe is the system's (Mesa's Vulkan drivers, which
+    # scripts/bootstrap/linux.sh installs), through the system's loader, as the
+    # client itself runs, and its window needs a display: CI's runner gives it
+    # a virtual X server (xvfb-run, nightly-jobs.yml). The layer's manifest
+    # names its library without a folder, which the loader then looks for on
+    # the library path: vcpkg's lib, put on it.
+    find_file(
+      AUGUSTA_LAVAPIPE_ICD
+      NAMES lvp_icd.json lvp_icd.x86_64.json
+      PATHS /usr/share/vulkan/icd.d
+      NO_DEFAULT_PATH
+      DOC "The system's lavapipe ICD manifest, which the renderer smoke test draws on"
+    )
+    set(no_smoke_test_reason "no lavapipe in /usr/share/vulkan/icd.d (Mesa's Vulkan drivers)")
+    if(AUGUSTA_LAVAPIPE_ICD)
+      set(
+        smoke_test_environment
+        "VK_DRIVER_FILES=${AUGUSTA_LAVAPIPE_ICD};VK_ADD_LAYER_PATH=${vcpkg_installed}/share/vulkan/explicit_layer.d;VK_LOADER_DEBUG=error,warn;--modify;LD_LIBRARY_PATH=path_list_prepend:${vcpkg_installed}/lib"
+      )
+    endif()
+  endif()
+  if(smoke_test_environment)
+    add_executable(augusta_client_renderer_smoke_tests client_renderer_smoke_test.cpp)
+    target_link_libraries(augusta_client_renderer_smoke_tests PRIVATE augusta_renderer GTest::gtest GTest::gtest_main)
+    augusta_stage_aftermath(augusta_client_renderer_smoke_tests)
+    set_target_properties(
+      augusta_client_renderer_smoke_tests
+      PROPERTIES CROSSCOMPILING_EMULATOR "${CMAKE_COMMAND};-E;env;${smoke_test_environment};--"
+    )
+    gtest_discover_tests(augusta_client_renderer_smoke_tests)
+  else()
+    message(STATUS "Renderer smoke test not built: ${no_smoke_test_reason}")
+  endif()
+
+  # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
+  # The test names keys by GLFW's own constants.
+  find_package(glfw3 CONFIG REQUIRED)
+  add_executable(augusta_client_renderer_glfw_keys_tests client_renderer_glfw_keys_test.cpp)
+  target_include_directories(augusta_client_renderer_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+  target_link_libraries(
+    augusta_client_renderer_glfw_keys_tests
+    PRIVATE augusta_renderer_glfw_keys glfw GTest::gtest GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_client_renderer_glfw_keys_tests)
 endif()
 
 add_subdirectory(fuzz)

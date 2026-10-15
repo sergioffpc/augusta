@@ -1,6 +1,7 @@
 #include "decoder.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -20,6 +21,32 @@
 namespace augusta::assets {
 
 namespace {
+
+// The twelve bytes every KTX2 file starts with (the KTX2 specification's file
+// identifier).
+constexpr std::array<std::byte, 12> kKtx2Identifier = {
+    std::byte{0xAB}, std::byte{0x4B}, std::byte{0x54}, std::byte{0x58}, std::byte{0x20}, std::byte{0x32},
+    std::byte{0x30}, std::byte{0xBB}, std::byte{0x0D}, std::byte{0x0A}, std::byte{0x1A}, std::byte{0x0A},
+};
+
+// The VkFormat values of the three block formats the cooker writes (ADR-0017).
+constexpr std::uint32_t kVkFormatBc4UnormBlock = 139;
+constexpr std::uint32_t kVkFormatBc5UnormBlock = 141;
+constexpr std::uint32_t kVkFormatBc7SrgbBlock = 146;
+
+// The block format a KTX2's VkFormat names, or nothing for any other VkFormat.
+std::optional<TextureFormat> ToTextureFormat(std::uint32_t vk_format) {
+  switch (vk_format) {
+    case kVkFormatBc7SrgbBlock:
+      return TextureFormat::kBC7;
+    case kVkFormatBc5UnormBlock:
+      return TextureFormat::kBC5;
+    case kVkFormatBc4UnormBlock:
+      return TextureFormat::kBC4;
+    default:
+      return std::nullopt;
+  }
+}
 
 // Reads path-shaped optional reference fields (mesh/material/collider/
 // hitbox) that are only present when their bit is set in flags.
@@ -228,29 +255,37 @@ std::optional<SceneData> DecodeSceneBlob(std::span<const std::byte> blob) {
   return scene;
 }
 
-// Texture blob wire format: format byte, then a length-prefixed DDS byte
-// string (DirectXTex's own SaveToDDSMemory output, opaque to this
-// module beyond its outer length).
+// Texture blob wire format: see EncodeTextureBlob. Of the KTX2 file itself,
+// only its identifier and the VkFormat after it are read.
 std::optional<TextureData> DecodeTextureBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
 
-  const auto format = reader.ReadU8();
-  if (!format || !IsValidTextureFormat(*format)) {
+  const auto ktx2_size = reader.ReadU32();
+  if (!ktx2_size || *ktx2_size > kMaxTextureBytes) {
+    return std::nullopt;
+  }
+  const auto ktx2_bytes = reader.ReadBytes(*ktx2_size);
+  if (!ktx2_bytes) {
     return std::nullopt;
   }
 
-  const auto dds_size = reader.ReadU32();
-  if (!dds_size || *dds_size > kMaxTextureBytes) {
+  ByteReader header(*ktx2_bytes);
+  const auto identifier = header.ReadBytes(kKtx2Identifier.size());
+  if (!identifier || !std::ranges::equal(*identifier, kKtx2Identifier)) {
     return std::nullopt;
   }
-  const auto dds_bytes = reader.ReadBytes(*dds_size);
-  if (!dds_bytes) {
+  const auto vk_format = header.ReadU32();
+  if (!vk_format) {
+    return std::nullopt;
+  }
+  const auto format = ToTextureFormat(*vk_format);
+  if (!format) {
     return std::nullopt;
   }
 
   return TextureData{
-      .dds_bytes = std::vector<std::byte>(dds_bytes->begin(), dds_bytes->end()),
-      .format = static_cast<TextureFormat>(*format),
+      .ktx2_bytes = std::vector<std::byte>(ktx2_bytes->begin(), ktx2_bytes->end()),
+      .format = *format,
   };
 }
 

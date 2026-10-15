@@ -19,6 +19,7 @@
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/reenactment.h"
+#include "augusta/renderer.h"
 #include "augusta/version.h"
 #include "runtime.h"
 
@@ -72,6 +73,8 @@ struct Client {
 
 // How long `augustac --replays` waits for the replay server's list.
 constexpr auto kReplayListPatience = std::chrono::seconds(10);
+// How often it pumps the connection while it waits.
+constexpr auto kReplayListPollInterval = std::chrono::milliseconds(10);
 
 // augustac --replays (ADR-0051): asks the server file_config names for the
 // captures it replays and prints them, or says why it could not.
@@ -86,7 +89,7 @@ augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& f
     if (std::optional<augusta::failure::Failure> failed = query.TakeTransportFailure()) {
       return std::move(*failed);
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::this_thread::sleep_for(kReplayListPollInterval);
   }
   if (const std::optional<std::vector<augusta::harness::ReplayListing>>& list = query.List()) {
     std::println("{}", augusta::harness::DescribeReplayList(*list));
@@ -116,6 +119,11 @@ std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClien
 
   augusta::client::RuntimeConfig config;
   config.renderer.title = "augusta";
+#ifndef NDEBUG
+  // A Debug build runs under Vulkan's validation layer (ADR-0059) wherever the
+  // loader finds it through VK_ADD_LAYER_PATH.
+  config.renderer.validation = augusta::renderer::Validation::kIfAvailable;
+#endif
   // Direct IP:port only, no server discovery (ARCHITECTURE.md §3).
   config.server.address = file_config.server_address;
   config.input = file_config.input;

@@ -40,3 +40,8 @@ comment on every function that is not obvious and short (with its arguments,
 globals, outputs and return), `local` for a function's variables, `readonly`
 constants in upper case, and a `main` function, called last as `main "$@"`, in
 any script with another function.
+
+YAML is formatted by yamlfmt (2-space indentation, LF line endings, a final
+newline) and linted by yamllint. yamlfmt keeps a folded scalar's (`>`) line
+breaks, so what no tool checks is written by hand: prose too long for one line,
+such as a `description:`, goes in a folded scalar wrapped at 80 columns.

@@ -52,6 +52,13 @@ probe: a single replica takes no balanced traffic, so the pod is Ready once its
 container runs. A server that fails to start exits (ADR-0005) and shows as a
 crash-looping pod.
 
+**A failing release run blocks the GitHub Release, not `staging`.** What a `v*`
+tag's run must pass before it publishes the executables is ADR-0013's; one
+failure publishes nothing, never part of a release. `staging` does not wait on
+it: Flux follows the signed tag itself (ADR-0056), running the image `main`'s CI
+already tested, scanned and signed, so a failing release run is fixed by moving
+the tag (`docs/runbooks/cut-release.md`).
+
 ## Considered Options
 
 The original design (see git history of `docs/ENGINEERING.md`'s Deployment & CD

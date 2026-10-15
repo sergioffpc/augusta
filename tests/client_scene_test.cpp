@@ -12,7 +12,7 @@
 #include "scene_loader.h"
 
 // Unit tests for the cooked-scene -> renderer::Scene conversion. Links no
-// Falcor or window: the loader only uses renderer.h's plain scene types.
+// GPU or window: the loader only uses renderer.h's plain scene types.
 namespace {
 
 using augusta::assets::MeshData;
@@ -173,8 +173,10 @@ TEST(BuildRenderSceneTest, ReportsTheMeshItCouldNotResolve) {
 }
 
 TEST(DescribeSceneErrorTest, NamesTheAssetThatFailedToResolve) {
-  const auto scene = DescribeSceneError(
-      {.code = SceneErrorCode::kSceneUnresolved, .subject = "Scene", .resolve_error = ResolveError::kTypeMismatch});
+  const auto scene = DescribeSceneError({.code = SceneErrorCode::kSceneUnresolved,
+                                         .node = {},
+                                         .subject = "Scene",
+                                         .resolve_error = ResolveError::kTypeMismatch});
   const auto mesh = DescribeSceneError({.code = SceneErrorCode::kMeshUnresolved,
                                         .node = "Root",
                                         .subject = "Root/Missing",

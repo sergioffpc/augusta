@@ -2,6 +2,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <exception>  // IWYU pragma: keep - rapidcheck/Gen.hpp uses it without including it
 #include <string>
 
 #include <gtest/gtest.h>
@@ -15,7 +16,7 @@ namespace {
 
 // 9999-12-31T23:59:59Z, the last second a four-digit year can name, or the last
 // one the log sink's system_clock holds if that ends sooner (2262 where it
-// counts nanoseconds, as libstdc++'s does).
+// counts nanoseconds).
 constexpr std::int64_t kLastSecond = std::min<std::int64_t>(
     253402300799,
     std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::time_point::max()).time_since_epoch().count());

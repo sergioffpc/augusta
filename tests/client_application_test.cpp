@@ -1,3 +1,4 @@
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -150,7 +151,7 @@ std::filesystem::path WriteCapture(const std::string& name) {
   protocol::CaptureHeaderWire header{
       .engine_version = "1.0.0", .format_version = protocol::kCaptureFormatVersion, .tick_rate_hz = 60};
   header.client_pack.fill(std::byte{9});
-  const protocol::CaptureRecordWire records[] = {
+  const std::array<protocol::CaptureRecordWire, 2> records = {
       header,
       protocol::CapturedJoinWire{
           .spawn = {4, 0, -2}, .session = protocol::SessionIdWire{1}, .character = "soldier", .player = 1},

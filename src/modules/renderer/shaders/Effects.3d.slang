@@ -1,11 +1,11 @@
-// Draws the fight's effects (ADR-0014, on the D3D12 path): tracers, impacts
+// Draws the fight's effects (ADR-0014): tracers, impacts
 // on the Map and muzzle flashes, in world space, and the crosshair and hit
 // marker over the frame, already in clip space (an identity gViewProj). Unlit:
-// each vertex carries the color it glows with, and renderer.cpp's blend state
+// each vertex carries the color it glows with, and the Renderer's blend state
 // adds it to what is behind (effects) or writes it over it (the overlay). The
 // vertex layout is the scene's (Renderer.3d.slang); the normal goes unused.
 
-cbuffer PerFrameCB
+cbuffer PerFrameCB : register(b0)
 {
     float4x4 gViewProj;
 };

@@ -39,6 +39,33 @@ if(AUGUSTA_TOOLS)
   endif()
 endif()
 
+# The client (src/client) and its Renderer (src/modules/renderer), on Windows
+# and Linux (ADR-0006): on by default, so `cmake --preset linux` builds augustac
+# and its tests too. With it, vcpkg installs the manifest's client feature,
+# whose GLFW needs the system's X11, Wayland and xkbcommon development files on
+# Linux (scripts/bootstrap/linux.sh). The server image, and every Linux CI job
+# but the nightly's client-x64-linux, turn it off: they build and test what
+# augustad is built from, and the Linux client is the nightly's alone
+# (ADR-0013). Before project(), as AUGUSTA_TOOLS is.
+option(AUGUSTA_CLIENT "Build the client (augustac), its Renderer and their tests" ON)
+if(AUGUSTA_CLIENT)
+  list(APPEND VCPKG_MANIFEST_FEATURES client)
+endif()
+
+# Mesa's lavapipe, the software Vulkan driver the renderer smoke test draws on
+# (tests/CMakeLists.txt), on Windows, where vcpkg builds it: the manifest's
+# lavapipe feature, for tests only. Off by default, so a release's build
+# installs none of it and its SBOM names none; CI's client-x64-windows job and
+# the windows-debug preset turn it on. Its first build compiles LLVM, which
+# needs Visual Studio's ATL; off, the smoke test is not built. Before project(),
+# as AUGUSTA_TOOLS is.
+if(CMAKE_HOST_WIN32)
+  option(AUGUSTA_LAVAPIPE "Install Mesa's lavapipe for the renderer smoke test" OFF)
+  if(AUGUSTA_LAVAPIPE)
+    list(APPEND VCPKG_MANIFEST_FEATURES lavapipe)
+  endif()
+endif()
+
 project(augusta LANGUAGES CXX)
 augusta_require_server_platform()
 
@@ -51,6 +78,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(GNUInstallDirs)
 
 if(MSVC)
+  # clang-cl, which sets MSVC (ADR-0008): its /W4 is clang's -Wall -Wextra and
+  # /WX its -Werror, Linux's warning set below. Not /Wall, which clang-cl takes
+  # for -Weverything.
   add_compile_options(/W4 /WX /EHsc)
   # Every configuration keeps its debug info, embedded in each object file
   # (/Z7), which sccache caches - not /Zi's PDB shared between compiles, which
@@ -63,7 +93,7 @@ else()
   # Release keeps its debug info, which src/server splits off augustad: what a
   # crash's core dump is read with (ADR-0047). Every target, not just augustad's
   # own: a core's frames are mostly in the module libraries it links, and
-  # without theirs gdb has no file, line or local for them.
+  # without theirs lldb has no file, line or local for them.
   add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
@@ -72,6 +102,21 @@ endif()
 # whole build, so the tools link what augustad does. Windows needs nothing.
 if(AUGUSTA_TOOLS AND NOT WIN32)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
+# Every binary of an ASan build (linux-san, linux-fuzz) starts with the options
+# cmake/asan_default_options.cpp gives it (ADR-0008): when ctest runs it, when
+# the build lists its tests, and when it is run by hand.
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*address")
+  add_library(augusta_asan_default_options OBJECT cmake/asan_default_options.cpp)
+  link_libraries(augusta_asan_default_options)
+endif()
+# Every binary of a UBSan build (linux-san) starts with the options
+# cmake/ubsan_default_options.cpp gives it, so a UBSan report fails it however
+# it is run (ADR-0013).
+if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
+  add_library(augusta_ubsan_default_options OBJECT cmake/ubsan_default_options.cpp)
+  link_libraries(augusta_ubsan_default_options)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -92,6 +137,7 @@ add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
 include(cmake/AugustaModule.cmake)
+include(cmake/AugustaDebugInfo.cmake)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
@@ -135,10 +181,12 @@ add_subdirectory(src/server)
 if(AUGUSTA_TOOLS)
   if(AUGUSTA_AGENT_PYTHON)
     set(PYTHON_EXECUTABLE "${AUGUSTA_AGENT_PYTHON}")
-    # Classic mode's FindPythonInterp/FindPythonLibs, which CMake has removed
-    # from its own (CMP0148) and pybind11 still ships for itself: a default,
-    # as pybind11's config sets its own policy version.
-    set(CMAKE_POLICY_DEFAULT_CMP0148 OLD)
+    # Classic mode, not FindPython: vcpkg's python3 port, which pybind11's
+    # depends on, wraps FindPython to give a module its own Python's headers
+    # and libraries, a 3.14 where the tools environment's is the 3.12 its USD
+    # wheels need. pybind11 warns that CMP0148 is not set, whatever this
+    # project sets it to, and goes on with the FindPythonInterp/FindPythonLibs
+    # it ships.
     find_package(pybind11 CONFIG REQUIRED)
   endif()
   add_subdirectory(tools/agent)
@@ -160,11 +208,11 @@ if(AUGUSTA_COVERAGE)
     USES_TERMINAL
   )
 endif()
-if(WIN32)
-  # NVIDIA Falcor (ADR-0009) is Windows-only, so augusta_renderer's real
-  # implementation only builds here - nothing on Linux (only the
-  # WIN32-only client links it) ever needed it in that build graph anyway.
-  add_subdirectory(src/modules/renderer)
+# The client renders through NVRHI on Vulkan, on Windows and Linux (ADR-0059).
+# What its Renderer decides apart from the GPU builds and is tested in every
+# build; the Renderer itself and the client that links it, with AUGUSTA_CLIENT.
+add_subdirectory(src/modules/renderer)
+if(AUGUSTA_CLIENT)
   add_subdirectory(src/client)
 endif()
 

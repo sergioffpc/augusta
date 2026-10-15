@@ -12,8 +12,10 @@ the next one.
 Keeps the codebase and issue list healthy and feeds work into the main flow; its
 skills are used as needed, in no order. The user runs
 `/improve-codebase-architecture` (refactoring candidates), `/triage` (raw issues
-into workable ones) and `/implement-spec` (a whole spec at once with parallel
-subagents, in place of `/implement`). Yours to invoke: `/diagnosing-bugs` for a
+into workable ones), `/implement-spec` (a whole spec at once with parallel
+subagents, in place of `/implement`) and `/engineering-review` (a read-only
+audit of standing code into a findings report; profile in
+`docs/agents/engineering-review.md`). Yours to invoke: `/diagnosing-bugs` for a
 hard bug, from a failing repro; `/wizard` for setup steps only a human can
 perform.
 
@@ -24,12 +26,18 @@ Git Flow (`docs/ENGINEERING.md`, Branching model): `feature/*` → `develop`;
 `docs/runbooks/cut-release.md` step 10 — a release is done once `develop`
 contains its tag. A stacked PR takes its parent's fixes by merging the parent
 branch. On macOS, build, test and lint through `scripts/dev-container.sh`; only
-CI's `client` job reproduces Windows-only failures.
+CI's `client-x64-windows` job reproduces Windows-only failures.
 
 ### Issue tracker
 
 Issues are tracked in this repo's GitHub Issues, using the `gh` CLI. See
 `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles under their own names (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`), beside GitHub's `bug` and
+`enhancement` as the categories. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 

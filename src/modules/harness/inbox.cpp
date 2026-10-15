@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -50,7 +51,10 @@ void Inbox::Receive(const networking::Payload& payload) {
   }
 }
 
-std::shared_ptr<const ServerView> Inbox::View() const { return view_.load(); }
+std::shared_ptr<const ServerView> Inbox::View() const {
+  const std::scoped_lock lock(view_mutex_);
+  return view_;
+}
 
 std::vector<Shot> Inbox::TakeShots(std::uint32_t matches_started) { return shots_.Take(matches_started); }
 
@@ -119,7 +123,7 @@ void Inbox::OnLobby(Lobby lobby) {
 // A Match start that leaves this client out is not one it can play: dropped,
 // as a malformed message is. A Replay viewer's leaves it out: it plays no one.
 void Inbox::OnMatchStart(MatchStart start) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!current->accepted.has_value() || (!viewer_ && !IsInMatch(start, current->accepted->session))) {
     LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
     return;
@@ -158,7 +162,7 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
 // the tick a match ended arrives after Match end, which is routine; one of a
 // body not in the match is a server's mistake.
 void Inbox::OnShot(const Shot& shot) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
     LT("subsystem=harness event=dropped tick={} reason=\"shot outside a match\"", shot.tick);
     return;
@@ -173,7 +177,7 @@ void Inbox::OnShot(const Shot& shot) {
 
 // Keeps hit for TakeHitConfirmations if it is of the match in progress, as OnShot does a Shot.
 void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
     LT("subsystem=harness event=dropped reason=\"hit confirmation outside a match\"");
     return;
@@ -191,7 +195,7 @@ void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
 // victim and its killer are players of the match: one who has left it since
 // is still in its Match start.
 void Inbox::OnDeath(const Death& death) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
     LT("subsystem=harness event=dropped reason=\"death outside a match\"");
     return;
@@ -210,7 +214,7 @@ void Inbox::OnDeath(const Death& death) {
 // reorder) and belongs to the match in progress: unreliable, it can arrive
 // before Match start or after Match end.
 void Inbox::OnAuthoritativeState(AuthoritativeState state) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
     LT("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
     return;
@@ -231,7 +235,7 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
 // as OnAuthoritativeState keeps a state: it travels as unreliably. A player's
 // client is sent none.
 void Inbox::OnReplayView(ReplayView view) {
-  const std::shared_ptr<const ServerView> current = view_.load();
+  const std::shared_ptr<const ServerView> current = View();
   if (!viewer_ || !current->in_match) {
     LT("subsystem=harness event=dropped tick={} reason=\"replay view outside a replay\"", view.tick);
     return;

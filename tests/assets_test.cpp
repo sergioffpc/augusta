@@ -1,8 +1,10 @@
 #include "augusta/assets.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -20,7 +22,7 @@
 
 // Unit tests for augusta_assets, including its own private pack-format
 // internals (encoder.h/WritePack). Links only augusta_assets - no USD/
-// DirectXTex/meshoptimizer - so it builds and runs under the plain
+// libktx/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
 // augusta_assets' wire format, which tools/pack's Python
 // WritePack reimplementation (ADR-0030) is validated against.
@@ -160,34 +162,88 @@ TEST_F(PackTest, WritePackRejectsDuplicatePaths) {
   EXPECT_EQ(result.error(), augusta::assets::WriteError::kDuplicatePath);
 }
 
+// The KTX2 file identifier (ADR-0031): the twelve bytes every KTX2 file starts
+// with.
+constexpr std::array<std::uint8_t, 12> kKtx2Identifier = {0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32,
+                                                          0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A};
+
+// The VkFormats a texture blob's KTX2 may carry (ADR-0017), and one it may not.
+constexpr std::uint32_t kVkFormatBc4UnormBlock = 139;
+constexpr std::uint32_t kVkFormatBc5UnormBlock = 141;
+constexpr std::uint32_t kVkFormatBc7UnormBlock = 145;
+constexpr std::uint32_t kVkFormatBc7SrgbBlock = 146;
+
+// The start of a KTX2 file: its identifier, then vk_format as the header's
+// first field, then a few bytes standing in for the rest of the file.
+std::vector<std::byte> MakeKtx2(std::uint32_t vk_format) {
+  std::vector<std::byte> bytes;
+  for (const std::uint8_t byte : kKtx2Identifier) {
+    bytes.push_back(std::byte{byte});
+  }
+  for (std::size_t shift = 0; shift < 32; shift += 8) {
+    bytes.push_back(static_cast<std::byte>((vk_format >> shift) & 0xFFU));
+  }
+  bytes.insert(bytes.end(), {std::byte{0x01}, std::byte{0xAB}, std::byte{0xCD}});
+  return bytes;
+}
+
 // Exercises augusta_assets' own texture-blob encode/write/resolve seam
-// directly (WritePack/Pack::Load/ResolveTexture) - actually compressing an
-// image (DirectXTex) happens in tools/pack (Python), which this
-// module has no dependency on.
-TEST_F(PackTest, EncodesAndResolvesTextureBlob) {
-  const auto pack_path = MakePackPath("augusta_assets_test_texture_blob.pack");
-  const auto keys = GenerateEd25519KeyPair();
+// directly (WritePack/Pack::Load/ResolveTexture) - actually encoding an image
+// to KTX2 (libktx) happens in tools/pack, which this module has no dependency
+// on.
+class TextureBlobTest : public PackTest {
+ protected:
+  // Writes a pack holding ktx2 as the texture "Tex" and resolves it.
+  std::expected<augusta::assets::TextureData, augusta::assets::ResolveError> WriteAndResolve(
+      const std::vector<std::byte>& ktx2) {
+    const auto pack_path = MakePackPath("augusta_assets_test_texture_blob.pack");
+    const auto keys = GenerateEd25519KeyPair();
+    const auto blob = augusta::assets::EncodeTextureBlob(ktx2);
+    EXPECT_TRUE(blob.has_value());
+    const std::vector<augusta::assets::AssetEntry> entries = {
+        augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kTexture, .path = "Tex", .data = *blob},
+    };
+    EXPECT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+    auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+    EXPECT_TRUE(pack.has_value());
+    return pack->ResolveTexture("Tex");
+  }
+};
 
-  const std::vector<std::byte> dds_bytes = {std::byte{0x44}, std::byte{0x44}, std::byte{0x53},
-                                            std::byte{0x20}, std::byte{0xAB}, std::byte{0xCD}};
-  const augusta::assets::TextureData texture{.dds_bytes = dds_bytes, .format = augusta::assets::TextureFormat::kBC5};
+TEST_F(TextureBlobTest, ResolvesEachSupportedVkFormatToItsBlockFormat) {
+  const std::array<std::pair<std::uint32_t, augusta::assets::TextureFormat>, 3> cases = {{
+      {kVkFormatBc7SrgbBlock, augusta::assets::TextureFormat::kBC7},
+      {kVkFormatBc5UnormBlock, augusta::assets::TextureFormat::kBC5},
+      {kVkFormatBc4UnormBlock, augusta::assets::TextureFormat::kBC4},
+  }};
+  for (const auto& [vk_format, format] : cases) {
+    SCOPED_TRACE(vk_format);
+    const std::vector<std::byte> ktx2 = MakeKtx2(vk_format);
 
-  const auto blob = augusta::assets::EncodeTextureBlob(texture);
-  ASSERT_TRUE(blob.has_value());
+    const auto resolved = WriteAndResolve(ktx2);
 
-  const std::vector<augusta::assets::AssetEntry> entries = {
-      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kTexture, .path = "Tex", .data = *blob},
-  };
-  const auto written = augusta::assets::WritePack(pack_path, entries, keys.private_key);
-  ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_EQ(resolved->format, format);
+    EXPECT_EQ(resolved->ktx2_bytes, ktx2);
+  }
+}
 
-  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
-  ASSERT_TRUE(pack.has_value());
+TEST_F(TextureBlobTest, RefusesABlobWithoutTheKtx2Identifier) {
+  std::vector<std::byte> dds = MakeKtx2(kVkFormatBc7SrgbBlock);
+  std::ranges::copy(std::array{std::byte{'D'}, std::byte{'D'}, std::byte{'S'}, std::byte{' '}}, dds.begin());
 
-  const auto resolved = pack->ResolveTexture("Tex");
-  ASSERT_TRUE(resolved.has_value());
-  EXPECT_EQ(resolved->format, augusta::assets::TextureFormat::kBC5);
-  EXPECT_EQ(resolved->dds_bytes, dds_bytes);
+  EXPECT_EQ(WriteAndResolve(dds).error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+TEST_F(TextureBlobTest, RefusesABlobTooShortForAKtx2Header) {
+  std::vector<std::byte> truncated = MakeKtx2(kVkFormatBc7SrgbBlock);
+  truncated.resize(kKtx2Identifier.size() + 3);
+
+  EXPECT_EQ(WriteAndResolve(truncated).error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+TEST_F(TextureBlobTest, RefusesAKtx2OfAnotherVkFormat) {
+  EXPECT_EQ(WriteAndResolve(MakeKtx2(kVkFormatBc7UnormBlock)).error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 // A scenario's Lua scripts ride in its server pack (ADR-0031, ADR-0039) as text,
@@ -397,7 +453,9 @@ class HitboxPackTest : public PackTest {
     };
     const auto blob = augusta::assets::EncodeHitboxBlob(hitbox);
     EXPECT_TRUE(blob.has_value());
-    return {.type = augusta::assets::AssetType::kHitbox, .path = std::move(path), .data = blob.value_or({})};
+    return {.type = augusta::assets::AssetType::kHitbox,
+            .path = std::move(path),
+            .data = blob.value_or(std::vector<std::byte>{})};
   }
 
   augusta::assets::Pack Write(const std::vector<augusta::assets::AssetEntry>& entries) {
@@ -680,6 +738,19 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kBadMagic);
+}
+
+// Requirements: NFR-08, NFR-12
+// A version-2 pack holds DDS textures (ADR-0031): refused, not misread.
+TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{2};
+  const auto path = MakePackPath("augusta_assets_test_version_2.pack");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error(), augusta::assets::LoadError::kUnsupportedVersion);
 }
 
 // Requirements: NFR-08, NFR-12

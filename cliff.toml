@@ -44,7 +44,6 @@ commit_parsers = [
 ]
 protect_breaking_commits = true
 filter_commits = true
-# Release tags only: the falcor-* tags are prebuilt-Falcor assets
-# (falcor-prebuilt.yml), not releases.
+# Release tags only, not every tag the repository has.
 tag_pattern = "^v[0-9]"
 sort_commits = "oldest"

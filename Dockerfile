@@ -13,11 +13,19 @@ FROM scratch AS vcpkg-bincache
 # validates the server against.
 FROM ubuntu:26.04 AS build
 
-# clang compiles (the linux preset selects it, ADR-0008); build-essential
-# still provides libstdc++ and binutils.
+# LLVM's toolchain alone builds the server and its dependencies (ADR-0008):
+# clang, lld, LLVM's binary tools, libc++, libc++abi, libunwind and
+# compiler-rt. make runs the autotools ports' builds; no GCC is installed to
+# fall back on.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential \
       clang \
+      lld \
+      llvm \
+      libc++-dev \
+      libc++abi-dev \
+      libunwind-21-dev \
+      libclang-rt-dev \
+      make \
       cmake \
       ninja-build \
       git \
@@ -37,11 +45,13 @@ WORKDIR /workspace
 
 # Only what the vcpkg layers read comes in before them, so they stay cached
 # across source and CMake edits: the bootstrap reads the submodule alone, and
-# the install below it and the manifest (no overlays, no
-# vcpkg-configuration.json).
+# the install below it, the manifest, its overlay triplets and the toolchain
+# they chainload.
 COPY third_party/vcpkg third_party/vcpkg
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 COPY vcpkg.json ./
+COPY triplets triplets
+COPY cmake/LlvmToolchain.cmake cmake/
 
 # The dependencies too, into the install root the linux preset's configure
 # uses (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds
@@ -50,13 +60,13 @@ COPY vcpkg.json ./
 # the registry cache doesn't carry them.
 # vcpkg restores what it can from the vcpkg-bincache context, the CI Linux
 # jobs' binary cache (ci.yml's container jobs pass it), and builds the rest
-# from source: vcpkg builds its ports with the system compiler on the same
-# Ubuntu as those jobs, so their ABI hashes match. Bind-mounted read-only, for
+# from source: vcpkg builds its ports with the same triplets and clang on the
+# same Ubuntu as those jobs, so their ABI hashes match. Bind-mounted read-only, for
 # this command alone, it is in no layer and never written; built without it
 # (a local docker build, a fork), the context is the empty stage below. Its
 # contents are part of this layer's cache key, so a cache that gained packages
 # reruns the layer: a manifest change runs it twice, once for the change, from
-# the cache as it was, and again once the server job's save of the new
+# the cache as it was, and again once the server-x64-linux job's save of the new
 # packages is the cache restored.
 RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
     VCPKG_BINARY_SOURCES="clear;files,/vcpkg-bincache,read" \
@@ -66,7 +76,7 @@ RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
 
 # The build scripts come in only now, after the dependencies: copied before
 # them, a CMake-only change rebuilt every vcpkg package. vcpkg reads none of
-# cmake/ (its patches are Falcor's, the Windows-only renderer's).
+# cmake/ but the toolchain, already in place.
 COPY cmake cmake
 COPY CMakeLists.txt CMakePresets.json ./
 COPY src src
@@ -74,9 +84,10 @@ COPY tests tests
 
 # The install is staged under DESTDIR with the prefix the runtime stage runs
 # it from, so this file never names a path inside the build tree.
-# Without the C++ tools (AUGUSTA_TOOLS): the image builds augustad alone and
-# does not copy tools/.
-RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF \
+# Without the C++ tools (AUGUSTA_TOOLS) or the client (AUGUSTA_CLIENT): the
+# image builds augustad alone, does not copy tools/, and installs none of the
+# client's ports or the system packages they need.
+RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF -DAUGUSTA_CLIENT=OFF \
     && cmake --build --preset linux --target augustad \
     && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
 
@@ -131,8 +142,8 @@ RUN git init -q /chisel-releases \
     && git -C /chisel-releases checkout -q FETCH_HEAD
 COPY chisel/slices/ /chisel-releases/slices/
 
-# augustad links libc, libm, libstdc++ and libgcc_s; base-files_chisel writes
-# chisel's manifest of what was cut.
+# augustad links libc and libm, its C++ runtime statically (ADR-0008);
+# base-files_chisel writes chisel's manifest of what was cut.
 RUN mkdir /rootfs \
     && chisel cut --release /chisel-releases --root /rootfs \
       base-files_base \
@@ -140,8 +151,6 @@ RUN mkdir /rootfs \
       base-files_chisel \
       base-passwd_data \
       libc6_libs \
-      libgcc-s1_libs \
-      libstdc++6_libs \
       tini_bins
 
 # trivy reads no chisel manifest, so each package it lists also gets the

@@ -1,32 +1,51 @@
 name: Set up a Linux build
 description: >
-  Installs the Linux toolchain the presets expect, starts sccache (unless told not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a Linux job needs before `cmake --preset`. Assumes the repository is checked out with its submodules and the job sets VCPKG_BINARY_SOURCES to the .vcpkg-bincache files provider (see ci.yml's server job for why not the NuGet feed). A job saves the cache with save-vcpkg-cache after it configures.
-
+  Installs the Linux toolchain the presets expect, starts sccache (unless told
+  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
+  Linux job needs before `cmake --preset`. Assumes the repository is checked out
+  with its submodules and the job sets VCPKG_BINARY_SOURCES to the
+  .vcpkg-bincache files provider (see ci.yml's server-x64-linux job for why not
+  the NuGet feed). A job saves the cache with save-vcpkg-cache after it
+  configures.
 inputs:
   extra-packages:
-    description: Additional apt packages a job needs on top of the build toolchain (e.g. clang-tidy).
+    description: >
+      Additional apt packages a job needs on top of the build toolchain (e.g.
+      clang-tidy).
     required: false
     default: ""
   sccache:
     description: >
-      Whether to put sccache on PATH, where the root CMakeLists.txt picks it up as the compiler launcher. "false" for CodeQL: a cache hit never runs the compiler, so CodeQL's tracer would see nothing to extract.
-
+      Whether to put sccache on PATH, where the root CMakeLists.txt picks it up
+      as the compiler launcher. "false" for CodeQL: a cache hit never runs the
+      compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
+  vcpkg-cache-prefix:
+    description: >
+      A vcpkg binary cache of the job's own, by its key prefix (see
+      restore-vcpkg-cache), for a job installing ports the others don't. Empty
+      for the one every Linux job of the runner's architecture shares.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
     - name: Install build tools
-      # clang: the Linux presets compile with it (ADR-0008), through the Ninja
-      # generator. autoconf/autoconf-archive/automake/libtool: vcpkg's
-      # libsodium port builds via autotools on Linux (vcpkg_run_autoreconf) and
-      # needs these from the system package manager - not bundled with vcpkg
-      # itself.
+      # The LLVM toolchain the Linux presets and triplets build with, through
+      # the Ninja generator (ADR-0008): clang, lld, llvm (its binary tools),
+      # libc++, libc++abi, libunwind, whose -dev package Ubuntu names only by
+      # the distro clang's major, and compiler-rt (libclang-rt-dev).
+      # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
+      # builds via autotools on Linux (vcpkg_run_autoreconf) and needs these
+      # from the system package manager - not bundled with vcpkg itself.
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y clang ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
+      run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
     - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       if: inputs.sccache == 'true'
     - uses: ./.github/actions/restore-vcpkg-cache
+      with:
+        prefix: ${{ inputs.vcpkg-cache-prefix }}
     - name: Bootstrap vcpkg
       shell: bash
       run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics

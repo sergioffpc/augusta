@@ -136,28 +136,21 @@ inline constexpr std::string_view kScenePath = "Scene";
 /// every parent listed before its children, which Pack::ResolveScene guarantees.
 std::vector<math::Mat4> ComputeWorldTransforms(const SceneData& scene);
 
-/// The DirectXTex block-compression format a texture blob was compressed
-/// to (ADR-0017), one-to-one with DXGI_FORMAT_BC7_UNORM/BC5_UNORM/
-/// BC4_UNORM. Its own enum rather than depending on DXGI_FORMAT directly:
-/// augusta_assets has no DirectXTex/D3D dependency of its own - only the
-/// offline cooker's native module (tools/pack/native) links DirectXTex.
+/// The block format of a cooked texture's KTX2 `VkFormat` (ADR-0017): kBC7 is
+/// VK_FORMAT_BC7_SRGB_BLOCK, kBC5 VK_FORMAT_BC5_UNORM_BLOCK and kBC4
+/// VK_FORMAT_BC4_UNORM_BLOCK, the only three the cooker writes. Its own enum, so
+/// augusta_assets depends on neither Vulkan nor a KTX library.
 enum class TextureFormat : std::uint8_t {
   kBC7,
   kBC5,
   kBC4,
 };
 
-/// True if value is one of TextureFormat's defined enumerators - a texture
-/// blob's format byte is untrusted wire data and must be checked against
-/// this before being treated as a TextureFormat.
-bool IsValidTextureFormat(std::uint8_t value);
-
-/// A cooked texture (ADR-0017/ADR-0031): DirectXTex's own SaveToDDSMemory
-/// output (DDS header included) plus the block format it was compressed
-/// to, so a caller can pick a shader/PSO without re-parsing the DDS
-/// header itself.
+/// A cooked texture (ADR-0017/ADR-0031): its KTX2 file, as the cooker wrote it,
+/// and the block format its header names, so a caller picks a GPU format without
+/// parsing the file itself.
 struct TextureData {
-  std::vector<std::byte> dds_bytes;
+  std::vector<std::byte> ktx2_bytes;
   TextureFormat format = TextureFormat::kBC7;
 };
 

@@ -72,7 +72,7 @@ ADR-0030 for why.
 
 The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
 environment, native module, a signing key and content directories). The cooker
-runs on Windows and Linux, the platforms vcpkg's DirectXTex port builds for, and
+runs on Windows and Linux, the platforms vcpkg's `ktx` port builds for, and
 cooks the same bytes on both. From Git Bash on Windows, or a Linux shell (the
 dev container included), after the repository's own `scripts/bootstrap.sh`:
 

@@ -55,7 +55,7 @@ the self-hosted k3s cluster. Watching it there came with v2 (M7).
 - Windows bootstrap script (`scripts/bootstrap.sh`): VS Build Tools installed
   system-wide, Windows SDK, CMake, Ninja, Git, vcpkg
 - Linux dev container (`.devcontainer/`): CMake, Ninja, vcpkg, clang-tidy,
-  clang-format, gdb, GitHub CLI, kubectl, helm
+  clang-format, lldb, GitHub CLI, kubectl, helm
 - `.vscode/extensions.json` recommended extensions
 - GitHub Actions CI pipeline: build+test client (Windows runner) and server
   (Linux runner), clang-format/clang-tidy, warnings-as-errors, ASan+UBSan
@@ -340,8 +340,6 @@ criteria:** 4 servers of one scenario run 8-player Matches of Agents at once at
   authority, so peers prove who they are (connections are already encrypted;
   trusted-LAN-only until then, see ARCHITECTURE.md §8)
 - Matchmaking/master server
-- Cross-platform client (would require revisiting Falcor's Linux/Vulkan path —
-  currently Windows-only, see ADR-0009)
 - Incremental asset rebuild (vs. full rebake, see ADR risk notes)
 - LuaJIT, if policy-script performance ever becomes a bottleneck
 - Production (`main`) deployment target — explicitly undecided for now (see

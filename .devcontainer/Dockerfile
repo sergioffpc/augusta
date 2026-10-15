@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# The Linux/server build environment of CI's server job: its runner's Ubuntu
-# release, whose distro clang/clang-tidy/clang-format fix CI's LLVM major
+# The Linux/server build environment of CI's server-x64-linux job: its runner's
+# Ubuntu release, whose distro clang/clang-tidy/clang-format fix CI's LLVM major
 # (bump it with the runner image), and the toolchain
 # .github/actions/setup-linux-build installs on top, as
 # scripts/bootstrap.sh installs it - the one recipe for it, which a

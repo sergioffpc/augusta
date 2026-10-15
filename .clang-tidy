@@ -21,8 +21,8 @@ Checks: >
 # goes unused. It leaves third-party headers alone (IgnoreHeaders, below):
 # those libraries are meant to be used through their umbrella headers
 # (<boost/log/core.hpp>, <yaml-cpp/yaml.h>, <PxPhysicsAPI.h>, <flecs.h>,
-# <rapidcheck.h>, <windows.h>, <pybind11/pybind11.h>), not the internal ones the check would
-# otherwise ask for.
+# <rapidcheck.h>, <windows.h>, <pybind11/pybind11.h>, <vulkan/vulkan.hpp>),
+# not the internal ones the check would otherwise ask for.
 #
 # Trailing return type is a stylistic alternative the guide doesn't mandate
 # either way, so it's the one thing above we don't turn into a hard rule.
@@ -41,7 +41,7 @@ Checks: >
 # (assets::Pack::Load) ORs two of xfilesystem_abi.h's __std_fs_stats_flags
 # bit flags into a value no single enumerator names. Not a bug in our code,
 # and not fixable from the call site since it's the STL's own header; the
-# Linux lint, on libstdc++, never reaches it.
+# Linux lint, on libc++, never reaches it.
 #
 # readability-convert-member-functions-to-static is disabled because most
 # module classes (physics::World, networking::Client, ...) are still
@@ -50,8 +50,8 @@ Checks: >
 # instance state yet only because there's no real state to touch, not
 # because they're meant to be static. Chasing this check per stub would
 # just mean undoing it the moment each real implementation lands.
-# (renderer::Renderer is real as of M1's Falcor spike, ADR-0009 - but it's
-# Windows-only and this clang-tidy run is Linux-only, so it's moot there.)
+# (renderer::Renderer is real, ADR-0059, and linted by the Windows client job;
+# the check stays off there too, so every module is held to one profile.)
 #
 # readability-identifier-length is disabled because the Google style guide sets
 # no minimum name length, and a short name is the natural one in a small scope
@@ -71,9 +71,11 @@ WarningsAsErrors: "*"
 # commands give it, which is absolute (/home/runner/work/augusta/augusta/src/...
 # on CI, C:\...\augusta\src\... on Windows), so the pattern must allow a
 # prefix and either separator. third_party is excluded: its vendored sources
-# have src/ directories of their own.
+# have src/ directories of their own. So is build: the headers the build
+# generates there (the Renderer's embedded shaders and font) sit under a src/ of
+# their own, and are byte arrays, not code anyone writes.
 HeaderFilterRegex: '.*[/\\](src|tests)[/\\].*\.h$'
-ExcludeHeaderFilterRegex: '.*[/\\]third_party[/\\].*'
+ExcludeHeaderFilterRegex: '.*[/\\](third_party|build)[/\\].*'
 
 CheckOptions:
   - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
@@ -110,4 +112,4 @@ CheckOptions:
   # library's headers are found as glm\..., boost\... and so on, hence [/\].
   # <Windows.h> is an umbrella over the SDK's um/ and shared/ headers
   # (winbase.h, minwindef.h, ...), so those are ignored by their location.
-  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp[/\].*;glm[/\].*;spdlog[/\].*;fmt[/\].*;flecs.*;Px.*;foundation[/\].*;extensions[/\].*;characterkinematic[/\].*;steam[/\].*;sol[/\].*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3[/\].*;gtest[/\].*;gmock[/\].*;rapidcheck.*;benchmark[/\].*;pybind11[/\].*;Windows Kits[/\].*[/\](um|shared)[/\].*;Falcor.*;Core[/\].*;Utils[/\].*;RenderGraph[/\].*' }
+  - { key: misc-include-cleaner.IgnoreHeaders, value: 'boost[/\].*;yaml-cpp[/\].*;glm[/\].*;spdlog[/\].*;fmt[/\].*;flecs.*;Px.*;foundation[/\].*;extensions[/\].*;characterkinematic[/\].*;steam[/\].*;sol[/\].*;lua.*;lauxlib.h;lualib.h;blake3.h;sodium.*;nvtx3[/\].*;gtest[/\].*;gmock[/\].*;rapidcheck.*;benchmark[/\].*;pybind11[/\].*;vulkan[/\].*;Windows Kits[/\].*[/\](um|shared)[/\].*' }

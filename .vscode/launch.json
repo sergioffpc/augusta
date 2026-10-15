@@ -7,34 +7,30 @@
   //
   // The (MSVC) configs start from config/augustac.yaml / config/augustad.yaml
   // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
-  // hold this machine's paths. Create them before the first F5. The (gdb)
+  // hold this machine's paths. Create them before the first F5. The (lldb)
   // configs pass none: they run on Linux, where those Windows paths don't exist.
   "configurations": [
-    // The (gdb) configs below debug the Linux build of augustad (the real
-    // deployment target, ADR-0026) and need a real gdb on PATH - only
-    // works from the dev container, not plain Windows (no MIDebuggerPath is set here,
-    // so VS Code falls back to expecting "gdb" to resolve on its own,
-    // which it can't on Windows: "Unable to determine path to debugger").
-    // For debugging augustad natively on Windows during dev, use the
-    // (MSVC) Server configs instead - augustad builds for both platforms
-    // (see the top-level CMakeLists.txt: src/server isn't WIN32-gated the
-    // way src/client and src/modules/renderer are).
+    // The (lldb) configs below debug the Linux build of augustad (the real
+    // deployment target, ADR-0026) through LLVM's lldb-dap extension, which
+    // runs the lldb-dap on PATH - the dev container's, from the lldb package
+    // scripts/bootstrap.sh installs. For debugging augustad natively on
+    // Windows during dev, use the (MSVC) Server configs instead - augustad
+    // builds for both platforms (see the top-level CMakeLists.txt: src/server
+    // isn't WIN32-gated the way src/client and src/modules/renderer are).
     {
-      "name": "Debug Server - Release (gdb)",
-      "type": "cppdbg",
+      "name": "Debug Server - Release (lldb)",
+      "type": "lldb-dap",
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "MIMode": "gdb",
       "preLaunchTask": "CMake: build"
     },
     {
-      "name": "Debug Server - Debug (gdb)",
-      "type": "cppdbg",
+      "name": "Debug Server - Debug (lldb)",
+      "type": "lldb-dap",
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux-debug/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "MIMode": "gdb",
       "preLaunchTask": "CMake: build"
     },
     {
@@ -74,6 +70,14 @@
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
+      // A Debug client runs under Vulkan's validation layer, vcpkg's
+      // (ADR-0059), which the system's loader finds through this.
+      "environment": [
+        {
+          "name": "VK_ADD_LAYER_PATH",
+          "value": "${workspaceFolder}\\build\\x64-windows-debug\\vcpkg_installed\\x64-windows\\debug\\bin"
+        }
+      ],
       "preLaunchTask": "CMake: build",
       "externalConsole": true
     }

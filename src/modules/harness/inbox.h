@@ -1,10 +1,10 @@
 #ifndef AUGUSTA_HARNESS_INBOX_H_
 #define AUGUSTA_HARNESS_INBOX_H_
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "augusta/harness.h"
@@ -69,13 +69,17 @@ class Inbox {
   // Only the Network I/O thread publishes, so nothing can intervene between the load and the store.
   template <typename Mutate>
   void Publish(Mutate&& mutate) {
-    auto next = std::make_shared<ServerView>(*view_.load());
+    auto next = std::make_shared<ServerView>(*View());
     mutate(*next);
-    view_.store(std::move(next));
+    const std::scoped_lock lock(view_mutex_);
+    view_ = std::move(next);
   }
 
   const bool viewer_;
-  std::atomic<std::shared_ptr<const ServerView>> view_{std::make_shared<const ServerView>()};
+  // The published view, swapped whole under view_mutex_ and copied out under it:
+  // libc++ has no std::atomic<std::shared_ptr>.
+  mutable std::mutex view_mutex_;
+  std::shared_ptr<const ServerView> view_{std::make_shared<const ServerView>()};
   // The Shots, the Hit confirmations and the Deaths received and not yet taken,
   // each under the Match it is of. Not part of the view: they are handed out
   // once, not read.

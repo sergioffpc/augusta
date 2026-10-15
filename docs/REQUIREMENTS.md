@@ -478,19 +478,21 @@ Version: v1
 ```text
 Source:      Build system
 Stimulus:    Compilation request
-Environment: Client build targets Windows x64; server build targets
-             Linux x86-64 and Linux arm64, with Windows x64 for
-             development only
+Environment: Client build targets Windows x64 and Linux x86-64;
+             server build targets Linux x86-64 and Linux arm64, with
+             Windows x64 for development only
 Artifact:    Engine codebase (shared core, client, server)
 Response:    Shared core (ECS, physics, ballistics, networking) compiles
              cleanly for every target platform without platform-specific
-             branches; client-only code (rendering) is Windows-only;
-             server-only code runs in production on Linux only; any other
-             target is refused when the build is configured
+             branches; client-only code (rendering) builds for
+             Windows and Linux x86-64; server-only code runs in
+             production on Linux only; any other server target is
+             refused when the build is configured
 Measure:     Successful client build + Match playthrough on
              Windows; successful server build + Match playthrough
              on Linux; CI builds the server on Linux x86-64 and
-             Windows x64, and each release on both Linux architectures
+             Windows x64, and each release on both Linux architectures;
+             the nightly builds and tests the client on Linux x86-64
 ```
 
 The server's Windows build is for development (ADR-0047): it runs a match beside

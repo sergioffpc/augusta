@@ -4,6 +4,7 @@ What each authored prim becomes in the client and server packs (ADR-0019,
 ADR-0032), and how malformed geometry is refused.
 """
 
+import math
 import shutil
 import struct
 
@@ -17,8 +18,17 @@ from conftest import decode_hitbox
 from conftest import decode_mesh
 from conftest import decode_spawn_point
 from conftest import decode_string
+from conftest import decode_texture
+from conftest import encode_png
 from conftest import FIXTURES_DIR
+from conftest import KTX2_SUPERCOMPRESSION_ZSTD
+from conftest import ktx_validate
+from conftest import read_ktx2_header
+from conftest import read_ktx2_level_sizes
 from conftest import read_pack_contents
+from conftest import VK_FORMAT_BC4_UNORM_BLOCK
+from conftest import VK_FORMAT_BC5_UNORM_BLOCK
+from conftest import VK_FORMAT_BC7_SRGB_BLOCK
 import pytest
 
 
@@ -144,12 +154,123 @@ def test_a_spawn_point_carries_its_local_transform(tmp_path, key_pair):
     assert rotation == (0, 0, 0, 1)
 
 
-def test_a_texture_is_compressed_to_bc7_dds_by_default(tmp_path, key_pair):
-    client, _ = cook_stage("texture_fixture.usda", tmp_path, key_pair)
+def cook_texture(texture_format, tmp_path, key_pair, png=None):
+    """Cooks the texture fixture with augusta:textureFormat set, if not None.
 
-    blob = client.blob("TestMesh/Mat/DiffuseTexture")
-    assert blob[0] == pack.TEXTURE_FORMAT_BC7
-    assert blob[5:9] == b"DDS "
+    The fixture's image is texture_fixture.png, or png's bytes if given.
+
+    Returns:
+        The KTX2 file of the client pack's texture blob.
+    """
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    if png is None:
+        shutil.copy(FIXTURES_DIR / "texture_fixture.png", stage_dir)
+    else:
+        (stage_dir / "texture_fixture.png").write_bytes(png)
+    stage = (FIXTURES_DIR / "texture_fixture.usda").read_text()
+    if texture_format is not None:
+        stage = stage.replace(
+            "asset inputs:file",
+            f'uniform token augusta:textureFormat = "{texture_format}"\n'
+            "            asset inputs:file",
+        )
+    (stage_dir / "texture_fixture.usda").write_text(stage)
+    client_path = tmp_path / "client.pack"
+    cook_scenario(
+        stage_dir / "texture_fixture.usda",
+        [],
+        client_path,
+        tmp_path / "server.pack",
+        key_pair.private_key,
+    )
+    client = read_pack_contents(client_path, key_pair.public_key)
+    return decode_texture(client.blob("TestMesh/Mat/DiffuseTexture"))
+
+
+def test_a_texture_cooks_to_a_ktx2_that_ktx_validate_accepts(
+    tmp_path, key_pair
+):
+    ktx2 = cook_texture(None, tmp_path, key_pair)
+
+    ktx_validate(ktx2, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("texture_format", "vk_format"),
+    [
+        ("bc7", VK_FORMAT_BC7_SRGB_BLOCK),
+        ("bc5", VK_FORMAT_BC5_UNORM_BLOCK),
+        ("bc4", VK_FORMAT_BC4_UNORM_BLOCK),
+        ("dxt1", VK_FORMAT_BC7_SRGB_BLOCK),
+        (None, VK_FORMAT_BC7_SRGB_BLOCK),
+    ],
+)
+def test_a_texture_cooks_to_the_vk_format_its_texture_format_names(
+    texture_format, vk_format, tmp_path, key_pair
+):
+    ktx2 = cook_texture(texture_format, tmp_path, key_pair)
+
+    assert read_ktx2_header(ktx2).vk_format == vk_format
+    ktx_validate(ktx2, tmp_path)
+
+
+def test_a_texture_is_supercompressed_with_zstandard(tmp_path, key_pair):
+    ktx2 = cook_texture(None, tmp_path, key_pair)
+
+    assert (
+        read_ktx2_header(ktx2).supercompression_scheme
+        == KTX2_SUPERCOMPRESSION_ZSTD
+    )
+
+
+# The bytes of one 4x4 block of each VkFormat the cooker writes.
+BLOCK_BYTES = {
+    VK_FORMAT_BC7_SRGB_BLOCK: 16,
+    VK_FORMAT_BC5_UNORM_BLOCK: 16,
+    VK_FORMAT_BC4_UNORM_BLOCK: 8,
+}
+
+
+def level_byte_count(width, height, level, vk_format):
+    """A level's size in whole 4x4 blocks.
+
+    Its dimensions are the KTX2 specification's: max(1, floor(base /
+    2^level)) on each axis.
+    """
+    level_width = max(1, width >> level)
+    level_height = max(1, height >> level)
+    blocks = math.ceil(level_width / 4) * math.ceil(level_height / 4)
+    return blocks * BLOCK_BYTES[vk_format]
+
+
+@pytest.mark.parametrize(("width", "height"), [(8, 8), (16, 4), (5, 3), (3, 7)])
+@pytest.mark.parametrize("texture_format", ["bc7", "bc5", "bc4"])
+def test_a_texture_cooks_with_its_full_mip_chain(
+    width, height, texture_format, tmp_path, key_pair
+):
+    rgba = bytes(i % 256 for i in range(width * height * 4))
+    png = encode_png(width, height, rgba)
+
+    ktx2 = cook_texture(texture_format, tmp_path, key_pair, png)
+
+    header = read_ktx2_header(ktx2)
+    assert (header.width, header.height) == (width, height)
+    level_count = math.floor(math.log2(max(width, height))) + 1
+    assert read_ktx2_level_sizes(ktx2) == [
+        level_byte_count(width, height, level, header.vk_format)
+        for level in range(level_count)
+    ]
+    ktx_validate(ktx2, tmp_path)
+
+
+def test_a_1x1_image_cooks_to_a_single_level(tmp_path, key_pair):
+    png = encode_png(1, 1, bytes([10, 20, 30, 255]))
+
+    ktx2 = cook_texture(None, tmp_path, key_pair, png)
+
+    assert read_ktx2_header(ktx2).level_count == 1
+    ktx_validate(ktx2, tmp_path)
 
 
 def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):

@@ -1,6 +1,6 @@
 {
   "name": "augusta",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "dependencies": [
     "abseil",
     "benchmark",
@@ -16,10 +16,6 @@
     "gtest",
     "libsodium",
     "lua",
-    {
-      "name": "miniaudio",
-      "platform": "windows"
-    },
     "physx",
     {
       "name": "prometheus-cpp",
@@ -27,10 +23,6 @@
     },
     "rapidcheck",
     "sol2",
-    {
-      "name": "steam-audio",
-      "platform": "windows"
-    },
     "yaml-cpp"
   ],
   "features": {
@@ -39,6 +31,62 @@
       "dependencies": [
         "pybind11"
       ]
+    },
+    "client": {
+      "description": "The client and its Renderer (src/client, src/modules/renderer), which the root CMakeLists.txt turns on with AUGUSTA_CLIENT: GLFW (with Wayland beside X11 on Linux), ImGui, NVRHI on Vulkan, the Vulkan headers and validation layers, Slang's shader compiler as a host tool, and miniaudio and Steam Audio for the audio output",
+      "dependencies": [
+        {
+          "name": "glfw3",
+          "features": [
+            {
+              "name": "wayland",
+              "platform": "linux"
+            }
+          ]
+        },
+        {
+          "name": "imgui",
+          "features": [
+            "glfw-binding"
+          ]
+        },
+        "miniaudio",
+        "nvrhi",
+        {
+          "name": "shader-slang",
+          "host": true
+        },
+        "steam-audio",
+        "vulkan-headers",
+        "vulkan-validationlayers"
+      ]
+    },
+    "lavapipe": {
+      "description": "The software Vulkan the renderer smoke test runs on (tests/CMakeLists.txt), which the root CMakeLists.txt turns on with AUGUSTA_LAVAPIPE: Mesa's lavapipe, and a Vulkan loader for a machine with no GPU driver to install one, such as CI's runner. LLVM without its default features: lavapipe needs its x86 code generator, not clang or lld",
+      "dependencies": [
+        {
+          "name": "llvm",
+          "default-features": false,
+          "platform": "windows"
+        },
+        {
+          "name": "mesa",
+          "default-features": false,
+          "features": [
+            "lavapipe"
+          ],
+          "platform": "windows"
+        },
+        {
+          "name": "vulkan-loader",
+          "platform": "windows"
+        }
+      ]
     }
+  },
+  "vcpkg-configuration": {
+    "overlay-triplets": [
+      "./triplets"
+    ]
   }
 }

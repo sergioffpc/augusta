@@ -22,21 +22,31 @@ install_toolchain() {
       "release - its clang may format and lint differently from CI's." >&2
   fi
 
-  # From .github/actions/setup-linux-build (which says why each): clang,
-  # ninja-build, autoconf, autoconf-archive, automake, libtool. From the server
-  # job: clang-tidy. Already on CI's runner image: build-essential, cmake, git,
-  # curl, zip, unzip, tar, pkg-config. From the tools job: libomp-dev
-  # (DirectXTex's CMake config finds OpenMP). For the hooks: clang-format,
-  # git-lfs (pre-push), and lua-check (luacheck), which this release packages
-  # at CI's pinned LUACHECK_VERSION for every architecture, unlike luacheck's
-  # own release. sccache: the root CMakeLists.txt picks it up from PATH.
-  # doxygen: `make docs`. gdb and gh: for development.
+  # From .github/actions/setup-linux-build (which says why each): clang, lld,
+  # llvm, libc++-dev, libc++abi-dev, libunwind-21-dev, libclang-rt-dev,
+  # ninja-build, autoconf, autoconf-archive, automake, libtool. From the
+  # server-x64-linux job: clang-tidy.
+  # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
+  # pkg-config. For the hooks: clang-format, git-lfs (pre-push), and lua-check
+  # (luacheck), which this release packages at CI's pinned LUACHECK_VERSION for
+  # every architecture, unlike luacheck's own release. sccache: the root
+  # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
+  # for development.
+  # The client's (AUGUSTA_CLIENT), as the nightly's client-x64-linux job
+  # installs them: vcpkg's GLFW builds against the system's X11 (libx11-dev,
+  # libxcursor-dev, libxi-dev, libxinerama-dev, libxrandr-dev), Wayland
+  # (libwayland-dev, with wayland-scanner) and xkbcommon (libxkbcommon-dev)
+  # development files, and its header includes OpenGL's (libgl-dev), as ImGui's
+  # GLFW binding builds it. GLFW loads those libraries at runtime, as miniaudio
+  # does PipeWire's, PulseAudio's or ALSA's, which need no headers. The
+  # renderer smoke test draws on Mesa's lavapipe (mesa-vulkan-drivers) through
+  # the system's Vulkan loader (libvulkan1), in a virtual X server where there
+  # is no display (xvfb, and xauth for xvfb-run).
   as_root apt-get update
   as_root apt-get install -y --no-install-recommends \
     autoconf \
     autoconf-archive \
     automake \
-    build-essential \
     ca-certificates \
     clang \
     clang-format \
@@ -44,19 +54,37 @@ install_toolchain() {
     cmake \
     curl \
     doxygen \
-    gdb \
     gh \
     git \
     git-lfs \
-    libomp-dev \
+    libc++-dev \
+    libc++abi-dev \
+    libclang-rt-dev \
+    libgl-dev \
     libtool \
+    libunwind-21-dev \
+    libvulkan1 \
+    libwayland-dev \
+    libx11-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxinerama-dev \
+    libxkbcommon-dev \
+    libxrandr-dev \
+    lld \
+    lldb \
+    llvm \
     lua-check \
+    make \
+    mesa-vulkan-drivers \
     ninja-build \
     pkg-config \
     sccache \
     sudo \
     tar \
     unzip \
+    xauth \
+    xvfb \
     zip
 
   # The hooks' and CI's format job's formatters and linters that Ubuntu doesn't
@@ -128,7 +156,7 @@ install_toolchain() {
     | as_root bash
 }
 
-# The submodules the Linux build uses; Falcor is the Windows client's alone.
+# The repository's submodules.
 update_submodules() {
   git submodule update --init third_party/vcpkg third_party/nvtx
 }

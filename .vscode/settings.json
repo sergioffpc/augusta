@@ -6,7 +6,10 @@
   "[c]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
   "[lua]": { "editor.defaultFormatter": "JohnnyMorganz.stylua" },
   "[toml]": { "editor.defaultFormatter": "tamasfe.even-better-toml" },
-  "[yaml]": { "editor.formatOnSave": false },
+  "[yaml]": { "editor.formatOnSave": false, "editor.rulers": [80] },
+  "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode", "editor.rulers": [80] },
+  "[python]": { "editor.defaultFormatter": "charliermarsh.ruff", "editor.rulers": [80] },
+  "[shellscript]": { "editor.defaultFormatter": "mkhl.shfmt", "editor.rulers": [80] },
 
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.detectIndentation": false,

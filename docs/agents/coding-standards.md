@@ -40,7 +40,7 @@ shared concept is clear, not on a schedule.
 Within C++, keep the code that _decides_ what to do separate from the code that
 _executes_ it, even inside the same module — e.g. in the renderer, "which
 resource to bind given this state" (decision) is a different function from
-"issue the D3D12 call" (execution); in networking, the reconciliation strategy
+"issue the Vulkan call" (execution); in networking, the reconciliation strategy
 (decision) is separate from the transport send/receive (mechanism). Extract the
 decision into its own function so it stays unit-testable even when the
 surrounding code isn't (see Testing below).

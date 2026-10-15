@@ -1,0 +1,6 @@
+# The tests' profile: the root one, without readability-magic-numbers. A test's
+# literals are its inputs and the values it expects (a frame at 60 Hz, a player
+# 2 m away), read where they are used; naming each one would only move it away
+# from the assertion it explains.
+InheritParentConfig: true
+Checks: -readability-magic-numbers

@@ -3,8 +3,17 @@
   "version": "0.1.0",
   "dependencies": [
     "meshoptimizer",
-    "directxtex",
+    {
+      "name": "ktx",
+      "default-features": false,
+      "features": ["tools"]
+    },
     "stb",
     "pybind11"
-  ]
+  ],
+  "vcpkg-configuration": {
+    "overlay-triplets": [
+      "../../../triplets"
+    ]
+  }
 }

@@ -1,7 +1,7 @@
 # The client's private libraries below use renderer.h's plain types only, so
-# they take that header's directory rather than linking augusta_renderer: their
-# tests need neither Falcor nor a window. renderer.h includes input.h, hence
-# augusta_input.
+# they take that header's directory rather than linking augusta_renderer:
+# their tests need neither a GPU nor a window. renderer.h includes input.h,
+# hence augusta_input.
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see scene_loader.h), the characters other players bring (see
@@ -114,69 +114,88 @@ target_link_libraries(
     augustac_content
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
-# winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
-# life of the process, so the Prediction thread's sleeps keep its tick schedule.
-# NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
-target_link_libraries(augustac PRIVATE winmm)
-target_compile_definitions(augustac PRIVATE NOMINMAX)
-# Release writes augustac.pdb beside augustac.exe, what a released client's
-# crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
-# /OPT:ICF off unless they are named, so they are: the code is Release's own.
-target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
+# The Aftermath shared libraries beside augustac, on both platforms, when the
+# build has them (cmake/Aftermath.cmake).
+augusta_stage_aftermath(augustac)
+# What each platform's augustac needs beyond its code: its debug info, and its
+# runtime folder, which a release archives (ADR-0055, ADR-0058); and on Windows
+# its timer resolution, which Linux's main.cpp has no need to raise.
+if(WIN32)
+  # winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
+  # life of the process, so the Prediction thread's sleeps keep its tick schedule.
+  # NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
+  target_link_libraries(augustac PRIVATE winmm)
+  target_compile_definitions(augustac PRIVATE NOMINMAX)
+  # Release writes augustac.pdb beside augustac.exe, what a released client's
+  # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
+  # /OPT:ICF off unless they are named, so they are: the code is Release's own.
+  target_link_options(augustac PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL;/OPT:REF;/OPT:ICF>")
 
-# Falcor.dll (ADR-0009) and its own runtime dependencies (D3D12 Agility SDK,
-# dxcompiler, ...) and shader library need to sit next to augustac.exe -
-# FALCOR_BIN_DIR is set by src/modules/renderer/CMakeLists.txt, the only
-# other consumer of the vendored Falcor build.
-add_custom_command(
-  TARGET augustac
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${FALCOR_BIN_DIR}" "$<TARGET_FILE_DIR:augustac>"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders"
-    "$<TARGET_FILE_DIR:augustac>/shaders/Augusta/Renderer"
-  COMMENT "Deploying Falcor's runtime (ADR-0009) and shaders next to augustac"
-)
+  # `cmake --install --component client` stages the client's whole runtime folder,
+  # which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
+  # loads, and the MSVC runtime, so it starts on a Windows with no Visual C++
+  # redistributable. CMake resolves the DLLs itself, as for augustad: vcpkg's, and
+  # Aftermath's when the build has it (cmake/Aftermath.cmake). The renderer's
+  # shaders are in augustac.exe, and the Vulkan loader is the system's, which
+  # augustac loads at runtime rather than imports (ADR-0059).
+  # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
+  # `make install`), leaves it out.
+  install(
+    TARGETS augustac
+    RUNTIME_DEPENDENCY_SET augustac_dlls
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+  set(dll_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
+  if(AUGUSTA_AFTERMATH_DIR)
+    list(APPEND dll_directories "${AUGUSTA_AFTERMATH_DIR}/lib/x64")
+  endif()
+  install(
+    RUNTIME_DEPENDENCY_SET augustac_dlls
+    PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
+    POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
+    DIRECTORIES ${dll_directories}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+  include(InstallRequiredSystemLibraries)
+  install(
+    PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT client
+    EXCLUDE_FROM_ALL
+  )
+else()
+  # Release's debug info split off into augustac.debug, as augustad's is
+  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). No
+  # crash handler: a player's systemd-coredump keeps the core.
+  augusta_split_debug_info(augustac)
+  # The shared libraries the folder bundles are found beside augustac, wherever
+  # it is extracted, with no launcher script setting a library path. In the
+  # build tree too, so the installed augustac is the built one, byte for byte.
+  set_target_properties(augustac PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
 
-# `cmake --install --component client` stages the client's whole runtime folder,
-# which a release zips (scripts/stage-client.sh): augustac.exe, the DLLs it
-# loads, Falcor's runtime as the build tree has it beside it (its DLLs, those it
-# loads itself, and the shaders, data and plugins it reads), and the MSVC
-# runtime, so it starts on a Windows with no Visual C++ redistributable. CMake
-# resolves the DLLs itself, as for augustad. Falcor's PDBs stay out: they are
-# most of its folder, and no player reads them. EXCLUDE_FROM_ALL: a plain
-# `cmake --install`, augustad's (Dockerfile, `make install`), leaves it out.
-install(
-  TARGETS augustac
-  RUNTIME_DEPENDENCY_SET augustac_dlls
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-)
-install(
-  RUNTIME_DEPENDENCY_SET augustac_dlls
-  PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
-  POST_EXCLUDE_REGEXES "[/\\][Ss]ystem32[/\\]"
-  DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin" "${FALCOR_BIN_DIR}"
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
-)
-install(
-  DIRECTORY "${FALCOR_BIN_DIR}/"
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  COMPONENT client
-  EXCLUDE_FROM_ALL
-  PATTERN "*.pdb" EXCLUDE
-  PATTERN "setpath.*" EXCLUDE
-)
-install(
-  DIRECTORY "${CMAKE_SOURCE_DIR}/src/modules/renderer/shaders/"
-  DESTINATION ${CMAKE_INSTALL_BINDIR}/shaders/Augusta/Renderer
-  COMPONENT client
-  EXCLUDE_FROM_ALL
-)
-set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-include(InstallRequiredSystemLibraries)
-install(
-  PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-  DESTINATION ${CMAKE_INSTALL_BINDIR}
-  COMPONENT client
-  EXCLUDE_FROM_ALL
-)
+  # `cmake --install --component client` stages the client's runtime folder,
+  # which a release tars (scripts/stage-client.sh): augustac and the shared
+  # libraries it links that are not the system's. vcpkg links its ports
+  # statically, and the toolchain the C++ runtime (cmake/LlvmToolchain.cmake),
+  # so the folder bundles only a shared library a dependency ships alone:
+  # Aftermath's when the build has it. What it links from the system is held to
+  # an allowlist by the staging check.
+  # EXCLUDE_FROM_ALL: a plain `cmake --install`, augustad's (Dockerfile,
+  # `make install`), leaves it out.
+  install(
+    TARGETS augustac
+    RUNTIME_DEPENDENCY_SET augustac_libraries
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+  set(library_directories "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>lib")
+  if(AUGUSTA_AFTERMATH_DIR)
+    list(APPEND library_directories "${AUGUSTA_AFTERMATH_DIR}/lib/x64")
+  endif()
+  install(
+    RUNTIME_DEPENDENCY_SET augustac_libraries
+    POST_EXCLUDE_REGEXES "^/lib/" "^/lib64/" "^/usr/lib/" "^/usr/lib64/"
+    DIRECTORIES ${library_directories}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT client EXCLUDE_FROM_ALL
+  )
+endif()

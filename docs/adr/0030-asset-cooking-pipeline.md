@@ -22,8 +22,8 @@ told explicitly where to write it. `--client-output-pack`/`--server-output-pack`
 override this per run.
 
 The full pipeline runs as a single ordered sequence: **usd-optimize →
-usd-validation-nvidia → USD stage walk → meshoptimizer/DirectXTex → pack → hash
-→ sign**, entirely inside `tools/pack` - the first two steps run once per stage
+usd-validation-nvidia → USD stage walk → meshoptimizer/libktx → pack → hash →
+sign**, entirely inside `tools/pack` - the first two steps run once per stage
 the manifest composes (the map, then each character, ADR-0041), each
 independently cleaned/validated, before the walk/pack/hash/sign steps run once
 over all of them together into one pack pair — a pure-Python project
@@ -47,8 +47,10 @@ did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python
 equivalent and stay native, in one small pybind11 extension module,
 `augusta_pack._native`, built from `tools/pack/native/` (`optimize_mesh`,
 wrapping meshoptimizer's vertex weld/simplify/reorder/quantize pass, ADR-0016;
-`compress_texture`, wrapping stb_image's PNG/JPEG load and DirectXTex's
-BC7/BC5/BC4 compression + DDS encode, ADR-0017) — both stateless,
+`compress_texture`, wrapping stb_image's PNG/JPEG load, stb_image_resize2's mip
+chain and libktx's UASTC encode, BC7/BC5/BC4 transcode and KTX2 write, ADR-0017;
+and `generate_mip_chain`, the same mip chain alone, so the cooker's tests check
+its filtering before the levels are BC-encoded) — all stateless,
 taking/returning plain bytes, with **no USD dependency of their own**. That last
 point is load-bearing, not incidental: an earlier version of this cooker was
 itself a C++ program linking vcpkg's own OpenUSD build directly, called from
@@ -90,23 +92,23 @@ per-USD-prim conversion mapping.
 
 ## Considered Options
 
-**A single C++ cooker, linking OpenUSD/meshoptimizer/DirectXTex directly, called
+**A single C++ cooker, linking OpenUSD/meshoptimizer/libktx directly, called
 from Python through one pybind11 module** was the original design. Rejected
 after implementation: it requires vcpkg's own OpenUSD build to load in the same
 process as usd-optimize's independently-built one (needed regardless, for stage
 cleanup) - a hard DLL-name collision on Windows, not a subprocess/threading
 issue a different calling convention could work around. Splitting the native
-surface down to only the two USD-independent pieces (meshoptimizer, DirectXTex)
-and moving the stage walk into Python removes the conflict at its root rather
-than working around it (e.g. via subprocess isolation, which was considered and
-would have worked, but keeps two OpenUSD toolchains to maintain for no benefit
-once the walk itself is trivially portable to Python).
+surface down to only the two USD-independent pieces (meshoptimizer, libktx) and
+moving the stage walk into Python removes the conflict at its root rather than
+working around it (e.g. via subprocess isolation, which was considered and would
+have worked, but keeps two OpenUSD toolchains to maintain for no benefit once
+the walk itself is trivially portable to Python).
 
 **Reusing `augusta_assets`' C++ pack-writer via a third pybind11 binding**
 (rather than reimplementing it in Python) was also considered, and was the
 safer-looking option on paper - byte-for-byte fidelity with the decoder "for
 free," no format logic to duplicate. Decided against: that binding would have
-had the same no-USD-dependency property as meshoptimizer/textconv
+had the same no-USD-dependency property as meshoptimizer/libktx
 (blake3/libsodium don't touch USD), so it wouldn't have caused the collision
 above, but keeping the cooker's write path in Python end to end was judged worth
 the small duplication, validated once by cross-checking the hash/signature
