@@ -79,6 +79,11 @@ one with fire pressed: whether a Command fires a round is the server's to decide
 - **`augusta_ballistics` leaves the server-only modules.** Its trajectory
   integration is used by the client's presentation as well; its hit testing and
   the outcome it reports stay server-side.
+- **Replication lives with SimulationWorld, in `augusta_simulation`.** Deciding
+  what each client is sent of a tick's Authoritative State, its Shots and Hit
+  confirmations included, is server-only and stops at the engine's own types: a
+  pure decision tested without a network, which `server::Host` turns into
+  messages.
 - **A shooter's hit marker lags its shot** by the flight time plus half an RTT.
   That is the price of never showing one that is taken back.
 

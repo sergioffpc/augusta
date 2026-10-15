@@ -1,7 +1,7 @@
 # Keeps the Networking Protocol at the edge (ADR-0038): no header of the
 # modules past it - the harness's API, the server's Match, Host and command
-# queue, replication, presentation, ClientRuntime - may name a protocol type
-# or include the protocol's header. Only the two adapters convert:
+# queue, simulation's Replication, presentation, ClientRuntime - may name a
+# protocol type or include the protocol's header. Only the two adapters convert:
 # harness_wire.h on the client and server/wire.h on the server, which both
 # call augusta/shared_wire.h for the shared core's own types (a Command, a
 # stance, a pack's hash), and augusta/capture.h reads a Match capture's
@@ -25,7 +25,7 @@ endif()
 file(
   GLOB headers
   "${SOURCE_DIR}/src/modules/harness/include/augusta/*.h"
-  "${SOURCE_DIR}/src/modules/replication/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/simulation/include/augusta/replication.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
   "${SOURCE_DIR}/src/server/*.h"
   "${SOURCE_DIR}/src/client/*.h"
