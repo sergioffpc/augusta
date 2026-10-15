@@ -14,7 +14,9 @@
 /// general body movement, stance transitions, and stamina depletion/
 /// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate
 /// module (see augusta::ballistics) - PhysX's own generic projectile
-/// handling is deliberately not used for that.
+/// handling is deliberately not used for that. The module also builds a
+/// map's static collision from a verified Pack (see augusta/map.h), so it
+/// depends on augusta_assets.
 ///
 /// This module's World is used identically by both PredictionWorld (client,
 /// predicted/approximate) and SimulationWorld (server, authoritative) - the
