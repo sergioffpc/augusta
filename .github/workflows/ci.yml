@@ -490,9 +490,11 @@ jobs:
         # whatever the root build didn't install. vcpkg's tools pinned as
         # setup-linux-build pins them, for the same reason.
         run: |
-          echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite" >> "$GITHUB_ENV"
-          echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
-          echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}" >> "$GITHUB_ENV"
+          {
+            echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite"
+            echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1"
+            echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}"
+          } >> "$GITHUB_ENV"
       - name: Restore and save vcpkg binaries
         if: runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
