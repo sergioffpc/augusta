@@ -33,6 +33,12 @@ CI's `client-x64-windows` job reproduces Windows-only failures.
 Issues are tracked in this repo's GitHub Issues, using the `gh` CLI. See
 `docs/agents/issue-tracker.md`.
 
+### Triage labels
+
+The five canonical roles under their own names (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`), beside GitHub's `bug` and
+`enhancement` as the categories. See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See
