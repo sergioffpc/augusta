@@ -27,7 +27,7 @@ target_link_libraries(
     augusta_failure
     augusta_physics
     augusta_protocol
-    augusta_capture_file
+    augusta_capture
     augusta_shared_wire
     augusta_supervisor
     augusta_tick

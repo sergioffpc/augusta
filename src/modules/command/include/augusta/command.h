@@ -58,6 +58,8 @@ struct Command {
   /// server holds it within what it sent and within the Shooter's delay's cap.
   tick::Tick seen_tick = 0;
   float seen_fraction = 0.0F;
+
+  bool operator==(const Command&) const = default;
 };
 
 /// The rotation of a view with this yaw and pitch (see Command): yaw about +Y,

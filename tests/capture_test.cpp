@@ -22,8 +22,8 @@
 #include <sys/stat.h>
 #endif
 
+#include "augusta/capture.h"
 #include "augusta/capture_error.h"
-#include "augusta/capture_file.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -37,7 +37,7 @@
 // hand, as Host hands them on the Simulation thread.
 namespace {
 
-using augusta::capture_file::ReadError;
+using augusta::capture::ReadError;
 using augusta::command::Command;
 using augusta::failure::Code;
 using augusta::failure::DescribeFailure;
@@ -770,7 +770,7 @@ TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
   std::string bytes = Bytes();
   std::ostringstream out(bytes, std::ios::binary | std::ios::ate);
   // After the Match end, which nothing may follow, and of a player 9.
-  augusta::capture_file::WriteFrame(
+  augusta::capture::WriteFrame(
       out,
       augusta::protocol::EncodeCaptureRecord(augusta::protocol::CapturedLeaveWire{.offset = 5, .player = 9}).value());
   EXPECT_EQ(ReadBytes(out.str()).error(), ReadError::kMalformed);
@@ -779,14 +779,14 @@ TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
 // The longest payload a frame holds reads back whole: its length fills the
 // frame's one byte.
 TEST(FramesTest, APayloadOfTheLongestLengthReadsBackWhole) {
-  const std::vector<std::byte> written(augusta::capture_file::kMaxFramePayload, std::byte{0xAB});
+  const std::vector<std::byte> written(augusta::capture::kMaxFramePayload, std::byte{0xAB});
   std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
-  augusta::capture_file::WriteFrame(stream, written);
+  augusta::capture::WriteFrame(stream, written);
 
   std::vector<std::byte> read;
-  EXPECT_EQ(augusta::capture_file::ReadFrame(stream, read), augusta::capture_file::Frame::kRead);
+  EXPECT_EQ(augusta::capture::ReadFrame(stream, read), augusta::capture::Frame::kRead);
   EXPECT_EQ(read, written);
-  EXPECT_EQ(augusta::capture_file::ReadFrame(stream, read), augusta::capture_file::Frame::kEnd);
+  EXPECT_EQ(augusta::capture::ReadFrame(stream, read), augusta::capture::Frame::kEnd);
 }
 
 }  // namespace

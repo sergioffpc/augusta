@@ -445,6 +445,13 @@ target_compile_definitions(
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
 
+# A Match capture's file (ADR-0050) through the capture module alone: written,
+# read back and refused, with no server; its framing reached through frame.h.
+add_executable(augusta_capture_format_tests capture_format_test.cpp)
+target_link_libraries(augusta_capture_format_tests PRIVATE augusta_capture GTest::gtest GTest::gtest_main)
+target_include_directories(augusta_capture_format_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/capture)
+gtest_discover_tests(augusta_capture_format_tests)
+
 # Match captures (ADR-0050): a Capturer's files, read back, with no Host.
 add_executable(augusta_capture_tests capture_test.cpp)
 target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)

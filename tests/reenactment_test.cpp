@@ -31,7 +31,7 @@
 // Server views built by hand.
 namespace {
 
-using augusta::capture_file::ReadError;
+using augusta::capture::ReadError;
 using augusta::command::Command;
 using augusta::harness::CapturedCommand;
 using augusta::harness::CapturedPlayer;

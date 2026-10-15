@@ -20,7 +20,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/capture_file.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
@@ -327,10 +327,9 @@ augusta::server::Capture ReadWhole(const std::filesystem::path& file) {
 void Rewrite(const std::filesystem::path& file, const augusta::server::Capture& capture) {
   std::ofstream out(file, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  augusta::capture_file::WriteFrame(out,
-                                    augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
+  augusta::capture::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
   for (const augusta::server::CaptureRecord& record : capture.records) {
-    augusta::capture_file::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
+    augusta::capture::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
   }
 }
 
