@@ -176,7 +176,9 @@ IP:port.
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-      smooths for display; emits presentation state each render frame
+      smooths for display; emits presentation state each render frame. One
+      module (augusta_presentation) holds it and its phases, including the
+      animation engine behind its Animation phase
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; owns the
   client's single OS window (see Input handling, above) and consumes
   presentation state. Exposes pumping window/device events and rendering a frame

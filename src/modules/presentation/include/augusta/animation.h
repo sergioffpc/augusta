@@ -7,7 +7,8 @@
 #include "augusta/physics.h"
 
 /// \file
-/// augusta::animation drives PresentationWorld's Animation phase
+/// augusta::animation, the presentation module's (augusta_presentation)
+/// animation engine, drives PresentationWorld's Animation phase
 /// (ADR-0024): turning interpolated movement and weapon state into
 /// animation blend inputs for every player character the client can see
 /// - not just the local player. Unlike augusta::prediction (local player

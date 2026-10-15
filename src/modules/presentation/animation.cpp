@@ -5,9 +5,9 @@
 namespace augusta::animation {
 
 // TODO(sergioffpc): every method below is a placeholder - there is no
-// skeleton/rig format yet (see this module's header comment). Just
-// enough is defined here for callers to construct/link against this
-// module.
+// skeleton/rig format yet (see animation.h's file comment). Just
+// enough is defined here for callers to construct/link against the
+// Engine.
 
 // Nothing to own yet - no animators exist until CreateAnimator is called.
 Engine::Engine() = default;
