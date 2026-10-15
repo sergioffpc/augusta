@@ -4,15 +4,15 @@
 #include <string>
 #include <variant>
 
+#include "augusta/capture.h"
 #include "augusta/capture_error.h"
-#include "augusta/capture_file.h"
 #include "augusta/harness_wire.h"
 #include "augusta/protocol.h"
 #include "augusta/reenactment.h"
 #include "augusta/shared_wire.h"
 
 // A Captured player's part of a Match capture, out of the records
-// augusta/capture_file.h reads, which has already held them to the format's
+// augusta/capture.h reads, which has already held them to the format's
 // order: here they are only sorted into what one player keeps.
 namespace augusta::harness {
 
@@ -52,12 +52,12 @@ struct ScriptBuilder {
 }  // namespace
 
 std::string DescribeScriptError(const ScriptError& error) {
-  return error.capture.has_value() ? std::string(capture_file::DescribeReadError(*error.capture))
+  return error.capture.has_value() ? std::string(capture::DescribeReadError(*error.capture))
                                    : std::string("the capture has no player of that number");
 }
 
 std::expected<Script, ScriptError> ReadScript(std::istream& in, CapturedPlayer player) {
-  const auto file = capture_file::ReadCaptureFile(in);
+  const auto file = capture::ReadCaptureFile(in);
   if (!file.has_value()) {
     return std::unexpected(ScriptError{.capture = file.error()});
   }

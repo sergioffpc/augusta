@@ -70,6 +70,8 @@ struct MovementInput {
   /// transition is actually possible (e.g. standing up under a low
   /// ceiling) and reflects the result in the returned BodyState::stance.
   Stance desired_stance = Stance::kStanding;
+
+  bool operator==(const MovementInput&) const = default;
 };
 
 /// What World::Step carries from one tick to the next besides BodyState: the fall

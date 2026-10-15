@@ -116,11 +116,11 @@ struct Capture {
   bool torn = false;
 };
 
-/// Reads a capture a Capturer wrote, as augusta/capture_file.h reads its
+/// Reads a capture a Capturer wrote, as augusta/capture.h reads its
 /// format, in the engine's terms. A last record cut short is dropped and
 /// reported in Capture::torn; a stream that fails, wherever it does, is
 /// kUnreadable, never a whole or torn capture.
-[[nodiscard]] std::expected<Capture, capture_file::ReadError> ReadCapture(std::istream& in);
+[[nodiscard]] std::expected<Capture, capture::ReadError> ReadCapture(std::istream& in);
 
 /// The name of the file of the Match that started at started, the
 /// match_number-th of its server's run, from 1: its start in UTC, then its
@@ -130,7 +130,7 @@ struct Capture {
 
 /// Why a Match's capture stopped before its Match end, as logs name it.
 enum class CaptureStop : std::uint8_t {
-  /// A record is longer than a capture's frame holds (capture_file::kMaxFramePayload).
+  /// A record is longer than a capture's frame holds (capture::kMaxFramePayload).
   kRecordTooLong,
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is not keeping up.
   kQueueFull,
@@ -179,7 +179,7 @@ enum class CaptureStep : std::uint8_t {
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is
   /// not keeping up.
   kQueueFull,
-  /// A record is longer than a capture's frame holds (capture_file::kMaxFramePayload).
+  /// A record is longer than a capture's frame holds (capture::kMaxFramePayload).
   kRecordTooLong,
   /// A record would take the directory past CaptureRetention::max_bytes with
   /// no completed capture left to delete.
@@ -296,7 +296,7 @@ struct CaptureOptions {
 
 /// Captures every Match a server runs into a directory of its own, one file
 /// each (CaptureFileName), each file the capture's magic then its records,
-/// framed as augusta/capture_file.h writes them, the header first, the directory
+/// framed as augusta/capture.h writes them, the header first, the directory
 /// kept within CaptureOptions::retention (capture_retention.h). Every call but the
 /// destructor is the Simulation thread's, in the order the tick makes its
 /// events, and only encodes and queues; the Capturer's writer thread creates,

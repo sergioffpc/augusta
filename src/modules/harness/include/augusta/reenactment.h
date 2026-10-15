@@ -93,9 +93,9 @@ struct Script {
 
 /// Why a capture gives no Script.
 struct ScriptError {
-  /// Why the capture does not read (augusta/capture_file.h), or nullopt when it
+  /// Why the capture does not read (augusta/capture.h), or nullopt when it
   /// reads but has no player of the number asked for.
-  std::optional<capture_file::ReadError> capture;
+  std::optional<capture::ReadError> capture;
 
   bool operator==(const ScriptError&) const = default;
 };
@@ -104,7 +104,7 @@ struct ScriptError {
 [[nodiscard]] std::string DescribeScriptError(const ScriptError& error);
 
 /// Player player's part of the capture in, as a Capturer writes one and
-/// augusta/capture_file.h reads it (ADR-0050). A last record cut short is
+/// augusta/capture.h reads it (ADR-0050). A last record cut short is
 /// dropped and reported in Script::torn.
 [[nodiscard]] std::expected<Script, ScriptError> ReadScript(std::istream& in, CapturedPlayer player);
 

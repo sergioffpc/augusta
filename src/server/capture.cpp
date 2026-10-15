@@ -25,8 +25,8 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/capture_error.h"
-#include "augusta/capture_file.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -99,8 +99,8 @@ std::int64_t Offset(tick::Tick from, tick::Tick to) {
 
 }  // namespace
 
-std::expected<Capture, capture_file::ReadError> ReadCapture(std::istream& in) {
-  auto file = capture_file::ReadCaptureFile(in);
+std::expected<Capture, capture::ReadError> ReadCapture(std::istream& in) {
+  auto file = capture::ReadCaptureFile(in);
   if (!file.has_value()) {
     return std::unexpected(file.error());
   }
@@ -367,7 +367,7 @@ class Capturer::Writer {
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
     if (!directory_.Open(item.match, item.path.filename().string(),
-                         protocol::kCaptureMagic.size() + capture_file::FrameSize(item.payload.size()))) {
+                         protocol::kCaptureMagic.size() + capture::FrameSize(item.payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
@@ -392,7 +392,7 @@ class Capturer::Writer {
 
   // Makes room in the directory for payload's frame, then writes it.
   std::optional<Failed> Persist(const protocol::BytesWire& payload) {
-    if (!directory_.Reserve(capture_file::FrameSize(payload.size()))) {
+    if (!directory_.Reserve(capture::FrameSize(payload.size()))) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     return Write(payload);
@@ -405,7 +405,7 @@ class Capturer::Writer {
       file_.setstate(std::ios::badbit);
       return Failed{.step = CaptureStep::kWrite, .detail = *std::move(fault)};
     }
-    capture_file::WriteFrame(file_, payload);
+    capture::WriteFrame(file_, payload);
     if (!file_) {
       return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
     }
@@ -418,7 +418,7 @@ class Capturer::Writer {
       return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
     }
     ++records_;
-    observer_->OnWritten(capture_file::FrameSize(payload.size()));
+    observer_->OnWritten(capture::FrameSize(payload.size()));
     return std::nullopt;
   }
 
@@ -668,7 +668,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   }
   // A record ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
-  if (encoded->size() > capture_file::kMaxFramePayload) {
+  if (encoded->size() > capture::kMaxFramePayload) {
     writer_->Stop(matches_, CaptureStep::kRecordTooLong);
     return std::nullopt;
   }

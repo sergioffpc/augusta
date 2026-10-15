@@ -149,7 +149,7 @@ target_link_libraries(
     augustad_heartbeat
     augusta_assets
     augusta_protocol
-    augusta_capture_file
+    augusta_capture
     augusta_shared_wire
     augusta_replication
     augusta_tick

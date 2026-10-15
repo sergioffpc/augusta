@@ -4,7 +4,7 @@
 # or include the protocol's header. Only the two adapters convert:
 # harness_wire.h on the client and server/wire.h on the server, which both
 # call augusta/shared_wire.h for the shared core's own types (a Command, a
-# stance, a pack's hash), and augusta/capture_file.h reads a Match capture's
+# stance, a pack's hash), and augusta/capture.h reads a Match capture's
 # records for either.
 #
 # Keeps the harness at ClientRuntime's edge the same way: no presentation
