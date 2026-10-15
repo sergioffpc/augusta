@@ -45,28 +45,28 @@ never a bare exception, an enum that names only where it happened, or a log line
 in place of a returned error.
 
 Each executable's `main` runs behind one application boundary
-(`augusta::application`): reading its config file, then a `Lifecycle` of
-process-wide initialization (the transport), constructing its runtime (verifying
-its pack, loading its content) and running it. Each phase classifies its own
-failures with their `Code`; a dependency's exception escaping a phase is
-classified there too (`dependency_init_failed` while initializing or
-constructing, `worker_failed` while running, with `phase=` naming which), so no
-unclassified exception leaves `main`. Startup code that may throw throws any
-failure it can name already classified, as a `failure::ClassifiedFailure`, which
-`failure::Guard` returns with its `Code` unchanged: content that is not usable
-(`invalid_content`), a configured address or directory that is not
-(`invalid_configuration`), a listener that cannot be set up
-(`listener_setup_failed`). `dependency_init_failed` is left for a dependency's
-own exception. A runtime's failure arrives as its supervisor's first cause, its
-`Code` unchanged; the client classifies its Session ending on its own
-(`join_refused`, `server_unreachable`, `peer_connection_lost`) and a character
-it cannot load (`invalid_content`) the same way. The runtime is released before
-the outcome is reported, and the boundary then writes the executable's one
-terminal event, `event=terminal_failure` at `CRIT`, and exits with status 1,
-whatever the failure's `Disposition`; a stop asked for (the window closed,
-SIGTERM) exits 0. The supervisor's own `ERR` line for a runtime's first cause is
-the runtime's, written where its stop was decided; the terminal event is the
-process's.
+(`augusta::application`, in the `lifecycle` module beside the runtime supervisor
+of ADR-0005): reading its config file, then a `Lifecycle` of process-wide
+initialization (the transport), constructing its runtime (verifying its pack,
+loading its content) and running it. Each phase classifies its own failures with
+their `Code`; a dependency's exception escaping a phase is classified there too
+(`dependency_init_failed` while initializing or constructing, `worker_failed`
+while running, with `phase=` naming which), so no unclassified exception leaves
+`main`. Startup code that may throw throws any failure it can name already
+classified, as a `failure::ClassifiedFailure`, which `failure::Guard` returns
+with its `Code` unchanged: content that is not usable (`invalid_content`), a
+configured address or directory that is not (`invalid_configuration`), a
+listener that cannot be set up (`listener_setup_failed`).
+`dependency_init_failed` is left for a dependency's own exception. A runtime's
+failure arrives as its supervisor's first cause, its `Code` unchanged; the
+client classifies its Session ending on its own (`join_refused`,
+`server_unreachable`, `peer_connection_lost`) and a character it cannot load
+(`invalid_content`) the same way. The runtime is released before the outcome is
+reported, and the boundary then writes the executable's one terminal event,
+`event=terminal_failure` at `CRIT`, and exits with status 1, whatever the
+failure's `Disposition`; a stop asked for (the window closed, SIGTERM) exits 0.
+The supervisor's own `ERR` line for a runtime's first cause is the runtime's,
+written where its stop was decided; the terminal event is the process's.
 
 Runtime-boundary tests make dependencies fail through controlled fault injection
 (`failure::Faults`): a runtime asks it at each named site (dependency

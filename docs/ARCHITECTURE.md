@@ -162,6 +162,12 @@ IP:port.
   source. Its collision geometry is built into a physics::World's static meshes
   by the shared Physics module (augusta_physics), so PredictionWorld and
   SimulationWorld collide against the same map
+- Lifecycle — how an executable starts, runs its worker threads, stops and ends
+  (augusta_lifecycle): the runtime supervisor both runtimes and the Harness run
+  their threads under (ADR-0005) and the application boundary each executable's
+  `main` runs behind (ADR-0033), each with its own header and namespace. The
+  failure model they report in is a module of its own (augusta_failure), so low
+  layers name a failure without linking thread supervision
 
 **Client-only** (Windows and Linux)
 
