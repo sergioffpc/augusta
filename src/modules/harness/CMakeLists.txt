@@ -29,7 +29,7 @@ target_link_libraries(
     augusta_protocol
     augusta_capture
     augusta_shared_wire
-    augusta_supervisor
+    augusta_lifecycle
     augusta_tick
     augusta_version
     augusta_weapon

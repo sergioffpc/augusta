@@ -81,26 +81,30 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 
 A runtime supervisor (`augusta::supervisor`) owns each runtime's worker threads,
 the one stop request every loop watches, and the first terminal failure, the
-runtime's first cause. A worker body returns a typed `failure::Failure`
-(ADR-0033) when it stops on a failure it can name — a transport, an invariant —
-and the supervisor keeps its code, and so its disposition, as given. A worker
-that cannot be started (`worker_creation_failed`) or whose body throws
-(`worker_failed`) does not terminate the process either. Whichever way it
-arrives, the supervisor adds the thread to the failure's context, records it if
-it is the first, logs it once at `ERR`, and requests the stop; a failure after
-an earlier recorded one is its consequence and logged at `WARN`. The stop moves
-the supervisor from running to stopping exactly once; from then on it admits no
-new worker and every loop returns at its next check, before its next tick or
-network round. A tick or round already in progress, and the wait after it,
-completes, so a worker does at most one tick of work after the stop. The runtime
-stops and joins every worker before it returns, on success, failure or
-exception, and so before the resources they use are released, and returns the
-first cause for `main` to report and exit non-zero — the client among its other
-failures (refused, unreachable, connection lost), the server as its own. A stop
-requested from outside (the server's SIGINT/SIGTERM handler) is a single
-lock-free atomic operation, safe from a signal handler, and is not a failure; a
-worker that fails after it, with no failure before it, is still the first cause,
-since the runtime did not stop cleanly.
+runtime's first cause. It shares the `lifecycle` module with the application
+boundary (ADR-0033), each keeping its own header and namespace: the harness
+supervises its threads without a `main`, and each executable's `main` reports a
+runtime's first cause without owning a thread. A worker body returns a typed
+`failure::Failure` (ADR-0033) when it stops on a failure it can name — a
+transport, an invariant — and the supervisor keeps its code, and so its
+disposition, as given. A worker that cannot be started
+(`worker_creation_failed`) or whose body throws (`worker_failed`) does not
+terminate the process either. Whichever way it arrives, the supervisor adds the
+thread to the failure's context, records it if it is the first, logs it once at
+`ERR`, and requests the stop; a failure after an earlier recorded one is its
+consequence and logged at `WARN`. The stop moves the supervisor from running to
+stopping exactly once; from then on it admits no new worker and every loop
+returns at its next check, before its next tick or network round. A tick or
+round already in progress, and the wait after it, completes, so a worker does at
+most one tick of work after the stop. The runtime stops and joins every worker
+before it returns, on success, failure or exception, and so before the resources
+they use are released, and returns the first cause for `main` to report and exit
+non-zero — the client among its other failures (refused, unreachable, connection
+lost), the server as its own. A stop requested from outside (the server's
+SIGINT/SIGTERM handler) is a single lock-free atomic operation, safe from a
+signal handler, and is not a failure; a worker that fails after it, with no
+failure before it, is still the first cause, since the runtime did not stop
+cleanly.
 
 ## Consequences
 

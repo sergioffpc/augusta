@@ -62,10 +62,7 @@ target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest
 gtest_discover_tests(augusta_tick_tests)
 
 add_executable(augusta_supervisor_tests supervisor_test.cpp)
-target_link_libraries(
-  augusta_supervisor_tests
-  PRIVATE augusta_failure augusta_supervisor GTest::gtest GTest::gtest_main
-)
+target_link_libraries(augusta_supervisor_tests PRIVATE augusta_failure augusta_lifecycle GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_supervisor_tests)
 
 add_executable(augusta_failure_tests failure_test.cpp)
@@ -75,7 +72,7 @@ gtest_discover_tests(augusta_failure_tests)
 add_executable(augusta_application_tests application_test.cpp)
 target_link_libraries(
   augusta_application_tests
-  PRIVATE augusta_application augusta_failure augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE augusta_failure augusta_lifecycle augusta_logging GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_application_tests)
 
@@ -429,9 +426,9 @@ target_link_libraries(
   augusta_server_application_tests
   PRIVATE
     augustad_application
-    augusta_application
     augusta_config
     augusta_failure
+    augusta_lifecycle
     augusta_logging
     augusta_networking
     augusta_server_config
@@ -507,7 +504,7 @@ target_link_libraries(
     augusta_logging
     augusta_networking
     augusta_parameters
-    augusta_supervisor
+    augusta_lifecycle
     GTest::gtest
     GTest::gtest_main
 )
@@ -540,7 +537,7 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE augusta_harness augustad_host augustad_runtime augusta_supervisor GTest::gtest GTest::gtest_main
+  PRIVATE augusta_harness augustad_host augustad_runtime augusta_lifecycle GTest::gtest GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
