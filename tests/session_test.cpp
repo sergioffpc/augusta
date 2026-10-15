@@ -1891,15 +1891,16 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
            ("augusta_session_capture_" + std::string(test.name()) + "_" + std::to_string(std::random_device{}()));
   }
 
-  static HostSetup CaptureSetup(const std::filesystem::path& directory) {
+  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::scripting::Engine policy) {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
     setup.config.capture_directory = directory;
+    setup.policy = std::move(policy);
     return setup;
   }
 
-  CaptureHostTest() : CaptureHostTest(Directory()) {}
-  explicit CaptureHostTest(const std::filesystem::path& directory)
-      : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory)) {}
+  explicit CaptureHostTest(augusta::scripting::Engine policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
+  CaptureHostTest(const std::filesystem::path& directory, augusta::scripting::Engine policy)
+      : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory, std::move(policy))) {}
 
   void PlayAMatch() {
     Join();
@@ -1912,17 +1913,20 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
     ServerTick();
   }
 
-  // The directory's one capture once its writer has reached its Match end:
-  // the Host, which outlives the test, writes it on a thread of its own.
-  [[nodiscard]] augusta::server::Capture ReadBack() const {
+  // The newest capture, once the directory holds count of them and its
+  // writer has reached its Match end: the Host, which outlives the test,
+  // writes it on a thread of its own.
+  [[nodiscard]] augusta::server::Capture ReadBack(std::size_t count = 1) const {
     constexpr auto kPatience = std::chrono::seconds(5);
     constexpr auto kRetryAfter = std::chrono::milliseconds(10);
     const auto deadline = std::chrono::steady_clock::now() + kPatience;
     while (true) {
-      const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
+      std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
+      // Named by their Match's start (CaptureFileName), the newest sorts last.
+      std::ranges::sort(files);
       std::optional<augusta::server::Capture> capture;
-      if (files.size() == 1) {
-        std::ifstream in(files.front(), std::ios::binary);
+      if (files.size() == count) {
+        std::ifstream in(files.back(), std::ios::binary);
         auto read = augusta::server::ReadCapture(in);
         if (read.has_value()) {
           capture = *std::move(read);
@@ -1931,7 +1935,7 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
       const bool ended = capture.has_value() && !capture->records.empty() &&
                          std::holds_alternative<augusta::server::CapturedMatchEnd>(capture->records.back().event);
       if (ended || std::chrono::steady_clock::now() >= deadline) {
-        EXPECT_EQ(files.size(), 1U);
+        EXPECT_EQ(files.size(), count);
         EXPECT_TRUE(ended);
         return capture.value_or(augusta::server::Capture{});
       }
@@ -2012,6 +2016,51 @@ TEST_F(CaptureHostTest, CapturesAreCapturingWhileAMatchIsInProgress) {
   Step();
 
   EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kCapturing);
+}
+
+// A CaptureHostTest whose scenario's rules end its first Match on its fifth
+// tick, won by its first player, and leave every Match after it to go on.
+class FirstMatchWonCaptureHostTest : public CaptureHostTest {
+ protected:
+  FirstMatchWonCaptureHostTest() : CaptureHostTest(FirstMatchWon()) {}
+
+  static augusta::scripting::Engine FirstMatchWon() {
+    auto policy = augusta::scripting::Engine::Load(R"(
+      ticks = 0
+      function on_tick(match)
+        ticks = ticks + 1
+        if ticks == 5 then return {winner = match.players[1].session} end
+      end
+    )");
+    EXPECT_TRUE(policy.has_value());
+    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  }
+};
+
+// Nobody won a Match its last player left: its capture ends it as a Draw, even
+// when the winner of the Match before played in it.
+// Requirements: US-21
+TEST_F(FirstMatchWonCaptureHostTest, AMatchEveryPlayerLeftEndsAsADrawWhoeverWonTheMatchBefore) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const augusta::server::HostMetrics& metrics = host_.Metrics();
+  ASSERT_EQ(metrics.matches_ended_with_winner.Value(), 1U);
+
+  ASSERT_TRUE(StartMatch());
+  Run(1);
+  for (const auto& session : sessions_) {
+    session->Disconnect();
+  }
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return metrics.sessions.Value() == 0.0; }));
+  ASSERT_EQ(metrics.matches_ended_abandoned.Value(), 1U);
+  ServerTick();
+
+  const augusta::server::Capture capture = ReadBack(2);
+  ASSERT_FALSE(capture.records.empty());
+  const auto& end = std::get<augusta::server::CapturedMatchEnd>(capture.records.back().event);
+  EXPECT_FALSE(end.winner.has_value());
 }
 
 TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {

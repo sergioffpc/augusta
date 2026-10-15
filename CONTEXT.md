@@ -54,8 +54,9 @@ still in the Match, with the Winner or a Draw; everyone returns to the Lobby
 **Winner**: The player Game policy declares has won a Match, alive in it when
 declared, named by its Session ID in Match end. _Avoid_: Victor, champion
 
-**Draw**: A Match end with no Winner: its last players died on the same tick, or
-a Match of one ended with its player's death. _Avoid_: Tie, stalemate
+**Draw**: A Match end with no Winner: its last players died on the same tick, a
+Match of one ended with its player's death, or its last player left. _Avoid_:
+Tie, stalemate
 
 **Session**: One player's presence on the server, from being admitted to the
 Lobby until it disconnects, named by its Session ID. It spans the Lobby and

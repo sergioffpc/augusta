@@ -221,6 +221,8 @@ void Host::Impl::HandleDisconnect(networking::PeerId peer, Leaving how) {
          SessionNumber(*session), LeavingName(how), match.Playing().size());
       break;
     case Departure::kEndedMatch:
+      // Nobody won a match its last player left, whoever won the one before.
+      match_winner = std::nullopt;
       metrics.disconnects_from_match[how].Increment();
       CountMatchEnded(EndReason::kNoPlayersLeft, std::nullopt);
       LI("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
