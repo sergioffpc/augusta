@@ -138,26 +138,36 @@ IP:port.
   bodies (ragdolls, debris) only on the client (ADR-0045). Particles are the
   renderer's, not physics'. It also builds a map's static collision from a
   verified Pack (augusta/map.h), so it depends on augusta_assets
-- WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules (augusta_weapon);
-  one interface used identically by both Worlds. The client/server difference
-  isn't in this module's logic, it's in what each World does with the result:
-  the server treats it as authoritative and feeds Ballistics, the client uses it
-  only for local predicted feedback pending reconciliation - same split as
-  Physics.
-- Ballistics — custom bullet trajectory simulation (gravity, travel time),
-  hand-rolled instead of PhysX's generic projectile handling (ADR-0002). Its
-  trajectory math is shared: the server advances every bullet with it, and each
-  client's PresentationWorld draws every announced Shot's tracer and Map impact
-  with it, a visual only. Deciding a bullet's outcome (hit detection, damage)
-  stays server-side (ADR-0024, ADR-0044).
+- Gameplay — the gameplay rules both Worlds apply identically, in one module
+  (augusta_gameplay) with a header and namespace per concept. It builds on
+  Physics and the Primitives and stays below the Networking Protocol and the
+  client's Input handling: the protocol links none of it, and Input builds its
+  Commands with it. Its concepts:
+    - Command — one tick's player intent (augusta/command.h): what the client's
+      Input handling samples and the server screens and simulates, so the server
+      links no client input code
+    - Tick schedule — the fixed schedule the server's Simulation loop and the
+      client's Prediction loop both keep (augusta/tick.h, ADR-0005)
+    - Parameters — the simulation's data-driven configuration
+      (augusta/parameters.h, ADR-0039): the server decides the values, and every
+      client ticks and predicts with the same ones
+    - WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules
+      (augusta/weapon.h); one interface used identically by both Worlds. The
+      client/server difference isn't in its logic, it's in what each World does
+      with the result: the server treats it as authoritative and feeds
+      Ballistics, the client uses it only for local predicted feedback pending
+      reconciliation - same split as Physics.
+    - Ballistics — custom bullet trajectory simulation (gravity, travel time),
+      hand-rolled instead of PhysX's generic projectile handling (ADR-0002). Its
+      trajectory math is shared: the server advances every bullet with it, and
+      each client's PresentationWorld draws every announced Shot's tracer and
+      Map impact with it, a visual only. Deciding a bullet's outcome (hit
+      detection, damage) stays server-side (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
 - Primitives — the Tick and command sequence widths and the player, command and
   recoil-kick bounds for the engine and the protocol to share
   (augusta_primitives), depending on no other module, so neither side needs the
   other's for them
-- Command — one tick's player intent (augusta_command): what the client's Input
-  handling samples and the server screens and simulates, so the server links no
-  client input code
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
   by the shared Physics module (augusta_physics), so PredictionWorld and

@@ -17,7 +17,7 @@
 /// external solver). A semi-implicit Euler integrator is enough;
 /// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 ///
-/// The module is shared (ADR-0024, ADR-0044): the server advances every
+/// Ballistics is shared (ADR-0024, ADR-0044): the server advances every
 /// bullet with it and decides what each one hits, and each client's
 /// presentation draws every announced Shot's tracer and Map impact with
 /// the same World, handing it no hitboxes - a visual only. Deciding

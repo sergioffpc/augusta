@@ -8,7 +8,7 @@ add_library(augusta_agent_core STATIC agent.cpp report.cpp)
 target_include_directories(augusta_agent_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_core
-  PUBLIC augusta_assets augusta_command augusta_harness augusta_networking augusta_physics
+  PUBLIC augusta_assets augusta_gameplay augusta_harness augusta_networking augusta_physics
   PRIVATE augusta_failure augusta_prediction
 )
 augusta_set_module_scope(augusta_agent_core CLIENT_ONLY)
@@ -20,7 +20,7 @@ target_include_directories(augusta_agent_testing_server PUBLIC ${CMAKE_CURRENT_S
 target_link_libraries(
   augusta_agent_testing_server
   PUBLIC augustad_content augustad_host
-  PRIVATE augusta_assets augusta_failure augusta_parameters
+  PRIVATE augusta_assets augusta_failure augusta_gameplay
 )
 augusta_set_module_scope(augusta_agent_testing_server SERVER_ONLY)
 
@@ -40,8 +40,8 @@ target_link_libraries(
   PRIVATE
     augusta_agent_core
     augusta_agent_testing_server
-    augusta_command
     augusta_failure
+    augusta_gameplay
     augusta_harness
     augusta_logging
     augusta_math

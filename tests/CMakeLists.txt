@@ -32,9 +32,8 @@ target_link_libraries(
   PRIVATE
     augusta_assets
     augusta_audio
-    augusta_ballistics
     augusta_cues
-    augusta_parameters
+    augusta_gameplay
     augusta_presentation
     augusta_primitives
     augusta_protocol
@@ -57,8 +56,9 @@ target_link_libraries(augusta_primitives_tests PRIVATE augusta_primitives GTest:
 gtest_discover_tests(augusta_primitives_tests)
 
 add_executable(augusta_tick_tests tick_test.cpp)
-target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_tick_tests)
+target_link_libraries(augusta_tick_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_tick_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(augusta_supervisor_tests PRIVATE augusta_failure augusta_lifecycle GTest::gtest GTest::gtest_main)
@@ -100,9 +100,9 @@ gtest_discover_tests(augusta_server_config_tests)
 add_executable(augusta_parameters_tests parameters_test.cpp)
 target_link_libraries(
   augusta_parameters_tests
-  PRIVATE augusta_parameters augusta_primitives GTest::gtest GTest::gtest_main
+  PRIVATE augusta_gameplay augusta_primitives GTest::gtest GTest::gtest_main
 )
-# Links PhysX through augusta_physics, so the same first-launch cost applies as below.
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
@@ -166,7 +166,7 @@ gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_command_queue_tests command_queue_test.cpp)
 target_link_libraries(augusta_command_queue_tests PRIVATE augustad_commands GTest::gtest GTest::gtest_main)
-# Links PhysX through augusta_command, so the same first-launch cost applies as below.
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
@@ -310,7 +310,7 @@ target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest
 gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
-target_link_libraries(augusta_ballistics_tests PRIVATE augusta_ballistics GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on
 # purpose, one step rewrites them for review and commit:
 #   cmake --build --preset <preset> --target augusta_golden_trajectories
@@ -318,7 +318,7 @@ target_compile_definitions(
   augusta_ballistics_tests
   PRIVATE AUGUSTA_GOLDEN_TRAJECTORIES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/golden_trajectories.txt"
 )
-# Links PhysX through augusta_physics, so the same first-launch cost applies as above.
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_ballistics_tests DISCOVERY_TIMEOUT 30)
 add_custom_target(
   augusta_golden_trajectories
@@ -500,10 +500,10 @@ target_link_libraries(
     augustad_host
     augustad_runtime
     augusta_failure
+    augusta_gameplay
     augusta_lifecycle
     augusta_logging
     augusta_networking
-    augusta_parameters
     GTest::gtest
     GTest::gtest_main
 )

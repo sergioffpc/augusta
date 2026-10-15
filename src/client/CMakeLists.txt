@@ -27,7 +27,7 @@ target_include_directories(
 )
 target_link_libraries(
   augustac_frame_mapping
-  PUBLIC augusta_command augusta_harness augusta_input augusta_math augusta_presentation
+  PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation
 )
 augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
 
@@ -85,11 +85,11 @@ target_link_libraries(
     augustac_lobby_readiness
     augustac_net_stats
     augusta_audio
+    augusta_gameplay
     augusta_logging
     augusta_physics
     augusta_prediction
     augusta_presentation
-    augusta_tick
     nvtx3-cpp
 )
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
