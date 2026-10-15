@@ -28,8 +28,8 @@ target_link_libraries(
     augusta_physics
     augusta_protocol
     augusta_capture
-    augusta_shared_wire
     augusta_lifecycle
+    augusta_shared_wire
     augusta_tick
     augusta_version
     augusta_weapon

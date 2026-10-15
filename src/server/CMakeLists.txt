@@ -196,8 +196,8 @@ add_executable(augustad main.cpp)
 target_link_libraries(
   augustad
   PRIVATE
-    augusta_lifecycle
     augusta_config
+    augusta_lifecycle
     augusta_server_config
     augustad_application
     augustad_crash

@@ -501,10 +501,10 @@ target_link_libraries(
     augustad_host
     augustad_runtime
     augusta_failure
+    augusta_lifecycle
     augusta_logging
     augusta_networking
     augusta_parameters
-    augusta_lifecycle
     GTest::gtest
     GTest::gtest_main
 )
@@ -537,7 +537,7 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE augusta_harness augustad_host augustad_runtime augusta_lifecycle GTest::gtest GTest::gtest_main
+  PRIVATE augusta_harness augusta_lifecycle augustad_host augustad_runtime GTest::gtest GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
