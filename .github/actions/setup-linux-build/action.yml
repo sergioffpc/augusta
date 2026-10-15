@@ -41,6 +41,16 @@ runs:
       # from the system package manager - not bundled with vcpkg itself.
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
+    - name: Pin vcpkg's tools
+      # vcpkg runs the runner image's CMake when it is recent enough, and that
+      # CMake's version is part of every package's ABI hash: an image update
+      # bumping it (4.4.3 -> 4.4.4) missed every cached package, and while
+      # GitHub rolls an image out, jobs on the old and the new one each saved
+      # the cache in their own ABIs, so the next job on the other rebuilt them
+      # all. vcpkg's own downloads are the versions its submodule pins, the
+      # same the server image's dependency layer uses (Dockerfile).
+      shell: bash
+      run: echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
     - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       if: inputs.sccache == 'true'
     - uses: ./.github/actions/restore-vcpkg-cache
