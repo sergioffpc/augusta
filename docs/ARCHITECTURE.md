@@ -136,7 +136,8 @@ IP:port.
   interface used identically by PredictionWorld and SimulationWorld. Props are
   simulated only by the server and moved kinematically on the client; Cosmetic
   bodies (ragdolls, debris) only on the client (ADR-0045). Particles are the
-  renderer's, not physics'
+  renderer's, not physics'. It also builds a map's static collision from a
+  verified Pack (augusta/map.h), so it depends on augusta_assets
 - WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules (augusta_weapon);
   one interface used identically by both Worlds. The client/server difference
   isn't in this module's logic, it's in what each World does with the result:
