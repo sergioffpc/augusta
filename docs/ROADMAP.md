@@ -86,13 +86,13 @@ automatically on merge, in their respective namespaces
 Prove the riskiest unknowns work in isolation before building on them. No
 gameplay yet.
 
-- Falcor renders a textured, rotating primitive on the Windows target
+- NVRHI renders a textured, rotating primitive on the Windows target
 - Minimal GameNetworkingSockets round-trip: Windows client ↔ Linux dedicated
   server
 - Minimal PhysX prediction/reconciliation test: one entity, restore-and-replay
   correction (ADR-0004) visibly acceptable (no wild jitter)
 
-**Exercises:** ADR-0002, ADR-0003, ADR-0004, ADR-0009, ADR-0011 (C++23),
+**Exercises:** ADR-0002, ADR-0003, ADR-0004, ADR-0059, ADR-0011 (C++23),
 ADR-0012 (Google C++ Style Guide), ADR-0013 (GoogleTest/Benchmark) — the first
 code written on this project, so where these foundational tooling ADRs are first
 exercised in practice **Exit criteria:** all three spikes run standalone and
