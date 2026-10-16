@@ -1,12 +1,13 @@
 name: Set up a Linux build
 description: >
-  Installs the Linux toolchain the presets expect, starts sccache (unless told
-  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
-  Linux job needs before `cmake --preset`. Assumes the repository is checked out
-  with its submodules and the job sets VCPKG_BINARY_SOURCES to the
-  .vcpkg-bincache files provider (see ci.yml's server-x64-linux job for why not
-  the NuGet feed). A job saves the cache with save-vcpkg-cache after it
-  configures.
+  Installs the Linux toolchain the presets expect, sets up sccache and restores
+  its cache (unless told not to), restores the vcpkg binary cache, and
+  bootstraps vcpkg - everything a Linux job needs before `cmake --preset`.
+  Assumes the repository is checked out with its submodules and the job sets
+  VCPKG_BINARY_SOURCES to the .vcpkg-bincache files provider (see ci.yml's
+  server-x64-linux job for why not the NuGet feed). A job saves the vcpkg cache
+  with save-vcpkg-cache after it configures, and sccache's with
+  save-sccache-cache after it builds.
 inputs:
   extra-packages:
     description: >
@@ -17,10 +18,17 @@ inputs:
   sccache:
     description: >
       Whether to put sccache on PATH, where the root CMakeLists.txt picks it up
-      as the compiler launcher. "false" for CodeQL: a cache hit never runs the
+      as the compiler launcher, and restore its cache. "false" for CodeQL: a cache hit never runs the
       compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
+  sccache-job:
+    description: >
+      The job id whose sccache cache to restore and save, for a job that
+      compiles what another does (see restore-sccache-cache). Empty for this
+      job's.
+    required: false
+    default: ""
   vcpkg-cache-prefix:
     description: >
       A vcpkg binary cache of the job's own, by its key prefix (see
@@ -51,8 +59,10 @@ runs:
       # same the server image's dependency layer uses (Dockerfile).
       shell: bash
       run: echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
-    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+    - uses: ./.github/actions/restore-sccache-cache
       if: inputs.sccache == 'true'
+      with:
+        job: ${{ inputs.sccache-job }}
     - uses: ./.github/actions/restore-vcpkg-cache
       with:
         prefix: ${{ inputs.vcpkg-cache-prefix }}

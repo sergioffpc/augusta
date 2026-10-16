@@ -30,7 +30,6 @@ on:
 # what the calling job grants: nightly.yml's and release.yml's, each of which
 # must grant them all.
 env:
-  SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
 # Every job but client-x64-linux configures with the client off
 # (AUGUSTA_CLIENT): each checks what augustad and the shared core are built
@@ -58,6 +57,9 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
+      # A release saves none (save-sccache-cache).
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test (property tests, ~10 000 cases)
         # The same binaries a pull request runs at RapidCheck's default 100
         # cases; only RC_PARAMS differs. A failure prints its seed and shrunk
@@ -100,6 +102,8 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Restore the corpus
         # A cache entry can't be overwritten, so each night saves under its own
         # run id and restores the newest one by prefix.
@@ -177,6 +181,8 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test
         run: ctest --preset linux-tsan --output-junit "$GITHUB_WORKSPACE/junit/tsan.xml"
       - name: Upload the test results
@@ -213,6 +219,8 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test (netcode under an impaired link)
         run: ctest --preset linux-netcode --no-tests=error --output-junit "$GITHUB_WORKSPACE/junit/netcode.xml"
       - name: Upload the test results
@@ -247,6 +255,8 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test
         # The whole Linux suite, so its results are test-report's linux column.
         run: ctest --preset linux-coverage --output-junit "$GITHUB_WORKSPACE/junit/linux.xml"
@@ -327,6 +337,10 @@ jobs:
         if: |
           !cancelled() && steps.configure-san.outcome == 'success'
         run: cmake --build --preset linux-san --target all augusta_tests
+      # After both builds, and whatever the tests above did, as the sanitized
+      # pass runs after a failing test too.
+      - if: ${{ !cancelled() && steps.build-san.outcome == 'success' && !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Check that the sanitized smoke test is built
         id: check-san
         if: |
@@ -400,6 +414,8 @@ jobs:
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_benchmarks
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Benchmark
         # Five repetitions, of which only the median is kept: one slow
         # repetition on a busy runner moves it less than it would a mean.

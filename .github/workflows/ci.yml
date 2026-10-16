@@ -17,7 +17,6 @@ permissions:
   actions: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
-  SCCACHE_GHA_ENABLED: "true"
 jobs:
   changes:
     runs-on: ubuntu-26.04
@@ -251,7 +250,7 @@ jobs:
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008),
       # and the clang-tidy the Lint step runs.
       - uses: ./.github/actions/setup-windows-llvm
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
@@ -281,6 +280,7 @@ jobs:
         # all includes augustad: this job is the build matrix's Windows x64
         # server, the development-only one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset windows --target all augusta_tests
+      - uses: ./.github/actions/save-sccache-cache
       - name: Check augustac's PDB
         # Each release publishes it (ADR-0055): the build leaves it beside
         # augustac.exe, whose debug directory names it. -headers rather than
@@ -416,6 +416,7 @@ jobs:
         # all includes augustad: this job is the build matrix's Linux x86-64
         # server, the production one (NFR-04, cmake/AugustaPlatform.cmake).
         run: cmake --build --preset linux --target all augusta_tests
+      - uses: ./.github/actions/save-sccache-cache
       - name: Test
         run: ctest --preset linux --parallel "$(nproc)"
       - name: Test the Agents' package (pytest)
@@ -468,7 +469,7 @@ jobs:
         # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
         # via autotools on Linux.
         run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg (Windows)
         if: runner.os == 'Windows'
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
@@ -520,6 +521,7 @@ jobs:
           [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
           cmake --preset ${{ matrix.preset }} -S tools/pack/native "-DPYTHON_EXECUTABLE=$python"
           cmake --build tools/pack/native/build/x64-${{ matrix.preset }}
+      - uses: ./.github/actions/save-sccache-cache
       - name: Test (pytest)
         working-directory: tools/pack
         run: uv run pytest
@@ -542,6 +544,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-san --target all augusta_tests
+      - uses: ./.github/actions/save-sccache-cache
       - name: Test
         run: ctest --preset linux-san --parallel "$(nproc)"
   fuzz:
@@ -567,6 +570,10 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
+      # Pull requests alone run this job, so no develop entry exists: a pull
+      # request's first run restores the nightly's fuzz job's, of the same job
+      # id and preset, from main.
+      - uses: ./.github/actions/save-sccache-cache
       - name: Fuzz
         # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
         # directory, never into the committed seeds; a crash lands in

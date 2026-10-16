@@ -136,6 +136,14 @@ decisions already made in ARCHITECTURE.md:
       Ubuntu, restores them too: the container jobs mount the entry read-only
       into its `vcpkg install`, and it builds from source only the packages the
       entry lacks.
+    - Compiler cache: sccache on its local disk backend, never its
+      GitHub-Actions-cache one, whose one entry per object exhausts the cache's
+      request quota. Each job carries the directory between runs as one entry of
+      its own per ref (`.github/actions/restore-sccache-cache`,
+      `save-sccache-cache`), saved after a successful build only when it
+      changed, holding only the objects that build wrote or read, and replacing
+      the ref's entry before it. A release's jobs restore main's entries and
+      save none. An Actions cache outage only makes the build cold.
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
       binaries and sccache objects. The server image's Docker layers live in

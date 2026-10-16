@@ -15,7 +15,10 @@ permissions:
   attestations: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
-  SCCACHE_GHA_ENABLED: "true"
+# Each build job restores the sccache cache its ci.yml or nightly counterpart
+# saved on main, and saves none: an entry on the tag's ref would be read by no
+# other ref (save-sccache-cache).
+#
 # What is published is tested first (ADR-0013): each build job runs ctest on
 # the Release binaries it stages, which includes the C++ half of the pack
 # contract (the golden packs), the tools job runs the cooker's half, and the
@@ -42,7 +45,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
       - uses: ./.github/actions/setup-windows-llvm
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
@@ -212,6 +215,12 @@ jobs:
       # The clang the linux preset compiles with (ADR-0008), and the rest of
       # the Linux toolchain.
       - uses: ./.github/actions/setup-linux-build
+        with:
+          # x64 compiles what ci.yml's server-x64-linux does, and restores
+          # that job's cache from main. The name holds the runner's
+          # architecture, so arm64, which no ci.yml job builds outside Docker,
+          # restores none.
+          sccache-job: server-x64-linux
       - name: Configure
         # augustad and what it is built from, without the client, whose Linux
         # build the nightly jobs below test.
@@ -271,7 +280,7 @@ jobs:
       - name: Fetch vcpkg
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg
         run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: Configure vcpkg NuGet cache
