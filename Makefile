@@ -182,13 +182,22 @@ format-check:
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+
+# clang-tidy through ctcache (scripts/bootstrap.sh installs it), as CI's Lint
+# steps run it: a file whose preprocessed source, configuration and arguments
+# passed before is skipped. Its results live under build/, for every preset,
+# apart per clang-tidy version (the first number `clang-tidy --version`
+# prints), which ctcache's key leaves out. Recursive, so only tidy runs
+# clang-tidy for it, and hands it to the per-file targets.
+CLANG_TIDY := clang-tidy-cache clang-tidy
+CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 $(TIDY_CHECKS): tidy/%:
-	$(RUN) clang-tidy -p=$(BUILD_DIR) $*
+	$(RUN) $(CLANG_TIDY) -p=$(BUILD_DIR) $*
 
 $(INCLUDE_CHECKS): include-cleaner/%:
-	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
+	$(RUN) $(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy

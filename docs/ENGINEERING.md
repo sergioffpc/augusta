@@ -144,13 +144,24 @@ decisions already made in ARCHITECTURE.md:
       changed, holding only the objects that build wrote or read, and replacing
       the ref's entry before it. A release's jobs restore main's entries and
       save none. An Actions cache outage only makes the build cold.
+    - clang-tidy results: both C++ jobs' Lint steps run clang-tidy through
+      ctcache, one translation unit per invocation, and skip a unit that passed
+      with the same preprocessed source, `#include` lines, effective
+      configuration and arguments. A unit with findings is never cached, so it
+      fails every run until fixed; a header, flag or `.clang-tidy` change
+      re-lints exactly the units it reaches. Not linting only a pull request's
+      changed files: that misses the units a changed header or configuration
+      reaches. Results live in a directory per clang-tidy version, which
+      ctcache's key leaves out, and each job carries them between runs as the
+      compiler cache is carried (`.github/actions/restore-ctcache-cache`,
+      `save-ctcache-cache`), saved after Lint whether it passed or failed.
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
-      binaries and sccache objects. The server image's Docker layers live in
-      GHCR (`augustad:buildcache`) instead: at several GB they would evict the
-      rest, and every pull request would rebuild its dependencies from source.
-      Only a push's `container-verify` writes them; a pull request reads them,
-      and a fork's reads nothing.
+      binaries, sccache objects and clang-tidy results. The server image's
+      Docker layers live in GHCR (`augustad:buildcache`) instead: at several GB
+      they would evict the rest, and every pull request would rebuild its
+      dependencies from source. Only a push's `container-verify` writes them; a
+      pull request reads them, and a fork's reads nothing.
     - An Actions cache entry is kept only on a ref a later run restores from
       (its own, a pull request's base, or `main`). A release restores the caches
       but saves none: its tag's entries would serve only a rerun of it, which
@@ -442,22 +453,23 @@ no self-hosted GitHub Actions runner in this pipeline).
   It installs CI's runner Ubuntu release's packages, whose LLVM major is CI's,
   with the toolchain `.github/actions/setup-linux-build` installs (kept in step
   with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
-  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format,
-  GitHub CLI, kubectl, helm, the flux CLI at the cluster's Flux version,
-  Doxygen, the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
-  shellcheck, actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt,
-  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg
-  binary cache configuration (a files provider in the checkout's
-  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
-  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
-  shared by every container of the repository; the build trees in a volume per
-  container, so they never collide with a Windows build of the same checkout.
-  One recipe, not a container beside a separate host bootstrap: two recipes for
-  the same toolchain drift apart. With them come the Linux client's system
-  packages (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's
-  Vulkan drivers and Xvfb for the Renderer's smoke test), so the `linux` presets
-  build and test `augustac` in the container too. The Windows client has no
-  container equivalent (see below).
+  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy and ctcache (which
+  `make tidy` runs it through, at CI's pinned commit), clang-format, GitHub CLI,
+  kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the hooks'
+  formatters and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint,
+  gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and
+  taplo, at CI's pinned versions), and CI's Linux vcpkg binary cache
+  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
+  image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. With them come the Linux client's system packages
+  (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's Vulkan
+  drivers and Xvfb for the Renderer's smoke test), so the `linux` presets build
+  and test `augustac` in the container too. The Windows client has no container
+  equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -488,15 +500,15 @@ no self-hosted GitHub Actions runner in this pipeline).
   install location) — simpler than pinning a project-specific path, at the cost
   of not being able to side-by-side independent Build Tools versions per project
   — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
-  and the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
-  luacheck and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
-  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
-  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
-  the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
-  cluster. It also puts Git's `bin` directory on PATH, so
-  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
-  VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  and the formatters and linters uv runs, below, and ctcache, which `make tidy`
+  runs `clang-tidy` through), standalone yamlfmt, StyLua, luacheck and taplo,
+  and LLVM (`clang-cl` and `lld-link` for the build, `clang-format`/`clang-tidy`
+  for the hooks below), pinned to the LLVM version CI's Ubuntu runner ships and
+  CI's Windows jobs install, so a local build and the hooks agree with CI's
+  gates, and kubectl, helm and the flux CLI, for the cluster. It also puts Git's
+  `bin` directory on PATH, so `bash scripts/<script>.sh` runs from PowerShell
+  and cmd, and the workspace's VS Code settings point the Kubernetes extension
+  and its terminals at the day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
@@ -534,7 +546,9 @@ no self-hosted GitHub Actions runner in this pipeline).
   needs a full `compile_commands.json`, so it stays out of the commit hook and
   runs on changed C++ before push. `make format` applies the formatters,
   `make format-check` checks formatting and every linter but `clang-tidy`,
-  `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
+  `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`,
+  through ctcache as CI's Lint steps do (CI, clang-tidy results), keeping its
+  results under `build/ctcache`; both bootstraps install it.
 - A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua 2.5.2
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
   luacheck 1.2.0 (`.luacheckrc`), whose standard library is the engine's Lua
