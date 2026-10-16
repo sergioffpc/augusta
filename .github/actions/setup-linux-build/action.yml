@@ -1,12 +1,13 @@
 name: Set up a Linux build
 description: >
-  Installs the Linux toolchain the presets expect, starts sccache (unless told
-  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
-  Linux job needs before `cmake --preset`. Assumes the repository is checked out
-  with its submodules and the job sets VCPKG_BINARY_SOURCES to the
-  .vcpkg-bincache files provider (see ci.yml's server-x64-linux job for why not
-  the NuGet feed). A job saves the cache with save-vcpkg-cache after it
-  configures.
+  Installs the Linux toolchain the presets expect, sets up sccache and restores
+  its cache (unless told not to), restores the vcpkg binary cache, and
+  bootstraps vcpkg - everything a Linux job needs before `cmake --preset`.
+  Assumes the repository is checked out with its submodules and the job sets
+  VCPKG_BINARY_SOURCES to the .vcpkg-bincache files provider (see ci.yml's
+  server-x64-linux job for why not the NuGet feed). A job saves the vcpkg cache
+  with save-vcpkg-cache after it configures, and sccache's with
+  save-sccache-cache after it builds.
 inputs:
   extra-packages:
     description: >
@@ -21,6 +22,12 @@ inputs:
       compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
+  sccache-name:
+    description: >
+      Another job's sccache cache, by its job id, for a job that compiles what
+      that one does (see restore-sccache-cache). Empty for this job's own.
+    required: false
+    default: ""
   vcpkg-cache-prefix:
     description: >
       A vcpkg binary cache of the job's own, by its key prefix (see
@@ -51,8 +58,10 @@ runs:
       # same the server image's dependency layer uses (Dockerfile).
       shell: bash
       run: echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
-    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+    - uses: ./.github/actions/restore-sccache-cache
       if: inputs.sccache == 'true'
+      with:
+        name: ${{ inputs.sccache-name }}
     - uses: ./.github/actions/restore-vcpkg-cache
       with:
         prefix: ${{ inputs.vcpkg-cache-prefix }}

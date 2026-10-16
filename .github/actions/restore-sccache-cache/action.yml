@@ -1,0 +1,75 @@
+name: Restore the sccache cache
+description: >
+  Installs sccache, where the root CMakeLists.txt picks it up as the compiler
+  launcher, on its local disk backend, and restores into that directory the
+  newest cache this job saved (see save-sccache-cache): this ref's first, then
+  the base branch's, then main's. Records what it restored, and under which
+  prefix, for save-sccache-cache. The objects stay on the runner's disk while
+  the job builds, so the Actions cache is read once and written at most once a
+  job, never once per object, and an Actions cache outage costs only a cold
+  build.
+inputs:
+  name:
+    description: >
+      The job whose cache this is, by its job id: another job's, for a job that
+      compiles what that one does (release.yml's server, which builds what
+      ci.yml's server-x64-linux does, restores that job's from main). Empty for
+      this job's own id. Runner OS and architecture are part of the cache's
+      name, so a matrix over those needs no name of its own.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    # Its post step prints the server's stats, which save-sccache-cache has
+    # printed already, stopping it: annotating the zeros a restarted server
+    # shows would only mislead.
+    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      with:
+        disable_annotations: "true"
+    # The prefix ends in ".", which no job id holds: a job named like another's
+    # prefix (fuzz, fuzz-x) restores and prunes only its own entries. The key
+    # never matches, so the prefix picks the newest entry.
+    #
+    # SCCACHE_CACHE_SIZE: well above what one job's build holds, so nothing is
+    # evicted while it builds. The entry stays near what the build used, as
+    # save-sccache-cache drops the objects it didn't, so the cap only bounds a
+    # pathological build.
+    - name: Name the sccache cache
+      id: cache
+      shell: bash
+      env:
+        OWN_NAME: ${{ inputs.name }}
+        JOB: ${{ github.job }}
+      run: |
+        # A mixed-slash path on Windows, which Git Bash's tools, sccache and
+        # actions/cache all read.
+        temp="$RUNNER_TEMP"
+        if [ "$RUNNER_OS" = Windows ]; then
+          temp="$(cygpath -m "$temp")"
+        fi
+        prefix="sccache-$RUNNER_OS-$RUNNER_ARCH-${OWN_NAME:-$JOB}."
+        echo "dir=$temp/sccache" >> "$GITHUB_OUTPUT"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        {
+          echo "SCCACHE_DIR=$temp/sccache"
+          echo "SCCACHE_CACHE_SIZE=1G"
+          echo "SCCACHE_CACHE_PREFIX=$prefix"
+          echo "SCCACHE_CACHE_MARKER=$temp/sccache-restored"
+        } >> "$GITHUB_ENV"
+    - name: Restore sccache's cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.cache.outputs.dir }}
+        key: ${{ steps.cache.outputs.prefix }}restore-${{ github.run_id }}
+        restore-keys: ${{ steps.cache.outputs.prefix }}
+    - name: Record the restored sccache cache
+      # What save-sccache-cache compares against, to save only when the build
+      # wrote an object or left one unused. The marker is newer than every
+      # restored object, and older than every one the build writes or hits:
+      # sccache sets an object's modification time when it reads it.
+      shell: bash
+      run: |
+        mkdir -p "$SCCACHE_DIR"
+        echo "SCCACHE_CACHE_RESTORED=$(cd "$SCCACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
+        touch "$SCCACHE_CACHE_MARKER"
