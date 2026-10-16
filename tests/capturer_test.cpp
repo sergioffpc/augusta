@@ -167,7 +167,7 @@ bool Names(const augusta::failure::Failure& failure, const std::string& text) {
   return DescribeFailure(failure).find(text) != std::string::npos;
 }
 
-class CaptureTest : public ::testing::Test {
+class CapturerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Named after the running test: ctest runs every test in a process of its
@@ -200,7 +200,7 @@ class CaptureTest : public ::testing::Test {
 };
 
 // Requirements: US-21
-TEST_F(CaptureTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
+TEST_F(CapturerTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
   {
     Capturer capturer(directory_, Header());
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
@@ -231,7 +231,7 @@ TEST_F(CaptureTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
   EXPECT_EQ(Read(files.front()), expected);
 }
 
-TEST_F(CaptureTest, ADrawEndsWithNoWinner) {
+TEST_F(CapturerTest, ADrawEndsWithNoWinner) {
   {
     Capturer capturer(directory_, Header());
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
@@ -245,7 +245,7 @@ TEST_F(CaptureTest, ADrawEndsWithNoWinner) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, EachMatchIsAFileOfItsOwn) {
+TEST_F(CapturerTest, EachMatchIsAFileOfItsOwn) {
   {
     Capturer capturer(directory_, Header());
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
@@ -266,7 +266,7 @@ TEST_F(CaptureTest, EachMatchIsAFileOfItsOwn) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, NothingIsWrittenWithoutAMatch) {
+TEST_F(CapturerTest, NothingIsWrittenWithoutAMatch) {
   {
     const Capturer capturer(directory_, Header());
   }
@@ -274,7 +274,7 @@ TEST_F(CaptureTest, NothingIsWrittenWithoutAMatch) {
   EXPECT_TRUE(Files().empty());
 }
 
-TEST_F(CaptureTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
+TEST_F(CapturerTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
   {
     Capturer capturer(directory_, Header());
     capturer.Command(kFirstTick, EntityId{70}, Walk(0));
@@ -292,7 +292,7 @@ TEST_F(CaptureTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
+TEST_F(CapturerTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
   Faults faults;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.faults = &faults});
@@ -311,7 +311,7 @@ TEST_F(CaptureTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
   EXPECT_FALSE(read.torn);
 }
 
-TEST_F(CaptureTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
+TEST_F(CapturerTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
   Faults faults;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.faults = &faults});
@@ -329,7 +329,7 @@ TEST_F(CaptureTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
   EXPECT_EQ(second.events.size(), 1U);
 }
 
-TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
+TEST_F(CapturerTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.capacity = 0});
     capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
@@ -343,7 +343,7 @@ TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNextMatchAfresh) {
+TEST_F(CapturerTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNextMatchAfresh) {
   Faults faults;
   HealthLog health;
   {
@@ -375,7 +375,7 @@ TEST_F(CaptureTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNextM
             (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
 }
 
-TEST_F(CaptureTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
+TEST_F(CapturerTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
   faults.Arm(Site::kCaptureFlush, "flush refused", 1);
@@ -389,7 +389,7 @@ TEST_F(CaptureTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
   EXPECT_TRUE(Names(*lost, "match=1 step=flush")) << DescribeFailure(*lost);
 }
 
-TEST_F(CaptureTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
+TEST_F(CapturerTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .faults = &faults});
   faults.Arm(Site::kCaptureWrite, "disk full", Faults::kEveryTime);
@@ -405,7 +405,7 @@ TEST_F(CaptureTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesNothingMore) {
+TEST_F(CapturerTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesNothingMore) {
   Faults faults;
   HealthLog health;
   {
@@ -438,7 +438,7 @@ TEST_F(CaptureTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesNo
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
-TEST_F(CaptureTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
+TEST_F(CapturerTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
   Faults faults;
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .faults = &faults});
   faults.Arm(Site::kCaptureFlush, "flush refused", 1);
@@ -452,7 +452,7 @@ TEST_F(CaptureTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
   EXPECT_TRUE(Names(*lost, "match=1 step=flush")) << DescribeFailure(*lost);
 }
 
-TEST_F(CaptureTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
+TEST_F(CapturerTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kStrict, .capacity = 0});
   capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
 
@@ -464,7 +464,7 @@ TEST_F(CaptureTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, AnOptionalCaptureWhoseQueueIsFullIsASlowDiskNotAFailedWrite) {
+TEST_F(CapturerTest, AnOptionalCaptureWhoseQueueIsFullIsASlowDiskNotAFailedWrite) {
   Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .capacity = 0});
   capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
 
@@ -501,7 +501,7 @@ TEST(LostCaptureTest, ALossNamesItsMatchStepAndDetail) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
+TEST_F(CapturerTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
   HealthLog health;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.mode = CaptureMode::kOptional, .observer = &health});
@@ -524,7 +524,7 @@ TEST_F(CaptureTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
-TEST_F(CaptureTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
+TEST_F(CapturerTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
   Faults faults;
   HealthLog health;
   Capturer capturer(directory_, Header(),
@@ -543,7 +543,7 @@ TEST_F(CaptureTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
 // A record the codec cannot carry is the server's own bug, not the capture's
 // loss: in either mode it is the runtime's broken invariant (ADR-0033), and
 // nothing of it is written.
-TEST_F(CaptureTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
+TEST_F(CapturerTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
   for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
     const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");
     std::filesystem::create_directories(directory);
@@ -569,7 +569,7 @@ TEST_F(CaptureTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
 }
 
 // Requirements: US-21
-TEST_F(CaptureTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
+TEST_F(CapturerTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
   std::vector<std::string> written;
   for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
     const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");
@@ -597,7 +597,7 @@ TEST_F(CaptureTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
 
 #ifndef _WIN32
 // A capture in the mode the test's parameter names.
-class StalledDiskTest : public CaptureTest, public ::testing::WithParamInterface<CaptureMode> {};
+class StalledDiskTest : public CapturerTest, public ::testing::WithParamInterface<CaptureMode> {};
 
 // NFR-01: a disk that stalls holds up the writer, never the Simulation thread,
 // in either mode: a strict capture fails the run, but only once its queue is full.
@@ -643,7 +643,7 @@ TEST_P(StalledDiskTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOn
 }
 
 // Requirements: NFR-07
-TEST_F(CaptureTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
+TEST_F(CapturerTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
   Told told;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.observer = &told});
@@ -665,7 +665,7 @@ TEST_F(CaptureTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
 }
 
 // Requirements: NFR-07
-TEST_F(CaptureTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
+TEST_F(CapturerTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
   // Captures are the files named as captures that start with a capture's magic.
   const capture::Capture earlier{.header = Header(), .joins = {}, .events = {}, .torn = false};
   for (const char* name : {"20260101T000000000Z-0001.capture", "20260101T000000000Z-0002.capture"}) {
@@ -688,7 +688,7 @@ TEST_F(CaptureTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
 }
 
 // Requirements: NFR-07
-TEST_F(CaptureTest, AStopIsToldWithItsReasonAndHoldsUntilTheMatchEnds) {
+TEST_F(CapturerTest, AStopIsToldWithItsReasonAndHoldsUntilTheMatchEnds) {
   Told told;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.capacity = 0, .observer = &told});
@@ -705,7 +705,7 @@ TEST_F(CaptureTest, AStopIsToldWithItsReasonAndHoldsUntilTheMatchEnds) {
 }
 
 // Requirements: NFR-07
-TEST_F(CaptureTest, AFailedWriteIsToldAsWriteFailed) {
+TEST_F(CapturerTest, AFailedWriteIsToldAsWriteFailed) {
   Faults faults;
   Told told;
   {
