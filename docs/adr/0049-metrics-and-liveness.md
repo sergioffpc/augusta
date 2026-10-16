@@ -57,7 +57,7 @@ endpoint ends the Match in progress, as a hung tick does.
 **Names.** Every metric is named `augustad_<what>_<unit>`. Units are base units
 (`_seconds`, `_bytes`, `_ratio`, `_hertz`), and counters end in `_total`. Each
 label takes its values from a closed set: an enum in the code, never free text,
-an address or a Character's name. The domain words are CONTEXT.md's.
+an address or a Character's name. The domain words are GLOSSARY.md's.
 
 ## Catalogue
 

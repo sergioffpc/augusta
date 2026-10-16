@@ -46,8 +46,8 @@ source of randomness, so on the build that made the capture each Death and the
 Match end come out as captured. The replay server compares them and logs the
 first that differs: on that build it is a non-determinism to chase; on another
 it can be floats rounding differently (ADR-0008, ADR-0045), and nothing holds a
-Replay across builds to a tolerance or re-syncs it. It is a smoke check, not
-ADR-0048's per-tick comparison.
+Replay across builds to a tolerance or re-syncs it. It is a smoke check, not a
+per-tick comparison.
 
 **A Replay viewer asks with a Replay request, by a capture's name.** Two new
 client-to-server messages take the Join request's place as a connection's first

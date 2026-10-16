@@ -1,19 +1,18 @@
 # Renderer: NVRHI
 
-> Supersedes ADR-0009.
-
 The client renders through NVIDIA's NVRHI on Vulkan, in a GLFW window, on
 Windows and Linux alike. NVRHI and GLFW come from the repository's vcpkg
 manifest. The implementation sits behind the `augusta::renderer::Renderer`
 interface, which its callers use unchanged.
 
-**Why not Falcor.** Falcor (ADR-0009) is a research framework with no upstream
-commits since January 2025. Building it pulls a 2022 packman bundle and an
-embedded Python, and the client's zip (ADR-0058) ships all of it: FreeImage,
-assimp, OpenVDB, USD, NRD, hdf5 and Python. Nightly `sbom-scan` finds over a
-hundred high or critical CVEs in them, and patching an abandoned dependency
-doesn't scale. Through Falcor the client uses only a window, a GPU device and
-swapchain, a rasterization pipeline, its Slang shaders and a debug HUD.
+**Why not Falcor.** Falcor, NVIDIA's D3D12 framework the client first used, is a
+research framework with no upstream commits since January 2025. Building it
+pulls a 2022 packman bundle and an embedded Python, and the client's zip
+(ADR-0058) ships all of it: FreeImage, assimp, OpenVDB, USD, NRD, hdf5 and
+Python. Nightly `sbom-scan` finds over a hundred high or critical CVEs in them,
+and patching an abandoned dependency doesn't scale. Through Falcor the client
+uses only a window, a GPU device and swapchain, a rasterization pipeline, its
+Slang shaders and a debug HUD.
 
 **Why NVRHI.** It is MIT-licensed, maintained by NVIDIA, in vcpkg, and is what
 NVIDIA's RTX Kit SDKs (DLSS, NRD, RTXDI) build on. The alternatives weighed:

@@ -4,8 +4,11 @@
 
 Work moves idea → ship along one spine of skills, in order: `/grill-with-docs` →
 `/to-spec` → `/to-tickets` → `/implement` → `/code-review` → `/retro`. The user
-runs each step; only `/code-review` is yours to invoke. When a step ends, name
-the next one.
+runs each step; `/code-review` and `/pr` are yours to invoke. When a step ends,
+name the next one; `/ask-matt` routes when the next step is unclear.
+`/implement` and `/implement-spec` work on a `feature/*` branch off `develop`
+and end with a push and a PR into `develop`; `/pr` shapes its body inside
+`.github/pull_request_template.md`.
 
 ### Engineering flow
 
@@ -13,11 +16,14 @@ Keeps the codebase and issue list healthy and feeds work into the main flow; its
 skills are used as needed, in no order. The user runs
 `/improve-codebase-architecture` (refactoring candidates), `/triage` (raw issues
 into workable ones), `/implement-spec` (a whole spec at once with parallel
-subagents, in place of `/implement`) and `/engineering-review` (a read-only
+subagents, in place of `/implement`), `/wayfinder` (an effort too big for one
+session, mapped as decision tickets before `/to-spec`), `/handoff` (carry a
+session to a new directory or harness) and `/engineering-review` (a read-only
 audit of standing code into a findings report; profile in
 `docs/agents/engineering-review.md`). Yours to invoke: `/diagnosing-bugs` for a
-hard bug, from a failing repro; `/wizard` for setup steps only a human can
-perform.
+hard bug, from a failing repro; `/prototype` for a design question settled only
+by running code; `/research` for reading legwork against primary sources;
+`/wizard` for setup steps only a human can perform.
 
 ### Git flow
 
@@ -32,7 +38,8 @@ CI's `client-x64-windows` job reproduces Windows-only failures.
 
 ### Issue tracker
 
-Issues are tracked in this repo's GitHub Issues, using the `gh` CLI. See
+Issues are tracked in this repo's GitHub Issues, using the `gh` CLI; a PR into
+`develop` closes none of them, so they close by hand once it merges. See
 `docs/agents/issue-tracker.md`.
 
 ### Triage labels
@@ -43,7 +50,7 @@ The five canonical roles under their own names (`needs-triage`, `needs-info`,
 
 ### Domain docs
 
-Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See
+Single-context layout: `GLOSSARY.md` + `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
 
 ### Coding standards
