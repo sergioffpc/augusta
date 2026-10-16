@@ -1,0 +1,48 @@
+name: Save the ctcache cache
+description: >
+  Prints the Lint step's ctcache hits and misses and saves its results for this
+  job's later runs to restore (restore-ctcache-cache), as save-sccache-cache
+  does sccache's objects: holding only the results that run read or wrote, only
+  when that differs from what it restored, replacing this ref's entry before it.
+  Run it right after the Lint step, whether that passed or failed: either way
+  every unit was checked, and the passing ones are worth keeping. Not when Lint
+  didn't run, as it would read nothing and save an empty cache.
+runs:
+  using: composite
+  steps:
+    - name: Print the ctcache stats
+      # The local cache's lines, the rest being a cache server's, which this
+      # has none of. Then cleared, so the entry holds results alone and the next
+      # run counts its own.
+      shell: bash
+      run: |
+        clang-tidy-cache --show-stats | grep -F '(local)'
+        clang-tidy-cache --zero-stats
+    - name: Drop the results Lint didn't use
+      # Older than the marker restore-ctcache-cache left, as save-sccache-cache
+      # drops its objects: a unit's old result, or another clang-tidy version's.
+      shell: bash
+      run: |
+        echo "dropped $(find "$TIDY_CACHE_DIR" -type f ! -newer "$TIDY_CACHE_MARKER" -print -delete | wc -l) unused results"
+    - name: List the ctcache results
+      id: listing
+      shell: bash
+      run: |
+        listing="$(cd "$TIDY_CACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)"
+        echo "hash=$listing" >> "$GITHUB_OUTPUT"
+        if [ "$listing" != "$TIDY_CACHE_RESTORED" ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Save ctcache's cache
+      if: steps.listing.outputs.changed == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.TIDY_CACHE_DIR }}
+        key: ${{ env.TIDY_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}
+    - if: steps.listing.outputs.changed == 'true'
+      uses: ./.github/actions/prune-cache
+      with:
+        prefix: ${{ env.TIDY_CACHE_PREFIX }}
+        keep: ${{ env.TIDY_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}

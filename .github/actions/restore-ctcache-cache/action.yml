@@ -1,0 +1,64 @@
+name: Restore the ctcache cache
+description: >
+  Installs ctcache, whose clang-tidy-cache wraps clang-tidy and skips a
+  translation unit that passed before: its key hashes the unit's preprocessed
+  source, its #include lines, the effective configuration and the arguments, so
+  a header, flag or .clang-tidy change re-lints exactly the units it reaches.
+  Only a passing unit is cached, so a unit with findings fails every run until
+  it's fixed. Restores the newest results this job saved (see
+  save-ctcache-cache), as restore-sccache-cache does sccache's objects: this
+  ref's first, then the base branch's, then main's. Run it after uv's setup and
+  once the clang-tidy the job lints with is on PATH.
+runs:
+  using: composite
+  steps:
+    # At the commit scripts/bootstrap.sh installs; bump them together. A commit,
+    # as ctcache isn't on PyPI.
+    - name: Install ctcache
+      shell: bash
+      run: |
+        uv tool install 'ctcache @ git+https://github.com/matus-chochlik/ctcache@857b14271d3ded5511c2e6a60f2dc20c1e4b5680'
+        uv tool dir --bin >> "$GITHUB_PATH"
+    # The prefix ends in ".", as restore-sccache-cache's does (which says why).
+    #
+    # ctcache's key leaves clang-tidy's version out, so the results live in a
+    # directory per version: a toolchain bump restores the old results, reads
+    # none of them, and save-ctcache-cache drops them all as unused.
+    # CTCACHE_NO_LOCAL_STATS stays unset: save-ctcache-cache prints the hits and
+    # misses, then clears them before saving.
+    - name: Name the ctcache cache
+      id: cache
+      shell: bash
+      env:
+        JOB: ${{ github.job }}
+      run: |
+        # A mixed-slash path on Windows, as restore-sccache-cache's.
+        temp="$RUNNER_TEMP"
+        if [ "$RUNNER_OS" = Windows ]; then
+          temp="$(cygpath -m "$temp")"
+        fi
+        version="$(clang-tidy --version | sha256sum | cut -c1-16)"
+        prefix="ctcache-$RUNNER_OS-$RUNNER_ARCH-$JOB."
+        echo "dir=$temp/ctcache" >> "$GITHUB_OUTPUT"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        {
+          echo "CTCACHE_DIR=$temp/ctcache/$version"
+          echo "TIDY_CACHE_DIR=$temp/ctcache"
+          echo "TIDY_CACHE_PREFIX=$prefix"
+          echo "TIDY_CACHE_MARKER=$temp/ctcache-restored"
+        } >> "$GITHUB_ENV"
+    - name: Restore ctcache's cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.cache.outputs.dir }}
+        key: ${{ steps.cache.outputs.prefix }}restore-${{ github.run_id }}
+        restore-keys: ${{ steps.cache.outputs.prefix }}
+    - name: Record the restored ctcache cache
+      # What save-ctcache-cache compares against, as restore-sccache-cache
+      # records its own: ctcache sets a result's modification time when it
+      # reads it.
+      shell: bash
+      run: |
+        mkdir -p "$CTCACHE_DIR"
+        echo "TIDY_CACHE_RESTORED=$(cd "$TIDY_CACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
+        touch "$TIDY_CACHE_MARKER"

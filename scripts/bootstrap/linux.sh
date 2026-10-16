@@ -122,6 +122,13 @@ install_toolchain() {
     curl -LsSf https://astral.sh/uv/install.sh \
       | as_root env UV_UNMANAGED_INSTALL=/usr/local/bin sh
   fi
+  # ctcache (scripts/bootstrap.sh) for every user, the dev container's too: its
+  # tool environment and the Python uv may fetch for it under /usr/local, not
+  # root's home. uv by its path, which sudo's own PATH may lack.
+  as_root env UV_TOOL_DIR=/usr/local/share/uv/tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python \
+    "$(command -v uv)" tool install "${CTCACHE_PACKAGE}"
   local tmp
   tmp="$(mktemp -d)"
   download_verified \
