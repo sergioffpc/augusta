@@ -1,6 +1,6 @@
 """Reading a Match capture (ADR-0050) for `augusta-inspect`.
 
-The read side of src/server/capture.cpp, which writes it, and
+The read side of src/modules/capture, which reads and writes it, and
 src/modules/protocol's capture records: the capture's magic, then each record
 after its length in one byte (#463), the header first. A Command's contents are
 counted, never decoded, so a capture's size does not slow the reader; every
@@ -191,7 +191,7 @@ def read_capture(data: bytes) -> Capture:
         reader = _Reader(payload)
         kind = reader.u8()
         offset = reader.u32()
-        # As src/server/capture.cpp's Follows: Joins first, at 0, in order,
+        # As src/modules/capture/capture.cpp's RecordOrder: Joins first, at 0, in order,
         # then the events in tick order, and nothing after the Match end.
         if capture.ended or offset < capture.last_offset:
             raise CaptureError("a record is out of order")

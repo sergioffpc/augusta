@@ -50,7 +50,7 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
-#include "capture.h"
+#include "capturer.h"
 #include "command_queue.h"
 #include "connection_health.h"
 #include "connection_sample.h"

@@ -23,7 +23,7 @@
 #include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
-#include "capture.h"
+#include "capturer.h"
 #include "content.h"
 #include "heartbeat.h"
 #include "host_impl.h"

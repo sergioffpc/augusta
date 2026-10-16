@@ -1,6 +1,6 @@
 """augusta-inspect on a Match capture (ADR-0050).
 
-The C++ half writes captures (src/server/capture.cpp); the capture_read fuzz
+The C++ half writes captures (src/modules/capture); the capture_read fuzz
 target's seed is one it wrote, so reading it here holds both halves to one
 format.
 """

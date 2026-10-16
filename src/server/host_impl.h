@@ -25,7 +25,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capture.h"
+#include "capturer.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host.h"

@@ -519,22 +519,6 @@ TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) 
   EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
 }
 
-TEST(WireTest, ACaptureRecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
-  const augusta::protocol::CaptureHeaderWire too_long{
-      .server_pack = {},
-      .client_pack = {},
-      .engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v'),
-      .started_unix_ms = 0,
-      .format_version = augusta::protocol::kCaptureFormatVersion,
-      .tick_rate_hz = 60};
-
-  const auto encoded = augusta::server::EncodeToCapture(too_long);
-
-  ASSERT_FALSE(encoded.has_value());
-  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
-  EXPECT_EQ(ContextOf(encoded.error(), "capture_record_type"), "1");
-}
-
 // A refusal no case of ToWire names is a corrupted one: it travels on as a
 // value the protocol lacks, which Encode refuses, rather than as undefined
 // behaviour.

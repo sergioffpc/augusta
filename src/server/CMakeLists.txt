@@ -111,13 +111,13 @@ augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
 # can drive a match by hand (see host.h), and the conversions Host makes at its
 # edges: between the protocol's plain types and the engine's (see wire.h), and
 # into SimulationWorld's (see simulation_mapping.h); with the Match capture
-# Host writes (see capture.h, ADR-0050), and what it counts for the metrics
+# Host writes (see capturer.h, ADR-0050), and what it counts for the metrics
 # endpoint (see host_metrics.h, ADR-0049).
 add_library(
   augustad_host
   STATIC
-  capture.cpp
   capture_retention.cpp
+  capturer.cpp
   host.cpp
   host_log.cpp
   host_match.cpp

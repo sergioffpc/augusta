@@ -23,7 +23,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/tick.h"
-#include "capture.h"
+#include "capturer.h"
 #include "command_queue.h"
 #include "match.h"
 

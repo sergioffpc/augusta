@@ -449,9 +449,9 @@ target_include_directories(augusta_capture_format_tests PRIVATE ${CMAKE_SOURCE_D
 gtest_discover_tests(augusta_capture_format_tests)
 
 # Match captures (ADR-0050): a Capturer's files, read back, with no Host.
-add_executable(augusta_capture_tests capture_test.cpp)
-target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
+add_executable(augusta_capturer_tests capturer_test.cpp)
+target_link_libraries(augusta_capturer_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 
 # A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
 # checked against its markers, with no network.

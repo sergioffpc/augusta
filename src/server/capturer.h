@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CAPTURE_H_
-#define AUGUSTA_SERVER_CAPTURE_H_
+#ifndef AUGUSTA_SERVER_CAPTURER_H_
+#define AUGUSTA_SERVER_CAPTURER_H_
 
 #include <chrono>
 #include <cstddef>
@@ -30,22 +30,17 @@
 /// Simulation thread as the tick makes it; the Capturer encodes it there and a
 /// thread of its own opens, writes and flushes the files, so a disk that
 /// stalls never holds up a tick (NFR-01). The capture module
-/// (augusta/capture.h) owns the file's format and reads it back. A capture that cannot
+/// (augusta/capture.h) owns the file's format: it encodes each event and
+/// reads the file back. A capture that cannot
 /// be written stops, keeping every whole record before it. What that costs the
 /// run is its CaptureMode (#398, ADR-0033): an optional capture, a debugging
 /// aid, degrades and the Match goes on without it; a strict one, for a
 /// playtest whose point is the capture, is the runtime's terminal failure.
 namespace augusta::server {
 
-/// The name of the file of the Match that started at started, the
-/// match_number-th of its server's run, from 1: its start in UTC, then its
-/// number, so the names of one server's captures sort by when they started.
-[[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
-                                          std::uint64_t match_number);
-
 /// Why a Match's capture stopped before its Match end, as logs name it.
 enum class CaptureStop : std::uint8_t {
-  /// A record is longer than a capture's frame holds (capture::kMaxFramePayload).
+  /// A record is longer than a capture's frame holds (capture::RecordTooLong).
   kRecordTooLong,
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is not keeping up.
   kQueueFull,
@@ -94,7 +89,7 @@ enum class CaptureStep : std::uint8_t {
   /// A record found kCaptureQueueCapacity records still unwritten: the disk is
   /// not keeping up.
   kQueueFull,
-  /// A record is longer than a capture's frame holds (capture::kMaxFramePayload).
+  /// A record is longer than a capture's frame holds (capture::RecordTooLong).
   kRecordTooLong,
   /// A record would take the directory past CaptureRetention::max_bytes with
   /// no completed capture left to delete.
@@ -162,7 +157,8 @@ class CaptureObserver {
   virtual void OnCompleted() {}
   /// A Match's capture stopped early, told once per capture.
   virtual void OnStopped(CaptureStop /*stop*/) {}
-  /// The writer wrote bytes more to a file: its magic or a record's frame.
+  /// The writer wrote bytes more to a file: its magic with its header, or a
+  /// record, each as capture::Encoded::SizeOnDisk counts it.
   virtual void OnWritten(std::size_t /*bytes*/) {}
   /// records are queued for the writer and not yet written.
   virtual void OnQueued(std::size_t /*records*/) {}
@@ -210,15 +206,14 @@ struct CaptureOptions {
 };
 
 /// Captures every Match a server runs into a directory of its own, one file
-/// each (CaptureFileName), each file the capture's magic then its records,
-/// framed as augusta/capture.h writes them, the header first, the directory
-/// kept within CaptureOptions::retention (capture_retention.h). Every call but the
-/// destructor is the Simulation thread's, in the order the tick makes its
-/// events, and only encodes and queues; the Capturer's writer thread creates,
-/// writes, flushes and closes the files. A Match's capture stops at a record
-/// too long, one that finds the queue full, a failed create, write or flush, or
-/// one past the retention budget, logged once at WARN as event=capture_stopped:
-/// its file keeps every whole record before it.
+/// each (CaptureFileName), each file as augusta/capture.h encodes it, the
+/// directory kept within CaptureOptions::retention (capture_retention.h). Every
+/// call but the destructor is the Simulation thread's, in the order the tick
+/// makes its events, and only encodes and queues; the Capturer's writer thread
+/// creates, writes, flushes and closes the files. A Match's capture stops at a
+/// record too long, one that finds the queue full, a failed create, write or
+/// flush, or one past the retention budget, logged once at WARN as
+/// event=capture_stopped: its file keeps every whole record before it.
 ///
 /// The run's first such loss is kept as Loss. An optional capture then
 /// degrades, logged once at ERR as event=capture_degraded, and the next Match
@@ -293,12 +288,12 @@ class Capturer {
   [[nodiscard]] capture::Player PlayerOf(EntityId entity) const;
   // Offset of tick from the Match's first.
   [[nodiscard]] std::uint32_t OffsetOf(tick::Tick tick) const;
-  // encoded, a record EncodeToCapture made, if a capture's frame holds it.
-  // Otherwise nullopt: a broken invariant is kept as Failure, and a record too
-  // long stops the Match's capture.
-  std::optional<std::vector<std::byte>> Admit(std::expected<std::vector<std::byte>, failure::Failure> encoded);
-  // Queues encoded, a record EncodeToCapture made, if Admit admits it.
-  void Queue(std::expected<std::vector<std::byte>, failure::Failure> encoded);
+  // Decision: what an encode error costs (ADR-0033). encoded if it encoded;
+  // otherwise nullopt, a codec failure kept as Failure, the runtime's to stop
+  // on, and a record too long stopping only the Match's capture.
+  std::optional<capture::Encoded> Admit(std::expected<capture::Encoded, capture::EncodeError> encoded);
+  // Queues encoded, a Join or an event, if Admit admits it.
+  void Queue(std::expected<capture::Encoded, capture::EncodeError> encoded);
 
   const std::filesystem::path directory_;
   const capture::Header header_;
@@ -315,4 +310,4 @@ class Capturer {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CAPTURE_H_
+#endif  // AUGUSTA_SERVER_CAPTURER_H_

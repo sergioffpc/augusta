@@ -9,6 +9,7 @@
 #include <ios>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -20,8 +21,7 @@
 #include "augusta/command.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
-#include "augusta/protocol.h"
-#include "capture.h"
+#include "capturer.h"
 #include "match.h"
 
 // A capture directory kept within a count and a size, oldest Match first
@@ -58,6 +58,16 @@ std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
     completed.push_back({.path = {}, .size = size});
   }
   return completed;
+}
+
+TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
+  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003.capture");
+}
+
+TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
+  const std::string first = CaptureFileName(kStarted, 9);
+  const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, 10);
+  EXPECT_LT(first, second);
 }
 
 TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
@@ -167,22 +177,26 @@ class CaptureRetentionTest : public ::testing::Test {
 
   void TearDown() override { std::filesystem::remove_all(directory_); }
 
-  // A completed capture of a Match that started hours_ago, size bytes long:
-  // the magic, then filler.
+  // A completed capture of a Match that started hours_ago, size bytes long.
   std::string Seed(int hours_ago, std::uintmax_t size) {
     const std::string name = CaptureFileName(kStarted - std::chrono::hours{hours_ago}, 1);
     Write(directory_ / name, true, size);
     return name;
   }
 
-  static void Write(const std::filesystem::path& path, bool magic, std::uintmax_t size) {
-    std::ofstream out(path, std::ios::binary);
-    std::string bytes(size, 'x');
-    if (magic) {
-      std::ranges::transform(augusta::protocol::kCaptureMagic, bytes.begin(),
-                             [](std::byte byte) { return static_cast<char>(byte); });
+  // A file of size bytes: a capture of no Match cut or padded with filler to
+  // size when as_capture, so it starts with a capture's magic, else filler.
+  static void Write(const std::filesystem::path& path, bool as_capture, std::uintmax_t size) {
+    std::string bytes;
+    if (as_capture) {
+      std::ostringstream written(std::ios::binary);
+      EXPECT_TRUE(
+          augusta::capture::WriteCapture(written, Capture{.header = Header(), .joins = {}, .events = {}, .torn = false})
+              .has_value());
+      bytes = written.str();
     }
-    out << bytes;
+    bytes.resize(size, 'x');
+    std::ofstream(path, std::ios::binary) << bytes;
   }
 
   // The names of the directory's regular files, sorted.

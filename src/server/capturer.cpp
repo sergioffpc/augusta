@@ -1,7 +1,6 @@
-#include "capture.h"
+#include "capturer.h"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -22,6 +21,7 @@
 #include <thread>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "augusta/capture.h"
@@ -30,11 +30,9 @@
 #include "augusta/faults.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
-#include "augusta/protocol.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
 #include "match.h"
-#include "wire.h"
 
 namespace augusta::server {
 
@@ -93,12 +91,6 @@ std::int64_t Offset(tick::Tick from, tick::Tick to) {
 }
 
 }  // namespace
-
-std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, std::uint64_t match_number) {
-  const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
-  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}{}", seconds, (started - seconds).count(), match_number,
-                     capture::kExtension);
-}
 
 std::string_view CaptureStopName(CaptureStop stop) {
   switch (stop) {
@@ -206,8 +198,8 @@ class Capturer::Writer {
     observer_->OnState(CaptureState::kCapturing);
   }
 
-  void Open(std::uint64_t match, std::filesystem::path path, protocol::BytesWire header) {
-    Enqueue({.kind = Kind::kOpen, .match = match, .payload = std::move(header), .path = std::move(path)});
+  void Open(std::uint64_t match, std::filesystem::path path, capture::Encoded header) {
+    Enqueue({.kind = Kind::kOpen, .match = match, .encoded = std::move(header), .path = std::move(path)});
   }
 
   void Close(std::uint64_t match) {
@@ -217,14 +209,14 @@ class Capturer::Writer {
         open_match_ = 0;
         observer_->OnState(CaptureState::kIdle);
       }
-      queue_.push_back({.kind = Kind::kClose, .match = match, .payload = {}, .path = {}});
+      queue_.push_back({.kind = Kind::kClose, .match = match, .encoded = std::nullopt, .path = {}});
     }
     ready_.notify_one();
   }
 
   // Queues match's record, or stops its capture there when capacity records
   // are still unwritten. Once its capture has stopped, drops every one.
-  void Push(std::uint64_t match, protocol::BytesWire record) {
+  void Push(std::uint64_t match, capture::Encoded record) {
     {
       const std::scoped_lock lock(mutex_);
       if (stopped_.contains(match) || health_ == CaptureHealth::kStopped) {
@@ -238,7 +230,7 @@ class Capturer::Writer {
       }
       ++records_queued_;
       observer_->OnQueued(records_queued_);
-      queue_.push_back({.kind = Kind::kRecord, .match = match, .payload = std::move(record), .path = {}});
+      queue_.push_back({.kind = Kind::kRecord, .match = match, .encoded = std::move(record), .path = {}});
     }
     ready_.notify_one();
   }
@@ -280,7 +272,8 @@ class Capturer::Writer {
   struct Item {
     Kind kind;
     std::uint64_t match;
-    protocol::BytesWire payload;
+    // kOpen: the magic with the header; kRecord: the record.
+    std::optional<capture::Encoded> encoded;
     std::filesystem::path path;
   };
 
@@ -334,7 +327,7 @@ class Capturer::Writer {
       case Kind::kOpen:
         return OpenFile(item);
       case Kind::kRecord:
-        return file_match_ == item.match ? Persist(item.payload) : std::nullopt;
+        return file_match_ == item.match ? Persist(*item.encoded) : std::nullopt;
       case Kind::kClose:
         CloseFile(item.match);
         return std::nullopt;
@@ -345,8 +338,7 @@ class Capturer::Writer {
   // Makes room in the directory for the magic and the header, then creates
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
-    if (!directory_.Open(item.match, item.path.filename().string(),
-                         protocol::kCaptureMagic.size() + capture::FrameSize(item.payload.size()))) {
+    if (!directory_.Open(item.match, item.path.filename().string(), item.encoded->SizeOnDisk())) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
@@ -356,35 +348,31 @@ class Capturer::Writer {
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
-    file_.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
     LI("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
     observer_->OnStarted();
-    if (file_) {
-      observer_->OnWritten(protocol::kCaptureMagic.size());
-    }
-    return Write(item.payload);
+    return Write(*item.encoded);
   }
 
   std::optional<std::string> Trip(failure::Site site) const {
     return faults_ == nullptr ? std::nullopt : faults_->Trip(site);
   }
 
-  // Makes room in the directory for payload's frame, then writes it.
-  std::optional<Failed> Persist(const protocol::BytesWire& payload) {
-    if (!directory_.Reserve(capture::FrameSize(payload.size()))) {
+  // Makes room in the directory for encoded, then writes it.
+  std::optional<Failed> Persist(const capture::Encoded& encoded) {
+    if (!directory_.Reserve(encoded.SizeOnDisk())) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
-    return Write(payload);
+    return Write(encoded);
   }
 
-  // Writes and flushes payload's frame, or says which step the file failed
-  // at. An injected fault fails the file, as the disk would.
-  std::optional<Failed> Write(const protocol::BytesWire& payload) {
+  // Writes and flushes encoded, or says which step the file failed at. An
+  // injected fault fails the file, as the disk would.
+  std::optional<Failed> Write(const capture::Encoded& encoded) {
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureWrite)) {
       file_.setstate(std::ios::badbit);
       return Failed{.step = CaptureStep::kWrite, .detail = *std::move(fault)};
     }
-    capture::WriteFrame(file_, payload);
+    capture::Write(file_, encoded);
     if (!file_) {
       return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
     }
@@ -397,7 +385,7 @@ class Capturer::Writer {
       return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
     }
     ++records_;
-    observer_->OnWritten(capture::FrameSize(payload.size()));
+    observer_->OnWritten(encoded.SizeOnDisk());
     return std::nullopt;
   }
 
@@ -540,7 +528,7 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
   sessions_.clear();
   capture::Header header = header_;
   header.started = std::chrono::floor<std::chrono::milliseconds>(started);
-  std::optional<protocol::BytesWire> encoded = Admit(EncodeToCapture(ToWire(header)));
+  std::optional<capture::Encoded> encoded = Admit(capture::EncodeHeader(header));
   if (!encoded.has_value()) {
     // No file is opened: its Joins and the rest are dropped by the writer.
     return;
@@ -550,9 +538,9 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
     const auto player = static_cast<capture::Player>(players_.size() + 1);
     players_.emplace(entrant.entity, player);
     sessions_.emplace(entrant.session, player);
-    Queue(EncodeToCapture(ToWire(player, capture::Join{.session = std::to_underlying(entrant.session),
-                                                       .character = entrant.character,
-                                                       .spawn = math::SnapPosition(entrant.spawn)})));
+    Queue(capture::EncodeJoin(player, capture::Join{.session = std::to_underlying(entrant.session),
+                                                    .character = entrant.character,
+                                                    .spawn = math::SnapPosition(entrant.spawn)}));
   }
 }
 
@@ -566,10 +554,10 @@ void Capturer::Command(tick::Tick tick, EntityId entity, const command::Command&
                                std::numeric_limits<std::int32_t>::max());
   command::Command captured = command;
   captured.seen_tick = 0;
-  Queue(EncodeToCapture(
-      ToWire({.offset = OffsetOf(tick),
-              .event = capture::Command{
-                  .player = player, .seen_offset = static_cast<std::int32_t>(seen), .command = captured}})));
+  Queue(capture::EncodeEvent(
+      {.offset = OffsetOf(tick),
+       .event =
+           capture::Command{.player = player, .seen_offset = static_cast<std::int32_t>(seen), .command = captured}}));
 }
 
 void Capturer::Leave(tick::Tick tick, EntityId entity) {
@@ -577,7 +565,7 @@ void Capturer::Leave(tick::Tick tick, EntityId entity) {
   if (!open_ || player == 0) {
     return;
   }
-  Queue(EncodeToCapture(ToWire({.offset = OffsetOf(tick), .event = capture::Leave{.player = player}})));
+  Queue(capture::EncodeEvent({.offset = OffsetOf(tick), .event = capture::Leave{.player = player}}));
 }
 
 void Capturer::Death(tick::Tick tick, EntityId victim, EntityId killer) {
@@ -585,8 +573,8 @@ void Capturer::Death(tick::Tick tick, EntityId victim, EntityId killer) {
   if (!open_ || dead == 0) {
     return;
   }
-  Queue(EncodeToCapture(
-      ToWire({.offset = OffsetOf(tick), .event = capture::Death{.victim = dead, .killer = PlayerOf(killer)}})));
+  Queue(capture::EncodeEvent(
+      {.offset = OffsetOf(tick), .event = capture::Death{.victim = dead, .killer = PlayerOf(killer)}}));
 }
 
 void Capturer::EndMatch(tick::Tick last_tick, std::optional<SessionId> winner) {
@@ -599,7 +587,7 @@ void Capturer::EndMatch(tick::Tick last_tick, std::optional<SessionId> winner) {
       winning = found->second;
     }
   }
-  Queue(EncodeToCapture(ToWire({.offset = OffsetOf(last_tick), .event = capture::MatchEnd{.winner = winning}})));
+  Queue(capture::EncodeEvent({.offset = OffsetOf(last_tick), .event = capture::MatchEnd{.winner = winning}}));
   writer_->Close(matches_);
   open_ = false;
   players_.clear();
@@ -636,26 +624,26 @@ std::uint32_t Capturer::OffsetOf(tick::Tick tick) const {
       std::clamp<std::int64_t>(Offset(first_tick_, tick), 0, std::numeric_limits<std::uint32_t>::max()));
 }
 
-std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<std::byte>, failure::Failure> encoded) {
-  // Not the capture's loss but the server's own bug, which stops the runtime
-  // (ADR-0033): kept for Host to take, and nothing of it written.
-  if (!encoded.has_value()) {
+std::optional<capture::Encoded> Capturer::Admit(std::expected<capture::Encoded, capture::EncodeError> encoded) {
+  if (encoded.has_value()) {
+    return *std::move(encoded);
+  }
+  if (auto* broken = std::get_if<failure::Failure>(&encoded.error())) {
+    // Not the capture's loss but the server's own bug, which stops the runtime
+    // (ADR-0033): kept for Host to take, and nothing of it written.
     if (!failure_.has_value()) {
-      failure_ = std::move(encoded.error());
+      failure_ = std::move(*broken);
     }
     return std::nullopt;
   }
-  // A record capture::ReadCapture would refuse would make every record after it
-  // unreadable; stopping here keeps the file readable up to it.
-  if (encoded->size() > capture::kMaxFramePayload) {
-    writer_->Stop(matches_, CaptureStep::kRecordTooLong);
-    return std::nullopt;
-  }
-  return *std::move(encoded);
+  // A record capture::ReadCapture would refuse would make every record after
+  // it unreadable; stopping here keeps the file readable up to it.
+  writer_->Stop(matches_, CaptureStep::kRecordTooLong);
+  return std::nullopt;
 }
 
-void Capturer::Queue(std::expected<std::vector<std::byte>, failure::Failure> encoded) {
-  if (std::optional<protocol::BytesWire> admitted = Admit(std::move(encoded))) {
+void Capturer::Queue(std::expected<capture::Encoded, capture::EncodeError> encoded) {
+  if (std::optional<capture::Encoded> admitted = Admit(std::move(encoded))) {
     writer_->Push(matches_, *std::move(admitted));
   }
 }

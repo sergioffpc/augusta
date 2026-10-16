@@ -1,12 +1,14 @@
 #ifndef AUGUSTA_SERVER_CAPTURE_RETENTION_H_
 #define AUGUSTA_SERVER_CAPTURE_RETENTION_H_
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -46,6 +48,12 @@ struct CaptureRetentionObserver {
   /// one being written included, after a scan, a deletion or a write.
   std::function<void(std::size_t files, std::uintmax_t bytes)> on_directory;
 };
+
+/// The name of the file of the Match that started at started, the
+/// match_number-th of its server's run, from 1: its start in UTC, then its
+/// number, so the names of one server's captures sort by when they started.
+[[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
+                                          std::uint64_t match_number);
 
 /// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.capture,
 /// the number of 4 digits or more.

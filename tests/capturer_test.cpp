@@ -1,4 +1,4 @@
-#include "capture.h"
+#include "capturer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,7 +27,7 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/math.h"
-#include "augusta/protocol.h"
+#include "capture_retention.h"
 #include "match.h"
 
 // A Match capture (ADR-0050), written by a Capturer into a directory of its
@@ -173,7 +173,7 @@ class CaptureTest : public ::testing::Test {
     // Named after the running test: ctest runs every test in a process of its
     // own, possibly in parallel, so no other test removes it while in use.
     const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
-    std::string name = std::string("augusta_capture_test_") + test.test_suite_name() + "_" + test.name();
+    std::string name = std::string("augusta_capturer_test_") + test.test_suite_name() + "_" + test.name();
     std::ranges::replace(name, '/', '_');
     directory_ = std::filesystem::temp_directory_path() / name;
     std::filesystem::remove_all(directory_);
@@ -198,16 +198,6 @@ class CaptureTest : public ::testing::Test {
 
   std::filesystem::path directory_;
 };
-
-TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
-  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003.capture");
-}
-
-TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
-  const std::string first = CaptureFileName(kStarted, 9);
-  const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, 10);
-  EXPECT_LT(first, second);
-}
 
 // Requirements: US-21
 TEST_F(CaptureTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
@@ -550,6 +540,34 @@ TEST_F(CaptureTest, ADegradedCaptureIsStoppedOnceFinishedKeepingItsLoss) {
             (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
 }
 
+// A record the codec cannot carry is the server's own bug, not the capture's
+// loss: in either mode it is the runtime's broken invariant (ADR-0033), and
+// nothing of it is written.
+TEST_F(CaptureTest, ARecordTheCodecCannotCarryIsABrokenInvariantInEitherMode) {
+  for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
+    const std::filesystem::path directory = directory_ / (mode == CaptureMode::kStrict ? "strict" : "optional");
+    std::filesystem::create_directories(directory);
+    std::vector<CaptureEntrant> players = TwoPlayers();
+    players[1].character = std::string(1000, 'x');
+    {
+      Capturer capturer(directory, Header(), CaptureOptions{.mode = mode});
+      capturer.StartMatch(players, kFirstTick, kStarted);
+      capturer.EndMatch(kFirstTick, std::nullopt);
+      capturer.WaitUntilWritten();
+
+      ASSERT_TRUE(capturer.Failure().has_value());
+      EXPECT_EQ(capturer.Failure()->code, Code::kInvariantViolated);
+      EXPECT_EQ(DispositionOf(capturer.Failure()->code), Disposition::kRuntime);
+      EXPECT_EQ(capturer.Health(), CaptureHealth::kEnabled);
+      EXPECT_FALSE(capturer.Loss().has_value());
+    }
+    std::ifstream in(directory / CaptureFileName(kStarted, 1), std::ios::binary);
+    const auto read = ReadCapture(in);
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(read->joins.size(), 1U);
+  }
+}
+
 // Requirements: US-21
 TEST_F(CaptureTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
   std::vector<std::string> written;
@@ -649,10 +667,11 @@ TEST_F(CaptureTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
 // Requirements: NFR-07
 TEST_F(CaptureTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
   // Captures are the files named as captures that start with a capture's magic.
-  const std::string magic(reinterpret_cast<const char*>(augusta::protocol::kCaptureMagic.data()),
-                          augusta::protocol::kCaptureMagic.size());
-  std::ofstream(directory_ / "20260101T000000000Z-0001.capture", std::ios::binary) << magic << "01";
-  std::ofstream(directory_ / "20260101T000000000Z-0002.capture", std::ios::binary) << magic;
+  const capture::Capture earlier{.header = Header(), .joins = {}, .events = {}, .torn = false};
+  for (const char* name : {"20260101T000000000Z-0001.capture", "20260101T000000000Z-0002.capture"}) {
+    std::ofstream out(directory_ / name, std::ios::binary);
+    ASSERT_TRUE(augusta::capture::WriteCapture(out, earlier).has_value());
+  }
   std::ofstream(directory_ / "20260101T000000000Z-0003.capture", std::ios::binary) << "no magic";
   std::ofstream(directory_ / "notes.txt", std::ios::binary) << "not a capture";
   std::filesystem::create_directory(directory_ / "nested.capture");
@@ -663,8 +682,9 @@ TEST_F(CaptureTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
     capturer.EndMatch(kFirstTick, std::nullopt);
   }
 
+  const std::uintmax_t earlier_size = std::filesystem::file_size(directory_ / "20260101T000000000Z-0001.capture");
   const std::uintmax_t size = std::filesystem::file_size(directory_ / CaptureFileName(kStarted, 1));
-  EXPECT_EQ(told.Get().directory, (CaptureDirectoryUsage{.files = 3, .bytes = (2 * magic.size()) + 2 + size}));
+  EXPECT_EQ(told.Get().directory, (CaptureDirectoryUsage{.files = 3, .bytes = (2 * earlier_size) + size}));
 }
 
 // Requirements: NFR-07

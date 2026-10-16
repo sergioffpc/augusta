@@ -22,7 +22,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/supervisor.h"
-#include "capture.h"
+#include "capturer.h"
 #include "content.h"
 #include "host.h"
 #include "runtime.h"
@@ -30,7 +30,7 @@
 // A Match capture that cannot be written (ADR-0050), seen from the Host and the
 // ServerRuntime that runs it: an optional one degrades while the server goes
 // on, a strict one is the runtime's terminal failure (ADR-0033). The capture's
-// own behaviour is capture_test.cpp's. Each server's Match has no players, so
+// own behaviour is capturer_test.cpp's. Each server's Match has no players, so
 // it starts on the first tick and its capture's header is written with no
 // client.
 namespace {
