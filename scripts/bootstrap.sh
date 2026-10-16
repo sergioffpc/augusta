@@ -27,8 +27,10 @@ readonly FLUX_VERSION=2.9.5
 # ctcache, which the Makefile's tidy target runs clang-tidy through, at the
 # commit .github/actions/restore-ctcache-cache installs; bump them together. A
 # commit, as ctcache isn't on PyPI.
+readonly CTCACHE_REPOSITORY=https://github.com/matus-chochlik/ctcache
+readonly CTCACHE_COMMIT=857b14271d3ded5511c2e6a60f2dc20c1e4b5680
 # shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly CTCACHE_PACKAGE='ctcache @ git+https://github.com/matus-chochlik/ctcache@857b14271d3ded5511c2e6a60f2dc20c1e4b5680'
+readonly CTCACHE_PACKAGE="ctcache @ git+${CTCACHE_REPOSITORY}@${CTCACHE_COMMIT}"
 
 # Prints the platform: linux, windows (Git Bash) or macos.
 platform() {
