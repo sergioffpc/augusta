@@ -434,6 +434,9 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+# It drives augustad end to end, which is the only way Glue is tested
+# (ADR-0060), so it is allowed augustad's own application.
+augusta_set_end_to_end_test(augusta_server_application_tests augustad)
 target_compile_definitions(
   augusta_server_application_tests
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
@@ -514,6 +517,9 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
+# It runs a real ServerRuntime, so it is allowed augustad's own runtime
+# (ADR-0060).
+augusta_set_end_to_end_test(augusta_capture_runtime_tests augustad)
 # Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_capture_runtime_tests DISCOVERY_TIMEOUT 30)
 
@@ -545,6 +551,9 @@ target_link_libraries(
   augusta_transport_failure_tests
   PRIVATE augusta_harness augusta_lifecycle augustad_host augustad_runtime GTest::gtest GTest::gtest_main
 )
+# It runs a real ServerRuntime, so it is allowed augustad's own runtime
+# (ADR-0060).
+augusta_set_end_to_end_test(augusta_transport_failure_tests augustad)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 
@@ -609,6 +618,8 @@ add_test(
 # defined inside an executable's own directory, allows that executable's own
 # three and a library outside it, lets a named exception through and counts
 # what is left, and refuses an exception naming a library that has moved out.
+# It also refuses a test that links Glue unless the test declares itself an
+# end-to-end test of that executable, and then only its application or runtime.
 # It only configures a fixture build graph, with no compiler, so it builds
 # nothing.
 add_test(
@@ -755,6 +766,9 @@ if(AUGUSTA_CLIENT)
       GTest::gtest
       GTest::gtest_main
   )
+  # It drives augustac end to end, which is the only way Glue is tested
+  # (ADR-0060), so it is allowed augustac's own application.
+  augusta_set_end_to_end_test(augusta_client_application_tests augustac)
   target_compile_definitions(
     augusta_client_application_tests
     PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
