@@ -199,6 +199,13 @@ SimulationWorld's Scripts/Behaviours phase, kept out of C++ so it can change
 without touching mechanism code. _Avoid_: Game logic, gameplay code (too broad —
 conflates policy with mechanism)
 
+**Glue**: What an executable adds to the modules it is built from, and the only
+thing it adds: its entry point, its phases from config to runtime, the threads
+it owns, the modules it builds and the wiring of one's output into another's
+input. It holds neither Mechanism nor Game policy; anything worth a test of its
+own is not Glue and belongs in a module. _Avoid_: Application logic, server
+logic, client logic
+
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
 mode, such as who spawns where and when the Match is won, chosen together
 because they describe the same mode. The scenario's manifest names the script,
@@ -284,6 +291,12 @@ tick: whatever plays live runs it in real time on the Prediction and Network I/O
 threads the Harness owns (harness::Runner), and a test drives it by hand.
 _Avoid_: Client session, bot
 
+**Host**: Where every client connects on the server: its socket and
+SimulationWorld without threads or a clock, the server's counterpart of the
+Harness. augustad runs it in real time on its Network I/O and Simulation
+threads, and a test drives it by hand, one network round and one tick at a time.
+_Avoid_: Game server, server session
+
 **Agent**: A player with no one at the keyboard, controlled by a Python script
 through a Harness (ADR-0052): the script observes what the server tells the
 Agent and its events, and chooses Intents; the Harness turns them into a Command
@@ -316,6 +329,12 @@ damage-resolution volume)
 Every Hitbox stands for one. It is what a hit resolves to, what decides the
 hit's damage (the Parameters give the ammo's damage for each), and what a Hit
 confirmation names. _Avoid_: Hit zone, hit location, hit region, body zone
+
+**Hitbox pose**: The part of a player's skeletal pose that moves its Hitboxes:
+locomotion, stance, aim and how the weapon is held. Client and server arrive at
+the same one from the same state, so a shooter hits where it sees a body; what
+the client draws on top of it (cosmetic layers such as foot placement or a
+flinch) never moves a Hitbox. _Avoid_: Server pose, physics pose, hit pose
 
 **Shot**: One bullet fired, as the Authoritative server announces it to every
 client: who fired it, at which tick, from where and in which direction. Clients

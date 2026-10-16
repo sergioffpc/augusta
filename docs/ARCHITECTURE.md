@@ -127,6 +127,11 @@ IP:port.
                +-------------------------------------+
 ```
 
+Each block below is a module under `src/modules/`, scoped to the side or sides
+it is compiled into. The executables themselves - augustad, augustac and the C++
+tools - are Glue: their applications and runtimes build these modules and wire
+them together, and hold neither Mechanism nor Game policy (ADR-0060).
+
 **Shared Core** (compiled into both client and server)
 
 - ECS (Flecs) — shared entity/component data: players, bullets. Each World below
@@ -593,6 +598,10 @@ not affect numbering.
   live server
 - [ADR-0051](./adr/0051-replay.md) — Replay: augustad re-runs a Match capture
   and streams it to Replay viewers
+- [ADR-0060](./adr/0060-executables-are-glue.md) — Executables are Glue:
+  Mechanism in modules, Game policy in Lua, the executables only wire them
+- [ADR-0061](./adr/0061-skeletal-hitboxes.md) — Skeletal hitboxes: a shared
+  Hitbox pose, evaluated alike by client and server
 
 ### Tooling & Build
 
