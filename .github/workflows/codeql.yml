@@ -45,9 +45,22 @@ jobs:
           VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
       - uses: ./.github/actions/save-vcpkg-cache
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        id: init
         with:
           languages: cpp
           build-mode: manual
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+      # Analyzing main, the default branch, analyze saves the TRAP cache (the
+      # extracted headers every later analysis restores from main) under a key
+      # of this commit, ~1 GB each, and never deletes the one before: only the
+      # newest is restored, so the older are deleted. The prefix spans every
+      # CodeQL version, whose entries this version never restores either; the
+      # "1" is the codeql-action's cache format version, and should it change,
+      # keep matches nothing and nothing is pruned.
+      - if: github.ref == 'refs/heads/main'
+        uses: ./.github/actions/prune-cache
+        with:
+          prefix: codeql-trap-
+          keep: codeql-trap-1-${{ steps.init.outputs.codeql-version }}-cpp-${{ github.sha }}

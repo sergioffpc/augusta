@@ -18,8 +18,9 @@ on:
           Whether release.yml is the caller. Then a failure opens no
           nightly-failure issue (the release's own run is where it shows),
           sbom-scan scans the SBOMs the caller uploaded as sbom-<executable>
-          artifacts before the call instead of the latest release's, and the
-          fuzz corpus is not saved.
+          artifacts before the call instead of the latest release's, and no
+          job saves a cache (the vcpkg binaries, the fuzz corpus): scoped to
+          the release's tag, no later run would restore it.
         required: false
         type: boolean
         default: false
@@ -53,7 +54,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test (property tests, ~10 000 cases)
@@ -94,7 +96,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
         run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
       - name: Restore the corpus
@@ -170,7 +173,8 @@ jobs:
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Configure (TSan)
         run: cmake --preset linux-tsan -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
       - name: Test
@@ -205,7 +209,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
       - name: Test (netcode under an impaired link)
@@ -238,7 +243,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (coverage)
         run: cmake --preset linux-coverage -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
       - name: Test
@@ -295,7 +301,8 @@ jobs:
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
         run: cmake --preset linux
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Check that the smoke test is built
@@ -389,7 +396,8 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_benchmarks
       - name: Benchmark
