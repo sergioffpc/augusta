@@ -4,8 +4,9 @@ description: >
   certificate for the workflow's GitHub OIDC token, logged in Rekor), and
   verifies the signature at once against the identity the cluster admits it by,
   so a publish the cluster would refuse fails here. ci.yml runs it for each
-  augustad image it publishes (container-publish-x64-linux's,
-  container-publish-arm64-linux's and container-index's index of both), which
+  augustad image it publishes (container-publish-x64-linux's and
+  container-publish-arm64-linux's, through sign-and-attest-server-image, and
+  container-index's index of both), which
   clusters/onprem/policies/verify-image-signatures.yaml admits from develop or
   main (ADR-0057), and for develop's chart (chart-publish), which develop's
   OCIRepository (clusters/onprem/apps/sources.yaml) takes from develop alone.

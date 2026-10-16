@@ -3,10 +3,12 @@ description: >
   Signs an augustad image ci.yml has just pushed to GHCR (sign-artifact), then
   attests the provenance of its debug info and of the image, and the image's
   SBOM, pushing each attestation beside what it attests. Every published image
-  is attested here, where it is pushed: release.yml builds none, and the image a
-  release runs is its tag's commit's, pushed to main (docs/ENGINEERING.md,
-  Provenance and SBOMs). Run by each architecture's publish job; the job needs
-  container-publish-x64-linux's permissions and is logged in to GHCR.
+  is attested in the job that pushes it: release.yml builds none, and the image
+  a release runs is its tag's commit's, pushed to main (docs/ENGINEERING.md,
+  Provenance and SBOMs). Run by each architecture's publish job, once it has
+  pushed the image and its debug info. The job needs packages: write, id-token:
+  write, attestations: write and artifact-metadata: write, and is logged in to
+  GHCR.
 inputs:
   image:
     description: The image's manifest digest, sha256:..., as GHCR serves it.

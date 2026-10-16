@@ -223,16 +223,17 @@ decisions already made in ARCHITECTURE.md:
   attestations, signed keylessly (Sigstore) by the workflow that built them:
   SLSA build provenance, naming the commit and the workflow run, and an SPDX
   SBOM. Each is attested where it is published, so the image is attested by CI
-  on the push that publishes it (`.github/actions/attest-server-image`, for
-  either architecture), and the image a release runs (`sha-<12>` of its tag's
-  commit) needs nothing more from the release. On `main` each architecture's
-  image is attested, and the index of both gets its own provenance; a release
-  attests `augustad-linux-x64` and `augustad-linux-arm64` alike. An executable's
-  SBOM, attached to the Release, lists the vcpkg ports it was built with, taken
-  from vcpkg's own per-port SPDX documents (`scripts/vcpkg-sbom.py`), plus the
-  submodules it uses, by commit: syft finds nothing in a statically linked C++
-  binary. The client's also lists the MSVC runtime its zip ships beside it
-  (ADR-0058). The image's SBOM is syft's, of its Ubuntu packages. Verified with:
+  on the push that publishes it (`.github/actions/sign-and-attest-server-image`,
+  for either architecture), and the image a release runs (`sha-<12>` of its
+  tag's commit) needs nothing more from the release. On `main` each
+  architecture's image is attested, and the index of both gets its own
+  provenance; a release attests `augustad-linux-x64` and `augustad-linux-arm64`
+  alike. An executable's SBOM, attached to the Release, lists the vcpkg ports it
+  was built with, taken from vcpkg's own per-port SPDX documents
+  (`scripts/vcpkg-sbom.py`), plus the submodules it uses, by commit: syft finds
+  nothing in a statically linked C++ binary. The client's also lists the MSVC
+  runtime its zip ships beside it (ADR-0058). The image's SBOM is syft's, of its
+  Ubuntu packages. Verified with:
 
     ```sh
     gh attestation verify augustac-windows-x64.zip --repo sergioffpc/augusta
