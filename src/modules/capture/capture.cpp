@@ -301,7 +301,7 @@ std::expected<std::vector<std::byte>, EncodeError> Framed(
     return std::unexpected(RecordTooLong{});
   }
   std::vector<std::byte> frame;
-  frame.reserve(1 + payload->size());
+  frame.reserve(kFrameLengthSize + payload->size());
   frame.push_back(static_cast<std::byte>(payload->size()));
   frame.insert(frame.end(), payload->begin(), payload->end());
   return frame;
