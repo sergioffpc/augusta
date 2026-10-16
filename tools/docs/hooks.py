@@ -1,7 +1,7 @@
 """MkDocs build hooks for the documentation site (ADR-0046).
 
 The site reads the repository's Markdown as it is. These hooks make that work:
-README.md and CONTEXT.md, which live at the root, join docs/ as pages; the
+README.md and GLOSSARY.md, which live at the root, join docs/ as pages; the
 navigation lists the runbooks by file name and the ADRs in number order, so a
 new one needs no edit to mkdocs.yml; and a link to anything that is not a page
 becomes a link to it on GitHub, so the same Markdown reads right in both
@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GITHUB = "https://github.com/sergioffpc/augusta"
 
 # Root documents published as pages, by their path in the repository.
-ROOT_PAGES = {"README.md": "index.md", "CONTEXT.md": "CONTEXT.md"}
+ROOT_PAGES = {"README.md": "index.md", "GLOSSARY.md": "GLOSSARY.md"}
 
 # The navigation before the ADRs, in reading order: (title, page).
 LEADING_NAV = [
@@ -26,7 +26,7 @@ LEADING_NAV = [
     ("Vision", "VISION.md"),
     ("Requirements", "REQUIREMENTS.md"),
     ("Architecture", "ARCHITECTURE.md"),
-    ("Context", "CONTEXT.md"),
+    ("Glossary", "GLOSSARY.md"),
     ("Engineering", "ENGINEERING.md"),
     ("Roadmap", "ROADMAP.md"),
 ]

@@ -6,6 +6,8 @@
 # docs/ARCHITECTURE.md §5's Shared Core/Client-only/Server-only split
 # into a configure-time check instead of relying on code review to catch
 # a client-only module linked into augustad_runtime (or vice versa).
+# Tagging a module under src/modules also checks it has the README.md
+# stating its responsibility (docs/agents/coding-standards.md).
 #
 # Usage: call augusta_set_module_scope(<target> <SHARED|CLIENT_ONLY|
 # SERVER_ONLY>) right after a module's own add_library() (or after a
@@ -21,6 +23,15 @@ function(augusta_set_module_scope target scope)
     message(
       FATAL_ERROR
       "augusta_set_module_scope(${target}): scope must be one of SHARED, CLIENT_ONLY, SERVER_ONLY - got '${scope}'"
+    )
+  endif()
+  # Every module states its responsibility in a README.md beside its
+  # CMakeLists.txt (docs/agents/coding-standards.md, Module README). Runtime
+  # targets and executables, tagged from outside src/modules, are not modules.
+  if(CMAKE_CURRENT_SOURCE_DIR MATCHES "/src/modules/[^/]+$" AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    message(
+      FATAL_ERROR
+      "augusta_set_module_scope(${target}): ${CMAKE_CURRENT_SOURCE_DIR} has no README.md stating the module's responsibility"
     )
   endif()
   set_target_properties(${target} PROPERTIES AUGUSTA_MODULE_SCOPE ${scope})

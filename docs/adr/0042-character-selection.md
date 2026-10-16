@@ -18,10 +18,8 @@ unchanged.
 required `player.character` key naming a character by its name, the key the
 manifest's `characters` maps to its stage (ADR-0041), e.g. `soldier`. There is
 no selection screen, so the config is the only place a player can state a choice
-today. (_Superseded by ADR-0043:_ this used to say there is no lobby either,
-since a Match then had no pre-match waiting state; a Lobby now comes before
-every Match, still without a selection screen.) A future UI only changes who
-fills in the value, not the protocol beneath it.
+today, and the Lobby before every Match (ADR-0043) has none either. A future UI
+only changes who fills in the value, not the protocol beneath it.
 
 **The server validates it at join and has the final word.** The Join request
 carries the character name next to the engine version. The server admits the

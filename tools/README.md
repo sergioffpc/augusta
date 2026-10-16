@@ -496,7 +496,7 @@ uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $g
 ## Agent
 
 `augusta_agent` (ADR-0052) is a Python package a script imports to connect
-Agents (see [CONTEXT.md](../CONTEXT.md)) to a server and tell each what to do;
+Agents (see [GLOSSARY.md](../GLOSSARY.md)) to a server and tell each what to do;
 the Harness carries it out every tick. A script runs its Agents in an asyncio
 loop: it awaits each Agent's events (`await agent.next_event()`: Shot, Hit
 confirmation, Death, Match start, Match end) and how each Intent it set ended,

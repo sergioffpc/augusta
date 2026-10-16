@@ -203,7 +203,7 @@ decisions already made in ARCHITECTURE.md:
   checked the same way, and for linking nothing from the system beyond an
   allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
-  for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
+  for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
   builds it locally into `build/docs-site/`, with the `uv` and Doxygen both
   bootstraps install.

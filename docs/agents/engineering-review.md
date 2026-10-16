@@ -22,13 +22,13 @@ pymarkdown format and lint them like any other (ADR-0012).
 
 ## Sources of truth
 
-Read before Phase 2, as `docs/agents/domain.md` describes: `CONTEXT.md` (use its
-terms in findings), `docs/ARCHITECTURE.md` (§5 building blocks, §8 crosscutting
-concepts, §11 known risks), `docs/REQUIREMENTS.md` (NFR-01 to NFR-09), and the
-ADRs for each area reviewed. The project's own C++ judgment rules are
-`docs/agents/coding-standards.md`; the C++ standard checks against them and
-ADR-0012, ADR-0033 and ADR-0037, not against general preference. A finding that
-contradicts an ADR says so explicitly.
+Read before Phase 2, as `docs/agents/domain.md` describes: `GLOSSARY.md` (use
+its terms in findings), `docs/ARCHITECTURE.md` (§5 building blocks, §8
+crosscutting concepts, §11 known risks), `docs/REQUIREMENTS.md` (NFR-01 to
+NFR-09), and the ADRs for each area reviewed. The project's own C++ judgment
+rules are `docs/agents/coding-standards.md`; the C++ standard checks against
+them and ADR-0012, ADR-0033 and ADR-0037, not against general preference. A
+finding that contradicts an ADR says so explicitly.
 
 ## Subsystem map
 
@@ -44,12 +44,12 @@ requirement changes. Paths are under `src/modules/` unless they start with
 | Packs and integrity     | `assets`, `scenario`, `src/client/content`                                                                                           | Critical | L3, L4 (fuzz) | assets, security                          | NFR-08, ADR-0030, ADR-0031                                 |
 | Lua sandbox and policy  | `scripting`, `gameplay/parameters`, `scenario/{policy_loader,parameters_loader}`                                                     | Critical | L3            | security, simulation                      | ADR-0022, ADR-0039                                         |
 | Prediction, replication | `prediction`, `simulation/replication`, `presentation`, `src/client/{frame_mapping,net_stats}`                                       | High     | L3            | simulation, networking                    | NFR-02, ADR-0004, ADR-0024                                 |
-| Capture and replay      | `capture`, `src/server/{capturer,capture_retention,replay,replay_catalog,replay_server}`                                             | High     | L2, L4 (fuzz) | simulation, assets, errors                | NFR-09, ADR-0048, ADR-0050, ADR-0051                       |
+| Capture and replay      | `capture`, `src/server/{capturer,capture_retention,replay,replay_catalog,replay_server}`                                             | High     | L2, L4 (fuzz) | simulation, assets, errors                | NFR-09, ADR-0050, ADR-0051                                 |
 | Pack writer             | `tools/pack`                                                                                                                         | High     | L2            | assets, testing                           | ADR-0030, ADR-0031, ADR-0013 (golden packs)                |
 | Configuration           | `config`                                                                                                                             | Medium   | L2            | correctness, build-deploy                 | ADR-0034                                                   |
 | Observability           | `logging`, `modules/metrics`, `src/server/{metrics,host_metrics,liveness,heartbeat,crash,host_log}`                                  | Medium   | L2            | errors, concurrency                       | NFR-07, ADR-0029, ADR-0047, ADR-0049                       |
 | Supporting modules      | `math`, `input`, `version`, `src/client/{lobby_readiness,character_loader,scene_loader}`                                             | Medium   | L2            | correctness                               | per module                                                 |
-| Rendering and audio     | `renderer`, `audio`                                                                                                                  | Low      | L1–L2         | cpp, concurrency, performance             | ADR-0009, ADR-0059, ADR-0013 (judged by eye)               |
+| Rendering and audio     | `renderer`, `audio`                                                                                                                  | Low      | L1–L2         | cpp, concurrency, performance             | ADR-0059, ADR-0013 (judged by eye)                         |
 | Agents and tools        | `tools/agent`, `tools/composer`, `tools/docs`                                                                                        | Low      | L1            | testing                                   | ADR-0052                                                   |
 | Build and deployment    | `CMakeLists.txt`, `CMakePresets.json`, `cmake/`, `vcpkg.json`, `.github/workflows/`, `Dockerfile`, `chisel/`, `charts/`, `clusters/` | Medium   | L2            | build-deploy, security                    | ADR-0008, ADR-0025, ADR-0026, ADR-0054, ADR-0056, ADR-0057 |
 

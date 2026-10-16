@@ -139,8 +139,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   disagree, at least one runner fails, without either job needing the other's
   output. A deliberate change to the ballistics model regenerates the file with
   one build target, and the diff is reviewed like code.
-- **No golden match.** ADR-0048's golden match, a recorded duel replayed on
-  every runner, is dropped with the Match recording (ADR-0050): a Replay
+- **No golden match.** No recorded match is replayed on every runner: a Replay
   (ADR-0051) checks only Deaths and the Match end, and only on the build that
   captured them.
 - **Pack contract through golden packs.** The pack format has two
