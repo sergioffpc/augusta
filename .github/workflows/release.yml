@@ -22,10 +22,11 @@ env:
 # nightly job runs every nightly check on the same commit. publish needs them
 # all, so a failing test publishes nothing.
 #
-# The jobs restore the Actions caches but save none, the nightly jobs' included
-# (their release input): an entry saved here is scoped to the tag, which only a
-# rerun of the same release restores from, and would only push the caches in
-# use out of the repository's 10 GB. A rerun restores main's, as any ref does.
+# The jobs restore the vcpkg and uv caches but save neither, nor do the nightly
+# jobs (their release input): an entry saved here is scoped to the tag, which
+# only a rerun of the same release restores from, and would only push the
+# caches in use out of the repository's 10 GB. A rerun restores main's, as any
+# ref does.
 jobs:
   client-x64-windows:
     runs-on: windows-2025
@@ -303,8 +304,8 @@ jobs:
     # what later jobs test. After the build jobs because sbom-scan scans
     # their SBOMs, and a called workflow's job can't wait on its caller's. It
     # may overlap a night outside nightly.yml's concurrency group: with release
-    # set it records no benchmark and saves no fuzz corpus, so it writes
-    # nothing a night reads.
+    # set it records no benchmark and saves no cache, so it writes nothing a
+    # night reads.
     needs: [client-x64-windows, client-x64-linux, server]
     uses: ./.github/workflows/nightly-jobs.yml
     # A caller must grant every permission a called job declares, or the run is

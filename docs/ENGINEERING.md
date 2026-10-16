@@ -147,8 +147,8 @@ decisions already made in ARCHITECTURE.md:
       (its own, a pull request's base, or `main`). A release restores the caches
       but saves none: its tag's entries would serve only a rerun of it, which
       restores `main`'s instead. A pull request's entries are deleted when it
-      closes, and a branch's when the branch is deleted. Of CodeQL's TRAP cache,
-      which `main` alone saves, one entry per commit, only the newest is kept.
+      closes, and a branch's when the branch is deleted. CodeQL's TRAP cache is
+      saved by `main` alone, an entry per commit, and only the newest is kept.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, the Linux client's build and

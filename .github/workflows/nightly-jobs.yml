@@ -19,8 +19,8 @@ on:
           nightly-failure issue (the release's own run is where it shows),
           sbom-scan scans the SBOMs the caller uploaded as sbom-<executable>
           artifacts before the call instead of the latest release's, and no
-          job saves a cache (the vcpkg binaries, the fuzz corpus): scoped to
-          the release's tag, no later run would restore it.
+          job saves the vcpkg binaries or the fuzz corpus: scoped to the
+          release's tag, no later run would restore them.
         required: false
         type: boolean
         default: false
