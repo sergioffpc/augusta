@@ -1,4 +1,4 @@
-#include "augusta/shared_wire.h"
+#include "augusta/wire.h"
 
 #include <algorithm>
 #include <cstdint>

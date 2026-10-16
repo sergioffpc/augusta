@@ -21,7 +21,7 @@
 
 #include "augusta/failure.h"
 #include "augusta/protocol.h"
-#include "augusta/shared_wire.h"
+#include "augusta/wire.h"
 #include "frame.h"
 
 namespace augusta::capture {

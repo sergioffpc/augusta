@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SHARED_WIRE_H_
-#define AUGUSTA_SHARED_WIRE_H_
+#ifndef AUGUSTA_WIRE_H_
+#define AUGUSTA_WIRE_H_
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
@@ -39,4 +39,4 @@ namespace augusta::wire {
 
 }  // namespace augusta::wire
 
-#endif  // AUGUSTA_SHARED_WIRE_H_
+#endif  // AUGUSTA_WIRE_H_
