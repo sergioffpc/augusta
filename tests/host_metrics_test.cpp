@@ -1,4 +1,4 @@
-#include "host_metrics.h"
+#include "augusta/host_metrics.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -17,14 +17,14 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/capture_retention.h"
+#include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
+#include "augusta/host_log.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
-#include "capture_retention.h"
-#include "capturer.h"
-#include "host_log.h"
 
 // What the Host counts, as the metrics endpoint collects it: the catalogue's
 // names, types and labels (ADR-0049), and the heartbeat's totals read from the

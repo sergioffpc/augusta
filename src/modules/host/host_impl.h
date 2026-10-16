@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_HOST_IMPL_H_
-#define AUGUSTA_SERVER_HOST_IMPL_H_
+#ifndef AUGUSTA_HOST_IMPL_H_
+#define AUGUSTA_HOST_IMPL_H_
 
 #include <atomic>
 #include <chrono>
@@ -16,25 +16,25 @@
 #include <vector>
 
 #include "augusta/admission.h"
+#include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/heartbeat.h"
+#include "augusta/host.h"
+#include "augusta/host_log.h"
+#include "augusta/host_metrics.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/peer_gate.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capturer.h"
-#include "host.h"
-#include "host_log.h"
-#include "host_metrics.h"
-#include "peer_gate.h"
-#include "tick_messages.h"
+#include "augusta/tick_messages.h"
 
 /// \file
 /// Host's state, shared by the files that each implement one side of it:
@@ -120,7 +120,7 @@ struct Host::Impl {
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
   // Sending to players (host.cpp), each message as EncodeToSend left it
-  // (wire.h), reliably, counted as the transport accepts it (SendCounted).
+  // (augusta/host_wire.h), reliably, counted as the transport accepts it (SendCounted).
   // One the protocol could not carry is sent to no one and kept in
   // invariant_failure; a local transport failure is kept in transport_failure.
   // Once either is, the runtime has failed (Failed), and nothing more is sent.
@@ -173,4 +173,4 @@ struct Host::Impl {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_HOST_IMPL_H_
+#endif  // AUGUSTA_HOST_IMPL_H_

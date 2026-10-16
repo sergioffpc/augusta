@@ -117,14 +117,7 @@ endfunction()
 # breaks the rule it excuses fails the configure, and the lists and this check
 # go away together once both are empty.
 
-set(
-  AUGUSTA_GLUE_EXCEPTIONS_augustad
-  augustad_liveness
-  augustad_metrics
-  augustad_connection_health
-  augustad_host
-  augustad_crash
-)
+set(AUGUSTA_GLUE_EXCEPTIONS_augustad augustad_liveness augustad_metrics augustad_connection_health augustad_crash)
 
 set(
   AUGUSTA_GLUE_EXCEPTIONS_augustac

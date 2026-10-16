@@ -33,65 +33,23 @@ add_library(augustad_connection_health STATIC connection_health.cpp)
 target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_connection_health
-  PUBLIC augusta_metrics augusta_networking augusta_host_match
+  PUBLIC augusta_host augusta_metrics augusta_networking augusta_host_match
   PRIVATE augusta_primitives
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
-
-# The server's socket and SimulationWorld without threads or a clock, so a test
-# can drive a match by hand (see host.h), and the conversions Host makes at its
-# edges: between the protocol's plain types and the engine's (see wire.h), and
-# into SimulationWorld's (see simulation_mapping.h); with the Match capture
-# Host writes (see capturer.h, ADR-0050), and what it counts for the metrics
-# endpoint (see host_metrics.h, ADR-0049).
-add_library(
-  augustad_host
-  STATIC
-  capture_retention.cpp
-  capturer.cpp
-  host.cpp
-  host_log.cpp
-  host_match.cpp
-  host_metrics.cpp
-  host_network.cpp
-  peer_gate.cpp
-  replay.cpp
-  replay_catalog.cpp
-  replay_server.cpp
-  simulation_mapping.cpp
-  tick_messages.cpp
-  wire.cpp
-)
-target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustad_host
-  PUBLIC
-    augusta_failure
-    augusta_gameplay
-    augusta_networking
-    augusta_physics
-    augusta_simulation
-    augusta_scenario
-    augusta_host_commands
-    augusta_host_match
-    augusta_host_misbehaviour
-    augusta_host_admission
-    augusta_host_heartbeat
-    augusta_assets
-    augusta_protocol
-    augusta_capture
-    augusta_wire
-    augusta_metrics
-    prometheus-cpp::core
-  PRIVATE augusta_logging augusta_version
-)
-augusta_set_module_scope(augustad_host SERVER_ONLY)
 
 add_library(augustad_runtime STATIC runtime.cpp)
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
-  PUBLIC augustad_host augusta_failure augusta_gameplay augusta_networking augusta_physics augusta_simulation
+  PUBLIC
+    augusta_host
+    augusta_host_replay
+    augusta_failure
+    augusta_gameplay
+    augusta_networking
+    augusta_physics
+    augusta_simulation
   PRIVATE augusta_assets augusta_lifecycle augusta_logging augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
@@ -104,13 +62,7 @@ target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(
   augustad_application
   PUBLIC augusta_config augusta_failure augusta_lifecycle augusta_server_config augustad_runtime
-  PRIVATE
-    augusta_assets
-    augusta_logging
-    augusta_networking
-    augusta_scenario
-    augusta_scenario_policy_loader
-    augustad_host
+  PRIVATE augusta_assets augusta_logging augusta_networking augusta_scenario augusta_scenario_policy_loader augusta_host
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
 

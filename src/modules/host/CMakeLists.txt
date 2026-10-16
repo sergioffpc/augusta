@@ -34,3 +34,59 @@ augusta_set_module_scope(augusta_host_admission SERVER_ONLY)
 add_library(augusta_host_heartbeat STATIC heartbeat.cpp)
 target_include_directories(augusta_host_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 augusta_set_module_scope(augusta_host_heartbeat SERVER_ONLY)
+
+# The Host itself: the server's socket and SimulationWorld, driven by hand (see
+# augusta/host.h), and the conversions it makes at its edges - between the
+# protocol's plain types and the engine's (see augusta/host_wire.h), and into
+# SimulationWorld's (see augusta/simulation_mapping.h) - with the Match capture
+# it writes (see augusta/capturer.h, ADR-0050) and what it counts for the
+# metrics endpoint (see augusta/host_metrics.h, ADR-0049).
+find_package(prometheus-cpp CONFIG REQUIRED)
+add_library(
+  augusta_host
+  STATIC
+  capture_retention.cpp
+  capturer.cpp
+  host.cpp
+  host_log.cpp
+  host_match.cpp
+  host_metrics.cpp
+  host_network.cpp
+  peer_gate.cpp
+  replay.cpp
+  replay_catalog.cpp
+  simulation_mapping.cpp
+  tick_messages.cpp
+  wire.cpp
+)
+target_include_directories(augusta_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  augusta_host
+  PUBLIC
+    augusta_failure
+    augusta_gameplay
+    augusta_networking
+    augusta_physics
+    augusta_simulation
+    augusta_scenario
+    augusta_host_commands
+    augusta_host_match
+    augusta_host_misbehaviour
+    augusta_host_admission
+    augusta_host_heartbeat
+    augusta_assets
+    augusta_protocol
+    augusta_capture
+    augusta_wire
+    augusta_metrics
+    prometheus-cpp::core
+  PRIVATE augusta_logging augusta_version
+)
+augusta_set_module_scope(augusta_host SERVER_ONLY)
+
+# The Replay server (see augusta/replay_server.h, ADR-0051): it serves a
+# recorded Match through the Host's own log, metrics and peer gate, so it moves
+# with the Host; splitting it out is a later decision.
+add_library(augusta_host_replay STATIC replay_server.cpp)
+target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_version)
+augusta_set_module_scope(augusta_host_replay SERVER_ONLY)

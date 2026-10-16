@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_REPLAY_H_
-#define AUGUSTA_SERVER_REPLAY_H_
+#ifndef AUGUSTA_REPLAY_H_
+#define AUGUSTA_REPLAY_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -167,4 +167,4 @@ class Replay {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_REPLAY_H_
+#endif  // AUGUSTA_REPLAY_H_

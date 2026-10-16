@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_HOST_LOG_H_
-#define AUGUSTA_SERVER_HOST_LOG_H_
+#ifndef AUGUSTA_HOST_LOG_H_
+#define AUGUSTA_HOST_LOG_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -59,4 +59,4 @@ void LogCombat(const simulation::State& state);
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_HOST_LOG_H_
+#endif  // AUGUSTA_HOST_LOG_H_

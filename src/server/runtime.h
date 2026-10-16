@@ -8,10 +8,10 @@
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/host.h"
+#include "augusta/replay_server.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "host.h"
-#include "replay_server.h"
 
 /// \file
 /// The augustad executable's orchestrator (ARCHITECTURE.md §5): it runs a

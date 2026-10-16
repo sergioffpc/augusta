@@ -1,4 +1,4 @@
-#include "capturer.h"
+#include "augusta/capturer.h"
 
 #include <algorithm>
 #include <atomic>
@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/capture_retention.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -32,7 +33,6 @@
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/tick.h"
-#include "capture_retention.h"
 
 namespace augusta::server {
 

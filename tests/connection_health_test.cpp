@@ -11,9 +11,9 @@
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
+#include "augusta/connection_sample.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
-#include "connection_sample.h"
 
 // What ConnectionHealth records, read back as the metrics endpoint collects it.
 namespace {

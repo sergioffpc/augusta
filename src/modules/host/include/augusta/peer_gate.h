@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_PEER_GATE_H_
-#define AUGUSTA_SERVER_PEER_GATE_H_
+#ifndef AUGUSTA_PEER_GATE_H_
+#define AUGUSTA_PEER_GATE_H_
 
 #include <chrono>
 #include <functional>
@@ -10,10 +10,10 @@
 
 #include "augusta/admission.h"
 #include "augusta/first_failure.h"
+#include "augusta/host_log.h"
+#include "augusta/host_metrics.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
-#include "host_log.h"
-#include "host_metrics.h"
 
 /// \file
 /// What every augustad server - a live server::Host and a replay
@@ -90,4 +90,4 @@ void PumpPeers(networking::Server& network, HostMetrics& metrics, std::mutex& mu
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_PEER_GATE_H_
+#endif  // AUGUSTA_PEER_GATE_H_

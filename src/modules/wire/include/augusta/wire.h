@@ -11,7 +11,7 @@
 /// The conversions both peers make between the Networking Protocol's plain
 /// types and the shared core's (ADR-0038): a Command, a stance and a pack's
 /// hash travel the same way whichever side sends them, so they are converted
-/// here once, for server/wire.h and the client's augusta/harness_wire.h to
+/// here once, for augusta/host_wire.h and the client's augusta/harness_wire.h to
 /// call. Each peer's own types (its sessions, its Match, its Authoritative
 /// State) stay with its own adapter. Pure field-by-field copies.
 namespace augusta::wire {

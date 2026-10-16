@@ -47,7 +47,7 @@ file(
 add_test(NAME augusta_capture_read_replay COMMAND augusta_capture_read_replay ${augusta_capture_read_inputs})
 
 add_executable(augusta_capture_read_seeds_tests capture_read_seeds_test.cpp)
-target_link_libraries(augusta_capture_read_seeds_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_capture_read_seeds_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 target_compile_definitions(
   augusta_capture_read_seeds_tests
   PRIVATE AUGUSTA_CAPTURE_READ_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/capture_read"

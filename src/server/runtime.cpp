@@ -14,15 +14,15 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/heartbeat.h"
+#include "augusta/host.h"
 #include "augusta/logging.h"
 #include "augusta/policy_loader.h"
+#include "augusta/replay_server.h"
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "connection_health.h"
-#include "host.h"
 #include "metrics.h"
-#include "replay_server.h"
 
 namespace augusta::server {
 

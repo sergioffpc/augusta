@@ -7,7 +7,7 @@
 #include <prometheus/collectable.h>
 #include <prometheus/metric_family.h>
 
-#include "connection_sample.h"
+#include "augusta/connection_sample.h"
 
 /// \file
 /// Every client's Connection health as augustad's metrics report it (ADR-0049,

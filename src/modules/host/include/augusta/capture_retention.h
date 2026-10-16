@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CAPTURE_RETENTION_H_
-#define AUGUSTA_SERVER_CAPTURE_RETENTION_H_
+#ifndef AUGUSTA_CAPTURE_RETENTION_H_
+#define AUGUSTA_CAPTURE_RETENTION_H_
 
 #include <chrono>
 #include <cstddef>
@@ -137,4 +137,4 @@ class CaptureDirectory {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CAPTURE_RETENTION_H_
+#endif  // AUGUSTA_CAPTURE_RETENTION_H_

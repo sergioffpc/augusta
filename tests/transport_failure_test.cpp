@@ -13,6 +13,8 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/harness.h"
+#include "augusta/host.h"
+#include "augusta/host_metrics.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
@@ -21,10 +23,8 @@
 #include "augusta/primitives.h"
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
-#include "host.h"
-#include "host_metrics.h"
+#include "augusta/tick_messages.h"
 #include "runtime.h"
-#include "tick_messages.h"
 
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
 // the local transport refuses becomes the runtime's typed failure, which its

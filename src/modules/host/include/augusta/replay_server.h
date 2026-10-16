@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_REPLAY_SERVER_H_
-#define AUGUSTA_SERVER_REPLAY_SERVER_H_
+#ifndef AUGUSTA_REPLAY_SERVER_H_
+#define AUGUSTA_REPLAY_SERVER_H_
 
 #include <chrono>
 #include <cstddef>
@@ -13,19 +13,19 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/connection_sample.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/host_metrics.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/policy_loader.h"
+#include "augusta/replay.h"
+#include "augusta/replay_catalog.h"
 #include "augusta/scripting.h"
 #include "augusta/tick.h"
-#include "connection_sample.h"
-#include "host_metrics.h"
-#include "replay.h"
-#include "replay_catalog.h"
 
 /// \file
 /// augusta::server::ReplayServer is augustad in the replay mode of ADR-0051:
@@ -141,4 +141,4 @@ class ReplayServer {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_REPLAY_SERVER_H_
+#endif  // AUGUSTA_REPLAY_SERVER_H_

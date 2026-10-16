@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_TICK_MESSAGES_H_
-#define AUGUSTA_SERVER_TICK_MESSAGES_H_
+#ifndef AUGUSTA_TICK_MESSAGES_H_
+#define AUGUSTA_TICK_MESSAGES_H_
 
 #include <expected>
 #include <functional>
@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/host_metrics.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "host_metrics.h"
 
 /// \file
 /// What Host sends its players after each tick (ADR-0044): each one's update,
@@ -68,4 +68,4 @@ using TickMessageSink = std::function<bool(networking::PeerId, const networking:
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_TICK_MESSAGES_H_
+#endif  // AUGUSTA_TICK_MESSAGES_H_
