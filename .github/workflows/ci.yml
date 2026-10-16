@@ -478,7 +478,7 @@ jobs:
         # setup-linux-build installs it. autoconf/autoconf-archive/
         # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
         # via autotools on Linux.
-        run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
+        run: sudo apt-get update && sudo apt-get install -y clang-21 clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
       - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg (Windows)
         if: runner.os == 'Windows'

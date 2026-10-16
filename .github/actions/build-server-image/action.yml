@@ -33,9 +33,8 @@ outputs:
   toolchain-args:
     description: >
       The build args naming the runner's toolchain, which the build stage
-      installs (see Dockerfile): a job that builds another target of the
-      Dockerfile from the same layer cache (the debuginfo stage) passes them
-      too, or misses the build stage's layers.
+      installs: a job building another target from the same layer cache (the
+      debuginfo stage) passes them too, or misses the build stage's layers.
     value: ${{ steps.toolchain.outputs.args }}
 runs:
   using: composite
@@ -63,11 +62,9 @@ runs:
         tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
         echo "$install_dir" >> "$GITHUB_PATH"
     # The architecture variant the runner's apt takes, and the clang-21 the
-    # archive has for it now, which setup-linux-build installs on the Linux
-    # jobs whose vcpkg binaries the build stage restores: its clang must be the
-    # very binary theirs is (see Dockerfile). The candidate, not what this
-    # runner has installed: its image's clang-21 can trail the archive's, which
-    # those jobs upgrade to.
+    # archive has for it now, as setup-linux-build installs it on the jobs
+    # whose vcpkg binaries the build stage restores (Dockerfile says why). The
+    # candidate, not what this runner has installed, which can trail it.
     - name: Read the runner's toolchain
       id: toolchain
       shell: bash

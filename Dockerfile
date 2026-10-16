@@ -17,11 +17,10 @@ FROM ubuntu:26.04 AS build
 # hash of every package covers the SHA1 of the clang binary, so the dependency
 # install below restores the Linux jobs' binary cache only when its clang is
 # the very build theirs is. The runner's apt takes Ubuntu's architecture
-# variant builds (amd64v3), a different binary of the same version than the
-# plain amd64 one; and its clang-21 is the archive's current one, which pinned
-# here also renews this layer, cached otherwise for good, whenever Ubuntu
-# updates clang. Without them (a local build) it is plain amd64's current
-# clang, whose packages the binary cache, empty then, would not match anyway.
+# variant builds (amd64v3), a different binary of the same version than plain
+# amd64's; and its LLVM is the archive's current one (setup-linux-build), which
+# pinned here also renews this layer, cached otherwise for good, whenever
+# Ubuntu updates it. A local build, with neither, has an empty binary cache.
 ARG APT_ARCHITECTURE_VARIANTS=""
 ARG CLANG_VERSION=""
 
@@ -34,7 +33,7 @@ RUN if [ -n "${APT_ARCHITECTURE_VARIANTS}" ]; then \
         > /etc/apt/apt.conf.d/90arch-variant; \
     fi \
     && apt-get update && apt-get install -y --no-install-recommends \
-      "clang-21${CLANG_VERSION:+=${CLANG_VERSION}}" \
+      "clang-21${CLANG_VERSION:+=${CLANG_VERSION}}"       "lld-21${CLANG_VERSION:+=${CLANG_VERSION}}"       "llvm-21${CLANG_VERSION:+=${CLANG_VERSION}}" \
       clang \
       lld \
       llvm \
@@ -80,8 +79,8 @@ COPY cmake/LlvmToolchain.cmake cmake/
 # from source: vcpkg builds its ports with the same triplets and the very
 # clang binary of those jobs (the toolchain args above), so their ABI hashes
 # match. Bind-mounted read-only, for this command alone, it is in no layer and
-# never written; built without it
-# (a local docker build, a fork), the context is the empty stage below. Its
+# never written; built without it (a local docker build, a fork), the context
+# is the empty stage below. Its
 # contents are part of this layer's cache key, so a cache that gained packages
 # reruns the layer: a manifest change runs it twice, once for the change, from
 # the cache as it was, and again once the server-x64-linux job's save of the new
