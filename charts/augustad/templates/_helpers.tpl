@@ -50,6 +50,19 @@ scenario: {{ .scenario }}
 {{- $version -}}
 {{- end -}}
 
+{{/* Checks a server's packFormat, when set, is the integer augusta-publish
+     printed. The chart only records it: CI compares it with the engine's
+     (scripts/check-pack-formats.py). Renders nothing. */}}
+{{- define "augustad.checkPackFormat" -}}
+{{- $server := index .root.Values.servers .scenario -}}
+{{- if hasKey $server "packFormat" -}}
+{{- $format := $server.packFormat -}}
+{{- if not (and (or (kindIs "float64" $format) (kindIs "int" $format) (kindIs "int64" $format)) (regexMatch "^[1-9][0-9]*$" (toString $format))) -}}
+{{- fail (printf "servers.%s.packFormat must be the pack format augusta-publish printed, a positive integer, unquoted, not %v (%s)" .scenario $format (kindOf $format)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/* The Node's folder holding a server's pack. */}}
 {{- define "augustad.packFolder" -}}
 {{- printf "%s/%s/%s" .root.Values.assetPacks.hostPath .scenario (include "augustad.packVersion" .) -}}

@@ -1,6 +1,7 @@
 # One server per scenario (ADR-0026), each serving that scenario's pack alone.
 {{- range $scenario, $_ := .Values.servers }}
 {{- $server := dict "root" $ "scenario" $scenario }}
+{{- include "augustad.checkPackFormat" $server }}
 ---
 apiVersion: apps/v1
 kind: Deployment
