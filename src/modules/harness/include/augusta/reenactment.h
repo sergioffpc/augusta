@@ -108,7 +108,8 @@ inline constexpr std::uint64_t kMaxCommandsQueued = 2;
 /// the gaps after it close up. For a tick with none due, a filler keeps the
 /// server's queue in step as its own hold would have: the last Command without
 /// its fire or reload, its movement for up to command::kMaxHeldTime, then none.
-/// Nothing is sent for the tick of the captured Leave or after it.
+/// No filler is sent for the tick of the captured Leave or after it; a
+/// Command late into it still goes, so it reaches the server before the Leave.
 class Pacer {
  public:
   /// Paces commands, in offset order, for a server ticking at tick_rate_hz,
@@ -120,17 +121,23 @@ class Pacer {
   /// due_tick, of a Match whose first tick is first_tick: its Seen time's tick
   /// is due_tick less the delay the capture had, so Lag compensation judges it
   /// as far back as in the playtest. nullopt to send none: a Command already
-  /// went for due_tick or one after it, or the Leave has come.
+  /// went for due_tick or one after it, or the Leave has come with every
+  /// Command before it sent.
   [[nodiscard]] std::optional<command::Command> Next(tick::Tick first_tick, tick::Tick due_tick);
 
   /// How many of the Script's Commands have gone out.
   [[nodiscard]] std::size_t Sent() const { return next_; }
 
-  /// Whether every tick before the Leave has had its Command sent, so nothing
-  /// more is: false without a Leave.
-  [[nodiscard]] bool DoneBeforeLeave() const { return leave_.has_value() && slot_ >= *leave_; }
+  /// Whether every tick before the Leave has had its Command sent, and every
+  /// captured Command before it too, so nothing more is: false without a Leave.
+  [[nodiscard]] bool DoneBeforeLeave() const { return leave_.has_value() && slot_ >= *leave_ && !CommandBeforeLeave(); }
 
  private:
+  // Whether a captured Command from before the Leave has yet to go.
+  [[nodiscard]] bool CommandBeforeLeave() const {
+    return leave_.has_value() && next_ < commands_.size() && commands_[next_].offset < *leave_;
+  }
+
   // The filler for a tick with nothing due.
   [[nodiscard]] command::Command Filler(tick::Tick due_tick);
 
