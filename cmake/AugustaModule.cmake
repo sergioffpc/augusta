@@ -122,11 +122,6 @@ set(
   augustad_parameters_loader
   augustad_policy_loader
   augustad_content
-  augustad_match
-  augustad_commands
-  augustad_misbehaviour
-  augustad_admission
-  augustad_heartbeat
   augustad_liveness
   augustad_metrics
   augustad_connection_health

@@ -6,10 +6,10 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "match.h"
 
 /// \file
 /// The log lines Host writes from more than one of its parts (ADR-0029,

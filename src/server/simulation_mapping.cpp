@@ -12,13 +12,13 @@
 #include "augusta/ballistics.h"
 #include "augusta/failure.h"
 #include "augusta/map.h"
+#include "augusta/match.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "content.h"
-#include "match.h"
 
 namespace augusta::server {
 

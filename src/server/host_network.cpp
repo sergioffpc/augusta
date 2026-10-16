@@ -8,17 +8,17 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command_queue.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
-#include "command_queue.h"
 #include "connection_sample.h"
 #include "host.h"
 #include "host_impl.h"
 #include "host_log.h"
 #include "host_metrics.h"
-#include "match.h"
-#include "misbehaviour.h"
 #include "peer_gate.h"
 #include "wire.h"
 

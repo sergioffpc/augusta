@@ -16,10 +16,12 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -27,8 +29,6 @@
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
-#include "match.h"
 
 // Each peer converts between the engine's types and the protocol's plain ones
 // at its edge (ADR-0038) and nowhere else: the server in server/wire.h, the

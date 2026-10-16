@@ -26,9 +26,9 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "capture_retention.h"
-#include "match.h"
 
 // A Match capture (ADR-0050), written by a Capturer into a directory of its
 // own and read back by ReadCapture, with no Host: the events are handed in by

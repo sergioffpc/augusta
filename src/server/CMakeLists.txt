@@ -26,39 +26,6 @@ target_link_libraries(
 )
 augusta_set_module_scope(augustad_content SERVER_ONLY)
 
-# Who is in the match and whether a join is admitted; pure, so tested without a
-# network (see match.h).
-add_library(augustad_match STATIC match.cpp)
-target_include_directories(augustad_match PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_match PUBLIC augusta_assets augusta_math augusta_networking augusta_physics)
-augusta_set_module_scope(augustad_match SERVER_ONLY)
-
-# The sanity gate and per-player queue for what clients send to move; pure, so
-# tested without a network (see command_queue.h).
-add_library(augustad_commands STATIC command_queue.cpp)
-target_include_directories(augustad_commands PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_commands PUBLIC augusta_gameplay)
-augusta_set_module_scope(augustad_commands SERVER_ONLY)
-
-# The count of each peer's misbehaviour that decides when it is disconnected;
-# pure, so tested without a network (see misbehaviour.h).
-add_library(augustad_misbehaviour STATIC misbehaviour.cpp)
-target_include_directories(augustad_misbehaviour PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-augusta_set_module_scope(augustad_misbehaviour SERVER_ONLY)
-
-# When a peer that has not been admitted is past its deadline; pure, so tested
-# without a network (see admission.h).
-add_library(augustad_admission STATIC admission.cpp)
-target_include_directories(augustad_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_admission PUBLIC augusta_networking)
-augusta_set_module_scope(augustad_admission SERVER_ONLY)
-
-# The counts behind the server's once-a-second heartbeat line; pure, so tested
-# without a network (see heartbeat.h).
-add_library(augustad_heartbeat STATIC heartbeat.cpp)
-target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
-
 # Whether the tick loop is still running, which /livez answers; pure, so tested
 # without HTTP (see liveness.h).
 add_library(augustad_liveness STATIC liveness.cpp)
@@ -94,7 +61,7 @@ add_library(augustad_connection_health STATIC connection_health.cpp)
 target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_connection_health
-  PUBLIC augusta_metrics augusta_networking augustad_match
+  PUBLIC augusta_metrics augusta_networking augusta_host_match
   PRIVATE augusta_primitives
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
@@ -133,11 +100,11 @@ target_link_libraries(
     augusta_physics
     augusta_simulation
     augustad_content
-    augustad_commands
-    augustad_match
-    augustad_misbehaviour
-    augustad_admission
-    augustad_heartbeat
+    augusta_host_commands
+    augusta_host_match
+    augusta_host_misbehaviour
+    augusta_host_admission
+    augusta_host_heartbeat
     augusta_assets
     augusta_protocol
     augusta_capture

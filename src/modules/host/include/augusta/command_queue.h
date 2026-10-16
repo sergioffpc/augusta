@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_COMMAND_QUEUE_H_
-#define AUGUSTA_SERVER_COMMAND_QUEUE_H_
+#ifndef AUGUSTA_COMMAND_QUEUE_H_
+#define AUGUSTA_COMMAND_QUEUE_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -107,4 +107,4 @@ class CommandQueue {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_COMMAND_QUEUE_H_
+#endif  // AUGUSTA_COMMAND_QUEUE_H_

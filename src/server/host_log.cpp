@@ -9,10 +9,10 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "match.h"
 
 namespace augusta::server {
 

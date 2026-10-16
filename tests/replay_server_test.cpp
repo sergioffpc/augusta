@@ -25,7 +25,9 @@
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -36,8 +38,6 @@
 #include "content.h"
 #include "host.h"
 #include "host_metrics.h"
-#include "match.h"
-#include "misbehaviour.h"
 #include "replay_catalog.h"
 #include "wire.h"
 

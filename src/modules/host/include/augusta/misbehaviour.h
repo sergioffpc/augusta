@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_MISBEHAVIOUR_H_
-#define AUGUSTA_SERVER_MISBEHAVIOUR_H_
+#ifndef AUGUSTA_MISBEHAVIOUR_H_
+#define AUGUSTA_MISBEHAVIOUR_H_
 
 #include <chrono>
 #include <cstddef>
@@ -94,4 +94,4 @@ class MisbehaviourTracker {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_MISBEHAVIOUR_H_
+#endif  // AUGUSTA_MISBEHAVIOUR_H_

@@ -10,21 +10,21 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/command_queue.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/policy_actions.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "capturer.h"
-#include "command_queue.h"
 #include "host.h"
 #include "host_impl.h"
 #include "host_log.h"
 #include "host_metrics.h"
-#include "match.h"
 #include "simulation_mapping.h"
 #include "tick_messages.h"
 #include "wire.h"
