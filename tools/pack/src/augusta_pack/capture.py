@@ -191,8 +191,9 @@ def read_capture(data: bytes) -> Capture:
         reader = _Reader(payload)
         kind = reader.u8()
         offset = reader.u32()
-        # As src/modules/capture/capture.cpp's RecordOrder: Joins first, at 0, in order,
-        # then the events in tick order, and nothing after the Match end.
+        # As src/modules/capture/capture.cpp's RecordOrder: Joins first, at
+        # 0, in order, then the events in tick order, and nothing after the
+        # Match end.
         if capture.ended or offset < capture.last_offset:
             raise CaptureError("a record is out of order")
         capture.last_offset = offset
