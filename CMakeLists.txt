@@ -165,6 +165,7 @@ add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
 add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
+add_subdirectory(src/modules/metrics)
 add_subdirectory(src/server)
 # The tools, built with the runtime they link on every platform: the Agents
 # (ADR-0052), whose Python module is built against the interpreter

@@ -13,13 +13,13 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/lock_free_metrics.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
 #include "capturer.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
-#include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 
@@ -31,7 +31,7 @@
 /// The Host owns one, and its Network I/O and Simulation threads, and its
 /// Capturer's writer (through CaptureMetrics), write each value in place where
 /// the event happens; the endpoint's thread only collects. Every
-/// counter, gauge and histogram here is lock-free (lock_free_metrics.h), so
+/// counter, gauge and histogram here is lock-free (augusta/lock_free_metrics.h), so
 /// neither thread ever waits on a scrape. The heartbeat line (heartbeat.h) reads its totals from the
 /// same counters (Totals), so the line and the series count each event once.
 /// Every label takes its values from a closed set, one of the server's own enums

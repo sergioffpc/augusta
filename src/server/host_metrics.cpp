@@ -18,13 +18,13 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/lock_free_metrics.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
 #include "capturer.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"
-#include "lock_free_metrics.h"
 #include "match.h"
 #include "misbehaviour.h"
 #include "wire.h"
