@@ -344,8 +344,9 @@ jobs:
         # The renderer smoke test among them, on lavapipe and under the
         # validation layer, both from vcpkg, as is the Vulkan loader the
         # runner, with no GPU driver, lacks: the test's ctest environment
-        # puts the loader on PATH (tests/CMakeLists.txt, ADR-0059).
-        run: ctest --preset windows
+        # puts the loader on PATH (tests/CMakeLists.txt, ADR-0059). One test
+        # per core, as on Linux (docs/ENGINEERING.md).
+        run: ctest --preset windows --parallel "$NUMBER_OF_PROCESSORS"
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
         run: uv run --locked --no-default-groups --group agent pytest
