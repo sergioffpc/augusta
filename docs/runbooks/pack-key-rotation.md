@@ -31,6 +31,14 @@ has a new `packVersion`, so `augusta-publish` puts it in a new folder, and the
 server is pointed at it through Git, which keeps the old folder in place as the
 rollback.
 
+A fresh cook is in the pack format version of the `augusta-pack` that cooks it,
+and the server refuses a pack of any format but its own (ADR-0031). Cook with an
+`augusta-pack` of the format `develop`'s engine reads, and record the format
+`augusta-publish` prints as the server's `packFormat`: CI fails a `packFormat`
+other than that engine's. A change of format itself re-cooks every environment's
+packs in the pull request that makes it
+([Pack format changes](cut-release.md#pack-format-changes)).
+
 ## Where packs go on the node
 
 Each server mounts its own version's folder read-only and reads `server.pack`
@@ -150,12 +158,12 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     ```
 
     Replace `firebase` with the scenario, and `develop` with the environment
-    (`staging` for the release key). It prints the folder it wrote and the
-    `packVersion` to serve it with.
+    (`staging` for the release key). It prints the folder it wrote, and the
+    `packVersion` to serve it with and the `packFormat` it was cooked in.
 
 7. Point the scenario's server at the new version: on a `feature/*` branch off
    `develop`, set `spec.values.servers.<scenario>.packVersion` to the printed
-   version, quoted, in
+   version, quoted, and `packFormat` beside it to the printed format, in
    [`clusters/onprem/apps/develop.yaml`](../../clusters/onprem/apps/develop.yaml)
    and/or [`staging.yaml`](../../clusters/onprem/apps/staging.yaml), commit
    (`chore(cluster): move <environment>'s <scenario> server to a new pack`), and

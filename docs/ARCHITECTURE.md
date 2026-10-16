@@ -492,8 +492,10 @@ How each piece reaches the node or the player:
   `augusta-publish` copies a server pack and its `signing.pub` to the node, in a
   new folder of its environment's tree named by its version, which changes
   nothing that runs. Each environment signs with its own key, `develop`'s or the
-  release key, `staging`'s. A pull request then sets that `packVersion` in the
-  environment's `HelmRelease`, and Flux deploys it like any other change.
+  release key, `staging`'s. A pull request then sets that `packVersion`, and the
+  `packFormat` it was cooked in, in the environment's `HelmRelease`, and Flux
+  deploys it like any other change. CI fails a `packFormat` other than the
+  engine's.
 - **Client:** a `v*` tag's release workflow attaches `augustac-windows-x64.zip`,
   the client's whole runtime folder, and its `augustac.exe`'s `.pdb` to the
   GitHub Release (ADR-0055; [cut-release](runbooks/cut-release.md)).
