@@ -246,7 +246,7 @@ jobs:
       - name: Fetch the submodules
         # vcpkg and NVTX, the only submodules.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ./.github/actions/setup-windows-msvc
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008),
       # and the clang-tidy the Lint step runs.
       - uses: ./.github/actions/setup-windows-llvm
@@ -463,7 +463,7 @@ jobs:
       - name: Fetch vcpkg
         # Only vcpkg: the native module builds against no other submodule.
         run: git submodule update --init --depth 1 third_party/vcpkg
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ./.github/actions/setup-windows-msvc
         if: runner.os == 'Windows'
       - name: Install build tools
         if: runner.os == 'Linux'
