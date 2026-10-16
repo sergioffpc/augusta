@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_HOST_METRICS_H_
-#define AUGUSTA_SERVER_HOST_METRICS_H_
+#ifndef AUGUSTA_HOST_METRICS_H_
+#define AUGUSTA_HOST_METRICS_H_
 
 #include <atomic>
 #include <chrono>
@@ -13,15 +13,15 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/capture_retention.h"
+#include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
+#include "augusta/host_log.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/tick.h"
-#include "capture_retention.h"
-#include "capturer.h"
-#include "host_log.h"
 
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
@@ -41,7 +41,7 @@
 namespace augusta::server {
 
 /// The Networking Protocol's message types (ADR-0038), as the metrics label
-/// them: the server's own, since the protocol's stay at its edge (wire.h).
+/// them: the server's own, since the protocol's stay at its edge (augusta/host_wire.h).
 enum class MessageType : std::uint8_t {
   kJoinRequest,
   kJoinAccepted,
@@ -216,4 +216,4 @@ void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_HOST_METRICS_H_
+#endif  // AUGUSTA_HOST_METRICS_H_

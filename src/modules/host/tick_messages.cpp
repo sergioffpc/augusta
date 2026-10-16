@@ -1,4 +1,4 @@
-#include "tick_messages.h"
+#include "augusta/tick_messages.h"
 
 #include <expected>
 #include <functional>
@@ -7,14 +7,14 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/host_metrics.h"
+#include "augusta/host_wire.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
+#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
-#include "host_metrics.h"
-#include "simulation_mapping.h"
-#include "wire.h"
 
 namespace augusta::server {
 

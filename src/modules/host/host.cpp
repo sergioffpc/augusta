@@ -1,4 +1,4 @@
-#include "host.h"
+#include "augusta/host.h"
 
 #include <chrono>
 #include <cmath>
@@ -16,22 +16,22 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/capturer.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/heartbeat.h"
+#include "augusta/host_metrics.h"
+#include "augusta/host_wire.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/scripting.h"
+#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
+#include "augusta/tick_messages.h"
 #include "augusta/version.h"
-#include "capturer.h"
 #include "host_impl.h"
-#include "host_metrics.h"
-#include "simulation_mapping.h"
-#include "tick_messages.h"
-#include "wire.h"
 
 namespace augusta::server {
 

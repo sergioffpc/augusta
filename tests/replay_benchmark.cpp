@@ -9,11 +9,11 @@
 #include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/replay.h"
+#include "augusta/replay_server.h"
 #include "augusta/simulation.h"
 #include "benchmark_match.h"
 #include "benchmark_scene.h"
-#include "replay.h"
-#include "replay_server.h"
 
 // What one Replay viewer costs a replay server's Simulation thread each tick
 // (ADR-0051): its Replay's step - a SimulationWorld tick of the full Match

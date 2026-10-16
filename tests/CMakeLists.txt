@@ -26,7 +26,7 @@ add_executable(
 )
 # The tick runs the example scenario's Game policy, as the server loads it from
 # its golden server pack; replication is server::Host's own
-# (augustad_host), and a render frame plays the golden client pack's cue sounds.
+# (augusta_host), and a render frame plays the golden client pack's cue sounds.
 target_link_libraries(
   augusta_benchmarks
   PRIVATE
@@ -39,7 +39,7 @@ target_link_libraries(
     augusta_protocol
     augusta_simulation
     augusta_version
-    augustad_host
+    augusta_host_replay
     augusta_scenario_policy_loader
     benchmark::benchmark
     benchmark::benchmark_main
@@ -197,8 +197,8 @@ gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
 
 # What the Host counts, collected as the endpoint collects it, without HTTP.
 add_executable(augusta_host_metrics_tests host_metrics_test.cpp)
-target_link_libraries(augusta_host_metrics_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
-# Links networking and PhysX through augustad_host, so the same first-launch cost applies as below.
+target_link_libraries(augusta_host_metrics_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+# Links networking and PhysX through augusta_host, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
 
 # Reads what it records back as the metrics endpoint collects it.
@@ -405,7 +405,7 @@ target_link_libraries(
   PRIVATE
     augusta_harness
     augustad_connection_health
-    augustad_host
+    augusta_host
     augusta_scenario_parameters_loader
     augusta_scenario_policy_loader
     augusta_logging
@@ -460,7 +460,7 @@ gtest_discover_tests(augusta_capture_format_tests)
 
 # Match captures (ADR-0050): a Capturer's files, read back, with no Host.
 add_executable(augusta_capturer_tests capturer_test.cpp)
-target_link_libraries(augusta_capturer_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_capturer_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 
 # A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
@@ -468,20 +468,27 @@ gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_server_replay_tests server_replay_test.cpp)
 target_link_libraries(
   augusta_server_replay_tests
-  PRIVATE augustad_host augusta_scripting augusta_simulation GTest::gtest GTest::gtest_main
+  PRIVATE augusta_host augusta_scripting augusta_simulation GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
 
 # Which captures a replay server replays (ADR-0051), from directories of them.
 add_executable(augusta_replay_catalog_tests replay_catalog_test.cpp)
-target_link_libraries(augusta_replay_catalog_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_replay_catalog_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30)
 
 # A replay server (ADR-0051) over loopback, on a Match a live Host captured.
 add_executable(augusta_replay_server_tests replay_server_test.cpp)
 target_link_libraries(
   augusta_replay_server_tests
-  PRIVATE augustad_host augusta_harness augusta_logging augusta_scripting augusta_version GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_host_replay
+    augusta_harness
+    augusta_logging
+    augusta_scripting
+    augusta_version
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
@@ -490,7 +497,7 @@ gtest_discover_tests(augusta_replay_server_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_capture_retention_tests capture_retention_test.cpp)
 target_link_libraries(
   augusta_capture_retention_tests
-  PRIVATE augustad_host augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE augusta_host augusta_logging GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
 
@@ -510,7 +517,7 @@ add_executable(augusta_capture_runtime_tests capture_runtime_test.cpp)
 target_link_libraries(
   augusta_capture_runtime_tests
   PRIVATE
-    augustad_host
+    augusta_host
     augustad_runtime
     augusta_failure
     augusta_gameplay
@@ -523,7 +530,7 @@ target_link_libraries(
 # It runs a real ServerRuntime, so it is allowed augustad's own runtime
 # (ADR-0060).
 augusta_set_end_to_end_test(augusta_capture_runtime_tests augustad)
-# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
+# Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_capture_runtime_tests DISCOVERY_TIMEOUT 30)
 
 # What a player's ticks add up to, from Prediction States built by hand.
@@ -542,7 +549,7 @@ target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math 
 gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_runner_tests runner_test.cpp)
-target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augusta_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 
@@ -552,7 +559,7 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE augusta_harness augusta_lifecycle augustad_host augustad_runtime GTest::gtest GTest::gtest_main
+  PRIVATE augusta_harness augusta_lifecycle augusta_host augustad_runtime GTest::gtest GTest::gtest_main
 )
 # It runs a real ServerRuntime, so it is allowed augustad's own runtime
 # (ADR-0060).
@@ -561,22 +568,22 @@ augusta_set_end_to_end_test(augusta_transport_failure_tests augustad)
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_wire_tests wire_test.cpp)
-target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augusta_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
-target_link_libraries(augusta_tick_messages_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
-# Links networking and PhysX through augustad_host, so the same first-launch cost applies as above.
+target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+# Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_simulation_mapping_tests simulation_mapping_test.cpp)
-target_link_libraries(augusta_simulation_mapping_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_simulation_mapping_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
-# harness_wire.h and server/wire.h convert. Nor does a presentation header name
+# harness_wire.h and augusta/host_wire.h convert. Nor does a presentation header name
 # the harness: the client converts (src/client/frame_mapping.h). Nor does the
 # protocol itself include or link anything but augusta_math and
 # augusta_primitives. A source scan, so it builds nothing.

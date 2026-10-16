@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CONNECTION_SAMPLE_H_
-#define AUGUSTA_SERVER_CONNECTION_SAMPLE_H_
+#ifndef AUGUSTA_CONNECTION_SAMPLE_H_
+#define AUGUSTA_CONNECTION_SAMPLE_H_
 
 #include <optional>
 
@@ -23,4 +23,4 @@ struct ConnectionSample {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CONNECTION_SAMPLE_H_
+#endif  // AUGUSTA_CONNECTION_SAMPLE_H_

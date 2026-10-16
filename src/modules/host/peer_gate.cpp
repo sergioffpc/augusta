@@ -1,4 +1,4 @@
-#include "peer_gate.h"
+#include "augusta/peer_gate.h"
 
 #include <chrono>
 #include <mutex>
@@ -6,11 +6,11 @@
 #include <vector>
 
 #include "augusta/first_failure.h"
+#include "augusta/host_log.h"
+#include "augusta/host_metrics.h"
 #include "augusta/logging.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
-#include "host_log.h"
-#include "host_metrics.h"
 
 namespace augusta::server {
 

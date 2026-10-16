@@ -13,9 +13,9 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/replay.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "replay.h"
 
 // A Replay (ADR-0051) re-run on a SimulationWorld with no Map, from captures
 // made by hand: what it hands the World, tick by tick, and what it compares

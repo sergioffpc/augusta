@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_REPLAY_CATALOG_H_
-#define AUGUSTA_SERVER_REPLAY_CATALOG_H_
+#ifndef AUGUSTA_REPLAY_CATALOG_H_
+#define AUGUSTA_REPLAY_CATALOG_H_
 
 #include <chrono>
 #include <cstdint>
@@ -103,4 +103,4 @@ class ReplayCatalog {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_REPLAY_CATALOG_H_
+#endif  // AUGUSTA_REPLAY_CATALOG_H_

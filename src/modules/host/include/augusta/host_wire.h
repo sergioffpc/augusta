@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_WIRE_H_
-#define AUGUSTA_SERVER_WIRE_H_
+#ifndef AUGUSTA_HOST_WIRE_H_
+#define AUGUSTA_HOST_WIRE_H_
 
 #include <cstdint>
 #include <expected>
@@ -11,16 +11,16 @@
 #include "augusta/command.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"
+#include "augusta/host_metrics.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/replay.h"
+#include "augusta/replay_catalog.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
-#include "host_metrics.h"
-#include "replay.h"
-#include "replay_catalog.h"
 
 /// \file
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
@@ -121,4 +121,4 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_WIRE_H_
+#endif  // AUGUSTA_HOST_WIRE_H_

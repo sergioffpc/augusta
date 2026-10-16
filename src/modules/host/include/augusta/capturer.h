@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CAPTURER_H_
-#define AUGUSTA_SERVER_CAPTURER_H_
+#ifndef AUGUSTA_CAPTURER_H_
+#define AUGUSTA_CAPTURER_H_
 
 #include <chrono>
 #include <cstddef>
@@ -14,13 +14,13 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/capture_retention.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
-#include "capture_retention.h"
 
 /// \file
 /// A Match capture (ADR-0050): one file per Match, from its Match start to its
@@ -310,4 +310,4 @@ class Capturer {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CAPTURER_H_
+#endif  // AUGUSTA_CAPTURER_H_

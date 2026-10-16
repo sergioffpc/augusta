@@ -9,18 +9,18 @@
 #include <vector>
 
 #include "augusta/command_queue.h"
+#include "augusta/connection_sample.h"
+#include "augusta/host.h"
+#include "augusta/host_log.h"
+#include "augusta/host_metrics.h"
+#include "augusta/host_wire.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
+#include "augusta/peer_gate.h"
 #include "augusta/protocol.h"
-#include "connection_sample.h"
-#include "host.h"
 #include "host_impl.h"
-#include "host_log.h"
-#include "host_metrics.h"
-#include "peer_gate.h"
-#include "wire.h"
 
 namespace augusta::server {
 

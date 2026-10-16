@@ -1,4 +1,4 @@
-#include "replay_catalog.h"
+#include "augusta/replay_catalog.h"
 
 #include <algorithm>
 #include <cstdint>

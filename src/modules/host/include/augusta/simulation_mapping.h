@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_SIMULATION_MAPPING_H_
-#define AUGUSTA_SERVER_SIMULATION_MAPPING_H_
+#ifndef AUGUSTA_SIMULATION_MAPPING_H_
+#define AUGUSTA_SIMULATION_MAPPING_H_
 
 #include <cstdint>
 #include <string>
@@ -56,4 +56,4 @@ namespace augusta::server {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_SIMULATION_MAPPING_H_
+#endif  // AUGUSTA_SIMULATION_MAPPING_H_

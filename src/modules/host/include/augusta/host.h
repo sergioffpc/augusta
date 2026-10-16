@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_HOST_H_
-#define AUGUSTA_SERVER_HOST_H_
+#ifndef AUGUSTA_HOST_H_
+#define AUGUSTA_HOST_H_
 
 #include <chrono>
 #include <cstddef>
@@ -12,9 +12,13 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/capture_retention.h"
+#include "augusta/capturer.h"
+#include "augusta/connection_sample.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/host_metrics.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -23,10 +27,6 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capture_retention.h"
-#include "capturer.h"
-#include "connection_sample.h"
-#include "host_metrics.h"
 
 /// \file
 /// augusta::server::Host is the server's network boundary and the
@@ -193,4 +193,4 @@ class Host {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_HOST_H_
+#endif  // AUGUSTA_HOST_H_
