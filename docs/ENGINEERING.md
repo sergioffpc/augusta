@@ -87,11 +87,12 @@ decisions already made in ARCHITECTURE.md:
     3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
        x86-64, one of its two production platforms: Linux arm64 is built only
        for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google
-       style checks profile). It and the sanitizers job run the tests one per
-       core of the runner (`ctest --parallel "$(nproc)"`), so they follow the
-       runner's size: each test listens on a port of its own (`:0`) and names
-       its temporary files after itself, so they don't contend. The presets
-       themselves stay serial, as do the nightly and release runs.
+       style checks profile). It, the sanitizers job and the Windows job above
+       run the tests one per core of the runner (`ctest --parallel "$(nproc)"`,
+       `"$NUMBER_OF_PROCESSORS"` on Windows), so they follow the runner's size:
+       each test listens on a port of its own (`:0`) and names its temporary
+       files after itself, so they don't contend. The presets themselves stay
+       serial, as do the nightly and release runs.
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
