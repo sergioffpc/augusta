@@ -119,11 +119,6 @@ endfunction()
 
 set(
   AUGUSTA_GLUE_EXCEPTIONS_augustad
-  augustad_match
-  augustad_commands
-  augustad_misbehaviour
-  augustad_admission
-  augustad_heartbeat
   augustad_liveness
   augustad_metrics
   augustad_connection_health

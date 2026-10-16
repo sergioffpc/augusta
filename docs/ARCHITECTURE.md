@@ -293,6 +293,15 @@ exclusively server-authoritative.
   in one server-only module (augusta_metrics). It knows nothing of what is
   counted: whoever counts — the Host, the Connection health collector — builds
   on it, and augustad's metrics endpoint only collects what they hold
+- Host — the server's socket and SimulationWorld without threads or a clock, so
+  a test can drive a Match by hand, one network round and one tick at a time:
+  who is in the Match and whether a join is admitted, the Command intake and its
+  sanity gate, each peer's misbehaviour count, when an unadmitted peer is past
+  its deadline, the counts behind the once-a-second heartbeat line, the
+  conversions at its seam, what it counts for the metrics endpoint and the Match
+  capture it writes (ADR-0050). One server-only module (augusta_host), the
+  counterpart of the client's Harness; augustad's runtime adds its threads, its
+  clock, the metrics endpoint and its lifecycle (ADR-0060)
 - ServerRuntime
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,

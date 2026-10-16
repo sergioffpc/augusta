@@ -163,21 +163,21 @@ target_compile_options(
 gtest_discover_tests(augusta_simulation_property_tests DISCOVERY_TIMEOUT 30 PROPERTIES LABELS property)
 
 add_executable(augusta_match_tests match_test.cpp)
-target_link_libraries(augusta_match_tests PRIVATE augustad_match GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_match_tests PRIVATE augusta_host_match GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_match_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_command_queue_tests command_queue_test.cpp)
-target_link_libraries(augusta_command_queue_tests PRIVATE augustad_commands GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_command_queue_tests PRIVATE augusta_host_commands GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_command_queue_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_misbehaviour_tests misbehaviour_test.cpp)
-target_link_libraries(augusta_misbehaviour_tests PRIVATE augustad_misbehaviour GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_misbehaviour_tests PRIVATE augusta_host_misbehaviour GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_misbehaviour_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_heartbeat_tests heartbeat_test.cpp)
-target_link_libraries(augusta_heartbeat_tests PRIVATE augustad_heartbeat GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_heartbeat_tests PRIVATE augusta_host_heartbeat GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_liveness_tests liveness_test.cpp)
@@ -208,7 +208,7 @@ target_link_libraries(augusta_connection_health_tests PRIVATE augustad_connectio
 gtest_discover_tests(augusta_connection_health_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_admission_tests admission_test.cpp)
-target_link_libraries(augusta_admission_tests PRIVATE augustad_admission GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_admission_tests PRIVATE augusta_host_admission GTest::gtest GTest::gtest_main)
 # Links networking (for PeerId), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_admission_tests DISCOVERY_TIMEOUT 30)
 
@@ -499,7 +499,7 @@ gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_reenactment_tests reenactment_test.cpp)
 target_link_libraries(
   augusta_reenactment_tests
-  PRIVATE augusta_harness augustad_commands GTest::gtest GTest::gtest_main
+  PRIVATE augusta_harness augusta_host_commands GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
 

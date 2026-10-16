@@ -14,6 +14,7 @@
 #include "augusta/faults.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
@@ -22,7 +23,6 @@
 #include "augusta/supervisor.h"
 #include "host.h"
 #include "host_metrics.h"
-#include "misbehaviour.h"
 #include "runtime.h"
 #include "tick_messages.h"
 

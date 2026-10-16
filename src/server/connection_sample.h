@@ -3,8 +3,8 @@
 
 #include <optional>
 
+#include "augusta/match.h"
 #include "augusta/networking.h"
-#include "match.h"
 
 /// \file
 /// One sample of a client's Connection health, as Host takes it from the

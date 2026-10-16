@@ -13,15 +13,15 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/command_queue.h"
+#include "augusta/heartbeat.h"
 #include "augusta/lock_free_metrics.h"
+#include "augusta/match.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
 #include "capturer.h"
-#include "command_queue.h"
-#include "heartbeat.h"
 #include "host_log.h"
-#include "match.h"
-#include "misbehaviour.h"
 
 /// \file
 /// What the server counts about itself, for the metrics endpoint (metrics.h)
@@ -32,7 +32,7 @@
 /// Capturer's writer (through CaptureMetrics), write each value in place where
 /// the event happens; the endpoint's thread only collects. Every
 /// counter, gauge and histogram here is lock-free (augusta/lock_free_metrics.h), so
-/// neither thread ever waits on a scrape. The heartbeat line (heartbeat.h) reads its totals from the
+/// neither thread ever waits on a scrape. The heartbeat line (augusta/heartbeat.h) reads its totals from the
 /// same counters (Totals), so the line and the series count each event once.
 /// Every label takes its values from a closed set, one of the server's own enums
 /// where it has one, never from text a peer sent; each range of counters is
@@ -65,7 +65,7 @@ enum class MessageType : std::uint8_t {
 using JoinRefusalCounters =
     EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;
 using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
-/// The misbehaviours only: the first of PeerRejection's values (misbehaviour.h),
+/// The misbehaviours only: the first of PeerRejection's values (augusta/misbehaviour.h),
 /// which host_metrics.cpp checks.
 using MisbehaviourCounters =
     EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
@@ -202,12 +202,12 @@ class CaptureMetrics final : public CaptureObserver {
 
 /// Counts a tick the Simulation loop ran with timing into metrics' Tick
 /// family, and returns what Network I/O and the ticks did over the heartbeat
-/// interval it ends (heartbeat.h), at now, if it ends one: the line its server
+/// interval it ends (augusta/heartbeat.h), at now, if it ends one: the line its server
 /// writes. How every server counts its ticks.
 [[nodiscard]] std::optional<Activity> CountTick(HostMetrics& metrics, Heartbeat& heartbeat, const tick::Timing& timing,
                                                 std::chrono::steady_clock::time_point now);
 
-/// The heartbeat's running totals (heartbeat.h), read from metrics' counters:
+/// The heartbeat's running totals (augusta/heartbeat.h), read from metrics' counters:
 /// the heartbeat line counts nothing of its own.
 [[nodiscard]] Activity Totals(const HostMetrics& metrics);
 

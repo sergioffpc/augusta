@@ -15,6 +15,7 @@
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -26,7 +27,6 @@
 #include "capturer.h"
 #include "connection_sample.h"
 #include "host_metrics.h"
-#include "match.h"
 
 /// \file
 /// augusta::server::Host is the server's network boundary and the

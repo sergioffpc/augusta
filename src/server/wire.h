@@ -9,16 +9,16 @@
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
 #include "augusta/failure.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
 #include "host_metrics.h"
-#include "match.h"
 #include "replay.h"
 #include "replay_catalog.h"
 

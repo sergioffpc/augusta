@@ -7,10 +7,10 @@
 
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "host_log.h"
 #include "host_metrics.h"
-#include "misbehaviour.h"
 
 namespace augusta::server {
 

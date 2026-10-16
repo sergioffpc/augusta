@@ -16,9 +16,9 @@
 #include "augusta/assets.h"
 #include "augusta/capture.h"
 #include "augusta/command.h"
+#include "augusta/match.h"
 #include "capture_retention.h"
 #include "capturer.h"
-#include "match.h"
 
 // Which captures a replay server replays (ADR-0051), from a directory of
 // captures a Capturer wrote, as a live server's would be.

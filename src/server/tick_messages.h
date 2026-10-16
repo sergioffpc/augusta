@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "host_metrics.h"
-#include "match.h"
 
 /// \file
 /// What Host sends its players after each tick (ADR-0044): each one's update,

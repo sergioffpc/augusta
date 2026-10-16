@@ -8,19 +8,19 @@
 #include <unordered_set>
 #include <vector>
 
-#include "admission.h"
+#include "augusta/admission.h"
 #include "augusta/first_failure.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "host_log.h"
 #include "host_metrics.h"
-#include "misbehaviour.h"
 
 /// \file
 /// What every augustad server - a live server::Host and a replay
 /// server::ReplayServer (ADR-0051) - does with a peer before and around what
 /// it asks for: every connection is accepted, since a refusal needs one to
-/// travel on; a peer not admitted within kAdmissionDeadline (admission.h), or
-/// that keeps sending what no honest client sends (misbehaviour.h), is
+/// travel on; a peer not admitted within kAdmissionDeadline (augusta/admission.h), or
+/// that keeps sending what no honest client sends (augusta/misbehaviour.h), is
 /// expelled; and nothing more is taken in from an expelled peer in the round
 /// it was expelled in. PeerGate keeps that state, and PumpPeers runs one round
 /// of a server's Network I/O work through it, so each server only says what a

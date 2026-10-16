@@ -20,10 +20,10 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/lock_free_metrics.h"
+#include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/primitives.h"
 #include "connection_sample.h"
-#include "match.h"
 
 namespace augusta::server {
 namespace {

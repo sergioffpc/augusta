@@ -9,9 +9,9 @@
 #include "augusta/ballistics.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
-#include "match.h"
 
 // Unit tests for the conversions Host makes at SimulationWorld's edge.
 namespace {

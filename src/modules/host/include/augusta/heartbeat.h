@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_HEARTBEAT_H_
-#define AUGUSTA_SERVER_HEARTBEAT_H_
+#ifndef AUGUSTA_HEARTBEAT_H_
+#define AUGUSTA_HEARTBEAT_H_
 
 #include <chrono>
 #include <cstdint>
@@ -32,7 +32,7 @@ struct Activity {
   /// routine, since commands repeat and some are in flight when a match ends.
   std::uint64_t stale = 0;
   /// Messages and commands refused for being malformed, or sent out of turn:
-  /// every misbehaviour (misbehaviour.h).
+  /// every misbehaviour (augusta/misbehaviour.h).
   std::uint64_t dropped = 0;
   /// Queued commands dropped because a client ran further ahead than
   /// kMaxQueuedCommands: its pacing is not keeping up.
@@ -59,4 +59,4 @@ class Heartbeat {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_HEARTBEAT_H_
+#endif  // AUGUSTA_HEARTBEAT_H_

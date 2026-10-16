@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_MATCH_H_
-#define AUGUSTA_SERVER_MATCH_H_
+#ifndef AUGUSTA_MATCH_H_
+#define AUGUSTA_MATCH_H_
 
 #include <chrono>
 #include <cstddef>
@@ -273,4 +273,4 @@ class Match {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_MATCH_H_
+#endif  // AUGUSTA_MATCH_H_

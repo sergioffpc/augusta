@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
+#include "augusta/command_queue.h"
 #include "augusta/failure.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -20,9 +22,7 @@
 #include "augusta/replication.h"
 #include "augusta/tick.h"
 #include "augusta/wire.h"
-#include "command_queue.h"
 #include "host_metrics.h"
-#include "match.h"
 #include "replay.h"
 #include "replay_catalog.h"
 #include "simulation_mapping.h"

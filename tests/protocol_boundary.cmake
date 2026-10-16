@@ -29,6 +29,7 @@ file(
   "${SOURCE_DIR}/src/modules/simulation/include/augusta/replication*.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/capture/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
   "${SOURCE_DIR}/src/server/*.h"
   "${SOURCE_DIR}/src/client/*.h"
 )

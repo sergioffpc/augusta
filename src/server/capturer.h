@@ -17,10 +17,10 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
-#include "match.h"
 
 /// \file
 /// A Match capture (ADR-0050): one file per Match, from its Match start to its

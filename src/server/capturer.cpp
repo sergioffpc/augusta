@@ -30,9 +30,9 @@
 #include "augusta/faults.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/tick.h"
 #include "capture_retention.h"
-#include "match.h"
 
 namespace augusta::server {
 

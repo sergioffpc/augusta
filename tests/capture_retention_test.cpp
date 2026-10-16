@@ -21,8 +21,8 @@
 #include "augusta/command.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "capturer.h"
-#include "match.h"
 
 // A capture directory kept within a count and a size, oldest Match first
 // (ADR-0050, #461): PlanRetention's decision on its own, then a Capturer

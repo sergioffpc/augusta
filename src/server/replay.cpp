@@ -13,11 +13,11 @@
 
 #include "augusta/capture.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
+#include "augusta/match.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
-#include "match.h"
 #include "simulation_mapping.h"
 
 namespace augusta::server {

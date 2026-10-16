@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/command_queue.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
-#include "match.h"
 
 /// \file
 /// A Replay (ADR-0051): a Match capture handed, tick by tick, to a fresh
