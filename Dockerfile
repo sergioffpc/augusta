@@ -83,8 +83,8 @@ COPY cmake/LlvmToolchain.cmake cmake/
 # is the empty stage below. Its
 # contents are part of this layer's cache key, so a cache that gained packages
 # reruns the layer: a manifest change runs it twice, once for the change, from
-# the cache as it was, and again once the server-x64-linux job's save of the new
-# packages is the cache restored. vcpkg's tools are its own pinned downloads,
+# the cache as it was, and again once a Linux job's save of the new packages is
+# the cache restored. vcpkg's tools are its own pinned downloads,
 # as in those jobs (setup-linux-build), never apt's CMake: its version is part
 # of every ABI hash.
 RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \

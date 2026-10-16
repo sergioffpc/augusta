@@ -127,15 +127,18 @@ decisions already made in ARCHITECTURE.md:
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
-      Linux job, saved only when a job built a package it didn't restore -
-      except the `tools` job's Linux leg, whose `tools/pack/native` manifest
-      keeps an entry of its own. vcpkg builds its ports through the overlay
-      `x64-linux` triplet with the project's LLVM toolchain (ADR-0008), which no
-      preset changes. So the entry's packages are the same whatever preset a job
-      configures, and the server image's dependency layer, built on the same
-      Ubuntu, restores them too: the container jobs mount the entry read-only
-      into its `vcpkg install`, and it builds from source only the packages the
-      entry lacks.
+      Linux job, saved only when a job built a package it didn't restore. A save
+      keeps only the packages its job installed, so a job installing ports no
+      other does keeps an entry of its own: the `tools` job's Linux leg, for the
+      `tools/pack/native` manifest, and each job turning on a manifest feature
+      the others don't (`client-x64-linux` the `client` feature,
+      `server-x64-linux` the Agents' `agent` feature). vcpkg builds its ports
+      through the overlay `x64-linux` triplet with the project's LLVM toolchain
+      (ADR-0008), which no preset changes. So the entry's packages are the same
+      whatever preset a job configures, and the server image's dependency layer,
+      built on the same Ubuntu, restores them too: the container jobs mount the
+      entry read-only into its `vcpkg install`, and it builds from source only
+      the packages the entry lacks.
     - Compiler cache: sccache on its local disk backend, never its
       GitHub-Actions-cache one, whose one entry per object exhausts the cache's
       request quota. Each job carries the directory between runs as one entry of
