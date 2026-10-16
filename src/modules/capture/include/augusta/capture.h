@@ -8,7 +8,6 @@
 #include <istream>
 #include <optional>
 #include <ostream>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,11 +15,9 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
-#include "augusta/protocol.h"
 
 /// \file
 /// A Match capture's file (ADR-0050), in one place for every side that reads or
@@ -31,17 +28,34 @@
 /// format's rules; EncodeHeader, EncodeJoin and EncodeEvent encode one piece of
 /// it for Write, and WriteCapture writes a whole one.
 ///
-/// A file is the capture's magic, then each record's payload after its length -
-/// in one byte (WriteFrame) - the header first, in the Networking Protocol's
-/// encoding. ReadCaptureFile checks the magic, the header's format version and
-/// the records' order (every Join first, numbered from 1, then the events in
-/// offset order, each naming a player a Join did, nothing after the Match end),
-/// and hands the records on in the protocol's own types.
-/// Pure stream I/O, on whichever thread holds the stream.
+/// A file is the capture's magic, then each record's payload after its length
+/// in one byte, the header first, in the Networking Protocol's encoding: the
+/// module converts between its records and the engine's types, so its
+/// interface names no protocol type (ADR-0038). Reading checks the magic, the
+/// header's format version and the records' order (every Join first, numbered
+/// from 1, then the events in offset order, each naming a player a Join did,
+/// nothing after the Match end). Pure stream I/O, on whichever thread holds the
+/// stream.
 namespace augusta::capture {
 
 /// What every capture's file name ends in.
 inline constexpr std::string_view kExtension = ".capture";
+
+/// Why a capture does not read, wherever it is read: Replay and the Replay
+/// catalog, and a Captured player's harness::ReadScript, report the same errors.
+enum class ReadError : std::uint8_t {
+  /// The stream could not be read, or was never opened.
+  kUnreadable,
+  /// It does not start with a capture's magic.
+  kNotACapture,
+  /// Its header is missing, or of a format version this engine does not read.
+  kUnsupported,
+  /// A record does not decode, comes out of order, or names a player no Join did.
+  kMalformed,
+};
+
+/// What to tell whoever runs the process about error.
+[[nodiscard]] std::string_view DescribeReadError(ReadError error);
 
 /// Whether in starts with a capture's magic. Reads as far as the magic goes.
 [[nodiscard]] bool StartsWithMagic(std::istream& in);
@@ -178,50 +192,6 @@ void Write(std::ostream& out, const Encoded& encoded);
 /// out was cut short. capture is held to nothing ReadCapture holds it to: one
 /// out of the format's order is written as it is, and reads back kMalformed.
 [[nodiscard]] std::expected<void, EncodeError> WriteCapture(std::ostream& out, const Capture& capture);
-
-// The protocol-typed records and frames the interface above is built on, still
-// read by the server and the harness until they read through it.
-
-/// The longest payload a frame holds, in bytes: none of a capture's records,
-/// header included, passes it, so one byte of length is enough (#463).
-inline constexpr std::size_t kMaxFramePayload = 255;
-
-/// How many bytes a frame of a payload this long takes: its length, then it.
-[[nodiscard]] constexpr std::size_t FrameSize(std::size_t payload_size) { return 1 + payload_size; }
-
-/// Writes payload's frame to out, whose state then says whether it was.
-/// payload is at most kMaxFramePayload bytes.
-void WriteFrame(std::ostream& out, std::span<const std::byte> payload);
-
-/// How reading the next frame ended.
-enum class Frame : std::uint8_t {
-  kRead,
-  /// The stream ended where a frame would start.
-  kEnd,
-  /// The stream ended partway through a frame.
-  kTorn,
-  /// The stream failed: what it holds past here is unknown, so neither an end
-  /// nor a torn frame can be told from it.
-  kUnreadable,
-};
-
-/// Reads the next frame from in into payload.
-[[nodiscard]] Frame ReadFrame(std::istream& in, std::vector<std::byte>& payload);
-
-/// A capture file's records, as the protocol decodes them.
-struct CaptureFile {
-  protocol::CaptureHeaderWire header;
-  /// Every record after the header, in the order written.
-  std::vector<protocol::CaptureRecordWire> records;
-  /// Whether the file ended partway through a record, which was dropped: its
-  /// writer stopped while writing it.
-  bool torn = false;
-};
-
-/// Reads the capture in. A last record cut short is dropped and reported in
-/// CaptureFile::torn; a stream that fails, wherever it does, is kUnreadable,
-/// never a whole or torn capture.
-[[nodiscard]] std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in);
 
 }  // namespace augusta::capture
 

@@ -442,9 +442,13 @@ target_compile_definitions(
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
 
 # A Match capture's file (ADR-0050) through the capture module alone: written,
-# read back and refused, with no server; its framing reached through frame.h.
+# read back and refused, with no server; its framing reached through frame.h,
+# and the protocol linked only to build malformed files.
 add_executable(augusta_capture_format_tests capture_format_test.cpp)
-target_link_libraries(augusta_capture_format_tests PRIVATE augusta_capture GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_capture_format_tests
+  PRIVATE augusta_capture augusta_protocol GTest::gtest GTest::gtest_main
+)
 target_include_directories(augusta_capture_format_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/capture)
 gtest_discover_tests(augusta_capture_format_tests)
 

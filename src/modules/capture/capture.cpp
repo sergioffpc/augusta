@@ -19,7 +19,6 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/capture_error.h"
 #include "augusta/failure.h"
 #include "augusta/protocol.h"
 #include "augusta/shared_wire.h"
@@ -28,6 +27,36 @@
 namespace augusta::capture {
 
 namespace {
+
+// How reading the next frame ended.
+enum class Frame : std::uint8_t {
+  kRead,
+  // The stream ended where a frame would start.
+  kEnd,
+  // The stream ended partway through a frame.
+  kTorn,
+  // The stream failed: what it holds past here is unknown, so neither an end
+  // nor a torn frame can be told from it.
+  kUnreadable,
+};
+
+// Reads the next frame from in into payload: its length in one byte, then it.
+Frame ReadFrame(std::istream& in, std::vector<std::byte>& payload) {
+  char length = 0;
+  in.read(&length, 1);
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
+  if (in.gcount() == 0) {
+    return Frame::kEnd;
+  }
+  payload.resize(static_cast<unsigned char>(length));
+  in.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+  if (in.bad()) {
+    return Frame::kUnreadable;
+  }
+  return static_cast<std::size_t>(in.gcount()) == payload.size() ? Frame::kRead : Frame::kTorn;
+}
 
 std::expected<void, ReadError> ReadMagic(std::istream& in) {
   std::array<char, protocol::kCaptureMagic.size()> magic{};
@@ -201,46 +230,18 @@ class RecordOrder {
   bool ended_ = false;
 };
 
-}  // namespace
+// A capture file's records, as the protocol decodes them.
+struct CaptureFile {
+  protocol::CaptureHeaderWire header;
+  // Every record after the header, in the order written.
+  std::vector<protocol::CaptureRecordWire> records;
+  // Whether the file ended partway through a record, which was dropped.
+  bool torn = false;
+};
 
-std::string_view DescribeReadError(ReadError error) {
-  switch (error) {
-    case ReadError::kUnreadable:
-      return "the capture could not be read";
-    case ReadError::kNotACapture:
-      return "the file does not start with a capture's magic";
-    case ReadError::kUnsupported:
-      return "the capture's header is missing or of a format version this engine does not read";
-    case ReadError::kMalformed:
-      return "a record of the capture does not decode or is out of order";
-  }
-  return "unknown capture error";
-}
-
-void WriteFrame(std::ostream& out, std::span<const std::byte> payload) {
-  // A longer one's length would not fit its byte (Capturer::Admit stops it first).
-  assert(payload.size() <= kMaxFramePayload);
-  out.put(static_cast<char>(payload.size()));
-  out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
-}
-
-Frame ReadFrame(std::istream& in, std::vector<std::byte>& payload) {
-  char length = 0;
-  in.read(&length, 1);
-  if (in.bad()) {
-    return Frame::kUnreadable;
-  }
-  if (in.gcount() == 0) {
-    return Frame::kEnd;
-  }
-  payload.resize(static_cast<unsigned char>(length));
-  in.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
-  if (in.bad()) {
-    return Frame::kUnreadable;
-  }
-  return static_cast<std::size_t>(in.gcount()) == payload.size() ? Frame::kRead : Frame::kTorn;
-}
-
+// Reads the capture in, held to the format's order, in the protocol's types. A
+// last record cut short is dropped and reported in CaptureFile::torn; a stream
+// that fails, wherever it does, is kUnreadable, never a whole or torn capture.
 std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
   if (!in) {
     return std::unexpected(ReadError::kUnreadable);
@@ -272,6 +273,22 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
   return file;
 }
 
+}  // namespace
+
+std::string_view DescribeReadError(ReadError error) {
+  switch (error) {
+    case ReadError::kUnreadable:
+      return "the capture could not be read";
+    case ReadError::kNotACapture:
+      return "the file does not start with a capture's magic";
+    case ReadError::kUnsupported:
+      return "the capture's header is missing or of a format version this engine does not read";
+    case ReadError::kMalformed:
+      return "a record of the capture does not decode or is out of order";
+  }
+  return "unknown capture error";
+}
+
 std::expected<std::vector<std::byte>, EncodeError> Framed(
     const std::expected<protocol::BytesWire, protocol::EncodeError>& payload, protocol::CaptureRecordTypeWire type) {
   if (!payload.has_value()) {
@@ -284,7 +301,7 @@ std::expected<std::vector<std::byte>, EncodeError> Framed(
     return std::unexpected(RecordTooLong{});
   }
   std::vector<std::byte> frame;
-  frame.reserve(FrameSize(payload->size()));
+  frame.reserve(1 + payload->size());
   frame.push_back(static_cast<std::byte>(payload->size()));
   frame.insert(frame.end(), payload->begin(), payload->end());
   return frame;
