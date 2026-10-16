@@ -288,8 +288,8 @@ from any player's view, its Deaths and Match end as captured
 - Pod Security levels per namespace; packs and captures on `local`
   PersistentVolumes; `augustad` in a user namespace under its own seccomp
   profile
-- Default-deny NetworkPolicies; signed or digest-pinned images; no Secrets;
-  least-privilege operator and publish credentials
+- Default-deny NetworkPolicies; signed or digest-pinned images; no credential in
+  Git; least-privilege operator and publish credentials
 - Security logs in Loki and their alerts; every policy enforced, failing closed
 
 **Exercises:** NFR-15, ADR-0056, ADR-0057, ADR-0026 **Exit criteria:**

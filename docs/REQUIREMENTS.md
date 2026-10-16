@@ -710,11 +710,12 @@ Artifact:    The Node's OS, kernel and k3s, admission policies, Flux sources,
              the augustad chart and operator credentials
 Response:    The cluster runs only signed revisions and signed or
              digest-pinned images, admits no pod past its namespace's Pod
-             Security level, allows no flow it did not name, holds no Secret,
-             and a stolen credential cannot change workloads or the Node; a
-             process that escapes augustad's container finds kernel addresses
-             hidden, no ptrace, no kexec, no unprivileged user namespace and
-             no ICMP redirect
+             Security level, allows no flow it did not name, holds no Secret
+             but its alerts' bot token, never in Git, and a stolen
+             credential cannot change workloads or the Node; a process that
+             escapes augustad's container finds kernel addresses hidden, no
+             ptrace, no kexec, no unprivileged user namespace and no ICMP
+             redirect
 Measure:     kube-bench reports no CIS k3s failure outside the recorded
              exceptions; every Kyverno policy enforced, CI refusing each
              policy's negative fixture; the Node runbook's negative checks all
