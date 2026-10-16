@@ -17,7 +17,6 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
-#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"

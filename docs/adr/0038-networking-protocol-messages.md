@@ -20,15 +20,17 @@ protocol type carries the suffix, so none reads like an engine type. Each peer
 converts between the protocol's types and its own at its edge and nowhere else:
 the server in `server/wire.h` (used by `server::Host` right after Decode and
 right before Encode) and the client in `augusta/harness_wire.h` (used the same
-way by `harness::Session`). Inside each peer, modules pass the engine's types,
-never a `Wire` one: each peer names a player by its own Session ID type
-(`harness::SessionId` for the harness's API and ClientRuntime;
-`server::SessionId` for `server::Match` and `server::Host`), a body by its own
-Entity ID type (`harness::EntityId`, which ClientRuntime converts at its own
-edge into `presentation::EntityId`, so `presentation` does not depend on the
-harness; `server::EntityId`, which `server::Host` hands SimulationWorld and
-`replication` as the `simulation::EntityId` of the same number), a pack by
-`assets::PackHash`, and a refusal by its own `JoinRefusal`;
+way by `harness::Session`). A Match capture's records are converted by a third
+adapter, the capture module (`augusta/capture.h`), shared by both peers: its
+interface speaks the engine's types and it links the protocol privately. Inside
+each peer, modules pass the engine's types, never a `Wire` one: each peer names
+a player by its own Session ID type (`harness::SessionId` for the harness's API
+and ClientRuntime; `server::SessionId` for `server::Match` and `server::Host`),
+a body by its own Entity ID type (`harness::EntityId`, which ClientRuntime
+converts at its own edge into `presentation::EntityId`, so `presentation` does
+not depend on the harness; `server::EntityId`, which `server::Host` hands
+SimulationWorld and `replication` as the `simulation::EntityId` of the same
+number), a pack by `assets::PackHash`, and a refusal by its own `JoinRefusal`;
 `tests/protocol_boundary.cmake` fails the build's tests if one of their headers
 names the protocol, or a `presentation` header the harness.
 
@@ -163,9 +165,9 @@ as strictly, in every build: they return `std::expected<BytesWire, EncodeError>`
 `kInvalidEnum`, and give no payload at all for a message or record a field of
 which the protocol cannot carry, so nothing cut off or misframed is ever sent or
 captured. Such a field is the sender's bug, never a peer's input: each peer's
-edge (`server/wire.h`, `augusta/harness_wire.h`) turns the error into a
-`kInvariantViolated` failure naming the message or record type, and the runtime
-that sent it stops (ADR-0033).
+edge (`server/wire.h`, `augusta/harness_wire.h`, and the capture module for a
+record) turns the error into a `kInvariantViolated` failure naming the message
+or record type, and the runtime that sent it stops (ADR-0033).
 
 **Reliability split.** The sender names a `networking::Reliability` for every
 send (ADR-0003's transport offers both). A message that must arrive, and whose
