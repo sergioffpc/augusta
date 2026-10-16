@@ -10,19 +10,19 @@
 #include <thread>
 #include <utility>
 
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/heartbeat.h"
+#include "augusta/host.h"
 #include "augusta/logging.h"
+#include "augusta/policy_loader.h"
+#include "augusta/replay_server.h"
 #include "augusta/scripting.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "connection_health.h"
-#include "content.h"
-#include "heartbeat.h"
-#include "host.h"
 #include "metrics.h"
-#include "policy_loader.h"
-#include "replay_server.h"
 
 namespace augusta::server {
 

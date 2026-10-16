@@ -165,6 +165,9 @@ add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
 add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
+add_subdirectory(src/modules/metrics)
+add_subdirectory(src/modules/scenario)
+add_subdirectory(src/modules/host)
 add_subdirectory(src/server)
 # The tools, built with the runtime they link on every platform: the Agents
 # (ADR-0052), whose Python module is built against the interpreter
@@ -217,3 +220,9 @@ augusta_check_module_scopes()
 # augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
 # ctest: building the binaries never waits on them (ADR-0008).
 add_subdirectory(tests EXCLUDE_FROM_ALL)
+
+# Every target is now defined, so what sits inside src/client and src/server is
+# settled - only their Glue may be there - and so is what each test links: the
+# check reads the tests too, so it runs after them (ADR-0060 - see
+# cmake/AugustaModule.cmake).
+augusta_check_executable_glue()

@@ -7,8 +7,8 @@
 #include <string>
 #include <thread>
 
-#include "content.h"
-#include "host.h"
+#include "augusta/content.h"
+#include "augusta/host.h"
 
 /// \file
 /// A server::Host in the test's own process, for tests only: the augusta_agent

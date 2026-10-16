@@ -1,4 +1,4 @@
-#include "capture_retention.h"
+#include "augusta/capture_retention.h"
 
 #include <algorithm>
 #include <chrono>
@@ -18,11 +18,11 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
-#include "capturer.h"
-#include "match.h"
+#include "augusta/match.h"
 
 // A capture directory kept within a count and a size, oldest Match first
 // (ADR-0050, #461): PlanRetention's decision on its own, then a Capturer

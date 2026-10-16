@@ -12,10 +12,10 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capturer.h"
 #include "augusta/command.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
-#include "capturer.h"
-#include "match.h"
 
 // The capture_read fuzz target's seed (tests/fuzz/README.md): one whole
 // capture holding every kind of record, so the fuzzer starts from a valid file

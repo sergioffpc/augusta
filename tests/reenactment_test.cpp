@@ -18,11 +18,11 @@
 
 #include "augusta/capture.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
 
 // A Captured player (ADR-0050) without a network: its Script read from a
 // capture the capture module writes, and its pacing and progress decided from

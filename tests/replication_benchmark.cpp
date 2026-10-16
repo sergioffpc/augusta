@@ -2,11 +2,11 @@
 
 #include <benchmark/benchmark.h>
 
+#include "augusta/host_wire.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "benchmark_match.h"
-#include "wire.h"
 
 // A full Match's Authoritative State replicated as server::Host replicates it
 // after each tick (ADR-0044): what each player in the Match is sent

@@ -113,6 +113,11 @@ target_link_libraries(
     augustac_content
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
+# This directory is augustac's Glue: only augustac, augustac_application and
+# augustac_runtime belong in it, and a new library here fails the configure
+# (ADR-0060, cmake/AugustaModule.cmake). The libraries above are the
+# exceptions the migration has still to move out.
+augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)

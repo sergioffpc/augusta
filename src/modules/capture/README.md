@@ -11,7 +11,7 @@ interface names no protocol type. Pure stream I/O.
 
 ## Not its responsibility
 
-- Deciding what is captured, when, and how long a capture is kept: the server
+- Deciding what is captured, when, and how long a capture is kept: host
   (Capturer, capture retention, Replay).
 - Playing a captured player again: harness (`augusta/reenactment.h`).
 

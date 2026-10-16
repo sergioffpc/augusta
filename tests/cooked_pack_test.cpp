@@ -8,8 +8,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/policy_loader.h"
 #include "augusta/scripting.h"
-#include "policy_loader.h"
 
 // The C++ half of the contract between the pack's two implementations: the
 // Python cooker (tools/pack, ADR-0030) writes it, augusta_assets reads it.

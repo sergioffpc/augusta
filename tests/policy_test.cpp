@@ -19,13 +19,13 @@
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
+#include "augusta/policy_loader.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
-#include "parameters_loader.h"
-#include "policy_loader.h"
 
 // SimulationWorld ticked with a Game policy script chosen by the test (ADR-0022,
 // ADR-0023): what a hook sees, what it may do and what happens when it fails,

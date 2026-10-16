@@ -19,7 +19,7 @@ add_library(augusta_agent_testing_server STATIC testing_server.cpp)
 target_include_directories(augusta_agent_testing_server PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_testing_server
-  PUBLIC augustad_content augustad_host
+  PUBLIC augusta_scenario augusta_host
   PRIVATE augusta_assets augusta_failure augusta_gameplay
 )
 augusta_set_module_scope(augusta_agent_testing_server SERVER_ONLY)

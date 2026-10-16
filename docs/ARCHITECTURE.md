@@ -282,6 +282,26 @@ exclusively server-authoritative.
   the Lua embedding and the restricted-environment sandbox (§8) that upholds "no
   I/O inside ECS worlds" structurally (ADR-0022). Server-only - game policy is
   exclusively server-authoritative, never run by either client world.
+- Scenario — what the server loads from its verified pack at startup: the
+  scenario it serves, the Parameters its simulation and every client run on
+  (ADR-0039) and its Game policy (ADR-0022), with the two loaders that read them
+  through Lua, in one server-only module (augusta_scenario). It is loaded before
+  any socket or thread opens, so a pack without usable content exits like a bad
+  pack does, and the Host is handed it already loaded
+- Metrics — the lock-free counter, gauge and histogram the server's threads
+  write in place where an event happens, and their Prometheus form (ADR-0049),
+  in one server-only module (augusta_metrics). It knows nothing of what is
+  counted: whoever counts — the Host, the Connection health collector — builds
+  on it, and augustad's metrics endpoint only collects what they hold
+- Host — the server's socket and SimulationWorld without threads or a clock, so
+  a test can drive a Match by hand, one network round and one tick at a time:
+  who is in the Match and whether a join is admitted, the Command intake and its
+  sanity gate, each peer's misbehaviour count, when an unadmitted peer is past
+  its deadline, the counts behind the once-a-second heartbeat line, the
+  conversions at its seam, what it counts for the metrics endpoint and the Match
+  capture it writes (ADR-0050). One server-only module (augusta_host), the
+  counterpart of the client's Harness; augustad's runtime adds its threads, its
+  clock, the metrics endpoint and its lifecycle (ADR-0060)
 - ServerRuntime
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,

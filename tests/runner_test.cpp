@@ -15,8 +15,10 @@
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/host.h"
 #include "augusta/intent.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
@@ -25,8 +27,6 @@
 #include "augusta/protocol.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
-#include "content.h"
-#include "host.h"
 
 // A harness::Runner running a real client session in real time against a real
 // server host, in one process over loopback: the test runs the host on its

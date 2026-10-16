@@ -1,78 +1,9 @@
-# Reads the Parameters script through Lua (ADR-0022, ADR-0039) into the shared
-# Parameters; pure, so tested with scripts as strings (see parameters_loader.h).
-# Server-only: a client never reads the script, it is sent the result, so it
-# never links the interpreter.
-add_library(augustad_parameters_loader STATIC parameters_loader.cpp)
-target_include_directories(augustad_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_parameters_loader PUBLIC augusta_gameplay PRIVATE augusta_lua_sandbox)
-augusta_set_module_scope(augustad_parameters_loader SERVER_ONLY)
-
-# Reads the scenario's Game policy scripts out of the server pack into the
-# engine SimulationWorld runs them in (ADR-0022); tested with packs built in the
-# test (see policy_loader.h).
-add_library(augustad_policy_loader STATIC policy_loader.cpp)
-target_include_directories(augustad_policy_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_policy_loader PUBLIC augusta_assets augusta_scripting)
-augusta_set_module_scope(augustad_policy_loader SERVER_ONLY)
-
-# What the server loads from its verified pack at startup: the scenario, the
-# Parameters and the Game policy (see content.h).
-add_library(augustad_content STATIC content.cpp)
-target_include_directories(augustad_content PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustad_content
-  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_scripting
-  PRIVATE augusta_logging augustad_parameters_loader augustad_policy_loader
-)
-augusta_set_module_scope(augustad_content SERVER_ONLY)
-
-# Who is in the match and whether a join is admitted; pure, so tested without a
-# network (see match.h).
-add_library(augustad_match STATIC match.cpp)
-target_include_directories(augustad_match PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_match PUBLIC augusta_assets augusta_math augusta_networking augusta_physics)
-augusta_set_module_scope(augustad_match SERVER_ONLY)
-
-# The sanity gate and per-player queue for what clients send to move; pure, so
-# tested without a network (see command_queue.h).
-add_library(augustad_commands STATIC command_queue.cpp)
-target_include_directories(augustad_commands PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_commands PUBLIC augusta_gameplay)
-augusta_set_module_scope(augustad_commands SERVER_ONLY)
-
-# The count of each peer's misbehaviour that decides when it is disconnected;
-# pure, so tested without a network (see misbehaviour.h).
-add_library(augustad_misbehaviour STATIC misbehaviour.cpp)
-target_include_directories(augustad_misbehaviour PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-augusta_set_module_scope(augustad_misbehaviour SERVER_ONLY)
-
-# When a peer that has not been admitted is past its deadline; pure, so tested
-# without a network (see admission.h).
-add_library(augustad_admission STATIC admission.cpp)
-target_include_directories(augustad_admission PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_admission PUBLIC augusta_networking)
-augusta_set_module_scope(augustad_admission SERVER_ONLY)
-
-# The counts behind the server's once-a-second heartbeat line; pure, so tested
-# without a network (see heartbeat.h).
-add_library(augustad_heartbeat STATIC heartbeat.cpp)
-target_include_directories(augustad_heartbeat PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-augusta_set_module_scope(augustad_heartbeat SERVER_ONLY)
-
 # Whether the tick loop is still running, which /livez answers; pure, so tested
 # without HTTP (see liveness.h).
 add_library(augustad_liveness STATIC liveness.cpp)
 target_include_directories(augustad_liveness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_liveness PUBLIC augusta_gameplay)
 augusta_set_module_scope(augustad_liveness SERVER_ONLY)
-
-# The lock-free counter, gauge and histogram the server's threads write in
-# place, and their Prometheus form (see lock_free_metrics.h, ADR-0049).
-find_package(prometheus-cpp CONFIG REQUIRED)
-add_library(augustad_lock_free_metrics STATIC lock_free_metrics.cpp)
-target_include_directories(augustad_lock_free_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_lock_free_metrics PUBLIC prometheus-cpp::core)
-augusta_set_module_scope(augustad_lock_free_metrics SERVER_ONLY)
 
 # The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049):
 # prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them;
@@ -102,65 +33,23 @@ add_library(augustad_connection_health STATIC connection_health.cpp)
 target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_connection_health
-  PUBLIC augusta_networking augustad_match augustad_lock_free_metrics
+  PUBLIC augusta_host augusta_metrics augusta_networking augusta_host_match
   PRIVATE augusta_primitives
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
-
-# The server's socket and SimulationWorld without threads or a clock, so a test
-# can drive a match by hand (see host.h), and the conversions Host makes at its
-# edges: between the protocol's plain types and the engine's (see wire.h), and
-# into SimulationWorld's (see simulation_mapping.h); with the Match capture
-# Host writes (see capturer.h, ADR-0050), and what it counts for the metrics
-# endpoint (see host_metrics.h, ADR-0049).
-add_library(
-  augustad_host
-  STATIC
-  capture_retention.cpp
-  capturer.cpp
-  host.cpp
-  host_log.cpp
-  host_match.cpp
-  host_metrics.cpp
-  host_network.cpp
-  peer_gate.cpp
-  replay.cpp
-  replay_catalog.cpp
-  replay_server.cpp
-  simulation_mapping.cpp
-  tick_messages.cpp
-  wire.cpp
-)
-target_include_directories(augustad_host PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustad_host
-  PUBLIC
-    augusta_failure
-    augusta_gameplay
-    augusta_networking
-    augusta_physics
-    augusta_simulation
-    augustad_content
-    augustad_commands
-    augustad_match
-    augustad_misbehaviour
-    augustad_admission
-    augustad_heartbeat
-    augusta_assets
-    augusta_protocol
-    augusta_capture
-    augusta_wire
-    augustad_lock_free_metrics
-    prometheus-cpp::core
-  PRIVATE augusta_logging augusta_version
-)
-augusta_set_module_scope(augustad_host SERVER_ONLY)
 
 add_library(augustad_runtime STATIC runtime.cpp)
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
-  PUBLIC augustad_host augusta_failure augusta_gameplay augusta_networking augusta_physics augusta_simulation
+  PUBLIC
+    augusta_host
+    augusta_host_replay
+    augusta_failure
+    augusta_gameplay
+    augusta_networking
+    augusta_physics
+    augusta_simulation
   PRIVATE augusta_assets augusta_lifecycle augusta_logging augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
@@ -173,7 +62,7 @@ target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(
   augustad_application
   PUBLIC augusta_config augusta_failure augusta_lifecycle augusta_server_config augustad_runtime
-  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host augustad_policy_loader
+  PRIVATE augusta_assets augusta_logging augusta_networking augusta_scenario augusta_scenario_policy_loader augusta_host
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
 
@@ -205,6 +94,11 @@ target_link_libraries(
 # The headless server itself, not only its libraries: a client-only module
 # linked straight into it fails the configure (tests/server_boundary.cmake).
 augusta_set_module_scope(augustad SERVER_ONLY)
+# This directory is augustad's Glue: only augustad, augustad_application and
+# augustad_runtime belong in it, and a new library here fails the configure
+# (ADR-0060, cmake/AugustaModule.cmake). The libraries above are the
+# exceptions the migration has still to move out.
+augusta_set_executable_glue(augustad)
 
 # On Linux the debug info is split off into augustad.debug beside it (ADR-0047).
 if(NOT WIN32)

@@ -3,7 +3,7 @@
 # queue, simulation's Replication, presentation, ClientRuntime, the capture
 # module's interface - may name a protocol type or include the protocol's
 # header. Only three adapters convert: harness_wire.h on the client and
-# server/wire.h on the server, which both call augusta/wire.h for the
+# augusta/host_wire.h on the server, which both call augusta/wire.h for the
 # shared core's own types (a Command, a stance, a pack's hash), and the
 # capture module, which converts a Match capture's records for either inside
 # its implementation and links the protocol privately.
@@ -29,13 +29,15 @@ file(
   "${SOURCE_DIR}/src/modules/simulation/include/augusta/replication*.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/capture/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/host/*.h"
   "${SOURCE_DIR}/src/server/*.h"
   "${SOURCE_DIR}/src/client/*.h"
 )
 list(
   REMOVE_ITEM headers
   "${SOURCE_DIR}/src/modules/harness/include/augusta/harness_wire.h"
-  "${SOURCE_DIR}/src/server/wire.h"
+  "${SOURCE_DIR}/src/modules/host/include/augusta/host_wire.h"
 )
 if(NOT headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no headers found under ${SOURCE_DIR}")
@@ -104,7 +106,7 @@ if(violations)
   list(JOIN violations "\n" protocol_report)
   string(
     APPEND report
-    "The protocol leaks past its edge (ADR-0038) - convert in harness_wire.h or server/wire.h instead:\n${protocol_report}\n"
+    "The protocol leaks past its edge (ADR-0038) - convert in harness_wire.h or host_wire.h instead:\n${protocol_report}\n"
   )
 endif()
 if(harness_violations)
