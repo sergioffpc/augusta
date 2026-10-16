@@ -192,8 +192,34 @@ retention failing), one set per server, each alert labelled with its scenario.
 The capture filesystem's rules (almost full, a warning past 85% for 10 minutes
 and critical past 95%; filling up, full within 6 hours at the last 6 hours'
 rate) are the node's, not a server's, so they come once, with the release that
-ships the dashboards. They route to no receiver yet, so they show only in
-Grafana and Alertmanager.
+ships the dashboards. Rules that watch the cluster rather than a server come
+with the stack's own `HelmRelease`, which installs the `PrometheusRule` CRD they
+need: `FluxObjectNotReady` fires, `critical`, when a Flux `HelmRelease`,
+`Kustomization`, `GitRepository`, `OCIRepository` or `HelmRepository` that is
+not suspended has not been `Ready` for 15 minutes, labelled with its kind,
+namespace and name. Such an object applies nothing new while what it applied
+before keeps running, so nothing else looks down. kube-state-metrics reads those
+objects' `Ready` condition from the API (its custom resource state, as
+`gotk_resource_info`), so Prometheus never scrapes Flux's controllers, whose
+NetworkPolicies stay closed to it. All the rules are tested with
+`promtool test rules` in CI.
+
+**Where alerts go.** Alertmanager posts to the operator's chat through a
+Telegram bot (its native `telegram_configs`): every `critical` or `error` alert,
+whichever rule raised it, and two of the stack's default `warning` rules by
+name, `KubePodCrashLooping` and `KubeDeploymentRolloutStuck`, which catch a
+server crash-looping and a rollout whose new pods never become ready while the
+old ones serve. Every other alert (the other warnings, `info`, `Watchdog`,
+`InfoInhibitor`) goes to the chart's `null` receiver and shows only in Grafana
+and Alertmanager. Alerts are grouped by `alertname`, `namespace` and `scenario`,
+sent 30 seconds after the first fires, repeated every 4 hours while they fire,
+and sent again when they resolve. The bot's token and the chat's id are a Secret
+the operator makes by hand in `monitoring`, never in Git, which Alertmanager
+reads from files (ADR-0057); the chat's id goes with the token rather than in
+Git because a private chat's id is the operator's own Telegram account.
+Alertmanager reaches the Bot API by HTTPS on the internet, never the LAN or the
+cluster. CI checks the configuration the chart renders with `amtool`, and where
+each kind of alert goes.
 
 ## Considered Options
 
@@ -225,6 +251,16 @@ Grafana and Alertmanager.
   for a phase 2.
 - **Connection health aggregated only**: rejected. It cannot say which player's
   connection is bad.
+- **Mail, ntfy or Pushover in place of Telegram**: rejected. Alertmanager speaks
+  Telegram natively, with the token read from a file; mail needs an SMTP relay
+  and its credential, and ntfy and Pushover an account or server of their own.
+- **Scraping Flux's controllers (a `PodMonitor`) for its objects' state**:
+  rejected. It opens `flux-system`'s NetworkPolicies to Prometheus, where a
+  mistake cuts Flux off from GitHub, and kube-state-metrics reads the same
+  conditions from the API.
+- **New rules for a crash loop and a stalled rollout**: rejected. The stack's
+  `KubePodCrashLooping` and `KubeDeploymentRolloutStuck` already catch them;
+  routing them by name avoids two copies that drift apart.
 - **`/healthz`**: rejected for `/livez`. The check answers liveness only, and
   `/livez` is Kubernetes' own current name for that, next to which a `/readyz`
   would fit. It also keeps "health" from meaning a third thing beside a player's
@@ -238,7 +274,10 @@ Grafana and Alertmanager.
   holds.
 - Instrumenting a new event means a new counter in the catalogue above, counted
   where the heartbeat counts it.
-- Alerts have rules but no receiver. Choosing one (mail, a webhook, ntfy) is
-  left for when the server runs unattended for real.
+- A crash-looping server, a stalled rollout or a Flux object stuck not `Ready`
+  reaches the operator's phone within about 15 minutes. A cluster that is down
+  altogether sends nothing: nothing outside it watches for the `Watchdog`.
+- Alertmanager's pod does not start until the operator has made its Telegram
+  Secret, so a rebuilt cluster needs it made again.
 - The cluster runs a monitoring stack of its own, about 1 to 1.5 GB of memory on
   the node.

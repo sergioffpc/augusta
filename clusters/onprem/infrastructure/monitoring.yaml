@@ -96,6 +96,128 @@ spec:
       image:
         tag: v2.20.0
         sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+      # Beside its own series, the Ready condition of each Flux object the
+      # Flux alert below watches, as Flux's monitoring guide names it:
+      # gotk_resource_info{namespace, name, ready, suspended}, one series per
+      # object, its kind in customresource_kind. Read from the API, as every
+      # other object is, rather than scraped from Flux's controllers, which
+      # would open flux-system's NetworkPolicies to Prometheus. Each kind at
+      # the version gotk-components.yaml stores it in, bumped with Flux.
+      rbac:
+        extraRules:
+          - apiGroups:
+              - source.toolkit.fluxcd.io
+            resources:
+              - gitrepositories
+              - ocirepositories
+              - helmrepositories
+            verbs:
+              - list
+              - watch
+          - apiGroups:
+              - kustomize.toolkit.fluxcd.io
+            resources:
+              - kustomizations
+            verbs:
+              - list
+              - watch
+          - apiGroups:
+              - helm.toolkit.fluxcd.io
+            resources:
+              - helmreleases
+            verbs:
+              - list
+              - watch
+      customResourceState:
+        enabled: true
+        config:
+          spec:
+            resources:
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: GitRepository
+                metricNamePrefix: gotk
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: resource_info
+                    help: The Ready condition of a Flux GitRepository.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          ready: [status, conditions, "[type=Ready]", status]
+                          suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: OCIRepository
+                metricNamePrefix: gotk
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: resource_info
+                    help: The Ready condition of a Flux OCIRepository.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          ready: [status, conditions, "[type=Ready]", status]
+                          suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: HelmRepository
+                metricNamePrefix: gotk
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: resource_info
+                    help: The Ready condition of a Flux HelmRepository.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          ready: [status, conditions, "[type=Ready]", status]
+                          suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                metricNamePrefix: gotk
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: resource_info
+                    help: The Ready condition of a Flux Kustomization.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          ready: [status, conditions, "[type=Ready]", status]
+                          suspended: [spec, suspend]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                metricNamePrefix: gotk
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: resource_info
+                    help: The Ready condition of a Flux HelmRelease.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          ready: [status, conditions, "[type=Ready]", status]
+                          suspended: [spec, suspend]
     # The one component that cannot meet restricted, alone in its privileged
     # namespace (above). Prometheus still finds its ServiceMonitor, as it
     # watches every namespace's, and its series and their labels but
@@ -141,15 +263,83 @@ spec:
               resources:
                 requests:
                   storage: 10Gi
-    # The chart's default configuration routes every alert to its "null"
-    # receiver: alerts show only in Grafana and Alertmanager until one is
-    # chosen (ADR-0049).
+    # The cluster's own alert rules: the chart installs them with the
+    # PrometheusRule CRD they need, which a manifest beside this file could
+    # not count on when the cluster is rebuilt. Flux's objects, from
+    # kube-state-metrics (above): one that has not been Ready for 15 minutes
+    # applies nothing new, whatever was merged, while what it applied before
+    # keeps running and looks healthy. A suspended one is held on purpose
+    # (docs/runbooks/flux-rollback.md). Not Ready rather than Ready=False, so
+    # an object that keeps retrying, Unknown while it does, alerts as well.
+    # Tested in alert-tests/flux.test.yaml.
+    additionalPrometheusRulesMap:
+      flux:
+        groups:
+          - name: flux
+            rules:
+              - alert: FluxObjectNotReady
+                expr: |
+                  label_replace(
+                    max by (customresource_kind, namespace, name) (
+                      gotk_resource_info{ready!="True", suspended!="true"}
+                    ),
+                    "kind", "$1", "customresource_kind", "(.*)"
+                  )
+                for: 15m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: Flux's {{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} has not been Ready for 15 minutes
+                  description: Flux applies nothing new from {{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} until it is Ready again. flux get all -A gives its message; docs/runbooks/flux-rollback.md reverts a bad deploy.
+    # Where alerts reach the operator (ADR-0049): a Telegram bot posts every
+    # critical or error alert, and the two stack rules that catch a server
+    # crash-looping or a rollout that never becomes ready, to the operator's
+    # chat. Everything else (other warnings, info, Watchdog, InfoInhibitor)
+    # stays on the chart's "null" receiver, in Grafana and Alertmanager
+    # alone. These keys replace the chart's own route and receivers and keep
+    # its inhibit rules. An alert fires a message within group_wait of
+    # firing, and again every repeat_interval while it does.
+    #
+    # The bot's token and the chat's id are the Secret alertmanager-telegram,
+    # made by hand, never in Git (ADR-0057,
+    # docs/runbooks/alert-notifications.md). Alertmanager's pod does not
+    # start without it. Its routes are tested in alert-tests/routes.txt.
     alertmanager:
       enabled: true
+      config:
+        route:
+          group_by:
+            - alertname
+            - namespace
+            - scenario
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          receiver: "null"
+          routes:
+            - receiver: "null"
+              matchers:
+                - alertname = "Watchdog"
+            - receiver: telegram
+              matchers:
+                - severity =~ "critical|error"
+            - receiver: telegram
+              matchers:
+                - alertname =~ "KubeDeploymentRolloutStuck|KubePodCrashLooping"
+        receivers:
+          - name: "null"
+          - name: telegram
+            telegram_configs:
+              - bot_token_file: /etc/alertmanager/secrets/alertmanager-telegram/bot-token
+                chat_id_file: /etc/alertmanager/secrets/alertmanager-telegram/chat-id
+                send_resolved: true
       alertmanagerSpec:
         image:
           tag: v0.34.1
           sha: e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+        # Mounted at /etc/alertmanager/secrets/alertmanager-telegram/.
+        secrets:
+          - alertmanager-telegram
     grafana:
       image:
         tag: 13.2.3-distroless@sha256:202e5d5b3f8499e70ccac7991eea6d7da72d2790eb2e0597e7987acf724e7180

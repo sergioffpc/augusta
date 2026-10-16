@@ -438,9 +438,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   from PersistentVolumes, never as `hostPath` volumes, which a
   `host-path-volumes` policy refuses outside the `privileged` namespaces
   (ADR-0057).
-- **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
-  refuses any Secret but Flux's trusted public keys, Helm's release records and
-  those the charts make themselves, each listed by name (ADR-0057).
+- **One credential, not in Git:** the cluster's only credential is
+  Alertmanager's Telegram bot token, in a Secret the operator makes by hand
+  (`docs/runbooks/alert-notifications.md`). A `secret-allowlist` policy refuses
+  any Secret but that one, Flux's trusted public keys, Helm's release records
+  and those the charts make themselves, each listed by name (ADR-0057).
 - **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
   a tag pushed again never changes what runs, except those whose signatures are
   verified instead (`augustad`'s and Flux's) and `kube-system`'s, which come
@@ -636,8 +638,10 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Liveness:** `/livez` fails when the tick loop has not finished a tick for 5
   seconds, and is the Deployment's liveness probe, so a hung server restarts on
   its own (ADR-0049).
-- **Alerts:** rules ship with the chart and show in Grafana and Alertmanager,
-  with no receiver yet. One is chosen when the server runs unattended for real.
+- **Alerts:** the servers' rules ship with the chart, the cluster's (Flux) with
+  the monitoring stack's release. Every `critical` or `error` alert, a crash
+  loop and a stalled rollout reach the operator's Telegram chat; the rest show
+  only in Grafana and Alertmanager (ADR-0049).
 - **Grafana** opens on node port 30300 with no login: anyone on the LAN is an
   anonymous Viewer, and there is no login form, basic authentication or admin
   user (ADR-0057). Nothing is changed in Grafana itself. A dashboard is changed

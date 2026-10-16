@@ -1,8 +1,9 @@
 # The security events that alert (ADR-0057), as Loki alerting rules over the
 # security logs (ADR-0053): Loki's rules sidecar loads every ConfigMap
 # labelled loki_rule in monitoring, and its ruler sends what fires to the
-# stack's Alertmanager, whose receivers are still ADR-0049's (none: alerts
-# show only in Grafana and Alertmanager).
+# stack's Alertmanager, which routes them as ADR-0049's (monitoring.yaml): a
+# critical one reaches the operator's Telegram chat, the others show only in
+# Grafana and Alertmanager.
 #
 # Each counts over five minutes, so an event keeps its alert firing for five
 # minutes after it, and no longer: a new event raises it again.

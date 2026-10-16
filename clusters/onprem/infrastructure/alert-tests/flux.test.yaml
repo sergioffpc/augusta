@@ -1,0 +1,51 @@
+# promtool test rules for the Flux alert, the kube-prometheus-stack release's
+# additionalPrometheusRulesMap (monitoring.yaml): CI's manifests job writes
+# its rules, as the chart renders them, as flux.rules.yaml beside a copy of
+# this file (.github/workflows/ci.yml). The series are kube-state-metrics',
+# labelled as its customResourceState there labels them.
+rule_files:
+  - flux.rules.yaml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      # Ready=False from 0m: not at 14m, fires at 15m.
+      - series: gotk_resource_info{customresource_group="helm.toolkit.fluxcd.io", customresource_kind="HelmRelease", customresource_version="v2", namespace="flux-system", name="augustad-develop", ready="False", suspended="false"}
+        values: 1x30
+      # Retrying: False for 10 minutes, then Unknown while it tries again.
+      # Not Ready all along, so it fires at 15m too.
+      - series: gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io", customresource_kind="Kustomization", customresource_version="v1", namespace="flux-system", name="apps", ready="False"}
+        values: 1x9 _x21
+      - series: gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io", customresource_kind="Kustomization", customresource_version="v1", namespace="flux-system", name="apps", ready="Unknown"}
+        values: _x9 1x21
+      # Held on purpose, as a rollback does: never fires.
+      - series: gotk_resource_info{customresource_group="helm.toolkit.fluxcd.io", customresource_kind="HelmRelease", customresource_version="v2", namespace="flux-system", name="augustad-staging", ready="False", suspended="true"}
+        values: 1x30
+      # Ready: never fires.
+      - series: gotk_resource_info{customresource_group="source.toolkit.fluxcd.io", customresource_kind="GitRepository", customresource_version="v1", namespace="flux-system", name="flux-system", ready="True", suspended="false"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: FluxObjectNotReady
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: FluxObjectNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              kind: HelmRelease
+              customresource_kind: HelmRelease
+              namespace: flux-system
+              name: augustad-develop
+            exp_annotations:
+              summary: Flux's HelmRelease flux-system/augustad-develop has not been Ready for 15 minutes
+              description: Flux applies nothing new from HelmRelease flux-system/augustad-develop until it is Ready again. flux get all -A gives its message; docs/runbooks/flux-rollback.md reverts a bad deploy.
+          - exp_labels:
+              severity: critical
+              kind: Kustomization
+              customresource_kind: Kustomization
+              namespace: flux-system
+              name: apps
+            exp_annotations:
+              summary: Flux's Kustomization flux-system/apps has not been Ready for 15 minutes
+              description: Flux applies nothing new from Kustomization flux-system/apps until it is Ready again. flux get all -A gives its message; docs/runbooks/flux-rollback.md reverts a bad deploy.

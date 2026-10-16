@@ -1,0 +1,11 @@
+# Alertmanager's Telegram credential, which only monitoring may hold, made
+# beside a Server.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-telegram
+  namespace: develop
+type: Opaque
+stringData:
+  bot-token: "123456:not-a-token"
+  chat-id: "123456"
