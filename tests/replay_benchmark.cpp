@@ -6,13 +6,12 @@
 
 #include <benchmark/benchmark.h>
 
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
 #include "benchmark_match.h"
 #include "benchmark_scene.h"
-#include "capture.h"
-#include "match.h"
 #include "replay.h"
 #include "replay_server.h"
 
@@ -26,11 +25,7 @@ namespace {
 
 using augusta::benchmarks::kPlayers;
 using augusta::benchmarks::kTicksPerWalk;
-using augusta::server::Capture;
-using augusta::server::CapturedCommand;
-using augusta::server::CapturedJoin;
-using augusta::server::CapturedMatchEnd;
-using augusta::server::CaptureRecord;
+using augusta::capture::Capture;
 
 constexpr const char* kCharacter = "squares";
 // Long enough that a run rarely starts the Replay over.
@@ -44,12 +39,10 @@ Capture FullMatchCapture() {
   Capture capture;
   capture.header.tick_rate_hz = augusta::benchmarks::kTickRate;
   for (std::uint8_t player = 1; player <= kPlayers; ++player) {
-    capture.records.push_back(CaptureRecord{
-        .offset = 0,
-        .event = CapturedJoin{.player = player,
-                              .session = augusta::server::SessionId{player},
-                              .character = kCharacter,
-                              .spawn = augusta::math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player - 1))}});
+    capture.joins.push_back(
+        augusta::capture::Join{.session = player,
+                               .character = kCharacter,
+                               .spawn = augusta::math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player - 1))});
   }
   for (std::uint32_t offset = 0; offset < kCaptureTicks; ++offset) {
     for (std::uint8_t player = 1; player <= kPlayers; ++player) {
@@ -57,11 +50,12 @@ Capture FullMatchCapture() {
       command.movement.direction = augusta::math::Vec3(0.0F, 0.0F, (offset / kTicksPerWalk) % 2 == 0 ? -1.0F : 1.0F);
       command.fire = true;
       command.reload = offset % kReloadEvery == kReloadEvery - 1;
-      capture.records.push_back(CaptureRecord{
-          .offset = offset, .event = CapturedCommand{.player = player, .seen_offset = -1, .command = command}});
+      capture.events.push_back(
+          {.offset = offset,
+           .event = augusta::capture::Command{.player = player, .seen_offset = -1, .command = command}});
     }
   }
-  capture.records.push_back(CaptureRecord{.offset = kCaptureTicks, .event = CapturedMatchEnd{}});
+  capture.events.push_back({.offset = kCaptureTicks, .event = augusta::capture::MatchEnd{}});
   return capture;
 }
 

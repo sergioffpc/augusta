@@ -30,6 +30,7 @@
 #include "admission.h"
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
@@ -1916,7 +1917,7 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
   // The newest capture, once the directory holds count of them and its
   // writer has reached its Match end: the Host, which outlives the test,
   // writes it on a thread of its own.
-  [[nodiscard]] augusta::server::Capture ReadBack(std::size_t count = 1) const {
+  [[nodiscard]] augusta::capture::Capture ReadBack(std::size_t count = 1) const {
     constexpr auto kPatience = std::chrono::seconds(5);
     constexpr auto kRetryAfter = std::chrono::milliseconds(10);
     const auto deadline = std::chrono::steady_clock::now() + kPatience;
@@ -1924,20 +1925,20 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
       std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
       // Named by their Match's start (CaptureFileName), the newest sorts last.
       std::ranges::sort(files);
-      std::optional<augusta::server::Capture> capture;
+      std::optional<augusta::capture::Capture> capture;
       if (files.size() == count) {
         std::ifstream in(files.back(), std::ios::binary);
-        auto read = augusta::server::ReadCapture(in);
+        auto read = augusta::capture::ReadCapture(in);
         if (read.has_value()) {
           capture = *std::move(read);
         }
       }
-      const bool ended = capture.has_value() && !capture->records.empty() &&
-                         std::holds_alternative<augusta::server::CapturedMatchEnd>(capture->records.back().event);
+      const bool ended = capture.has_value() && !capture->events.empty() &&
+                         std::holds_alternative<augusta::capture::MatchEnd>(capture->events.back().event);
       if (ended || std::chrono::steady_clock::now() >= deadline) {
         EXPECT_EQ(files.size(), count);
         EXPECT_TRUE(ended);
-        return capture.value_or(augusta::server::Capture{});
+        return capture.value_or(augusta::capture::Capture{});
       }
       std::this_thread::sleep_for(kRetryAfter);
     }
@@ -1947,21 +1948,17 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
 // Requirements: US-21
 TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid) {
   PlayAMatch();
-  const augusta::server::Capture capture = ReadBack();
+  const augusta::capture::Capture capture = ReadBack();
 
   EXPECT_EQ(capture.header.tick_rate_hz, kTestTickRate);
   EXPECT_EQ(capture.header.engine_version, augusta::EngineVersion());
-  ASSERT_GE(capture.records.size(), 2U);
-  for (std::size_t i = 0; i < 2; ++i) {
-    const auto* join = std::get_if<augusta::server::CapturedJoin>(&capture.records[i].event);
-    ASSERT_NE(join, nullptr);
-    EXPECT_EQ(join->player, i + 1);
-    EXPECT_EQ(join->character, kCharacter);
+  ASSERT_EQ(capture.joins.size(), 2U);
+  for (const augusta::capture::Join& join : capture.joins) {
+    EXPECT_EQ(join.character, kCharacter);
   }
-  using augusta::server::CapturedPlayer;
-  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
-    const auto sent = std::ranges::count_if(capture.records, [player](const augusta::server::CaptureRecord& record) {
-      const auto* command = std::get_if<augusta::server::CapturedCommand>(&record.event);
+  for (const augusta::capture::Player player : {augusta::capture::Player{1}, augusta::capture::Player{2}}) {
+    const auto sent = std::ranges::count_if(capture.events, [player](const auto& event) {
+      const auto* command = std::get_if<augusta::capture::Command>(&event.event);
       return command != nullptr && command->player == player && command->command.movement.direction.x == 1.0F &&
              command->command.fire;
     });
@@ -1969,7 +1966,7 @@ TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid)
     EXPECT_GT(sent, 0);
     EXPECT_LE(sent, kSettleTicks);
   }
-  const auto& end = std::get<augusta::server::CapturedMatchEnd>(capture.records.back().event);
+  const auto& end = std::get<augusta::capture::MatchEnd>(capture.events.back().event);
   EXPECT_FALSE(end.winner.has_value());
 }
 
@@ -1992,7 +1989,7 @@ TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
 // Requirements: NFR-07
 TEST_F(CaptureHostTest, AMatchCapturedToItsEndIsCounted) {
   PlayAMatch();
-  ASSERT_FALSE(ReadBack().records.empty());
+  ASSERT_FALSE(ReadBack().events.empty());
 
   const augusta::server::HostMetrics& metrics = host_.Metrics();
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -2057,9 +2054,9 @@ TEST_F(FirstMatchWonCaptureHostTest, AMatchEveryPlayerLeftEndsAsADrawWhoeverWonT
   ASSERT_EQ(metrics.matches_ended_abandoned.Value(), 1U);
   ServerTick();
 
-  const augusta::server::Capture capture = ReadBack(2);
-  ASSERT_FALSE(capture.records.empty());
-  const auto& end = std::get<augusta::server::CapturedMatchEnd>(capture.records.back().event);
+  const augusta::capture::Capture capture = ReadBack(2);
+  ASSERT_FALSE(capture.events.empty());
+  const auto& end = std::get<augusta::capture::MatchEnd>(capture.events.back().event);
   EXPECT_FALSE(end.winner.has_value());
 }
 

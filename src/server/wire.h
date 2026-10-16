@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
@@ -16,7 +17,6 @@
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
-#include "capture.h"
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -27,7 +27,7 @@
 /// The server's edge with the Networking Protocol (ADR-0038): what server::Host
 /// sends, turned from the engine's types into the protocol's plain ones right
 /// before Encode, and what it receives, turned back right after Decode; and a
-/// Match capture's records (capture.h), the same way. The only
+/// Match capture's records (augusta/capture.h), the same way. The only
 /// place on the server where a protocol::*Wire type meets an engine type: Match,
 /// CommandQueue and replication never see one. Pure field-by-field copies;
 /// whether a value is one the server accepts is decided after, by whoever takes
@@ -126,16 +126,13 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 [[nodiscard]] ReplayRequest FromWire(const protocol::ReplayRequestWire& request);
 
 /// A Match capture's header as its record (ADR-0050), in this engine's format version.
-[[nodiscard]] protocol::CaptureHeaderWire ToWire(const CaptureHeader& header);
+[[nodiscard]] protocol::CaptureHeaderWire ToWire(const capture::Header& header);
 
-/// A capture's header record in the engine's terms; its format version is the reader's to check.
-[[nodiscard]] CaptureHeader FromWire(const protocol::CaptureHeaderWire& header);
+/// The Join of player, numbered from 1 in the Match start's order, as its record at offset 0.
+[[nodiscard]] protocol::CaptureRecordWire ToWire(capture::Player player, const capture::Join& join);
 
 /// One event of a capture as its record.
-[[nodiscard]] protocol::CaptureRecordWire ToWire(const CaptureRecord& record);
-
-/// A capture's record in the engine's terms; nullopt for its header, which is no event.
-[[nodiscard]] std::optional<CaptureRecord> FromWire(const protocol::CaptureRecordWire& record);
+[[nodiscard]] protocol::CaptureRecordWire ToWire(const capture::AtOffset<capture::Event>& event);
 
 }  // namespace augusta::server
 

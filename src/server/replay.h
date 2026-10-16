@@ -8,10 +8,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capture.h"
 #include "command_queue.h"
 #include "match.h"
 
@@ -23,7 +23,7 @@
 /// the capture's (NFR-09). Neither touches a socket, a file or a clock:
 /// server::ReplayServer reads the capture, builds the World, ticks each Replay
 /// on the Simulation thread and sends what it resolves to the Replay's viewer.
-/// A player is named by its number in the capture (CapturedPlayer), and its
+/// A player is named by its number in the capture (capture::Player), and its
 /// body in the World by the same number, so a Replay names no tick and no
 /// entity of the server that made the capture.
 namespace augusta::server {
@@ -39,12 +39,12 @@ struct Divergence {
   std::uint32_t offset = 0;
   /// kDeath: the Deaths the capture has on the tick and those the World
   /// resolved on it, each ordered by victim.
-  std::vector<CapturedDeath> captured_deaths;
-  std::vector<CapturedDeath> resolved_deaths;
+  std::vector<capture::Death> captured_deaths;
+  std::vector<capture::Death> resolved_deaths;
   /// kMatchEnd: the Match end the capture has on the tick and the one the
   /// World's Game policy decided on it; nullopt for none.
-  std::optional<CapturedMatchEnd> captured_end;
-  std::optional<CapturedMatchEnd> resolved_end;
+  std::optional<capture::MatchEnd> captured_end;
+  std::optional<capture::MatchEnd> resolved_end;
 
   bool operator==(const Divergence&) const = default;
 };
@@ -55,21 +55,21 @@ struct Divergence {
 /// Compares what a Replay resolves with the capture's markers, tick by tick,
 /// and finds the first that differs (NFR-09): each tick's Deaths, victim and
 /// killer, and the Match end, its tick and winner. A capture that ends partway
-/// (Capture::torn) has no Match end to compare. Pure.
+/// (capture::Capture::torn) has no Match end to compare. Pure.
 class ReplayCheck {
  public:
-  explicit ReplayCheck(const Capture& capture);
+  explicit ReplayCheck(const capture::Capture& capture);
 
   /// The tick at offset resolved deaths and, if Game policy ended the Match on
   /// it, end. Returns the first marker that differs, once: nullopt on every
   /// call after it, as on every call before one.
-  [[nodiscard]] std::optional<Divergence> Check(std::uint32_t offset, std::vector<CapturedDeath> deaths,
-                                                const std::optional<CapturedMatchEnd>& end);
+  [[nodiscard]] std::optional<Divergence> Check(std::uint32_t offset, std::vector<capture::Death> deaths,
+                                                const std::optional<capture::MatchEnd>& end);
 
  private:
-  std::unordered_map<std::uint32_t, std::vector<CapturedDeath>> deaths_;
+  std::unordered_map<std::uint32_t, std::vector<capture::Death>> deaths_;
   std::optional<std::uint32_t> end_offset_;
-  CapturedMatchEnd end_;
+  capture::MatchEnd end_;
   bool reported_ = false;
 };
 
@@ -113,14 +113,14 @@ struct ReplayTick {
 ///    Seen time's tick is moved onto the Replay's ticks.
 ///
 /// It ends at the World's Match end, or at the capture's if the World has not
-/// ended it by then; a capture that ends partway ends at its last record.
+/// ended it by then; a capture that ends partway ends at its last event.
 class Replay {
  public:
-  /// A Replay of capture, which ReadCapture read, on world, a fresh
+  /// A Replay of capture, which capture::ReadCapture read, on world, a fresh
   /// SimulationWorld of the capture's server pack ticking at its tick rate,
   /// with characters, the scenario's by path, which must hold every Join's
   /// Character. Starts its Match.
-  Replay(Capture capture, simulation::World world,
+  Replay(capture::Capture capture, simulation::World world,
          const std::unordered_map<std::string, simulation::Character>& characters);
 
   /// Who the Match starts with, in the capture's order, each body named by its
@@ -138,7 +138,7 @@ class Replay {
 
  private:
   struct Player {
-    CapturedPlayer number = 0;
+    capture::Player number = 0;
     CommandQueue commands;
     command::Sequence sequence = 0;
     bool left = false;
@@ -150,17 +150,17 @@ class Replay {
   [[nodiscard]] std::vector<simulation::PlayerCommand> TakeCommands(std::vector<PlayerView>& views);
   [[nodiscard]] std::optional<ReplayEnd> EndOf(std::uint32_t offset, const simulation::TickResult& result) const;
 
-  Capture capture_;
+  capture::Capture capture_;
   simulation::World world_;
   ReplayCheck check_;
   MatchStart start_;
   std::vector<math::Vec3> spawns_;
   std::vector<Player> players_;
-  // The next record of capture_ not yet handed to the World.
-  std::size_t next_record_ = 0;
+  // The next event of capture_ not yet handed to the World.
+  std::size_t next_event_ = 0;
   // The offset of the tick the next Step runs.
   std::uint32_t offset_ = 0;
-  // The capture's last tick: its Match end's, or its last record's for a torn one.
+  // The capture's last tick: its Match end's, or its last event's for a torn one.
   std::uint32_t last_offset_ = 0;
   bool ended_ = false;
 };

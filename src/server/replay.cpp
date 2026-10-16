@@ -11,11 +11,11 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capture.h"
 #include "command_queue.h"
 #include "match.h"
 #include "simulation_mapping.h"
@@ -26,22 +26,22 @@ namespace {
 
 // deaths ordered by victim, then killer, so two lists of one tick compare
 // whatever order each was made in.
-std::vector<CapturedDeath> Ordered(std::vector<CapturedDeath> deaths) {
-  std::ranges::sort(deaths, [](const CapturedDeath& a, const CapturedDeath& b) {
+std::vector<capture::Death> Ordered(std::vector<capture::Death> deaths) {
+  std::ranges::sort(deaths, [](const capture::Death& a, const capture::Death& b) {
     return a.victim != b.victim ? a.victim < b.victim : a.killer < b.killer;
   });
   return deaths;
 }
 
-std::string DescribeDeaths(const std::vector<CapturedDeath>& deaths) {
+std::string DescribeDeaths(const std::vector<capture::Death>& deaths) {
   std::string described = "[";
-  for (const CapturedDeath& death : deaths) {
+  for (const capture::Death& death : deaths) {
     described += std::format("{}{}<-{}", described.size() > 1 ? " " : "", death.victim, death.killer);
   }
   return described + "]";
 }
 
-std::string DescribeEnd(const std::optional<CapturedMatchEnd>& end) {
+std::string DescribeEnd(const std::optional<capture::MatchEnd>& end) {
   if (!end.has_value()) {
     return "none";
   }
@@ -50,25 +50,28 @@ std::string DescribeEnd(const std::optional<CapturedMatchEnd>& end) {
 
 // The body of a Replay's player: its number in the capture, which no
 // SimulationWorld body of the Replay shares.
-simulation::EntityId BodyOf(CapturedPlayer player) { return simulation::EntityId{player}; }
+simulation::EntityId BodyOf(capture::Player player) { return simulation::EntityId{player}; }
 
-// The capture's last tick: its Match end's, or its last record's when it ends partway.
-std::uint32_t LastOffset(const Capture& capture) { return capture.records.empty() ? 0 : capture.records.back().offset; }
+// The capture's last tick: its Match end's, or its last event's when it ends partway.
+std::uint32_t LastOffset(const capture::Capture& capture) {
+  return capture.events.empty() ? 0 : capture.events.back().offset;
+}
 
-// Whether the Leave at index of records, on its tick, was taken after that
+// Whether the Leave at index of events, on its tick, was taken after that
 // tick rather than before it: the live server takes the bodies of those who
 // left an ended Match out after its last tick, so their Leaves follow that
 // tick's Commands and Deaths, or else come right before its Match end.
-bool LeavesAfterItsTick(const std::vector<CaptureRecord>& records, std::size_t index, bool tick_run) {
+bool LeavesAfterItsTick(const std::vector<capture::AtOffset<capture::Event>>& events, std::size_t index,
+                        bool tick_run) {
   if (tick_run) {
     return true;
   }
-  const std::uint32_t offset = records[index].offset;
-  for (std::size_t i = index; i < records.size() && records[i].offset == offset; ++i) {
-    if (std::holds_alternative<CapturedMatchEnd>(records[i].event)) {
+  const std::uint32_t offset = events[index].offset;
+  for (std::size_t i = index; i < events.size() && events[i].offset == offset; ++i) {
+    if (std::holds_alternative<capture::MatchEnd>(events[i].event)) {
       return true;
     }
-    if (!std::holds_alternative<CapturedLeave>(records[i].event)) {
+    if (!std::holds_alternative<capture::Leave>(events[i].event)) {
       return false;
     }
   }
@@ -86,26 +89,26 @@ std::string DescribeDivergence(const Divergence& divergence) {
                      DescribeEnd(divergence.captured_end), DescribeEnd(divergence.resolved_end));
 }
 
-ReplayCheck::ReplayCheck(const Capture& capture) {
-  for (const CaptureRecord& record : capture.records) {
-    if (const auto* death = std::get_if<CapturedDeath>(&record.event)) {
-      deaths_[record.offset].push_back(*death);
-    } else if (const auto* end = std::get_if<CapturedMatchEnd>(&record.event)) {
-      end_offset_ = record.offset;
+ReplayCheck::ReplayCheck(const capture::Capture& capture) {
+  for (const capture::AtOffset<capture::Event>& event : capture.events) {
+    if (const auto* death = std::get_if<capture::Death>(&event.event)) {
+      deaths_[event.offset].push_back(*death);
+    } else if (const auto* end = std::get_if<capture::MatchEnd>(&event.event)) {
+      end_offset_ = event.offset;
       end_ = *end;
     }
   }
 }
 
-std::optional<Divergence> ReplayCheck::Check(std::uint32_t offset, std::vector<CapturedDeath> deaths,
-                                             const std::optional<CapturedMatchEnd>& end) {
+std::optional<Divergence> ReplayCheck::Check(std::uint32_t offset, std::vector<capture::Death> deaths,
+                                             const std::optional<capture::MatchEnd>& end) {
   if (reported_) {
     return std::nullopt;
   }
   const auto captured = deaths_.find(offset);
-  std::vector<CapturedDeath> captured_deaths =
-      Ordered(captured == deaths_.end() ? std::vector<CapturedDeath>{} : captured->second);
-  std::vector<CapturedDeath> resolved_deaths = Ordered(std::move(deaths));
+  std::vector<capture::Death> captured_deaths =
+      Ordered(captured == deaths_.end() ? std::vector<capture::Death>{} : captured->second);
+  std::vector<capture::Death> resolved_deaths = Ordered(std::move(deaths));
   if (captured_deaths != resolved_deaths) {
     reported_ = true;
     return Divergence{.marker = Divergence::Marker::kDeath,
@@ -119,8 +122,8 @@ std::optional<Divergence> ReplayCheck::Check(std::uint32_t offset, std::vector<C
   if (!end_offset_.has_value()) {
     return std::nullopt;
   }
-  const std::optional<CapturedMatchEnd> captured_end =
-      *end_offset_ == offset ? std::optional<CapturedMatchEnd>(end_) : std::nullopt;
+  const std::optional<capture::MatchEnd> captured_end =
+      *end_offset_ == offset ? std::optional<capture::MatchEnd>(end_) : std::nullopt;
   if (captured_end == end) {
     return std::nullopt;
   }
@@ -133,33 +136,31 @@ std::optional<Divergence> ReplayCheck::Check(std::uint32_t offset, std::vector<C
                     .resolved_end = end};
 }
 
-Replay::Replay(Capture capture, simulation::World world,
+Replay::Replay(capture::Capture capture, simulation::World world,
                const std::unordered_map<std::string, simulation::Character>& characters)
     : capture_(std::move(capture)), world_(std::move(world)), check_(capture_), last_offset_(LastOffset(capture_)) {
   const std::uint8_t tick_rate_hz = capture_.header.tick_rate_hz;
-  for (const CaptureRecord& record : capture_.records) {
-    const auto* join = std::get_if<CapturedJoin>(&record.event);
-    if (join == nullptr) {
-      break;
-    }
-    ++next_record_;
-    const auto entity = static_cast<EntityId>(join->player);
-    start_.players.push_back(MatchPlayer{.session = join->session, .entity = entity, .character = join->character});
-    spawns_.push_back(join->spawn);
-    players_.push_back(Player{.number = join->player, .commands = CommandQueue{tick_rate_hz}});
+  for (std::size_t i = 0; i < capture_.joins.size(); ++i) {
+    const capture::Join& join = capture_.joins[i];
+    const auto number = static_cast<capture::Player>(i + 1);
+    const auto session = static_cast<SessionId>(join.session);
+    start_.players.push_back(
+        MatchPlayer{.session = session, .entity = static_cast<EntityId>(number), .character = join.character});
+    spawns_.push_back(join.spawn);
+    players_.push_back(Player{.number = number, .commands = CommandQueue{tick_rate_hz}});
     // As World::StartMatch adds them, but where the capture has them: Game
     // policy is not asked for spawns (ADR-0051).
-    world_.AddPlayer(BodyOf(join->player), join->spawn, characters.at(join->character),
-                     simulation::PlayerIdentity{.session = ToSimulation(join->session), .character = join->character});
+    world_.AddPlayer(BodyOf(number), join.spawn, characters.at(join.character),
+                     simulation::PlayerIdentity{.session = ToSimulation(session), .character = join.character});
   }
 }
 
 void Replay::HandBefore(std::uint32_t offset) {
-  const std::vector<CaptureRecord>& records = capture_.records;
+  const std::vector<capture::AtOffset<capture::Event>>& events = capture_.events;
   bool tick_run = false;
-  for (; next_record_ < records.size() && records[next_record_].offset == offset; ++next_record_) {
-    const CaptureRecord& record = records[next_record_];
-    if (const auto* command = std::get_if<CapturedCommand>(&record.event)) {
+  for (; next_event_ < events.size() && events[next_event_].offset == offset; ++next_event_) {
+    const capture::AtOffset<capture::Event>& event = events[next_event_];
+    if (const auto* command = std::get_if<capture::Command>(&event.event)) {
       tick_run = true;
       Player& player = players_.at(command->player - 1);
       command::Command queued = command->command;
@@ -169,8 +170,8 @@ void Replay::HandBefore(std::uint32_t offset) {
       queued.seen_tick = seen > 0 ? static_cast<tick::Tick>(seen) : 0;
       // A capture holds what passed the live queue, so only a doctored one is turned away here.
       (void)player.commands.TryEnqueue(SequencedCommand{.sequence = ++player.sequence, .command = queued});
-    } else if (const auto* leave = std::get_if<CapturedLeave>(&record.event)) {
-      if (!LeavesAfterItsTick(records, next_record_, tick_run)) {
+    } else if (const auto* leave = std::get_if<capture::Leave>(&event.event)) {
+      if (!LeavesAfterItsTick(events, next_event_, tick_run)) {
         players_.at(leave->player - 1).left = true;
         world_.RemovePlayer(BodyOf(leave->player));
       }
@@ -207,7 +208,8 @@ std::optional<ReplayEnd> Replay::EndOf(std::uint32_t offset, const simulation::T
   }
   // The capture's Match end, the World not having ended it: as the capture says.
   ReplayEnd end;
-  const auto* captured = std::get_if<CapturedMatchEnd>(&capture_.records.back().event);
+  const auto* captured =
+      capture_.events.empty() ? nullptr : std::get_if<capture::MatchEnd>(&capture_.events.back().event);
   if (captured != nullptr && captured->winner.has_value()) {
     end.winner = start_.players.at(*captured->winner - 1).session;
   }
@@ -222,20 +224,20 @@ ReplayTick Replay::Step() {
   const float delta_time = 1.0F / static_cast<float>(capture_.header.tick_rate_hz);
   tick.result = world_.Tick(commands, delta_time);
 
-  std::vector<CapturedDeath> deaths;
+  std::vector<capture::Death> deaths;
   for (const simulation::Death& death : tick.result.state.deaths) {
-    deaths.push_back(CapturedDeath{.victim = static_cast<CapturedPlayer>(death.victim),
-                                   .killer = static_cast<CapturedPlayer>(death.killer)});
+    deaths.push_back(capture::Death{.victim = static_cast<capture::Player>(death.victim),
+                                    .killer = static_cast<capture::Player>(death.killer)});
   }
-  std::optional<CapturedMatchEnd> resolved_end;
+  std::optional<capture::MatchEnd> resolved_end;
   for (const simulation::PolicyAction& action : tick.result.actions) {
     if (const auto* end = std::get_if<simulation::MatchEnd>(&action)) {
-      CapturedMatchEnd captured;
+      capture::MatchEnd captured;
       if (end->winner.has_value()) {
         const SessionId winner = FromSimulation(*end->winner);
         const auto found = std::ranges::find(start_.players, winner, &MatchPlayer::session);
         if (found != start_.players.end()) {
-          captured.winner = static_cast<CapturedPlayer>(found->entity);
+          captured.winner = static_cast<capture::Player>(found->entity);
         }
       }
       resolved_end = captured;

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
@@ -22,7 +23,6 @@
 #include "augusta/replication.h"
 #include "augusta/shared_wire.h"
 #include "augusta/tick.h"
-#include "capture.h"
 #include "command_queue.h"
 #include "host_metrics.h"
 #include "match.h"
@@ -353,57 +353,20 @@ namespace {
 struct CapturedEventToWire {
   std::uint32_t offset;
 
-  protocol::CaptureRecordWire operator()(const CapturedJoin& join) const {
-    return protocol::CapturedJoinWire{.spawn = join.spawn,
-                                      .offset = offset,
-                                      .session = server::ToWire(join.session),
-                                      .character = join.character,
-                                      .player = join.player};
-  }
-  protocol::CaptureRecordWire operator()(const CapturedCommand& command) const {
+  protocol::CaptureRecordWire operator()(const capture::Command& command) const {
     return protocol::CapturedCommandWire{.command = StoredToWire(command.command),
                                          .offset = offset,
                                          .seen_offset = command.seen_offset,
                                          .player = command.player};
   }
-  protocol::CaptureRecordWire operator()(const CapturedLeave& leave) const {
+  protocol::CaptureRecordWire operator()(const capture::Leave& leave) const {
     return protocol::CapturedLeaveWire{.offset = offset, .player = leave.player};
   }
-  protocol::CaptureRecordWire operator()(const CapturedDeath& death) const {
+  protocol::CaptureRecordWire operator()(const capture::Death& death) const {
     return protocol::CapturedDeathWire{.offset = offset, .victim = death.victim, .killer = death.killer};
   }
-  protocol::CaptureRecordWire operator()(const CapturedMatchEnd& end) const {
+  protocol::CaptureRecordWire operator()(const capture::MatchEnd& end) const {
     return protocol::CapturedMatchEndWire{.offset = offset, .winner = end.winner.value_or(0)};
-  }
-};
-
-// One overload per record: its event, nullopt for the header, which is none.
-struct CaptureRecordFromWire {
-  std::optional<CaptureRecord> operator()(const protocol::CaptureHeaderWire& /*header*/) const { return std::nullopt; }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedJoinWire& join) const {
-    return CaptureRecord{.offset = join.offset,
-                         .event = CapturedJoin{.player = join.player,
-                                               .session = static_cast<SessionId>(std::to_underlying(join.session)),
-                                               .character = join.character,
-                                               .spawn = join.spawn}};
-  }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedCommandWire& command) const {
-    return CaptureRecord{.offset = command.offset,
-                         .event = CapturedCommand{.player = command.player,
-                                                  .seen_offset = command.seen_offset,
-                                                  .command = wire::FromWire(command.command, 0)}};
-  }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedLeaveWire& leave) const {
-    return CaptureRecord{.offset = leave.offset, .event = CapturedLeave{.player = leave.player}};
-  }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedDeathWire& death) const {
-    return CaptureRecord{.offset = death.offset,
-                         .event = CapturedDeath{.victim = death.victim, .killer = death.killer}};
-  }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedMatchEndWire& end) const {
-    return CaptureRecord{.offset = end.offset,
-                         .event = CapturedMatchEnd{
-                             .winner = end.winner == 0 ? std::nullopt : std::optional<CapturedPlayer>(end.winner)}};
   }
 };
 
@@ -415,7 +378,7 @@ std::expected<protocol::BytesWire, failure::Failure> EncodeToCapture(const proto
   });
 }
 
-protocol::CaptureHeaderWire ToWire(const CaptureHeader& header) {
+protocol::CaptureHeaderWire ToWire(const capture::Header& header) {
   return protocol::CaptureHeaderWire{.server_pack = ToWire(header.server_pack),
                                      .client_pack = ToWire(header.client_pack),
                                      .engine_version = header.engine_version,
@@ -424,22 +387,16 @@ protocol::CaptureHeaderWire ToWire(const CaptureHeader& header) {
                                      .tick_rate_hz = header.tick_rate_hz};
 }
 
-CaptureHeader FromWire(const protocol::CaptureHeaderWire& header) {
-  return CaptureHeader{
-      .engine_version = header.engine_version,
-      .server_pack = FromWire(header.server_pack),
-      .client_pack = FromWire(header.client_pack),
-      .tick_rate_hz = header.tick_rate_hz,
-      .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(header.started_unix_ms)),
-  };
+protocol::CaptureRecordWire ToWire(capture::Player player, const capture::Join& join) {
+  return protocol::CapturedJoinWire{.spawn = join.spawn,
+                                    .offset = 0,
+                                    .session = static_cast<protocol::SessionIdWire>(join.session),
+                                    .character = join.character,
+                                    .player = player};
 }
 
-protocol::CaptureRecordWire ToWire(const CaptureRecord& record) {
-  return std::visit(CapturedEventToWire{.offset = record.offset}, record.event);
-}
-
-std::optional<CaptureRecord> FromWire(const protocol::CaptureRecordWire& record) {
-  return std::visit(CaptureRecordFromWire{}, record);
+protocol::CaptureRecordWire ToWire(const capture::AtOffset<capture::Event>& event) {
+  return std::visit(CapturedEventToWire{.offset = event.offset}, event.event);
 }
 
 }  // namespace augusta::server

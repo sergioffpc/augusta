@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/capture.h"
 #include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
@@ -85,7 +86,7 @@ class ReadScriptTest : public ::testing::Test {
   // and leaves before the eighth; the Match ends on the ninth, the soldier's.
   // Returns the capture's file.
   std::filesystem::path CaptureAMatch() {
-    augusta::server::CaptureHeader header{.engine_version = "2.0.1", .tick_rate_hz = kTickRate, .started = {}};
+    augusta::capture::Header header{.engine_version = "2.0.1", .tick_rate_hz = kTickRate, .started = {}};
     header.client_pack.fill(std::byte{2});
     {
       augusta::server::Capturer capturer(directory_, header);
