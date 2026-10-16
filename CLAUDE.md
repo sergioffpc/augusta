@@ -25,7 +25,9 @@ Git Flow (`docs/ENGINEERING.md`, Branching model): `feature/*` → `develop`;
 `release/*`/`hotfix/*` → `main`, then back into `develop` by
 `docs/runbooks/cut-release.md` step 10 — a release is done once `develop`
 contains its tag. A stacked PR takes its parent's fixes by merging the parent
-branch. On macOS, build, test and lint through `scripts/dev-container.sh`; only
+branch. Build, test and lint with `make` (`make help`; `PRESET=windows-debug` on
+Windows, through `scripts/dev-container.sh` on macOS): `test` is the one target
+that builds the tests, and `prepush` runs a push's checks before pushing. Only
 CI's `client-x64-windows` job reproduces Windows-only failures.
 
 ### Issue tracker
