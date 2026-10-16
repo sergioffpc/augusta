@@ -132,7 +132,19 @@ def _refs(roots, required):
     return sorted(root.ref for root in roots if root.required == required)
 
 
-def test_image_roots_are_the_caches_branches_releases_and_develop_history():
+def test_kept_develop_commits_are_the_newest_that_published_an_image():
+    tags = {"sha-aaaaaaaaaaaa", "sha-cccccccccccc", "sha-dddddddddddd"}
+
+    kept = prune.kept_develop_commits(
+        tags,
+        ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"],
+        keep=2,
+    )
+
+    assert kept == ["aaaaaaaaaaaa", "cccccccccccc"]
+
+
+def test_image_roots_are_the_caches_branches_environments_and_commits():
     tags = {
         "buildcache",
         "buildcache-arm64",
@@ -141,23 +153,18 @@ def test_image_roots_are_the_caches_branches_releases_and_develop_history():
         "sha-aaaaaaaaaaaa",
         "sha-aaaaaaaaaaaa-debuginfo",
         "sha-cccccccccccc",
-        "sha-dddddddddddd",
+        "sha-cccccccccccc-debuginfo",
         "sha-eeeeeeeeeeee",
         "sha-eeeeeeeeeeee-arm64",
         "sha-ffffffffffff",
+        "sha-777777777777-arm64",
+        "sha-777777777777-debuginfo",
         "2.0.0",
     }
 
     roots = prune.image_roots(
         tags,
-        # Newest first; bbbbbbbbbbbb published no image, and dddddddddddd is
-        # beyond the newest two that did.
-        develop_commits=[
-            "aaaaaaaaaaaa",
-            "bbbbbbbbbbbb",
-            "cccccccccccc",
-            "dddddddddddd",
-        ],
+        develop_commits=["aaaaaaaaaaaa"],
         # v0.9.0 published no image.
         releases={
             "v0.9.0": "999999999999",
@@ -165,8 +172,9 @@ def test_image_roots_are_the_caches_branches_releases_and_develop_history():
             "v1.1.0": "eeeeeeeeeeee",
         },
         develop_chart_commit="cccccccccccc",
+        # main's newest commit, its index not made yet.
+        main_commit="777777777777",
         references=["sha-0123456789ab"],
-        keep_develop_commits=2,
     )
 
     assert _refs(roots, required=True) == [
@@ -177,13 +185,17 @@ def test_image_roots_are_the_caches_branches_releases_and_develop_history():
         "sha-cccccccccccc",
         "sha-eeeeeeeeeeee",
     ]
-    assert _refs(roots, required=False) == [
+    assert sorted(set(_refs(roots, required=False))) == [
         "2.0.0",
         "sha-0123456789ab",
+        "sha-777777777777",
+        "sha-777777777777-arm64",
+        "sha-777777777777-debuginfo",
         "sha-999999999999",
         "sha-aaaaaaaaaaaa",
         "sha-aaaaaaaaaaaa-debuginfo",
         "sha-cccccccccccc",
+        "sha-cccccccccccc-debuginfo",
         "sha-eeeeeeeeeeee",
         "sha-eeeeeeeeeeee-arm64",
         "sha-ffffffffffff",
@@ -243,6 +255,7 @@ def test_references_take_a_pinned_digest_over_its_tag_and_skip_placeholders():
 
 def test_a_plan_prints_its_counts_then_each_version_sorted():
     plan = prune.Plan(
+        package_type="container",
         package="charts/augustad",
         keep=(_image(2, "b", "develop", "3.1.0_bbbbbbbbbbbb"), _image(3, "c")),
         delete=(_image(1, "a", "3.1.0_aaaaaaaaaaaa"),),
@@ -262,6 +275,7 @@ def test_a_plan_prints_its_counts_then_each_version_sorted():
 
 def test_a_delete_whose_version_was_tagged_since_the_plan_is_stale():
     plan = prune.Plan(
+        package_type="container",
         package="augustad",
         keep=(),
         delete=(_image(1, "a"), _image(2, "b"), _image(3, "c")),
@@ -270,3 +284,24 @@ def test_a_delete_whose_version_was_tagged_since_the_plan_is_stale():
     now = [_image(1, "a", "sha-0123456789ab"), _image(2, "b")]
 
     assert prune.stale_deletes(plan, now) == [plan.delete[0]]
+
+
+def test_a_recent_version_is_kept_with_what_it_needs():
+    versions = [
+        prune.Version(1, _digest("a"), (), "2026-10-16T05:00:00Z"),
+        prune.Version(2, _digest("b"), (), "2026-10-01T00:00:00Z"),
+        prune.Version(3, _digest("c"), (), "2026-10-01T00:00:00Z"),
+    ]
+    # An index CI is making now, of a platform manifest pushed earlier.
+    manifests = {_digest("a"): _index(_digest("b"))}
+
+    plan = prune.plan_container(
+        "augustad",
+        versions,
+        [],
+        _reader(manifests),
+        keep_since="2026-10-15T06:00:00Z",
+    )
+
+    assert [v.id for v in plan.keep] == [1, 2]
+    assert [v.id for v in plan.delete] == [3]

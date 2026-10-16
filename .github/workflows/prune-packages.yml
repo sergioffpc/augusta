@@ -13,14 +13,13 @@ on:
         description: Delete what the plan deletes, rather than only printing it.
         type: boolean
         default: false
+      # Left empty, the script's defaults.
       keep-develop-commits:
         description: develop's newest images, and their charts, to keep.
-        type: number
-        default: 20
+        type: string
       keep-nuget-versions:
         description: Each NuGet package's newest versions to keep.
-        type: number
-        default: 2
+        type: string
   pull_request:
     branches: [main, develop]
     paths:
@@ -33,8 +32,8 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 env:
-  KEEP_DEVELOP_COMMITS: ${{ inputs.keep-develop-commits || 20 }}
-  KEEP_NUGET_VERSIONS: ${{ inputs.keep-nuget-versions || 2 }}
+  KEEP_DEVELOP_COMMITS: ${{ inputs.keep-develop-commits }}
+  KEEP_NUGET_VERSIONS: ${{ inputs.keep-nuget-versions }}
 jobs:
   plan:
     runs-on: ubuntu-26.04
@@ -53,9 +52,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/prune-packages.py --owner "$GITHUB_REPOSITORY_OWNER" \
-            --keep-develop-commits "$KEEP_DEVELOP_COMMITS" \
-            --keep-nuget-versions "$KEEP_NUGET_VERSIONS"
+          args=(--owner "$GITHUB_REPOSITORY_OWNER")
+          if [[ -n "$KEEP_DEVELOP_COMMITS" ]]; then
+            args+=(--keep-develop-commits "$KEEP_DEVELOP_COMMITS")
+          fi
+          if [[ -n "$KEEP_NUGET_VERSIONS" ]]; then
+            args+=(--keep-nuget-versions "$KEEP_NUGET_VERSIONS")
+          fi
+          python3 scripts/prune-packages.py "${args[@]}"
   apply:
     needs: plan
     if: github.event_name == 'workflow_dispatch' && inputs.apply
@@ -71,6 +75,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/prune-packages.py --owner "$GITHUB_REPOSITORY_OWNER" \
-            --keep-develop-commits "$KEEP_DEVELOP_COMMITS" \
-            --keep-nuget-versions "$KEEP_NUGET_VERSIONS" --apply
+          args=(--owner "$GITHUB_REPOSITORY_OWNER" --apply)
+          if [[ -n "$KEEP_DEVELOP_COMMITS" ]]; then
+            args+=(--keep-develop-commits "$KEEP_DEVELOP_COMMITS")
+          fi
+          if [[ -n "$KEEP_NUGET_VERSIONS" ]]; then
+            args+=(--keep-nuget-versions "$KEEP_NUGET_VERSIONS")
+          fi
+          python3 scripts/prune-packages.py "${args[@]}"

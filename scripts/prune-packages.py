@@ -24,6 +24,7 @@ tags are fetched, with gh logged in (read:packages; delete:packages to apply):
 
 import argparse
 import dataclasses
+import datetime
 import json
 import re
 import subprocess
@@ -40,8 +41,12 @@ _KEEP_NUGET_VERSIONS = 2
 _IMAGE = "augustad"
 _CHART = "charts/augustad"
 _DEVELOP = "origin/develop"
+_MAIN = "origin/main"
 # Where the repository names images: its two long-lived branches.
-_BRANCHES = (_DEVELOP, "origin/main")
+_BRANCHES = (_DEVELOP, _MAIN)
+# How long before the newest version a container version is kept for
+# whatever it is, as what a CI run overlapping this one may be using.
+_KEEP_RECENT = datetime.timedelta(days=1)
 
 # A release, as a Git tag (vX.Y.Z, pre-releases excluded, as staging's
 # GitRepository takes it) or as an image or chart tag.
@@ -100,12 +105,14 @@ class Plan:
     """What pruning one package keeps and deletes, each sorted by name.
 
     Attributes:
+        package_type: The package's type, as the REST API names it.
         package: The package's name.
         keep: The versions kept.
         delete: The versions deleted.
         absent: The optional roots the package does not have.
     """
 
+    package_type: str
     package: str
     keep: tuple[Version, ...]
     delete: tuple[Version, ...]
@@ -122,10 +129,10 @@ class PruneError(Exception):
 def plan_nuget(package, versions, keep):
     """Keeps a NuGet package's newest versions, by when they were pushed."""
     newest = sorted(versions, key=lambda v: (v.created, v.id), reverse=True)
-    return _plan(package, newest[:keep], newest[keep:])
+    return _plan("nuget", package, newest[:keep], newest[keep:])
 
 
-def plan_container(package, versions, roots, read_manifest):
+def plan_container(package, versions, roots, read_manifest, keep_since=""):
     """Keeps a container package's roots and everything they need.
 
     Args:
@@ -133,6 +140,9 @@ def plan_container(package, versions, roots, read_manifest):
         versions: Its versions.
         roots: What it keeps.
         read_manifest: Reads a manifest, by digest, as parsed JSON.
+        keep_since: An ISO 8601 UTC timestamp: the versions pushed since are
+            roots too, as what a CI run may be pushing, or making an index
+            of, while this one runs.
 
     Returns:
         The plan.
@@ -142,7 +152,9 @@ def plan_container(package, versions, roots, read_manifest):
     """
     by_tag = {tag: v.name for v in versions for tag in v.tags}
     known = {v.name for v in versions}
-    pending = []
+    pending = [
+        v.name for v in versions if keep_since and v.created >= keep_since
+    ]
     absent = []
     for root in roots:
         digest = by_tag.get(root.ref, root.ref)
@@ -168,6 +180,7 @@ def plan_container(package, versions, roots, read_manifest):
             if referrers := by_tag.get(f"sha256-{hex_digest}{suffix}"):
                 pending.append(referrers)
     return _plan(
+        "container",
         package,
         [v for v in versions if v.name in keep],
         [v for v in versions if v.name not in keep],
@@ -175,11 +188,13 @@ def plan_container(package, versions, roots, read_manifest):
     )
 
 
-def _plan(package, keep, delete, absent=()):
+def _plan(package_type, package, keep, delete, absent=()):
     def by_name(versions):
         return tuple(sorted(versions, key=lambda v: v.name))
 
-    return Plan(package, by_name(keep), by_name(delete), tuple(absent))
+    return Plan(
+        package_type, package, by_name(keep), by_name(delete), tuple(absent)
+    )
 
 
 def kept_develop_commits(tags, develop_commits, keep):
@@ -202,20 +217,21 @@ def image_roots(
     develop_commits,
     releases,
     develop_chart_commit,
+    main_commit,
     references,
-    keep_develop_commits,
 ):
     """What the augustad image package keeps.
 
     Args:
         tags: The package's tags.
-        develop_commits: develop's commits, newest first, as
-            kept_develop_commits takes them.
+        develop_commits: The develop commits whose images are kept, from
+            kept_develop_commits.
         releases: Each vX.Y.Z Git tag's commit, by its 12 characters.
         develop_chart_commit: The commit of the chart tagged develop, which
             the develop environment runs.
+        main_commit: main's newest commit, whose index of both architectures
+            may not be made yet.
         references: The image's tags and digests the repository names.
-        keep_develop_commits: How many of develop's newest images to keep.
 
     Returns:
         The roots. The required ones are what CI and the cluster run now.
@@ -228,13 +244,9 @@ def image_roots(
         Root(branch, "the branch's newest image", required=True)
         for branch in ("develop", "main")
     ]
-    roots.append(
-        Root(
-            f"sha-{develop_chart_commit}",
-            "what the develop environment runs",
-            required=True,
-        )
-    )
+    develop_runs = "what the develop environment runs"
+    roots.append(Root(f"sha-{develop_chart_commit}", develop_runs, True))
+    roots += _commit_roots(tags, develop_chart_commit, develop_runs)
     if releases:
         newest = max(releases, key=_release_key)
         roots.append(
@@ -246,9 +258,8 @@ def image_roots(
         )
     for release in sorted(releases, key=_release_key):
         roots += _commit_roots(tags, releases[release], f"release {release}")
-    for commit in kept_develop_commits(
-        tags, develop_commits, keep_develop_commits
-    ):
+    roots += _commit_roots(tags, main_commit, "main's newest commit")
+    for commit in develop_commits:
         roots += _commit_roots(tags, commit, "a recent develop image")
     roots += [
         Root(tag, "a release tag", required=False)
@@ -297,26 +308,29 @@ def develop_chart_commit(versions):
     raise PruneError(f"{_CHART}: no chart tagged develop and a version")
 
 
-def chart_roots(tags, develop_commits):
+def chart_roots(tags, commits):
     """What the chart package keeps.
 
     Args:
         tags: The package's tags.
-        develop_commits: The develop commits whose images are kept: their
-            charts are what develop can be rolled back to.
+        commits: The commits whose images are kept, the releases' and the
+            recent develop ones: their charts are what develop can be
+            rolled back to.
 
     Returns:
         The roots.
     """
-    roots = [Root("develop", "what the develop environment runs", True)]
-    commits = set(develop_commits)
+    roots = [
+        Root("develop", "what the develop environment runs", required=True)
+    ]
+    commits = set(commits)
     for tag in sorted(tags):
         if _RELEASE_TAG.fullmatch(tag):
             roots.append(Root(tag, "a release", required=False))
         elif (match := _CHART_TAG.fullmatch(tag)) and match[
             "commit"
         ] in commits:
-            roots.append(Root(tag, "a recent develop chart", required=False))
+            roots.append(Root(tag, "a kept commit's chart", required=False))
     return roots
 
 
@@ -365,9 +379,7 @@ def stale_deletes(plan, versions):
 
 def format_plan(plan):
     """A plan as the workflow log shows it: the same plan, the same text."""
-    lines = [
-        f"{plan.package}: keep {len(plan.keep)}, delete {len(plan.delete)}"
-    ]
+    lines = [_counts(plan)]
     lines += [f"  absent {root.ref} ({root.reason})" for root in plan.absent]
     for action, versions in (("keep  ", plan.keep), ("delete", plan.delete)):
         for version in versions:
@@ -377,18 +389,20 @@ def format_plan(plan):
     return "\n".join(lines)
 
 
+def _counts(plan):
+    return f"{plan.package}: keep {len(plan.keep)}, delete {len(plan.delete)}"
+
+
 # Mechanisms: the GitHub Packages REST API, GHCR and Git.
 
 
-def _run(*command):
-    try:
-        return subprocess.run(
-            command, check=True, capture_output=True, text=True
-        ).stdout
-    except subprocess.CalledProcessError as error:
-        raise PruneError(
-            f"{' '.join(command)}: {error.stderr.strip()}"
-        ) from error
+def _run(*command, success=(0,)):
+    result = subprocess.run(
+        command, check=False, capture_output=True, text=True
+    )
+    if result.returncode not in success:
+        raise PruneError(f"{' '.join(command)}: {result.stderr.strip()}")
+    return result.stdout
 
 
 def _versions_path(owner, package_type, package):
@@ -520,15 +534,21 @@ def releases():
 
 def repository_references(owner):
     """The augustad image's tags and digests the long-lived branches name."""
-    needle = f"ghcr.io/{owner}/{_IMAGE}"
-    command = ("git", "grep", "-hIF", needle, *_BRANCHES)
-    result = subprocess.run(
-        command, check=False, capture_output=True, text=True
-    )
     # git grep exits 1 when nothing matches.
-    if result.returncode not in (0, 1):
-        raise PruneError(f"{' '.join(command)}: {result.stderr.strip()}")
-    return parse_references(result.stdout, owner)
+    out = _run(
+        "git",
+        "grep",
+        "-hIF",
+        f"ghcr.io/{owner}/{_IMAGE}",
+        *_BRANCHES,
+        success=(0, 1),
+    )
+    return parse_references(out, owner)
+
+
+def main_commit():
+    """The newest commit on main, by its 12 characters."""
+    return _run("git", "rev-parse", _MAIN).strip()[:12]
 
 
 def _parse_args(argv):
@@ -565,56 +585,63 @@ def _parse_args(argv):
     return parser.parse_args(argv)
 
 
+def _tags(versions):
+    return {tag for v in versions for tag in v.tags}
+
+
+def _keep_since(versions):
+    # A day before the newest version: whatever a CI run that overlaps this
+    # one pushed. Not the clock's, so an unchanged package plans the same.
+    newest = max(datetime.datetime.fromisoformat(v.created) for v in versions)
+    return (newest - _KEEP_RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _plans(args):
-    # Each plan, with the package type it is of.
     owner = args.owner
     chart_versions = list_versions(owner, "container", _CHART)
     image_versions = list_versions(owner, "container", _IMAGE)
-    image_tags = {tag for v in image_versions for tag in v.tags}
-    commits = develop_commits()
+    image_tags = _tags(image_versions)
+    commits = kept_develop_commits(
+        image_tags, develop_commits(), args.keep_develop_commits
+    )
+    release_commits = releases()
     roots = image_roots(
         image_tags,
         commits,
-        releases(),
+        release_commits,
         develop_chart_commit(chart_versions),
+        main_commit(),
         repository_references(owner),
-        args.keep_develop_commits,
     )
     roots += [Root(ref, "asked for", required=True) for ref in args.keep_image]
     plans = [
-        (
-            "container",
-            plan_container(
-                _IMAGE,
-                image_versions,
-                roots,
-                Registry(owner, _IMAGE).read_manifest,
-            ),
+        plan_container(
+            _IMAGE,
+            image_versions,
+            roots,
+            Registry(owner, _IMAGE).read_manifest,
+            _keep_since(image_versions),
         ),
-        (
-            "container",
-            plan_container(
-                _CHART,
-                chart_versions,
-                chart_roots(
-                    {tag for v in chart_versions for tag in v.tags},
-                    kept_develop_commits(
-                        image_tags, commits, args.keep_develop_commits
-                    ),
-                ),
-                Registry(owner, _CHART).read_manifest,
+        plan_container(
+            _CHART,
+            chart_versions,
+            chart_roots(
+                _tags(chart_versions), commits + list(release_commits.values())
             ),
+            Registry(owner, _CHART).read_manifest,
+            _keep_since(chart_versions),
         ),
     ]
-    for package in list_packages(owner, "nuget"):
+    packages = list_packages(owner, "nuget")
+    # vcpkg's cache is never empty: a token that cannot see it lists nothing.
+    if not packages:
+        raise PruneError(f"{owner}: no NuGet packages listed")
+    for package in packages:
         plans.append(
-            (
-                "nuget",
-                plan_nuget(
-                    package,
-                    list_versions(owner, "nuget", package),
-                    args.keep_nuget_versions,
-                ),
+            plan_nuget(
+                package,
+                list_versions(owner, "nuget", package),
+                args.keep_nuget_versions,
             )
         )
     return plans
@@ -622,13 +649,8 @@ def _plans(args):
 
 def _summary(plans):
     lines = ["Summary:"]
-    nuget = [plan for package_type, plan in plans if package_type == "nuget"]
-    for package_type, plan in plans:
-        if package_type == "container":
-            lines.append(
-                f"  {plan.package}: keep {len(plan.keep)},"
-                f" delete {len(plan.delete)}"
-            )
+    lines += [f"  {_counts(p)}" for p in plans if p.package_type == "container"]
+    nuget = [plan for plan in plans if plan.package_type == "nuget"]
     lines.append(
         f"  NuGet, {len(nuget)} packages:"
         f" keep {sum(len(plan.keep) for plan in nuget)},"
@@ -637,17 +659,15 @@ def _summary(plans):
     return "\n".join(lines)
 
 
-def _apply(owner, package_type, plan):
+def _apply(owner, plan):
     if not plan.delete:
         return
-    stale = stale_deletes(
-        plan, list_versions(owner, package_type, plan.package)
-    )
-    if stale:
+    now = list_versions(owner, plan.package_type, plan.package)
+    if stale := stale_deletes(plan, now):
         names = ", ".join(v.name for v in stale)
         raise PruneError(f"{plan.package}: tagged since the plan: {names}")
     for version in plan.delete:
-        delete_version(owner, package_type, plan.package, version)
+        delete_version(owner, plan.package_type, plan.package, version)
     print(f"{plan.package}: deleted {len(plan.delete)}")
 
 
@@ -657,14 +677,14 @@ def main(argv):
     try:
         # Every plan is made before anything is deleted.
         plans = _plans(args)
-        for _, plan in plans:
+        for plan in plans:
             print(format_plan(plan))
         print(_summary(plans))
         if not args.apply:
             print("Dry run: nothing deleted. --apply deletes it.")
             return 0
-        for package_type, plan in plans:
-            _apply(args.owner, package_type, plan)
+        for plan in plans:
+            _apply(args.owner, plan)
     except PruneError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
