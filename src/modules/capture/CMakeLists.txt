@@ -9,6 +9,6 @@ target_include_directories(augusta_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/in
 target_link_libraries(
   augusta_capture
   PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math
-  PRIVATE augusta_protocol augusta_shared_wire
+  PRIVATE augusta_protocol augusta_wire
 )
 augusta_set_module_scope(augusta_capture SHARED)

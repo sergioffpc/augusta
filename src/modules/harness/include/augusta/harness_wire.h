@@ -23,7 +23,7 @@
 /// engine's right after Decode, and what it sends, turned back right before
 /// Encode. The only place on the client where a protocol::*Wire type meets an
 /// engine type, but for the shared core's own, which convert in
-/// augusta/shared_wire.h as on the server, and a Match capture's records, which
+/// augusta/wire.h as on the server, and a Match capture's records, which
 /// the capture module (augusta/capture.h) converts. Pure field-by-field copies;
 /// whether a value is one the client accepts is decided after, by whoever takes
 /// it in. What it sends is encoded here too, so a payload the protocol cannot

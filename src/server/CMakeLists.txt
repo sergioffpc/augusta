@@ -149,7 +149,7 @@ target_link_libraries(
     augusta_assets
     augusta_protocol
     augusta_capture
-    augusta_shared_wire
+    augusta_wire
     augustad_lock_free_metrics
     prometheus-cpp::core
   PRIVATE augusta_logging augusta_version

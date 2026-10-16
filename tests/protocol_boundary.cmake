@@ -3,7 +3,7 @@
 # queue, simulation's Replication, presentation, ClientRuntime, the capture
 # module's interface - may name a protocol type or include the protocol's
 # header. Only three adapters convert: harness_wire.h on the client and
-# server/wire.h on the server, which both call augusta/shared_wire.h for the
+# server/wire.h on the server, which both call augusta/wire.h for the
 # shared core's own types (a Command, a stance, a pack's hash), and the
 # capture module, which converts a Match capture's records for either inside
 # its implementation and links the protocol privately.

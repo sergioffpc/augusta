@@ -16,7 +16,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
-#include "augusta/shared_wire.h"
+#include "augusta/wire.h"
 
 namespace augusta::harness {
 
