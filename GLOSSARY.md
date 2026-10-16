@@ -119,11 +119,10 @@ state sync
 
 **Spawn point**: A place in the Map where a player's feet are put at Match
 start, authored as a scene node in the pack (ADR-0032). Which player gets which
-is Game policy: the scenario's `assign_spawns` hook assigns them once, at Match
-start (ADR-0022, ADR-0023), and players take them in order, starting over after
-the last, when it is undefined or its answer is refused. Every client is told
-where each player spawned in Match start. _Avoid_: Spawn location, start
-position
+is Game policy: a hook of the scenario's Rules assigns them once, at Match start
+(ADR-0022, ADR-0023), and players take them in order, starting over after the
+last, when it is undefined or its answer is refused. Every client is told where
+each player spawned in Match start. _Avoid_: Spawn location, start position
 
 **Roster**: Who is in the Lobby, each with its Character, as the server tells
 every client in it whenever it changes. The version a client loaded for is what
@@ -145,10 +144,10 @@ its Match end, as the Authoritative server took it in: who joined it and where
 they spawned, each Command a client sent and who left it, each at its tick from
 the Match's first, with its Deaths and its Match end to compare against
 (ADR-0050). Written per Match when the server's config asks for it, for a Replay
-or a Reenactment. _Avoid_: Match recording (ADR-0048's, dropped), demo, playback
+or a Reenactment. _Avoid_: Match recording, demo, playback
 
 **Reenactment**: Captured players playing a Match capture again against a live
-server, through the network, one augustac each: the playtest's input at the
+server, through the network, one client each: the playtest's input at the
 playtest's pace, to bring back a crash or load problem; what the server resolves
 from it may differ from the Match captured (ADR-0050). _Avoid_: Replay (the
 server re-runs a Replay itself), rerun
@@ -195,12 +194,11 @@ without touching mechanism code. _Avoid_: Game logic, gameplay code (too broad �
 conflates policy with mechanism)
 
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
-mode, such as who spawns where (`assign_spawns`) and when the Match is won
-(`on_tick`), chosen together because they describe the same mode. The scenario's
-manifest names the script (e.g. `scripts/rules/last_man_standing.lua`), and it
-is packed as `rules.lua` (ADR-0022, ADR-0041). A scenario may have none.
-_Avoid_: Behaviours, objectives (the two scripts the rules replaced), game mode
-script
+mode, such as who spawns where and when the Match is won, chosen together
+because they describe the same mode. The scenario's manifest names the script,
+and it is packed with the scenario (ADR-0022, ADR-0041). A scenario may have
+none. _Avoid_: Behaviours, objectives (the two scripts the rules replaced), game
+mode script
 
 **Policy action**: One decision of Game policy as the server receives it: a
 hook's answer read into one of a closed set of C++ types and validated as it is
@@ -220,28 +218,27 @@ update is not one), network state
 **Data-driven configuration**: Tunable values (e.g. weapon/ammo damage, stamina
 rules) written as a Lua table script rather than expressed as mechanism code or
 policy scripts — a third category alongside mechanism and policy. A value may be
-an expression of other values; the script is authored under
-`authoring/scripts/parameters/` and named by the scenario's manifest, cooked
-into the scenario's server pack, evaluated once at server startup into a plain
-immutable struct (**Parameters**) and sent to clients (ADR-0039). _Avoid_:
+an expression of other values; the script is named by the scenario's manifest,
+cooked into the scenario's server pack, evaluated once at server startup into a
+plain immutable struct (**Parameters**) and sent to clients (ADR-0039). _Avoid_:
 Config, settings (too generic — this specifically means simulation-tunable
 values, not startup settings, which the YAML files of ADR-0034 hold in place of
 command-line arguments)
 
-**Parameters**: The result of loading the data-driven configuration script
-(`parameters.lua`) out of the server pack: a plain immutable struct of the
-simulation's tunable values, the same for the whole run. Whatever tunable value
-client and server must agree on is a parameter: the server alone decides it and
-sends it to every client, which predicts with the server's numbers and never its
-own. The tick rate is not one: it is fixed for the life of the server process,
-so it is a startup setting in `augustad.yaml` that the server tells each client
-when it joins (ADR-0039). _Avoid_: Tuning, settings; not a function's parameters
+**Parameters**: The result of loading the data-driven configuration script out
+of the server pack: a plain immutable struct of the simulation's tunable values,
+the same for the whole run. Whatever tunable value client and server must agree
+on is a parameter: the server alone decides it and sends it to every client,
+which predicts with the server's numbers and never its own. The tick rate is not
+one: it is fixed for the life of the server process, so it is a startup setting
+of the server that the server tells each client when it joins (ADR-0039).
+_Avoid_: Tuning, settings; not a function's parameters
 
 **Map**: The static space a match is played in - its collision, spawn points and
-hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. The
-shared `map` module builds its collision into the physics of both the client's
-PredictionWorld and the server's SimulationWorld. _Avoid_: Level, stage (a
-_scene graph_ is how the pack stores the map, not the map itself)
+hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. Its
+collision is built into the physics of both the client's PredictionWorld and the
+server's SimulationWorld. _Avoid_: Level, stage (a _scene graph_ is how the pack
+stores the map, not the map itself)
 
 **Harness**: Where anything that plays connects to the server: the client's
 network connection and PredictionWorld without a window or GPU. The real client,
@@ -264,11 +261,11 @@ on all three channels. An Intent that ends - arrived, blocked, target gone,
 replaced - tells the script. _Avoid_: Command (what is sent to the server each
 tick), Policy action (a decision of Game policy), order
 
-**Captured player**: augustac playing one player of a Match capture in a
-Reenactment, from its `--reenact` command line: it joins with a Reenact request
-naming that player's Character and spawn, sends that player's Commands at their
-ticks, leaves when that player did and shows the Match from that player's view
-(ADR-0050). _Avoid_: Replay viewer (it watches, it does not play), bot, ghost
+**Captured player**: A client playing one player of a Match capture in a
+Reenactment: it joins with a Reenact request naming that player's Character and
+spawn, sends that player's Commands at their ticks, leaves when that player did
+and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
+(it watches, it does not play), bot, ghost
 
 ### Combat
 
@@ -339,8 +336,8 @@ observer, dead cam
 
 **Node**: The physical machine the cluster runs on, and every Environment's
 Servers with it: what is hardened, patched and rebuilt as one. _Avoid_: Server
-(the Authoritative server, `augustad`, is a workload on the Node, not the Node),
-host, k3s server, box
+(the Authoritative server is a workload on the Node, not the Node), host, k3s
+server, box
 
 **Environment**: One long-lived deployment that follows signed sources and runs
 a Server per scenario it serves: `develop` (the chart CI signed for the latest

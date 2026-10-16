@@ -1,8 +1,7 @@
 # Match Capture and Reenactment: One Match's Client Actions, Played Again by augustac Against a Live Server
 
-> Supersedes ADR-0048: the Match recording and its Replay go, and a Match
-> capture is the one way the server keeps a Match. ADR-0051 replays a capture on
-> the server for viewers; this ADR reenacts one through clients.
+A Match capture is the one way the server keeps a Match. ADR-0051 replays a
+capture on the server for viewers; this ADR reenacts one through clients.
 
 A crash or a load problem seen in a playtest is hard to bring back: the people
 who played are gone, and nothing else plays the way they did. This ADR decides
@@ -202,13 +201,11 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
 
 ## Consequences
 
-- **The determinism check of ADR-0048 goes.** Its Replay compared every tick's
-  outcome on a fresh SimulationWorld, and the golden match held every build to
-  it (ADR-0013, NFR-09). A Reenactment compares nothing but Deaths and the Match
-  end, which an open-loop run cannot be held to; ADR-0051's Replay compares the
-  same two, on the server, without a network in between. US-21 and NFR-09 are
-  rewritten or dropped with these ADRs, and the Match recording's code,
-  `augusta-replay` and the golden match are removed.
+- **No per-tick determinism check.** Nothing compares every tick's outcome on a
+  fresh SimulationWorld, and no golden match holds every build to one
+  (ADR-0013). A Reenactment compares nothing but Deaths and the Match end, which
+  an open-loop run cannot be held to; ADR-0051's Replay compares the same two,
+  on the server, without a network in between (NFR-09).
 - **Captured players run only where augustac does**, on Windows with a GPU, one
   window each: a Reenactment is for bringing back a playtest's problem, not for
   load tests or CI, which stay with Agents (ADR-0013, ADR-0052).
@@ -228,10 +225,10 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
 
 ## Considered Options
 
-- **Keeping ADR-0048's Match recording and Replay beside the capture**:
-  rejected - two ways of keeping a Match and two file formats, with a golden
-  match to rewrite on every change to the simulation; one capture serves both a
-  Reenactment and ADR-0051's Replay.
+- **A per-tick Match recording and Replay beside the capture**: rejected - two
+  ways of keeping a Match and two file formats, with a golden match to rewrite
+  on every change to the simulation; one capture serves both a Reenactment and
+  ADR-0051's Replay.
 - **Recording the network traffic with its wall-clock arrival times**:
   rejected - the tick a Command goes to the World is decided by the server's
   queue and pacing, not by when its datagram arrives, so time offsets would add

@@ -60,11 +60,10 @@ nightly's Linux client, a clean build on one platform is clean on the other, and
 builds the code. The asset cooker's native module (`tools/pack/native`), a
 project of its own with its own presets, still builds with `cl` on Windows.
 `clang-cl` defines both `_MSC_VER` and `__clang__`; no check in our code takes
-either. `clang-cl` was rejected twice before: first because Falcor supported
-only MSVC (ADR-0009), then, with Falcor gone (ADR-0059), because vcpkg's
-`x64-windows` triplet and NVIDIA's SDKs are built and tested with MSVC. Neither
-holds for our own code: the dependencies, NVIDIA's included, stay on `cl` and
-its triplet, and `clang-cl` links against what they build.
+either. `clang-cl` was once rejected because vcpkg's `x64-windows` triplet and
+NVIDIA's SDKs are built and tested with MSVC. That does not hold for our own
+code: the dependencies, NVIDIA's included, stay on `cl` and its triplet, and
+`clang-cl` links against what they build.
 
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so

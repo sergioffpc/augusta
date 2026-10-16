@@ -1,7 +1,7 @@
 # Documentation Site: MkDocs Material for the Docs, Doxygen for the C++ API, on GitHub Pages
 
 The project's documentation lives in two forms: Markdown written for people
-(`README.md`, `CONTEXT.md`, `docs/` and its ADRs) and the doc comments of the
+(`README.md`, `GLOSSARY.md`, `docs/` and its ADRs) and the doc comments of the
 C++ headers (`docs/agents/coding-standards.md`). Both are published together as
 one site on the repository's GitHub Pages, built from the repository on every
 push to `main`, so what the site says is what was released (ADR-0026).
@@ -9,7 +9,7 @@ push to `main`, so what the site says is what was released (ADR-0026).
 **MkDocs Material builds the site from the Markdown as it is.** No document is
 converted or moved for it: `mkdocs.yml` reads `docs/`, and a build hook
 (`tools/docs/hooks.py`) adds the two root documents, `README.md` as the home
-page and `CONTEXT.md`, lists the runbooks (`docs/runbooks/`) and the ADRs, each
+page and `GLOSSARY.md`, lists the runbooks (`docs/runbooks/`) and the ADRs, each
 under its own title and the ADRs in number order, and turns a link to anything
 that is not a page (a source file, the `Makefile`, `LICENSE`) into a link to
 that file on GitHub, so the same Markdown reads right on GitHub and on the site.

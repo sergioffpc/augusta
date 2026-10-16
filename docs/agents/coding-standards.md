@@ -6,13 +6,6 @@ Style Guide, enforced mechanically by `clang-format`/`clang-tidy`) — don't
 repeat anything `clang-tidy` already catches (naming case, brace style, function
 line count, etc.).
 
-## Baseline
-
-Everything not listed below follows Claude Code's own general defaults: avoid
-premature abstraction, comment only the non-obvious _why_, don't add error
-handling for scenarios that can't happen, no compatibility shims. This doc
-records only where Augusta diverges from or sharpens those defaults.
-
 ## Single responsibility
 
 A function does one nameable operation — if describing it needs "and"
@@ -46,7 +39,7 @@ decision into its own function so it stays unit-testable even when the
 surrounding code isn't (see Testing below).
 
 This is a C++-internal pattern, distinct from **Game policy** (Lua, see
-[CONTEXT.md](../../CONTEXT.md)) — don't call C++ decision code "policy"; that
+[GLOSSARY.md](../../GLOSSARY.md)) — don't call C++ decision code "policy"; that
 term is reserved for the Lua-implemented gameplay rules.
 
 ## Comments
@@ -103,8 +96,8 @@ Lua gameplay scripts (ADR-0022) are tested inside the real engine, through
 ## Naming
 
 When a name represents a domain concept, use the canonical term from
-[CONTEXT.md](../../CONTEXT.md) (e.g. `Tick`, `Hitbox`, `ADS`), not a synonym the
-glossary lists under `_Avoid_`.
+[GLOSSARY.md](../../GLOSSARY.md) (e.g. `Tick`, `Hitbox`, `ADS`), not a synonym
+the glossary lists under `_Avoid_`.
 
 ## Ownership
 

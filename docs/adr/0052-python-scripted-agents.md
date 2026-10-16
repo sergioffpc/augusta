@@ -168,7 +168,7 @@ and a smoke test plays one Match of two Agents against an in-process
   interpreter, its paths and its packages, and a script could not use `asyncio`,
   its own command line or a library's event loop as a Python program does.
 - **The Intents in a module of their own, or in `tools/agent`**: rejected - the
-  Harness is where anything that plays connects (CONTEXT.md), and the Intents
+  Harness is where anything that plays connects (GLOSSARY.md), and the Intents
   are a source of the Runner's Commands, using only what `augusta_harness`
   already depends on.
 - **The bindings in `src/modules/harness`**: rejected - augustac links the

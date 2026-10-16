@@ -1,5 +1,5 @@
 # The documentation site (ADR-0046): docs/ as it is, plus README.md and
-# CONTEXT.md, with the C++ API reference Doxygen builds into api/. The navigation
+# GLOSSARY.md, with the C++ API reference Doxygen builds into api/. The navigation
 # and the links to files that are not pages come from tools/docs/hooks.py.
 # Build it with `make docs`.
 site_name: Augusta
@@ -7,7 +7,7 @@ site_description: A realistic, physics-driven multiplayer FPS simulator engine.
 site_url: https://sergioffpc.github.io/augusta/
 repo_url: https://github.com/sergioffpc/augusta
 repo_name: sergioffpc/augusta
-# No edit button: README.md and CONTEXT.md live outside docs/.
+# No edit button: README.md and GLOSSARY.md live outside docs/.
 edit_uri: ""
 docs_dir: docs
 site_dir: build/docs-site
