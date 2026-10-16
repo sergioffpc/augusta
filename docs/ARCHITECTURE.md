@@ -282,6 +282,11 @@ exclusively server-authoritative.
   the Lua embedding and the restricted-environment sandbox (§8) that upholds "no
   I/O inside ECS worlds" structurally (ADR-0022). Server-only - game policy is
   exclusively server-authoritative, never run by either client world.
+- Metrics — the lock-free counter, gauge and histogram the server's threads
+  write in place where an event happens, and their Prometheus form (ADR-0049),
+  in one server-only module (augusta_metrics). It knows nothing of what is
+  counted: whoever counts — the Host, the Connection health collector — builds
+  on it, and augustad's metrics endpoint only collects what they hold
 - ServerRuntime
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
