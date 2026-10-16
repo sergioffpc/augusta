@@ -57,72 +57,59 @@ jobs:
 
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
 
-          if echo "$changed" \
-              | grep -qE '^(src/|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|tools/(pyproject\.toml|uv\.lock)$|cmake/|config/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|\.clang-format$|\.clang-tidy$|\.github/workflows/ci\.yml$|\.github/actions/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/)'; then
-            echo "run_build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_build=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Writes "<output>=true" when a changed path matches the extended
+          # regex, "<output>=false" otherwise.
+          set_output() {
+            local -r output="${1}"
+            local -r regex="${2}"
+            if echo "${changed}" | grep -qE "${regex}"; then
+              echo "${output}=true" >> "${GITHUB_OUTPUT}"
+            else
+              echo "${output}=false" >> "${GITHUB_OUTPUT}"
+            fi
+          }
 
-          if echo "$changed" \
-              | grep -qE '^(Dockerfile$|\.dockerignore$|\.hadolint\.yaml$|chisel/|charts/|\.github/workflows/ci\.yml$|\.github/actions/(build-server-image|restore-vcpkg-cache)/|src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$)'; then
-            echo "run_container=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_container=false" >> "$GITHUB_OUTPUT"
-          fi
+          # The paths more than one output matches, each written only here.
+          ci_workflow='\.github/workflows/ci\.yml$'
+          tools_project='tools/(pyproject\.toml|uv\.lock)$'
+          charts='charts/'
+          # The server and what builds its image.
+          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
+
+          set_output run_build \
+            "^(${server}|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|${tools_project}|config/|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
+
+          set_output run_container \
+            "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
 
           # What Flux applies to the cluster: its own manifests, the chart the
           # HelmReleases there install, and the Kyverno policies (and their
           # negative fixtures) both are checked against, all under clusters/;
           # and the k3s release they run on.
-          if echo "$changed" \
-              | grep -qE '^(charts/|clusters/|scripts/bootstrap-node\.sh$|\.github/workflows/ci\.yml$)'; then
-            echo "run_manifests=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_manifests=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_manifests \
+            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow})"
 
           # The offline tools (tools/pack, tools/composer), and the golden
           # output of theirs the runtime's tests load, which the tools job checks
           # they still write; and the node's end of augusta-publish, which its
           # tests run. tools/docs is the docs workflow's, not theirs.
-          if echo "$changed" \
-              | grep -qE '^(tools/(pack|composer)/|tools/(pyproject\.toml|uv\.lock)$|tests/fixtures/example-packs/|clusters/onprem/node/augusta-publish-receive\.sh$|\.github/workflows/ci\.yml$)'; then
-            echo "run_tools=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_tools=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_tools \
+            "^(tools/(pack|composer)/|${tools_project}|tests/fixtures/example-packs/|clusters/onprem/node/augusta-publish-receive\.sh$|${ci_workflow})"
 
-          if echo "$changed" \
-              | grep -qE '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|(^|/)[^/]+\.ya?ml$)'; then
-            echo "run_yaml=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_yaml=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_yaml \
+            '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|(^|/)[^/]+\.ya?ml$)'
 
           # The scenarios' Lua scripts, and the rules they are formatted and
           # linted by.
-          if echo "$changed" \
-              | grep -qE '(\.lua$|^(stylua\.toml|\.luacheckrc|\.github/workflows/ci\.yml)$)'; then
-            echo "run_lua=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_lua=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_lua \
+            "(\.lua$|^(stylua\.toml$|\.luacheckrc$|${ci_workflow}))"
 
-          if echo "$changed" | grep -qE '(\.toml$|^\.github/workflows/ci\.yml$)'; then
-            echo "run_toml=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_toml=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_toml "(\.toml$|^${ci_workflow})"
 
           # Python, shell, Markdown, CMake and the workflows, and
           # the rules each is formatted and linted by.
-          if echo "$changed" \
-              | grep -qE '(\.(py|sh|md|cmake)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig)$)'; then
-            echo "run_lint=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_lint=false" >> "$GITHUB_OUTPUT"
-          fi
+          set_output run_lint \
+            '(\.(py|sh|md|cmake)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig)$)'
   format:
     needs: changes
     if: >-
