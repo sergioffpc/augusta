@@ -73,8 +73,6 @@ namespace {
 
 using augusta::command::Command;
 using augusta::failure::Code;
-using augusta::harness::CapturedCommand;
-using augusta::harness::CapturedPlayer;
 using augusta::harness::Death;
 using augusta::harness::EntityId;
 using augusta::harness::Failure;
@@ -2157,7 +2155,7 @@ class ReenactmentHostTest : public ::testing::Test {
   }
 
   // The one capture in directory, once its host is gone, as player's Script.
-  static Script ReadPlayer(const std::filesystem::path& directory, CapturedPlayer player) {
+  static Script ReadPlayer(const std::filesystem::path& directory, augusta::capture::Player player) {
     const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory), {});
     EXPECT_EQ(files.size(), 1U);
     std::ifstream in(files.empty() ? std::filesystem::path{} : files.front(), std::ios::binary);
@@ -2194,7 +2192,7 @@ class ReenactmentHostTest : public ::testing::Test {
     const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
     std::vector<std::unique_ptr<Session>> sessions;
     std::vector<std::unique_ptr<Reenactment>> runs;
-    for (const CapturedPlayer player : {CapturedPlayer{2}, CapturedPlayer{1}}) {
+    for (const augusta::capture::Player player : {augusta::capture::Player{2}, augusta::capture::Player{1}}) {
       Script script = ReadPlayer(playtest_, player);
       sessions.push_back(std::make_unique<Session>(
           SessionConfig{.server = host->ListenEndpoint(), .character = script.character, .spawn = script.spawn},
@@ -2234,19 +2232,19 @@ class ReenactmentHostTest : public ::testing::Test {
   // delay; reenacted holds the fillers of its gaps besides.
   static void ExpectReenacted(const Script& played, const Script& reenacted) {
     std::size_t next = 0;
-    for (const CapturedCommand& command : played.commands) {
+    for (const augusta::capture::AtOffset<augusta::capture::Command>& command : played.commands) {
       const auto found =
           std::find_if(reenacted.commands.begin() + static_cast<std::ptrdiff_t>(next), reenacted.commands.end(),
-                       [&](const CapturedCommand& candidate) {
-                         return candidate.command.yaw == command.command.yaw &&
-                                candidate.command.movement.direction == command.command.movement.direction;
+                       [&](const augusta::capture::AtOffset<augusta::capture::Command>& candidate) {
+                         return candidate.event.command.yaw == command.event.command.yaw &&
+                                candidate.event.command.movement.direction == command.event.command.movement.direction;
                        });
       ASSERT_NE(found, reenacted.commands.end()) << "the Command of offset " << command.offset << " never arrived";
       next = static_cast<std::size_t>(found - reenacted.commands.begin()) + 1;
       EXPECT_LE(std::abs(static_cast<std::int64_t>(found->offset) - command.offset), kTolerance)
           << "captured at " << command.offset << ", reenacted at " << found->offset;
-      EXPECT_LE(std::abs((static_cast<std::int64_t>(found->offset) - found->seen_offset) -
-                         (static_cast<std::int64_t>(command.offset) - command.seen_offset)),
+      EXPECT_LE(std::abs((static_cast<std::int64_t>(found->offset) - found->event.seen_offset) -
+                         (static_cast<std::int64_t>(command.offset) - command.event.seen_offset)),
                 kTolerance)
           << "the Seen time of the Command of offset " << command.offset;
     }
@@ -2261,7 +2259,7 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
   Playtest();
   const std::vector<Vec3> spawned = Reenact();
 
-  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
+  for (const augusta::capture::Player player : {augusta::capture::Player{1}, augusta::capture::Player{2}}) {
     SCOPED_TRACE(+player);
     const Script played = ReadPlayer(playtest_, player);
     ASSERT_GE(spawned.size(), 2U);
@@ -2271,7 +2269,8 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
     const std::vector<Vec3> run_spawns = ReadPlayer(reenacted_, 1).spawns;
     const auto number = std::ranges::find(run_spawns, played.spawn);
     ASSERT_NE(number, run_spawns.end());
-    const Script reenacted = ReadPlayer(reenacted_, static_cast<CapturedPlayer>(number - run_spawns.begin() + 1));
+    const Script reenacted =
+        ReadPlayer(reenacted_, static_cast<augusta::capture::Player>(number - run_spawns.begin() + 1));
     EXPECT_EQ(reenacted.character, played.character);
     ASSERT_GT(played.commands.size(), 10U);
     ExpectReenacted(played, reenacted);

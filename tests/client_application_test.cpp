@@ -1,4 +1,3 @@
-#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -10,12 +9,12 @@
 
 #include "application.h"
 #include "augusta/assets.h"
+#include "augusta/capture.h"
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
-#include "augusta/protocol.h"
 #include "augusta/reenactment.h"
 #include "character_loader.h"
 
@@ -144,23 +143,14 @@ CommandLine ReenactCommandLine(const std::filesystem::path& capture, const std::
 
 // A capture of one player, the soldier, at (4, 0, -2), made with a client pack of 9s.
 std::filesystem::path WriteCapture(const std::string& name) {
-  namespace protocol = augusta::protocol;
   const std::filesystem::path path = std::filesystem::temp_directory_path() / name;
+  augusta::capture::Capture capture{.header = {.engine_version = "1.0.0", .tick_rate_hz = 60, .started = {}},
+                                    .joins = {{.session = 1, .character = "soldier", .spawn = {4, 0, -2}}},
+                                    .events = {},
+                                    .torn = false};
+  capture.header.client_pack.fill(std::byte{9});
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
-  out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  protocol::CaptureHeaderWire header{
-      .engine_version = "1.0.0", .format_version = protocol::kCaptureFormatVersion, .tick_rate_hz = 60};
-  header.client_pack.fill(std::byte{9});
-  const std::array<protocol::CaptureRecordWire, 2> records = {
-      header,
-      protocol::CapturedJoinWire{
-          .spawn = {4, 0, -2}, .session = protocol::SessionIdWire{1}, .character = "soldier", .player = 1},
-  };
-  for (const protocol::CaptureRecordWire& record : records) {
-    const protocol::BytesWire payload = protocol::EncodeCaptureRecord(record).value();
-    out.put(static_cast<char>(payload.size()));
-    out.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
-  }
+  EXPECT_TRUE(augusta::capture::WriteCapture(out, capture).has_value());
   return path;
 }
 
