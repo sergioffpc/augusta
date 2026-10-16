@@ -17,8 +17,8 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/ballistics.h"
-#include "capture.h"
 #include "capture_retention.h"
+#include "capturer.h"
 #include "command_queue.h"
 #include "heartbeat.h"
 #include "host_log.h"

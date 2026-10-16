@@ -18,7 +18,7 @@
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "capture.h"
+#include "capturer.h"
 #include "command_queue.h"
 #include "host.h"
 #include "host_impl.h"

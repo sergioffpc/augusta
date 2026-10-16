@@ -1,10 +1,11 @@
 #include "capture_retention.h"
 
 #include <algorithm>
-#include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <ios>
 #include <optional>
@@ -15,9 +16,9 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
-#include "augusta/protocol.h"
 
 namespace augusta::server {
 
@@ -28,19 +29,22 @@ bool IsDigit(char character) { return character >= '0' && character <= '9'; }
 // Whether the file at path starts with a capture's magic.
 bool StartsWithMagic(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
-  std::array<char, protocol::kCaptureMagic.size()> magic{};
-  in.read(magic.data(), magic.size());
-  return static_cast<std::size_t>(in.gcount()) == magic.size() &&
-         std::ranges::equal(magic, protocol::kCaptureMagic,
-                            [](char read, std::byte expected) { return static_cast<std::byte>(read) == expected; });
+  return capture::StartsWithMagic(in);
 }
 
 }  // namespace
 
+std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, std::uint64_t match_number) {
+  const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
+  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}{}", seconds, (started - seconds).count(), match_number,
+                     capture::kExtension);
+}
+
 bool IsCaptureFileName(std::string_view name) {
-  // D a digit: the Match start in UTC to the millisecond, then its number.
+  // D a digit: the Match start in UTC to the millisecond, then its number
+  // of at least 4 digits, as CaptureFileName makes it.
   constexpr std::string_view kStart = "DDDDDDDDTDDDDDDDDDZ-";
-  constexpr std::string_view kExtension = ".capture";
+  constexpr std::string_view kExtension = capture::kExtension;
   constexpr std::size_t kNumberDigits = 4;
   if (name.size() < kStart.size() + kNumberDigits + kExtension.size() || !name.ends_with(kExtension)) {
     return false;

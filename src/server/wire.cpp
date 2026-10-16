@@ -9,12 +9,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "augusta/ballistics.h"
-#include "augusta/capture.h"
-#include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -38,10 +35,6 @@ namespace {
 using wire::FromWire;
 using wire::ToWire;
 
-// command as a Commands message carries it, but for its Seen time's tick,
-// which whoever stores it keeps beside it: its age is 0.
-protocol::CommandWire StoredToWire(const command::Command& command) { return ToWire(command, command.seen_tick); }
-
 protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
   switch (part) {
     case ballistics::BodyPart::kHead:
@@ -56,8 +49,8 @@ protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
   return protocol::BodyPartWire{};
 }
 
-// A payload the protocol could not carry, of the message or capture record type
-// named under key: a broken invariant of the server's, never a peer's input.
+// A payload the protocol could not carry, of the message type named under
+// key: a broken invariant of the server's, never a peer's input.
 failure::Failure BrokenInvariant(protocol::EncodeError error, std::string_view key, std::uint8_t type) {
   return failure::Failure{.code = failure::Code::kInvariantViolated,
                           .context = {{.key = std::string(key), .value = std::to_string(type)}},
@@ -345,58 +338,6 @@ std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
     commands.push_back(FromWire(command, message.seen_tick));
   }
   return commands;
-}
-
-namespace {
-
-// One overload per event: its record, at offset.
-struct CapturedEventToWire {
-  std::uint32_t offset;
-
-  protocol::CaptureRecordWire operator()(const capture::Command& command) const {
-    return protocol::CapturedCommandWire{.command = StoredToWire(command.command),
-                                         .offset = offset,
-                                         .seen_offset = command.seen_offset,
-                                         .player = command.player};
-  }
-  protocol::CaptureRecordWire operator()(const capture::Leave& leave) const {
-    return protocol::CapturedLeaveWire{.offset = offset, .player = leave.player};
-  }
-  protocol::CaptureRecordWire operator()(const capture::Death& death) const {
-    return protocol::CapturedDeathWire{.offset = offset, .victim = death.victim, .killer = death.killer};
-  }
-  protocol::CaptureRecordWire operator()(const capture::MatchEnd& end) const {
-    return protocol::CapturedMatchEndWire{.offset = offset, .winner = end.winner.value_or(0)};
-  }
-};
-
-}  // namespace
-
-std::expected<protocol::BytesWire, failure::Failure> EncodeToCapture(const protocol::CaptureRecordWire& record) {
-  return protocol::EncodeCaptureRecord(record).transform_error([&record](protocol::EncodeError error) {
-    return BrokenInvariant(error, "capture_record_type", static_cast<std::uint8_t>(protocol::TypeOf(record)));
-  });
-}
-
-protocol::CaptureHeaderWire ToWire(const capture::Header& header) {
-  return protocol::CaptureHeaderWire{.server_pack = ToWire(header.server_pack),
-                                     .client_pack = ToWire(header.client_pack),
-                                     .engine_version = header.engine_version,
-                                     .started_unix_ms = header.started.time_since_epoch().count(),
-                                     .format_version = protocol::kCaptureFormatVersion,
-                                     .tick_rate_hz = header.tick_rate_hz};
-}
-
-protocol::CaptureRecordWire ToWire(capture::Player player, const capture::Join& join) {
-  return protocol::CapturedJoinWire{.spawn = join.spawn,
-                                    .offset = 0,
-                                    .session = static_cast<protocol::SessionIdWire>(join.session),
-                                    .character = join.character,
-                                    .player = player};
-}
-
-protocol::CaptureRecordWire ToWire(const capture::AtOffset<capture::Event>& event) {
-  return std::visit(CapturedEventToWire{.offset = event.offset}, event.event);
 }
 
 }  // namespace augusta::server

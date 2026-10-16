@@ -14,7 +14,7 @@
 #include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
-#include "capture.h"
+#include "capturer.h"
 #include "match.h"
 
 // The capture_read fuzz target's seed (tests/fuzz/README.md): one whole

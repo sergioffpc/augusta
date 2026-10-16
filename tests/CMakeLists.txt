@@ -442,16 +442,20 @@ target_compile_definitions(
 gtest_discover_tests(augusta_server_application_tests DISCOVERY_TIMEOUT 30)
 
 # A Match capture's file (ADR-0050) through the capture module alone: written,
-# read back and refused, with no server; its framing reached through frame.h.
+# read back and refused, with no server; its framing reached through frame.h,
+# and the protocol linked only to build malformed files.
 add_executable(augusta_capture_format_tests capture_format_test.cpp)
-target_link_libraries(augusta_capture_format_tests PRIVATE augusta_capture GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_capture_format_tests
+  PRIVATE augusta_capture augusta_protocol GTest::gtest GTest::gtest_main
+)
 target_include_directories(augusta_capture_format_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/capture)
 gtest_discover_tests(augusta_capture_format_tests)
 
 # Match captures (ADR-0050): a Capturer's files, read back, with no Host.
-add_executable(augusta_capture_tests capture_test.cpp)
-target_link_libraries(augusta_capture_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_capture_tests DISCOVERY_TIMEOUT 30)
+add_executable(augusta_capturer_tests capturer_test.cpp)
+target_link_libraries(augusta_capturer_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 
 # A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
 # checked against its markers, with no network.
@@ -484,10 +488,13 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_capture_retention_tests DISCOVERY_TIMEOUT 30)
 
-# A Captured player (ADR-0050): its Script read from a capture a Capturer
+# A Captured player (ADR-0050): its Script read from a capture the capture module
 # writes, and its pacing and progress from Server views built by hand.
 add_executable(augusta_reenactment_tests reenactment_test.cpp)
-target_link_libraries(augusta_reenactment_tests PRIVATE augusta_harness augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_reenactment_tests
+  PRIVATE augusta_harness augustad_commands GTest::gtest GTest::gtest_main
+)
 gtest_discover_tests(augusta_reenactment_tests DISCOVERY_TIMEOUT 30)
 
 # A Match capture that cannot be written, optional or strict (ADR-0050,
