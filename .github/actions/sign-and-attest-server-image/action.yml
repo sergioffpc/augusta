@@ -1,0 +1,56 @@
+name: Sign and attest a published server image
+description: >
+  Signs an augustad image ci.yml has just pushed to GHCR (sign-artifact), then
+  attests the provenance of its debug info and of the image, and the image's
+  SBOM, pushing each attestation beside what it attests. Every published image
+  is attested in the job that pushes it: release.yml builds none, and the image
+  a release runs is its tag's commit's, pushed to main (docs/ENGINEERING.md,
+  Provenance and SBOMs). Run by each architecture's publish job, once it has
+  pushed the image and its debug info. The job needs packages: write, id-token:
+  write, attestations: write and artifact-metadata: write, and is logged in to
+  GHCR.
+inputs:
+  image:
+    description: The image's manifest digest, sha256:..., as GHCR serves it.
+    required: true
+  debuginfo:
+    description: >
+      The digest of the image's debug info (the Dockerfile's debuginfo stage),
+      pushed beside it.
+    required: true
+runs:
+  using: composite
+  steps:
+    # What the cluster admits an augustad image by (ADR-0057). Signed before it
+    # is attested, so the verify after signing sees the signature alone.
+    - name: Sign server image
+      uses: ./.github/actions/sign-artifact
+      with:
+        digest: ${{ inputs.image }}
+    - name: Attest debug info provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+        subject-digest: ${{ inputs.debuginfo }}
+        push-to-registry: true
+    - name: Attest image provenance
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+        subject-digest: ${{ inputs.image }}
+        push-to-registry: true
+    - name: Image SBOM
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        image: ghcr.io/${{ github.repository_owner }}/augustad@${{ inputs.image }}
+        format: spdx-json
+        output-file: augustad-image.spdx.json
+        upload-artifact: false
+        upload-release-assets: false
+    - name: Attest image SBOM
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      with:
+        subject-name: ghcr.io/${{ github.repository_owner }}/augustad
+        subject-digest: ${{ inputs.image }}
+        sbom-path: augustad-image.spdx.json
+        push-to-registry: true

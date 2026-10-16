@@ -222,8 +222,9 @@ decisions already made in ARCHITECTURE.md:
   executables and every published server image get from GitHub artifact
   attestations, signed keylessly (Sigstore) by the workflow that built them:
   SLSA build provenance, naming the commit and the workflow run, and an SPDX
-  SBOM. Each is attested where it is built, so the image is attested by CI on
-  the push that publishes it, and the image a release runs (`sha-<12>` of its
+  SBOM. Each is attested where it is published, so the image is attested by CI
+  on the push that publishes it (`.github/actions/sign-and-attest-server-image`,
+  for either architecture), and the image a release runs (`sha-<12>` of its
   tag's commit) needs nothing more from the release. On `main` each
   architecture's image is attested, and the index of both gets its own
   provenance; a release attests `augustad-linux-x64` and `augustad-linux-arm64`
