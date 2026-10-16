@@ -244,6 +244,19 @@ decisions already made in ARCHITECTURE.md:
   on a high or critical CVE; the image only on one with a fix available, the
   executables on any, since the NVD gives most of its ranges with no fixed
   version.
+- **Package retention:** GitHub Packages keeps every version CI pushes, so the
+  `prune-packages` workflow (`scripts/prune-packages.py`) deletes the ones
+  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`, `develop`,
+  `main`, every release's `sha-<12>`, the 20 newest `develop` images, what
+  `develop` and `staging` run, and every tag or digest `develop` or `main`
+  names; with each of them, its platform manifests, debug info, signatures and
+  attestations. `charts/augustad` keeps `develop`, the releases and the charts
+  of those 20 commits, what `develop` can be rolled back to
+  ([flux-rollback.md](runbooks/flux-rollback.md)). Each vcpkg NuGet package
+  keeps its 2 newest versions: a miss rebuilds the port. If what CI or the
+  cluster runs now is missing, or a manifest cannot be read, the run fails
+  before anything is deleted. Scheduled runs print the plan alone; deleting it
+  is a dispatch with `apply` set, after reading that plan.
 
 ## Git Workflow
 
