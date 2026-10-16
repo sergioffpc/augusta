@@ -86,6 +86,7 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
 
     assert copied
     assert release.version == server_hash.hex()[:12]
+    assert release.pack_format == pack.FORMAT_VERSION
     assert (
         release.directory
         == f"/srv/augusta/asset-packs/develop/firebase/{release.version}"

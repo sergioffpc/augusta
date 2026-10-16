@@ -398,9 +398,10 @@ augusta-publish [-h] --environment {develop,staging} --host HOST
 
 On success it prints the folder on the node and the line to put under the
 scenario's server in the `HelmRelease`
-(`servers.<scenario>.packVersion: "<version>"`), and exits `0`, whether it
-copied the pack or found it there already. On any failure it prints the reason
-to stderr and exits `1`.
+(`servers.<scenario>.packVersion: "<version>"`), with the pack format version
+the server pack was cooked in to put beside it (`packFormat: <format>`), and
+exits `0`, whether it copied the pack or found it there already. On any failure
+it prints the reason to stderr and exits `1`.
 
 ### Layout
 
