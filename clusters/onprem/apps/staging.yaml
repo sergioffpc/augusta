@@ -41,7 +41,7 @@ spec:
     # release key.
     servers:
       firebase:
-        packVersion: "073cb2bb854f"
+        packVersion: "c136bad8059d"
         # Pinned so this server has a stable address for LAN clients.
         nodePort: 30800
     # develop's release ships the dashboards (charts/augustad values.yaml).
