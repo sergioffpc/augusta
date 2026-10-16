@@ -42,7 +42,7 @@ jobs:
       - name: Fetch the submodules
         # As ci.yml's client-x64-windows job does: vcpkg and NVTX alone.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ./.github/actions/setup-windows-msvc
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
       - uses: ./.github/actions/setup-windows-llvm
       - uses: ./.github/actions/restore-sccache-cache
@@ -272,7 +272,7 @@ jobs:
           lfs: true
       - name: Fetch vcpkg
         run: git submodule update --init --depth 1 third_party/vcpkg
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ./.github/actions/setup-windows-msvc
       - uses: ./.github/actions/restore-sccache-cache
       - uses: ./.github/actions/setup-windows-vcpkg
         with:
