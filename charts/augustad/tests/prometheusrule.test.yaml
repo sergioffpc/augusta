@@ -1,0 +1,57 @@
+# promtool test rules for the chart's alert rules (templates/prometheusrule.yaml),
+# rendered for one server, firebase, in develop: CI's manifests job writes
+# them as prometheusrule.rules.yaml beside a copy of this file
+# (.github/workflows/ci.yml). Each of the alerts that reach the operator
+# (ADR-0049) fires when it should, and not before.
+rule_files:
+  - prometheusrule.rules.yaml
+evaluation_interval: 1m
+tests:
+  # The server's last scrape succeeds at 2m. Down from 3m, it fires once it
+  # has been down for 2 minutes, at 5m, labelled with its scenario alone:
+  # absent() of a comparison keeps none of its series' labels.
+  - interval: 1m
+    input_series:
+      - series: up{job="augustad-firebase-metrics", namespace="develop", service="augustad-firebase-metrics"}
+        values: 1 1 1 0x10
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: AugustadDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AugustadDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              scenario: firebase
+            exp_annotations:
+              summary: augustad for firebase in develop is down
+              description: Prometheus has scraped no metrics endpoint of augustad for firebase in develop for 2 minutes.
+  # The container restarts at 3m and runs on: it fires at once, until the
+  # restart has left the 15-minute window. Another scenario's pod, whose name
+  # begins with this one's, restarting, does not fire it.
+  - interval: 1m
+    input_series:
+      - series: kube_pod_container_status_restarts_total{namespace="develop", container="augustad", pod="augustad-firebase-5d8f7c9b6-x7k2p"}
+        values: 0 0 0 1x30
+      - series: kube_pod_container_status_restarts_total{namespace="develop", container="augustad", pod="augustad-firebase-night-5d8f7c9b6-q4m9z"}
+        values: 0 1 2 3x30
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AugustadRestarted
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: AugustadRestarted
+        exp_alerts:
+          - exp_labels:
+              severity: error
+              scenario: firebase
+              namespace: develop
+              container: augustad
+              pod: augustad-firebase-5d8f7c9b6-x7k2p
+            exp_annotations:
+              summary: augustad for firebase in develop restarted
+              description: augustad in pod augustad-firebase-5d8f7c9b6-x7k2p for firebase in develop has restarted in the last 15 minutes. kubectl describe pod gives the reason; a crash leaves its stack in the previous container's log and its core in coredumpctl on the node.
+      - eval_time: 20m
+        alertname: AugustadRestarted
+        exp_alerts: []
