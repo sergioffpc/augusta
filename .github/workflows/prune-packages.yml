@@ -1,0 +1,85 @@
+name: Prune packages
+# Deletes the GitHub Packages versions nothing needs any more: augustad's
+# images, develop's charts and the vcpkg NuGet cache's old versions
+# (scripts/prune-packages.py, docs/ENGINEERING.md). Every run prints the plan;
+# only a dispatch with apply set deletes it, after the same plan is made again.
+# A pull request that changes the script runs its tests and the plan.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete what the plan deletes, rather than only printing it.
+        type: boolean
+        default: false
+      # Left empty, the script's defaults.
+      keep-develop-commits:
+        description: develop's newest images, and their charts, to keep.
+        type: string
+      keep-nuget-versions:
+        description: Each NuGet package's newest versions to keep.
+        type: string
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - scripts/prune-packages.py
+      - scripts/tests/test_prune_packages.py
+      - .github/workflows/prune-packages.yml
+permissions: {}
+# One run at a time: an apply must not race a plan, nor another apply.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+env:
+  KEEP_DEVELOP_COMMITS: ${{ inputs.keep-develop-commits }}
+  KEEP_NUGET_VERSIONS: ${{ inputs.keep-nuget-versions }}
+jobs:
+  plan:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # develop's history, main and the v* tags: the roots come from them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Test the script
+        run: uv run --no-project --with pytest==9.1.1 pytest scripts/tests
+      - name: Print the plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(--owner "$GITHUB_REPOSITORY_OWNER")
+          if [[ -n "$KEEP_DEVELOP_COMMITS" ]]; then
+            args+=(--keep-develop-commits "$KEEP_DEVELOP_COMMITS")
+          fi
+          if [[ -n "$KEEP_NUGET_VERSIONS" ]]; then
+            args+=(--keep-nuget-versions "$KEEP_NUGET_VERSIONS")
+          fi
+          python3 scripts/prune-packages.py "${args[@]}"
+  apply:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && inputs.apply
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Delete what the plan deletes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(--owner "$GITHUB_REPOSITORY_OWNER" --apply)
+          if [[ -n "$KEEP_DEVELOP_COMMITS" ]]; then
+            args+=(--keep-develop-commits "$KEEP_DEVELOP_COMMITS")
+          fi
+          if [[ -n "$KEEP_NUGET_VERSIONS" ]]; then
+            args+=(--keep-nuget-versions "$KEEP_NUGET_VERSIONS")
+          fi
+          python3 scripts/prune-packages.py "${args[@]}"
