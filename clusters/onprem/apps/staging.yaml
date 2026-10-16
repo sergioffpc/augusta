@@ -36,12 +36,14 @@ spec:
     # release key (charts/augustad values.yaml).
     assetPacks:
       hostPath: /srv/augusta/asset-packs/staging
-    # A server per scenario (ADR-0026), each running the pack version
-    # augusta-publish printed for it: the release's packs, signed with the
-    # release key.
+    # A server per scenario (ADR-0026), each running the pack version and
+    # pack format augusta-publish printed for it: the release's packs, signed
+    # with the release key. CI fails a pack format other than the engine's
+    # (scripts/check-pack-formats.py).
     servers:
       firebase:
         packVersion: "c136bad8059d"
+        packFormat: 3
         # Pinned so this server has a stable address for LAN clients.
         nodePort: 30800
     # develop's release ships the dashboards (charts/augustad values.yaml).
