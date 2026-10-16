@@ -10,13 +10,13 @@
 #include <iterator>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #ifndef _WIN32
+#include <sstream>
 #include <thread>
 
 #include <sys/stat.h>
