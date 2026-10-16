@@ -16,7 +16,6 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
-#include "augusta/reenactment.h"
 #include "augusta/shared_wire.h"
 
 namespace augusta::harness {
@@ -203,11 +202,6 @@ MatchEnd FromWire(const protocol::MatchEndWire& end) {
   return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(end.winner))};
 }
 
-CapturedCommand FromWire(const protocol::CapturedCommandWire& command) {
-  return CapturedCommand{
-      .offset = command.offset, .seen_offset = command.seen_offset, .command = FromWire(command.command, 0)};
-}
-
 ReplayView FromWire(const protocol::ReplayViewWire& view) {
   ReplayView result{.tick = view.tick, .players = {}};
   result.players.reserve(view.players.size());
@@ -234,15 +228,6 @@ protocol::ReplayRequestWire ToWire(const ReplayRequest& request) {
       .client_pack = ToWire(request.client_pack),
       .capture = request.capture,
   };
-}
-
-CapturedDeath FromWire(const protocol::CapturedDeathWire& death) {
-  return CapturedDeath{.offset = death.offset, .victim = death.victim, .killer = death.killer};
-}
-
-CapturedEnd FromWire(const protocol::CapturedMatchEndWire& end) {
-  return CapturedEnd{.offset = end.offset,
-                     .winner = end.winner == 0 ? std::nullopt : std::optional<CapturedPlayer>(end.winner)};
 }
 
 protocol::MessageWire ToWire(const JoinRequest& request) {
