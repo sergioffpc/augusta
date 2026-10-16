@@ -282,6 +282,12 @@ exclusively server-authoritative.
   the Lua embedding and the restricted-environment sandbox (§8) that upholds "no
   I/O inside ECS worlds" structurally (ADR-0022). Server-only - game policy is
   exclusively server-authoritative, never run by either client world.
+- Scenario — what the server loads from its verified pack at startup: the
+  scenario it serves, the Parameters its simulation and every client run on
+  (ADR-0039) and its Game policy (ADR-0022), with the two loaders that read them
+  through Lua, in one server-only module (augusta_scenario). It is loaded before
+  any socket or thread opens, so a pack without usable content exits like a bad
+  pack does, and the Host is handed it already loaded
 - Metrics — the lock-free counter, gauge and histogram the server's threads
   write in place where an event happens, and their Prometheus form (ADR-0049),
   in one server-only module (augusta_metrics). It knows nothing of what is

@@ -16,6 +16,7 @@
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
@@ -23,7 +24,6 @@
 #include "augusta/parameters.h"
 #include "augusta/supervisor.h"
 #include "capturer.h"
-#include "content.h"
 #include "host.h"
 #include "runtime.h"
 

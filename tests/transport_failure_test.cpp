@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/harness.h"
@@ -19,7 +20,6 @@
 #include "augusta/primitives.h"
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
-#include "content.h"
 #include "host.h"
 #include "host_metrics.h"
 #include "misbehaviour.h"

@@ -119,9 +119,6 @@ endfunction()
 
 set(
   AUGUSTA_GLUE_EXCEPTIONS_augustad
-  augustad_parameters_loader
-  augustad_policy_loader
-  augustad_content
   augustad_match
   augustad_commands
   augustad_misbehaviour

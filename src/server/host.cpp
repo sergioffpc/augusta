@@ -16,6 +16,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
@@ -24,7 +25,6 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "capturer.h"
-#include "content.h"
 #include "heartbeat.h"
 #include "host_impl.h"
 #include "host_metrics.h"

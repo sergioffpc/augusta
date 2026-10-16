@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_PARAMETERS_LOADER_H_
-#define AUGUSTA_SERVER_PARAMETERS_LOADER_H_
+#ifndef AUGUSTA_PARAMETERS_LOADER_H_
+#define AUGUSTA_PARAMETERS_LOADER_H_
 
 #include <cstdint>
 #include <expected>
@@ -63,4 +63,4 @@ std::expected<parameters::Parameters, ParametersLoadError> LoadParameters(std::s
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_PARAMETERS_LOADER_H_
+#endif  // AUGUSTA_PARAMETERS_LOADER_H_
