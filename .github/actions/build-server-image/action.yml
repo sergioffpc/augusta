@@ -2,10 +2,10 @@ name: Build and scan the server image
 description: >
   Builds the server image into the runner's Docker (loaded, not pushed), from
   the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on
-  a high or critical CVE trivy finds in it. Every ci.yml container job runs it:
-  container-verify to check the image, container-publish-x64-linux to rebuild
-  the image it then pushes, so what it publishes is an image that was scanned,
-  and on main container-publish-arm64-linux for the arm64 image. Tags it
+  a high or critical CVE trivy finds in it. ci.yml's container-verify runs it
+  for the image container-publish-x64-linux then pushes, so what it publishes
+  is an image that was scanned, and on main container-publish-arm64-linux for
+  the arm64 image it pushes itself. Tags it
   sha-<12> and, on a push, with the branch name (sha-<12>-arm64 alone with
   arch-suffix). Assumes the repository is checked out with its submodules and
   buildx is set up; a job that reads or writes the cache logs in to GHCR first.

@@ -108,16 +108,16 @@ decisions already made in ARCHITECTURE.md:
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
-       every push, and on a pull request when the image or chart changed.
-       `container-publish-x64-linux`, on a push only, waits for both it and the
-       server-x64-linux job, rebuilds the image from the layer cache
-       `container-verify` just wrote (every stage but `rootfs`, ADR-0054, is a
-       cache hit), scans it again, and only then pushes it with its `-debuginfo`
-       image and attestations - so a published image is always a scanned one, of
-       a commit whose tests passed. On a push to `main` alone, whose image is
-       the one a release runs, `container-publish-arm64-linux` builds, scans and
-       pushes the arm64 image too, natively on an arm64 runner, as
-       `sha-<12>-arm64` with its own debug info and attestations, and
+       every push, and on a pull request when the image or chart changed; on a
+       push it also builds the image's `debuginfo` stage, and hands both to the
+       run as artifacts. `container-publish-x64-linux`, on a push only, waits
+       for it, the server-x64-linux job and `confinement`, then pushes that very
+       image (it builds none) with its `-debuginfo` image, signature and
+       attestations - so a published image is always the one that was scanned
+       and confined, of a commit whose tests passed. On a push to `main` alone,
+       whose image is the one a release runs, `container-publish-arm64-linux`
+       builds, scans and pushes the arm64 image too, natively on an arm64
+       runner, as `sha-<12>-arm64` with its own debug info and attestations, and
        `container-index` then makes `sha-<12>`, `main` and `sha-<12>-debuginfo`
        the index of both architectures (NFR-04). On a push to `develop` alone,
        `chart-publish` then pushes the chart, versioned `<chart version>+<12>`,
