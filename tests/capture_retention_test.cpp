@@ -1,4 +1,4 @@
-#include "capture_retention.h"
+#include "augusta/capture_retention.h"
 
 #include <algorithm>
 #include <chrono>
@@ -9,6 +9,7 @@
 #include <ios>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -16,25 +17,25 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/capture.h"
+#include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
-#include "augusta/protocol.h"
-#include "capture.h"
-#include "match.h"
+#include "augusta/match.h"
 
 // A capture directory kept within a count and a size, oldest Match first
 // (ADR-0050, #461): PlanRetention's decision on its own, then a Capturer
 // keeping a real directory, with completed captures seeded by hand.
 namespace {
 
+using augusta::capture::Capture;
+using augusta::capture::ReadCapture;
 using augusta::command::Command;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::Capture;
 using augusta::server::CaptureEntrant;
 using augusta::server::CaptureFileName;
-using augusta::server::CaptureHeader;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
 using augusta::server::CaptureRetention;
@@ -42,7 +43,6 @@ using augusta::server::CompletedCapture;
 using augusta::server::EntityId;
 using augusta::server::IsCaptureFileName;
 using augusta::server::PlanRetention;
-using augusta::server::ReadCapture;
 using augusta::server::RetentionPlan;
 using augusta::server::SessionId;
 
@@ -58,6 +58,16 @@ std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
     completed.push_back({.path = {}, .size = size});
   }
   return completed;
+}
+
+TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
+  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003.capture");
+}
+
+TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
+  const std::string first = CaptureFileName(kStarted, 9);
+  const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, 10);
+  EXPECT_LT(first, second);
 }
 
 TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
@@ -125,8 +135,8 @@ TEST(PlanRetentionTest, DeletesWhatTheStricterLimitAsks) {
             (RetentionPlan{.deletions = 2, .fits = true}));
 }
 
-CaptureHeader Header() {
-  CaptureHeader header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
+augusta::capture::Header Header() {
+  augusta::capture::Header header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
   header.server_pack.fill(std::byte{1});
   header.client_pack.fill(std::byte{2});
   return header;
@@ -167,22 +177,26 @@ class CaptureRetentionTest : public ::testing::Test {
 
   void TearDown() override { std::filesystem::remove_all(directory_); }
 
-  // A completed capture of a Match that started hours_ago, size bytes long:
-  // the magic, then filler.
+  // A completed capture of a Match that started hours_ago, size bytes long.
   std::string Seed(int hours_ago, std::uintmax_t size) {
     const std::string name = CaptureFileName(kStarted - std::chrono::hours{hours_ago}, 1);
     Write(directory_ / name, true, size);
     return name;
   }
 
-  static void Write(const std::filesystem::path& path, bool magic, std::uintmax_t size) {
-    std::ofstream out(path, std::ios::binary);
-    std::string bytes(size, 'x');
-    if (magic) {
-      std::ranges::transform(augusta::protocol::kCaptureMagic, bytes.begin(),
-                             [](std::byte byte) { return static_cast<char>(byte); });
+  // A file of size bytes: a capture of no Match cut or padded with filler to
+  // size when as_capture, so it starts with a capture's magic, else filler.
+  static void Write(const std::filesystem::path& path, bool as_capture, std::uintmax_t size) {
+    std::string bytes;
+    if (as_capture) {
+      std::ostringstream written(std::ios::binary);
+      EXPECT_TRUE(
+          augusta::capture::WriteCapture(written, Capture{.header = Header(), .joins = {}, .events = {}, .torn = false})
+              .has_value());
+      bytes = written.str();
     }
-    out << bytes;
+    bytes.resize(size, 'x');
+    std::ofstream(path, std::ios::binary) << bytes;
   }
 
   // The names of the directory's regular files, sorted.
@@ -210,6 +224,12 @@ class CaptureRetentionTest : public ::testing::Test {
     auto capture = ReadCapture(in);
     EXPECT_TRUE(capture.has_value()) << name;
     return capture.value_or(Capture{});
+  }
+
+  // How many records the capture name holds after its header: its Joins, then its events.
+  [[nodiscard]] std::size_t Records(const std::string& name) const {
+    const Capture capture = Read(name);
+    return capture.joins.size() + capture.events.size();
   }
 
   // Plays one Match of commands Commands, started at started.
@@ -275,7 +295,7 @@ TEST_F(CaptureRetentionTest, ADirectoryNearItsBudgetHasItsOldestCapturesDeletedW
   const std::vector<std::string> kept(names.begin(), names.end() - 1);
   EXPECT_EQ(kept, std::vector<std::string>(seeded.end() - static_cast<std::ptrdiff_t>(kept.size()), seeded.end()));
   EXPECT_EQ(names.back(), CaptureFileName(kStarted, 1));
-  EXPECT_EQ(Read(names.back()).records.size(), 2U + 20U + 1U);
+  EXPECT_EQ(Records(names.back()), 2U + 20U + 1U);
   EXPECT_LE(Bytes(), kBudget);
 }
 
@@ -299,8 +319,9 @@ TEST_F(CaptureRetentionTest, AMatchThatAloneExceedsTheBudgetStopsItsCaptureWithR
   EXPECT_LE(Bytes(), kBudget);
   const Capture capture = Read(CaptureFileName(kStarted, 1));
   EXPECT_FALSE(capture.torn);
-  EXPECT_GT(capture.records.size(), 2U);
-  EXPECT_LT(capture.records.size(), 2U + 100U + 1U);
+  EXPECT_EQ(capture.joins.size(), 2U);
+  EXPECT_FALSE(capture.events.empty());
+  EXPECT_LT(capture.events.size(), 100U + 1U);
   EXPECT_EQ(Occurrences(written, "event=capture_stopped match=1 reason=retention_budget"), 1U) << written;
 }
 
@@ -314,7 +335,7 @@ TEST_F(CaptureRetentionTest, TheMatchInProgressIsNeverDeleted) {
 
   const std::string second = CaptureFileName(kStarted + std::chrono::seconds{1}, 2);
   EXPECT_EQ(Names(), std::vector<std::string>{second});
-  EXPECT_EQ(Read(second).records.size(), 2U + 3U + 1U);
+  EXPECT_EQ(Records(second), 2U + 3U + 1U);
 }
 
 // Requirements: US-21
@@ -355,7 +376,7 @@ TEST_F(CaptureRetentionTest, AFailedDeletionIsLoggedOnceAndTheMatchIsStillCaptur
   EXPECT_EQ(Occurrences(written, "event=capture_retention_failed"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "event=capture_stopped"), 0U) << written;
   EXPECT_EQ(Names().size(), seeded.size() + 1);
-  EXPECT_EQ(Read(CaptureFileName(kStarted, 1)).records.size(), 2U + 2U + 1U);
+  EXPECT_EQ(Records(CaptureFileName(kStarted, 1)), 2U + 2U + 1U);
 }
 
 // NFR-01: what retention deletes, it deletes on the capture's writer thread,

@@ -8,8 +8,8 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 
 | Target            | Input                                                                                                                     | Seeds                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `protocol_decode` | one payload for `protocol::Decode`                                                                                        | one message of each kind           |
-| `capture_read`    | a Match capture file for `server::ReadCapture`, and the same bytes as one record for `protocol::DecodeCaptureRecord`      | one capture holding every record   |
+| `protocol_decode` | one payload for `protocol::Decode`, and the same bytes as one capture record for `protocol::DecodeCaptureRecord`          | one message of each kind           |
+| `capture_read`    | a Match capture file for `capture::ReadCapture`                                                                           | one capture holding every record   |
 | `pack_load`       | a pack without its trailer, which the target signs with the golden packs' test key and loads through `assets::Pack::Load` | the golden client and server packs |
 
 ## Layout

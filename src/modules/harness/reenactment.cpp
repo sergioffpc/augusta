@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
@@ -20,10 +21,10 @@ namespace {
 
 // The capture's number of the player of view's Match start that spawned at
 // spawn, 0 if none of the capture's did.
-CapturedPlayer NumberAt(const Script& script, const math::Vec3& spawn) {
+capture::Player NumberAt(const Script& script, const math::Vec3& spawn) {
   const auto found = std::ranges::find(script.spawns, spawn);
-  return found == script.spawns.end() ? CapturedPlayer{0}
-                                      : static_cast<CapturedPlayer>(found - script.spawns.begin() + 1);
+  return found == script.spawns.end() ? capture::Player{0}
+                                      : static_cast<capture::Player>(found - script.spawns.begin() + 1);
 }
 
 // The Match start player of view that matches, if any.
@@ -37,15 +38,15 @@ const MatchPlayer* FindPlayer(const ServerView& view, Matches matches) {
 }
 
 // The capture's number of the player whose body is entity in view's Match.
-CapturedPlayer NumberOf(const Script& script, const ServerView& view, EntityId entity) {
+capture::Player NumberOf(const Script& script, const ServerView& view, EntityId entity) {
   const MatchPlayer* player = FindPlayer(view, [entity](const MatchPlayer& p) { return p.entity == entity; });
-  return player == nullptr ? CapturedPlayer{0} : NumberAt(script, player->spawn);
+  return player == nullptr ? capture::Player{0} : NumberAt(script, player->spawn);
 }
 
 // The capture's number of the player of session in view's Match.
-CapturedPlayer NumberOf(const Script& script, const ServerView& view, SessionId session) {
+capture::Player NumberOf(const Script& script, const ServerView& view, SessionId session) {
   const MatchPlayer* player = FindPlayer(view, [session](const MatchPlayer& p) { return p.session == session; });
-  return player == nullptr ? CapturedPlayer{0} : NumberAt(script, player->spawn);
+  return player == nullptr ? capture::Player{0} : NumberAt(script, player->spawn);
 }
 
 // tick as an offset from first, never below 0.
@@ -58,7 +59,7 @@ tick::Tick NewestTick(const ServerView& view) {
   return view.authoritative.has_value() ? view.authoritative->tick : view.match_start->first_tick;
 }
 
-std::string WinnerName(std::optional<CapturedPlayer> winner) {
+std::string WinnerName(std::optional<capture::Player> winner) {
   return winner.has_value() ? std::to_string(*winner) : std::string("draw");
 }
 
@@ -77,22 +78,26 @@ tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz) {
   return (scaled + kMillisecondsPerSecond - 1) / kMillisecondsPerSecond;
 }
 
-Pacer::Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz, std::optional<std::uint32_t> leave)
+Pacer::Pacer(std::vector<capture::AtOffset<capture::Command>> commands, std::uint8_t tick_rate_hz,
+             std::optional<std::uint32_t> leave)
     : commands_(std::move(commands)), max_held_ticks_(command::HeldTicks(tick_rate_hz)), leave_(leave) {}
 
 std::optional<command::Command> Pacer::Next(tick::Tick first_tick, tick::Tick due_tick) {
   const std::uint64_t due_offset = OffsetOf(due_tick, first_tick);
-  if (due_offset < slot_ || DoneBeforeLeave()) {
+  // From the Leave's tick on, only a Command late into it still goes, so it
+  // reaches the server before the Leave does: never a filler.
+  const bool at_leave = leave_.has_value() && due_offset >= *leave_;
+  if (due_offset < slot_ || (at_leave && !CommandBeforeLeave())) {
     return std::nullopt;
   }
   slot_ = due_offset + 1;
   if (next_ >= commands_.size() || commands_[next_].offset > due_offset) {
     return Filler(due_tick);
   }
-  const CapturedCommand& captured = commands_[next_++];
-  const std::int64_t delay = static_cast<std::int64_t>(captured.offset) - captured.seen_offset;
+  const capture::AtOffset<capture::Command>& captured = commands_[next_++];
+  const std::int64_t delay = static_cast<std::int64_t>(captured.offset) - captured.event.seen_offset;
   last_delay_ = static_cast<tick::Tick>(std::max<std::int64_t>(delay, 0));
-  command::Command command = captured.command;
+  command::Command command = captured.event.command;
   command.seen_tick = due_tick - std::min(last_delay_, due_tick);
   last_ = command;
   held_ = 0;
@@ -116,19 +121,19 @@ command::Command Pacer::Filler(tick::Tick due_tick) {
 std::vector<PairedDeath> PairDeaths(const Script& script, const ServerView& view,
                                     const std::vector<ObservedDeath>& observed) {
   const tick::Tick first = view.match_start.has_value() ? view.match_start->first_tick : 0;
-  std::vector<CapturedDeath> told;
+  std::vector<capture::AtOffset<capture::Death>> told;
   told.reserve(observed.size());
   for (const ObservedDeath& death : observed) {
-    told.push_back(CapturedDeath{.offset = static_cast<std::uint32_t>(OffsetOf(death.tick, first)),
-                                 .victim = NumberOf(script, view, death.victim),
-                                 .killer = NumberOf(script, view, death.killer)});
+    told.push_back({.offset = static_cast<std::uint32_t>(OffsetOf(death.tick, first)),
+                    .event = capture::Death{.victim = NumberOf(script, view, death.victim),
+                                            .killer = NumberOf(script, view, death.killer)}});
   }
   std::vector<bool> taken(told.size(), false);
   std::vector<PairedDeath> pairs;
-  for (const CapturedDeath& death : script.deaths) {
+  for (const capture::AtOffset<capture::Death>& death : script.deaths) {
     PairedDeath pair{.captured = death, .observed = std::nullopt};
     for (std::size_t i = 0; i < told.size(); ++i) {
-      if (!taken[i] && told[i].victim == death.victim) {
+      if (!taken[i] && told[i].event.victim == death.event.victim) {
         taken[i] = true;
         pair.observed = told[i];
         break;
@@ -204,14 +209,15 @@ namespace {
 
 // pair's line: the captured Death, then the one told, or why there is none.
 std::string DescribeDeath(const PairedDeath& pair, std::optional<std::uint32_t> left_at) {
-  const CapturedDeath& named = pair.captured.has_value() ? *pair.captured : *pair.observed;
+  const capture::Death& named = pair.captured.has_value() ? pair.captured->event : pair.observed->event;
   std::string line = std::format("event=death victim={} killer={}", named.victim, named.killer);
   if (!pair.captured.has_value()) {
     return line + std::format(" captured=none observed_offset={}", pair.observed->offset);
   }
   line += std::format(" captured_offset={}", pair.captured->offset);
   if (pair.observed.has_value()) {
-    return line + std::format(" observed_offset={} observed_killer={}", pair.observed->offset, pair.observed->killer);
+    return line +
+           std::format(" observed_offset={} observed_killer={}", pair.observed->offset, pair.observed->event.killer);
   }
   const bool after_leave = left_at.has_value() && pair.captured->offset >= *left_at;
   return line + (after_leave ? " observed=left" : " observed=none");
@@ -228,10 +234,10 @@ std::vector<std::string> Reenactment::Outcome(const ServerView& view, const std:
     lines.push_back(DescribeDeath(pair, left_at));
   }
   std::string end = script_.end.has_value() ? std::format("event=match_end captured_offset={} captured_winner={}",
-                                                          script_.end->offset, WinnerName(script_.end->winner))
+                                                          script_.end->offset, WinnerName(script_.end->event.winner))
                                             : std::string("event=match_end captured=none");
   if (view.match_end.has_value()) {
-    const std::optional<CapturedPlayer> winner =
+    const std::optional<capture::Player> winner =
         view.match_end->winner.transform([&](SessionId session) { return NumberOf(script_, view, session); });
     end += std::format(" observed_offset={} observed_winner={}", OffsetOf(last_tick, first), WinnerName(winner));
   } else {

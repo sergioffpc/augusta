@@ -1,0 +1,54 @@
+name: Save the sccache cache
+description: >
+  Stops sccache, printing its stats, and saves its directory for this job's
+  later runs to restore (restore-sccache-cache), holding only the objects this
+  job's build wrote or read, and only when that differs from what it restored:
+  an unchanged cache is already saved, and saving it again would only push other
+  caches out of the repository's 10 GB. The entry it replaces on this ref is
+  deleted. Run it right after the job's last build step, so a failing test
+  later can't keep it from saving, and only when that build succeeded: an
+  unfinished build read only part of the cache, and keeping only that part would
+  throw the rest away. A release's jobs don't run it: an entry on a tag's ref is
+  read by no other ref, and a rerun of the release restores main's.
+runs:
+  using: composite
+  steps:
+    - name: Stop sccache
+      # Its local disk cache is complete once the server has stopped. Stopping
+      # prints the hits and misses of the job's builds.
+      shell: bash
+      run: sccache --stop-server || echo "::warning::sccache's server wasn't running."
+    - name: Drop the objects the build didn't use
+      # Older than the marker restore-sccache-cache left: restored, and neither
+      # read nor written since. Kept, they would be saved forever, since every
+      # save starts from the one before, and an object of a header or flag that
+      # changed is never read again.
+      shell: bash
+      run: |
+        echo "dropped $(find "$SCCACHE_DIR" -type f ! -newer "$COMPILER_CACHE_MARKER" -print -delete | wc -l) unused objects"
+    - name: List the sccache objects
+      id: listing
+      shell: bash
+      run: |
+        listing="$(cd "$SCCACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)"
+        echo "hash=$listing" >> "$GITHUB_OUTPUT"
+        if [ "$listing" != "$COMPILER_CACHE_RESTORED" ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Save sccache's cache
+      # Keyed by the listing, so jobs of one run that compiled the same objects
+      # (the nightly's fuzz matrix) save one entry: the first reserves the key,
+      # the rest skip with a warning, as they do when the cache can't be
+      # reached.
+      if: steps.listing.outputs.changed == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.SCCACHE_DIR }}
+        key: ${{ env.COMPILER_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}
+    - if: steps.listing.outputs.changed == 'true'
+      uses: ./.github/actions/prune-cache
+      with:
+        prefix: ${{ env.COMPILER_CACHE_PREFIX }}
+        keep: ${{ env.COMPILER_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}

@@ -1,0 +1,15 @@
+# Where Alertmanager sends an alert (monitoring.yaml, ADR-0049), checked by
+# CI's manifests job with amtool config routes test against the configuration
+# the kube-prometheus-stack chart renders (.github/workflows/ci.yml): on each
+# line, the receiver an alert with the labels after it must reach, alone.
+telegram severity=critical
+telegram severity=error
+telegram alertname=AugustadRestarted severity=error namespace=develop scenario=firebase
+telegram alertname=FluxObjectNotReady severity=critical namespace=flux-system
+telegram alertname=KubeDeploymentRolloutStuck severity=warning namespace=staging
+telegram alertname=KubePodCrashLooping severity=warning namespace=develop
+null severity=warning
+null alertname=ClusterAdminUsed severity=warning
+null severity=info
+null alertname=Watchdog severity=none
+null alertname=InfoInhibitor severity=none

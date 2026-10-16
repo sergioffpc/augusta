@@ -1,5 +1,7 @@
-# The servers' alert rules (ADR-0049). They route to no receiver yet, so a
-# firing alert shows only in Grafana and Alertmanager. Each server has its own,
+# The servers' alert rules (ADR-0049). A critical or error alert reaches the
+# operator's Telegram chat; a warning shows only in Grafana and Alertmanager
+# (clusters/onprem/infrastructure/monitoring.yaml). tests/ holds their
+# promtool tests. Each server has its own,
 # scoped to its metrics Service in this release's namespace, so develop and
 # staging, and every scenario in them, alert apart. The capture filesystem
 # (ADR-0050) is the node's, shared by every server of every environment, so its

@@ -239,6 +239,9 @@ std::expected<Value, HookError> Engine::Call(std::string_view hook, const Value:
   if (!slot) {
     return Value{};
   }
+  // The engine's own work in the state is outside a protected call, so it runs
+  // with the memory limit lifted; the hook alone runs under it.
+  const MemoryLimitScope unlimited(slot->lua, false);
   const sol::object function = slot->lua.globals().raw_get<sol::object>(hook);
   if (function.get_type() == sol::type::lua_nil) {
     return Value{};
@@ -250,7 +253,11 @@ std::expected<Value, HookError> Engine::Call(std::string_view hook, const Value:
   // call cannot stop this one early.
   LimitInstructions(slot->lua, kHookInstructionLimit);
   const sol::object argument = ToLua(*slot, view);
-  const sol::protected_function_result result = function.as<sol::protected_function>()(argument);
+  const auto run = function.as<sol::protected_function>();
+  const sol::protected_function_result result = [&] {
+    const MemoryLimitScope limited(slot->lua, true);
+    return run(argument);
+  }();
   if (!result.valid()) {
     const sol::error failure = result;
     return Fail(HookErrorCode::kRaised, failure.what());

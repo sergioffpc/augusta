@@ -1,0 +1,198 @@
+#ifndef AUGUSTA_CAPTURE_H_
+#define AUGUSTA_CAPTURE_H_
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <istream>
+#include <optional>
+#include <ostream>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "augusta/assets.h"
+#include "augusta/command.h"
+#include "augusta/failure.h"
+#include "augusta/math.h"
+
+/// \file
+/// A Match capture's file (ADR-0050), in one place for every side that reads or
+/// writes one: the server's Capturer, Replay and the Replay catalog, a Captured
+/// player's harness::ReadScript, and test fixtures. A capture is its header, its
+/// Joins and its events, each event at its offset in ticks from the Match's
+/// first tick, in the engine's types. ReadCapture reads one and holds it to the
+/// format's rules; EncodeHeader, EncodeJoin and EncodeEvent encode one piece of
+/// it for Write, and WriteCapture writes a whole one.
+///
+/// A file is the capture's magic, then each record's payload after its length
+/// in one byte, the header first, in the Networking Protocol's encoding: the
+/// module converts between its records and the engine's types, so its
+/// interface names no protocol type (ADR-0038). Reading checks the magic, the
+/// header's format version and the records' order (every Join first, numbered
+/// from 1, then the events in offset order, each naming a player a Join did,
+/// nothing after the Match end). Pure stream I/O, on whichever thread holds the
+/// stream.
+namespace augusta::capture {
+
+/// What every capture's file name ends in.
+inline constexpr std::string_view kExtension = ".capture";
+
+/// Why a capture does not read, wherever it is read: Replay and the Replay
+/// catalog, and a Captured player's harness::ReadScript, report the same errors.
+enum class ReadError : std::uint8_t {
+  /// The stream could not be read, or was never opened.
+  kUnreadable,
+  /// It does not start with a capture's magic.
+  kNotACapture,
+  /// Its header is missing, or of a format version this engine does not read.
+  kUnsupported,
+  /// A record does not decode, comes out of order, or names a player no Join did.
+  kMalformed,
+};
+
+/// What to tell whoever runs the process about error.
+[[nodiscard]] std::string_view DescribeReadError(ReadError error);
+
+/// Whether in starts with a capture's magic. Reads as far as the magic goes.
+[[nodiscard]] bool StartsWithMagic(std::istream& in);
+
+/// What a captured Match ran on and when it started.
+struct Header {
+  /// The capturing engine's version (augusta::EngineVersion).
+  std::string engine_version;
+  assets::PackHash server_pack{};
+  assets::PackHash client_pack{};
+  std::uint8_t tick_rate_hz = 0;
+  /// When the Match started, in UTC.
+  std::chrono::sys_time<std::chrono::milliseconds> started;
+
+  bool operator==(const Header&) const = default;
+};
+
+/// A player's number in a capture: from 1, in its Match start's order, as
+/// `augustac --reenact --player` names it. Player n's Join is Capture::joins[n - 1].
+using Player = std::uint8_t;
+
+/// A player of the Match start, where it spawned on the position grid.
+struct Join {
+  /// Its Session's id on the server that captured it.
+  std::uint32_t session = 0;
+  /// Its Character, by its name in the scenario's manifest (ADR-0042).
+  std::string character;
+  math::Vec3 spawn{};
+
+  bool operator==(const Join&) const = default;
+};
+
+/// A Command its player sent, as the server's command queue handed it to the World.
+struct Command {
+  Player player = 0;
+  /// Its Seen time's tick, as an offset from the Match's first tick: negative
+  /// for a State sent before the Match started. command.seen_tick is 0.
+  std::int32_t seen_offset = 0;
+  command::Command command{};
+
+  bool operator==(const Command&) const = default;
+};
+
+/// A player whose connection ended mid-Match.
+struct Leave {
+  Player player = 0;
+
+  bool operator==(const Leave&) const = default;
+};
+
+struct Death {
+  Player victim = 0;
+  Player killer = 0;
+
+  bool operator==(const Death&) const = default;
+};
+
+struct MatchEnd {
+  /// nullopt for a Draw.
+  std::optional<Player> winner;
+
+  bool operator==(const MatchEnd&) const = default;
+};
+
+using Event = std::variant<Command, Leave, Death, MatchEnd>;
+
+/// An event at its offset in ticks from the Match's first tick.
+template <typename T>
+struct AtOffset {
+  std::uint32_t offset = 0;
+  T event{};
+
+  bool operator==(const AtOffset&) const = default;
+};
+
+struct Capture {
+  Header header;
+  /// Its players, in player order.
+  std::vector<Join> joins;
+  /// Its events, in offset order.
+  std::vector<AtOffset<Event>> events;
+  /// Whether the file ended partway through a record, which was dropped: its
+  /// writer stopped while writing it.
+  bool torn = false;
+
+  bool operator==(const Capture&) const = default;
+};
+
+/// Reads the capture in, held to the format's rules. A last record cut short is
+/// dropped and reported in Capture::torn; a stream that fails, wherever it
+/// does, is kUnreadable, never a whole or torn capture.
+[[nodiscard]] std::expected<Capture, ReadError> ReadCapture(std::istream& in);
+
+/// A record longer than a capture's frame holds: everything before it reads,
+/// nothing after it would.
+struct RecordTooLong {};
+
+/// Why a piece of a capture does not encode: a failure::Failure for a field the
+/// codec cannot carry (failure::Code::kInvariantViolated, a broken invariant of
+/// the writer's), or a record too long for a frame.
+using EncodeError = std::variant<failure::Failure, RecordTooLong>;
+
+/// A piece of a capture as it is on disk, for Write.
+class Encoded {
+ public:
+  [[nodiscard]] std::size_t SizeOnDisk() const { return bytes_.size(); }
+
+ private:
+  friend std::expected<Encoded, EncodeError> EncodeHeader(const Header& header);
+  friend std::expected<Encoded, EncodeError> EncodeJoin(Player player, const Join& join);
+  friend std::expected<Encoded, EncodeError> EncodeEvent(const AtOffset<Event>& event);
+  friend void Write(std::ostream& out, const Encoded& encoded);
+
+  explicit Encoded(std::vector<std::byte> bytes) : bytes_(std::move(bytes)) {}
+
+  std::vector<std::byte> bytes_;
+};
+
+/// The capture's magic, then header, in this engine's format version: what a file starts with.
+[[nodiscard]] std::expected<Encoded, EncodeError> EncodeHeader(const Header& header);
+
+/// The Join of player, numbered from 1 in the Match start's order, at offset 0.
+[[nodiscard]] std::expected<Encoded, EncodeError> EncodeJoin(Player player, const Join& join);
+
+/// One event, after every Join.
+[[nodiscard]] std::expected<Encoded, EncodeError> EncodeEvent(const AtOffset<Event>& event);
+
+/// Writes encoded to out, whose state then says whether it was.
+void Write(std::ostream& out, const Encoded& encoded);
+
+/// Writes capture to out whole - its header, its Joins, then its events - and
+/// out's state then says whether it was; nothing is written unless every piece
+/// encodes. Its torn flag is not written: a capture read back is torn only if
+/// out was cut short. capture is held to nothing ReadCapture holds it to: one
+/// out of the format's order is written as it is, and reads back kMalformed.
+[[nodiscard]] std::expected<void, EncodeError> WriteCapture(std::ostream& out, const Capture& capture);
+
+}  // namespace augusta::capture
+
+#endif  // AUGUSTA_CAPTURE_H_

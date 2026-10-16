@@ -2,6 +2,79 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 3.3.0 - 2026-10-16
+
+### Features
+
+- **tools:** print the pack format augusta-publish published
+- **chart:** accept a server's packFormat beside its packVersion
+- **cluster:** send critical alerts and stuck Flux objects to Telegram
+
+### Bug Fixes
+
+- **protocol:** stop ReadList at the first error and reserve nothing
+- **server:** capture a Match abandoned by its last player as a Draw
+- **scripting:** drop warn from the Lua sandbox and bound each state's memory
+- **chart:** record packFormat without acting on it
+- **scripts:** hold the alert notifications wizard to the shell style
+- **harness:** send a Command late into the Leave's tick before leaving
+
+### Refactoring
+
+- **capture:** grow an engine-typed capture interface
+- **capture:** point the build, callers and tests at the capture module
+- **physics:** fold map collision into physics
+- **presentation:** fold the animation module into presentation
+- **presentation:** make the animation engine's place in presentation explicit
+- **simulation:** fold Replication into simulation
+- **simulation:** tighten Replication's docs and boundary glob
+- **gameplay:** merge the shared gameplay rules into one module
+- **gameplay:** address review of the gameplay merge
+- **lifecycle:** merge the supervisor and the application boundary into lifecycle
+- **lifecycle:** sort lifecycle links and lowercase the supervisor
+- **replay:** read Match captures through the capture module
+- **capture:** write Match captures through the capture module
+- **harness:** build a Captured player's Script from the capture module
+- **capture:** contract the capture module's interface to engine types
+- **capture:** name the byte a frame's length takes
+- rename the shared_wire module to wire
+- move the lock-free metrics into the metrics module
+- move what the server loads from its pack into the scenario module
+- move the server's bookkeeping into the host module
+- make the Host a module
+
+### Documentation
+
+- **roadmap:** point the M1 render spike at NVRHI
+- **physics:** say the physics module builds map collision from a Pack
+- point every platform at the Makefile in CLAUDE.md
+- **pack:** wrap the record order comment within ruff's line length
+- state which Linux jobs keep a vcpkg cache of their own
+- say when a pack format change re-cooks and how it merges
+- state the pack format change's merge order in ADR-0031
+- record Telegram alert notifications and their one Secret
+- record executables as Glue and skeletal hitboxes
+- name the metrics module in the Building Block View
+- name the scenario module in the Building Block View
+- name the host module in the Building Block View
+- state each module's responsibility in a README
+- align the agent setup with mattpocock-skills 1.3
+- define the glossary terms its entries already use
+- state the metrics, scenario and host modules' responsibility
+
+### Tests
+
+- **capture:** include <thread> only where the FIFO test uses it
+- **capture:** name the Capturer's test fixture after it
+- **capture:** include sstream only where the POSIX stalled-disk test uses it
+- **tools:** cover the packFormat augusta-publish prints
+- assert the Glue refusal names the violator's own directory
+
+### Build
+
+- run the pre-push hook's checks without pushing
+- refuse a library target inside an executable
+- refuse a test that links Glue it may not
 ## 3.2.0 - 2026-10-15
 
 ### Features

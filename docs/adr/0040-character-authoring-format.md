@@ -27,7 +27,7 @@ and keeps the camera there, following its body, and the server reads the eye of
 every character of the scenario at startup, refusing to run on one it could not
 fire for. A character is never itself the argument the cooker (`augusta-pack`)
 takes; it's shared authoring content scenarios draw on, not scenario content.
-This follows CONTEXT.md's own line between the two: "Map" is the static space a
+This follows GLOSSARY.md's own line between the two: "Map" is the static space a
 match is played in — collision, spawn points, hitboxes — and a player character
 is an ECS entity, not scene content, so it doesn't belong inside the map's stage
 alongside the level.

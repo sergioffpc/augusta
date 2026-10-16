@@ -311,6 +311,10 @@ spec:
         - port: 10250
           protocol: TCP
 ---
+# Alertmanager takes the alerts of Prometheus and Loki's ruler, and Grafana's
+# queries. It posts its notifications to Telegram's Bot API (monitoring.yaml),
+# whose addresses these files do not pin, as the image verification's
+# registries' above: HTTPS on the internet, but not the LAN or the cluster.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -322,6 +326,18 @@ spec:
       app.kubernetes.io/name: alertmanager
   policyTypes:
     - Ingress
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
   ingress:
     - from:
         - podSelector:

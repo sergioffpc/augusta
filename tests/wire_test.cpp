@@ -1,5 +1,3 @@
-#include "wire.h"
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -16,10 +14,13 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
+#include "augusta/host_wire.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -27,11 +28,9 @@
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "command_queue.h"
-#include "match.h"
 
 // Each peer converts between the engine's types and the protocol's plain ones
-// at its edge (ADR-0038) and nowhere else: the server in server/wire.h, the
+// at its edge (ADR-0038) and nowhere else: the server in augusta/host_wire.h, the
 // client in harness_wire.h. What one side sends must reach the other's engine
 // types unchanged, bytes and all.
 namespace {
@@ -517,22 +516,6 @@ TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) 
   }
   EXPECT_EQ(augusta::server::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
   EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
-}
-
-TEST(WireTest, ACaptureRecordTheServerCannotEncodeIsAnInvariantFailureNamingItsType) {
-  const augusta::protocol::CaptureHeaderWire too_long{
-      .server_pack = {},
-      .client_pack = {},
-      .engine_version = std::string(augusta::protocol::kMaxEngineVersionLength + 1, 'v'),
-      .started_unix_ms = 0,
-      .format_version = augusta::protocol::kCaptureFormatVersion,
-      .tick_rate_hz = 60};
-
-  const auto encoded = augusta::server::EncodeToCapture(too_long);
-
-  ASSERT_FALSE(encoded.has_value());
-  EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
-  EXPECT_EQ(ContextOf(encoded.error(), "capture_record_type"), "1");
 }
 
 // A refusal no case of ToWire names is a corrupted one: it travels on as a

@@ -8,7 +8,7 @@ target_include_directories(augusta_agent_match_loop PUBLIC ${CMAKE_CURRENT_SOURC
 target_link_libraries(
   augusta_agent_match_loop
   PUBLIC augusta_agent_core augusta_harness
-  PRIVATE augusta_command augusta_math augusta_physics
+  PRIVATE augusta_gameplay augusta_math augusta_physics
 )
 
 # Whole runs of Agents against a server::Host in the same process, through the

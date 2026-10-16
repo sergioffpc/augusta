@@ -1,4 +1,4 @@
-#include "tick_messages.h"
+#include "augusta/tick_messages.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -9,6 +9,7 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/failure.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
@@ -16,7 +17,6 @@
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "match.h"
 
 // What the Host hands its connections after a tick, message by message: which
 // peer is sent which bytes, how reliably, and in what order (ADR-0044).

@@ -20,7 +20,8 @@ already on the node checks it holds the same files and changes nothing.
 Only the server pack and the public key go to the node, the key renamed to
 signing.pub as the chart expects. The client pack stays local; nothing here
 distributes it. Publishing does not deploy: an environment serves the new
-pack once its HelmRelease names the printed version (clusters/onprem/apps/).
+pack once its HelmRelease names the printed version, with the pack format it
+was cooked in beside it (clusters/onprem/apps/).
 
 The node is reached with the OpenSSH client (ssh) on PATH, as the node's
 augusta-publish user, whose key does nothing but run the node's end of
@@ -70,6 +71,8 @@ class Release:
     environment: str
     scenario: str
     version: str
+    # The pack format version the server pack was cooked in (ADR-0031).
+    pack_format: int
     # Name on the node -> local file.
     files: dict[str, Path]
 
@@ -148,6 +151,7 @@ def prepare(
         environment=environment,
         scenario=scenario,
         version=server.hash.hex()[:VERSION_LENGTH],
+        pack_format=server.version,
         files={SERVER_PACK_NAME: server_pack, PUBLIC_KEY_NAME: public_key_path},
     )
 
@@ -342,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     # Quoted: a version of digits alone would read as a number in YAML.
     print(
         f"  serve it with servers.{release.scenario}.packVersion: "
-        f'"{release.version}" in '
+        f'"{release.version}" and packFormat: {release.pack_format} in '
         f"clusters/onprem/apps/{release.environment}.yaml"
     )
     return 0

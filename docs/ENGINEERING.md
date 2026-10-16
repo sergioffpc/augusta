@@ -87,11 +87,12 @@ decisions already made in ARCHITECTURE.md:
     3. Build + test the server on a Linux runner (clang, ADR-0008), on Linux
        x86-64, one of its two production platforms: Linux arm64 is built only
        for `main`'s image and the releases (NFR-04). Plus `clang-tidy` (Google
-       style checks profile). It and the sanitizers job run the tests one per
-       core of the runner (`ctest --parallel "$(nproc)"`), so they follow the
-       runner's size: each test listens on a port of its own (`:0`) and names
-       its temporary files after itself, so they don't contend. The presets
-       themselves stay serial, as do the nightly and release runs.
+       style checks profile). It, the sanitizers job and the Windows job above
+       run the tests one per core of the runner (`ctest --parallel "$(nproc)"`,
+       `"$NUMBER_OF_PROCESSORS"` on Windows), so they follow the runner's size:
+       each test listens on a port of its own (`:0`) and names its temporary
+       files after itself, so they don't contend. The presets themselves stay
+       serial, as do the nightly and release runs.
     4. ASan + UBSan test build and a short fuzzing run per target (both Linux
        only), only for `pull_request` runs — skipped on the `push` that lands
        after merge, since the PR already validated it
@@ -107,16 +108,16 @@ decisions already made in ARCHITECTURE.md:
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
-       every push, and on a pull request when the image or chart changed.
-       `container-publish-x64-linux`, on a push only, waits for both it and the
-       server-x64-linux job, rebuilds the image from the layer cache
-       `container-verify` just wrote (every stage but `rootfs`, ADR-0054, is a
-       cache hit), scans it again, and only then pushes it with its `-debuginfo`
-       image and attestations - so a published image is always a scanned one, of
-       a commit whose tests passed. On a push to `main` alone, whose image is
-       the one a release runs, `container-publish-arm64-linux` builds, scans and
-       pushes the arm64 image too, natively on an arm64 runner, as
-       `sha-<12>-arm64` with its own debug info and attestations, and
+       every push, and on a pull request when the image or chart changed; on a
+       push it also builds the image's `debuginfo` stage, and hands both to the
+       run as artifacts. `container-publish-x64-linux`, on a push only, waits
+       for it, the server-x64-linux job and `confinement`, then pushes that very
+       image (it builds none) with its `-debuginfo` image, signature and
+       attestations - so a published image is always the one that was scanned
+       and confined, of a commit whose tests passed. On a push to `main` alone,
+       whose image is the one a release runs, `container-publish-arm64-linux`
+       builds, scans and pushes the arm64 image too, natively on an arm64
+       runner, as `sha-<12>-arm64` with its own debug info and attestations, and
        `container-index` then makes `sha-<12>`, `main` and `sha-<12>-debuginfo`
        the index of both architectures (NFR-04). On a push to `develop` alone,
        `chart-publish` then pushes the chart, versioned `<chart version>+<12>`,
@@ -127,22 +128,50 @@ decisions already made in ARCHITECTURE.md:
       (vcpkg's native GitHub-Actions-cache backend was removed upstream in
       2026). On Linux, where nuget.exe runs under Mono and fails certificate
       checks, it is a files cache in the Actions cache, one entry for every
-      Linux job, saved only when a job built a package it didn't restore -
-      except the `tools` job's Linux leg, whose `tools/pack/native` manifest
-      keeps an entry of its own. vcpkg builds its ports through the overlay
-      `x64-linux` triplet with the project's LLVM toolchain (ADR-0008), which no
-      preset changes. So the entry's packages are the same whatever preset a job
-      configures, and the server image's dependency layer, built on the same
-      Ubuntu, restores them too: the container jobs mount the entry read-only
-      into its `vcpkg install`, and it builds from source only the packages the
-      entry lacks.
+      Linux job, saved only when a job built a package it didn't restore. A save
+      keeps only the packages its job installed, so a job installing ports no
+      other does keeps an entry of its own: the `tools` job's Linux leg, for the
+      `tools/pack/native` manifest, and each job turning on a manifest feature
+      the others don't (`client-x64-linux` the `client` feature,
+      `server-x64-linux` the Agents' `agent` feature). vcpkg builds its ports
+      through the overlay `x64-linux` triplet with the project's LLVM toolchain
+      (ADR-0008), which no preset changes. So the entry's packages are the same
+      whatever preset a job configures, and the server image's dependency layer,
+      built on the same Ubuntu, restores them too: the container jobs mount the
+      entry read-only into its `vcpkg install`, and it builds from source only
+      the packages the entry lacks.
+    - Compiler cache: sccache on its local disk backend, never its
+      GitHub-Actions-cache one, whose one entry per object exhausts the cache's
+      request quota. Each job carries the directory between runs as one entry of
+      its own per ref (`.github/actions/restore-sccache-cache`,
+      `save-sccache-cache`), saved after a successful build only when it
+      changed, holding only the objects that build wrote or read, and replacing
+      the ref's entry before it. A release's jobs restore main's entries and
+      save none. An Actions cache outage only makes the build cold.
+    - clang-tidy results: both C++ jobs' Lint steps run clang-tidy through
+      ctcache, one translation unit per invocation, and skip a unit that passed
+      with the same preprocessed source, `#include` lines, effective
+      configuration and arguments. A unit with findings is never cached, so it
+      fails every run until fixed; a header, flag or `.clang-tidy` change
+      re-lints exactly the units it reaches. Not linting only a pull request's
+      changed files: that misses the units a changed header or configuration
+      reaches. Results live in a directory per clang-tidy version, which
+      ctcache's key leaves out, and each job carries them between runs as the
+      compiler cache is carried (`.github/actions/restore-ctcache-cache`,
+      `save-ctcache-cache`), saved after Lint whether it passed or failed.
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
-      binaries and sccache objects. The server image's Docker layers live in
-      GHCR (`augustad:buildcache`) instead: at several GB they would evict the
-      rest, and every pull request would rebuild its dependencies from source.
-      Only a push's `container-verify` writes them; a pull request reads them,
-      and a fork's reads nothing.
+      binaries, sccache objects and clang-tidy results. The server image's
+      Docker layers live in GHCR (`augustad:buildcache`) instead: at several GB
+      they would evict the rest, and every pull request would rebuild its
+      dependencies from source. Only a push's `container-verify` writes them; a
+      pull request reads them, and a fork's reads nothing.
+    - An Actions cache entry is kept only on a ref a later run restores from
+      (its own, a pull request's base, or `main`). A release restores the caches
+      but saves none: its tag's entries would serve only a rerun of it, which
+      restores `main`'s instead. A pull request's entries are deleted when it
+      closes, and a branch's when the branch is deleted. CodeQL's TRAP cache is
+      saved by `main` alone, an entry per commit, and only the newest is kept.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
   high case count, a `llvm-cov` coverage report, the Linux client's build and
@@ -174,7 +203,7 @@ decisions already made in ARCHITECTURE.md:
   checked the same way, and for linking nothing from the system beyond an
   allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
-  for `docs/`, `README.md` and `CONTEXT.md`, Doxygen for the C++ API) on every
+  for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
   builds it locally into `build/docs-site/`, with the `uv` and Doxygen both
   bootstraps install.
@@ -193,8 +222,9 @@ decisions already made in ARCHITECTURE.md:
   executables and every published server image get from GitHub artifact
   attestations, signed keylessly (Sigstore) by the workflow that built them:
   SLSA build provenance, naming the commit and the workflow run, and an SPDX
-  SBOM. Each is attested where it is built, so the image is attested by CI on
-  the push that publishes it, and the image a release runs (`sha-<12>` of its
+  SBOM. Each is attested where it is published, so the image is attested by CI
+  on the push that publishes it (`.github/actions/sign-and-attest-server-image`,
+  for either architecture), and the image a release runs (`sha-<12>` of its
   tag's commit) needs nothing more from the release. On `main` each
   architecture's image is attested, and the index of both gets its own
   provenance; a release attests `augustad-linux-x64` and `augustad-linux-arm64`
@@ -244,6 +274,21 @@ decisions already made in ARCHITECTURE.md:
   on a high or critical CVE; the image only on one with a fix available, the
   executables on any, since the NVD gives most of its ranges with no fixed
   version.
+- **Package retention:** GitHub Packages keeps every version CI pushes, so the
+  `prune-packages` workflow (`scripts/prune-packages.py`) deletes the ones
+  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`, `develop`,
+  `main`, the images of every release, of `main`'s newest commit and of the
+  newest `develop` commits (20 by default), what `develop` and `staging` run,
+  every tag or digest `develop` or `main` names, and whatever was pushed in the
+  day before its newest version, which a CI run may still be using; with each of
+  them, its platform manifests, debug info, signatures and attestations.
+  `charts/augustad` keeps `develop` and the charts of those releases and
+  commits, what `develop` can be rolled back to
+  ([flux-rollback.md](runbooks/flux-rollback.md)). Each vcpkg NuGet package
+  keeps its newest versions (2 by default): a miss rebuilds the port. If what CI
+  or the cluster runs now is missing, or a manifest cannot be read, the run
+  fails before anything is deleted. Scheduled runs print the plan alone;
+  deleting it is a dispatch with `apply` set, after reading that plan.
 
 ## Git Workflow
 
@@ -322,10 +367,18 @@ no self-hosted GitHub Actions runner in this pipeline).
   own key, `develop`'s or `staging`'s (Release signing above). The hash does not
   cover the signature, so one cook signed for both is one `packVersion` in two
   folders. A published folder is never rewritten. Each environment's Helm values
-  list its servers, one per scenario, each naming the `packVersion` it runs; the
-  chart makes, for each server, a `local` PersistentVolume on that folder alone,
-  read-only and pinned to the node, and the claim bound to it (ADR-0057), both
-  named by the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
+  list its servers, one per scenario, each naming the `packVersion` it runs and,
+  beside it, the `packFormat` that pack was cooked in, both as `augusta-publish`
+  prints them. The engine refuses a pack of any format version but its own
+  (ADR-0031), so CI's `format` job
+  ([`scripts/check-pack-formats.py`](../scripts/check-pack-formats.py)) fails a
+  change after which any `packFormat` in `clusters/` differs from the engine's,
+  or a `packVersion` has none: a change to the pack format moves every
+  environment to packs re-cooked in it, in the same pull request
+  ([cut-release](runbooks/cut-release.md#pack-format-changes)). The chart makes,
+  for each server, a `local` PersistentVolume on that folder alone, read-only
+  and pinned to the node, and the claim bound to it (ADR-0057), both named by
+  the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
   `augustad-<scenario>-pack-<packVersion>`. A new version is a new volume and
   claim, and the previous ones stay, so reverting the line goes back to them;
   Helm never deletes either, nor Kubernetes the folder
@@ -385,9 +438,11 @@ no self-hosted GitHub Actions runner in this pipeline).
   from PersistentVolumes, never as `hostPath` volumes, which a
   `host-path-volumes` policy refuses outside the `privileged` namespaces
   (ADR-0057).
-- **No Secrets:** the cluster holds no credential. A `secret-allowlist` policy
-  refuses any Secret but Flux's trusted public keys, Helm's release records and
-  those the charts make themselves, each listed by name (ADR-0057).
+- **One credential, not in Git:** the cluster's only credential is
+  Alertmanager's Telegram bot token, in a Secret the operator makes by hand
+  (`docs/runbooks/alert-notifications.md`). A `secret-allowlist` policy refuses
+  any Secret but that one, Flux's trusted public keys, Helm's release records
+  and those the charts make themselves, each listed by name (ADR-0057).
 - **Images by digest:** every image runs as `<image>:<tag>@sha256:<digest>`, so
   a tag pushed again never changes what runs, except those whose signatures are
   verified instead (`augustad`'s and Flux's) and `kube-system`'s, which come
@@ -413,22 +468,23 @@ no self-hosted GitHub Actions runner in this pipeline).
   It installs CI's runner Ubuntu release's packages, whose LLVM major is CI's,
   with the toolchain `.github/actions/setup-linux-build` installs (kept in step
   with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
-  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy, clang-format,
-  GitHub CLI, kubectl, helm, the flux CLI at the cluster's Flux version,
-  Doxygen, the hooks' formatters and linters (uv for yamllint, ruff, shfmt,
-  shellcheck, actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt,
-  StyLua, luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg
-  binary cache configuration (a files provider in the checkout's
-  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
-  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
-  shared by every container of the repository; the build trees in a volume per
-  container, so they never collide with a Windows build of the same checkout.
-  One recipe, not a container beside a separate host bootstrap: two recipes for
-  the same toolchain drift apart. With them come the Linux client's system
-  packages (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's
-  Vulkan drivers and Xvfb for the Renderer's smoke test), so the `linux` presets
-  build and test `augustac` in the container too. The Windows client has no
-  container equivalent (see below).
+  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy and ctcache (which
+  `make tidy` runs it through, at CI's pinned commit), clang-format, GitHub CLI,
+  kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the hooks'
+  formatters and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint,
+  gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and
+  taplo, at CI's pinned versions), and CI's Linux vcpkg binary cache
+  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
+  image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees in a volume per container, so
+  they never collide with a Windows build of the same checkout. One recipe, not
+  a container beside a separate host bootstrap: two recipes for the same
+  toolchain drift apart. With them come the Linux client's system packages
+  (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's Vulkan
+  drivers and Xvfb for the Renderer's smoke test), so the `linux` presets build
+  and test `augustac` in the container too. The Windows client has no container
+  equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
   LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
@@ -459,15 +515,15 @@ no self-hosted GitHub Actions runner in this pipeline).
   install location) — simpler than pinning a project-specific path, at the cost
   of not being able to side-by-side independent Build Tools versions per project
   — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
-  and the formatters and linters uv runs, below), standalone yamlfmt, StyLua,
-  luacheck and taplo, and LLVM (`clang-cl` and `lld-link` for the build,
-  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
-  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
-  the hooks agree with CI's gates, and kubectl, helm and the flux CLI, for the
-  cluster. It also puts Git's `bin` directory on PATH, so
-  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
-  VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  and the formatters and linters uv runs, below, and ctcache, which `make tidy`
+  runs `clang-tidy` through), standalone yamlfmt, StyLua, luacheck and taplo,
+  and LLVM (`clang-cl` and `lld-link` for the build, `clang-format`/`clang-tidy`
+  for the hooks below), pinned to the LLVM version CI's Ubuntu runner ships and
+  CI's Windows jobs install, so a local build and the hooks agree with CI's
+  gates, and kubectl, helm and the flux CLI, for the cluster. It also puts Git's
+  `bin` directory on PATH, so `bash scripts/<script>.sh` runs from PowerShell
+  and cmd, and the workspace's VS Code settings point the Kubernetes extension
+  and its terminals at the day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
@@ -505,7 +561,9 @@ no self-hosted GitHub Actions runner in this pipeline).
   needs a full `compile_commands.json`, so it stays out of the commit hook and
   runs on changed C++ before push. `make format` applies the formatters,
   `make format-check` checks formatting and every linter but `clang-tidy`,
-  `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`.
+  `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`,
+  through ctcache as CI's Lint steps do (CI, clang-tidy results), keeping its
+  results under `build/ctcache`; both bootstraps install it.
 - A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua 2.5.2
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
   luacheck 1.2.0 (`.luacheckrc`), whose standard library is the engine's Lua
@@ -580,8 +638,10 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **Liveness:** `/livez` fails when the tick loop has not finished a tick for 5
   seconds, and is the Deployment's liveness probe, so a hung server restarts on
   its own (ADR-0049).
-- **Alerts:** rules ship with the chart and show in Grafana and Alertmanager,
-  with no receiver yet. One is chosen when the server runs unattended for real.
+- **Alerts:** the servers' rules ship with the chart, the cluster's (Flux) with
+  the monitoring stack's release. Every `critical` or `error` alert, a crash
+  loop and a stalled rollout reach the operator's Telegram chat; the rest show
+  only in Grafana and Alertmanager (ADR-0049).
 - **Grafana** opens on node port 30300 with no login: anyone on the LAN is an
   anonymous Viewer, and there is no login form, basic authentication or admin
   user (ADR-0057). Nothing is changed in Grafana itself. A dashboard is changed

@@ -61,6 +61,12 @@ The Match captures (ADR-0050) of every environment that turns them on (its
 rebuild may keep or drop them, but the filesystem must be set up again before
 Flux starts those servers.
 
+The cluster's one credential is not in Git either: Alertmanager's Telegram bot
+token, with the chat it posts to, in the Secret
+`monitoring/alertmanager-telegram`
+([Set Up Alert Notifications](alert-notifications.md)). A rebuild makes it again
+in step B5.
+
 Prometheus keeps its last 15 days of series on a `local-path` volume on the node
 (ADR-0049). A rebuild loses them, and Prometheus starts again empty; no step
 restores them.
@@ -1388,7 +1394,15 @@ On the node, after a rebuild, a configuration change or an upgrade:
     Kustomization, a few minutes after step 3: until then `kubectl` answers
     `Forbidden`.
 
-5. Watch it converge:
+5. Make Alertmanager's Telegram Secret again, as soon as the `monitoring`
+   namespace exists (`kubectl get namespace monitoring`): run
+   `scripts/alert-notifications-wizard.sh`, whose Secret stage is enough with
+   the bot made before ([Set Up Alert Notifications](alert-notifications.md)).
+   Until it exists Alertmanager's pod does not start, so the
+   `kube-prometheus-stack` `HelmRelease` cannot become ready, nor the
+   `infrastructure` Kustomization, and neither environment is installed.
+
+6. Watch it converge:
 
     ```sh
     flux get kustomizations -n flux-system --watch

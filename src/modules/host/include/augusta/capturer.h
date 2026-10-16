@@ -1,0 +1,313 @@
+#ifndef AUGUSTA_CAPTURER_H_
+#define AUGUSTA_CAPTURER_H_
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "augusta/capture.h"
+#include "augusta/capture_retention.h"
+#include "augusta/command.h"
+#include "augusta/failure.h"
+#include "augusta/faults.h"
+#include "augusta/match.h"
+#include "augusta/math.h"
+#include "augusta/tick.h"
+
+/// \file
+/// A Match capture (ADR-0050): one file per Match, from its Match start to its
+/// Match end, of what its players did (Join, Commands, Leave) and of the
+/// markers the server decided (Death, Match end), each at its offset in ticks
+/// from the Match's first tick. server::Host hands a Capturer each event on the
+/// Simulation thread as the tick makes it; the Capturer encodes it there and a
+/// thread of its own opens, writes and flushes the files, so a disk that
+/// stalls never holds up a tick (NFR-01). The capture module
+/// (augusta/capture.h) owns the file's format: it encodes each event and
+/// reads the file back. A capture that cannot
+/// be written stops, keeping every whole record before it. What that costs the
+/// run is its CaptureMode (#398, ADR-0033): an optional capture, a debugging
+/// aid, degrades and the Match goes on without it; a strict one, for a
+/// playtest whose point is the capture, is the runtime's terminal failure.
+namespace augusta::server {
+
+/// Why a Match's capture stopped before its Match end, as logs name it.
+enum class CaptureStop : std::uint8_t {
+  /// A record is longer than a capture's frame holds (capture::RecordTooLong).
+  kRecordTooLong,
+  /// A record found kCaptureQueueCapacity records still unwritten: the disk is not keeping up.
+  kQueueFull,
+  /// The file could not be created, written or flushed.
+  kWriteFailed,
+  /// The record would take the directory past CaptureRetention::max_bytes with
+  /// no completed capture left to delete: the Match alone fills it.
+  kRetentionBudget,
+};
+
+/// "record_too_long", "queue_full", "write_failed" or "retention_budget".
+[[nodiscard]] std::string_view CaptureStopName(CaptureStop stop);
+
+/// What losing a capture's record costs the run.
+enum class CaptureMode : std::uint8_t {
+  /// A debugging aid: the capture degrades, and the Match goes on as it would
+  /// without one. augustad's default.
+  kOptional,
+  /// Evidence a playtest is run for: losing a record is a terminal runtime
+  /// failure (failure::Code::kStrictCaptureFailed).
+  kStrict,
+};
+
+/// Where a server's captures are in their one-way life, as logs and the
+/// augustad_capture_health metric name it.
+enum class CaptureHealth : std::uint8_t {
+  /// No capture has lost a record.
+  kEnabled,
+  /// An optional capture lost a record: that Match's capture stopped there, and
+  /// each Match after it is still captured afresh.
+  kDegraded,
+  /// Nothing more is captured, until the process exits: the run's last tick
+  /// was captured (Capturer::Finish), or a strict capture lost a record and the
+  /// runtime is to stop on it.
+  kStopped,
+};
+
+/// Where a capture lost a record, as its Failure's context names it.
+enum class CaptureStep : std::uint8_t {
+  /// The file could not be created.
+  kCreate,
+  /// A record could not be written.
+  kWrite,
+  /// A record could not be flushed.
+  kFlush,
+  /// A record found kCaptureQueueCapacity records still unwritten: the disk is
+  /// not keeping up.
+  kQueueFull,
+  /// A record is longer than a capture's frame holds (capture::RecordTooLong).
+  kRecordTooLong,
+  /// A record would take the directory past CaptureRetention::max_bytes with
+  /// no completed capture left to delete.
+  kRetentionBudget,
+};
+
+/// "create", "write", "flush", "queue_full", "record_too_long" or
+/// "retention_budget".
+[[nodiscard]] std::string_view CaptureStepName(CaptureStep step);
+
+/// Decision: what losing a record of the match-th Match's capture at step is in
+/// mode, with the disk's own words as detail. A strict capture's loss is the
+/// runtime's (failure::Code::kStrictCaptureFailed); an optional one's is its
+/// own subsystem's, named for the step: kCaptureWriteFailed (create, write),
+/// kCaptureFlushFailed, kCaptureQueueFull, kCaptureRecordTooLong or
+/// kCaptureRetentionBudget.
+[[nodiscard]] failure::Failure LostCapture(CaptureMode mode, std::uint64_t match, CaptureStep step, std::string detail);
+
+/// "optional" or "strict", as logs name mode.
+[[nodiscard]] std::string_view CaptureModeName(CaptureMode mode);
+
+/// "enabled", "degraded" or "stopped", as logs and metrics name health.
+[[nodiscard]] std::string_view CaptureHealthName(CaptureHealth health);
+
+/// Whether a server captures, as augustad_capture_state names it.
+enum class CaptureState : std::uint8_t {
+  /// Captures are not configured: the server has no Capturer.
+  kOff,
+  /// No Match is open.
+  kIdle,
+  /// The Match open is being captured.
+  kCapturing,
+  /// The Match open's capture stopped early (CaptureStop), until its Match end.
+  kStopped,
+};
+
+/// What a capture directory holds of captures: the files CaptureDirectory
+/// counts as captures, whoever wrote them.
+struct CaptureDirectoryUsage {
+  std::uint64_t files = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const CaptureDirectoryUsage&) const = default;
+};
+
+/// Told what a Capturer does, for the server's metrics (HostMetrics) to count:
+/// a Capturer knows nothing of how it is counted. Each call comes from the
+/// Simulation thread or the Capturer's writer, some with the writer's lock
+/// held, so none may block (NFR-01). Each does nothing unless overridden.
+class CaptureObserver {
+ public:
+  CaptureObserver() = default;
+  virtual ~CaptureObserver() = default;
+  CaptureObserver(const CaptureObserver&) = delete;
+  CaptureObserver& operator=(const CaptureObserver&) = delete;
+  CaptureObserver(CaptureObserver&&) = delete;
+  CaptureObserver& operator=(CaptureObserver&&) = delete;
+
+  /// The server's captures entered state: kIdle as the Capturer is made, then
+  /// as each Match opens, stops or ends.
+  virtual void OnState(CaptureState /*state*/) {}
+  /// The writer created a Match's file.
+  virtual void OnStarted() {}
+  /// The writer closed a Match's file with every record of it written.
+  virtual void OnCompleted() {}
+  /// A Match's capture stopped early, told once per capture.
+  virtual void OnStopped(CaptureStop /*stop*/) {}
+  /// The writer wrote bytes more to a file: its magic with its header, or a
+  /// record, each as capture::Encoded::SizeOnDisk counts it.
+  virtual void OnWritten(std::size_t /*bytes*/) {}
+  /// records are queued for the writer and not yet written.
+  virtual void OnQueued(std::size_t /*records*/) {}
+  /// What the capture directory holds, the capture being written included, as
+  /// the writer scans it as each Match's file is about to be created, then as
+  /// it writes and as retention deletes (CaptureDirectory).
+  virtual void OnDirectory(CaptureDirectoryUsage /*usage*/) {}
+  /// Retention deleted a completed capture (CaptureRetention).
+  virtual void OnRetentionDeleted() {}
+  /// Retention could not delete a completed capture.
+  virtual void OnRetentionDeleteFailed() {}
+  /// The server's captures entered health: kEnabled as the Capturer is made,
+  /// then each change of it, kStopped last.
+  virtual void OnHealth(CaptureHealth /*health*/) {}
+};
+
+/// How many records a Capturer holds that its writer has not yet written:
+/// about 4 seconds of a full Match's Commands at 60 Hz, past which the disk is
+/// not keeping up and the capture stops.
+inline constexpr std::size_t kCaptureQueueCapacity = 4096;
+
+/// One player of a Match start, as Host hands it to a Capturer.
+struct CaptureEntrant {
+  SessionId session{};
+  /// The body its Commands move, which the Simulation's events name it by.
+  EntityId entity{};
+  std::string character;
+  /// Where SimulationWorld spawned it.
+  math::Vec3 spawn{};
+};
+
+/// How a Capturer captures, beyond its directory and header.
+struct CaptureOptions {
+  CaptureMode mode = CaptureMode::kOptional;
+  /// Asked before each write (failure::Site::kCaptureWrite) and flush
+  /// (kCaptureFlush), a trip failing the file as the disk would; only a test
+  /// gives one, and it must outlive the Capturer.
+  failure::Faults* faults = nullptr;
+  /// kCaptureQueueCapacity but in tests.
+  std::size_t capacity = kCaptureQueueCapacity;
+  /// What the directory is kept within; off by default, deleting nothing.
+  CaptureRetention retention{};
+  /// Told what the Capturer does, if given; it must outlive the Capturer.
+  CaptureObserver* observer = nullptr;
+};
+
+/// Captures every Match a server runs into a directory of its own, one file
+/// each (CaptureFileName), each file as augusta/capture.h encodes it, the
+/// directory kept within CaptureOptions::retention (capture_retention.h). Every
+/// call but the destructor is the Simulation thread's, in the order the tick
+/// makes its events, and only encodes and queues; the Capturer's writer thread
+/// creates, writes, flushes and closes the files. A Match's capture stops at a
+/// record too long, one that finds the queue full, a failed create, write or
+/// flush, or one past the retention budget, logged once at WARN as
+/// event=capture_stopped: its file keeps every whole record before it.
+///
+/// The run's first such loss is kept as Loss. An optional capture then
+/// degrades, logged once at ERR as event=capture_degraded, and the next Match
+/// is captured afresh; a strict one stops, logged at INFO as
+/// event=capture_disabled, captures nothing more, and the runtime that asks
+/// Loss stops on it, whose boundary writes the one ERR line (ADR-0033). A
+/// capture that loses nothing is written the same in either mode. Finish, or
+/// destroying the Capturer, waits for every record queued to be written, then
+/// stops the captures. Its CaptureOptions::observer, if any, is told each of
+/// these as it happens, on the thread it happens on.
+class Capturer {
+ public:
+  /// Captures into directory, which must exist, each file under header with
+  /// its Match's start time.
+  Capturer(std::filesystem::path directory, capture::Header header, CaptureOptions options = {});
+  ~Capturer();
+  Capturer(const Capturer&) = delete;
+  Capturer& operator=(const Capturer&) = delete;
+  Capturer(Capturer&&) = delete;
+  Capturer& operator=(Capturer&&) = delete;
+
+  /// Opens a Match's capture, ending one still open: its players, in their
+  /// Match start's order, first_tick its first tick, started when it started.
+  void StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick first_tick,
+                  std::chrono::system_clock::time_point started);
+
+  /// The Command the player of entity sent, handed to SimulationWorld on tick.
+  void Command(tick::Tick tick, EntityId entity, const command::Command& command);
+
+  /// The player of entity left: its body was taken out before tick.
+  void Leave(tick::Tick tick, EntityId entity);
+
+  /// The player of victim died on tick, killed by the player of killer.
+  void Death(tick::Tick tick, EntityId victim, EntityId killer);
+
+  /// The Match ended after last_tick, its last, won by winner or drawn; its
+  /// file is closed once written.
+  void EndMatch(tick::Tick last_tick, std::optional<SessionId> winner);
+
+  /// Waits until every record queued so far is written, or dropped because
+  /// its capture stopped, so Health and Loss then account for every record
+  /// queued so far. A stalled disk holds it up. Simulation thread.
+  void WaitUntilWritten();
+
+  /// Waits until every record queued so far is written, then stops the
+  /// captures (CaptureHealth::kStopped), logged once as event=capture_disabled:
+  /// everything handed in after is dropped. For the runtime, after its last
+  /// tick, so the captures read stopped while its metrics are still served. A
+  /// stalled disk holds it up. Simulation thread.
+  void Finish();
+
+  /// A loss on the writer thread shows here once that thread gets to it. Any
+  /// thread.
+  [[nodiscard]] CaptureHealth Health() const;
+
+  /// The run's first loss, nullopt while no capture has lost a record: a
+  /// subsystem failure (kCaptureWriteFailed, kCaptureFlushFailed) of an
+  /// optional capture, a runtime one (kStrictCaptureFailed) of a strict one,
+  /// with the Match and the step (create, write, flush, queue_full or
+  /// record_too_long) it was lost at as context. Any thread.
+  [[nodiscard]] std::optional<failure::Failure> Loss() const;
+
+  /// The broken invariant the first record the protocol could not carry was
+  /// (failure::Code::kInvariantViolated), or nullopt: once set, the runtime
+  /// must stop (ADR-0033). Nothing of that record is written.
+  [[nodiscard]] const std::optional<failure::Failure>& Failure() const;
+
+ private:
+  class Writer;
+
+  // The player number of entity in the Match open, 0 if it has none.
+  [[nodiscard]] capture::Player PlayerOf(EntityId entity) const;
+  // Offset of tick from the Match's first.
+  [[nodiscard]] std::uint32_t OffsetOf(tick::Tick tick) const;
+  // Decision: what an encode error costs (ADR-0033). encoded if it encoded;
+  // otherwise nullopt, a codec failure kept as Failure, the runtime's to stop
+  // on, and a record too long stopping only the Match's capture.
+  std::optional<capture::Encoded> Admit(std::expected<capture::Encoded, capture::EncodeError> encoded);
+  // Queues encoded, a Join or an event, if Admit admits it.
+  void Queue(std::expected<capture::Encoded, capture::EncodeError> encoded);
+
+  const std::filesystem::path directory_;
+  const capture::Header header_;
+  std::unique_ptr<Writer> writer_;
+  // The Match open, if any: how many Matches started in the run, its first
+  // tick, and the number of each of its players' bodies.
+  std::uint64_t matches_ = 0;
+  bool open_ = false;
+  tick::Tick first_tick_ = 0;
+  std::unordered_map<EntityId, capture::Player> players_;
+  std::unordered_map<SessionId, capture::Player> sessions_;
+  std::optional<failure::Failure> failure_;
+};
+
+}  // namespace augusta::server
+
+#endif  // AUGUSTA_CAPTURER_H_

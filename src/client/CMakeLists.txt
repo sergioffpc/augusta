@@ -14,7 +14,7 @@ target_include_directories(
 target_link_libraries(
   augustac_content
   PUBLIC augusta_assets augusta_cues augusta_failure augusta_input augusta_math augusta_physics
-  PRIVATE augusta_logging augusta_map
+  PRIVATE augusta_logging
 )
 augusta_set_module_scope(augustac_content CLIENT_ONLY)
 
@@ -27,7 +27,7 @@ target_include_directories(
 )
 target_link_libraries(
   augustac_frame_mapping
-  PUBLIC augusta_command augusta_harness augusta_input augusta_math augusta_presentation
+  PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation
 )
 augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
 
@@ -85,12 +85,11 @@ target_link_libraries(
     augustac_lobby_readiness
     augustac_net_stats
     augusta_audio
+    augusta_gameplay
     augusta_logging
-    augusta_map
     augusta_physics
     augusta_prediction
     augusta_presentation
-    augusta_tick
     nvtx3-cpp
 )
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
@@ -102,11 +101,11 @@ add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
   PRIVATE
-    augusta_application
     augusta_assets
     augusta_client_config
     augusta_config
     augusta_failure
+    augusta_lifecycle
     augusta_version
     augusta_logging
     augustac_application
@@ -114,6 +113,11 @@ target_link_libraries(
     augustac_content
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
+# This directory is augustac's Glue: only augustac, augustac_application and
+# augustac_runtime belong in it, and a new library here fails the configure
+# (ADR-0060, cmake/AugustaModule.cmake). The libraries above are the
+# exceptions the migration has still to move out.
+augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)

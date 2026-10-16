@@ -6,13 +6,6 @@ Style Guide, enforced mechanically by `clang-format`/`clang-tidy`) — don't
 repeat anything `clang-tidy` already catches (naming case, brace style, function
 line count, etc.).
 
-## Baseline
-
-Everything not listed below follows Claude Code's own general defaults: avoid
-premature abstraction, comment only the non-obvious _why_, don't add error
-handling for scenarios that can't happen, no compatibility shims. This doc
-records only where Augusta diverges from or sharpens those defaults.
-
 ## Single responsibility
 
 A function does one nameable operation — if describing it needs "and"
@@ -46,7 +39,7 @@ decision into its own function so it stays unit-testable even when the
 surrounding code isn't (see Testing below).
 
 This is a C++-internal pattern, distinct from **Game policy** (Lua, see
-[CONTEXT.md](../../CONTEXT.md)) — don't call C++ decision code "policy"; that
+[GLOSSARY.md](../../GLOSSARY.md)) — don't call C++ decision code "policy"; that
 term is reserved for the Lua-implemented gameplay rules.
 
 ## Comments
@@ -64,6 +57,26 @@ preconditions, why it exists. A comment that only restates the name
 (`/// The translation part of transform.` on `TranslationOf`) is deleted, not
 kept. Private members, and the implementation files (`.cpp`), keep the general
 default: `//`, and only for the non-obvious _why_.
+
+## Module README
+
+Every module under `src/modules/<module>/` has a `README.md` stating its
+responsibility, in this shape:
+
+- `# <module>`, then one line naming its targets and its scope (shared,
+  client-only or server-only), matching its `augusta_set_module_scope` calls.
+- `## Responsibility`: one paragraph on what the module owns, as a whole — not a
+  list of its headers or symbols.
+- `## Not its responsibility`: what a reader would expect here but lives
+  elsewhere, each with the module or executable that owns it.
+- `## Decisions`: links to the ADRs that decide it, if any.
+
+A new module adds its README in the same change; a change that moves a
+responsibility into, out of or between modules updates every README it touches.
+If the paragraph needs "and also" to fit something in, the module has more than
+one responsibility (see Single responsibility). The details stay in the headers'
+`/// \file` comments; the README is the one place the module's boundary is
+stated.
 
 ## Testing
 
@@ -103,8 +116,8 @@ Lua gameplay scripts (ADR-0022) are tested inside the real engine, through
 ## Naming
 
 When a name represents a domain concept, use the canonical term from
-[CONTEXT.md](../../CONTEXT.md) (e.g. `Tick`, `Hitbox`, `ADS`), not a synonym the
-glossary lists under `_Avoid_`.
+[GLOSSARY.md](../../GLOSSARY.md) (e.g. `Tick`, `Hitbox`, `ADS`), not a synonym
+the glossary lists under `_Avoid_`.
 
 ## Ownership
 
@@ -121,4 +134,5 @@ See [ADR-0033](../adr/0033-error-handling.md). Never return an error as a string
 
 Everything `clang-format`/`clang-tidy` already check (ADR-0012) is not repeated
 here. Everything else in this doc is enforced by agents reading it plus human
-code review — no additional CI gate for it yet.
+code review, except that a module without a `README.md` fails to configure
+(`augusta_set_module_scope`, `cmake/AugustaModule.cmake`).

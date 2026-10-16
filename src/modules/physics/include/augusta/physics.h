@@ -14,7 +14,9 @@
 /// general body movement, stance transitions, and stamina depletion/
 /// recovery (US-04, US-05). Ballistics (bullet trajectories) is a separate
 /// module (see augusta::ballistics) - PhysX's own generic projectile
-/// handling is deliberately not used for that.
+/// handling is deliberately not used for that. The module also builds a
+/// map's static collision from a verified Pack (see augusta/map.h), so it
+/// depends on augusta_assets.
 ///
 /// This module's World is used identically by both PredictionWorld (client,
 /// predicted/approximate) and SimulationWorld (server, authoritative) - the
@@ -70,6 +72,8 @@ struct MovementInput {
   /// transition is actually possible (e.g. standing up under a low
   /// ceiling) and reflects the result in the returned BodyState::stance.
   Stance desired_stance = Stance::kStanding;
+
+  bool operator==(const MovementInput&) const = default;
 };
 
 /// What World::Step carries from one tick to the next besides BodyState: the fall

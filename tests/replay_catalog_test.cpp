@@ -1,4 +1,4 @@
-#include "replay_catalog.h"
+#include "augusta/replay_catalog.h"
 
 #include <chrono>
 #include <cstddef>
@@ -14,17 +14,19 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/capture.h"
+#include "augusta/capture_retention.h"
+#include "augusta/capturer.h"
 #include "augusta/command.h"
-#include "capture.h"
-#include "match.h"
+#include "augusta/match.h"
 
 // Which captures a replay server replays (ADR-0051), from a directory of
 // captures a Capturer wrote, as a live server's would be.
 namespace {
 
-using augusta::server::Capture;
+namespace capture = augusta::capture;
+
 using augusta::server::CaptureEntrant;
-using augusta::server::CaptureHeader;
 using augusta::server::Capturer;
 using augusta::server::EntityId;
 using augusta::server::ListingOf;
@@ -73,11 +75,11 @@ class ReplayCatalogTest : public ::testing::Test {
                                        .spawn = {}});
     }
     {
-      Capturer capturer(directory_, CaptureHeader{.engine_version = "1.0.0",
-                                                  .server_pack = PackOf(pack),
-                                                  .client_pack = PackOf(2),
-                                                  .tick_rate_hz = tick_rate_hz,
-                                                  .started = {}});
+      Capturer capturer(directory_, capture::Header{.engine_version = "1.0.0",
+                                                    .server_pack = PackOf(pack),
+                                                    .client_pack = PackOf(2),
+                                                    .tick_rate_hz = tick_rate_hz,
+                                                    .started = {}});
       capturer.StartMatch(players, 100, kStarted + std::chrono::seconds(++written_));
       capturer.Command(100 + (last_offset / 2), EntityId{1}, augusta::command::Command{});
       capturer.EndMatch(100 + last_offset, std::nullopt);
@@ -171,11 +173,11 @@ TEST_F(ReplayCatalogTest, ADirectoryThatIsGoneListsNothing) {
 TEST_F(ReplayCatalogTest, FindsACaptureByItsListedName) {
   const std::string name = Write(1, kTickRate, {"soldier", "sniper"}, 12);
 
-  const std::optional<Capture> found = ReplayCatalog(directory_, Terms()).Find(name);
+  const std::optional<capture::Capture> found = ReplayCatalog(directory_, Terms()).Find(name);
 
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(found->header.tick_rate_hz, kTickRate);
-  EXPECT_EQ(found->records.back().offset, 12U);
+  EXPECT_EQ(found->events.back().offset, 12U);
 }
 
 // A name is matched against the directory's listing, never opened as a path
@@ -201,14 +203,11 @@ TEST_F(ReplayCatalogTest, ANameNotInTheListingIsUnknownAPathAmongThem) {
 
 // Requirements: US-21
 TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
-  Capture capture;
+  capture::Capture capture;
   capture.header.server_pack = PackOf(1);
   capture.header.tick_rate_hz = kTickRate;
-  capture.records = {
-      augusta::server::CaptureRecord{
-          .offset = 0,
-          .event = augusta::server::CapturedJoin{.player = 1, .session = SessionId{4}, .character = "soldier"}},
-      augusta::server::CaptureRecord{.offset = 59, .event = augusta::server::CapturedMatchEnd{}}};
+  capture.joins = {{.session = 4, .character = "soldier", .spawn = {}}};
+  capture.events = {{.offset = 59, .event = capture::MatchEnd{}}};
 
   const std::optional<ReplayListing> listing = ListingOf("a.capture", capture, Terms());
 
@@ -218,7 +217,7 @@ TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
 }
 
 TEST(ReplayListingTest, ACaptureWithNoPlayerIsNotReplayed) {
-  Capture capture;
+  capture::Capture capture;
   capture.header.server_pack = PackOf(1);
   capture.header.tick_rate_hz = kTickRate;
   capture.torn = true;

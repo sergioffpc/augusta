@@ -18,8 +18,9 @@ on:
           Whether release.yml is the caller. Then a failure opens no
           nightly-failure issue (the release's own run is where it shows),
           sbom-scan scans the SBOMs the caller uploaded as sbom-<executable>
-          artifacts before the call instead of the latest release's, and the
-          fuzz corpus is not saved.
+          artifacts before the call instead of the latest release's, and no
+          job saves the vcpkg binaries or the fuzz corpus: scoped to the
+          release's tag, no later run would restore them.
         required: false
         type: boolean
         default: false
@@ -29,7 +30,6 @@ on:
 # what the calling job grants: nightly.yml's and release.yml's, each of which
 # must grant them all.
 env:
-  SCCACHE_GHA_ENABLED: "true"
   NIGHTLY_REF: ${{ inputs.ref }}
 # Every job but client-x64-linux configures with the client off
 # (AUGUSTA_CLIENT): each checks what augustad and the shared core are built
@@ -53,9 +53,13 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
+      # A release saves none (save-sccache-cache).
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test (property tests, ~10 000 cases)
         # The same binaries a pull request runs at RapidCheck's default 100
         # cases; only RC_PARAMS differs. A failure prints its seed and shrunk
@@ -94,9 +98,12 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (libFuzzer + ASan)
         run: cmake --preset linux-fuzz -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Restore the corpus
         # A cache entry can't be overwritten, so each night saves under its own
         # run id and restores the newest one by prefix.
@@ -170,9 +177,12 @@ jobs:
         run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Configure (TSan)
         run: cmake --preset linux-tsan -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-tsan --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test
         run: ctest --preset linux-tsan --output-junit "$GITHUB_WORKSPACE/junit/tsan.xml"
       - name: Upload the test results
@@ -205,9 +215,12 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test (netcode under an impaired link)
         run: ctest --preset linux-netcode --no-tests=error --output-junit "$GITHUB_WORKSPACE/junit/netcode.xml"
       - name: Upload the test results
@@ -238,9 +251,12 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure (coverage)
         run: cmake --preset linux-coverage -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-coverage --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Test
         # The whole Linux suite, so its results are test-report's linux column.
         run: ctest --preset linux-coverage --output-junit "$GITHUB_WORKSPACE/junit/linux.xml"
@@ -295,7 +311,8 @@ jobs:
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
         run: cmake --preset linux
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Check that the smoke test is built
@@ -320,6 +337,10 @@ jobs:
         if: |
           !cancelled() && steps.configure-san.outcome == 'success'
         run: cmake --build --preset linux-san --target all augusta_tests
+      # After both builds, and whatever the tests above did, as the sanitized
+      # pass runs after a failing test too.
+      - if: ${{ !cancelled() && steps.build-san.outcome == 'success' && !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Check that the sanitized smoke test is built
         id: check-san
         if: |
@@ -389,9 +410,12 @@ jobs:
       - uses: ./.github/actions/setup-linux-build
       - name: Configure
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target augusta_benchmarks
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
       - name: Benchmark
         # Five repetitions, of which only the median is kept: one slow
         # repetition on a busy runner moves it less than it would a mean.

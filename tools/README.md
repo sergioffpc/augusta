@@ -398,9 +398,10 @@ augusta-publish [-h] --environment {develop,staging} --host HOST
 
 On success it prints the folder on the node and the line to put under the
 scenario's server in the `HelmRelease`
-(`servers.<scenario>.packVersion: "<version>"`), and exits `0`, whether it
-copied the pack or found it there already. On any failure it prints the reason
-to stderr and exits `1`.
+(`servers.<scenario>.packVersion: "<version>"`), with the pack format version
+the server pack was cooked in to put beside it (`packFormat: <format>`), and
+exits `0`, whether it copied the pack or found it there already. On any failure
+it prints the reason to stderr and exits `1`.
 
 ### Layout
 
@@ -417,7 +418,7 @@ to stderr and exits `1`.
 | `pack/src/augusta_pack/pack_cli.py`        | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
 | `pack/src/augusta_pack/publish.py`         | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
 | `pack/src/augusta_pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
-| `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/server/capture.cpp`)                                                                                                                                                                                                                                          |
+| `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/modules/capture`)                                                                                                                                                                                                                                             |
 | `pack/src/augusta_pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
 | `pack/native/`                             | Standalone CMake/vcpkg project for the native module. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                          |
 | `composer/`                                | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
@@ -495,7 +496,7 @@ uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $g
 ## Agent
 
 `augusta_agent` (ADR-0052) is a Python package a script imports to connect
-Agents (see [CONTEXT.md](../CONTEXT.md)) to a server and tell each what to do;
+Agents (see [GLOSSARY.md](../GLOSSARY.md)) to a server and tell each what to do;
 the Harness carries it out every tick. A script runs its Agents in an asyncio
 loop: it awaits each Agent's events (`await agent.next_event()`: Shot, Hit
 confirmation, Death, Match start, Match end) and how each Intent it set ended,

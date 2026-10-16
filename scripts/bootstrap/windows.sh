@@ -115,6 +115,17 @@ install_formatters() {
   add_to_path User "${bin}"
 }
 
+# Installs ctcache (scripts/bootstrap.sh) in uv's user tool directory, which
+# winget's uv leaves off PATH: added to the User PATH, and to this process's
+# for the checks after it.
+install_ctcache() {
+  local bin
+  uv tool install "${CTCACHE_PACKAGE}"
+  bin="$(uv tool dir --bin | tr -d '\r')"
+  add_to_path User "${bin}"
+  PATH="${PATH}:$(cygpath -u "${bin}")"
+}
+
 # Adds Visual Studio components to the latest Build Tools install that lacks
 # any of them: winget_install skips an existing install, so a component added
 # here after a machine was bootstrapped would otherwise never reach it.
@@ -214,14 +225,15 @@ install_toolchain() {
 
   install_formatters "$(windows_dir LOCALAPPDATA)/Programs/augusta-tools"
   refresh_path
+  install_ctcache
 
   # A silently-missing tool here doesn't fail loud until much later - e.g.
   # clang-format's absence only shows up as ".githooks/pre-commit: not found
   # on PATH - skipping" at commit time, which is easy to miss and leaves every
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
-    clang-format clang-tidy doxygen yamlfmt stylua taplo luacheck kubectl helm \
-    flux
+    clang-format clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo \
+    luacheck kubectl helm flux
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"

@@ -27,19 +27,33 @@
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 
-#include "admission.h"
+#include "augusta/admission.h"
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/capture.h"
+#include "augusta/capturer.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
+#include "augusta/connection_sample.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
 #include "augusta/harness.h"
+#include "augusta/heartbeat.h"
+#include "augusta/host.h"
+#include "augusta/host_log.h"
+#include "augusta/host_metrics.h"
+#include "augusta/host_wire.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
+#include "augusta/policy_loader.h"
 #include "augusta/prediction.h"
 #include "augusta/primitives.h"
 #include "augusta/protocol.h"
@@ -49,20 +63,7 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
-#include "capture.h"
-#include "command_queue.h"
 #include "connection_health.h"
-#include "connection_sample.h"
-#include "content.h"
-#include "heartbeat.h"
-#include "host.h"
-#include "host_log.h"
-#include "host_metrics.h"
-#include "match.h"
-#include "misbehaviour.h"
-#include "parameters_loader.h"
-#include "policy_loader.h"
-#include "wire.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -72,8 +73,6 @@ namespace {
 
 using augusta::command::Command;
 using augusta::failure::Code;
-using augusta::harness::CapturedCommand;
-using augusta::harness::CapturedPlayer;
 using augusta::harness::Death;
 using augusta::harness::EntityId;
 using augusta::harness::Failure;
@@ -1891,15 +1890,16 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
            ("augusta_session_capture_" + std::string(test.name()) + "_" + std::to_string(std::random_device{}()));
   }
 
-  static HostSetup CaptureSetup(const std::filesystem::path& directory) {
+  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::scripting::Engine policy) {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
     setup.config.capture_directory = directory;
+    setup.policy = std::move(policy);
     return setup;
   }
 
-  CaptureHostTest() : CaptureHostTest(Directory()) {}
-  explicit CaptureHostTest(const std::filesystem::path& directory)
-      : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory)) {}
+  explicit CaptureHostTest(augusta::scripting::Engine policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
+  CaptureHostTest(const std::filesystem::path& directory, augusta::scripting::Engine policy)
+      : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory, std::move(policy))) {}
 
   void PlayAMatch() {
     Join();
@@ -1912,28 +1912,31 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
     ServerTick();
   }
 
-  // The directory's one capture once its writer has reached its Match end:
-  // the Host, which outlives the test, writes it on a thread of its own.
-  [[nodiscard]] augusta::server::Capture ReadBack() const {
+  // The newest capture, once the directory holds count of them and its
+  // writer has reached its Match end: the Host, which outlives the test,
+  // writes it on a thread of its own.
+  [[nodiscard]] augusta::capture::Capture ReadBack(std::size_t count = 1) const {
     constexpr auto kPatience = std::chrono::seconds(5);
     constexpr auto kRetryAfter = std::chrono::milliseconds(10);
     const auto deadline = std::chrono::steady_clock::now() + kPatience;
     while (true) {
-      const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
-      std::optional<augusta::server::Capture> capture;
-      if (files.size() == 1) {
-        std::ifstream in(files.front(), std::ios::binary);
-        auto read = augusta::server::ReadCapture(in);
+      std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
+      // Named by their Match's start (CaptureFileName), the newest sorts last.
+      std::ranges::sort(files);
+      std::optional<augusta::capture::Capture> capture;
+      if (files.size() == count) {
+        std::ifstream in(files.back(), std::ios::binary);
+        auto read = augusta::capture::ReadCapture(in);
         if (read.has_value()) {
           capture = *std::move(read);
         }
       }
-      const bool ended = capture.has_value() && !capture->records.empty() &&
-                         std::holds_alternative<augusta::server::CapturedMatchEnd>(capture->records.back().event);
+      const bool ended = capture.has_value() && !capture->events.empty() &&
+                         std::holds_alternative<augusta::capture::MatchEnd>(capture->events.back().event);
       if (ended || std::chrono::steady_clock::now() >= deadline) {
-        EXPECT_EQ(files.size(), 1U);
+        EXPECT_EQ(files.size(), count);
         EXPECT_TRUE(ended);
-        return capture.value_or(augusta::server::Capture{});
+        return capture.value_or(augusta::capture::Capture{});
       }
       std::this_thread::sleep_for(kRetryAfter);
     }
@@ -1943,21 +1946,17 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
 // Requirements: US-21
 TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid) {
   PlayAMatch();
-  const augusta::server::Capture capture = ReadBack();
+  const augusta::capture::Capture capture = ReadBack();
 
   EXPECT_EQ(capture.header.tick_rate_hz, kTestTickRate);
   EXPECT_EQ(capture.header.engine_version, augusta::EngineVersion());
-  ASSERT_GE(capture.records.size(), 2U);
-  for (std::size_t i = 0; i < 2; ++i) {
-    const auto* join = std::get_if<augusta::server::CapturedJoin>(&capture.records[i].event);
-    ASSERT_NE(join, nullptr);
-    EXPECT_EQ(join->player, i + 1);
-    EXPECT_EQ(join->character, kCharacter);
+  ASSERT_EQ(capture.joins.size(), 2U);
+  for (const augusta::capture::Join& join : capture.joins) {
+    EXPECT_EQ(join.character, kCharacter);
   }
-  using augusta::server::CapturedPlayer;
-  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
-    const auto sent = std::ranges::count_if(capture.records, [player](const augusta::server::CaptureRecord& record) {
-      const auto* command = std::get_if<augusta::server::CapturedCommand>(&record.event);
+  for (const augusta::capture::Player player : {augusta::capture::Player{1}, augusta::capture::Player{2}}) {
+    const auto sent = std::ranges::count_if(capture.events, [player](const auto& event) {
+      const auto* command = std::get_if<augusta::capture::Command>(&event.event);
       return command != nullptr && command->player == player && command->command.movement.direction.x == 1.0F &&
              command->command.fire;
     });
@@ -1965,7 +1964,7 @@ TEST_F(CaptureHostTest, AMatchPlayedToItsEndLeavesOneCaptureOfWhatItsPlayersDid)
     EXPECT_GT(sent, 0);
     EXPECT_LE(sent, kSettleTicks);
   }
-  const auto& end = std::get<augusta::server::CapturedMatchEnd>(capture.records.back().event);
+  const auto& end = std::get<augusta::capture::MatchEnd>(capture.events.back().event);
   EXPECT_FALSE(end.winner.has_value());
 }
 
@@ -1988,7 +1987,7 @@ TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
 // Requirements: NFR-07
 TEST_F(CaptureHostTest, AMatchCapturedToItsEndIsCounted) {
   PlayAMatch();
-  ASSERT_FALSE(ReadBack().records.empty());
+  ASSERT_FALSE(ReadBack().events.empty());
 
   const augusta::server::HostMetrics& metrics = host_.Metrics();
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -2012,6 +2011,51 @@ TEST_F(CaptureHostTest, CapturesAreCapturingWhileAMatchIsInProgress) {
   Step();
 
   EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kCapturing);
+}
+
+// A CaptureHostTest whose scenario's rules end its first Match on its fifth
+// tick, won by its first player, and leave every Match after it to go on.
+class FirstMatchWonCaptureHostTest : public CaptureHostTest {
+ protected:
+  FirstMatchWonCaptureHostTest() : CaptureHostTest(FirstMatchWon()) {}
+
+  static augusta::scripting::Engine FirstMatchWon() {
+    auto policy = augusta::scripting::Engine::Load(R"(
+      ticks = 0
+      function on_tick(match)
+        ticks = ticks + 1
+        if ticks == 5 then return {winner = match.players[1].session} end
+      end
+    )");
+    EXPECT_TRUE(policy.has_value());
+    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  }
+};
+
+// Nobody won a Match its last player left: its capture ends it as a Draw, even
+// when the winner of the Match before played in it.
+// Requirements: US-21
+TEST_F(FirstMatchWonCaptureHostTest, AMatchEveryPlayerLeftEndsAsADrawWhoeverWonTheMatchBefore) {
+  Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  Run(kSettleTicks);
+  const augusta::server::HostMetrics& metrics = host_.Metrics();
+  ASSERT_EQ(metrics.matches_ended_with_winner.Value(), 1U);
+
+  ASSERT_TRUE(StartMatch());
+  Run(1);
+  for (const auto& session : sessions_) {
+    session->Disconnect();
+  }
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return metrics.sessions.Value() == 0.0; }));
+  ASSERT_EQ(metrics.matches_ended_abandoned.Value(), 1U);
+  ServerTick();
+
+  const augusta::capture::Capture capture = ReadBack(2);
+  ASSERT_FALSE(capture.events.empty());
+  const auto& end = std::get<augusta::capture::MatchEnd>(capture.events.back().event);
+  EXPECT_FALSE(end.winner.has_value());
 }
 
 TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
@@ -2111,7 +2155,7 @@ class ReenactmentHostTest : public ::testing::Test {
   }
 
   // The one capture in directory, once its host is gone, as player's Script.
-  static Script ReadPlayer(const std::filesystem::path& directory, CapturedPlayer player) {
+  static Script ReadPlayer(const std::filesystem::path& directory, augusta::capture::Player player) {
     const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory), {});
     EXPECT_EQ(files.size(), 1U);
     std::ifstream in(files.empty() ? std::filesystem::path{} : files.front(), std::ios::binary);
@@ -2148,7 +2192,7 @@ class ReenactmentHostTest : public ::testing::Test {
     const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
     std::vector<std::unique_ptr<Session>> sessions;
     std::vector<std::unique_ptr<Reenactment>> runs;
-    for (const CapturedPlayer player : {CapturedPlayer{2}, CapturedPlayer{1}}) {
+    for (const augusta::capture::Player player : {augusta::capture::Player{2}, augusta::capture::Player{1}}) {
       Script script = ReadPlayer(playtest_, player);
       sessions.push_back(std::make_unique<Session>(
           SessionConfig{.server = host->ListenEndpoint(), .character = script.character, .spawn = script.spawn},
@@ -2188,19 +2232,19 @@ class ReenactmentHostTest : public ::testing::Test {
   // delay; reenacted holds the fillers of its gaps besides.
   static void ExpectReenacted(const Script& played, const Script& reenacted) {
     std::size_t next = 0;
-    for (const CapturedCommand& command : played.commands) {
+    for (const augusta::capture::AtOffset<augusta::capture::Command>& command : played.commands) {
       const auto found =
           std::find_if(reenacted.commands.begin() + static_cast<std::ptrdiff_t>(next), reenacted.commands.end(),
-                       [&](const CapturedCommand& candidate) {
-                         return candidate.command.yaw == command.command.yaw &&
-                                candidate.command.movement.direction == command.command.movement.direction;
+                       [&](const augusta::capture::AtOffset<augusta::capture::Command>& candidate) {
+                         return candidate.event.command.yaw == command.event.command.yaw &&
+                                candidate.event.command.movement.direction == command.event.command.movement.direction;
                        });
       ASSERT_NE(found, reenacted.commands.end()) << "the Command of offset " << command.offset << " never arrived";
       next = static_cast<std::size_t>(found - reenacted.commands.begin()) + 1;
       EXPECT_LE(std::abs(static_cast<std::int64_t>(found->offset) - command.offset), kTolerance)
           << "captured at " << command.offset << ", reenacted at " << found->offset;
-      EXPECT_LE(std::abs((static_cast<std::int64_t>(found->offset) - found->seen_offset) -
-                         (static_cast<std::int64_t>(command.offset) - command.seen_offset)),
+      EXPECT_LE(std::abs((static_cast<std::int64_t>(found->offset) - found->event.seen_offset) -
+                         (static_cast<std::int64_t>(command.offset) - command.event.seen_offset)),
                 kTolerance)
           << "the Seen time of the Command of offset " << command.offset;
     }
@@ -2215,7 +2259,7 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
   Playtest();
   const std::vector<Vec3> spawned = Reenact();
 
-  for (const CapturedPlayer player : {CapturedPlayer{1}, CapturedPlayer{2}}) {
+  for (const augusta::capture::Player player : {augusta::capture::Player{1}, augusta::capture::Player{2}}) {
     SCOPED_TRACE(+player);
     const Script played = ReadPlayer(playtest_, player);
     ASSERT_GE(spawned.size(), 2U);
@@ -2225,7 +2269,8 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
     const std::vector<Vec3> run_spawns = ReadPlayer(reenacted_, 1).spawns;
     const auto number = std::ranges::find(run_spawns, played.spawn);
     ASSERT_NE(number, run_spawns.end());
-    const Script reenacted = ReadPlayer(reenacted_, static_cast<CapturedPlayer>(number - run_spawns.begin() + 1));
+    const Script reenacted =
+        ReadPlayer(reenacted_, static_cast<augusta::capture::Player>(number - run_spawns.begin() + 1));
     EXPECT_EQ(reenacted.character, played.character);
     ASSERT_GT(played.commands.size(), 10U);
     ExpectReenacted(played, reenacted);

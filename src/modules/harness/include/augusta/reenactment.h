@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/capture_error.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
@@ -30,40 +30,13 @@
 ///
 /// It decides; it does not act. Who ticks the Session, disconnects it or
 /// draws what it sees is the caller's (ClientRuntime), so all of it is tested
-/// without a window or a network. A capture's records are the Networking
-/// Protocol's, converted in harness_wire.h. Nothing here reads a clock or owns
+/// without a window or a network. A capture is read, and its records
+/// converted, by the capture module (augusta/capture.h), whose types the
+/// Script holds. Nothing here reads a clock or owns
 /// a thread: NextCommand is the Prediction thread's and touches only the
 /// pacing, the rest reads only the Script and the Server view handed in, from
 /// any thread.
 namespace augusta::harness {
-
-/// A player's number in a capture: from 1, in its Match start's order, as
-/// `augustac --reenact --player` names it.
-using CapturedPlayer = std::uint8_t;
-
-/// A Command a Captured player sends, at the offset in ticks from the Match's
-/// first tick on which the server's queue handed it to the World.
-struct CapturedCommand {
-  std::uint32_t offset = 0;
-  /// Its Seen time's tick, as an offset from the Match's first tick: negative
-  /// for a State sent before the Match started. command.seen_tick is 0.
-  std::int32_t seen_offset = 0;
-  command::Command command{};
-};
-
-/// A Death the capture holds, at its offset.
-struct CapturedDeath {
-  std::uint32_t offset = 0;
-  CapturedPlayer victim = 0;
-  CapturedPlayer killer = 0;
-};
-
-/// The capture's Match end, at the offset of its last tick.
-struct CapturedEnd {
-  std::uint32_t offset = 0;
-  /// nullopt for a Draw.
-  std::optional<CapturedPlayer> winner;
-};
 
 /// One player's part of a capture, and the markers its run is compared with.
 struct Script {
@@ -72,30 +45,32 @@ struct Script {
   assets::PackHash client_pack{};
   std::uint8_t tick_rate_hz = 0;
   /// The player this Script plays.
-  CapturedPlayer player = 0;
+  capture::Player player = 0;
   /// Its Character, by its name in the scenario's manifest, and where it spawned.
   std::string character;
   math::Vec3 spawn{};
   /// Where every player of the capture spawned, by number: player n's at n - 1.
   /// A run tells its own Match's players apart by them.
   std::vector<math::Vec3> spawns;
-  /// The player's Commands, in offset order, at most one an offset.
-  std::vector<CapturedCommand> commands;
+  /// The player's Commands, in offset order, at most one an offset, each at
+  /// the offset on which the server's queue handed it to the World.
+  std::vector<capture::AtOffset<capture::Command>> commands;
   /// The offset its connection ended at, if it left mid-Match.
   std::optional<std::uint32_t> leave;
   /// Every Death of the capture, anyone's, in offset order.
-  std::vector<CapturedDeath> deaths;
-  /// nullopt when the capture stopped before its Match end.
-  std::optional<CapturedEnd> end;
+  std::vector<capture::AtOffset<capture::Death>> deaths;
+  /// The capture's Match end, at the offset of its last tick; nullopt when the
+  /// capture stopped before it.
+  std::optional<capture::AtOffset<capture::MatchEnd>> end;
   /// Whether the file ended partway through a record, which was dropped.
   bool torn = false;
 };
 
 /// Why a capture gives no Script.
 struct ScriptError {
-  /// Why the capture does not read (augusta/capture_file.h), or nullopt when it
+  /// Why the capture does not read (capture::ReadCapture), or nullopt when it
   /// reads but has no player of the number asked for.
-  std::optional<capture_file::ReadError> capture;
+  std::optional<capture::ReadError> capture;
 
   bool operator==(const ScriptError&) const = default;
 };
@@ -103,10 +78,10 @@ struct ScriptError {
 /// What to tell whoever runs the process about error.
 [[nodiscard]] std::string DescribeScriptError(const ScriptError& error);
 
-/// Player player's part of the capture in, as a Capturer writes one and
-/// augusta/capture_file.h reads it (ADR-0050). A last record cut short is
-/// dropped and reported in Script::torn.
-[[nodiscard]] std::expected<Script, ScriptError> ReadScript(std::istream& in, CapturedPlayer player);
+/// Player player's part of the capture in, as capture::ReadCapture reads it
+/// (ADR-0050). A last record cut short is dropped and reported in
+/// Script::torn.
+[[nodiscard]] std::expected<Script, ScriptError> ReadScript(std::istream& in, capture::Player player);
 
 /// The server tick a Command sent now is handed to the World on, as best the
 /// client can tell: the newest Authoritative State's tick, from which the
@@ -133,32 +108,40 @@ inline constexpr std::uint64_t kMaxCommandsQueued = 2;
 /// the gaps after it close up. For a tick with none due, a filler keeps the
 /// server's queue in step as its own hold would have: the last Command without
 /// its fire or reload, its movement for up to command::kMaxHeldTime, then none.
-/// Nothing is sent for the tick of the captured Leave or after it.
+/// No filler is sent for the tick of the captured Leave or after it; a
+/// Command late into it still goes, so it reaches the server before the Leave.
 class Pacer {
  public:
   /// Paces commands, in offset order, for a server ticking at tick_rate_hz,
   /// up to leave, the offset of the player's Leave, if it has one.
-  Pacer(std::vector<CapturedCommand> commands, std::uint8_t tick_rate_hz, std::optional<std::uint32_t> leave);
+  Pacer(std::vector<capture::AtOffset<capture::Command>> commands, std::uint8_t tick_rate_hz,
+        std::optional<std::uint32_t> leave);
 
   /// The Command to send now, if the server is due to hand it to the World on
   /// due_tick, of a Match whose first tick is first_tick: its Seen time's tick
   /// is due_tick less the delay the capture had, so Lag compensation judges it
   /// as far back as in the playtest. nullopt to send none: a Command already
-  /// went for due_tick or one after it, or the Leave has come.
+  /// went for due_tick or one after it, or the Leave has come with every
+  /// Command before it sent.
   [[nodiscard]] std::optional<command::Command> Next(tick::Tick first_tick, tick::Tick due_tick);
 
   /// How many of the Script's Commands have gone out.
   [[nodiscard]] std::size_t Sent() const { return next_; }
 
-  /// Whether every tick before the Leave has had its Command sent, so nothing
-  /// more is: false without a Leave.
-  [[nodiscard]] bool DoneBeforeLeave() const { return leave_.has_value() && slot_ >= *leave_; }
+  /// Whether every tick before the Leave has had its Command sent, and every
+  /// captured Command before it too, so nothing more is: false without a Leave.
+  [[nodiscard]] bool DoneBeforeLeave() const { return leave_.has_value() && slot_ >= *leave_ && !CommandBeforeLeave(); }
 
  private:
+  // Whether a captured Command from before the Leave has yet to go.
+  [[nodiscard]] bool CommandBeforeLeave() const {
+    return leave_.has_value() && next_ < commands_.size() && commands_[next_].offset < *leave_;
+  }
+
   // The filler for a tick with nothing due.
   [[nodiscard]] command::Command Filler(tick::Tick due_tick);
 
-  std::vector<CapturedCommand> commands_;
+  std::vector<capture::AtOffset<capture::Command>> commands_;
   int max_held_ticks_;
   std::optional<std::uint32_t> leave_;
   std::size_t next_ = 0;
@@ -194,8 +177,8 @@ struct ObservedDeath {
 /// (0 for one the capture lacks), its tick as an offset from the Match's
 /// first. Either may be missing, not both.
 struct PairedDeath {
-  std::optional<CapturedDeath> captured;
-  std::optional<CapturedDeath> observed;
+  std::optional<capture::AtOffset<capture::Death>> captured;
+  std::optional<capture::AtOffset<capture::Death>> observed;
 };
 
 /// Each of the script's Deaths, in its order, beside the first of observed of

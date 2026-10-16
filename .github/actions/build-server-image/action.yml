@@ -2,12 +2,11 @@ name: Build and scan the server image
 description: >
   Builds the server image into the runner's Docker (loaded, not pushed), from
   the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on
-  a high or critical CVE trivy finds in it. Every ci.yml container job runs it:
-  container-verify to check the image, container-publish-x64-linux to rebuild
-  the image it then pushes, so what it publishes is an image that was scanned,
-  and on main container-publish-arm64-linux for the arm64 image. Tags it
-  sha-<12> and, on a push, with the branch name (sha-<12>-arm64 alone with
-  arch-suffix). Assumes the repository is checked out with its submodules and
+  a high or critical CVE trivy finds in it. ci.yml's container-verify runs it
+  for the image container-publish-x64-linux then pushes, so what it publishes
+  is an image that was scanned, and on main container-publish-arm64-linux for
+  the arm64 image it pushes itself. Tags it sha-<12> (sha-<12>-arm64 with
+  arch-suffix); the branch tag is the publishing job's. Assumes the repository is checked out with its submodules and
   buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 inputs:
   cache-to:
@@ -20,7 +19,7 @@ inputs:
   arch-suffix:
     description: >
       "-arm64" on main's arm64 build (ci.yml's container-publish-arm64-linux):
-      the image is tagged sha-<12>-arm64 alone, with no branch tag, and its
+      the image is tagged sha-<12>-arm64, and its
       layers cached at buildcache-arm64, so the plain tags can become the index
       of both architectures. Empty, the default, builds the amd64 image as ever.
     required: false
@@ -30,6 +29,12 @@ outputs:
     description: >
       The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
+  toolchain-args:
+    description: >
+      The build args naming the runner's toolchain, which the build stage
+      installs: a job building another target from the same layer cache (the
+      debuginfo stage) passes them too, or misses the build stage's layers.
+    value: ${{ steps.toolchain.outputs.args }}
 runs:
   using: composite
   steps:
@@ -55,6 +60,28 @@ runs:
           | sha256sum --check --status
         tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
         echo "$install_dir" >> "$GITHUB_PATH"
+    # The architecture variant the runner's apt takes, and the clang-21 the
+    # archive has for it now, as setup-linux-build installs it on the jobs
+    # whose vcpkg binaries the build stage restores (Dockerfile says why). The
+    # candidate, not what this runner has installed, which can trail it.
+    - name: Read the runner's toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        eval "$(apt-config shell variants APT::Architecture-Variants)"
+        sudo apt-get update -qq
+        clang=$(apt-cache policy clang-21 | awk '/Candidate:/ { print $2 }')
+        if [ -z "$clang" ] || [ "$clang" = "(none)" ]; then
+          echo "::error::The archive has no clang-21 for this runner"
+          exit 1
+        fi
+        echo "Architecture variants: ${variants:-(none)}; clang-21 $clang"
+        {
+          echo "args<<EOF"
+          echo "APT_ARCHITECTURE_VARIANTS=${variants:-}"
+          echo "CLANG_VERSION=$clang"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
     - id: short-sha
       shell: bash
       run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
@@ -69,19 +96,16 @@ runs:
         # of Ubuntu's current packages, security updates included, rather than
         # a cached layer's (ADR-0054).
         no-cache-filters: rootfs
-        # Reported as augustad_build_info's commit label (ADR-0049).
-        build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+        # Reported as augustad_build_info's commit label (ADR-0049), and the
+        # toolchain the build stage installs.
+        build-args: |
+          AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+          ${{ steps.toolchain.outputs.args }}
         # Mounted read-only by the dependency install alone (see Dockerfile).
         build-contexts: vcpkg-bincache=.vcpkg-bincache
         # sha-<first 12 characters of the commit> is the tag the chart runs:
         # Flux versions a Git-sourced chart <version>+<the same 12 characters>.
-        # The branch name tag is for people. github.ref_name is only a plain
-        # branch name (safe as a Docker tag) on push - for pull_request it's
-        # "<pr-number>/merge", which Docker rejects. An arm64 build has its
-        # suffixed tag alone.
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}${{ inputs.arch-suffix }}
-          ${{ github.event_name == 'push' && inputs.arch-suffix == '' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+        tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}${{ inputs.arch-suffix }}
         # A commit that leaves src/ alone reuses the cached build. The layers
         # live in GHCR, next to the image, not in the Actions cache: at several
         # GB they took most of its 10 GB, and GitHub evicted the vcpkg caches

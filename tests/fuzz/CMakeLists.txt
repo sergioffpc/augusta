@@ -5,7 +5,7 @@
 # fixtures without the fuzzer.
 option(AUGUSTA_FUZZ "Build the libFuzzer fuzz targets (the linux-fuzz preset sets it, with clang)" OFF)
 
-# protocol::Decode, the NFR-05 attack surface.
+# protocol::Decode and protocol::DecodeCaptureRecord, the NFR-05 attack surface.
 add_executable(augusta_protocol_decode_replay protocol_decode_fuzz.cpp replay_main.cpp)
 target_link_libraries(augusta_protocol_decode_replay PRIVATE augusta_protocol)
 file(
@@ -34,10 +34,10 @@ add_custom_target(
   VERBATIM
 )
 
-# server::ReadCapture and protocol::DecodeCaptureRecord, a Match capture file
+# capture::ReadCapture, a Match capture file
 # that may have been cut short or corrupted (ADR-0050).
 add_executable(augusta_capture_read_replay capture_read_fuzz.cpp replay_main.cpp)
-target_link_libraries(augusta_capture_read_replay PRIVATE augustad_host augusta_protocol)
+target_link_libraries(augusta_capture_read_replay PRIVATE augusta_capture)
 file(
   GLOB augusta_capture_read_inputs
   CONFIGURE_DEPENDS
@@ -47,7 +47,7 @@ file(
 add_test(NAME augusta_capture_read_replay COMMAND augusta_capture_read_replay ${augusta_capture_read_inputs})
 
 add_executable(augusta_capture_read_seeds_tests capture_read_seeds_test.cpp)
-target_link_libraries(augusta_capture_read_seeds_tests PRIVATE augustad_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_capture_read_seeds_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 target_compile_definitions(
   augusta_capture_read_seeds_tests
   PRIVATE AUGUSTA_CAPTURE_READ_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/capture_read"
@@ -108,7 +108,7 @@ if(AUGUSTA_FUZZ)
   target_link_options(augusta_protocol_decode_fuzz PRIVATE -fsanitize=fuzzer)
 
   add_executable(augusta_capture_read_fuzz capture_read_fuzz.cpp)
-  target_link_libraries(augusta_capture_read_fuzz PRIVATE augustad_host augusta_protocol)
+  target_link_libraries(augusta_capture_read_fuzz PRIVATE augusta_capture)
   target_link_options(augusta_capture_read_fuzz PRIVATE -fsanitize=fuzzer)
 
   add_executable(augusta_pack_load_fuzz pack_load_fuzz.cpp)

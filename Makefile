@@ -80,7 +80,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint docs
+.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint prepush docs
 
 all: build
 
@@ -102,6 +102,7 @@ help:
 	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
+	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits, without pushing)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
@@ -182,13 +183,32 @@ format-check:
 # compile_commands.json in step with the sources (a file new on a branch has no
 # entry until then).
 tidy: configure
-	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
+
+# clang-tidy through ctcache (scripts/bootstrap.sh installs it), as CI's Lint
+# steps run it: a file whose preprocessed source, configuration and arguments
+# passed before is skipped. Its results live under build/, for every preset,
+# apart per clang-tidy version (the first number `clang-tidy --version`
+# prints), which ctcache's key leaves out. Recursive, so only tidy runs
+# clang-tidy for it, and hands it to the per-file targets.
+CLANG_TIDY := clang-tidy-cache clang-tidy
+CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 $(TIDY_CHECKS): tidy/%:
-	$(RUN) clang-tidy -p=$(BUILD_DIR) $*
+	$(RUN) $(CLANG_TIDY) -p=$(BUILD_DIR) $*
 
 $(INCLUDE_CHECKS): include-cleaner/%:
-	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
+	$(RUN) $(CLANG_TIDY) --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy
+
+# The pre-push hook's checks, as a push of HEAD now would run them: on the
+# files of its commits the remote lacks, Git LFS left out. git runs the hook,
+# so it gets git's own shell on every platform. The hook reads only the
+# pushed commit from its stdin line, so HEAD stands in for both refs.
+PREPUSH_REFS := $(shell git rev-parse --git-path prepush-refs)
+prepush: export PRE_PUSH_CHECKS_ONLY = 1
+prepush:
+	$(file >$(PREPUSH_REFS),HEAD $(shell git rev-parse HEAD) HEAD 0000000000000000000000000000000000000000)
+	git hook run --to-stdin=$(PREPUSH_REFS) pre-push -- origin

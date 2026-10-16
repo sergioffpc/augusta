@@ -149,30 +149,25 @@ add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
 add_subdirectory(src/modules/primitives)
-add_subdirectory(src/modules/tick)
-add_subdirectory(src/modules/supervisor)
 add_subdirectory(src/modules/failure)
-add_subdirectory(src/modules/application)
+add_subdirectory(src/modules/lifecycle)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
-add_subdirectory(src/modules/command)
-add_subdirectory(src/modules/parameters)
-add_subdirectory(src/modules/map)
-add_subdirectory(src/modules/ballistics)
-add_subdirectory(src/modules/weapon)
+add_subdirectory(src/modules/gameplay)
 add_subdirectory(src/modules/protocol)
-add_subdirectory(src/modules/shared_wire)
-add_subdirectory(src/modules/capture_file)
+add_subdirectory(src/modules/wire)
+add_subdirectory(src/modules/capture)
 add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
 add_subdirectory(src/modules/audio)
 add_subdirectory(src/modules/input)
-add_subdirectory(src/modules/animation)
 add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
 add_subdirectory(src/modules/harness)
 add_subdirectory(src/modules/presentation)
-add_subdirectory(src/modules/replication)
+add_subdirectory(src/modules/metrics)
+add_subdirectory(src/modules/scenario)
+add_subdirectory(src/modules/host)
 add_subdirectory(src/server)
 # The tools, built with the runtime they link on every platform: the Agents
 # (ADR-0052), whose Python module is built against the interpreter
@@ -225,3 +220,9 @@ augusta_check_module_scopes()
 # augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
 # ctest: building the binaries never waits on them (ADR-0008).
 add_subdirectory(tests EXCLUDE_FROM_ALL)
+
+# Every target is now defined, so what sits inside src/client and src/server is
+# settled - only their Glue may be there - and so is what each test links: the
+# check reads the tests too, so it runs after them (ADR-0060 - see
+# cmake/AugustaModule.cmake).
+augusta_check_executable_glue()

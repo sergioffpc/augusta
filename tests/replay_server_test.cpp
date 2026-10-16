@@ -1,4 +1,4 @@
-#include "replay_server.h"
+#include "augusta/replay_server.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,27 +20,26 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/capture_file.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/host.h"
+#include "augusta/host_metrics.h"
+#include "augusta/host_wire.h"
 #include "augusta/logging.h"
+#include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
+#include "augusta/replay_catalog.h"
 #include "augusta/scripting.h"
 #include "augusta/version.h"
-#include "capture.h"
-#include "content.h"
-#include "host.h"
-#include "host_metrics.h"
-#include "match.h"
-#include "misbehaviour.h"
-#include "replay_catalog.h"
-#include "wire.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
 // viewer, a Replay list request and a Join request get from it, and the whole
@@ -308,30 +307,25 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
 }
 
 // The capture name names in directory, read once its writer has written it whole.
-augusta::server::Capture ReadWhole(const std::filesystem::path& file) {
+augusta::capture::Capture ReadWhole(const std::filesystem::path& file) {
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (true) {
     std::ifstream in(file, std::ios::binary);
-    auto capture = augusta::server::ReadCapture(in);
-    if ((capture.has_value() && !capture->records.empty() &&
-         std::holds_alternative<augusta::server::CapturedMatchEnd>(capture->records.back().event)) ||
+    auto capture = augusta::capture::ReadCapture(in);
+    if ((capture.has_value() && !capture->events.empty() &&
+         std::holds_alternative<augusta::capture::MatchEnd>(capture->events.back().event)) ||
         std::chrono::steady_clock::now() >= deadline) {
       EXPECT_TRUE(capture.has_value());
-      return capture.value_or(augusta::server::Capture{});
+      return capture.value_or(augusta::capture::Capture{});
     }
     std::this_thread::sleep_for(kPollInterval);
   }
 }
 
 // Writes capture to file, as a Capturer would have.
-void Rewrite(const std::filesystem::path& file, const augusta::server::Capture& capture) {
+void Rewrite(const std::filesystem::path& file, const augusta::capture::Capture& capture) {
   std::ofstream out(file, std::ios::binary | std::ios::trunc);
-  out.write(reinterpret_cast<const char*>(protocol::kCaptureMagic.data()), protocol::kCaptureMagic.size());
-  augusta::capture_file::WriteFrame(out,
-                                    augusta::server::EncodeToCapture(augusta::server::ToWire(capture.header)).value());
-  for (const augusta::server::CaptureRecord& record : capture.records) {
-    augusta::capture_file::WriteFrame(out, augusta::server::EncodeToCapture(augusta::server::ToWire(record)).value());
-  }
+  ASSERT_TRUE(augusta::capture::WriteCapture(out, capture).has_value());
 }
 
 class ReplayServerTest : public ::testing::Test {
@@ -485,7 +479,7 @@ TEST_F(ReplayServerTest, AReplayRequestFromAnotherVersionOrPackIsRefusedForItBef
 // Requirements: US-21
 TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   const std::string name = CaptureAKill(directory_.Path());
-  const augusta::server::Capture capture = ReadWhole(directory_.Path() / name);
+  const augusta::capture::Capture capture = ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
 
   const std::vector<protocol::MessageWire> received = Watch(*server, name);
@@ -500,9 +494,10 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_EQ(starts.size(), 1U);
   ASSERT_EQ(starts[0].players.size(), 2U);
   EXPECT_EQ(starts[0].first_tick, 1U);
+  ASSERT_EQ(capture.joins.size(), 2U);
   for (std::size_t i = 0; i < 2; ++i) {
-    const auto& join = std::get<augusta::server::CapturedJoin>(capture.records[i].event);
-    EXPECT_EQ(starts[0].players[i].session, augusta::server::ToWire(join.session));
+    const augusta::capture::Join& join = capture.joins[i];
+    EXPECT_EQ(starts[0].players[i].session, static_cast<protocol::SessionIdWire>(join.session));
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }
@@ -551,12 +546,12 @@ TEST_F(ReplayServerTest, OnTheCapturingBuildAReplayLogsNoDifference) {
 // Requirements: US-21, NFR-09
 TEST_F(ReplayServerTest, ADoctoredCapturesReplayLogsTheFirstDifference) {
   const std::string name = CaptureAKill(directory_.Path());
-  augusta::server::Capture capture = ReadWhole(directory_.Path() / name);
+  augusta::capture::Capture capture = ReadWhole(directory_.Path() / name);
   std::uint32_t death_offset = 0;
-  for (augusta::server::CaptureRecord& record : capture.records) {
-    if (auto* death = std::get_if<augusta::server::CapturedDeath>(&record.event)) {
+  for (augusta::capture::AtOffset<augusta::capture::Event>& event : capture.events) {
+    if (auto* death = std::get_if<augusta::capture::Death>(&event.event)) {
       death->killer = death->victim;
-      death_offset = record.offset;
+      death_offset = event.offset;
     }
   }
   ASSERT_GT(death_offset, 0U);

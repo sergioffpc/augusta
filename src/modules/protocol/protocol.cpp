@@ -325,12 +325,14 @@ class Reader {
 };
 
 // The read side of WriteList: at most max elements, each as read reads it.
+// Nothing is reserved for the count, and the list stops growing once a read
+// has failed, so a count the payload cannot back allocates only for the
+// elements the payload holds.
 template <typename Read>
 auto ReadList(Reader& reader, std::size_t max, Read read) {
   const std::size_t count = reader.ReadCount(max);
   std::vector<decltype(read(reader))> list;
-  list.reserve(count);
-  for (std::size_t i = 0; i < count; ++i) {
+  for (std::size_t i = 0; i < count && !reader.Error(); ++i) {
     list.push_back(read(reader));
   }
   return list;
@@ -398,14 +400,12 @@ RifleWire ReadRifle(Reader& reader) {
   rifle.recoil_recovery_per_second = reader.ReadF32();
   rifle.ads_recoil_scale = reader.ReadF32();
   rifle.ads_field_of_view = reader.ReadF32();
-  const std::size_t kicks = reader.ReadCount(primitives::kMaxRecoilKicks);
-  // Stops at the first missing byte, so a short payload never grows the list.
-  for (std::size_t i = 0; i < kicks && !reader.Error(); ++i) {
+  rifle.recoil_pattern = ReadList(reader, primitives::kMaxRecoilKicks, [](Reader& kick_reader) {
     RecoilKickWire kick;
-    kick.pitch = reader.ReadF32();
-    kick.yaw = reader.ReadF32();
-    rifle.recoil_pattern.push_back(kick);
-  }
+    kick.pitch = kick_reader.ReadF32();
+    kick.yaw = kick_reader.ReadF32();
+    return kick;
+  });
   return rifle;
 }
 

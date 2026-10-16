@@ -90,6 +90,18 @@ as untrusted as the data it points into. Once verified, the trailer's hash names
 that pack: two cooks of different content never share it, which is what the
 header's client pack hash relies on.
 
+**Format version:** the engine loads packs of its own format version alone
+(`kFormatVersion`), and refuses any other at load. Each server an Environment
+runs records, beside its `packVersion`, the `packFormat` its pack was cooked in,
+as `augusta-publish` reads it from the published server pack's header, and CI
+fails a pull request after which any `packFormat` differs from the engine's, or
+a `packVersion` has none. A change to the format therefore needs every
+Environment's packs re-cooked in it and published before it merges, and the pull
+request that makes it moves each Environment's `packVersion` and `packFormat` to
+them. `staging` runs the last release tag's binaries but takes its values from
+`develop`, so until that change is tagged its new pod refuses the new pack and
+its old pod serves on.
+
 ## Considered Options
 
 The client pack hash as one more blob in the index, at a fixed path with a type

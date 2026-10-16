@@ -44,27 +44,26 @@ presets name them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`);
 the Windows bootstrap installs that LLVM, and CI's and the release's Windows
 client jobs install it through `.github/actions/setup-windows-llvm`. The Visual
 Studio Build Tools and their developer environment (`scripts/vcenv.cmd`, CI's
-`msvc-dev-cmd`) stay: `clang-cl` takes the MSVC STL, the CRT and the Windows SDK
-from them, and sets CMake's `MSVC`, so the MSVC build settings apply to it
-unchanged. Its `/W4 /WX` is clang's `-Wall -Wextra -Werror`, Linux's warning
-set; `/Wall` would be `-Weverything`. The dependencies stay on MSVC `cl`, under
-vcpkg's stock `x64-windows` triplet (`mesa[lavapipe]` included), with no custom
-triplet: `clang-cl` is ABI-compatible with what `cl` builds, the same STL and
-CRT, and those ports are built and tested upstream with `cl`. The presets
-require CMake 3.29, the first to read `CMAKE_LINKER_TYPE`. The root project, the
-server, the client and their tests are then compiled by one compiler family
-everywhere: code that clang rejects or warns on fails the pull request's Windows
-build rather than the nightly's Linux client, a clean build on one platform is
-clean on the other, and `clang-tidy` on Windows reads compile commands written
-for the compiler that builds the code. The asset cooker's native module
-(`tools/pack/native`), a project of its own with its own presets, still builds
-with `cl` on Windows. `clang-cl` defines both `_MSC_VER` and `__clang__`; no
-check in our code takes either. `clang-cl` was rejected twice before: first
-because Falcor supported only MSVC (ADR-0009), then, with Falcor gone
-(ADR-0059), because vcpkg's `x64-windows` triplet and NVIDIA's SDKs are built
-and tested with MSVC. Neither holds for our own code: the dependencies, NVIDIA's
-included, stay on `cl` and its triplet, and `clang-cl` links against what they
-build.
+`.github/actions/setup-windows-msvc`) stay: `clang-cl` takes the MSVC STL, the
+CRT and the Windows SDK from them, and sets CMake's `MSVC`, so the MSVC build
+settings apply to it unchanged. Its `/W4 /WX` is clang's
+`-Wall -Wextra -Werror`, Linux's warning set; `/Wall` would be `-Weverything`.
+The dependencies stay on MSVC `cl`, under vcpkg's stock `x64-windows` triplet
+(`mesa[lavapipe]` included), with no custom triplet: `clang-cl` is
+ABI-compatible with what `cl` builds, the same STL and CRT, and those ports are
+built and tested upstream with `cl`. The presets require CMake 3.29, the first
+to read `CMAKE_LINKER_TYPE`. The root project, the server, the client and their
+tests are then compiled by one compiler family everywhere: code that clang
+rejects or warns on fails the pull request's Windows build rather than the
+nightly's Linux client, a clean build on one platform is clean on the other, and
+`clang-tidy` on Windows reads compile commands written for the compiler that
+builds the code. The asset cooker's native module (`tools/pack/native`), a
+project of its own with its own presets, still builds with `cl` on Windows.
+`clang-cl` defines both `_MSC_VER` and `__clang__`; no check in our code takes
+either. `clang-cl` was once rejected because vcpkg's `x64-windows` triplet and
+NVIDIA's SDKs are built and tested with MSVC. That does not hold for our own
+code: the dependencies, NVIDIA's included, stay on `cl` and its triplet, and
+`clang-cl` links against what they build.
 
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so

@@ -33,7 +33,7 @@
 /// carries the suffix Wire (BodyStateWire for physics::BodyState,
 /// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
 /// read alike where they meet: each peer converts at its edge
-/// and nowhere else, the server in server/wire.h and the client in
+/// and nowhere else, the server in augusta/host_wire.h and the client in
 /// augusta/harness_wire.h, so no module past that edge (Match, replication,
 /// harness::Session's API, presentation) names a Wire type.
 ///

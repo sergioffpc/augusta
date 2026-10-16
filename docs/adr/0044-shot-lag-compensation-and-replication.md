@@ -59,9 +59,9 @@ ballistics math the server uses and the ballistics values of the Parameters
 (ADR-0039), to draw the tracer and the impact on the Map. Hits on players
 (blood, hit reactions) are drawn only from the server's hit messages, never from
 that local trajectory, so a client's drawing can differ from the server's
-outcome without ever showing a hit that did not happen. `augusta_ballistics`'
-trajectory math is therefore shared by client and server; deciding a bullet's
-outcome (HitDetection, Damage) stays the server's alone.
+outcome without ever showing a hit that did not happen. Ballistics' trajectory
+math is therefore shared by client and server; deciding a bullet's outcome
+(HitDetection, Damage) stays the server's alone.
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its
 tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its
@@ -76,9 +76,14 @@ one with fire pressed: whether a Command fires a round is the server's to decide
   shot is tested against the hitbox history at the Shooter's delay, and against
   the Map and Props through physics. ADR-0002's note on raycasting a moved body
   therefore does not decide player hit detection.
-- **`augusta_ballistics` leaves the server-only modules.** Its trajectory
-  integration is used by the client's presentation as well; its hit testing and
-  the outcome it reports stay server-side.
+- **Ballistics is shared, in `augusta_gameplay`.** Its trajectory integration is
+  used by the client's presentation as well; its hit testing and the outcome it
+  reports stay server-side.
+- **Replication lives with SimulationWorld, in `augusta_simulation`.** Deciding
+  what each client is sent of a tick's Authoritative State, its Shots and Hit
+  confirmations included, is server-only and stops at the engine's own types: a
+  pure decision tested without a network, which `server::Host` turns into
+  messages.
 - **A shooter's hit marker lags its shot** by the flight time plus half an RTT.
   That is the price of never showing one that is taken back.
 

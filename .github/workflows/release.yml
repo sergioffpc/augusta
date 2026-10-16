@@ -9,20 +9,27 @@ on:
 permissions:
   contents: write
   packages: write
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
   # Signing the binaries' provenance and SBOM attestations (Sigstore, through
   # the workflow's OIDC token) and storing them in the repository.
   id-token: write
   attestations: write
 env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
-  SCCACHE_GHA_ENABLED: "true"
+# Each build job restores the sccache cache its ci.yml or nightly counterpart
+# saved on main, and saves none: an entry on the tag's ref would be read by no
+# other ref (save-sccache-cache).
+#
 # What is published is tested first (ADR-0013): each build job runs ctest on
 # the Release binaries it stages, which includes the C++ half of the pack
 # contract (the golden packs), the tools job runs the cooker's half, and the
 # nightly job runs every nightly check on the same commit. publish needs them
 # all, so a failing test publishes nothing.
+#
+# The jobs restore the vcpkg and uv caches but save neither, nor do the nightly
+# jobs (their release input): an entry saved here is scoped to the tag, which
+# only a rerun of the same release restores from, and would only push the
+# caches in use out of the repository's 10 GB. A rerun restores main's, as any
+# ref does.
 jobs:
   client-x64-windows:
     runs-on: windows-2025
@@ -35,20 +42,13 @@ jobs:
       - name: Fetch the submodules
         # As ci.yml's client-x64-windows job does: vcpkg and NVTX alone.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: ./.github/actions/setup-windows-msvc
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
       - uses: ./.github/actions/setup-windows-llvm
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-      - name: Configure vcpkg NuGet cache
-        env:
-          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
-          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
-          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - uses: ./.github/actions/restore-sccache-cache
+      - uses: ./.github/actions/setup-windows-vcpkg
+        with:
+          feed-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Configure
         run: cmake --preset windows
       - name: Build
@@ -122,7 +122,6 @@ jobs:
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
         run: cmake --preset linux
-      - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -209,11 +208,16 @@ jobs:
       # The clang the linux preset compiles with (ADR-0008), and the rest of
       # the Linux toolchain.
       - uses: ./.github/actions/setup-linux-build
+        with:
+          # x64 compiles what ci.yml's server-x64-linux does, and restores
+          # that job's cache from main. The name holds the runner's
+          # architecture, so arm64, which no ci.yml job builds outside Docker,
+          # restores none.
+          sccache-job: server-x64-linux
       - name: Configure
         # augustad and what it is built from, without the client, whose Linux
         # build the nightly jobs below test.
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -268,21 +272,15 @@ jobs:
           lfs: true
       - name: Fetch vcpkg
         run: git submodule update --init --depth 1 third_party/vcpkg
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-      - name: Configure vcpkg NuGet cache
-        env:
-          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
-          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
-          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - uses: ./.github/actions/setup-windows-msvc
+      - uses: ./.github/actions/restore-sccache-cache
+      - uses: ./.github/actions/setup-windows-vcpkg
+        with:
+          feed-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+          save-cache: false
           cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
         working-directory: tools
@@ -301,8 +299,8 @@ jobs:
     # what later jobs test. After the build jobs because sbom-scan scans
     # their SBOMs, and a called workflow's job can't wait on its caller's. It
     # may overlap a night outside nightly.yml's concurrency group: with release
-    # set it records no benchmark and saves no fuzz corpus, so it writes
-    # nothing a night reads.
+    # set it records no benchmark and saves no cache, so it writes nothing a
+    # night reads.
     needs: [client-x64-windows, client-x64-linux, server]
     uses: ./.github/workflows/nightly-jobs.yml
     # A caller must grant every permission a called job declares, or the run is

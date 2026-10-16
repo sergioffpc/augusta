@@ -1,12 +1,13 @@
 name: Set up a Linux build
 description: >
-  Installs the Linux toolchain the presets expect, starts sccache (unless told
-  not to), restores the vcpkg binary cache, and bootstraps vcpkg - everything a
-  Linux job needs before `cmake --preset`. Assumes the repository is checked out
-  with its submodules and the job sets VCPKG_BINARY_SOURCES to the
-  .vcpkg-bincache files provider (see ci.yml's server-x64-linux job for why not
-  the NuGet feed). A job saves the cache with save-vcpkg-cache after it
-  configures.
+  Installs the Linux toolchain the presets expect, sets up sccache and restores
+  its cache (unless told not to), restores the vcpkg binary cache, and
+  bootstraps vcpkg - everything a Linux job needs before `cmake --preset`.
+  Assumes the repository is checked out with its submodules and the job sets
+  VCPKG_BINARY_SOURCES to the .vcpkg-bincache files provider (see ci.yml's
+  server-x64-linux job for why not the NuGet feed). A job saves the vcpkg cache
+  with save-vcpkg-cache after it configures, and sccache's with
+  save-sccache-cache after it builds.
 inputs:
   extra-packages:
     description: >
@@ -17,10 +18,17 @@ inputs:
   sccache:
     description: >
       Whether to put sccache on PATH, where the root CMakeLists.txt picks it up
-      as the compiler launcher. "false" for CodeQL: a cache hit never runs the
+      as the compiler launcher, and restore its cache. "false" for CodeQL: a cache hit never runs the
       compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
+  sccache-job:
+    description: >
+      The job id whose sccache cache to restore and save, for a job that
+      compiles what another does (see restore-sccache-cache). Empty for this
+      job's.
+    required: false
+    default: ""
   vcpkg-cache-prefix:
     description: >
       A vcpkg binary cache of the job's own, by its key prefix (see
@@ -39,10 +47,25 @@ runs:
       # autoconf/autoconf-archive/automake/libtool: vcpkg's libsodium port
       # builds via autotools on Linux (vcpkg_run_autoreconf) and needs these
       # from the system package manager - not bundled with vcpkg itself.
+      # clang-21 by name, so a runner image whose clang-21 trails the
+      # archive's is upgraded to it, the one the server image's build stage
+      # installs too (Dockerfile says why they must match).
       shell: bash
-      run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
-    - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      run: sudo apt-get update && sudo apt-get install -y clang-21 clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool ${{ inputs.extra-packages }}
+    - name: Pin vcpkg's tools
+      # vcpkg runs the runner image's CMake when it is recent enough, and that
+      # CMake's version is part of every package's ABI hash: an image update
+      # bumping it (4.4.3 -> 4.4.4) missed every cached package, and while
+      # GitHub rolls an image out, jobs on the old and the new one each saved
+      # the cache in their own ABIs, so the next job on the other rebuilt them
+      # all. vcpkg's own downloads are the versions its submodule pins, the
+      # same the server image's dependency layer uses (Dockerfile).
+      shell: bash
+      run: echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
+    - uses: ./.github/actions/restore-sccache-cache
       if: inputs.sccache == 'true'
+      with:
+        job: ${{ inputs.sccache-job }}
     - uses: ./.github/actions/restore-vcpkg-cache
       with:
         prefix: ${{ inputs.vcpkg-cache-prefix }}

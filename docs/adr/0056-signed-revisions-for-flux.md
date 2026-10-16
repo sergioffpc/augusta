@@ -38,8 +38,8 @@ values move apart, renaming a value `develop` sets takes two steps: the chart
 first, then the values once its chart is live.
 
 The trusted public keys are a Secret in Git, unencrypted: they are public, and
-the cluster keeps no secret (ADR-0057). Keyless signatures need no key at all:
-the identity is the workflow that signed.
+Git holds no credential (ADR-0057). Keyless signatures need no key at all: the
+identity is the workflow that signed.
 
 ## Considered Options
 

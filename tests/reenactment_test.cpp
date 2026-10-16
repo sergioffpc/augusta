@@ -1,10 +1,10 @@
 #include "augusta/reenactment.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -16,25 +16,23 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/capture_error.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
+#include "augusta/command_queue.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/tick.h"
-#include "capture.h"
-#include "command_queue.h"
-#include "match.h"
 
 // A Captured player (ADR-0050) without a network: its Script read from a
-// capture a server::Capturer writes, and its pacing and progress decided from
+// capture the capture module writes, and its pacing and progress decided from
 // Server views built by hand.
 namespace {
 
-using augusta::capture_file::ReadError;
+using augusta::capture::AtOffset;
+using augusta::capture::Capture;
+using augusta::capture::ReadError;
 using augusta::command::Command;
-using augusta::harness::CapturedCommand;
-using augusta::harness::CapturedPlayer;
 using augusta::harness::DueTick;
 using augusta::harness::EntityId;
 using augusta::harness::MatchPlayer;
@@ -52,6 +50,9 @@ using augusta::harness::SessionId;
 using augusta::math::Vec3;
 using augusta::tick::Tick;
 
+using CapturedCommand = augusta::capture::Command;
+using CapturedPlayer = augusta::capture::Player;
+
 constexpr std::uint8_t kTickRate = 60;
 // At 60 Hz the server's queue holds a movement for 6 ticks (command::HeldTicks).
 constexpr int kHeldTicks = 6;
@@ -66,126 +67,107 @@ Command Walk(float speed, bool fire = false) {
   return command;
 }
 
-// --- Reading a capture ---
+// --- Reading a Script ---
 
-class ReadScriptTest : public ::testing::Test {
- protected:
-  void SetUp() override {
-    const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
-    directory_ = std::filesystem::temp_directory_path() / (std::string("augusta_reenactment_test_") + test.name());
-    std::filesystem::remove_all(directory_);
-    std::filesystem::create_directories(directory_);
-  }
+// A Match of two players, the soldier at (1, 0, 2) and the sniper at
+// (-3, 0, 4): the sniper walks on its first two ticks and the fifth, the
+// soldier on its second; the soldier kills the sniper on the sixth tick,
+// and leaves before the eighth; the Match ends on the ninth, the soldier's.
+Capture TheMatch() {
+  Capture capture{
+      .header = {.engine_version = "2.0.1", .tick_rate_hz = kTickRate, .started = {}},
+      .joins = {{.session = 7, .character = "soldier", .spawn = {1, 0, 2}},
+                {.session = 8, .character = "sniper", .spawn = {-3, 0, 4}}},
+      .events = {{.offset = 0, .event = CapturedCommand{.player = 2, .seen_offset = -3, .command = Walk(1.0F)}},
+                 {.offset = 1, .event = CapturedCommand{.player = 2, .seen_offset = -2, .command = Walk(1.0F)}},
+                 {.offset = 1, .event = CapturedCommand{.player = 1, .seen_offset = 1, .command = Walk(-1.0F, true)}},
+                 {.offset = 4, .event = CapturedCommand{.player = 2, .seen_offset = 4, .command = Walk(0.5F)}},
+                 {.offset = 5, .event = augusta::capture::Death{.victim = 2, .killer = 1}},
+                 {.offset = 7, .event = augusta::capture::Leave{.player = 1}},
+                 {.offset = 8, .event = augusta::capture::MatchEnd{.winner = 1}}},
+      .torn = false};
+  capture.header.client_pack.fill(std::byte{2});
+  return capture;
+}
 
-  void TearDown() override { std::filesystem::remove_all(directory_); }
+// capture's file, as the capture module writes it.
+std::string Written(const Capture& capture) {
+  std::ostringstream out(std::ios::binary);
+  EXPECT_TRUE(augusta::capture::WriteCapture(out, capture).has_value());
+  return out.str();
+}
 
-  // Captures a Match of two players, the soldier at (1, 0, 2) and the sniper
-  // at (-3, 0, 4): the sniper walks on its first two ticks and the fifth, the
-  // soldier on its second; the soldier kills the sniper on the sixth tick,
-  // and leaves before the eighth; the Match ends on the ninth, the soldier's.
-  // Returns the capture's file.
-  std::filesystem::path CaptureAMatch() {
-    augusta::server::CaptureHeader header{.engine_version = "2.0.1", .tick_rate_hz = kTickRate, .started = {}};
-    header.client_pack.fill(std::byte{2});
-    {
-      augusta::server::Capturer capturer(directory_, header);
-      capturer.StartMatch({{.session = augusta::server::SessionId{7},
-                            .entity = augusta::server::EntityId{70},
-                            .character = "soldier",
-                            .spawn = {1, 0, 2}},
-                           {.session = augusta::server::SessionId{8},
-                            .entity = augusta::server::EntityId{80},
-                            .character = "sniper",
-                            .spawn = {-3, 0, 4}}},
-                          kFirstTick, std::chrono::system_clock::now());
-      Command seen = Walk(1.0F);
-      seen.seen_tick = kFirstTick - 3;
-      capturer.Command(kFirstTick, augusta::server::EntityId{80}, seen);
-      seen.seen_tick = kFirstTick - 2;
-      capturer.Command(kFirstTick + 1, augusta::server::EntityId{80}, seen);
-      capturer.Command(kFirstTick + 1, augusta::server::EntityId{70}, Walk(-1.0F, true));
-      capturer.Command(kFirstTick + 4, augusta::server::EntityId{80}, Walk(0.5F));
-      capturer.Death(kFirstTick + 5, augusta::server::EntityId{80}, augusta::server::EntityId{70});
-      capturer.Leave(kFirstTick + 7, augusta::server::EntityId{70});
-      capturer.EndMatch(kFirstTick + 8, augusta::server::SessionId{7});
-    }
-    const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory_), {});
-    EXPECT_EQ(files.size(), 1U);
-    return files.empty() ? std::filesystem::path{} : files.front();
-  }
+std::expected<Script, ScriptError> ScriptOf(const std::string& file, CapturedPlayer player) {
+  std::istringstream in(file, std::ios::binary);
+  return ReadScript(in, player);
+}
 
-  static std::optional<Script> Read(const std::filesystem::path& path, CapturedPlayer player) {
-    std::ifstream in(path, std::ios::binary);
-    auto script = ReadScript(in, player);
-    EXPECT_TRUE(script.has_value()) << (script.has_value() ? "" : DescribeScriptError(script.error()));
-    return script.has_value() ? std::optional<Script>(*std::move(script)) : std::nullopt;
-  }
-
-  std::filesystem::path directory_;
-};
-
+// Each player's Script is its own Join, Commands and Leave, beside every
+// player's spawn, the capture's Deaths and its Match end.
 // Requirements: US-21
-TEST_F(ReadScriptTest, APlayersScriptIsItsJoinItsCommandsAndItsLeave) {
-  const auto script = Read(CaptureAMatch(), 2);
+TEST(ReadScriptTest, EachPlayersScriptIsItsPartOfTheCapture) {
+  struct Case {
+    CapturedPlayer player;
+    std::string character;
+    Vec3 spawn;
+    std::vector<AtOffset<CapturedCommand>> commands;
+    std::optional<std::uint32_t> leave;
+  };
+  const Capture capture = TheMatch();
+  const std::vector<Case> cases{
+      {.player = 1,
+       .character = "soldier",
+       .spawn = {1, 0, 2},
+       .commands = {{.offset = 1,
+                     .event = CapturedCommand{.player = 1, .seen_offset = 1, .command = Walk(-1.0F, true)}}},
+       .leave = 7},
+      {.player = 2,
+       .character = "sniper",
+       .spawn = {-3, 0, 4},
+       .commands = {{.offset = 0, .event = CapturedCommand{.player = 2, .seen_offset = -3, .command = Walk(1.0F)}},
+                    {.offset = 1, .event = CapturedCommand{.player = 2, .seen_offset = -2, .command = Walk(1.0F)}},
+                    {.offset = 4, .event = CapturedCommand{.player = 2, .seen_offset = 4, .command = Walk(0.5F)}}},
+       .leave = std::nullopt},
+  };
 
-  ASSERT_TRUE(script.has_value());
-  EXPECT_EQ(script->player, 2);
-  EXPECT_EQ(script->character, "sniper");
-  EXPECT_EQ(script->spawn, Vec3(-3, 0, 4));
-  EXPECT_EQ(script->spawns, (std::vector<Vec3>{{1, 0, 2}, {-3, 0, 4}}));
-  EXPECT_EQ(script->tick_rate_hz, kTickRate);
-  EXPECT_EQ(script->client_pack.front(), std::byte{2});
-  ASSERT_EQ(script->commands.size(), 3U);
-  EXPECT_EQ(script->commands[0].offset, 0U);
-  EXPECT_EQ(script->commands[0].seen_offset, -3);
-  EXPECT_EQ(script->commands[1].offset, 1U);
-  EXPECT_EQ(script->commands[1].seen_offset, -2);
-  EXPECT_EQ(script->commands[2].offset, 4U);
-  EXPECT_EQ(script->commands[2].command.movement.direction, Vec3(0.5F, 0.0F, 0.0F));
-  EXPECT_EQ(script->commands[0].command.yaw, 0.5F);
-  EXPECT_FALSE(script->leave.has_value());
-  EXPECT_FALSE(script->torn);
+  for (const Case& expected : cases) {
+    const auto script = ScriptOf(Written(capture), expected.player);
+
+    ASSERT_TRUE(script.has_value()) << +expected.player;
+    EXPECT_EQ(script->player, expected.player);
+    EXPECT_EQ(script->character, expected.character);
+    EXPECT_EQ(script->spawn, expected.spawn);
+    EXPECT_EQ(script->commands, expected.commands);
+    EXPECT_EQ(script->leave, expected.leave);
+    EXPECT_EQ(script->client_pack, capture.header.client_pack);
+    EXPECT_EQ(script->tick_rate_hz, kTickRate);
+    EXPECT_EQ(script->spawns, (std::vector<Vec3>{{1, 0, 2}, {-3, 0, 4}}));
+    EXPECT_EQ(script->deaths, (std::vector<AtOffset<augusta::capture::Death>>{
+                                  {.offset = 5, .event = augusta::capture::Death{.victim = 2, .killer = 1}}}));
+    EXPECT_EQ(script->end, (AtOffset<augusta::capture::MatchEnd>{.offset = 8, .event = {.winner = 1}}));
+    EXPECT_FALSE(script->torn);
+  }
 }
 
 // Requirements: US-21
-TEST_F(ReadScriptTest, EveryScriptHoldsTheCapturesDeathsAndMatchEnd) {
-  const auto script = Read(CaptureAMatch(), 1);
-
-  ASSERT_TRUE(script.has_value());
-  EXPECT_EQ(script->character, "soldier");
-  ASSERT_EQ(script->commands.size(), 1U);
-  EXPECT_TRUE(script->commands[0].command.fire);
-  EXPECT_EQ(script->leave, 7U);
-  ASSERT_EQ(script->deaths.size(), 1U);
-  EXPECT_EQ(script->deaths[0].offset, 5U);
-  EXPECT_EQ(script->deaths[0].victim, 2);
-  EXPECT_EQ(script->deaths[0].killer, 1);
-  ASSERT_TRUE(script->end.has_value());
-  EXPECT_EQ(script->end->offset, 8U);
-  EXPECT_EQ(script->end->winner, CapturedPlayer{1});
-}
-
-// Requirements: US-21
-TEST_F(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
-  const std::filesystem::path path = CaptureAMatch();
+TEST(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
   for (const CapturedPlayer player : {CapturedPlayer{0}, CapturedPlayer{3}}) {
-    std::ifstream in(path, std::ios::binary);
-    EXPECT_EQ(ReadScript(in, player).error(), ScriptError{.capture = std::nullopt}) << +player;
+    EXPECT_EQ(ScriptOf(Written(TheMatch()), player).error(), ScriptError{.capture = std::nullopt}) << +player;
   }
 }
 
-TEST_F(ReadScriptTest, AFileThatIsNoCaptureGivesNoScript) {
-  std::istringstream pack("AUGPACK\r\n and the rest");
-  EXPECT_EQ(ReadScript(pack, 1).error(), ScriptError{.capture = ReadError::kNotACapture});
-  std::ifstream missing(directory_ / "missing.capture", std::ios::binary);
+TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
+  EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(), ScriptError{.capture = ReadError::kNotACapture});
+  std::ifstream missing(std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing.capture",
+                        std::ios::binary);
   EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError::kUnreadable});
 }
 
-TEST_F(ReadScriptTest, ACaptureCutShortKeepsEveryWholeRecordAndSaysItIsTorn) {
-  const std::filesystem::path path = CaptureAMatch();
-  std::filesystem::resize_file(path, std::filesystem::file_size(path) - 1);
+TEST(ReadScriptTest, ACaptureCutShortGivesTheScriptOfEveryWholeRecordAndSaysItIsTorn) {
+  std::string file = Written(TheMatch());
+  file.pop_back();
 
-  const auto script = Read(path, 1);
+  const auto script = ScriptOf(file, 1);
 
   ASSERT_TRUE(script.has_value());
   EXPECT_TRUE(script->torn);
@@ -216,12 +198,13 @@ TEST(RoundTripTicksTest, APingIsCountedInWholeTicksRoundedUp) {
 // --- Pacing ---
 
 // commands, one at each of offsets, walking at 1, 2, 3 ...
-std::vector<CapturedCommand> AtOffsets(const std::vector<std::uint32_t>& offsets) {
-  std::vector<CapturedCommand> commands;
+std::vector<AtOffset<CapturedCommand>> AtOffsets(const std::vector<std::uint32_t>& offsets) {
+  std::vector<AtOffset<CapturedCommand>> commands;
   for (std::size_t i = 0; i < offsets.size(); ++i) {
-    commands.push_back(CapturedCommand{.offset = offsets[i],
-                                       .seen_offset = static_cast<std::int32_t>(offsets[i]) - 2,
-                                       .command = Walk(static_cast<float>(i + 1))});
+    commands.push_back({.offset = offsets[i],
+                        .event = CapturedCommand{.player = 1,
+                                                 .seen_offset = static_cast<std::int32_t>(offsets[i]) - 2,
+                                                 .command = Walk(static_cast<float>(i + 1))}});
   }
   return commands;
 }
@@ -259,9 +242,9 @@ TEST(PacerTest, BeforeItsFirstCommandIsDueThePacerSendsIdleCommands) {
 // fills them the same way, so every Command after one stays on its offset.
 // Requirements: US-21
 TEST(PacerTest, AGapHoldsTheLastMovementWithoutItsActionsForTheHoldThenIdles) {
-  std::vector<CapturedCommand> commands = AtOffsets({0, 20});
-  commands[0].command.fire = true;
-  commands[0].command.reload = true;
+  std::vector<AtOffset<CapturedCommand>> commands = AtOffsets({0, 20});
+  commands[0].event.command.fire = true;
+  commands[0].event.command.reload = true;
   Pacer pacer(commands, kTickRate, std::nullopt);
   ASSERT_TRUE(pacer.Next(kFirstTick, kFirstTick)->fire);
 
@@ -314,6 +297,21 @@ TEST(PacerTest, NothingGoesForTheLeavesTickOrAfterIt) {
   EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 3).has_value());
 }
 
+// A hiccup puts every Command after it a tick late, the last one before the
+// Leave onto the Leave's tick: it still goes, so it reaches the server before
+// the Leave does.
+// Requirements: US-21
+TEST(PacerTest, ACommandLateIntoTheLeavesTickStillGoesOutButNoFillerDoes) {
+  Pacer pacer(AtOffsets({0, 1}), kTickRate, 2);
+  ASSERT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 1)), 1.0F);
+  EXPECT_FALSE(pacer.DoneBeforeLeave());
+
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 2)), 2.0F);
+  EXPECT_TRUE(pacer.DoneBeforeLeave());
+  EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 3).has_value());
+  EXPECT_EQ(pacer.Sent(), 2U);
+}
+
 // --- A run ---
 
 // A Script of player 2 of three, spawned in a row, with Commands on offsets
@@ -327,9 +325,10 @@ Script ThreePlayerScript() {
   script.spawns = {Vec3(1, 0, 0), Vec3(2, 0, 0), Vec3(3, 0, 0)};
   script.spawn = script.spawns[1];
   script.commands = AtOffsets({0, 1});
-  script.deaths = {{.offset = 30, .victim = 3, .killer = 1}, {.offset = 45, .victim = 1, .killer = 3}};
+  script.deaths = {{.offset = 30, .event = {.victim = 3, .killer = 1}},
+                   {.offset = 45, .event = {.victim = 1, .killer = 3}}};
   script.leave = 40;
-  script.end = augusta::harness::CapturedEnd{.offset = 50, .winner = 1};
+  script.end = AtOffset<augusta::capture::MatchEnd>{.offset = 50, .event = {.winner = 1}};
   return script;
 }
 
@@ -462,11 +461,11 @@ TEST(PairDeathsTest, EachCapturedDeathIsPairedWithTheFirstToldOfItsVictimAndTheR
   ASSERT_EQ(pairs.size(), 3U);
   EXPECT_EQ(pairs[0].captured->offset, 30U);
   EXPECT_EQ(pairs[0].observed->offset, 31U);
-  EXPECT_EQ(pairs[0].observed->killer, 2);
+  EXPECT_EQ(pairs[0].observed->event.killer, 2);
   EXPECT_EQ(pairs[1].captured->offset, 45U);
   EXPECT_EQ(pairs[1].observed->offset, 47U);
   EXPECT_FALSE(pairs[2].captured.has_value());
-  EXPECT_EQ(pairs[2].observed->victim, 3);
+  EXPECT_EQ(pairs[2].observed->event.victim, 3);
   EXPECT_EQ(pairs[2].observed->offset, 33U);
 }
 
@@ -616,7 +615,9 @@ Script WalkingScript() {
     Command command = Walk(1.0F);
     command.yaw = 0.01F * static_cast<float>(offset);
     script.commands.push_back(
-        {.offset = offset, .seen_offset = static_cast<std::int32_t>(offset) - 3, .command = command});
+        {.offset = offset,
+         .event = CapturedCommand{
+             .player = script.player, .seen_offset = static_cast<std::int32_t>(offset) - 3, .command = command}});
   }
   script.leave.reset();
   script.end.reset();
@@ -628,11 +629,11 @@ Script WalkingScript() {
 std::vector<std::optional<std::pair<std::int64_t, std::int64_t>>> AsHanded(const Script& script, const LinkRun& run) {
   std::vector<std::optional<std::pair<std::int64_t, std::int64_t>>> handed;
   std::size_t from = 0;
-  for (const CapturedCommand& captured : script.commands) {
+  for (const AtOffset<CapturedCommand>& captured : script.commands) {
     std::optional<std::pair<std::int64_t, std::int64_t>> found;
     for (std::size_t i = from; i < run.handed.size(); ++i) {
-      if (run.handed[i].command.yaw == captured.command.yaw &&
-          run.handed[i].command.movement.direction == captured.command.movement.direction) {
+      if (run.handed[i].command.yaw == captured.event.command.yaw &&
+          run.handed[i].command.movement.direction == captured.event.command.movement.direction) {
         const auto tick = static_cast<std::int64_t>(run.handed[i].tick);
         found = std::pair{tick - static_cast<std::int64_t>(kFirstTick),
                           tick - static_cast<std::int64_t>(run.handed[i].command.seen_tick)};
@@ -658,7 +659,7 @@ TEST(ReenactmentLinkTest, AClientFasterThanTheServerNeverOverrunsItsQueueAndKeep
   EXPECT_LE(run.most_queued, augusta::harness::kMaxCommandsQueued + 2);
   const auto handed = AsHanded(script, run);
   for (std::size_t i = 0; i < script.commands.size(); ++i) {
-    const CapturedCommand& captured = script.commands[i];
+    const AtOffset<CapturedCommand>& captured = script.commands[i];
     ASSERT_TRUE(handed[i].has_value()) << "the Command of offset " << captured.offset << " never arrived";
     EXPECT_LE(std::abs(handed[i]->first - captured.offset), 2) << "offset " << captured.offset;
     EXPECT_EQ(handed[i]->second, 3) << "the Seen time of offset " << captured.offset;
@@ -676,7 +677,7 @@ TEST(ReenactmentLinkTest, AClientSlowerThanTheServerFallsBehindButLosesNoCommand
   EXPECT_EQ(run.dropped, 0);
   const auto handed = AsHanded(script, run);
   for (std::size_t i = 0; i < script.commands.size(); ++i) {
-    const CapturedCommand& captured = script.commands[i];
+    const AtOffset<CapturedCommand>& captured = script.commands[i];
     ASSERT_TRUE(handed[i].has_value()) << "the Command of offset " << captured.offset << " never arrived";
     // Never more than a tick early: the client's newest State is that stale at most.
     EXPECT_GE(handed[i]->first, static_cast<std::int64_t>(captured.offset) - 1) << "offset " << captured.offset;
@@ -692,7 +693,7 @@ TEST(ReenactmentLinkTest, AClientSlowerThanTheServerFallsBehindButLosesNoCommand
 TEST(ReenactmentLinkTest, APlayerThatLeavesLosesNoCommandBeforeItsLeave) {
   Script script = WalkingScript();
   script.commands.erase(std::remove_if(script.commands.begin(), script.commands.end(),
-                                       [](const CapturedCommand& command) { return command.offset >= 40; }),
+                                       [](const AtOffset<CapturedCommand>& command) { return command.offset >= 40; }),
                         script.commands.end());
   script.leave = 40;
 

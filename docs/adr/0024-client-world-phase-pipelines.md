@@ -17,9 +17,9 @@ Drawing a bullet is not deciding it: every client's PresentationWorld draws each
 Shot the server announces (ADR-0044) by computing its trajectory with the same
 ballistics math the server uses, for the tracer and the impact on the Map. That
 trajectory is a visual only: hits on players are drawn only from the server's
-hit messages, never from it. So the trajectory math of `augusta_ballistics` is
-shared by client and server, while HitDetection and Damage run only in
-SimulationWorld.
+hit messages, never from it. So the trajectory math of Ballistics, in
+`augusta_gameplay`, is shared by client and server, while HitDetection and
+Damage run only in SimulationWorld.
 
 The client's Dynamics is Presentation's, not Prediction's, because it is
 cosmetic (ADR-0045): it moves Props to their interpolated poses as kinematic

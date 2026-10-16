@@ -6,8 +6,8 @@ description: >
   version the Windows bootstrap pins and the Linux runner's distro package
   gives, so every platform has one LLVM. Downloaded and checked like the format
   job's tools, as the image has no winget, the bootstrap's package manager. Run
-  in a job that has loaded the Visual Studio developer environment, which
-  clang-cl and lld-link take the MSVC STL, the CRT and the Windows SDK from.
+  after setup-windows-msvc, whose Visual Studio developer environment clang-cl
+  and lld-link take the MSVC STL, the CRT and the Windows SDK from.
 runs:
   using: composite
   steps:

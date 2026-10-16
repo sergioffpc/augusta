@@ -1,76 +1,74 @@
+#include <cstdint>
 #include <expected>
 #include <istream>
 #include <optional>
 #include <string>
 #include <variant>
 
-#include "augusta/capture_error.h"
-#include "augusta/capture_file.h"
-#include "augusta/harness_wire.h"
-#include "augusta/protocol.h"
+#include "augusta/capture.h"
 #include "augusta/reenactment.h"
-#include "augusta/shared_wire.h"
 
-// A Captured player's part of a Match capture, out of the records
-// augusta/capture_file.h reads, which has already held them to the format's
-// order: here they are only sorted into what one player keeps.
+// A Captured player's part of a Match capture, out of the capture
+// capture::ReadCapture reads, which has already held it to the format's
+// rules: here its events are only sorted into what one player keeps.
 namespace augusta::harness {
 
 namespace {
 
-// Takes each record of a capture into the Script of one player.
+// Takes each event of a capture, at offset, into the Script of one player.
 struct ScriptBuilder {
   Script& script;
+  std::uint32_t offset;
 
-  void operator()(const protocol::CaptureHeaderWire& /*header*/) const {}
-
-  void operator()(const protocol::CapturedJoinWire& join) const {
-    script.spawns.push_back(join.spawn);
-    if (join.player == script.player) {
-      script.character = join.character;
-      script.spawn = join.spawn;
-    }
-  }
-
-  void operator()(const protocol::CapturedCommandWire& command) const {
+  void operator()(const capture::Command& command) const {
     if (command.player == script.player) {
-      script.commands.push_back(FromWire(command));
+      script.commands.push_back({.offset = offset, .event = command});
     }
   }
 
-  void operator()(const protocol::CapturedLeaveWire& leave) const {
+  void operator()(const capture::Leave& leave) const {
     if (leave.player == script.player) {
-      script.leave = leave.offset;
+      script.leave = offset;
     }
   }
 
-  void operator()(const protocol::CapturedDeathWire& death) const { script.deaths.push_back(FromWire(death)); }
+  void operator()(const capture::Death& death) const { script.deaths.push_back({.offset = offset, .event = death}); }
 
-  void operator()(const protocol::CapturedMatchEndWire& end) const { script.end = FromWire(end); }
+  void operator()(const capture::MatchEnd& end) const { script.end = {.offset = offset, .event = end}; }
 };
 
 }  // namespace
 
 std::string DescribeScriptError(const ScriptError& error) {
-  return error.capture.has_value() ? std::string(capture_file::DescribeReadError(*error.capture))
+  return error.capture.has_value() ? std::string(capture::DescribeReadError(*error.capture))
                                    : std::string("the capture has no player of that number");
 }
 
-std::expected<Script, ScriptError> ReadScript(std::istream& in, CapturedPlayer player) {
-  const auto file = capture_file::ReadCaptureFile(in);
-  if (!file.has_value()) {
-    return std::unexpected(ScriptError{.capture = file.error()});
+std::expected<Script, ScriptError> ReadScript(std::istream& in, capture::Player player) {
+  const auto read = capture::ReadCapture(in);
+  if (!read.has_value()) {
+    return std::unexpected(ScriptError{.capture = read.error()});
   }
-  Script script;
-  script.client_pack = wire::FromWire(file->header.client_pack);
-  script.tick_rate_hz = file->header.tick_rate_hz;
-  script.player = player;
-  script.torn = file->torn;
-  for (const protocol::CaptureRecordWire& record : file->records) {
-    std::visit(ScriptBuilder{.script = script}, record);
-  }
-  if (player == 0 || player > script.spawns.size()) {
+  if (player == 0 || player > read->joins.size()) {
     return std::unexpected(ScriptError{.capture = std::nullopt});
+  }
+  const capture::Join& join = read->joins[player - 1];
+  Script script{.client_pack = read->header.client_pack,
+                .tick_rate_hz = read->header.tick_rate_hz,
+                .player = player,
+                .character = join.character,
+                .spawn = join.spawn,
+                .spawns = {},
+                .commands = {},
+                .leave = std::nullopt,
+                .deaths = {},
+                .end = std::nullopt,
+                .torn = read->torn};
+  for (const capture::Join& each : read->joins) {
+    script.spawns.push_back(each.spawn);
+  }
+  for (const capture::AtOffset<capture::Event>& event : read->events) {
+    std::visit(ScriptBuilder{.script = script, .offset = event.offset}, event.event);
   }
   return script;
 }

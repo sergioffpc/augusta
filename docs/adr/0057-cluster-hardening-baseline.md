@@ -43,10 +43,16 @@ nothing else: never replace one a Server runs. Each Environment has its own
 tree, its packs signed with its own key, so one cook published for `develop` and
 for `staging` is two folders, not one that only the first could write.
 
-**The cluster holds no Secret.** Nothing in it needs one: Grafana has no login
-at all, anonymous viewers only, its dashboards, data sources and alerts all from
-Git; Loki and Prometheus answer only inside the cluster. The one Secret in Git
-is Flux's trusted signing keys, which are public (ADR-0056).
+**The cluster holds one credential, and Git none.** Grafana has no login at all,
+anonymous viewers only, its dashboards, data sources and alerts all from Git;
+Loki and Prometheus answer only inside the cluster. The one credential is
+Alertmanager's Telegram bot token (ADR-0049), with the chat it posts to, in the
+Secret `monitoring/alertmanager-telegram`: the operator makes it by hand on the
+Node, and makes it again after a rebuild. A stolen token can post as the bot,
+and read what it was sent, but reaches nothing in the cluster. The one Secret in
+Git is Flux's trusted signing keys, which are public (ADR-0056). A Kyverno
+policy refuses every other Secret but Helm's release records and those the
+charts make for themselves, each by name.
 
 **`augustad` cannot reach out, nor in past its container.** Every namespace but
 k3s's own denies ingress and egress by default, each flow allowed by name;
@@ -74,9 +80,9 @@ Flux's NetworkPolicies are ours, not the ones `flux install` generates, which
 let its controllers reach anywhere. A Kyverno policy refuses a pod in a
 namespace with no default deny, or with a rule that lets everything in or out.
 NetworkPolicies name addresses, not hosts: what must reach GitHub, GHCR, the
-Helm repositories or Sigstore (Flux's source-controller, Kyverno's image
-verification) reaches HTTPS on the internet, never the LAN or the cluster; the
-API server, a process of the Node, is reached by its port.
+Helm repositories, Sigstore or Telegram (Flux's source-controller, Kyverno's
+image verification, Alertmanager) reaches HTTPS on the internet, never the LAN
+or the cluster; the API server, a process of the Node, is reached by its port.
 
 **Security events are searchable, and the important ones alert.** Loki keeps,
 beside every pod's log (ADR-0053), the API server's audit log, the Node's logins
@@ -100,9 +106,10 @@ each alert in Alertmanager, from Loki's ruler, with ADR-0049's receivers.
 - **Packs as OCI images, mounted as `image` volumes and signed with cosign**:
   deferred. It removes the Node's pack folders altogether, but reworks
   publishing (ADR-0026), and is a project of its own.
-- **Secrets encrypted in Git (SOPS and age)**: rejected while nothing needs a
-  Secret. It brings a key to keep and rotate, for no credential the cluster
-  uses.
+- **Secrets encrypted in Git (SOPS and age)**: rejected while one credential is
+  all the cluster holds. It brings a key to keep, rotate and give the cluster,
+  itself a Secret made by hand, to save making the one Secret it protects by
+  hand.
 - **Runtime detection (Falco, Tetragon)**: deferred until a game port faces the
   internet.
 - **Swap kept, with `vm.swappiness` low**: rejected. It still lets a Node that
