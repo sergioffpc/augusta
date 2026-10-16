@@ -10,7 +10,8 @@ Pure field-by-field copies.
 
 ## Not its responsibility
 
-- Each peer's own types: `src/server/wire.h` and `augusta/harness_wire.h`.
+- Each peer's own types: host (`augusta/host_wire.h`) and harness
+  (`augusta/harness_wire.h`).
 - Whether a value is acceptable: whoever takes it in.
 
 ## Decisions
