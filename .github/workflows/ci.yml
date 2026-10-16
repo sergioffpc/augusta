@@ -903,8 +903,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Only a push writes the layer cache the next commits build from; a pull
-      # request never does.
+      # Only a push writes the layer cache, which the next commits build from.
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
@@ -1024,7 +1023,7 @@ jobs:
       attestations: write
       artifact-metadata: write
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/augustad
+      REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
       SHA_TAG: sha-${{ needs.container-verify.outputs.short-sha }}
     steps:
       # For the signing action, and the branch's head, alone: it builds
@@ -1058,19 +1057,19 @@ jobs:
         id: publish
         # The digest is read back from GHCR: a loaded image has none of the
         # manifest the registry serves. The sha- tag, which Flux runs, is
-        # always pushed. Pushes run side by side (see concurrency), so the
-        # branch tag is pushed only from the branch's newest commit: an older
-        # run finishing last must not move it back.
+        # always pushed; the branch tag is for people. Pushes run side by side
+        # (see concurrency), so the branch tag is pushed only from the branch's
+        # newest commit: an older run finishing last must not move it back.
         run: |
-          docker push "$IMAGE:$SHA_TAG"
+          docker push "$REPOSITORY:$SHA_TAG"
           head=$(git ls-remote --exit-code origin "$GITHUB_REF")
           if [ "${head%%[[:space:]]*}" = "$GITHUB_SHA" ]; then
-            docker tag "$IMAGE:$SHA_TAG" "$IMAGE:$GITHUB_REF_NAME"
-            docker push "$IMAGE:$GITHUB_REF_NAME"
+            docker tag "$REPOSITORY:$SHA_TAG" "$REPOSITORY:$GITHUB_REF_NAME"
+            docker push "$REPOSITORY:$GITHUB_REF_NAME"
           else
             echo "$GITHUB_REF_NAME has moved on to ${head%%[[:space:]]*}: leaving its tag alone"
           fi
-          digest=$(docker buildx imagetools inspect "$IMAGE:$SHA_TAG" --format '{{.Manifest.Digest}}')
+          digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # What the cluster admits an augustad image by (ADR-0057). Signed before
       # it is attested, so the verify after signing sees the signature alone.
@@ -1081,8 +1080,8 @@ jobs:
       - name: Publish server debug info
         id: debuginfo
         run: |
-          docker push "$IMAGE:$SHA_TAG-debuginfo"
-          digest=$(docker buildx imagetools inspect "$IMAGE:$SHA_TAG-debuginfo" --format '{{.Manifest.Digest}}')
+          docker push "$REPOSITORY:$SHA_TAG-debuginfo"
+          digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG-debuginfo" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Attest debug info provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
