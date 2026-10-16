@@ -217,7 +217,7 @@ jobs:
           # that job's cache from main. The name holds the runner's
           # architecture, so arm64, which no ci.yml job builds outside Docker,
           # restores none.
-          sccache-name: server-x64-linux
+          sccache-job: server-x64-linux
       - name: Configure
         # augustad and what it is built from, without the client, whose Linux
         # build the nightly jobs below test.

@@ -18,14 +18,15 @@ inputs:
   sccache:
     description: >
       Whether to put sccache on PATH, where the root CMakeLists.txt picks it up
-      as the compiler launcher. "false" for CodeQL: a cache hit never runs the
+      as the compiler launcher, and restore its cache. "false" for CodeQL: a cache hit never runs the
       compiler, so CodeQL's tracer would see nothing to extract.
     required: false
     default: "true"
-  sccache-name:
+  sccache-job:
     description: >
-      Another job's sccache cache, by its job id, for a job that compiles what
-      that one does (see restore-sccache-cache). Empty for this job's own.
+      The job id whose sccache cache to restore and save, for a job that
+      compiles what another does (see restore-sccache-cache). Empty for this
+      job's.
     required: false
     default: ""
   vcpkg-cache-prefix:
@@ -61,7 +62,7 @@ runs:
     - uses: ./.github/actions/restore-sccache-cache
       if: inputs.sccache == 'true'
       with:
-        name: ${{ inputs.sccache-name }}
+        job: ${{ inputs.sccache-job }}
     - uses: ./.github/actions/restore-vcpkg-cache
       with:
         prefix: ${{ inputs.vcpkg-cache-prefix }}

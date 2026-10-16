@@ -9,12 +9,12 @@ description: >
   job, never once per object, and an Actions cache outage costs only a cold
   build.
 inputs:
-  name:
+  job:
     description: >
-      The job whose cache this is, by its job id: another job's, for a job that
-      compiles what that one does (release.yml's server, which builds what
-      ci.yml's server-x64-linux does, restores that job's from main). Empty for
-      this job's own id. Runner OS and architecture are part of the cache's
+      The job id whose cache this is: another job's, for a job that compiles
+      what that one does (release.yml's server, which builds what ci.yml's
+      server-x64-linux does, restores that job's from main). Empty for this
+      job's. Runner OS and architecture are part of the cache's
       name, so a matrix over those needs no name of its own.
     required: false
     default: ""
@@ -39,7 +39,7 @@ runs:
       id: cache
       shell: bash
       env:
-        OWN_NAME: ${{ inputs.name }}
+        OWN_JOB: ${{ inputs.job }}
         JOB: ${{ github.job }}
       run: |
         # A mixed-slash path on Windows, which Git Bash's tools, sccache and
@@ -48,14 +48,14 @@ runs:
         if [ "$RUNNER_OS" = Windows ]; then
           temp="$(cygpath -m "$temp")"
         fi
-        prefix="sccache-$RUNNER_OS-$RUNNER_ARCH-${OWN_NAME:-$JOB}."
+        prefix="sccache-$RUNNER_OS-$RUNNER_ARCH-${OWN_JOB:-$JOB}."
         echo "dir=$temp/sccache" >> "$GITHUB_OUTPUT"
         echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
         {
           echo "SCCACHE_DIR=$temp/sccache"
           echo "SCCACHE_CACHE_SIZE=1G"
-          echo "SCCACHE_CACHE_PREFIX=$prefix"
-          echo "SCCACHE_CACHE_MARKER=$temp/sccache-restored"
+          echo "COMPILER_CACHE_PREFIX=$prefix"
+          echo "COMPILER_CACHE_MARKER=$temp/sccache-restored"
         } >> "$GITHUB_ENV"
     - name: Restore sccache's cache
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -71,5 +71,5 @@ runs:
       shell: bash
       run: |
         mkdir -p "$SCCACHE_DIR"
-        echo "SCCACHE_CACHE_RESTORED=$(cd "$SCCACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
-        touch "$SCCACHE_CACHE_MARKER"
+        echo "COMPILER_CACHE_RESTORED=$(cd "$SCCACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)" >> "$GITHUB_ENV"
+        touch "$COMPILER_CACHE_MARKER"

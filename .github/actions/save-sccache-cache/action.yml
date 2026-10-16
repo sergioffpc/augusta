@@ -25,14 +25,14 @@ runs:
       # changed is never read again.
       shell: bash
       run: |
-        echo "dropped $(find "$SCCACHE_DIR" -type f ! -newer "$SCCACHE_CACHE_MARKER" -print -delete | wc -l) unused objects"
+        echo "dropped $(find "$SCCACHE_DIR" -type f ! -newer "$COMPILER_CACHE_MARKER" -print -delete | wc -l) unused objects"
     - name: List the sccache objects
       id: listing
       shell: bash
       run: |
         listing="$(cd "$SCCACHE_DIR" && find . -type f | sort | sha256sum | cut -c1-64)"
         echo "hash=$listing" >> "$GITHUB_OUTPUT"
-        if [ "$listing" != "$SCCACHE_CACHE_RESTORED" ]; then
+        if [ "$listing" != "$COMPILER_CACHE_RESTORED" ]; then
           echo "changed=true" >> "$GITHUB_OUTPUT"
         else
           echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -46,9 +46,9 @@ runs:
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: ${{ env.SCCACHE_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}
+        key: ${{ env.COMPILER_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}
     - if: steps.listing.outputs.changed == 'true'
       uses: ./.github/actions/prune-cache
       with:
-        prefix: ${{ env.SCCACHE_CACHE_PREFIX }}
-        keep: ${{ env.SCCACHE_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}
+        prefix: ${{ env.COMPILER_CACHE_PREFIX }}
+        keep: ${{ env.COMPILER_CACHE_PREFIX }}${{ steps.listing.outputs.hash }}

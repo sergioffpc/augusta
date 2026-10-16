@@ -55,7 +55,7 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
-      # Not from a release, as the fuzz corpus isn't (save-sccache-cache).
+      # A release saves none (save-sccache-cache).
       - if: ${{ !inputs.release }}
         uses: ./.github/actions/save-sccache-cache
       - name: Test (property tests, ~10 000 cases)

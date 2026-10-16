@@ -570,6 +570,9 @@ jobs:
       - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux-fuzz --target all augusta_tests
+      # Pull requests alone run this job, so no develop entry exists: a pull
+      # request's first run restores the nightly's fuzz job's, of the same job
+      # id and preset, from main.
       - uses: ./.github/actions/save-sccache-cache
       - name: Fuzz
         # Each target in turn (tests/fuzz/README.md). New inputs go to a scratch
