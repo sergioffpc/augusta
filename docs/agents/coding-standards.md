@@ -65,6 +65,26 @@ preconditions, why it exists. A comment that only restates the name
 kept. Private members, and the implementation files (`.cpp`), keep the general
 default: `//`, and only for the non-obvious _why_.
 
+## Module README
+
+Every module under `src/modules/<module>/` has a `README.md` stating its
+responsibility, in this shape:
+
+- `# <module>`, then one line naming its targets and its scope (shared,
+  client-only or server-only), matching its `augusta_set_module_scope` calls.
+- `## Responsibility`: one paragraph on what the module owns, as a whole — not a
+  list of its headers or symbols.
+- `## Not its responsibility`: what a reader would expect here but lives
+  elsewhere, each with the module or executable that owns it.
+- `## Decisions`: links to the ADRs that decide it, if any.
+
+A new module adds its README in the same change; a change that moves a
+responsibility into, out of or between modules updates every README it touches.
+If the paragraph needs "and also" to fit something in, the module has more than
+one responsibility (see Single responsibility). The details stay in the headers'
+`/// \file` comments; the README is the one place the module's boundary is
+stated.
+
 ## Testing
 
 Required (GoogleTest, ADR-0013): logic that is deterministic and not judged by
@@ -121,4 +141,5 @@ See [ADR-0033](../adr/0033-error-handling.md). Never return an error as a string
 
 Everything `clang-format`/`clang-tidy` already check (ADR-0012) is not repeated
 here. Everything else in this doc is enforced by agents reading it plus human
-code review — no additional CI gate for it yet.
+code review, except that a module without a `README.md` fails to configure
+(`augusta_set_module_scope`, `cmake/AugustaModule.cmake`).
