@@ -478,7 +478,7 @@ jobs:
         # setup-linux-build installs it. autoconf/autoconf-archive/
         # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
         # via autotools on Linux.
-        run: sudo apt-get update && sudo apt-get install -y clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
+        run: sudo apt-get update && sudo apt-get install -y clang-21 clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
       - uses: ./.github/actions/restore-sccache-cache
       - name: Bootstrap vcpkg (Windows)
         if: runner.os == 'Windows'
@@ -1079,9 +1079,10 @@ jobs:
           target: debuginfo
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo
-          # The vcpkg binaries the image step restored, or the build stage
-          # misses the layer cache.
+          # The vcpkg binaries the image step restored, and the toolchain it
+          # installed, or the build stage misses the layer cache.
           build-contexts: vcpkg-bincache=.vcpkg-bincache
+          build-args: ${{ steps.image.outputs.toolchain-args }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
       - name: Attest debug info provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -1173,6 +1174,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-arm64-debuginfo
           build-contexts: vcpkg-bincache=.vcpkg-bincache
+          build-args: ${{ steps.image.outputs.toolchain-args }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache-arm64
       - name: Attest debug info provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

@@ -24,13 +24,15 @@ runs:
     # archive by its package's ABI hash, so an entry holding packages this job
     # doesn't need costs nothing but the download.
     #
-    # The ABI hash covers the compiler that built a package and the toolchain
-    # file it built through: vcpkg builds its ports with the project's own
-    # LLVM toolchain (triplets/, ADR-0008). So every Linux job, and the server
-    # image's dependency layer on the same Ubuntu, can share the entry; an
-    # archive another compiler built just never matches - as when Ubuntu
-    # updates clang and the runner image and the image's cached apt layer
-    # hold different builds of it, until both catch up.
+    # The ABI hash covers the SHA1 of the compiler binary that built a
+    # package and the toolchain file it built through: vcpkg builds its ports
+    # with the project's own LLVM toolchain (triplets/, ADR-0008). So every
+    # Linux job, and the server image's dependency layer, can share the entry,
+    # as long as all have the very same clang binary: setup-linux-build
+    # upgrades the runner's clang-21 to the archive's, and the image's build
+    # stage installs that version, of the runner's architecture variant
+    # (build-server-image, Dockerfile). An archive another compiler built just
+    # never matches.
     #
     # An arm64 runner's packages (the release's and main's arm64 builds) never
     # match an x64 job's ABI hashes, so they get a prefix of their own:
