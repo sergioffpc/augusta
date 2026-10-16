@@ -9,8 +9,6 @@ on:
 permissions:
   contents: write
   packages: write
-  # Deleting superseded cache entries (.github/actions/prune-cache).
-  actions: write
   # Signing the binaries' provenance and SBOM attestations (Sigstore, through
   # the workflow's OIDC token) and storing them in the repository.
   id-token: write
@@ -23,6 +21,12 @@ env:
 # contract (the golden packs), the tools job runs the cooker's half, and the
 # nightly job runs every nightly check on the same commit. publish needs them
 # all, so a failing test publishes nothing.
+#
+# The jobs restore the vcpkg and uv caches but save neither, nor do the nightly
+# jobs (their release input): an entry saved here is scoped to the tag, which
+# only a rerun of the same release restores from, and would only push the
+# caches in use out of the repository's 10 GB. A rerun restores main's, as any
+# ref does.
 jobs:
   client-x64-windows:
     runs-on: windows-2025
@@ -122,7 +126,6 @@ jobs:
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
         run: cmake --preset linux
-      - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -213,7 +216,6 @@ jobs:
         # augustad and what it is built from, without the client, whose Linux
         # build the nightly jobs below test.
         run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
-      - uses: ./.github/actions/save-vcpkg-cache
       - name: Build
         run: cmake --build --preset linux --target all augusta_tests
       - name: Test
@@ -283,6 +285,7 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+          save-cache: false
           cache-dependency-glob: tools/uv.lock
       - name: Install the cooker
         working-directory: tools
@@ -301,8 +304,8 @@ jobs:
     # what later jobs test. After the build jobs because sbom-scan scans
     # their SBOMs, and a called workflow's job can't wait on its caller's. It
     # may overlap a night outside nightly.yml's concurrency group: with release
-    # set it records no benchmark and saves no fuzz corpus, so it writes
-    # nothing a night reads.
+    # set it records no benchmark and saves no cache, so it writes nothing a
+    # night reads.
     needs: [client-x64-windows, client-x64-linux, server]
     uses: ./.github/workflows/nightly-jobs.yml
     # A caller must grant every permission a called job declares, or the run is
