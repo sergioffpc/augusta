@@ -861,7 +861,8 @@ jobs:
     # start. PRs build only when the image or chart changed.
     if: github.event_name == 'push' || needs.changes.outputs.run_container == 'true'
     runs-on: ubuntu-26.04
-    # The tag of the image it built, which the confinement job runs.
+    # The tag of the image it built, which the confinement job runs and
+    # container-publish-x64-linux pushes.
     outputs:
       short-sha: ${{ steps.image.outputs.short-sha }}
     permissions:
@@ -902,21 +903,48 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Only a push writes the layer cache, as only a push publishes:
-      # container-publish-x64-linux rebuilds from it.
+      # Only a push writes the layer cache, which the next commits build from.
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
         with:
           cache-to: ${{ github.event_name == 'push' }}
       - name: Save server image
-        # For the confinement job, which runs the image this job checked.
+        # For the confinement job, which runs the image this job checked, and
+        # container-publish-x64-linux, which pushes it.
         run: >-
           docker save ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }} | gzip > "$RUNNER_TEMP/augustad.tar.gz"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-image
           path: ${{ runner.temp }}/augustad.tar.gz
+          retention-days: 1
+      # On a push, the image's debug info (the Dockerfile's debuginfo stage,
+      # from the build stage the image was just built from, so every layer is a
+      # hit), which container-publish-x64-linux pushes beside the image and
+      # keeps for as long as it: what reads a core dump of it (ADR-0047).
+      - name: Build server debug info
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: debuginfo
+          load: true
+          tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo
+          # The vcpkg binaries the image step restored, and the toolchain it
+          # installed, or the build stage misses its layers.
+          build-contexts: vcpkg-bincache=.vcpkg-bincache
+          build-args: ${{ steps.image.outputs.toolchain-args }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+      - name: Save server debug info
+        if: github.event_name == 'push'
+        run: >-
+          docker save ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo | gzip > "$RUNNER_TEMP/augustad-debuginfo.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push'
+        with:
+          name: server-debuginfo
+          path: ${{ runner.temp }}/augustad-debuginfo.tar.gz
           retention-days: 1
   # The image under its own seccomp profile (ADR-0057), as the Node runs it:
   # Agents play full Matches against it, and a syscall outside the profile
@@ -994,10 +1022,15 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    env:
+      REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
+      SHA_TAG: sha-${{ needs.container-verify.outputs.short-sha }}
     steps:
+      # For the signing action, and the branch's head, alone: it builds
+      # nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: true
+          sparse-checkout: .github/actions/sign-artifact
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1005,35 +1038,38 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Rebuilt from the layer cache container-verify just wrote, so every
-      # stage but rootfs is a cache hit, and scanned again: rootfs is cut anew,
-      # and what is pushed below must be an image that passed the scan. It
-      # restores the newest vcpkg binaries, which the dependency layer's cache
-      # key covers: the entry container-verify built from, unless the server
-      # job saved a newer one meanwhile (and pruned that one), when that layer
-      # and the build after it run again.
-      - name: Build and scan server image
-        id: image
-        uses: ./.github/actions/build-server-image
+      # The image container-verify scanned and confinement ran, not a rebuild
+      # of it: a rebuild cuts rootfs anew, so it would be another image, to
+      # scan again. And its debug info, from the same build.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: server-image
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: server-debuginfo
+          path: ${{ runner.temp }}
+      - name: Load server image and debug info
+        run: |
+          gunzip -c "$RUNNER_TEMP/augustad.tar.gz" | docker load
+          gunzip -c "$RUNNER_TEMP/augustad-debuginfo.tar.gz" | docker load
       - name: Publish server image
         id: publish
-        # The digest is read back from GHCR: the build only loaded the image,
-        # so its own digest output isn't the manifest the registry serves.
-        # The sha- tag, which Flux runs, is always pushed. Pushes run side by
-        # side (see concurrency), so the branch tag is pushed only from the
-        # branch's newest commit: an older run finishing last must not move it
-        # back.
+        # The digest is read back from GHCR: a loaded image has none of the
+        # manifest the registry serves. The sha- tag, which Flux runs, is
+        # always pushed; the branch tag is for people. Pushes run side by side
+        # (see concurrency), so the branch tag is pushed only from the branch's
+        # newest commit: an older run finishing last must not move it back.
         run: |
-          image=ghcr.io/${{ github.repository_owner }}/augustad
-          sha_tag="$image:sha-${{ steps.image.outputs.short-sha }}"
-          docker push "$sha_tag"
+          docker push "$REPOSITORY:$SHA_TAG"
           head=$(git ls-remote --exit-code origin "$GITHUB_REF")
           if [ "${head%%[[:space:]]*}" = "$GITHUB_SHA" ]; then
-            docker push "$image:$GITHUB_REF_NAME"
+            docker tag "$REPOSITORY:$SHA_TAG" "$REPOSITORY:$GITHUB_REF_NAME"
+            docker push "$REPOSITORY:$GITHUB_REF_NAME"
           else
             echo "$GITHUB_REF_NAME has moved on to ${head%%[[:space:]]*}: leaving its tag alone"
           fi
-          digest=$(docker buildx imagetools inspect "$sha_tag" --format '{{.Manifest.Digest}}')
+          digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # What the cluster admits an augustad image by (ADR-0057). Signed before
       # it is attested, so the verify after signing sees the signature alone.
@@ -1041,29 +1077,19 @@ jobs:
         uses: ./.github/actions/sign-artifact
         with:
           digest: ${{ steps.publish.outputs.digest }}
-      # The published binary's debug info (the Dockerfile's debuginfo stage,
-      # from the build layer the image was just built from), kept beside the
-      # image for as long as it: what reads a core dump of it (ADR-0047).
       - name: Publish server debug info
         id: debuginfo
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          target: debuginfo
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo
-          # The vcpkg binaries the image step restored, and the toolchain it
-          # installed, or the build stage misses the layer cache.
-          build-contexts: vcpkg-bincache=.vcpkg-bincache
-          build-args: ${{ steps.image.outputs.toolchain-args }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+        run: |
+          docker push "$REPOSITORY:$SHA_TAG-debuginfo"
+          digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG-debuginfo" --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Attest debug info provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/augustad
           subject-digest: ${{ steps.debuginfo.outputs.digest }}
           push-to-registry: true
-      # Every published image is attested here, where it is built: release.yml
+      # Every published image is attested here, where it is pushed: release.yml
       # builds none, and the image a release runs is its tag's commit's, pushed
       # to main (docs/ENGINEERING.md, Provenance and SBOMs).
       - name: Attest image provenance

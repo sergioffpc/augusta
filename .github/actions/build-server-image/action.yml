@@ -2,12 +2,11 @@ name: Build and scan the server image
 description: >
   Builds the server image into the runner's Docker (loaded, not pushed), from
   the registry layer cache and the Linux jobs' vcpkg binary cache, and fails on
-  a high or critical CVE trivy finds in it. Every ci.yml container job runs it:
-  container-verify to check the image, container-publish-x64-linux to rebuild
-  the image it then pushes, so what it publishes is an image that was scanned,
-  and on main container-publish-arm64-linux for the arm64 image. Tags it
-  sha-<12> and, on a push, with the branch name (sha-<12>-arm64 alone with
-  arch-suffix). Assumes the repository is checked out with its submodules and
+  a high or critical CVE trivy finds in it. ci.yml's container-verify runs it
+  for the image container-publish-x64-linux then pushes, so what it publishes
+  is an image that was scanned, and on main container-publish-arm64-linux for
+  the arm64 image it pushes itself. Tags it sha-<12> (sha-<12>-arm64 with
+  arch-suffix); the branch tag is the publishing job's. Assumes the repository is checked out with its submodules and
   buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 inputs:
   cache-to:
@@ -20,7 +19,7 @@ inputs:
   arch-suffix:
     description: >
       "-arm64" on main's arm64 build (ci.yml's container-publish-arm64-linux):
-      the image is tagged sha-<12>-arm64 alone, with no branch tag, and its
+      the image is tagged sha-<12>-arm64, and its
       layers cached at buildcache-arm64, so the plain tags can become the index
       of both architectures. Empty, the default, builds the amd64 image as ever.
     required: false
@@ -106,13 +105,7 @@ runs:
         build-contexts: vcpkg-bincache=.vcpkg-bincache
         # sha-<first 12 characters of the commit> is the tag the chart runs:
         # Flux versions a Git-sourced chart <version>+<the same 12 characters>.
-        # The branch name tag is for people. github.ref_name is only a plain
-        # branch name (safe as a Docker tag) on push - for pull_request it's
-        # "<pr-number>/merge", which Docker rejects. An arm64 build has its
-        # suffixed tag alone.
-        tags: |
-          ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}${{ inputs.arch-suffix }}
-          ${{ github.event_name == 'push' && inputs.arch-suffix == '' && format('ghcr.io/{0}/augustad:{1}', github.repository_owner, github.ref_name) || '' }}
+        tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.short-sha.outputs.value }}${{ inputs.arch-suffix }}
         # A commit that leaves src/ alone reuses the cached build. The layers
         # live in GHCR, next to the image, not in the Actions cache: at several
         # GB they took most of its 10 GB, and GitHub evicted the vcpkg caches
