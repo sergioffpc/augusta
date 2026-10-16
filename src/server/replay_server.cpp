@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/capture.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
@@ -28,7 +29,6 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
-#include "capture.h"
 #include "connection_sample.h"
 #include "content.h"
 #include "heartbeat.h"
@@ -302,7 +302,7 @@ struct ReplayServer::Impl {
       return;
     }
     lock.unlock();
-    std::optional<Capture> capture = catalog.Find(request.capture);
+    std::optional<capture::Capture> capture = catalog.Find(request.capture);
     lock.lock();
     if (!capture.has_value()) {
       Refuse(peer, JoinRefusal::kUnknownCapture, now);

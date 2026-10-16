@@ -13,7 +13,6 @@
 #include <format>
 #include <fstream>
 #include <ios>
-#include <istream>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -26,7 +25,6 @@
 #include <vector>
 
 #include "augusta/capture.h"
-#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -41,9 +39,6 @@
 namespace augusta::server {
 
 namespace {
-
-// What every capture's file name ends in (CaptureFileName).
-constexpr std::string_view kCaptureExtension = ".capture";
 
 // What directory's retention reports, told to observer: the directory's
 // files and bytes, and each deletion and failed one.
@@ -99,26 +94,10 @@ std::int64_t Offset(tick::Tick from, tick::Tick to) {
 
 }  // namespace
 
-std::expected<Capture, capture::ReadError> ReadCapture(std::istream& in) {
-  auto file = capture::ReadCaptureFile(in);
-  if (!file.has_value()) {
-    return std::unexpected(file.error());
-  }
-  Capture capture{.header = FromWire(file->header), .records = {}, .torn = file->torn};
-  capture.records.reserve(file->records.size());
-  for (const protocol::CaptureRecordWire& wire : file->records) {
-    // The file's order admits no header past the first, which alone gives none.
-    if (std::optional<CaptureRecord> record = FromWire(wire)) {
-      capture.records.push_back(*std::move(record));
-    }
-  }
-  return capture;
-}
-
 std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, std::uint64_t match_number) {
   const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
   return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}{}", seconds, (started - seconds).count(), match_number,
-                     kCaptureExtension);
+                     capture::kExtension);
 }
 
 std::string_view CaptureStopName(CaptureStop stop) {
@@ -536,7 +515,7 @@ class Capturer::Writer {
   std::thread thread_;
 };
 
-Capturer::Capturer(std::filesystem::path directory, CaptureHeader header, CaptureOptions options)
+Capturer::Capturer(std::filesystem::path directory, capture::Header header, CaptureOptions options)
     : directory_(std::move(directory)),
       header_(std::move(header)),
       writer_(std::make_unique<Writer>(directory_, std::move(options))) {}
@@ -559,7 +538,7 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
   first_tick_ = first_tick;
   players_.clear();
   sessions_.clear();
-  CaptureHeader header = header_;
+  capture::Header header = header_;
   header.started = std::chrono::floor<std::chrono::milliseconds>(started);
   std::optional<protocol::BytesWire> encoded = Admit(EncodeToCapture(ToWire(header)));
   if (!encoded.has_value()) {
@@ -568,19 +547,17 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
   }
   writer_->Open(matches_, directory_ / CaptureFileName(header.started, matches_), *std::move(encoded));
   for (const CaptureEntrant& entrant : players) {
-    const auto player = static_cast<CapturedPlayer>(players_.size() + 1);
+    const auto player = static_cast<capture::Player>(players_.size() + 1);
     players_.emplace(entrant.entity, player);
     sessions_.emplace(entrant.session, player);
-    Queue(CaptureRecord{.offset = 0,
-                        .event = CapturedJoin{.player = player,
-                                              .session = entrant.session,
-                                              .character = entrant.character,
-                                              .spawn = math::SnapPosition(entrant.spawn)}});
+    Queue(EncodeToCapture(ToWire(player, capture::Join{.session = std::to_underlying(entrant.session),
+                                                       .character = entrant.character,
+                                                       .spawn = math::SnapPosition(entrant.spawn)})));
   }
 }
 
 void Capturer::Command(tick::Tick tick, EntityId entity, const command::Command& command) {
-  const CapturedPlayer player = PlayerOf(entity);
+  const capture::Player player = PlayerOf(entity);
   if (!open_ || player == 0) {
     return;
   }
@@ -589,38 +566,40 @@ void Capturer::Command(tick::Tick tick, EntityId entity, const command::Command&
                                std::numeric_limits<std::int32_t>::max());
   command::Command captured = command;
   captured.seen_tick = 0;
-  Queue(CaptureRecord{
-      .offset = OffsetOf(tick),
-      .event = CapturedCommand{.player = player, .seen_offset = static_cast<std::int32_t>(seen), .command = captured}});
+  Queue(EncodeToCapture(
+      ToWire({.offset = OffsetOf(tick),
+              .event = capture::Command{
+                  .player = player, .seen_offset = static_cast<std::int32_t>(seen), .command = captured}})));
 }
 
 void Capturer::Leave(tick::Tick tick, EntityId entity) {
-  const CapturedPlayer player = PlayerOf(entity);
+  const capture::Player player = PlayerOf(entity);
   if (!open_ || player == 0) {
     return;
   }
-  Queue(CaptureRecord{.offset = OffsetOf(tick), .event = CapturedLeave{.player = player}});
+  Queue(EncodeToCapture(ToWire({.offset = OffsetOf(tick), .event = capture::Leave{.player = player}})));
 }
 
 void Capturer::Death(tick::Tick tick, EntityId victim, EntityId killer) {
-  const CapturedPlayer dead = PlayerOf(victim);
+  const capture::Player dead = PlayerOf(victim);
   if (!open_ || dead == 0) {
     return;
   }
-  Queue(CaptureRecord{.offset = OffsetOf(tick), .event = CapturedDeath{.victim = dead, .killer = PlayerOf(killer)}});
+  Queue(EncodeToCapture(
+      ToWire({.offset = OffsetOf(tick), .event = capture::Death{.victim = dead, .killer = PlayerOf(killer)}})));
 }
 
 void Capturer::EndMatch(tick::Tick last_tick, std::optional<SessionId> winner) {
   if (!open_) {
     return;
   }
-  std::optional<CapturedPlayer> winning;
+  std::optional<capture::Player> winning;
   if (winner.has_value()) {
     if (const auto found = sessions_.find(*winner); found != sessions_.end()) {
       winning = found->second;
     }
   }
-  Queue(CaptureRecord{.offset = OffsetOf(last_tick), .event = CapturedMatchEnd{.winner = winning}});
+  Queue(EncodeToCapture(ToWire({.offset = OffsetOf(last_tick), .event = capture::MatchEnd{.winner = winning}})));
   writer_->Close(matches_);
   open_ = false;
   players_.clear();
@@ -647,9 +626,9 @@ std::optional<failure::Failure> Capturer::Loss() const {
 
 const std::optional<failure::Failure>& Capturer::Failure() const { return failure_; }
 
-CapturedPlayer Capturer::PlayerOf(EntityId entity) const {
+capture::Player Capturer::PlayerOf(EntityId entity) const {
   const auto found = players_.find(entity);
-  return found == players_.end() ? CapturedPlayer{0} : found->second;
+  return found == players_.end() ? capture::Player{0} : found->second;
 }
 
 std::uint32_t Capturer::OffsetOf(tick::Tick tick) const {
@@ -666,7 +645,7 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
     }
     return std::nullopt;
   }
-  // A record ReadCapture would refuse would make every record after it
+  // A record capture::ReadCapture would refuse would make every record after it
   // unreadable; stopping here keeps the file readable up to it.
   if (encoded->size() > capture::kMaxFramePayload) {
     writer_->Stop(matches_, CaptureStep::kRecordTooLong);
@@ -675,9 +654,9 @@ std::optional<std::vector<std::byte>> Capturer::Admit(std::expected<std::vector<
   return *std::move(encoded);
 }
 
-void Capturer::Queue(const CaptureRecord& record) {
-  if (std::optional<protocol::BytesWire> encoded = Admit(EncodeToCapture(ToWire(record)))) {
-    writer_->Push(matches_, *std::move(encoded));
+void Capturer::Queue(std::expected<std::vector<std::byte>, failure::Failure> encoded) {
+  if (std::optional<protocol::BytesWire> admitted = Admit(std::move(encoded))) {
+    writer_->Push(matches_, *std::move(admitted));
   }
 }
 

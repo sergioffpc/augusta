@@ -8,12 +8,12 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "capture.h"
 #include "match.h"
 #include "replay.h"
 
@@ -25,13 +25,6 @@ namespace {
 
 using augusta::command::Command;
 using augusta::math::Vec3;
-using augusta::server::Capture;
-using augusta::server::CapturedCommand;
-using augusta::server::CapturedDeath;
-using augusta::server::CapturedJoin;
-using augusta::server::CapturedLeave;
-using augusta::server::CapturedMatchEnd;
-using augusta::server::CaptureRecord;
 using augusta::server::Divergence;
 using augusta::server::EntityId;
 using augusta::server::Replay;
@@ -40,38 +33,31 @@ using augusta::server::ReplayTick;
 using augusta::server::SessionId;
 using augusta::simulation::Character;
 
+namespace capture = augusta::capture;
+
+// An event of a capture, at its offset.
+using Captured = capture::AtOffset<capture::Event>;
+
 constexpr std::uint8_t kTickRate = 60;
 constexpr const char* kCharacter = "soldier";
 
-// Two players, sessions 7 and 9, apart on the X axis.
-std::vector<CaptureRecord> TwoJoins() {
-  return {CaptureRecord{
-              .offset = 0,
-              .event =
-                  CapturedJoin{
-                      .player = 1, .session = SessionId{7}, .character = kCharacter, .spawn = Vec3(10.0F, 0.0F, 0.0F)}},
-          CaptureRecord{
-              .offset = 0,
-              .event = CapturedJoin{
-                  .player = 2, .session = SessionId{9}, .character = kCharacter, .spawn = Vec3(-10.0F, 0.0F, 4.0F)}}};
-}
-
-Capture CaptureOf(std::vector<CaptureRecord> records) {
-  Capture capture;
+// Two players, sessions 7 and 9, apart on the X axis, and then events.
+capture::Capture CaptureOf(std::vector<Captured> events) {
+  capture::Capture capture;
   capture.header.tick_rate_hz = kTickRate;
-  capture.records = TwoJoins();
-  capture.records.insert(capture.records.end(), records.begin(), records.end());
+  capture.joins = {{.session = 7, .character = kCharacter, .spawn = Vec3(10.0F, 0.0F, 0.0F)},
+                   {.session = 9, .character = kCharacter, .spawn = Vec3(-10.0F, 0.0F, 4.0F)}};
+  capture.events = std::move(events);
   return capture;
 }
 
-CaptureRecord CommandAt(std::uint32_t offset, augusta::server::CapturedPlayer player, const Command& command,
-                        std::int32_t seen_offset = 0) {
-  return CaptureRecord{.offset = offset,
-                       .event = CapturedCommand{.player = player, .seen_offset = seen_offset, .command = command}};
+Captured CommandAt(std::uint32_t offset, capture::Player player, const Command& command, std::int32_t seen_offset = 0) {
+  return Captured{.offset = offset,
+                  .event = capture::Command{.player = player, .seen_offset = seen_offset, .command = command}};
 }
 
-CaptureRecord EndAt(std::uint32_t offset, std::optional<augusta::server::CapturedPlayer> winner = std::nullopt) {
-  return CaptureRecord{.offset = offset, .event = CapturedMatchEnd{.winner = winner}};
+Captured EndAt(std::uint32_t offset, std::optional<capture::Player> winner = std::nullopt) {
+  return Captured{.offset = offset, .event = capture::MatchEnd{.winner = winner}};
 }
 
 const std::unordered_map<std::string, Character>& Characters() {
@@ -86,7 +72,7 @@ augusta::scripting::Engine Rules(const char* rules) {
   return policy ? *std::move(policy) : augusta::scripting::Engine{};
 }
 
-Replay ReplayOf(Capture capture, augusta::scripting::Engine policy = {}) {
+Replay ReplayOf(capture::Capture capture, augusta::scripting::Engine policy = {}) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   return Replay(std::move(capture), augusta::simulation::World(parameters, kTickRate, std::move(policy)), Characters());
@@ -197,7 +183,7 @@ TEST(CaptureReplayTest, ASeenTimeKeepsItsCapturedDelay) {
 
 // Requirements: US-21
 TEST(CaptureReplayTest, APlayerWhoLeftIsTakenOutBeforeTheTickOfItsLeave) {
-  Replay replay = ReplayOf(CaptureOf({CaptureRecord{.offset = 3, .event = CapturedLeave{.player = 2}}, EndAt(5)}));
+  Replay replay = ReplayOf(CaptureOf({Captured{.offset = 3, .event = capture::Leave{.player = 2}}, EndAt(5)}));
 
   const std::vector<ReplayTick> ticks = RunToEnd(replay);
 
@@ -211,7 +197,7 @@ TEST(CaptureReplayTest, APlayerWhoLeftIsTakenOutBeforeTheTickOfItsLeave) {
 // The live server takes out the bodies of those who left an ended Match after
 // its last tick: their Leaves on that tick do not take them out before it.
 TEST(CaptureReplayTest, ALeaveAfterTheLastTickLeavesThatTickAsItRan) {
-  Replay replay = ReplayOf(CaptureOf({CaptureRecord{.offset = 4, .event = CapturedLeave{.player = 2}}, EndAt(4)}));
+  Replay replay = ReplayOf(CaptureOf({Captured{.offset = 4, .event = capture::Leave{.player = 2}}, EndAt(4)}));
 
   const std::vector<ReplayTick> ticks = RunToEnd(replay);
 
@@ -260,13 +246,13 @@ TEST(CaptureReplayTest, ItEndsAtTheWorldsMatchEndAndChecksItAgainstTheCapturesOn
   }
   ASSERT_EQ(disagreed.size(), 4U);
   ASSERT_TRUE(disagreed.back().divergence.has_value());
-  EXPECT_EQ(disagreed.back().divergence->captured_end, CapturedMatchEnd{.winner = 1});
-  EXPECT_EQ(disagreed.back().divergence->resolved_end, CapturedMatchEnd{.winner = 2});
+  EXPECT_EQ(disagreed.back().divergence->captured_end, capture::MatchEnd{.winner = 1});
+  EXPECT_EQ(disagreed.back().divergence->resolved_end, capture::MatchEnd{.winner = 2});
 }
 
 // A capture cut short ends at its last record, with no Match end to hold the World's to.
 TEST(CaptureReplayTest, ACaptureCutShortEndsAtItsLastRecord) {
-  Capture capture = CaptureOf({CommandAt(7, 1, Command{})});
+  capture::Capture capture = CaptureOf({CommandAt(7, 1, Command{})});
   capture.torn = true;
   Replay replay = ReplayOf(std::move(capture));
 
@@ -279,10 +265,10 @@ TEST(CaptureReplayTest, ACaptureCutShortEndsAtItsLastRecord) {
   }
 }
 
-Capture MarkedCapture() {
-  return CaptureOf({CaptureRecord{.offset = 4, .event = CapturedDeath{.victim = 2, .killer = 1}},
-                    CaptureRecord{.offset = 9, .event = CapturedDeath{.victim = 1, .killer = 3}},
-                    CaptureRecord{.offset = 9, .event = CapturedDeath{.victim = 3, .killer = 1}}, EndAt(9, 1)});
+capture::Capture MarkedCapture() {
+  return CaptureOf({Captured{.offset = 4, .event = capture::Death{.victim = 2, .killer = 1}},
+                    Captured{.offset = 9, .event = capture::Death{.victim = 1, .killer = 3}},
+                    Captured{.offset = 9, .event = capture::Death{.victim = 3, .killer = 1}}, EndAt(9, 1)});
 }
 
 // Requirements: NFR-09
@@ -290,16 +276,16 @@ TEST(ReplayCheckTest, MarkersResolvedAsCapturedHaveNoDivergence) {
   ReplayCheck check(MarkedCapture());
 
   for (std::uint32_t offset = 0; offset < 9; ++offset) {
-    std::vector<CapturedDeath> deaths;
+    std::vector<capture::Death> deaths;
     if (offset == 4) {
-      deaths.push_back(CapturedDeath{.victim = 2, .killer = 1});
+      deaths.push_back(capture::Death{.victim = 2, .killer = 1});
     }
     EXPECT_FALSE(check.Check(offset, deaths, std::nullopt).has_value()) << offset;
   }
   // The same Deaths in another order are the same Deaths.
   EXPECT_FALSE(check
-                   .Check(9, {CapturedDeath{.victim = 3, .killer = 1}, CapturedDeath{.victim = 1, .killer = 3}},
-                          CapturedMatchEnd{.winner = 1})
+                   .Check(9, {capture::Death{.victim = 3, .killer = 1}, capture::Death{.victim = 1, .killer = 3}},
+                          capture::MatchEnd{.winner = 1})
                    .has_value());
 }
 
@@ -308,14 +294,14 @@ TEST(ReplayCheckTest, ADeathWithAnotherKillerOrOnAnotherTickIsTheFirstDivergence
   ReplayCheck other_killer(MarkedCapture());
   ReplayCheck late(MarkedCapture());
 
-  const auto killer = other_killer.Check(4, {CapturedDeath{.victim = 2, .killer = 3}}, std::nullopt);
+  const auto killer = other_killer.Check(4, {capture::Death{.victim = 2, .killer = 3}}, std::nullopt);
   const auto missing = late.Check(4, {}, std::nullopt);
 
   ASSERT_TRUE(killer.has_value());
   EXPECT_EQ(killer->marker, Divergence::Marker::kDeath);
   EXPECT_EQ(killer->offset, 4U);
-  EXPECT_EQ(killer->captured_deaths, (std::vector<CapturedDeath>{{.victim = 2, .killer = 1}}));
-  EXPECT_EQ(killer->resolved_deaths, (std::vector<CapturedDeath>{{.victim = 2, .killer = 3}}));
+  EXPECT_EQ(killer->captured_deaths, (std::vector<capture::Death>{{.victim = 2, .killer = 1}}));
+  EXPECT_EQ(killer->resolved_deaths, (std::vector<capture::Death>{{.victim = 2, .killer = 3}}));
   ASSERT_TRUE(missing.has_value());
   EXPECT_TRUE(missing->resolved_deaths.empty());
 }
@@ -325,22 +311,22 @@ TEST(ReplayCheckTest, AMatchEndOnAnotherTickOrWithAnotherWinnerIsADivergence) {
   ReplayCheck early(MarkedCapture());
   ReplayCheck missed(MarkedCapture());
   ReplayCheck other_winner(MarkedCapture());
-  const std::vector<CapturedDeath> on_nine = {{.victim = 1, .killer = 3}, {.victim = 3, .killer = 1}};
+  const std::vector<capture::Death> on_nine = {{.victim = 1, .killer = 3}, {.victim = 3, .killer = 1}};
 
-  const auto ended_early = early.Check(2, {}, CapturedMatchEnd{.winner = 1});
+  const auto ended_early = early.Check(2, {}, capture::MatchEnd{.winner = 1});
   (void)missed.Check(4, {{.victim = 2, .killer = 1}}, std::nullopt);
   const auto never_ended = missed.Check(9, on_nine, std::nullopt);
   (void)other_winner.Check(4, {{.victim = 2, .killer = 1}}, std::nullopt);
-  const auto drawn = other_winner.Check(9, on_nine, CapturedMatchEnd{});
+  const auto drawn = other_winner.Check(9, on_nine, capture::MatchEnd{});
 
   ASSERT_TRUE(ended_early.has_value());
   EXPECT_EQ(ended_early->marker, Divergence::Marker::kMatchEnd);
   EXPECT_FALSE(ended_early->captured_end.has_value());
   ASSERT_TRUE(never_ended.has_value());
-  EXPECT_EQ(never_ended->captured_end, CapturedMatchEnd{.winner = 1});
+  EXPECT_EQ(never_ended->captured_end, capture::MatchEnd{.winner = 1});
   EXPECT_FALSE(never_ended->resolved_end.has_value());
   ASSERT_TRUE(drawn.has_value());
-  EXPECT_EQ(drawn->resolved_end, CapturedMatchEnd{});
+  EXPECT_EQ(drawn->resolved_end, capture::MatchEnd{});
 }
 
 // Only the first difference is logged: the rest follow from it.
@@ -348,7 +334,7 @@ TEST(ReplayCheckTest, AMatchEndOnAnotherTickOrWithAnotherWinnerIsADivergence) {
 TEST(ReplayCheckTest, OnlyTheFirstDivergenceIsReported) {
   ReplayCheck check(MarkedCapture());
 
-  EXPECT_TRUE(check.Check(1, {CapturedDeath{.victim = 1, .killer = 2}}, std::nullopt).has_value());
+  EXPECT_TRUE(check.Check(1, {capture::Death{.victim = 1, .killer = 2}}, std::nullopt).has_value());
   EXPECT_FALSE(check.Check(4, {}, std::nullopt).has_value());
   EXPECT_FALSE(check.Check(9, {}, std::nullopt).has_value());
 }
@@ -364,8 +350,8 @@ TEST(ReplayCheckTest, ADivergenceIsDescribedWithBothSides) {
                        .offset = 9,
                        .captured_deaths = {},
                        .resolved_deaths = {},
-                       .captured_end = CapturedMatchEnd{.winner = 1},
-                       .resolved_end = CapturedMatchEnd{}};
+                       .captured_end = capture::MatchEnd{.winner = 1},
+                       .resolved_end = capture::MatchEnd{}};
 
   EXPECT_EQ(augusta::server::DescribeDivergence(death), "marker=death offset=4 captured=[2<-1] resolved=[]");
   EXPECT_EQ(augusta::server::DescribeDivergence(end), "marker=match_end offset=9 captured=winner:1 resolved=draw");

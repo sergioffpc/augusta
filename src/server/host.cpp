@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/capture.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
 #include "augusta/logging.h"
@@ -56,11 +57,11 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
      CaptureModeName(config.capture_mode));
   observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,
-                                    CaptureHeader{.engine_version = std::string(EngineVersion()),
-                                                  .server_pack = config.server_pack,
-                                                  .client_pack = client_pack,
-                                                  .tick_rate_hz = config.tick_rate_hz,
-                                                  .started = {}},
+                                    capture::Header{.engine_version = std::string(EngineVersion()),
+                                                    .server_pack = config.server_pack,
+                                                    .client_pack = client_pack,
+                                                    .tick_rate_hz = config.tick_rate_hz,
+                                                    .started = {}},
                                     CaptureOptions{.mode = config.capture_mode,
                                                    .faults = config.faults,
                                                    .capacity = kCaptureQueueCapacity,

@@ -4,7 +4,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -24,21 +23,19 @@
 #endif
 
 #include "augusta/capture.h"
-#include "augusta/capture_error.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 #include "match.h"
-#include "wire.h"
 
 // A Match capture (ADR-0050), written by a Capturer into a directory of its
 // own and read back by ReadCapture, with no Host: the events are handed in by
 // hand, as Host hands them on the Simulation thread.
 namespace {
 
-using augusta::capture::ReadError;
+using augusta::capture::ReadCapture;
 using augusta::command::Command;
 using augusta::failure::Code;
 using augusta::failure::DescribeFailure;
@@ -47,47 +44,31 @@ using augusta::failure::DispositionOf;
 using augusta::failure::Faults;
 using augusta::failure::Site;
 using augusta::math::Vec3;
-using augusta::server::Capture;
-using augusta::server::CapturedCommand;
-using augusta::server::CapturedDeath;
 using augusta::server::CaptureDirectoryUsage;
-using augusta::server::CapturedJoin;
-using augusta::server::CapturedLeave;
-using augusta::server::CapturedMatchEnd;
 using augusta::server::CaptureEntrant;
 using augusta::server::CaptureFileName;
-using augusta::server::CaptureHeader;
 using augusta::server::CaptureHealth;
 using augusta::server::CaptureMode;
 using augusta::server::CaptureObserver;
 using augusta::server::CaptureOptions;
 using augusta::server::Capturer;
-using augusta::server::CaptureRecord;
 using augusta::server::CaptureState;
 using augusta::server::CaptureStep;
 using augusta::server::CaptureStop;
 using augusta::server::EntityId;
 using augusta::server::LostCapture;
-using augusta::server::ReadCapture;
 using augusta::server::SessionId;
 
-using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
+namespace capture = augusta::capture;
 
-// records as they are written: Command has no ==, and its record compares on the protocol's grids.
-std::vector<augusta::protocol::CaptureRecordWire> AsWritten(const std::vector<CaptureRecord>& records) {
-  std::vector<augusta::protocol::CaptureRecordWire> written;
-  for (const CaptureRecord& record : records) {
-    written.push_back(augusta::server::ToWire(record));
-  }
-  return written;
-}
+using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
 // 2026-10-09 10:15:00.123 UTC.
 const Milliseconds kStarted{std::chrono::milliseconds{1'791'540'900'123}};
 constexpr std::uint64_t kFirstTick = 1000;
 
-CaptureHeader Header() {
-  CaptureHeader header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
+capture::Header Header() {
+  capture::Header header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
   header.server_pack.fill(std::byte{1});
   header.client_pack.fill(std::byte{2});
   return header;
@@ -208,11 +189,11 @@ class CaptureTest : public ::testing::Test {
     return files;
   }
 
-  [[nodiscard]] static Capture Read(const std::filesystem::path& path) {
+  [[nodiscard]] static capture::Capture Read(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
-    auto capture = ReadCapture(in);
-    EXPECT_TRUE(capture.has_value());
-    return capture.value_or(Capture{});
+    auto read = ReadCapture(in);
+    EXPECT_TRUE(read.has_value());
+    return read.value_or(capture::Capture{});
   }
 
   std::filesystem::path directory_;
@@ -243,24 +224,21 @@ TEST_F(CaptureTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 1U);
   EXPECT_EQ(files.front().filename(), CaptureFileName(kStarted, 1));
-  const Capture capture = Read(files.front());
-  CaptureHeader header = Header();
+  capture::Header header = Header();
   header.started = kStarted;
-  EXPECT_EQ(capture.header, header);
-  EXPECT_FALSE(capture.torn);
   const Command first = Walk(0);
-  const std::vector<CaptureRecord> expected{
-      {.offset = 0,
-       .event = CapturedJoin{.player = 1, .session = SessionId{7}, .character = "soldier", .spawn = {1, 0, 2}}},
-      {.offset = 0,
-       .event = CapturedJoin{.player = 2, .session = SessionId{8}, .character = "sniper", .spawn = {-3, 0, 4}}},
-      {.offset = 0, .event = CapturedCommand{.player = 1, .seen_offset = -2, .command = first}},
-      {.offset = 1, .event = CapturedCommand{.player = 2, .seen_offset = 0, .command = first}},
-      {.offset = 5, .event = CapturedDeath{.victim = 2, .killer = 1}},
-      {.offset = 6, .event = CapturedLeave{.player = 2}},
-      {.offset = 6, .event = CapturedMatchEnd{.winner = 1}},
+  const capture::Capture expected{
+      .header = header,
+      .joins = {{.session = 7, .character = "soldier", .spawn = {1, 0, 2}},
+                {.session = 8, .character = "sniper", .spawn = {-3, 0, 4}}},
+      .events = {{.offset = 0, .event = capture::Command{.player = 1, .seen_offset = -2, .command = first}},
+                 {.offset = 1, .event = capture::Command{.player = 2, .seen_offset = 0, .command = first}},
+                 {.offset = 5, .event = capture::Death{.victim = 2, .killer = 1}},
+                 {.offset = 6, .event = capture::Leave{.player = 2}},
+                 {.offset = 6, .event = capture::MatchEnd{.winner = 1}}},
+      .torn = false,
   };
-  EXPECT_EQ(AsWritten(capture.records), AsWritten(expected));
+  EXPECT_EQ(Read(files.front()), expected);
 }
 
 TEST_F(CaptureTest, ADrawEndsWithNoWinner) {
@@ -270,10 +248,10 @@ TEST_F(CaptureTest, ADrawEndsWithNoWinner) {
     capturer.EndMatch(kFirstTick, std::nullopt);
   }
 
-  const Capture capture = Read(Files().front());
-  ASSERT_FALSE(capture.records.empty());
-  EXPECT_EQ(AsWritten({capture.records.back()}),
-            AsWritten({CaptureRecord{.offset = 0, .event = CapturedMatchEnd{.winner = std::nullopt}}}));
+  const capture::Capture read = Read(Files().front());
+  ASSERT_FALSE(read.events.empty());
+  EXPECT_EQ(read.events.back(),
+            (capture::AtOffset<capture::Event>{.offset = 0, .event = capture::MatchEnd{.winner = std::nullopt}}));
 }
 
 // Requirements: US-21
@@ -289,11 +267,12 @@ TEST_F(CaptureTest, EachMatchIsAFileOfItsOwn) {
 
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 2U);
-  const Capture second = Read(files.back());
-  ASSERT_EQ(second.records.size(), 4U);
-  EXPECT_EQ(AsWritten({second.records[2]}),
-            AsWritten({CaptureRecord{.offset = 3,
-                                     .event = CapturedCommand{.player = 1, .seen_offset = 1, .command = Walk(0)}}}));
+  const capture::Capture second = Read(files.back());
+  ASSERT_EQ(second.joins.size(), 2U);
+  ASSERT_EQ(second.events.size(), 2U);
+  EXPECT_EQ(second.events.front(),
+            (capture::AtOffset<capture::Event>{
+                .offset = 3, .event = capture::Command{.player = 1, .seen_offset = 1, .command = Walk(0)}}));
 }
 
 // Requirements: US-21
@@ -317,7 +296,9 @@ TEST_F(CaptureTest, EventsOfBodiesNotInTheMatchAreNotCaptured) {
   }
 
   // Two Joins and the Match end.
-  EXPECT_EQ(Read(Files().front()).records.size(), 3U);
+  const capture::Capture read = Read(Files().front());
+  EXPECT_EQ(read.joins.size(), 2U);
+  EXPECT_EQ(read.events.size(), 1U);
 }
 
 // Requirements: US-21
@@ -333,10 +314,11 @@ TEST_F(CaptureTest, AFailedWriteStopsTheCaptureKeepingEveryRecordBeforeIt) {
     capturer.EndMatch(kFirstTick + 1, std::nullopt);
   }
 
-  const Capture capture = Read(Files().front());
+  const capture::Capture read = Read(Files().front());
   // The header and both Joins, written before the disk failed.
-  EXPECT_EQ(capture.records.size(), 2U);
-  EXPECT_FALSE(capture.torn);
+  EXPECT_EQ(read.joins.size(), 2U);
+  EXPECT_TRUE(read.events.empty());
+  EXPECT_FALSE(read.torn);
 }
 
 TEST_F(CaptureTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
@@ -352,7 +334,9 @@ TEST_F(CaptureTest, TheMatchAfterAStoppedCaptureIsCapturedAfresh) {
 
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 2U);
-  EXPECT_EQ(Read(files.back()).records.size(), 3U);
+  const capture::Capture second = Read(files.back());
+  EXPECT_EQ(second.joins.size(), 2U);
+  EXPECT_EQ(second.events.size(), 1U);
 }
 
 TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
@@ -363,8 +347,9 @@ TEST_F(CaptureTest, ARecordThatFindsTheQueueFullStopsTheCapture) {
   }
 
   // The header alone: the first Join found no room.
-  const Capture capture = Read(Files().front());
-  EXPECT_TRUE(capture.records.empty());
+  const capture::Capture read = Read(Files().front());
+  EXPECT_TRUE(read.joins.empty());
+  EXPECT_TRUE(read.events.empty());
 }
 
 // Requirements: US-21
@@ -393,7 +378,9 @@ TEST_F(CaptureTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNextM
 
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 2U);
-  EXPECT_EQ(Read(files.back()).records.size(), 3U);
+  const capture::Capture second = Read(files.back());
+  EXPECT_EQ(second.joins.size(), 2U);
+  EXPECT_EQ(second.events.size(), 1U);
   EXPECT_EQ(health.Entered(),
             (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kDegraded, CaptureHealth::kStopped}));
 }
@@ -456,7 +443,8 @@ TEST_F(CaptureTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesNo
   // The first Match's header and Joins, written before the disk failed, and no second file.
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 1U);
-  EXPECT_EQ(Read(files.front()).records.size(), 2U);
+  EXPECT_EQ(Read(files.front()).joins.size(), 2U);
+  EXPECT_TRUE(Read(files.front()).events.empty());
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
@@ -541,7 +529,8 @@ TEST_F(CaptureTest, AFinishedCaptureIsStoppedAndCapturesNothingMore) {
   // The first Match up to the Finish: both Joins and its one Command; no second file.
   const std::vector<std::filesystem::path> files = Files();
   ASSERT_EQ(files.size(), 1U);
-  EXPECT_EQ(Read(files.front()).records.size(), 3U);
+  EXPECT_EQ(Read(files.front()).joins.size(), 2U);
+  EXPECT_EQ(Read(files.front()).events.size(), 1U);
   EXPECT_EQ(health.Entered(), (std::vector<CaptureHealth>{CaptureHealth::kEnabled, CaptureHealth::kStopped}));
 }
 
@@ -627,10 +616,10 @@ TEST_P(StalledDiskTest, ADiskThatStallsNeverHoldsUpTheCallerAndStopsTheCaptureOn
   reader.join();
 
   std::istringstream in(drained, std::ios::binary);
-  const auto capture = ReadCapture(in);
-  ASSERT_TRUE(capture.has_value());
+  const auto read = ReadCapture(in);
+  ASSERT_TRUE(read.has_value());
   // Both Joins and the Commands that found room; nothing after the stop.
-  EXPECT_EQ(capture->records.size(), kCapacity);
+  EXPECT_EQ(read->joins.size() + read->events.size(), kCapacity);
   EXPECT_EQ(told.Get().most_queued, kCapacity);
   EXPECT_EQ(told.Get().stops, std::vector{CaptureStop::kQueueFull});
 }
@@ -719,75 +708,5 @@ INSTANTIATE_TEST_SUITE_P(EitherMode, StalledDiskTest, ::testing::Values(CaptureM
                            return info.param == CaptureMode::kStrict ? std::string("Strict") : std::string("Optional");
                          });
 #endif
-
-// A file of the capture written in one Match, for ReadCapture's own tests.
-class ReadCaptureTest : public CaptureTest {
- protected:
-  [[nodiscard]] std::string Bytes() {
-    {
-      Capturer capturer(directory_, Header());
-      capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
-      capturer.Command(kFirstTick, EntityId{70}, Walk(0));
-      capturer.EndMatch(kFirstTick + 1, std::nullopt);
-    }
-    std::ifstream in(Files().front(), std::ios::binary);
-    return {std::istreambuf_iterator<char>(in), {}};
-  }
-
-  static std::expected<Capture, ReadError> ReadBytes(const std::string& bytes) {
-    std::istringstream in(bytes, std::ios::binary);
-    return ReadCapture(in);
-  }
-};
-
-// Requirements: NFR-12
-TEST_F(ReadCaptureTest, AFileWithoutTheMagicIsNoCapture) {
-  std::string bytes = Bytes();
-  bytes[0] = 'P';
-  EXPECT_EQ(ReadBytes(bytes).error(), ReadError::kNotACapture);
-  EXPECT_EQ(ReadBytes("AUG").error(), ReadError::kNotACapture);
-}
-
-// Requirements: US-21
-TEST_F(ReadCaptureTest, ALastRecordCutShortIsDroppedAndReported) {
-  const std::string bytes = Bytes();
-  const auto torn = ReadBytes(bytes.substr(0, bytes.size() - 1));
-  ASSERT_TRUE(torn.has_value());
-  EXPECT_TRUE(torn->torn);
-  EXPECT_EQ(torn->records.size(), ReadBytes(bytes)->records.size() - 1);
-}
-
-// Requirements: NFR-12
-TEST_F(ReadCaptureTest, AnotherFormatVersionIsRefused) {
-  std::string bytes = Bytes();
-  // The header record's format version: after the magic, its 1-byte length and its type.
-  bytes[augusta::protocol::kCaptureMagic.size() + 1 + 1] =
-      static_cast<char>(augusta::protocol::kCaptureFormatVersion + 1);
-  EXPECT_EQ(ReadBytes(bytes).error(), ReadError::kUnsupported);
-}
-
-// Requirements: NFR-12
-TEST_F(ReadCaptureTest, ARecordNamingAPlayerNoJoinDidIsRefused) {
-  std::string bytes = Bytes();
-  std::ostringstream out(bytes, std::ios::binary | std::ios::ate);
-  // After the Match end, which nothing may follow, and of a player 9.
-  augusta::capture::WriteFrame(
-      out,
-      augusta::protocol::EncodeCaptureRecord(augusta::protocol::CapturedLeaveWire{.offset = 5, .player = 9}).value());
-  EXPECT_EQ(ReadBytes(out.str()).error(), ReadError::kMalformed);
-}
-
-// The longest payload a frame holds reads back whole: its length fills the
-// frame's one byte.
-TEST(FramesTest, APayloadOfTheLongestLengthReadsBackWhole) {
-  const std::vector<std::byte> written(augusta::capture::kMaxFramePayload, std::byte{0xAB});
-  std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
-  augusta::capture::WriteFrame(stream, written);
-
-  std::vector<std::byte> read;
-  EXPECT_EQ(augusta::capture::ReadFrame(stream, read), augusta::capture::Frame::kRead);
-  EXPECT_EQ(read, written);
-  EXPECT_EQ(augusta::capture::ReadFrame(stream, read), augusta::capture::Frame::kEnd);
-}
 
 }  // namespace

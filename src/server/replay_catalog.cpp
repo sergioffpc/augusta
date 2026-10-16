@@ -11,21 +11,17 @@
 #include <system_error>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
-#include "capture.h"
+#include "augusta/capture.h"
 
 namespace augusta::server {
 
 namespace {
 
-// The extension of every file a Capturer writes (CaptureFileName).
-constexpr std::string_view kCaptureExtension = ".capture";
-
-std::optional<Capture> ReadCaptureAt(const std::filesystem::path& path) {
+std::optional<capture::Capture> ReadCaptureAt(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
-  auto capture = ReadCapture(in);
+  auto capture = capture::ReadCapture(in);
   if (!capture.has_value()) {
     return std::nullopt;
   }
@@ -34,7 +30,7 @@ std::optional<Capture> ReadCaptureAt(const std::filesystem::path& path) {
 
 }  // namespace
 
-std::optional<ReplayListing> ListingOf(std::string name, const Capture& capture, const ReplayTerms& terms) {
+std::optional<ReplayListing> ListingOf(std::string name, const capture::Capture& capture, const ReplayTerms& terms) {
   if (capture.header.server_pack != terms.server_pack || capture.header.tick_rate_hz != terms.tick_rate_hz) {
     return std::nullopt;
   }
@@ -43,21 +39,17 @@ std::optional<ReplayListing> ListingOf(std::string name, const Capture& capture,
                         .ticks = 0,
                         .tick_rate_hz = capture.header.tick_rate_hz,
                         .characters = {}};
-  for (const CaptureRecord& record : capture.records) {
-    const auto* join = std::get_if<CapturedJoin>(&record.event);
-    if (join == nullptr) {
-      break;
-    }
-    if (!std::ranges::contains(terms.characters, join->character)) {
+  for (const capture::Join& join : capture.joins) {
+    if (!std::ranges::contains(terms.characters, join.character)) {
       return std::nullopt;
     }
-    listing.characters.push_back(join->character);
+    listing.characters.push_back(join.character);
   }
   if (listing.characters.empty()) {
     return std::nullopt;
   }
   // Offsets count from 0, so the last tick's offset is one short of the length.
-  listing.ticks = capture.records.back().offset + 1;
+  listing.ticks = (capture.events.empty() ? 0 : capture.events.back().offset) + 1;
   return listing;
 }
 
@@ -69,7 +61,7 @@ std::vector<std::filesystem::directory_entry> ReplayCatalog::Entries() const {
   std::error_code error;
   for (std::filesystem::directory_iterator it(directory_, error), end; !error && it != end; it.increment(error)) {
     std::error_code type_error;
-    if (it->is_regular_file(type_error) && it->path().extension() == kCaptureExtension) {
+    if (it->is_regular_file(type_error) && it->path().extension() == capture::kExtension) {
       entries.push_back(*it);
     }
   }
@@ -90,7 +82,7 @@ std::vector<ReplayListing> ReplayCatalog::List() {
     if (!error && known != read_.end() && known->second.size == size && known->second.written == written) {
       read = std::move(known->second);
     } else {
-      const std::optional<Capture> capture = ReadCaptureAt(entry.path());
+      const std::optional<capture::Capture> capture = ReadCaptureAt(entry.path());
       read = Read{.size = size,
                   .written = written,
                   .listing = capture.has_value() ? ListingOf(name, *capture, terms_) : std::nullopt};
@@ -107,7 +99,7 @@ std::vector<ReplayListing> ReplayCatalog::List() {
   return listings;
 }
 
-std::optional<Capture> ReplayCatalog::Find(std::string_view name) const {
+std::optional<capture::Capture> ReplayCatalog::Find(std::string_view name) const {
   // name is only ever compared with what the directory lists: a path from the
   // network names no file here, so it reaches none (ADR-0051).
   for (const std::filesystem::directory_entry& entry : Entries()) {
@@ -115,7 +107,7 @@ std::optional<Capture> ReplayCatalog::Find(std::string_view name) const {
     if (listed != name) {
       continue;
     }
-    std::optional<Capture> capture = ReadCaptureAt(entry.path());
+    std::optional<capture::Capture> capture = ReadCaptureAt(entry.path());
     if (!capture.has_value() || !ListingOf(listed, *capture, terms_).has_value()) {
       return std::nullopt;
     }

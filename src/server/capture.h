@@ -6,17 +6,14 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
-#include <istream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <variant>
 #include <vector>
 
-#include "augusta/assets.h"
-#include "augusta/capture_error.h"
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -32,95 +29,13 @@
 /// from the Match's first tick. server::Host hands a Capturer each event on the
 /// Simulation thread as the tick makes it; the Capturer encodes it there and a
 /// thread of its own opens, writes and flushes the files, so a disk that
-/// stalls never holds up a tick (NFR-01). ReadCapture reads a file back. The
-/// records are the Networking Protocol's, in its encoding, converted in
-/// wire.h, so this header names only the engine's types. A capture that cannot
+/// stalls never holds up a tick (NFR-01). The capture module
+/// (augusta/capture.h) owns the file's format and reads it back. A capture that cannot
 /// be written stops, keeping every whole record before it. What that costs the
 /// run is its CaptureMode (#398, ADR-0033): an optional capture, a debugging
 /// aid, degrades and the Match goes on without it; a strict one, for a
 /// playtest whose point is the capture, is the runtime's terminal failure.
 namespace augusta::server {
-
-/// What a captured Match ran on and when it started.
-struct CaptureHeader {
-  /// The capturing engine's version (augusta::EngineVersion).
-  std::string engine_version;
-  assets::PackHash server_pack{};
-  assets::PackHash client_pack{};
-  std::uint8_t tick_rate_hz = 0;
-  /// When the Match started, in UTC.
-  std::chrono::sys_time<std::chrono::milliseconds> started;
-
-  bool operator==(const CaptureHeader&) const = default;
-};
-
-/// A player's number in a capture: from 1, in its Match start's order, as
-/// `augustac --reenact --player` names it.
-using CapturedPlayer = std::uint8_t;
-
-/// A player of the Match start, where it spawned on the position grid.
-struct CapturedJoin {
-  CapturedPlayer player = 0;
-  SessionId session{};
-  /// Its Character, by its name in the scenario's manifest (ADR-0042).
-  std::string character;
-  math::Vec3 spawn{};
-
-  bool operator==(const CapturedJoin&) const = default;
-};
-
-/// A Command its player sent, as the command queue handed it to SimulationWorld.
-struct CapturedCommand {
-  CapturedPlayer player = 0;
-  /// Its Seen time's tick, as an offset from the Match's first tick: negative
-  /// for a State sent before the Match started. command.seen_tick is 0.
-  std::int32_t seen_offset = 0;
-  command::Command command{};
-};
-
-/// A player whose connection ended mid-Match.
-struct CapturedLeave {
-  CapturedPlayer player = 0;
-
-  bool operator==(const CapturedLeave&) const = default;
-};
-
-struct CapturedDeath {
-  CapturedPlayer victim = 0;
-  CapturedPlayer killer = 0;
-
-  bool operator==(const CapturedDeath&) const = default;
-};
-
-struct CapturedMatchEnd {
-  /// nullopt for a Draw.
-  std::optional<CapturedPlayer> winner;
-
-  bool operator==(const CapturedMatchEnd&) const = default;
-};
-
-using CapturedEvent = std::variant<CapturedJoin, CapturedCommand, CapturedLeave, CapturedDeath, CapturedMatchEnd>;
-
-/// One event of a capture, at its offset in ticks from the Match's first tick.
-struct CaptureRecord {
-  std::uint32_t offset = 0;
-  CapturedEvent event;
-};
-
-/// A whole capture, its records in the order they were written.
-struct Capture {
-  CaptureHeader header;
-  std::vector<CaptureRecord> records;
-  /// Whether the file ended partway through a record, which was dropped: the
-  /// server stopped while writing it.
-  bool torn = false;
-};
-
-/// Reads a capture a Capturer wrote, as augusta/capture.h reads its
-/// format, in the engine's terms. A last record cut short is dropped and
-/// reported in Capture::torn; a stream that fails, wherever it does, is
-/// kUnreadable, never a whole or torn capture.
-[[nodiscard]] std::expected<Capture, capture::ReadError> ReadCapture(std::istream& in);
 
 /// The name of the file of the Match that started at started, the
 /// match_number-th of its server's run, from 1: its start in UTC, then its
@@ -318,7 +233,7 @@ class Capturer {
  public:
   /// Captures into directory, which must exist, each file under header with
   /// its Match's start time.
-  Capturer(std::filesystem::path directory, CaptureHeader header, CaptureOptions options = {});
+  Capturer(std::filesystem::path directory, capture::Header header, CaptureOptions options = {});
   ~Capturer();
   Capturer(const Capturer&) = delete;
   Capturer& operator=(const Capturer&) = delete;
@@ -375,25 +290,26 @@ class Capturer {
   class Writer;
 
   // The player number of entity in the Match open, 0 if it has none.
-  [[nodiscard]] CapturedPlayer PlayerOf(EntityId entity) const;
+  [[nodiscard]] capture::Player PlayerOf(EntityId entity) const;
   // Offset of tick from the Match's first.
   [[nodiscard]] std::uint32_t OffsetOf(tick::Tick tick) const;
   // encoded, a record EncodeToCapture made, if a capture's frame holds it.
   // Otherwise nullopt: a broken invariant is kept as Failure, and a record too
   // long stops the Match's capture.
   std::optional<std::vector<std::byte>> Admit(std::expected<std::vector<std::byte>, failure::Failure> encoded);
-  void Queue(const CaptureRecord& record);
+  // Queues encoded, a record EncodeToCapture made, if Admit admits it.
+  void Queue(std::expected<std::vector<std::byte>, failure::Failure> encoded);
 
   const std::filesystem::path directory_;
-  const CaptureHeader header_;
+  const capture::Header header_;
   std::unique_ptr<Writer> writer_;
   // The Match open, if any: how many Matches started in the run, its first
   // tick, and the number of each of its players' bodies.
   std::uint64_t matches_ = 0;
   bool open_ = false;
   tick::Tick first_tick_ = 0;
-  std::unordered_map<EntityId, CapturedPlayer> players_;
-  std::unordered_map<SessionId, CapturedPlayer> sessions_;
+  std::unordered_map<EntityId, capture::Player> players_;
+  std::unordered_map<SessionId, capture::Player> sessions_;
   std::optional<failure::Failure> failure_;
 };
 

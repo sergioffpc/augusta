@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "capture.h"
+#include "augusta/capture.h"
 
 /// \file
 /// Which Match captures a replay server replays (ADR-0051): those of its
@@ -63,7 +63,7 @@ struct ReplayRequest {
 /// capture, read from the file name, as a Replay list names it, or nullopt if
 /// a replay server on terms does not replay it: made on another pack or at
 /// another rate, with no player, or with a Character the scenario lacks.
-[[nodiscard]] std::optional<ReplayListing> ListingOf(std::string name, const Capture& capture,
+[[nodiscard]] std::optional<ReplayListing> ListingOf(std::string name, const capture::Capture& capture,
                                                      const ReplayTerms& terms);
 
 /// The captures of one directory a replay server replays. It keeps what it
@@ -83,10 +83,10 @@ class ReplayCatalog {
 
   /// The capture of the directory's listing named name, read, if it is one
   /// List lists; nullopt for any other name, a path among them.
-  [[nodiscard]] std::optional<Capture> Find(std::string_view name) const;
+  [[nodiscard]] std::optional<capture::Capture> Find(std::string_view name) const;
 
  private:
-  // The regular files of the directory whose names end in ".capture", by name.
+  // The regular files of the directory whose names end in capture::kExtension, by name.
   [[nodiscard]] std::vector<std::filesystem::directory_entry> Entries() const;
 
   // What List read of one file, as it was when read.

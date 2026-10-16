@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/capture.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "capture.h"
@@ -23,7 +24,7 @@
 namespace {
 
 using augusta::server::CaptureEntrant;
-using augusta::server::CaptureHeader;
+
 using augusta::server::Capturer;
 using augusta::server::EntityId;
 using augusta::server::SessionId;
@@ -37,7 +38,7 @@ std::string Captured() {
       std::filesystem::temp_directory_path() / ("augusta_capture_seed_" + std::to_string(std::random_device{}()));
   std::filesystem::create_directories(directory);
   {
-    CaptureHeader header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
+    augusta::capture::Header header{.engine_version = "2.0.1", .tick_rate_hz = 60, .started = {}};
     header.server_pack.fill(std::byte{1});
     header.client_pack.fill(std::byte{2});
     Capturer capturer(directory, header);
