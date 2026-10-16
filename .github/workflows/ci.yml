@@ -1030,11 +1030,13 @@ jobs:
       REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
       SHA_TAG: sha-${{ needs.container-verify.outputs.short-sha }}
     steps:
-      # For the signing action, and the branch's head, alone: it builds
-      # nothing.
+      # For the signing and attesting actions, and the branch's head, alone: it
+      # builds nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions/sign-artifact
+          sparse-checkout: |
+            .github/actions/attest-server-image
+            .github/actions/sign-artifact
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1075,48 +1077,17 @@ jobs:
           fi
           digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      # What the cluster admits an augustad image by (ADR-0057). Signed before
-      # it is attested, so the verify after signing sees the signature alone.
-      - name: Sign server image
-        uses: ./.github/actions/sign-artifact
-        with:
-          digest: ${{ steps.publish.outputs.digest }}
       - name: Publish server debug info
         id: debuginfo
         run: |
           docker push "$REPOSITORY:$SHA_TAG-debuginfo"
           digest=$(docker buildx imagetools inspect "$REPOSITORY:$SHA_TAG-debuginfo" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - name: Attest debug info provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      - name: Sign and attest server image
+        uses: ./.github/actions/attest-server-image
         with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.debuginfo.outputs.digest }}
-          push-to-registry: true
-      # Every published image is attested here, where it is pushed: release.yml
-      # builds none, and the image a release runs is its tag's commit's, pushed
-      # to main (docs/ENGINEERING.md, Provenance and SBOMs).
-      - name: Attest image provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          push-to-registry: true
-      - name: Image SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          image: ghcr.io/${{ github.repository_owner }}/augustad@${{ steps.publish.outputs.digest }}
-          format: spdx-json
-          output-file: augustad-image.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-      - name: Attest image SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          sbom-path: augustad-image.spdx.json
-          push-to-registry: true
+          image: ${{ steps.publish.outputs.digest }}
+          debuginfo: ${{ steps.debuginfo.outputs.digest }}
   # main's server image for arm64 too (NFR-04): what a release runs is its
   # tag's commit's image, pushed to main, so main's images are built for both
   # production architectures, natively, on an arm64 runner. develop's and pull
@@ -1163,11 +1134,6 @@ jobs:
           docker push "$image:sha-${{ steps.image.outputs.short-sha }}-arm64"
           digest=$(docker buildx imagetools inspect "$image:sha-${{ steps.image.outputs.short-sha }}-arm64" --format '{{.Manifest.Digest}}')
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      # As container-publish-x64-linux's, before it is attested.
-      - name: Sign server image
-        uses: ./.github/actions/sign-artifact
-        with:
-          digest: ${{ steps.publish.outputs.digest }}
       - name: Publish server debug info
         id: debuginfo
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -1179,33 +1145,11 @@ jobs:
           build-contexts: vcpkg-bincache=.vcpkg-bincache
           build-args: ${{ steps.image.outputs.toolchain-args }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache-arm64
-      - name: Attest debug info provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+      - name: Sign and attest server image
+        uses: ./.github/actions/attest-server-image
         with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.debuginfo.outputs.digest }}
-          push-to-registry: true
-      - name: Attest image provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          push-to-registry: true
-      - name: Image SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          image: ghcr.io/${{ github.repository_owner }}/augustad@${{ steps.publish.outputs.digest }}
-          format: spdx-json
-          output-file: augustad-image.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-      - name: Attest image SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/augustad
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          sbom-path: augustad-image.spdx.json
-          push-to-registry: true
+          image: ${{ steps.publish.outputs.digest }}
+          debuginfo: ${{ steps.debuginfo.outputs.digest }}
   # Makes main's sha-<12>, main and sha-<12>-debuginfo tags the index of both
   # architectures' manifests, which the two jobs above signed and attested;
   # the index is signed and its own provenance attested here. A node pulls its
