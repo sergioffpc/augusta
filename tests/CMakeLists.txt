@@ -605,6 +605,19 @@ add_test(
     -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
 
+# Executables are Glue (ADR-0060): the Glue check refuses a library target
+# defined inside an executable's own directory, allows that executable's own
+# three and a library outside it, lets a named exception through and counts
+# what is left, and refuses an exception naming a library that has moved out.
+# It only configures a fixture build graph, with no compiler, so it builds
+# nothing.
+add_test(
+  NAME augusta_glue_boundary
+  COMMAND
+    ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+    -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/glue_boundary.cmake
+)
+
 # What the Linux client's tarball is checked for before a release publishes it
 # (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
 # augustac's build, so it runs on every pull request although augustac's Linux

@@ -213,6 +213,11 @@ endif()
 # graph is complete - see cmake/AugustaModule.cmake.
 augusta_check_module_scopes()
 
+# Both executables have defined every target of their own too, so what sits
+# inside src/client and src/server is settled: only their Glue may be there
+# (ADR-0060 - see cmake/AugustaModule.cmake).
+augusta_check_executable_glue()
+
 # Tests, benchmarks and fuzzers build only on request, through the
 # augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
 # ctest: building the binaries never waits on them (ADR-0008).
