@@ -805,6 +805,57 @@ jobs:
               -schema-location "$RUNNER_TEMP/monitoring-crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
+      - name: Install promtool and amtool
+        # The releases of the Prometheus and Alertmanager the cluster runs
+        # (clusters/onprem/infrastructure/monitoring.yaml), bumped with them.
+        shell: bash
+        run: |
+          install_dir="$RUNNER_TEMP/prometheus"
+          mkdir -p "$install_dir"
+          curl -fsSLo "$install_dir/prometheus.tar.gz" \
+            https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz
+          curl -fsSLo "$install_dir/alertmanager.tar.gz" \
+            https://github.com/prometheus/alertmanager/releases/download/v0.34.1/alertmanager-0.34.1.linux-amd64.tar.gz
+          printf '%s  %s\n' \
+            '2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0' "$install_dir/prometheus.tar.gz" \
+            '265b9d1e55ef0d5306a436018af6d2b686c2ce051f03d968f7464ecb1372a7e8' "$install_dir/alertmanager.tar.gz" \
+            | sha256sum --check --status
+          tar -xzf "$install_dir/prometheus.tar.gz" -C "$install_dir" --strip-components=1 \
+            prometheus-3.15.0.linux-amd64/promtool
+          tar -xzf "$install_dir/alertmanager.tar.gz" -C "$install_dir" --strip-components=1 \
+            alertmanager-0.34.1.linux-amd64/amtool
+          echo "$install_dir" >> "$GITHUB_PATH"
+      - name: Test the alert rules and Alertmanager's routes
+        # A rule kubeconform admits can still never fire, or fire late, and a
+        # route can send an alert nowhere. promtool tests the
+        # chart's rules, rendered for one server (firebase, in develop) from
+        # this commit's chart, against charts/augustad/tests/, and the
+        # cluster's Flux rule, as the stack's release above renders it,
+        # against clusters/onprem/infrastructure/alert-tests/. amtool checks
+        # the Alertmanager configuration that release renders, and that each
+        # alert in alert-tests/routes.txt reaches its receiver alone.
+        shell: bash
+        run: |
+          tests="$RUNNER_TEMP/alert-tests"
+          mkdir -p "$tests"
+          stack="$RUNNER_TEMP/rendered/release-kube-prometheus-stack.yaml"
+          helm template augustad charts/augustad --namespace develop \
+            --set servers.firebase.packVersion=0123456789ab \
+            | yq 'select(.kind == "PrometheusRule") | .spec' > "$tests/prometheusrule.rules.yaml"
+          yq 'select(.kind == "PrometheusRule" and .metadata.name == "kube-prometheus-stack-flux") | .spec' \
+            "$stack" > "$tests/flux.rules.yaml"
+          cp charts/augustad/tests/prometheusrule.test.yaml \
+            clusters/onprem/infrastructure/alert-tests/flux.test.yaml "$tests/"
+          promtool check rules "$tests"/*.rules.yaml
+          (cd "$tests" && promtool test rules ./*.test.yaml)
+          config="$tests/alertmanager.yaml"
+          yq 'select(.kind == "Secret" and .metadata.name == "alertmanager-kube-prometheus-stack-alertmanager")
+            | .data["alertmanager.yaml"] | @base64d' "$stack" > "$config"
+          amtool check-config "$config"
+          grep -v '^#' clusters/onprem/infrastructure/alert-tests/routes.txt | while read -r -a alert; do
+            echo "${alert[*]:1}: ${alert[0]}"
+            amtool config routes test --config.file="$config" --verify.receivers="${alert[0]}" "${alert[@]:1}"
+          done
       - name: Check the rendered manifests against the cluster's policies
         # The policies Flux applies (clusters/onprem/policies) over every
         # manifest the steps above rendered: what the cluster would refuse
