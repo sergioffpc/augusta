@@ -80,7 +80,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint docs
+.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint prepush docs
 
 all: build
 
@@ -102,6 +102,7 @@ help:
 	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
+	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits, without pushing)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
@@ -192,3 +193,13 @@ $(INCLUDE_CHECKS): include-cleaner/%:
 	$(RUN) clang-tidy --quiet -p=$(BUILD_DIR) --checks=-*,misc-include-cleaner --extra-arg=-w $*
 
 lint: format-check tidy
+
+# The pre-push hook's checks, as a push of HEAD now would run them: on the
+# files of its commits the remote lacks, Git LFS left out. git runs the hook,
+# so it gets git's own shell on every platform. The hook reads only the
+# pushed commit from its stdin line, so HEAD stands in for both refs.
+PREPUSH_REFS := $(shell git rev-parse --git-path prepush-refs)
+prepush: export PRE_PUSH_CHECKS_ONLY = 1
+prepush:
+	$(file >$(PREPUSH_REFS),HEAD $(shell git rev-parse HEAD) HEAD 0000000000000000000000000000000000000000)
+	git hook run --to-stdin=$(PREPUSH_REFS) pre-push -- origin
