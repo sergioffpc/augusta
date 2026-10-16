@@ -51,6 +51,11 @@ needs no re-cook. In order:
    release's tag is pushed (`staging`), each environment's new pod refuses the
    new pack and its old pod keeps serving, with the `HelmRelease` not `Ready`.
 
+A hotfix tagged in that window, off a `main` still in the old format, does not
+reach `staging` either: its pod refuses the new-format packs `staging.yaml`
+names. Ship the fix in the release that carries the format change instead, or
+cut that release first and the hotfix off it.
+
 ## Prerequisites
 
 - `gh`, authenticated, with permission to merge pull requests to `main` and
