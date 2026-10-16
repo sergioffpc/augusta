@@ -84,7 +84,10 @@ Pacer::Pacer(std::vector<capture::AtOffset<capture::Command>> commands, std::uin
 
 std::optional<command::Command> Pacer::Next(tick::Tick first_tick, tick::Tick due_tick) {
   const std::uint64_t due_offset = OffsetOf(due_tick, first_tick);
-  if (due_offset < slot_ || DoneBeforeLeave()) {
+  // From the Leave's tick on, only a Command late into it still goes, so it
+  // reaches the server before the Leave does: never a filler.
+  const bool at_leave = leave_.has_value() && due_offset >= *leave_;
+  if (due_offset < slot_ || (at_leave && !CommandBeforeLeave())) {
     return std::nullopt;
   }
   slot_ = due_offset + 1;
