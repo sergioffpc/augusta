@@ -128,7 +128,6 @@ set(
   augustad_admission
   augustad_heartbeat
   augustad_liveness
-  augustad_lock_free_metrics
   augustad_metrics
   augustad_connection_health
   augustad_host

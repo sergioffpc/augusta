@@ -18,7 +18,7 @@
 /// sample here once a heartbeat interval on the Network I/O thread (ADR-0005,
 /// ADR-0029), and the metrics endpoint (metrics.h) collects it on its own
 /// thread. Recording never waits on a collection: the histograms are lock-free
-/// (lock_free_metrics.h), and every Session's gauges are published together,
+/// (augusta/lock_free_metrics.h), and every Session's gauges are published together,
 /// once a Record, into a fixed set of slots, one per player a Lobby can hold.
 /// No address or Character name is ever a label.
 namespace augusta::server {

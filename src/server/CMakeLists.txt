@@ -66,14 +66,6 @@ target_include_directories(augustad_liveness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augustad_liveness PUBLIC augusta_gameplay)
 augusta_set_module_scope(augustad_liveness SERVER_ONLY)
 
-# The lock-free counter, gauge and histogram the server's threads write in
-# place, and their Prometheus form (see lock_free_metrics.h, ADR-0049).
-find_package(prometheus-cpp CONFIG REQUIRED)
-add_library(augustad_lock_free_metrics STATIC lock_free_metrics.cpp)
-target_include_directories(augustad_lock_free_metrics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_lock_free_metrics PUBLIC prometheus-cpp::core)
-augusta_set_module_scope(augustad_lock_free_metrics SERVER_ONLY)
-
 # The HTTP endpoint serving /metrics and /livez (see metrics.h, ADR-0049):
 # prometheus-cpp's core keeps and formats the metrics, Boost.Beast serves them;
 # its permanent failure is a subsystem one in the shared error model (ADR-0033).
@@ -102,7 +94,7 @@ add_library(augustad_connection_health STATIC connection_health.cpp)
 target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_connection_health
-  PUBLIC augusta_networking augustad_match augustad_lock_free_metrics
+  PUBLIC augusta_metrics augusta_networking augustad_match
   PRIVATE augusta_primitives
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
@@ -150,7 +142,7 @@ target_link_libraries(
     augusta_protocol
     augusta_capture
     augusta_wire
-    augustad_lock_free_metrics
+    augusta_metrics
     prometheus-cpp::core
   PRIVATE augusta_logging augusta_version
 )

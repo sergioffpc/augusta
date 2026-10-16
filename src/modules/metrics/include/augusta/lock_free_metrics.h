@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_LOCK_FREE_METRICS_H_
-#define AUGUSTA_SERVER_LOCK_FREE_METRICS_H_
+#ifndef AUGUSTA_LOCK_FREE_METRICS_H_
+#define AUGUSTA_LOCK_FREE_METRICS_H_
 
 #include <array>
 #include <atomic>
@@ -153,4 +153,4 @@ consteval bool LabelledExactly(LabelOf label) {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_LOCK_FREE_METRICS_H_
+#endif  // AUGUSTA_LOCK_FREE_METRICS_H_
