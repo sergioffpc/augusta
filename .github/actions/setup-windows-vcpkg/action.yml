@@ -1,0 +1,29 @@
+name: Set up vcpkg on Windows
+description: >
+  Bootstraps vcpkg and registers the GitHub Packages NuGet feed with the
+  nuget.exe vcpkg fetches, under the GitHubPackages name the workflows'
+  VCPKG_BINARY_SOURCES restores from and pushes to - the Windows counterpart of
+  setup-linux-build's vcpkg part. Assumes the repository is checked out with
+  the vcpkg submodule.
+inputs:
+  feed-token:
+    description: >
+      The token the feed is read and written with: the job's GITHUB_TOKEN,
+      passed in as a composite action can't read secrets. The job needs
+      packages: write to push.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Bootstrap vcpkg
+      shell: bash
+      run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
+    - name: Configure vcpkg NuGet cache
+      shell: bash
+      env:
+        FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        FEED_TOKEN: ${{ inputs.feed-token }}
+      run: |
+        nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
+        "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
+        "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages

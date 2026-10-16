@@ -46,16 +46,9 @@ jobs:
       # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
       - uses: ./.github/actions/setup-windows-llvm
       - uses: ./.github/actions/restore-sccache-cache
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-      - name: Configure vcpkg NuGet cache
-        env:
-          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
-          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
-          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - uses: ./.github/actions/setup-windows-vcpkg
+        with:
+          feed-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Configure
         run: cmake --preset windows
       - name: Build
@@ -281,16 +274,9 @@ jobs:
         run: git submodule update --init --depth 1 third_party/vcpkg
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: ./.github/actions/restore-sccache-cache
-      - name: Bootstrap vcpkg
-        run: ./third_party/vcpkg/bootstrap-vcpkg.bat -disableMetrics
-      - name: Configure vcpkg NuGet cache
-        env:
-          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-          FEED_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          nuget="$(cygpath -u "$(./third_party/vcpkg/vcpkg fetch nuget | tail -n 1 | tr -d '\r')")"
-          "$nuget" sources add -Name GitHubPackages -Source "$FEED_URL" -Username "$GITHUB_REPOSITORY_OWNER" -Password "$FEED_TOKEN" -StorePasswordInClearText
-          "$nuget" setapikey "$FEED_TOKEN" -Source GitHubPackages
+      - uses: ./.github/actions/setup-windows-vcpkg
+        with:
+          feed-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
