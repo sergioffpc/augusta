@@ -7,6 +7,7 @@ key's forced command (clusters/onprem/node/augusta-publish-receive.sh), run
 locally by an ssh that stands in for sshd; ssh itself is not run.
 """
 
+import dataclasses
 import hashlib
 import os
 from pathlib import Path
@@ -98,6 +99,87 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
     ]
     assert (folder / "server.pack").read_bytes() == server_pack.read_bytes()
     assert (folder / "signing.pub").read_bytes() == public_key.read_bytes()
+
+
+def _publish_main(tmp_path, monkeypatch, cook) -> int:
+    """Runs augusta-publish on cook, its node a LocalNode under tmp_path."""
+    client_pack, server_pack, public_key, _ = cook
+    node = LocalNode(tmp_path / "node")
+    monkeypatch.setattr(publish, "SshNode", lambda _host: node)
+    return publish.main(
+        [
+            "firebase",
+            "--environment",
+            "develop",
+            "--host",
+            "augusta-publish",
+            "--client-pack",
+            str(client_pack),
+            "--server-pack",
+            str(server_pack),
+            "--public-key",
+            str(public_key),
+        ]
+    )
+
+
+def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
+    tmp_path, monkeypatch, capsys, cook
+):
+    server_hash = cook[3]
+
+    assert _publish_main(tmp_path, monkeypatch, cook) == 0
+
+    assert (
+        f"  serve it with servers.firebase.packVersion: "
+        f'"{server_hash.hex()[:12]}" and packFormat: {pack.FORMAT_VERSION} in '
+        f"clusters/onprem/apps/develop.yaml"
+    ) in capsys.readouterr().out.splitlines()
+
+
+def test_the_printed_pack_format_is_the_server_packs_header(
+    tmp_path, monkeypatch, capsys, cook
+):
+    # The header's version as the reader parsed it, made one no constant
+    # holds: the printed format can only be that header's.
+    verify_pack = publish.verify_pack
+
+    def verify_pack_of_format_7(path, public_key):
+        return dataclasses.replace(verify_pack(path, public_key), version=7)
+
+    monkeypatch.setattr(publish, "verify_pack", verify_pack_of_format_7)
+
+    assert _publish_main(tmp_path, monkeypatch, cook) == 0
+
+    assert " and packFormat: 7 in " in capsys.readouterr().out
+
+
+def test_the_pack_format_is_read_from_the_server_packs_header(
+    tmp_path, monkeypatch, key_pair
+):
+    # A cook in another format, read back by a reader of that format.
+    monkeypatch.setattr(pack, "FORMAT_VERSION", 2)
+    client_hash = pack.write_pack(
+        tmp_path / "client.pack", ENTRIES, key_pair.private_key
+    )
+    pack.write_pack(
+        tmp_path / "server.pack", ENTRIES, key_pair.private_key, client_hash
+    )
+    public_key = tmp_path / "local-name.pub"
+    public_key.write_bytes(key_pair.public_key)
+
+    release = publish.prepare(
+        "develop",
+        "firebase",
+        tmp_path / "client.pack",
+        tmp_path / "server.pack",
+        public_key,
+    )
+
+    assert (tmp_path / "server.pack").read_bytes()[4:8] == (2).to_bytes(
+        4, "little"
+    )
+    assert release.pack_format == 2
 
 
 def cook_signed_by(folder: Path, private_key: bytes) -> tuple[Path, Path]:
