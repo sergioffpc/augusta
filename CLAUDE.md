@@ -50,8 +50,8 @@ Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See
 
 Judgment calls for generated C++ code that `clang-format`/`clang-tidy`
 (ADR-0012) can't check — single responsibility, KISS, DRY, decision/mechanism
-separation, comments, testing, naming, ownership, error handling. See
-`docs/agents/coding-standards.md`.
+separation, comments, module READMEs, testing, naming, ownership, error
+handling. See `docs/agents/coding-standards.md`.
 
 Markdown, Python and shell follow Google's style guides for each; ADR-0012 says
 which rules the formatters and linters enforce and which are written by hand.
