@@ -367,10 +367,18 @@ no self-hosted GitHub Actions runner in this pipeline).
   own key, `develop`'s or `staging`'s (Release signing above). The hash does not
   cover the signature, so one cook signed for both is one `packVersion` in two
   folders. A published folder is never rewritten. Each environment's Helm values
-  list its servers, one per scenario, each naming the `packVersion` it runs; the
-  chart makes, for each server, a `local` PersistentVolume on that folder alone,
-  read-only and pinned to the node, and the claim bound to it (ADR-0057), both
-  named by the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
+  list its servers, one per scenario, each naming the `packVersion` it runs and,
+  beside it, the `packFormat` that pack was cooked in, both as `augusta-publish`
+  prints them. The engine refuses a pack of any format version but its own
+  (ADR-0031), so CI's `format` job
+  ([`scripts/check-pack-formats.py`](../scripts/check-pack-formats.py)) fails a
+  change after which any `packFormat` in `clusters/` differs from the engine's,
+  or a `packVersion` has none: a change to the pack format moves every
+  environment to packs re-cooked in it, in the same pull request
+  ([cut-release](runbooks/cut-release.md#pack-format-changes)). The chart makes,
+  for each server, a `local` PersistentVolume on that folder alone, read-only
+  and pinned to the node, and the claim bound to it (ADR-0057), both named by
+  the version: `<namespace>-augustad-<scenario>-pack-<packVersion>` and
   `augustad-<scenario>-pack-<packVersion>`. A new version is a new volume and
   claim, and the previous ones stay, so reverting the line goes back to them;
   Helm never deletes either, nor Kubernetes the folder

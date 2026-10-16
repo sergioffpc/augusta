@@ -33,11 +33,13 @@ spec:
     # develop's key (charts/augustad values.yaml).
     assetPacks:
       hostPath: /srv/augusta/asset-packs/develop
-    # A server per scenario (ADR-0026), each running the pack version
-    # augusta-publish printed for it.
+    # A server per scenario (ADR-0026), each running the pack version and
+    # pack format augusta-publish printed for it. CI fails a pack format
+    # other than the engine's (scripts/check-pack-formats.py).
     servers:
       firebase:
         packVersion: "c136bad8059d"
+        packFormat: 3
         # Pinned (rather than left to Kubernetes to assign) so this server
         # has a stable address for LAN clients to connect to.
         nodePort: 30700

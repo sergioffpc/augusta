@@ -18,6 +18,44 @@ It follows the same steps with `hotfix/` for `release/`, except that step 2
 branches off `main` (`git switch -c hotfix/vX.Y.Z origin/main`) and step 4 is
 skipped: a branch cut from `main` already has everything `main` has.
 
+## Pack format changes
+
+The engine reads packs of one pack format version, `kFormatVersion` in
+[`src/modules/assets/assets.cpp`](../../src/modules/assets/assets.cpp)
+(ADR-0031), and a server exits at startup on a pack of any other. Each server in
+[`clusters/onprem/apps/`](../../clusters/onprem/apps/) records the `packFormat`
+its pack was cooked in beside its `packVersion`, and CI's `format` job, a
+required check, fails a pull request after which any `packFormat` there differs
+from `kFormatVersion`, or a `packVersion` has none
+([`scripts/check-pack-formats.py`](../../scripts/check-pack-formats.py)).
+
+A change to `kFormatVersion` (with the cooker's `FORMAT_VERSION`,
+[`tools/pack/src/augusta_pack/pack.py`](../../tools/pack/src/augusta_pack/pack.py))
+therefore needs every scenario re-cooked in the new format, for every
+environment, before it merges. A change that leaves the format version alone
+needs no re-cook. In order:
+
+1. On the `feature/*` branch that changes the format, cook each scenario
+   `clusters/` names (`git grep -n packVersion -- clusters/`) with that branch's
+   `augusta-pack`, once signed with `develop`'s key and once with the release
+   key, and publish each cook to its environment
+   ([Rotate the Pack Signing Key](pack-key-rotation.md), steps 3 to 6, with the
+   environment's existing key in place of a new one). Publishing changes nothing
+   that runs.
+2. In the same pull request, set every server's `packVersion` and `packFormat`
+   in `develop.yaml` and `staging.yaml` to what `augusta-publish` printed. The
+   `format` job passes once every `packFormat` is the new version.
+3. Merge it, then cut the release that ships it without waiting for more
+   changes. Flux applies the values at once, ahead of the binaries that read
+   them: until CI publishes the merge commit's chart (`develop`) and until this
+   release's tag is pushed (`staging`), each environment's new pod refuses the
+   new pack and its old pod keeps serving, with the `HelmRelease` not `Ready`.
+
+A hotfix tagged in that window, off a `main` still in the old format, does not
+reach `staging` either: its pod refuses the new-format packs `staging.yaml`
+names. Ship the fix in the release that carries the format change instead, or
+cut that release first and the hotfix off it.
+
 ## Prerequisites
 
 - `gh`, authenticated, with permission to merge pull requests to `main` and
@@ -37,10 +75,6 @@ skipped: a branch cut from `main` already has everything `main` has.
   or Git Bash on Windows.
 - `docker` with buildx, `jq` and `cosign`, for step 8's wait on the image. GHCR
   serves the image and its signatures without a login.
-- The release packs, cooked and signed with the release key on the developer's
-  machine ([Release signing](../ENGINEERING.md#cicd),
-  [Rotate the Pack Signing Key](pack-key-rotation.md)), for the pre-merge check
-  in step 6.
 - Access to the cluster's `develop` environment, for the NFR-01 check in step 6.
 
 ## Steps
@@ -100,8 +134,10 @@ skipped: a branch cut from `main` already has everything `main` has.
     gh pr create --base main --title "chore(release): vX.Y.Z" --body "<evidence checklist>"
     ```
 
-    Before merging, record in the pull request the checks CI cannot run
-    (`release/*` is never deployed, ADR-0026):
+    Before merging, record in the pull request the check CI cannot run
+    (`release/*` is never deployed, ADR-0026). That the environments' packs are
+    of the format this branch's binaries read is the pull request's `format`
+    job's ([Pack format changes](#pack-format-changes)):
 
     - NFR-01 on the cluster, eight players for a full Match in the `develop`
       environment (ADR-0013). That environment runs `develop`'s head, not this
@@ -118,9 +154,6 @@ skipped: a branch cut from `main` already has everything `main` has.
         when its other checks pass, but do the back-merge (step 10) before
         tagging (step 8), measure NFR-01 once Flux has deployed that `develop`
         commit, and tag only after it passes.
-
-    - The release packs load in this branch's binaries: client and server log
-      `event=pack_verified`, and the client is admitted at Join (ADR-0018).
 
 7. Merge it once its checks pass, as a merge commit:
 

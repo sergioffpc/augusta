@@ -47,7 +47,7 @@ jobs:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Test the script
-        run: uv run --no-project --with pytest==9.1.1 pytest scripts/tests
+        run: uv run --no-project --with pytest==9.1.1 pytest scripts/tests/test_prune_packages.py
       - name: Print the plan
         env:
           GH_TOKEN: ${{ github.token }}

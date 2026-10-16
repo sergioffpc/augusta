@@ -118,9 +118,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        if: needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
+      - name: Check the environments' pack formats
+        # Every pack clusters/ names is of the pack format the engine reads,
+        # so a change to the format fails here until every environment is
+        # moved to packs re-cooked in it (docs/runbooks/cut-release.md). In
+        # this always-required job: a change to the engine, to clusters/ or to
+        # the check itself runs it.
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
+        run: |
+          uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest scripts/tests/test_check_pack_formats.py
+          uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
       - name: Install yamlfmt
         if: needs.changes.outputs.run_yaml == 'true'
         shell: bash
