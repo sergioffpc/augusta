@@ -44,5 +44,5 @@
 # Decisions and requirements: ADRs, architecture, requirements, roadmap,
 # runbooks, agent docs.
 /docs/              @sergioffpc
-/CONTEXT.md         @sergioffpc
+/GLOSSARY.md        @sergioffpc
 /CLAUDE.md          @sergioffpc

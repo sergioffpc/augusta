@@ -220,7 +220,7 @@ claude plugins install mattpocock-skills
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — arc42 architecture document
 - [ENGINEERING.md](docs/ENGINEERING.md) — engineering practices, CI/CD, workflow
 - [ROADMAP.md](docs/ROADMAP.md) — milestone-driven roadmap
-- [CONTEXT.md](CONTEXT.md) — domain glossary
+- [GLOSSARY.md](GLOSSARY.md) — domain glossary
 - [docs/runbooks/](docs/runbooks/) — procedures for rollbacks, key rotation,
   node recovery and releases
 - [docs/adr/](docs/adr/) — architecture decision records

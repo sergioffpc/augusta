@@ -111,7 +111,7 @@ class ClientRuntime {
   /// once its Match starts, as there is no Lobby to load them in.
   /// Always stops and joins both spawned threads before returning or
   /// propagating an exception (see ~ClientRuntime). Must be called from
-  /// the same thread that constructed this ClientRuntime (ADR-0009's
+  /// the same thread that constructed this ClientRuntime (GLFW's
   /// window-thread-affinity requirement, inherited from Renderer) and
   /// must not be called more than once.
   [[nodiscard]] std::optional<failure::Failure> Run();

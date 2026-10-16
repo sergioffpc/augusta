@@ -1,24 +1,19 @@
-# Logging: `augusta::logging`, a Header-Only spdlog Wrapper, Console-Only
+# Logging: `augusta::logging`, Console-Only
 
-> The library is superseded by ADR-0036 (Boost.Log replaces spdlog, and the
-> module is no longer header-only); the console-only, build-type-level and
-> stdout-capture decisions below still stand.
+`augusta::logging` is a module behind fast macros
+(`LT`/`LD`/`LI`/`LW`/`LE`/`LC`), backed by a single process-wide, thread-safe
+logger writing only to a colored console sink — no file sink, no rotation, for
+either client or server. The library underneath is Boost.Log (ADR-0036). The
+server is deployed to k3s (see ADR-0026), where stdout is captured by the
+platform and shipped to a Logstash pipeline; writing to a local file inside the
+pod would be redundant and wouldn't survive pod eviction, since k8s gives no
+guarantee of persistent local disk across restarts. This follows
+twelve-factor-style logging: the app treats logs as an event stream to stdout
+and leaves capture/routing to the execution environment.
 
-`augusta::logging` is a header-only module wrapping spdlog behind fast macros
-(`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERR`/`CRIT`), backed by a single process-wide,
-thread-safe logger writing only to a colored console sink — no file sink, no
-rotation, for either client or server. The server is deployed to k3s (see
-ADR-0026), where stdout is captured by the platform and shipped to a Logstash
-pipeline; writing to a local file inside the pod would be redundant and wouldn't
-survive pod eviction, since k8s gives no guarantee of persistent local disk
-across restarts. This follows twelve-factor-style logging: the app treats logs
-as an event stream to stdout and leaves capture/routing to the execution
-environment.
-
-Compiled-in log level is tied to build type (`SPDLOG_ACTIVE_LEVEL`): Debug keeps
-`trace` and above, Release strips everything below `info` at compile time.
-`flush_on(warn)` guarantees warnings/errors survive a crash; lower levels are
-buffered.
+Compiled-in log level is tied to build type (`AUGUSTA_LOG_ACTIVE_LEVEL`): Debug
+keeps `trace` and above, Release strips everything below `info` at compile time.
+Every record is flushed as written, so nothing logged is lost in a crash.
 
 ## Consequences
 
