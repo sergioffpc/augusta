@@ -30,6 +30,13 @@ outputs:
     description: >
       The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
+  toolchain-args:
+    description: >
+      The build args naming the runner's toolchain, which the build stage
+      installs (see Dockerfile): a job that builds another target of the
+      Dockerfile from the same layer cache (the debuginfo stage) passes them
+      too, or misses the build stage's layers.
+    value: ${{ steps.toolchain.outputs.args }}
 runs:
   using: composite
   steps:
@@ -55,6 +62,30 @@ runs:
           | sha256sum --check --status
         tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
         echo "$install_dir" >> "$GITHUB_PATH"
+    # The architecture variant the runner's apt takes, and the clang-21 the
+    # archive has for it now, which setup-linux-build installs on the Linux
+    # jobs whose vcpkg binaries the build stage restores: its clang must be the
+    # very binary theirs is (see Dockerfile). The candidate, not what this
+    # runner has installed: its image's clang-21 can trail the archive's, which
+    # those jobs upgrade to.
+    - name: Read the runner's toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        eval "$(apt-config shell variants APT::Architecture-Variants)"
+        sudo apt-get update -qq
+        clang=$(apt-cache policy clang-21 | awk '/Candidate:/ { print $2 }')
+        if [ -z "$clang" ] || [ "$clang" = "(none)" ]; then
+          echo "::error::The archive has no clang-21 for this runner"
+          exit 1
+        fi
+        echo "Architecture variants: ${variants:-(none)}; clang-21 $clang"
+        {
+          echo "args<<EOF"
+          echo "APT_ARCHITECTURE_VARIANTS=${variants:-}"
+          echo "CLANG_VERSION=$clang"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
     - id: short-sha
       shell: bash
       run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
@@ -69,8 +100,11 @@ runs:
         # of Ubuntu's current packages, security updates included, rather than
         # a cached layer's (ADR-0054).
         no-cache-filters: rootfs
-        # Reported as augustad_build_info's commit label (ADR-0049).
-        build-args: AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+        # Reported as augustad_build_info's commit label (ADR-0049), and the
+        # toolchain the build stage installs.
+        build-args: |
+          AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+          ${{ steps.toolchain.outputs.args }}
         # Mounted read-only by the dependency install alone (see Dockerfile).
         build-contexts: vcpkg-bincache=.vcpkg-bincache
         # sha-<first 12 characters of the commit> is the tag the chart runs:

@@ -13,11 +13,28 @@ FROM scratch AS vcpkg-bincache
 # validates the server against.
 FROM ubuntu:26.04 AS build
 
+# The runner's toolchain, which CI passes in (build-server-image): vcpkg's ABI
+# hash of every package covers the SHA1 of the clang binary, so the dependency
+# install below restores the Linux jobs' binary cache only when its clang is
+# the very build theirs is. The runner's apt takes Ubuntu's architecture
+# variant builds (amd64v3), a different binary of the same version than the
+# plain amd64 one; and its clang-21 is the archive's current one, which pinned
+# here also renews this layer, cached otherwise for good, whenever Ubuntu
+# updates clang. Without them (a local build) it is plain amd64's current
+# clang, whose packages the binary cache, empty then, would not match anyway.
+ARG APT_ARCHITECTURE_VARIANTS=""
+ARG CLANG_VERSION=""
+
 # LLVM's toolchain alone builds the server and its dependencies (ADR-0008):
 # clang, lld, LLVM's binary tools, libc++, libc++abi, libunwind and
 # compiler-rt. make runs the autotools ports' builds; no GCC is installed to
 # fall back on.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN if [ -n "${APT_ARCHITECTURE_VARIANTS}" ]; then \
+      echo "APT::Architecture-Variants \"${APT_ARCHITECTURE_VARIANTS}\";" \
+        > /etc/apt/apt.conf.d/90arch-variant; \
+    fi \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      "clang-21${CLANG_VERSION:+=${CLANG_VERSION}}" \
       clang \
       lld \
       llvm \
@@ -60,9 +77,10 @@ COPY cmake/LlvmToolchain.cmake cmake/
 # the registry cache doesn't carry them.
 # vcpkg restores what it can from the vcpkg-bincache context, the CI Linux
 # jobs' binary cache (ci.yml's container jobs pass it), and builds the rest
-# from source: vcpkg builds its ports with the same triplets and clang on the
-# same Ubuntu as those jobs, so their ABI hashes match. Bind-mounted read-only, for
-# this command alone, it is in no layer and never written; built without it
+# from source: vcpkg builds its ports with the same triplets and the very
+# clang binary of those jobs (the toolchain args above), so their ABI hashes
+# match. Bind-mounted read-only, for this command alone, it is in no layer and
+# never written; built without it
 # (a local docker build, a fork), the context is the empty stage below. Its
 # contents are part of this layer's cache key, so a cache that gained packages
 # reruns the layer: a manifest change runs it twice, once for the change, from
