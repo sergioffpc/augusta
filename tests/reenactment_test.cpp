@@ -297,6 +297,21 @@ TEST(PacerTest, NothingGoesForTheLeavesTickOrAfterIt) {
   EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 3).has_value());
 }
 
+// A hiccup puts every Command after it a tick late, the last one before the
+// Leave onto the Leave's tick: it still goes, so it reaches the server before
+// the Leave does.
+// Requirements: US-21
+TEST(PacerTest, ACommandLateIntoTheLeavesTickStillGoesOutButNoFillerDoes) {
+  Pacer pacer(AtOffsets({0, 1}), kTickRate, 2);
+  ASSERT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 1)), 1.0F);
+  EXPECT_FALSE(pacer.DoneBeforeLeave());
+
+  EXPECT_EQ(SpeedOf(pacer.Next(kFirstTick, kFirstTick + 2)), 2.0F);
+  EXPECT_TRUE(pacer.DoneBeforeLeave());
+  EXPECT_FALSE(pacer.Next(kFirstTick, kFirstTick + 3).has_value());
+  EXPECT_EQ(pacer.Sent(), 2U);
+}
+
 // --- A run ---
 
 // A Script of player 2 of three, spawned in a row, with Commands on offsets
