@@ -8,10 +8,10 @@ inputs:
   prefix:
     description: >
       A cache of the job's own, by its key prefix, for a job that installs ports
-      the others don't (the nightly's client-x64-linux, with the manifest's
-      client feature): their saves keep only the packages they installed, so in
-      the shared cache the job's ports would be dropped by the next save. With
-      nothing saved under it yet, the shared x64 cache is restored. Empty for
+      the others don't, such as one turning on a manifest feature no other job
+      does: their saves keep only the packages they installed, so in the shared
+      cache the job's ports would be dropped by the next save. With nothing
+      saved under it yet, the shared x64 cache is restored. Empty for
       the shared cache. It must not begin with another cache's prefix, which
       would then restore and prune its entries.
     required: false
