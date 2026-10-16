@@ -54,7 +54,7 @@ endif()
 configure_fixture(VIOLATION failed output)
 if(NOT failed)
   string(APPEND report "the Glue check lets a library target sit inside an executable:\n${output}\n")
-elseif(NOT output MATCHES "fixture_exe_mechanism" OR NOT output MATCHES "exe" OR NOT output MATCHES "ADR-0060")
+elseif(NOT output MATCHES "fixture_exe_mechanism \\(exe\\)" OR NOT output MATCHES "ADR-0060")
   string(APPEND report "the Glue check's refusal names no target, directory or decision:\n${output}\n")
 endif()
 
