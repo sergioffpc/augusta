@@ -86,10 +86,48 @@ def test_every_document_of_a_file_is_checked():
     assert error.startswith("servers.b.packFormat is 2")
 
 
-def test_an_engine_without_a_format_version_is_an_error(tmp_path):
-    assets = tmp_path / "src" / "modules" / "assets" / "assets.cpp"
+def _engine(root, source):
+    assets = root / "src" / "modules" / "assets" / "assets.cpp"
     assets.parent.mkdir(parents=True)
-    assets.write_text("", encoding="utf-8")
+    assets.write_text(source, encoding="utf-8")
+    return root
 
-    with pytest.raises(ValueError, match="declares no kFormatVersion"):
-        formats.engine_format(tmp_path)
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "",
+        "constexpr std::uint32_t kFormatVersion = 3;\n"
+        "constexpr std::uint32_t kFormatVersion = 4;\n",
+    ],
+)
+def test_an_engine_not_defining_one_format_version_is_an_error(
+    tmp_path, source
+):
+    root = _engine(tmp_path, source)
+
+    with pytest.raises(ValueError, match="kFormatVersion"):
+        formats.engine_format(root)
+
+
+def test_the_format_version_is_read_whatever_its_type_and_spacing(tmp_path):
+    root = _engine(tmp_path, "constexpr  uint16_t kFormatVersion=7 ;\n")
+
+    assert formats.engine_format(root) == 7
+
+
+def test_one_environment_moved_to_another_format_fails(tmp_path):
+    root = _repo(tmp_path, 3, "        packFormat: 3\n")
+    staging = root / "clusters" / "onprem" / "apps" / "staging.yaml"
+    staging.write_text(
+        _RELEASE.format(pack_format="        packFormat: 2\n"),
+        encoding="utf-8",
+    )
+
+    (error,) = formats.check(root)
+
+    assert error.startswith(
+        "clusters/onprem/apps/staging.yaml: "
+        "spec.values.servers.firebase.packFormat is 2, but the engine reads "
+        "pack format 3"
+    )

@@ -21,7 +21,7 @@ import yaml
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _ASSETS = pathlib.PurePosixPath("src/modules/assets/assets.cpp")
 _FORMAT_VERSION = re.compile(
-    r"^constexpr std::uint32_t kFormatVersion = (\d+);$", re.MULTILINE
+    r"constexpr\s+\S+\s+kFormatVersion\s*=\s*(\d+)\s*;"
 )
 
 
@@ -29,12 +29,15 @@ def engine_format(root):
     """The pack format version the engine at root reads and writes.
 
     Raises:
-        ValueError: assets.cpp declares no kFormatVersion.
+        ValueError: assets.cpp does not define kFormatVersion exactly once.
     """
-    match = _FORMAT_VERSION.search((root / _ASSETS).read_text(encoding="utf-8"))
-    if not match:
-        raise ValueError(f"{_ASSETS} declares no kFormatVersion")
-    return int(match.group(1))
+    source = (root / _ASSETS).read_text(encoding="utf-8")
+    versions = _FORMAT_VERSION.findall(source)
+    if len(versions) != 1:
+        raise ValueError(
+            f"{_ASSETS} defines kFormatVersion {len(versions)} times, not once"
+        )
+    return int(versions[0])
 
 
 def _servers(node, path=""):
@@ -69,6 +72,8 @@ def mismatches(documents, expected):
                     f"{path} names a packVersion but no packFormat: add the "
                     f"packFormat augusta-publish printed for it"
                 )
+            # Not isinstance: YAML's true and false are bools, which are ints
+            # in Python, and a pack format is never one.
             elif type(pack_format) is not int:
                 errors.append(
                     f"{path}.packFormat must be an integer, not {pack_format!r}"
