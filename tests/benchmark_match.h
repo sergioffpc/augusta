@@ -15,11 +15,11 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/policy_actions.h"
+#include "augusta/policy_loader.h"
 #include "augusta/primitives.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "benchmark_scene.h"
-#include "policy_loader.h"
 
 // The full Match the server-side benchmarks run (ADR-0023): the players stand
 // in a file, facing down it, walk back and forth together and hold fire,

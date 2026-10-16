@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CONTENT_H_
-#define AUGUSTA_SERVER_CONTENT_H_
+#ifndef AUGUSTA_CONTENT_H_
+#define AUGUSTA_CONTENT_H_
 
 #include <cstdint>
 #include <expected>
@@ -72,4 +72,4 @@ struct Content {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CONTENT_H_
+#endif  // AUGUSTA_CONTENT_H_

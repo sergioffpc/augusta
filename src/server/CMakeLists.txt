@@ -1,31 +1,3 @@
-# Reads the Parameters script through Lua (ADR-0022, ADR-0039) into the shared
-# Parameters; pure, so tested with scripts as strings (see parameters_loader.h).
-# Server-only: a client never reads the script, it is sent the result, so it
-# never links the interpreter.
-add_library(augustad_parameters_loader STATIC parameters_loader.cpp)
-target_include_directories(augustad_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_parameters_loader PUBLIC augusta_gameplay PRIVATE augusta_lua_sandbox)
-augusta_set_module_scope(augustad_parameters_loader SERVER_ONLY)
-
-# Reads the scenario's Game policy scripts out of the server pack into the
-# engine SimulationWorld runs them in (ADR-0022); tested with packs built in the
-# test (see policy_loader.h).
-add_library(augustad_policy_loader STATIC policy_loader.cpp)
-target_include_directories(augustad_policy_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustad_policy_loader PUBLIC augusta_assets augusta_scripting)
-augusta_set_module_scope(augustad_policy_loader SERVER_ONLY)
-
-# What the server loads from its verified pack at startup: the scenario, the
-# Parameters and the Game policy (see content.h).
-add_library(augustad_content STATIC content.cpp)
-target_include_directories(augustad_content PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustad_content
-  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_scripting
-  PRIVATE augusta_logging augustad_parameters_loader augustad_policy_loader
-)
-augusta_set_module_scope(augustad_content SERVER_ONLY)
-
 # Who is in the match and whether a join is admitted; pure, so tested without a
 # network (see match.h).
 add_library(augustad_match STATIC match.cpp)
@@ -132,7 +104,7 @@ target_link_libraries(
     augusta_networking
     augusta_physics
     augusta_simulation
-    augustad_content
+    augusta_scenario
     augustad_commands
     augustad_match
     augustad_misbehaviour
@@ -165,7 +137,13 @@ target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(
   augustad_application
   PUBLIC augusta_config augusta_failure augusta_lifecycle augusta_server_config augustad_runtime
-  PRIVATE augusta_assets augusta_logging augusta_networking augustad_content augustad_host augustad_policy_loader
+  PRIVATE
+    augusta_assets
+    augusta_logging
+    augusta_networking
+    augusta_scenario
+    augusta_scenario_policy_loader
+    augustad_host
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
 

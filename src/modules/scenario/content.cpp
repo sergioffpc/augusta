@@ -1,4 +1,4 @@
-#include "content.h"
+#include "augusta/content.h"
 
 #include <cstdint>
 #include <expected>
@@ -14,9 +14,9 @@
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/parameters.h"
+#include "augusta/parameters_loader.h"
+#include "augusta/policy_loader.h"
 #include "augusta/scripting.h"
-#include "parameters_loader.h"
-#include "policy_loader.h"
 
 namespace augusta::server {
 

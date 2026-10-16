@@ -13,17 +13,17 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/policy_loader.h"
 #include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "connection_sample.h"
-#include "content.h"
 #include "host_metrics.h"
 #include "match.h"
-#include "policy_loader.h"
 #include "replay.h"
 #include "replay_catalog.h"
 

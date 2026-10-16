@@ -40,7 +40,7 @@ target_link_libraries(
     augusta_simulation
     augusta_version
     augustad_host
-    augustad_policy_loader
+    augusta_scenario_policy_loader
     benchmark::benchmark
     benchmark::benchmark_main
 )
@@ -106,7 +106,10 @@ target_link_libraries(
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_parameters_loader_tests parameters_loader_test.cpp)
-target_link_libraries(augusta_parameters_loader_tests PRIVATE augustad_parameters_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_parameters_loader_tests
+  PRIVATE augusta_scenario_parameters_loader GTest::gtest GTest::gtest_main
+)
 # The example scenario's script is what a new scenario is copied from, so a
 # test keeps it loading.
 target_compile_definitions(
@@ -226,8 +229,8 @@ target_link_libraries(
   PRIVATE
     augusta_simulation
     augusta_scripting
-    augustad_parameters_loader
-    augustad_policy_loader
+    augusta_scenario_parameters_loader
+    augusta_scenario_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -255,7 +258,7 @@ gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
   augusta_example_rules_tests
-  PRIVATE augusta_simulation augustad_policy_loader augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE augusta_simulation augusta_scenario_policy_loader augusta_logging GTest::gtest GTest::gtest_main
 )
 target_include_directories(augusta_example_rules_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 target_compile_definitions(
@@ -391,7 +394,7 @@ target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/mod
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
-target_link_libraries(augusta_policy_loader_tests PRIVATE augustad_policy_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_scenario_policy_loader GTest::gtest GTest::gtest_main)
 # Builds real packs with augusta_assets' private encoder (see augusta_assets_tests below).
 target_include_directories(augusta_policy_loader_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
@@ -403,8 +406,8 @@ target_link_libraries(
     augusta_harness
     augustad_connection_health
     augustad_host
-    augustad_parameters_loader
-    augustad_policy_loader
+    augusta_scenario_parameters_loader
+    augusta_scenario_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -667,7 +670,7 @@ add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
 # and every cue's sound as the client does.
 target_link_libraries(
   augusta_cooked_pack_tests
-  PRIVATE augusta_assets augusta_cues augustad_policy_loader GTest::gtest GTest::gtest_main
+  PRIVATE augusta_assets augusta_cues augusta_scenario_policy_loader GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_cooked_pack_tests

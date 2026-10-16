@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/math.h"
@@ -24,7 +25,6 @@
 #include "capture_retention.h"
 #include "capturer.h"
 #include "connection_sample.h"
-#include "content.h"
 #include "host_metrics.h"
 #include "match.h"
 
@@ -91,7 +91,7 @@ class Host {
   /// mesh, or a character's hitbox, is not a whole triangle list (see
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
   /// can't be created, or what networking::Server's constructor throws.
-  /// Content is loaded from the server pack by the caller (see content.h).
+  /// Content is loaded from the server pack by the caller (see augusta/content.h).
   Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
   ~Host();
 

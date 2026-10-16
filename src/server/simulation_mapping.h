@@ -8,11 +8,11 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/content.h"
 #include "augusta/parameters.h"
 #include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
-#include "content.h"
 #include "match.h"
 
 /// \file

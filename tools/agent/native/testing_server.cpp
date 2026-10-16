@@ -10,9 +10,9 @@
 #include <utility>
 
 #include "augusta/assets.h"
+#include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/parameters.h"
-#include "content.h"
 #include "host.h"
 
 namespace augusta::agent::testing {
