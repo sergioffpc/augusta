@@ -12,11 +12,11 @@
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
-#include "augusta/primitives.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "benchmark_scene.h"
@@ -35,7 +35,7 @@ namespace augusta::benchmarks {
 inline constexpr std::uint8_t kTickRate = 60;
 inline constexpr float kTick = 1.0F / kTickRate;
 // A full Match (US-02).
-inline constexpr std::uint8_t kPlayers = primitives::kMaxPlayers;
+inline constexpr std::uint8_t kPlayers = limits::kMaxPlayers;
 // How long players walk one way before turning back, and how long they settle
 // and shoot before timing starts, so the bullets in flight are at their usual
 // count.

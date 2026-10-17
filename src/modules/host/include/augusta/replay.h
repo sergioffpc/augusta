@@ -140,7 +140,7 @@ class Replay {
   struct Player {
     capture::Player number = 0;
     CommandQueue commands;
-    command::Sequence sequence = 0;
+    tick::Sequence sequence = 0;
     bool left = false;
   };
 

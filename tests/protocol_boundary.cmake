@@ -13,10 +13,10 @@
 # does not depend on the network session. ClientRuntime converts.
 #
 # Keeps the protocol itself a pure codec below the engine: its sources include
-# no augusta header but its own, the math's (augusta/math.h, augusta/grid.h)
-# and the neutral primitives' (augusta/primitives.h), and its target links
-# nothing else, so a gameplay module (the Command, the tick schedule, the
-# Parameters) never becomes what the wire depends on.
+# no augusta header but its own, the math's (augusta/math.h, augusta/grid.h),
+# the tick's (augusta/tick.h) and the limits' (augusta/limits.h), and its target
+# links nothing else, so a gameplay module (the Command, the Parameters) never
+# becomes what the wire depends on.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P protocol_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -73,8 +73,8 @@ if(NOT protocol_sources)
   message(FATAL_ERROR "protocol_boundary.cmake: no protocol sources found under ${SOURCE_DIR}")
 endif()
 
-set(allowed_include "augusta/(protocol|math|grid|primitives)\\.h")
-set(allowed_link "augusta_(math|primitives)")
+set(allowed_include "augusta/(protocol|math|grid|tick|limits)\\.h")
+set(allowed_link "augusta_(math|tick|limits)")
 set(dependency_violations "")
 foreach(source ${protocol_sources})
   file(STRINGS "${source}" lines REGEX "#[ \t]*include[ \t]*[\"<]augusta/")
@@ -88,7 +88,7 @@ foreach(source ${protocol_sources})
   endforeach()
 endforeach()
 # The protocol's own target_link_libraries call, whatever its scope keywords;
-# every augusta target it names must be one of the allowed two.
+# every augusta target it names must be one of the allowed three.
 file(READ "${SOURCE_DIR}/src/modules/protocol/CMakeLists.txt" protocol_cmake)
 string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" link_calls "${protocol_cmake}")
 foreach(call ${link_calls})
@@ -120,7 +120,7 @@ if(dependency_violations)
   list(JOIN dependency_violations "\n" dependency_report)
   string(
     APPEND report
-    "The protocol depends on a module above it - take the shared counter or bound from augusta/primitives.h instead:\n${dependency_report}\n"
+    "The protocol depends on a module above it - take the shared counter or bound from augusta/tick.h or augusta/limits.h instead:\n${dependency_report}\n"
   )
 endif()
 if(report)
@@ -131,5 +131,5 @@ list(LENGTH headers count)
 list(LENGTH presentation_headers presentation_count)
 message(
   STATUS
-  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math and primitives only"
+  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick and limits only"
 )

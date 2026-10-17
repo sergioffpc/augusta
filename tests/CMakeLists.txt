@@ -34,8 +34,8 @@ target_link_libraries(
     augusta_audio
     augusta_cues
     augusta_gameplay
+    augusta_limits
     augusta_presentation
-    augusta_primitives
     augusta_protocol
     augusta_simulation
     augusta_version
@@ -49,16 +49,17 @@ target_compile_definitions(
   PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
 )
 
-# Links augusta_primitives alone, so the build fails if its header ever needs
+# Links augusta_limits alone, so the build fails if its header ever needs
 # another module's include path.
-add_executable(augusta_primitives_tests primitives_test.cpp)
-target_link_libraries(augusta_primitives_tests PRIVATE augusta_primitives GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_primitives_tests)
+add_executable(augusta_limits_tests limits_test.cpp)
+target_link_libraries(augusta_limits_tests PRIVATE augusta_limits GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_limits_tests)
 
+# Links augusta_tick alone, so the build fails if its header ever needs another
+# module's include path.
 add_executable(augusta_tick_tests tick_test.cpp)
-target_link_libraries(augusta_tick_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
-# Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_tick_tests DISCOVERY_TIMEOUT 30)
+target_link_libraries(augusta_tick_tests PRIVATE augusta_tick GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_tick_tests)
 
 add_executable(augusta_supervisor_tests supervisor_test.cpp)
 target_link_libraries(augusta_supervisor_tests PRIVATE augusta_failure augusta_lifecycle GTest::gtest GTest::gtest_main)
@@ -98,10 +99,7 @@ target_compile_definitions(
 gtest_discover_tests(augusta_server_config_tests)
 
 add_executable(augusta_parameters_tests parameters_test.cpp)
-target_link_libraries(
-  augusta_parameters_tests
-  PRIVATE augusta_gameplay augusta_primitives GTest::gtest GTest::gtest_main
-)
+target_link_libraries(augusta_parameters_tests PRIVATE augusta_gameplay augusta_limits GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_parameters_tests DISCOVERY_TIMEOUT 30)
 
@@ -120,7 +118,10 @@ target_compile_definitions(
 gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_protocol_tests protocol_test.cpp)
-target_link_libraries(augusta_protocol_tests PRIVATE augusta_primitives augusta_protocol GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_protocol_tests
+  PRIVATE augusta_limits augusta_protocol augusta_tick GTest::gtest GTest::gtest_main
+)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
 
@@ -132,7 +133,7 @@ gtest_discover_tests(augusta_protocol_capture_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_protocol_property_tests protocol_property_test.cpp)
 target_link_libraries(
   augusta_protocol_property_tests
-  PRIVATE augusta_primitives augusta_protocol rapidcheck_gtest GTest::gtest GTest::gtest_main
+  PRIVATE augusta_limits augusta_protocol augusta_tick rapidcheck_gtest GTest::gtest GTest::gtest_main
 )
 # RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23. Clang
 # reports it where our code instantiates the template, so its system include
@@ -585,8 +586,8 @@ gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # harness_wire.h and augusta/host_wire.h convert. Nor does a presentation header name
 # the harness: the client converts (src/client/frame_mapping.h). Nor does the
-# protocol itself include or link anything but augusta_math and
-# augusta_primitives. A source scan, so it builds nothing.
+# protocol itself include or link anything but augusta_math, augusta_tick and
+# augusta_limits. A source scan, so it builds nothing.
 add_test(
   NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake
@@ -594,9 +595,9 @@ add_test(
 
 # Neither physics nor SimulationWorld names the protocol or the client's input
 # sampler in its public headers: the grids and the Command they need are shared
-# core modules of their own. Nor do the neutral primitives depend on any other
-# module, nor does anything else give their counters a type of its own or
-# declare their bounds again, even as an alias. A source scan, so it builds
+# core modules of their own. Nor do tick and limits depend on any other module,
+# nor does anything else give the Tick or the Sequence a type of its own or
+# declare a bound again, even as an alias. A source scan, so it builds
 # nothing.
 add_test(
   NAME augusta_core_boundary

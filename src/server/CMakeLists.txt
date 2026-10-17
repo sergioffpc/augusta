@@ -34,7 +34,7 @@ target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augustad_connection_health
   PUBLIC augusta_host augusta_metrics augusta_networking augusta_host_match
-  PRIVATE augusta_primitives
+  PRIVATE augusta_limits
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)
 

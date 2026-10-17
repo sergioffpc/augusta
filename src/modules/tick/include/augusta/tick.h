@@ -4,8 +4,6 @@
 #include <chrono>
 #include <cstdint>
 
-#include "augusta/primitives.h"
-
 /// \file
 /// The fixed schedule both tick loops keep - the server's Simulation thread and
 /// the client's Prediction thread (ADR-0005): each Tick is due one tick after the
@@ -16,13 +14,25 @@
 /// Pure - the caller passes the times in - so it is tested with a fake clock; the
 /// loops own the clock and the sleeping. The tick's duration is passed on every
 /// call, not fixed at construction, so a loop may change it between Ticks.
+///
+/// It depends on nothing but the standard library, and must stay that way, so
+/// the Networking Protocol encodes the Tick and the Sequence without taking the
+/// gameplay rules; and nothing else gives either an integer type of its own
+/// (tests/core_boundary.cmake).
 namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;
 
-/// A server tick's number, as both tick loops count it; its width is the
-/// primitives', which the wire takes too.
-using Tick = primitives::Tick;
+/// A server Tick's number, as both tick loops count it: from 1 for the life of
+/// the server process, never starting over, so wide enough never to wrap (32
+/// bits would after about 828 days at 60 Hz). The wire takes this width too.
+using Tick = std::uint64_t;
+
+/// The number a client gives each Command it sends, and the acknowledged
+/// sequence that answers it (ADR-0038): from 1, one more per command, over one
+/// connection. As wide as Tick, so it never wraps either and receivers order
+/// sequences as plain numbers.
+using Sequence = std::uint64_t;
 
 /// How many ticks a loop may fall behind its schedule and still catch up; any
 /// further and it resynchronises to now.

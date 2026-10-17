@@ -26,6 +26,7 @@
 #include "augusta/prediction.h"
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
+#include "augusta/tick.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
@@ -456,7 +457,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   std::vector<Acknowledgement> answers;  // answers[i] is the server's to commands[i].
   augusta::prediction::State predicted{};
   for (std::size_t i = 0; i < commands.size(); ++i) {
-    const auto sequence = static_cast<augusta::command::Sequence>(i + 1);
+    const auto sequence = static_cast<augusta::tick::Sequence>(i + 1);
     std::vector<augusta::simulation::PlayerCommand> received;
     if (i >= losses_end || !lost.contains(i)) {
       received.push_back({.entity = kPlayer, .command = commands[i]});
