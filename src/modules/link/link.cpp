@@ -53,6 +53,24 @@ struct Client::Impl {
     return *sent == networking::SendOutcome::kAccepted ? SendOutcome::kAccepted : SendOutcome::kDropped;
   }
 
+  // payload as what the server said, or nullopt, with a warning, if it is no
+  // message or one only a client sends.
+  std::optional<ServerMessage> TakeIn(const networking::Payload& payload) {
+    LOG_TRACE("subsystem=link event=received bytes={}", payload.size());
+    const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
+    if (!decoded.has_value()) {
+      LOG_WARNING_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"{}\"", payload.size(),
+                          protocol::DescribeDecodeError(decoded.error()));
+      return std::nullopt;
+    }
+    std::optional<ServerMessage> message = ServerMessageFromWire(*decoded);
+    if (!message.has_value()) {
+      LOG_WARNING_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"not a server message\"",
+                          payload.size());
+    }
+    return message;
+  }
+
   networking::Client network;
   // A server can send what is no message as fast as it likes, so the warnings
   // for dropping it are limited. Network I/O thread only, as Receive.
@@ -96,20 +114,9 @@ std::expected<std::vector<ServerMessage>, failure::Failure> Client::Receive() {
   std::vector<ServerMessage> messages;
   messages.reserve(received->size());
   for (const networking::Payload& payload : *received) {
-    LOG_TRACE("subsystem=link event=received bytes={}", payload.size());
-    const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
-    if (!decoded.has_value()) {
-      LOG_WARNING_LIMITED(impl_->drop_warnings, "subsystem=link event=dropped bytes={} reason=\"{}\"", payload.size(),
-                          protocol::DescribeDecodeError(decoded.error()));
-      continue;
+    if (std::optional<ServerMessage> message = impl_->TakeIn(payload); message.has_value()) {
+      messages.push_back(std::move(*message));
     }
-    std::optional<ServerMessage> message = ServerMessageFromWire(*decoded);
-    if (!message.has_value()) {
-      LOG_WARNING_LIMITED(impl_->drop_warnings, "subsystem=link event=dropped bytes={} reason=\"not a server message\"",
-                          payload.size());
-      continue;
-    }
-    messages.push_back(std::move(*message));
   }
   return messages;
 }

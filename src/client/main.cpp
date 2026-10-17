@@ -16,6 +16,7 @@
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/reenactment.h"
