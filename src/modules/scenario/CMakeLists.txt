@@ -14,11 +14,11 @@ target_link_libraries(augusta_scenario_parameters_loader PUBLIC augusta_gameplay
 augusta_set_module_scope(augusta_scenario_parameters_loader SERVER_ONLY)
 
 # Reads the scenario's Game policy scripts out of the server pack into the
-# engine SimulationWorld runs them in (ADR-0022); tested with packs built in the
+# Game policy SimulationWorld runs (ADR-0022); tested with packs built in the
 # test (see augusta/policy_loader.h).
 add_library(augusta_scenario_policy_loader STATIC policy_loader.cpp)
 target_include_directories(augusta_scenario_policy_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_scenario_policy_loader PUBLIC augusta_assets augusta_scripting)
+target_link_libraries(augusta_scenario_policy_loader PUBLIC augusta_assets augusta_policy)
 augusta_set_module_scope(augusta_scenario_policy_loader SERVER_ONLY)
 
 # The scenario, the Parameters and the Game policy as one loaded whole, which
@@ -27,7 +27,7 @@ add_library(augusta_scenario STATIC content.cpp)
 target_include_directories(augusta_scenario PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_scenario
-  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_scripting
+  PUBLIC augusta_assets augusta_failure augusta_gameplay augusta_math augusta_physics augusta_policy
   PRIVATE augusta_logging augusta_scenario_parameters_loader augusta_scenario_policy_loader
 )
 augusta_set_module_scope(augusta_scenario SERVER_ONLY)

@@ -13,8 +13,8 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/policy.h"
 #include "augusta/replay.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 // A Replay (ADR-0051) re-run on a SimulationWorld with no Map, from captures
@@ -66,13 +66,13 @@ const std::unordered_map<std::string, Character>& Characters() {
   return characters;
 }
 
-augusta::scripting::Engine Rules(const char* rules) {
-  auto policy = augusta::scripting::Engine::Load(rules);
+augusta::policy::Policy Rules(const char* rules) {
+  auto policy = augusta::policy::Policy::Load(rules);
   EXPECT_TRUE(policy.has_value());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
-Replay ReplayOf(capture::Capture capture, augusta::scripting::Engine policy = {}) {
+Replay ReplayOf(capture::Capture capture, augusta::policy::Policy policy = {}) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   return Replay(std::move(capture), augusta::simulation::World(parameters, kTickRate, std::move(policy)), Characters());

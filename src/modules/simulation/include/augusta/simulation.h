@@ -15,8 +15,8 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
-#include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 
@@ -24,7 +24,7 @@
 /// augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
 /// authoritative ECS pipeline, run once per tick on the server's
 /// Simulation thread (ADR-0005). It composes the mechanism modules that
-/// already exist (physics, ballistics, scripting) into the eight ordered
+/// already exist (physics, ballistics, policy) into the eight ordered
 /// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
 /// (see Phase below); server::Host hands its
 /// per-tick output to augusta::replication to reach clients
@@ -98,9 +98,9 @@ enum class Phase {
   /// world, bodiless, until it is removed.
   kDamage,
   /// Policy, sandboxed Lua (ADR-0022). Win condition, round transitions
-  /// (US-14) - augusta::scripting::Engine::Call: the
+  /// (US-14) - augusta::policy::Policy::OnTick: the
   /// rules' on_tick hook, handed a read-only view of the Match as Damage
-  /// left it (MatchView in simulation.cpp), while the world has players and
+  /// left it (policy::MatchView), while the world has players and
   /// policy has not already ended their Match. It may end the Match, with a
   /// winner or as a draw: its answer, validated into a typed action
   /// (policy_actions.h), goes in the tick's TickResult, for server::Host to act
@@ -125,7 +125,7 @@ enum class EntityId : std::uint32_t {};
 /// player and the Character it plays.
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
-  SessionId session{};
+  policy::SessionId session{};
   /// The character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
@@ -291,7 +291,7 @@ struct TickResult {
   State state;
   /// The actions Game policy took on this tick, in the order it took them: at
   /// most one MatchEnd, on at most one tick of a Match.
-  std::vector<PolicyAction> actions;
+  std::vector<policy::PolicyAction> actions;
   /// The Shooter's delay of each round of state's shots, in seconds, in no
   /// particular order: from 0 to kMaxShootersDelay, which it is exactly when the
   /// cap held it. The server's own, for its metrics (ADR-0049): neither sent
@@ -318,7 +318,7 @@ class World {
   /// Game policy (ADR-0022) as the server loaded it from its pack (none by
   /// default), and the Flecs world with Phase's eight phases and their systems
   /// registered (see header comment).
-  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, scripting::Engine policy = {});
+  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {});
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.

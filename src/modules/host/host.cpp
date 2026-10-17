@@ -27,7 +27,7 @@
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
@@ -87,7 +87,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 
 }  // namespace
 
-Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+Host::Impl::Impl(const HostConfig& config, Scenario scenario, policy::Policy policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
       capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
@@ -157,7 +157,7 @@ void Host::Impl::SetLobbyGauges() {
   metrics.match_in_progress.Set(match.InMatch() ? 1.0 : 0.0);
 }
 
-Host::Host(const HostConfig& config, Scenario scenario, scripting::Engine policy)
+Host::Host(const HostConfig& config, Scenario scenario, policy::Policy policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 Host::~Host() = default;

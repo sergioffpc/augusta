@@ -21,10 +21,10 @@
 #include "augusta/match.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/policy.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay.h"
 #include "augusta/replay_catalog.h"
-#include "augusta/scripting.h"
 #include "augusta/tick.h"
 
 /// \file

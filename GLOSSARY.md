@@ -73,9 +73,9 @@ transport connection beneath, which the Link alone owns. _Avoid_: Session (the
 presence it carries), connection, netcode
 
 **Session ID**: The Authoritative server's name for one connected player
-(harness::SessionId on the client, host::SessionId and simulation::SessionId on
-the server, protocol::SessionIdWire on the wire), assigned when it admits the
-join. Distinct from the transport's own handle for the connection, and not a
+(harness::SessionId on the client, host::SessionId and policy::SessionId on the
+server, protocol::SessionIdWire on the wire), assigned when it admits the join.
+Distinct from the transport's own handle for the connection, and not a
 credential — the server tells senders apart by connection, not by this ID.
 _Avoid_: Player ID, connection ID
 
