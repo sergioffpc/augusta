@@ -683,6 +683,8 @@ not affect numbering.
 - [ADR-0014](./adr/0014-shading-language.md) — Shading language: Slang
 - [ADR-0028](./adr/0028-audio-output.md) — Audio output: miniaudio
 - [ADR-0059](./adr/0059-renderer-nvrhi.md) — Renderer: NVRHI
+- [ADR-0062](./adr/0062-footsteps.md) — Footsteps: heard at a clip's Foot
+  contacts, on the collider's Acoustic material
 
 ### Asset Pipeline
 
