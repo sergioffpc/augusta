@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_AGENT_AGENT_H_
-#define AUGUSTA_AGENT_AGENT_H_
+#ifndef AUGUSTA_AGENT_H_
+#define AUGUSTA_AGENT_H_
 
 #include <atomic>
 #include <cstdint>
@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
@@ -21,14 +22,14 @@
 #include "augusta/netcode_stats.h"
 #include "augusta/physics.h"
 #include "augusta/runner.h"
-#include "report.h"
 
 /// \file
-/// An Agent (CONTEXT.md, ADR-0052): a player with no one at the keyboard, on a
-/// harness::Session under a harness::Runner of its own, its Commands made by an
-/// IntentExecutor from the Intents its script sets. What the Python module
-/// (module.cpp) wraps; nothing here knows of Python, so the Runner's threads
-/// never touch the GIL.
+/// The Agent's Runtime (ADR-0060): an Agent (CONTEXT.md, ADR-0052), a player
+/// with no one at the keyboard and no window or GPU, on a harness::Session
+/// under a harness::Runner of its own, its Commands made by an IntentExecutor
+/// from the Intents its script sets. What the Python module (module.cpp) and
+/// the C++ tests of whole Matches link; nothing here knows of Python, so the
+/// Runner's threads never touch the GIL.
 namespace augusta::agent {
 
 /// A client pack, verified, and its Map's collision: loaded once for every
@@ -162,4 +163,4 @@ class Agent {
 
 }  // namespace augusta::agent
 
-#endif  // AUGUSTA_AGENT_AGENT_H_
+#endif  // AUGUSTA_AGENT_H_

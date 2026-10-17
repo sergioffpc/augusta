@@ -7,7 +7,7 @@ add_library(augusta_agent_match_loop STATIC match_loop.cpp)
 target_include_directories(augusta_agent_match_loop PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_match_loop
-  PUBLIC augusta_agent_core augusta_harness
+  PUBLIC augusta_agent augusta_harness
   PRIVATE augusta_gameplay augusta_math augusta_physics
 )
 
