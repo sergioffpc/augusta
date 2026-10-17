@@ -9,9 +9,10 @@
 #include <utility>
 #include <vector>
 
-#include "application.h"
 #include "augusta/application.h"
 #include "augusta/assets.h"
+#include "augusta/client.h"
+#include "augusta/client_application.h"
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
@@ -22,7 +23,6 @@
 #include "augusta/reenactment.h"
 #include "augusta/renderer.h"
 #include "augusta/version.h"
-#include "runtime.h"
 
 #ifdef _WIN32
 #include <windows.h>

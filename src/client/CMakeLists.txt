@@ -1,102 +1,5 @@
-# The client's private libraries below use renderer.h's plain types only, so
-# they take that header's directory rather than linking augusta_renderer:
-# their tests need neither a GPU nor a window. renderer.h includes window.h,
-# which needs no GLFW, hence augusta_window_events.
-
-# What the client loads from its verified pack at startup: the scene graph as
-# renderer::Scene (see scene_loader.h), the characters other players bring (see
-# character_loader.h), the map's collision and every cue's sound (see content.h).
-add_library(augustac_content STATIC scene_loader.cpp character_loader.cpp content.cpp)
-target_include_directories(
-  augustac_content
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
-)
-target_link_libraries(
-  augustac_content
-  PUBLIC augusta_assets augusta_cues augusta_failure augusta_math augusta_physics augusta_window_events
-  PRIVATE augusta_logging
-)
-augusta_set_module_scope(augustac_content CLIENT_ONLY)
-
-# The conversions ClientRuntime makes at its edges: the harness's types into
-# presentation's, and presentation's into the renderer's (see frame_mapping.h).
-add_library(augustac_frame_mapping STATIC frame_mapping.cpp)
-target_include_directories(
-  augustac_frame_mapping
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
-)
-target_link_libraries(
-  augustac_frame_mapping
-  PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation augusta_window_events
-)
-augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
-
-# The connection's numbers as the debug HUD shows them and Nsight Systems plots
-# them (see net_stats.h). nvtx3-cpp (third_party/nvtx, see the root
-# CMakeLists.txt) is header-only.
-add_library(augustac_net_stats STATIC net_stats.cpp)
-target_include_directories(augustac_net_stats PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustac_net_stats PUBLIC augusta_hud augusta_link nvtx3-cpp)
-# NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
-# min/max macros would break std::min/std::max in net_stats.cpp.
-target_compile_definitions(augustac_net_stats PRIVATE NOMINMAX)
-augusta_set_module_scope(augustac_net_stats CLIENT_ONLY)
-
-# What the client loads in the Lobby before it reports Ready, and for which
-# Roster (see lobby_readiness.h): the decision only, so its tests need no
-# renderer or connection.
-add_library(augustac_lobby_readiness STATIC lobby_readiness.cpp)
-target_include_directories(augustac_lobby_readiness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustac_lobby_readiness PUBLIC augusta_harness)
-augusta_set_module_scope(augustac_lobby_readiness CLIENT_ONLY)
-
-# How augustac's phases classify their failures behind the application
-# boundary (see application.h, ADR-0033): no window or GPU, so its tests need
-# no renderer.
-add_library(augustac_application STATIC application.cpp)
-target_include_directories(augustac_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustac_application
-  PUBLIC augustac_content augusta_assets augusta_client_config augusta_config augusta_failure augusta_harness
-  PRIVATE augusta_logging augusta_networking
-)
-augusta_set_module_scope(augustac_application CLIENT_ONLY)
-
-add_library(augustac_runtime STATIC runtime.cpp)
-target_include_directories(augustac_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(
-  augustac_runtime
-  PUBLIC
-    augustac_content
-    augusta_assets
-    augusta_failure
-    augusta_harness
-    augusta_hud
-    augusta_input
-    # main.cpp's networking::Init, once per process, until the Link offers it.
-    augusta_networking
-    augusta_renderer
-    augusta_window
-  # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
-  # thread loops for Nsight Systems.
-  PRIVATE
-    augustac_application
-    augustac_frame_mapping
-    augustac_lobby_readiness
-    augustac_net_stats
-    augusta_audio
-    augusta_gameplay
-    augusta_logging
-    augusta_physics
-    augusta_prediction
-    augusta_presentation
-    nvtx3-cpp
-)
-# NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
-# min/max macros would break std::min/std::max.
-target_compile_definitions(augustac_runtime PRIVATE NOMINMAX)
-augusta_set_module_scope(augustac_runtime CLIENT_ONLY)
-
+# augustac's entry point: it runs the client Runtime (src/modules/client)
+# behind the application boundary (ADR-0033, ADR-0060).
 add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
@@ -108,15 +11,12 @@ target_link_libraries(
     augusta_failure
     augusta_version
     augusta_logging
-    augustac_application
-    augustac_runtime
-    augustac_content
+    augusta_client_application
+    augusta_client
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
-# This directory is augustac's Glue: only augustac, augustac_application and
-# augustac_runtime belong in it, and a new library here fails the configure
-# (ADR-0060, cmake/AugustaModule.cmake). The libraries above are the
-# exceptions the migration has still to move out.
+# This directory is augustac's Glue: only augustac belongs in it, and a new
+# library here fails the configure (ADR-0060, cmake/AugustaModule.cmake).
 augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).

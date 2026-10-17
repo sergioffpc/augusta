@@ -1,4 +1,4 @@
-#include "content.h"
+#include "augusta/client_content.h"
 
 #include <expected>
 #include <string>
@@ -7,14 +7,14 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/client_character_loader.h"
+#include "augusta/client_scene_loader.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
 #include "augusta/renderer.h"
-#include "character_loader.h"
-#include "scene_loader.h"
 
 namespace augusta::client {
 

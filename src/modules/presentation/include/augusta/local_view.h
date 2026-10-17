@@ -45,7 +45,7 @@ inline constexpr float kHipFieldOfView = 0.9F;
 /// Not augusta::renderer::Camera itself: this module stays decoupled from
 /// augusta_renderer the same way presentation::RemotePlayer does (see
 /// renderer::RemotePlayer's doc comment) - the client's ToRenderer
-/// (src/client/frame_mapping.h) maps both into their renderer-side equivalents.
+/// (src/modules/client/frame_mapping.h) maps both into their renderer-side equivalents.
 struct Camera {
   math::Vec3 position{};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};

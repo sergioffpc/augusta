@@ -1,4 +1,4 @@
-#include "scene_loader.h"
+#include "augusta/client_scene_loader.h"
 
 #include <cstddef>
 #include <expected>

@@ -6,21 +6,21 @@
 #include <optional>
 
 #include "augusta/assets.h"
+#include "augusta/client_character_loader.h"
 #include "augusta/client_config.h"
+#include "augusta/client_content.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/reenactment.h"
-#include "character_loader.h"
-#include "content.h"
 
 /// \file
 /// How augustac's phases classify their failures behind the application
 /// boundary (augusta/application.h, ADR-0033): an unusable config or capture to
-/// reenact, a transport
-/// that does not start, a pack or content that does not load, a Session that
-/// ends on its own, a character that cannot be loaded. main.cpp runs these as
-/// its Lifecycle around ClientRuntime (runtime.h), which classifies its run's
+/// reenact, a transport that does not start, a pack or content that does not
+/// load, a Session that ends on its own, a character that cannot be loaded.
+/// augustac's main.cpp runs these as its Lifecycle around ClientRuntime
+/// (client.h), which classifies its run's
 /// failures with the functions below and passes its workers' first cause on as
 /// the supervisor recorded it. Nothing here needs a window or a GPU, so it is
 /// tested without the renderer.

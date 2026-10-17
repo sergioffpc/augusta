@@ -1,25 +1,25 @@
-#ifndef AUGUSTA_CLIENT_RUNTIME_H_
-#define AUGUSTA_CLIENT_RUNTIME_H_
+#ifndef AUGUSTA_CLIENT_H_
+#define AUGUSTA_CLIENT_H_
 
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "augusta/assets.h"
+#include "augusta/client_content.h"
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
 #include "augusta/renderer.h"
-#include "content.h"
 
 /// \file
-/// The augustac executable's orchestrator (ARCHITECTURE.md §5): it owns one of
+/// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
 /// every client module - Input, Audio, the harness::Session, PresentationWorld
 /// and Renderer, with the Renderer's window - and runs the Main/Render loop:
 /// it hands the window's events to Input and the HUD's lines (augusta::hud) to
-/// the Renderer (ADR-0059). It belongs to src/client, not
-/// to the engine's modules: nothing else links against it.
+/// the Renderer (ADR-0059). augustac's entry point runs it behind the
+/// application boundary, and the end-to-end tests link it in augustac's place.
 ///
 /// It plays nothing itself. Sending commands, receiving the server's state and
 /// reconciling the prediction is harness::Session's work, and its Prediction and
@@ -28,7 +28,7 @@
 /// into render frames, and loads what the Lobby names. As a Captured player
 /// (ADR-0050) each tick's command is its harness::Reenactment's instead, the
 /// keyboard and mouse move nothing, and the run ends with its reenactment.
-/// Where its content comes from is main.cpp's business (content.h).
+/// Where its content comes from is its caller's business (client_content.h).
 namespace augusta::client {
 
 struct RuntimeConfig {
@@ -70,9 +70,9 @@ class ClientRuntime {
   /// ClientRuntime doesn't call it itself since Init() is a one-time
   /// process concern, not a per-instance one.
   ///
-  /// Content is loaded from the client pack by the caller (see content.h),
-  /// since where content comes from is the executable's business, not the
-  /// orchestrator's. load_character is called in the Lobby for each
+  /// Content is loaded from the client pack by the caller (see
+  /// client_content.h), since where content comes from is the executable's
+  /// business, not the orchestrator's. load_character is called in the Lobby for each
   /// character another player brings (ADR-0043); it must stay callable until
   /// Run() returns. Throws failure::ClassifiedFailure
   /// (failure::Code::kInvalidContent) if physics rejects a collision mesh.
@@ -105,7 +105,7 @@ class ClientRuntime {
   /// session fails (refused, server unreachable, connection lost), a
   /// character cannot be loaded or the Prediction or Network I/O thread
   /// fails (which stops the others), which is what it returns, classified
-  /// (application.h) - a thread's first cause as its supervisor recorded it:
+  /// (client_application.h) - a thread's first cause as its supervisor recorded it:
   /// the caller reports it and exits, since there is no reconnecting. nullopt
   /// if the player closed the window, a Captured player's run left at its
   /// captured Leave or reached the capture's Match end or the server's, which
@@ -126,4 +126,4 @@ class ClientRuntime {
 
 }  // namespace augusta::client
 
-#endif  // AUGUSTA_CLIENT_RUNTIME_H_
+#endif  // AUGUSTA_CLIENT_H_

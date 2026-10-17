@@ -1,3 +1,5 @@
+#include "augusta/client_application.h"
+
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -7,16 +9,15 @@
 
 #include <gtest/gtest.h>
 
-#include "application.h"
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/client_character_loader.h"
 #include "augusta/client_config.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/reenactment.h"
-#include "character_loader.h"
 
 // augustac's application boundary (ADR-0033): whatever its startup or its
 // runtime fails with, the client ends on one classified failure. Its runtime
