@@ -7,12 +7,12 @@
 
 #include <nvtx3/nvtx3.hpp>
 
+#include "augusta/hud.h"
 #include "augusta/networking.h"
-#include "augusta/renderer.h"
 
 /// \file
 /// What the client makes of its connection's numbers, sampled once per Network
-/// I/O round: the readout the renderer's debug HUD shows, and the counters Nsight
+/// I/O round: the readout the debug HUD shows, and the counters Nsight
 /// Systems plots.
 namespace augusta::client {
 
@@ -31,8 +31,8 @@ class HudNetStats {
 
   /// What the HUD shows after stats, sampled at now; nullopt while there is no
   /// connection to measure, which also starts the jitter window over.
-  [[nodiscard]] std::optional<renderer::DebugHudNetStats> Update(
-      const std::optional<networking::ConnectionStats>& stats, std::chrono::steady_clock::time_point now);
+  [[nodiscard]] std::optional<hud::NetStats> Update(const std::optional<networking::ConnectionStats>& stats,
+                                                    std::chrono::steady_clock::time_point now);
 
  private:
   // When the current jitter window started, or nullopt before the first sample.

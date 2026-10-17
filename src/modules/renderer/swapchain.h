@@ -9,7 +9,7 @@
 #include <nvrhi/nvrhi.h>
 #include <vulkan/vulkan.hpp>
 
-#include "augusta/renderer.h"
+#include "augusta/window.h"
 #include "vulkan_device.h"
 
 /// \file
@@ -27,7 +27,7 @@ class Swapchain final {
 
   /// Throws std::runtime_error if the window's surface takes no 4-byte sRGB
   /// format. device must outlive this swapchain.
-  Swapchain(VulkanDevice& device, Size size);
+  Swapchain(VulkanDevice& device, window::Size size);
 
   Swapchain(const Swapchain&) = delete;
   Swapchain& operator=(const Swapchain&) = delete;
@@ -43,12 +43,12 @@ class Swapchain final {
   [[nodiscard]] nvrhi::Format Format() const { return format_; }
 
   /// Its images' size; nullopt while it has none, the window being minimized.
-  [[nodiscard]] std::optional<Size> ImageSize() const;
+  [[nodiscard]] std::optional<window::Size> ImageSize() const;
 
   /// Makes it again, after waiting for the GPU, if size is not the one it was
   /// made for, if Vulkan said it no longer fits the window, or if it has no
   /// images.
-  void Update(Size size);
+  void Update(window::Size size);
 
   /// The next image to copy a frame into, using frame region region's
   /// semaphore, which the frame last in that region must be done with; nullptr
@@ -71,7 +71,7 @@ class Swapchain final {
   vk::PresentModeKHR present_mode_ = vk::PresentModeKHR::eFifo;
   // The size it was last made for, and whether Vulkan has said it no longer
   // fits the window since.
-  Size size_;
+  window::Size size_;
   bool stale_ = false;
   vk::UniqueSwapchainKHR swapchain_;
   vk::Extent2D extent_;

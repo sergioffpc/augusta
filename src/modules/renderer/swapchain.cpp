@@ -16,7 +16,7 @@
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
-#include "augusta/renderer.h"
+#include "augusta/window.h"
 #include "gpu_crash_dumps.h"
 #include "vulkan_device.h"
 
@@ -64,7 +64,7 @@ vk::PresentModeKHR ChoosePresentMode(vk::PhysicalDevice device, vk::SurfaceKHR s
 
 // The surface's own size if it has one, which Windows' always does, else size
 // within its limits.
-vk::Extent2D ExtentFor(const vk::SurfaceCapabilitiesKHR& capabilities, Size size) {
+vk::Extent2D ExtentFor(const vk::SurfaceCapabilitiesKHR& capabilities, window::Size size) {
   if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
     return capabilities.currentExtent;
   }
@@ -92,7 +92,7 @@ void ThrowIfFailed(VkResult result, const char* what) {
 
 }  // namespace
 
-Swapchain::Swapchain(VulkanDevice& device, Size size)
+Swapchain::Swapchain(VulkanDevice& device, window::Size size)
     : device_(device), present_mode_(ChoosePresentMode(device.PhysicalDevice(), device.Surface())), size_(size) {
   std::tie(surface_format_, format_) = ChooseFormat(device.PhysicalDevice(), device.Surface());
   for (vk::UniqueSemaphore& semaphore : acquired_) {
@@ -109,14 +109,14 @@ Swapchain::~Swapchain() {
   swapchain_.reset();
 }
 
-std::optional<Size> Swapchain::ImageSize() const {
+std::optional<window::Size> Swapchain::ImageSize() const {
   if (!swapchain_) {
     return std::nullopt;
   }
-  return Size{.width = extent_.width, .height = extent_.height};
+  return window::Size{.width = extent_.width, .height = extent_.height};
 }
 
-void Swapchain::Update(Size size) {
+void Swapchain::Update(window::Size size) {
   if (swapchain_ && !stale_ && size.width == size_.width && size.height == size_.height) {
     return;
   }

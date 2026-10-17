@@ -1,4 +1,4 @@
-#include "debug_hud_text.h"
+#include "augusta/hud.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,10 +8,9 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <vector>
 
-#include "augusta/renderer.h"
-
-namespace augusta::renderer {
+namespace augusta::hud {
 
 namespace {
 
@@ -37,7 +36,7 @@ std::string FormatRate(float bytes_per_sec) {
   return std::format("{:.0f}B/s", bytes_per_sec);
 }
 
-std::string FormatNet(const std::optional<DebugHudNetStats>& net) {
+std::string FormatNet(const std::optional<NetStats>& net) {
   if (!net.has_value()) {
     return "RTT: --";
   }
@@ -49,8 +48,8 @@ std::string FormatNet(const std::optional<DebugHudNetStats>& net) {
 
 }  // namespace
 
-std::string DebugHudText(double average_frame_time_s, const std::optional<DebugHudNetStats>& net) {
-  return FormatFps(average_frame_time_s) + " | " + FormatNet(net);
+std::vector<std::string> Lines(double average_frame_time_s, const std::optional<NetStats>& net) {
+  return {FormatFps(average_frame_time_s) + " | " + FormatNet(net)};
 }
 
 void FrameTimeWindow::Tick(Clock::time_point now) {
@@ -70,4 +69,4 @@ double FrameTimeWindow::Average() const {
   return std::accumulate(frame_times_s_.begin(), last, 0.0) / static_cast<double>(frames);
 }
 
-}  // namespace augusta::renderer
+}  // namespace augusta::hud

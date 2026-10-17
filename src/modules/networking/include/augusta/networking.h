@@ -23,8 +23,8 @@
 /// a handful of independent peers (US-02, 2-8 players) - genuinely
 /// different shapes, not just convenience.
 ///
-/// Unlike Renderer/Input's EventSink push (forced by GLFW/Win32 only
-/// delivering messages on the thread that owns the window), every method
+/// Unlike the window's events (GLFW/Win32 only deliver them on the thread
+/// that owns the window), every method
 /// here is safe to call from any thread - GameNetworkingSockets is
 /// internally thread-safe and queues both connection events and messages
 /// itself. PumpEvents/ReceiveMessages are still poll calls, matching this

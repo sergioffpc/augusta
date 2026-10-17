@@ -1,0 +1,17 @@
+# The window's device events (window_events.h), free of GLFW: input reads them
+# on every platform, even where the client and GLFW are not built.
+add_library(augusta_window_events STATIC events.cpp)
+target_include_directories(augusta_window_events PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+augusta_set_module_scope(augusta_window_events CLIENT_ONLY)
+
+if(AUGUSTA_CLIENT)
+  # The GLFW window (ADR-0059), which the Renderer creates and owns. GLFW is the
+  # manifest's client feature, which AUGUSTA_CLIENT installs. glfw_keys.h, its
+  # mapping of GLFW's keys, is private to the module: its test reaches it
+  # through this directory.
+  find_package(glfw3 CONFIG REQUIRED)
+  add_library(augusta_window STATIC window.cpp glfw_keys.cpp)
+  target_include_directories(augusta_window PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(augusta_window PUBLIC augusta_window_events PRIVATE glfw)
+  augusta_set_module_scope(augusta_window CLIENT_ONLY)
+endif()

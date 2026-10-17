@@ -118,7 +118,7 @@ std::expected<std::unique_ptr<Client>, augusta::failure::Failure> ConstructClien
   }
 
   augusta::client::RuntimeConfig config;
-  config.renderer.title = "augusta";
+  config.renderer.window.title = "augusta";
 #ifndef NDEBUG
   // A Debug build runs under Vulkan's validation layer (ADR-0059) wherever the
   // loader finds it through VK_ADD_LAYER_PATH.

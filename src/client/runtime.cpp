@@ -23,6 +23,7 @@
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/hud.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
 #include "augusta/local_view.h"
@@ -37,6 +38,8 @@
 #include "augusta/renderer.h"
 #include "augusta/runner.h"
 #include "augusta/tick.h"
+#include "augusta/window.h"
+#include "augusta/window_events.h"
 #include "character_loader.h"
 #include "content.h"
 #include "frame_mapping.h"
@@ -121,20 +124,22 @@ struct ClientRuntime::Impl {
   std::mutex seen_time_mutex;
   std::optional<presentation::SeenTime> seen_time;
 
-  // Connection numbers for the renderer's debug HUD: written by the Network
+  // Connection numbers for the debug HUD: written by the Network
   // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
   // frame. They should be consistent with each other, so - like
   // latest_tick above - a mutex-guarded copy.
   std::mutex hud_net_mutex;
-  std::optional<renderer::DebugHudNetStats> latest_hud_net;
+  std::optional<hud::NetStats> latest_hud_net;
 
   // Network I/O thread only: what the HUD shows of the connection, and the
   // counters Nsight Systems plots of it, sampled once per round of the
   // Runner's network work.
   HudNetStats hud_net_stats;
   NetStatsCounters net_stats_counters;
+  // Main/Render thread only: the frames the HUD's FPS averages.
+  hud::FrameTimeWindow frame_times;
 
-  std::optional<renderer::DebugHudNetStats> GetLatestHudNet() {
+  std::optional<hud::NetStats> GetLatestHudNet() {
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
     return latest_hud_net;
   }
@@ -145,7 +150,7 @@ struct ClientRuntime::Impl {
       round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, *rate));
     }
     net_stats_counters.Sample(stats);
-    const std::optional<renderer::DebugHudNetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
+    const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
     latest_hud_net = net;
   }
@@ -156,7 +161,7 @@ struct ClientRuntime::Impl {
         load_character(std::move(loader)),
         input(cfg.input),
         presentation(audio, cue_sounds, eye),
-        renderer(cfg.renderer, input) {
+        renderer(cfg.renderer) {
     if (cfg.reenactment.has_value()) {
       reenactment.emplace(*cfg.reenactment);
     }
@@ -357,7 +362,7 @@ struct ClientRuntime::Impl {
   // first. Main/Render thread only.
   std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
-    while (!renderer.ShouldClose()) {
+    while (!renderer.GetWindow().ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
         return failure;
       }
@@ -371,7 +376,7 @@ struct ClientRuntime::Impl {
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
         return std::nullopt;
       }
-      renderer.PumpEvents();
+      input.Handle(renderer.GetWindow().Poll());
       std::this_thread::sleep_for(kPollInterval);
     }
     return std::nullopt;
@@ -487,10 +492,11 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     return failure;
   }
 
+  window::Window& window = impl_->renderer.GetWindow();
   bool cursor_locked = impl_->input.CursorCaptured();
-  impl_->renderer.SetCursorLocked(cursor_locked);
+  window.SetCursorLocked(cursor_locked);
   LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");
-  while (!impl_->renderer.ShouldClose()) {
+  while (!window.ShouldClose()) {
     failure = impl_->GetRunFailure();
     if (failure.has_value()) {
       break;
@@ -512,13 +518,15 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};
-    impl_->renderer.PumpEvents();
+    impl_->input.Handle(window.Poll());
     // Escape releases the cursor and a click captures it again (Input decides).
     if (const bool captured = impl_->input.CursorCaptured(); captured != cursor_locked) {
-      impl_->renderer.SetCursorLocked(captured);
+      window.SetCursorLocked(captured);
       cursor_locked = captured;
     }
-    impl_->renderer.SetDebugHudStats({.net = impl_->GetLatestHudNet()});
+    // Each frame ends the last one for the FPS the HUD reads.
+    impl_->frame_times.Tick(hud::FrameTimeWindow::Clock::now());
+    impl_->renderer.SetTextLines(hud::Lines(impl_->frame_times.Average(), impl_->GetLatestHudNet()));
     const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
     impl_->SetSeenTime(frame_state.seen_time);
     impl_->StageRenderFrame(frame_state);
