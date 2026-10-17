@@ -28,17 +28,16 @@ and would couple PhysX to the GPU the renderer uses.
 step. Impulses from a tick's shots and explosions are queued and applied in the
 next tick's Dynamics; a tick's delay is not perceptible. On the client, the
 World is simulated only for Cosmetic bodies and Props' kinematic poses, which
-are not gameplay and so are the client-only dynamics module's, beside gameplay
-in the Domain Layer (ADR-0062); the server's Props affect gameplay and stay
-gameplay's. The client's Dynamics phase is PresentationWorld's (ADR-0024), not
-PredictionWorld's: Reconciliation replays Movement several times per tick, and a
-simulate inside that replay would advance debris more than once. Presentation
-runs per frame, but its Dynamics steps fixed: one `simulate()` of one tick's
-step for each tick the PredictionWorld advanced since the last frame, at most a
-few per frame, the excess dropped after a hitch. Cosmetic bodies are drawn
-interpolated between the last two steps with the Interpolation phase's own
-fraction, so they move in step with the players around them. PhysX never sees a
-variable step on either side.
+are not gameplay and so are the client-only dynamics module's, beside gameplay;
+the server's Props affect gameplay and stay gameplay's. The client's Dynamics
+phase is PresentationWorld's (ADR-0024), not PredictionWorld's: Reconciliation
+replays Movement several times per tick, and a simulate inside that replay would
+advance debris more than once. Presentation runs per frame, but its Dynamics
+steps fixed: one `simulate()` of one tick's step for each tick the
+PredictionWorld advanced since the last frame, at most a few per frame, the
+excess dropped after a hitch. Cosmetic bodies are drawn interpolated between the
+last two steps with the Interpolation phase's own fraction, so they move in step
+with the players around them. PhysX never sees a variable step on either side.
 
 **One World per process, split by collision filters.** The client keeps a single
 World. Cosmetic bodies collide with the Map, with Props and with controllers,

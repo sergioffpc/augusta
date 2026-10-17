@@ -47,13 +47,15 @@ between backends would double what has to be tested, for no gain to a player.
   the loader finds none. The smoke test requires it, and fails to start without
   it. An error the layer reports is thrown by the Renderer call it happened in,
   so API misuse fails where it is found.
-- **Window and input.** GLFW, in the window module (`augusta_window`, Domain
-  Layer, ADR-0062): the OS window and its device events, knowing no GPU API and
-  no input. The Renderer creates its window and owns it; its
-  `glfwCreateWindowSurface` makes the Vulkan surface, the one thing that differs
-  between the platforms. The input module reads the window's events, and the
-  client Runtime hands them over, so the Renderer knows nothing of input. Cursor
-  lock is GLFW's disabled cursor with raw mouse motion, which needs no patch.
+- **Window and input.** GLFW, in the window module (`augusta_window`): the OS
+  window and its device events, knowing no GPU API and no input. The Renderer
+  creates its window and owns it; its `glfwCreateWindowSurface` makes the Vulkan
+  surface, the one thing that differs between the platforms. The window's
+  `Poll()` returns the device events since the last call; the client Runtime
+  calls it on its Main/Render thread and hands them to the input module, which
+  links the window only for the events' type, so neither the window nor the
+  Renderer knows anything of input. Cursor lock is GLFW's disabled cursor with
+  raw mouse motion, which needs no patch.
 - **Shaders.** Slang (ADR-0014), compiled to SPIR-V at build time by `slangc`
   from vcpkg's `shader-slang`, a host tool in the manifest. The SPIR-V is
   embedded in the executable, so there are no shader files to ship or find, and

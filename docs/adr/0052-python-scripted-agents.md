@@ -129,11 +129,11 @@ an AI model: the API comes first, and an autonomous agent is a script on top of
 it.
 
 **Tests stay where they are.** The netcode tests and the whole Match loop
-against an in-process `server::Host` stay C++, in `tools/agent/tests/`, over a
+against an in-process `host::Host` stay C++, in `tools/agent/tests/`, over a
 test fixture that composes the C++ Intents the way `load_test.py` does, so ctest
 needs no Python. pytest covers the Python layer with the native module built,
 and a smoke test plays one Match of two Agents against an in-process
-`server::Host` that `augusta_agent._testing` exposes for tests only.
+`host::Host` that `augusta_agent._testing` exposes for tests only.
 
 ## Consequences
 
@@ -179,5 +179,5 @@ and a smoke test plays one Match of two Agents against an in-process
 - **Keeping augusta-swarm's YAML for the load test**: rejected - a script
   already is its configuration, and its arguments are the script's to choose.
 - **Python tests launching an augustad subprocess**: rejected - the test would
-  need to find the built server and its packs; an in-process `server::Host` is
+  need to find the built server and its packs; an in-process `host::Host` is
   what the C++ Match loop test already uses.

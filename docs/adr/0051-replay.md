@@ -30,7 +30,7 @@ hands it the capture tick by tick:
    its captured spawn, with Game policy's `assign_spawns` not asked.
 2. Before each tick, the bodies of the players whose Leave falls on it are taken
    out, as the live server took them out.
-3. Each player's Commands go through a `server::CommandQueue` of its own, each
+3. Each player's Commands go through a `host::CommandQueue` of its own, each
    queued just before the tick it was handed to the World on, so the queue holds
    and idles on the ticks with nothing new exactly as the live server's did: the
    capture leaves those out (ADR-0050) because the queue makes them again. Each

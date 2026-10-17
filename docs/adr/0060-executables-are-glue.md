@@ -18,22 +18,24 @@ PredictionWorld are a module, tested by hand-driven ticks.
   a module. Glue is the entry point alone, tested only end to end.
 - **What is a module.** One building block of ARCHITECTURE §5: a directory
   `src/modules/<module>/` with one concept and one responsibility at its
-  interface, in one Layer (ADR-0062). It may build several internal targets, as
-  the renderer module does. A new block enters §5 before it gets a directory.
-  Code is grouped by what changes together, not one module per file.
+  interface. It may build several internal targets, as the renderer and config
+  modules do. A new block enters §5 before it gets a directory. Code is grouped
+  by what changes together, not one module per file.
 - **One consumer is enough.** A module may be used by one side only, scoped
   `CLIENT_ONLY` or `SERVER_ONLY` (ADR-0006), as the renderer, simulation and
   scripting modules are.
 - **Acting on Game policy.** Applying a Policy action is a module's work; the
   Runtime only routes it there.
-- **The Cores.** The Harness and the Host, the client and the server without
-  threads or a clock, are modules a test drives by hand.
-- **The Runtimes.** What runs a Core live is a module too, in the Runtimes
-  Layer: client (augustac's), server (augustad's) and agent (the Agent's, kept
-  under `tools/agent/native` as the tools layout has it). A Runtime adds its
-  executable's configuration, its threads, its clock and the wiring of the
-  services its Core lacks: the window, the GPU, audio, the metrics endpoint
-  (ADR-0049). End-to-end tests link a Runtime, never an executable.
+- **The Harness and the Host.** The client and the server without threads or a
+  clock are modules a test drives by hand.
+- **The Runtimes.** What runs the Harness or the Host live is a module too:
+  client (augustac's), server (augustad's) and agent (the Agent's, kept under
+  `tools/agent/native` as the tools layout has it), each in the namespace of its
+  name (`augusta::client`, `augusta::server`, `augusta::agent`); the Host is
+  `augusta::host`'s. A Runtime adds its executable's configuration, its threads,
+  its clock and the wiring of the services the Harness or the Host lacks: the
+  window, the GPU, audio, the metrics endpoint (ADR-0049). End-to-end tests link
+  a Runtime, never an executable.
 - **Conversions at a seam.** A conversion between two modules' types lives in
   the module whose seam it crosses. Every conversion between the game's state
   and messages is the Link's.
@@ -43,7 +45,7 @@ PredictionWorld are a module, tested by hand-driven ticks.
 - **Checked at configure time.** `cmake/AugustaModule.cmake` refuses a target
   under `src/server/` or `src/client/` other than the executable, a test that
   links an executable's target, and an executable that links more than the
-  application, its Runtime and the Foundation (ADR-0062). Code that predates
+  application, its Runtime, failure, logging and version. Code that predates
   this decision is a named exception in the check; the list only shrinks, each
   migration removing its entries, and the check drops it once it is empty.
 - **Existing code.** Migrated gradually, one cohesive cluster at a time, never
@@ -60,6 +62,6 @@ PredictionWorld are a module, tested by hand-driven ticks.
 - **A module per testable piece**: rejected. It fragments one concept over many
   targets, so understanding it means reading all of them; cohesion sets the
   module, and finer splits stay internal targets.
-- **Runtimes as Glue, inside the executables**: rejected (ADR-0062). The strict
-  Layers would have each executable link Services directly, and the Agent's
-  Runtime, linked by its Python module and its C++ tests, could not be shared.
+- **Runtimes as Glue, inside the executables**: rejected. Each executable would
+  link every module its Runtime wires, and the Agent's Runtime, linked by its
+  Python module and its C++ tests, could not be shared.

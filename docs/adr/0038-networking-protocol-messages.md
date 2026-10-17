@@ -8,33 +8,43 @@ clock or state, used by both client and server (ADR-0006).
 **Its own types.** A message holds only types the protocol defines itself (its
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
-nothing but the Foundation's `augusta_math`, which also holds the grids its
-numbers travel on, `augusta_tick`, whose Tick and Sequence widths it encodes,
-and `augusta_limits`, whose player and recoil bounds it encodes, without owning
-or re-exporting them (ADR-0062); a module changing its own structs never changes
-what travels. How many commands a Commands message carries is the protocol's own
-bound (`protocol::kMaxCommandsPerMessage`). `tests/protocol_boundary.cmake`
-fails if the protocol includes or links anything else. A protocol type that
-mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire` for
+nothing but `augusta_math`, which also holds the grids its numbers travel on,
+`augusta_tick`, whose Tick and Sequence widths it encodes, and `augusta_limits`,
+whose player and recoil bounds it encodes, without owning or re-exporting them;
+a module changing its own structs never changes what travels. How many commands
+a Commands message carries is the protocol's own bound
+(`protocol::kMaxCommandsPerMessage`). `tests/protocol_boundary.cmake` fails if
+the protocol includes or links anything else. A protocol type that mirrors one
+of the engine's carries the suffix `Wire`: `BodyStateWire` for
 `physics::BodyState`, and the Authoritative State message is
 `AuthoritativeStateWire`, for the client's `harness::AuthoritativeState`. Every
 protocol type carries the suffix, so none reads like an engine type. Every
 conversion between the protocol's types and the engine's is the Link's
-(`augusta_link`, ADR-0062) and nowhere else: `server::Host` and
-`harness::Session` hand it the engine's types right before Encode and take them
-back right after Decode. The capture module (`augusta/capture.h`), shared by
-both peers, writes and reads a Match capture's records in the protocol's types;
-turning a record into the engine's is the Link's too. Inside each peer, modules
-pass the engine's types, never a `Wire` one: each peer names a player by its own
-Session ID type (`harness::SessionId` for the harness's API and ClientRuntime;
-`server::SessionId` for `server::Match` and `server::Host`), a body by its own
-Entity ID type (`harness::EntityId`, which ClientRuntime converts at its own
-edge into `presentation::EntityId`, so `presentation` does not depend on the
-harness; `server::EntityId`, which `server::Host` hands SimulationWorld and
-`replication` as the `simulation::EntityId` of the same number), a pack by
-`assets::PackHash`, and a refusal by its own `JoinRefusal`;
-`tests/protocol_boundary.cmake` fails the build's tests if one of their headers
-names the protocol, or a `presentation` header the harness.
+(`augusta_link`) and nowhere else: `host::Host` and `harness::Session` hand it
+the engine's types right before Encode and take them back right after Decode.
+The Link owns the transport end to end, too: the client's connection, the
+server's listening socket and one channel per peer, and the replay server's
+endpoint of its own (ADR-0051), so the Host and the Harness never link
+`augusta_networking`. Admission works on the peer identity the Link hands the
+Host, and the Connection health collector and the client's netcode stats read
+each peer's round trip, loss and queue from the Link, in its own types. Its
+conversions are stateless functions in an internal target of their own
+(`augusta_link_messages`), with no transport beneath, which also splits a tick's
+Commands into messages of at most `protocol::kMaxCommandsPerMessage` each, so
+the Harness never sees the bound. The capture module (`augusta/capture.h`),
+shared by both peers, writes and reads a Match capture's records: its interface
+speaks the engine's types, and it converts them with `augusta_link_messages`
+alone. Inside each peer, modules pass the engine's types, never a `Wire` one:
+each peer names a player by its own Session ID type (`harness::SessionId` for
+the harness's API and ClientRuntime; `host::SessionId` for `host::Match` and
+`host::Host`), a body by its own Entity ID type (`harness::EntityId`, which
+ClientRuntime converts at its own edge into `presentation::EntityId`, so
+`presentation` does not depend on the harness; `host::EntityId`, which
+`host::Host` hands SimulationWorld and `replication` as the
+`simulation::EntityId` of the same number), a pack by `assets::PackHash`, and a
+refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the
+build's tests if one of their headers names the protocol, or a `presentation`
+header the harness.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's name,
 Join refused gains the _unknown character_ reason, and Join accepted names the
@@ -170,10 +180,10 @@ the capture module for a record, turns the error into a `kInvariantViolated`
 failure naming the message or record type, and the runtime that sent it stops
 (ADR-0033).
 
-**Reliability split.** The sender names a `networking::Reliability` for every
-send (ADR-0003's transport offers both). A message that must arrive, and whose
-loss would leave the two sides disagreeing, is reliable; a message a newer one
-supersedes is unreliable.
+**Reliability split.** The Link sends each message with the reliability below,
+as a `networking::Reliability` (ADR-0003's transport offers both). A message
+that must arrive, and whose loss would leave the two sides disagreeing, is
+reliable; a message a newer one supersedes is unreliable.
 
 | Message             | Direction       | Reliability | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------- | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
