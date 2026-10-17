@@ -3,21 +3,13 @@
 add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
-  PRIVATE
-    augusta_application
-    augusta_assets
-    augusta_client_config
-    augusta_config
-    augusta_failure
-    augusta_version
-    augusta_logging
-    augusta_client_application
-    augusta_client
+  PRIVATE augusta_application augusta_failure augusta_version augusta_logging augusta_client_application augusta_client
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
-# This directory is augustac's Glue: only augustac belongs in it, and a new
-# library here fails the configure (ADR-0060, cmake/AugustaModule.cmake).
-augusta_set_executable_glue(augustac)
+# augustac is Glue: its directory holds it alone, and it links only the
+# application, the client Runtime, failure, logging and version - anything else
+# fails the configure (ADR-0060, cmake/AugustaModule.cmake).
+augusta_set_executable_glue(augustac augusta_client)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)

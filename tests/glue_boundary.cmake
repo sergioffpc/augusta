@@ -1,8 +1,9 @@
-# Executables are Glue (ADR-0060): an executable's own directory holds its
-# entry point, its application and its runtime, and nothing else, and Glue is
-# tested only end to end. The Glue check (cmake/AugustaModule.cmake) turns both
-# into a configure-time error, and this script proves it fires both ways by
-# configuring a fixture build graph (tests/glue_fixture) once per shape.
+# Executables are Glue (ADR-0060): an executable's only target is the
+# executable, which links only the application, its Runtime, failure, logging
+# and version, and no target links an executable. The Glue check
+# (cmake/AugustaModule.cmake) turns each into a configure-time error, and this
+# script proves it fires both ways by configuring a fixture build graph
+# (tests/glue_fixture) once per shape.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -DBINARY_DIR=<scratch dir>
 # [-DGENERATOR=<generator>] -P glue_boundary.cmake`.
@@ -40,100 +41,41 @@ function(configure_fixture case out_failed out_output)
   set(${out_output} "${output}" PARENT_SCOPE)
 endfunction()
 
-# An executable's own three, and a library outside its directory whose name
-# looks like one of its own, configure - with nothing left to except.
+# An executable linking all it may - the application, every target of its
+# Runtime's module, failure, logging, version and a system library - and a test
+# linking that Runtime configure.
 configure_fixture(GLUE failed output)
 if(failed)
-  string(APPEND report "the Glue check rejects an executable's own three Glue targets:\n${output}\n")
-elseif(NOT output MATCHES "0 exception")
-  string(APPEND report "the Glue check does not report how many exceptions are left:\n${output}\n")
+  string(APPEND report "the Glue check refuses an executable linking only what it may:\n${output}\n")
 endif()
 
-# A fourth library beside them does not, and the message says which target,
-# where it is and which decision it breaks.
-configure_fixture(VIOLATION failed output)
+# A second target beside the executable is refused, whatever it is called - its
+# runtime's name included - and the refusal says which target, where it is and
+# which decision it breaks.
+configure_fixture(EXTRA_TARGET failed output)
 if(NOT failed)
-  string(APPEND report "the Glue check lets a library target sit inside an executable:\n${output}\n")
-elseif(NOT output MATCHES "fixture_exe_mechanism \\(exe\\)" OR NOT output MATCHES "ADR-0060")
+  string(APPEND report "the Glue check lets a second target sit inside an executable's directory:\n${output}\n")
+elseif(NOT output MATCHES "fixture_exe_runtime \\(exe\\)" OR NOT output MATCHES "ADR-0060")
   string(APPEND report "the Glue check's refusal names no target, directory or decision:\n${output}\n")
 endif()
 
-# Naming it as an exception lets it through, and the check counts it.
-configure_fixture(EXCEPTED failed output)
-if(failed)
-  string(APPEND report "the Glue check refuses an excepted library target:\n${output}\n")
-elseif(NOT output MATCHES "1 exception")
-  string(APPEND report "the Glue check does not count the exception it allowed:\n${output}\n")
-endif()
-
-# Once it has moved out, the entry naming it is a lie, and the check says so:
-# a migration cannot leave the ledger stale.
-configure_fixture(STALE failed output)
+# An executable linking a module that is not its Runtime's, nor the
+# application, failure, logging or version, is refused, and the refusal names
+# the link.
+configure_fixture(LINK_REFUSED failed output)
 if(NOT failed)
-  string(APPEND report "the Glue check keeps an exception naming a target nothing defines:\n${output}\n")
-elseif(NOT output MATCHES "fixture_exe_mechanism")
-  string(APPEND report "the Glue check's stale-exception refusal names no entry:\n${output}\n")
+  string(APPEND report "the Glue check lets an executable link a module it may not:\n${output}\n")
+elseif(NOT output MATCHES "fixture_exe -> fixture_exe_module" OR NOT output MATCHES "ADR-0060")
+  string(APPEND report "the Glue check's refusal of a link names no link or decision:\n${output}\n")
 endif()
 
-# An executable a build leaves out altogether - augustac, on the Linux jobs
-# that configure with AUGUSTA_CLIENT=OFF - never registers its directory, so
-# its own entries are neither counted nor read as stale.
-configure_fixture(UNBUILT failed output)
-if(failed)
-  string(APPEND report "the Glue check reads the exceptions of an executable this build leaves out:\n${output}\n")
-elseif(NOT output MATCHES "0 exception")
-  string(APPEND report "the Glue check counts the exceptions of an executable this build leaves out:\n${output}\n")
-endif()
-
-# Glue is tested only end to end, so a test that links an executable's runtime
-# without saying so is refused, and the refusal names the test and what it
-# links.
-configure_fixture(TEST_UNIT failed output)
-if(NOT failed)
-  string(APPEND report "the Glue check lets an untagged test link an executable's runtime:\n${output}\n")
-elseif(NOT output MATCHES "fixture_test" OR NOT output MATCHES "fixture_exe_runtime" OR NOT output MATCHES "ADR-0060")
-  string(APPEND report "the Glue check's refusal names no test, Glue target or decision:\n${output}\n")
-endif()
-
-# Declaring the test end to end is what makes its own executable's runtime
-# allowed, so the application-boundary tests stay possible.
-configure_fixture(TEST_END_TO_END failed output)
-if(failed)
-  string(APPEND report "the Glue check refuses an end-to-end test its own executable's runtime:\n${output}\n")
-endif()
-
-# Another executable's Glue is refused whatever kind the test declares, and so
-# is the executable itself: an end-to-end test drives its own executable, and
-# it drives it through what that executable is built from.
-configure_fixture(TEST_FOREIGN failed output)
-if(NOT failed)
-  string(APPEND report "the Glue check lets an end-to-end test link another executable's runtime:\n${output}\n")
-elseif(NOT output MATCHES "fixture_test -> fixture_other_runtime")
-  string(APPEND report "the Glue check's cross-executable refusal names no test or Glue target:\n${output}\n")
-endif()
-
+# A test linking the executable itself is refused: an end-to-end test links a
+# Runtime, never an executable.
 configure_fixture(TEST_EXECUTABLE failed output)
 if(NOT failed)
-  string(APPEND report "the Glue check lets an end-to-end test link the executable itself:\n${output}\n")
-elseif(NOT output MATCHES "fixture_test -> fixture_exe:")
-  string(APPEND report "the Glue check's refusal of an executable names no test:\n${output}\n")
-endif()
-
-# The same ledger excuses a test that links Glue, so a suite that predates the
-# rule still configures, and the entry is counted among what is left.
-configure_fixture(TEST_EXCEPTED failed output)
-if(failed)
-  string(APPEND report "the Glue check refuses an excepted test that links an executable's runtime:\n${output}\n")
-elseif(NOT output MATCHES "1 exception")
-  string(APPEND report "the Glue check does not count the excepted test it allowed:\n${output}\n")
-endif()
-
-# Once that test links a module instead, the entry naming it excuses nothing.
-configure_fixture(TEST_STALE failed output)
-if(NOT failed)
-  string(APPEND report "the Glue check keeps an exception naming a test that links no Glue:\n${output}\n")
-elseif(NOT output MATCHES "fixture_test \\(fixture_exe\\)")
-  string(APPEND report "the Glue check's stale-test refusal names no entry:\n${output}\n")
+  string(APPEND report "the Glue check lets a test link an executable:\n${output}\n")
+elseif(NOT output MATCHES "fixture_test -> fixture_exe")
+  string(APPEND report "the Glue check's refusal of a test names no test or executable:\n${output}\n")
 endif()
 
 if(report)
@@ -142,5 +84,5 @@ if(report)
 endif()
 message(
   STATUS
-  "glue_boundary: the Glue check refuses a library target inside an executable and a test that links Glue it may not"
+  "glue_boundary: the Glue check refuses a second target inside an executable, a link an executable may not have and a test that links an executable"
 )

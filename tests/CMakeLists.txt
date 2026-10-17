@@ -670,14 +670,12 @@ add_test(
     -DGENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_boundary.cmake
 )
 
-# Executables are Glue (ADR-0060): the Glue check refuses a library target
-# defined inside an executable's own directory, allows that executable's own
-# three and a library outside it, lets a named exception through and counts
-# what is left, and refuses an exception naming a library that has moved out.
-# It also refuses a test that links Glue unless the test declares itself an
-# end-to-end test of that executable, and then only its application or runtime.
-# It only configures a fixture build graph, with no compiler, so it builds
-# nothing.
+# Executables are Glue (ADR-0060): the Glue check refuses a second target
+# inside an executable's own directory, an executable that links more than the
+# application, its Runtime, failure, logging and version, and a test that links
+# an executable, and allows an executable linking all of those and a test
+# linking its Runtime. It only configures a fixture build graph, with no
+# compiler, so it builds nothing.
 add_test(
   NAME augusta_glue_boundary
   COMMAND

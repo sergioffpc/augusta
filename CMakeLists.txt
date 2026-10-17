@@ -231,7 +231,7 @@ augusta_check_module_scopes()
 add_subdirectory(tests EXCLUDE_FROM_ALL)
 
 # Every target is now defined, so what sits inside src/client and src/server is
-# settled - only their Glue may be there - and so is what each test links: the
-# check reads the tests too, so it runs after them (ADR-0060 - see
+# settled - only the executables may be there - and so is what each target
+# links: the check reads the tests too, so it runs after them (ADR-0060 - see
 # cmake/AugustaModule.cmake).
 augusta_check_executable_glue()

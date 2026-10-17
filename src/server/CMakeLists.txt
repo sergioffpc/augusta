@@ -5,8 +5,6 @@ target_link_libraries(
   augustad
   PRIVATE
     augusta_application
-    augusta_config
-    augusta_server_config
     augusta_server_application
     augusta_server_crash
     augusta_version
@@ -16,9 +14,10 @@ target_link_libraries(
 # The headless server itself, not only its libraries: a client-only module
 # linked straight into it fails the configure (tests/server_boundary.cmake).
 augusta_set_module_scope(augustad SERVER_ONLY)
-# This directory is augustad's Glue: only augustad belongs in it, and a new
-# library here fails the configure (ADR-0060, cmake/AugustaModule.cmake).
-augusta_set_executable_glue(augustad)
+# augustad is Glue: its directory holds it alone, and it links only the
+# application, the server Runtime, failure, logging and version - anything else
+# fails the configure (ADR-0060, cmake/AugustaModule.cmake).
+augusta_set_executable_glue(augustad augusta_server)
 
 # On Linux the debug info is split off into augustad.debug beside it (ADR-0047).
 if(NOT WIN32)
