@@ -20,6 +20,7 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/intent.h"
+#include "augusta/link.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"

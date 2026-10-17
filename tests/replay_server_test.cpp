@@ -28,6 +28,7 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"

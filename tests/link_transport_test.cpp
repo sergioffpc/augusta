@@ -1,6 +1,5 @@
 #include <cstddef>
 #include <optional>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>

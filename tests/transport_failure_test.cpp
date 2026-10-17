@@ -17,6 +17,7 @@
 #include "augusta/host_metrics.h"
 #include "augusta/limits.h"
 #include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"

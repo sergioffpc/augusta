@@ -28,6 +28,7 @@
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
 #include "augusta/link_mapping.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
