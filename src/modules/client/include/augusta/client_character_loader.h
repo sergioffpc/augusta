@@ -8,9 +8,9 @@
 #include <string_view>
 
 #include "augusta/assets.h"
+#include "augusta/client_scene_loader.h"
 #include "augusta/math.h"
 #include "augusta/renderer.h"
-#include "scene_loader.h"
 
 /// \file
 /// Resolves what the client needs of a character (ADR-0040, ADR-0042): the mesh

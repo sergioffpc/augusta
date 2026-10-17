@@ -51,8 +51,8 @@ std::string DescribeSceneError(const SceneError& error);
 
 /// Builds the render scene for scene, resolving each node's mesh through
 /// resolve_mesh; eye is the local player's (LoadCharacterEye in
-/// character_loader.h), where its camera sits above the first spawn point. The
-/// error names the node or mesh that could not be used.
+/// client_character_loader.h), where its camera sits above the first spawn
+/// point. The error names the node or mesh that could not be used.
 std::expected<renderer::Scene, SceneError> BuildRenderScene(const assets::SceneData& scene,
                                                             const MeshResolver& resolve_mesh, const math::Vec3& eye);
 

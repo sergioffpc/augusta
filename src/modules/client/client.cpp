@@ -1,4 +1,4 @@
-#include "runtime.h"
+#include "augusta/client.h"
 
 #include <algorithm>
 #include <atomic>
@@ -17,8 +17,10 @@
 
 #include <nvtx3/nvtx3.hpp>
 
-#include "application.h"
 #include "augusta/audio.h"
+#include "augusta/client_application.h"
+#include "augusta/client_character_loader.h"
+#include "augusta/client_content.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -39,8 +41,6 @@
 #include "augusta/runner.h"
 #include "augusta/tick.h"
 #include "augusta/window.h"
-#include "character_loader.h"
-#include "content.h"
 #include "frame_mapping.h"
 #include "lobby_readiness.h"
 #include "net_stats.h"
@@ -53,7 +53,7 @@ namespace {
 // when unwinding past Run() due to an exception from the Main/Render loop
 // body. This is the only place thread cleanup happens; ~ClientRuntime relies
 // on Run() having already run it (see that destructor's own doc comment in
-// runtime.h).
+// augusta/client.h).
 struct RunnerJoiner {
   std::optional<harness::Runner>& runner;
 

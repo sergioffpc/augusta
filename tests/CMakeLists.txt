@@ -627,10 +627,10 @@ target_link_libraries(augusta_simulation_mapping_tests PRIVATE augusta_host GTes
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
-# the Link converts (augusta/link_messages.h). Nor does a presentation header name
-# the harness: the client converts (src/client/frame_mapping.h). Nor does the
-# protocol itself include or link anything but augusta_math, augusta_tick and
-# augusta_limits. A source scan, so it builds nothing.
+# the Link converts (augusta/link_messages.h). Nor does a presentation header
+# name the harness: the client converts (src/modules/client/frame_mapping.h).
+# Nor does the protocol itself include or link anything but augusta_math,
+# augusta_tick and augusta_limits. A source scan, so it builds nothing.
 add_test(
   NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake
@@ -773,21 +773,23 @@ target_link_libraries(
 gtest_discover_tests(augusta_renderer_device_choice_tests)
 
 if(AUGUSTA_CLIENT)
-  # The client's private libraries' targets build with the client, on Windows
-  # and Linux - though only the smoke test below links the Renderer.
+  # The client module's internal targets build with the client, on Windows
+  # and Linux - though only the smoke test below links the Renderer. Its
+  # private headers are reached through its directory, as the renderer's are.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
-  target_link_libraries(augusta_client_scene_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
+  target_link_libraries(augusta_client_scene_tests PRIVATE augusta_client_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_scene_tests)
 
   add_executable(augusta_client_character_tests client_character_test.cpp)
-  target_link_libraries(augusta_client_character_tests PRIVATE augustac_content GTest::gtest GTest::gtest_main)
+  target_link_libraries(augusta_client_character_tests PRIVATE augusta_client_content GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_character_tests)
 
   add_executable(augusta_client_frame_mapping_tests client_frame_mapping_test.cpp)
   target_link_libraries(
     augusta_client_frame_mapping_tests
-    PRIVATE augustac_frame_mapping GTest::gtest GTest::gtest_main
+    PRIVATE augusta_client_frame_mapping GTest::gtest GTest::gtest_main
   )
+  target_include_directories(augusta_client_frame_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
   # Links networking and PhysX through the harness, so the same first-launch
   # cost applies as above.
   gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
@@ -795,15 +797,16 @@ if(AUGUSTA_CLIENT)
   add_executable(augusta_client_lobby_readiness_tests client_lobby_readiness_test.cpp)
   target_link_libraries(
     augusta_client_lobby_readiness_tests
-    PRIVATE augustac_lobby_readiness GTest::gtest GTest::gtest_main
+    PRIVATE augusta_client_lobby_readiness GTest::gtest GTest::gtest_main
   )
+  target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
 
   add_executable(augusta_client_application_tests client_application_test.cpp)
   target_link_libraries(
     augusta_client_application_tests
     PRIVATE
-      augustac_application
+      augusta_client_application
       augusta_client_config
       augusta_config
       augusta_failure
@@ -811,9 +814,6 @@ if(AUGUSTA_CLIENT)
       GTest::gtest
       GTest::gtest_main
   )
-  # It drives augustac end to end, which is the only way Glue is tested
-  # (ADR-0060), so it is allowed augustac's own application.
-  augusta_set_end_to_end_test(augusta_client_application_tests augustac)
   target_compile_definitions(
     augusta_client_application_tests
     PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
@@ -821,7 +821,8 @@ if(AUGUSTA_CLIENT)
   gtest_discover_tests(augusta_client_application_tests DISCOVERY_TIMEOUT 30)
 
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
-  target_link_libraries(augusta_client_net_stats_tests PRIVATE augustac_net_stats GTest::gtest GTest::gtest_main)
+  target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)
+  target_include_directories(augusta_client_net_stats_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,

@@ -39,7 +39,8 @@ if(AUGUSTA_TOOLS)
   endif()
 endif()
 
-# The client (src/client) and its Renderer (src/modules/renderer), on Windows
+# The client (src/client, src/modules/client) and its Renderer
+# (src/modules/renderer), on Windows
 # and Linux (ADR-0006): on by default, so `cmake --preset linux` builds augustac
 # and its tests too. With it, vcpkg installs the manifest's client feature,
 # whose GLFW needs the system's X11, Wayland and xkbcommon development files on
@@ -210,9 +211,11 @@ if(AUGUSTA_COVERAGE)
 endif()
 # The client renders through NVRHI on Vulkan, on Windows and Linux (ADR-0059).
 # What its Renderer decides apart from the GPU builds and is tested in every
-# build; the Renderer itself and the client that links it, with AUGUSTA_CLIENT.
+# build; the Renderer itself, the client Runtime that links it and augustac,
+# with AUGUSTA_CLIENT.
 add_subdirectory(src/modules/renderer)
 if(AUGUSTA_CLIENT)
+  add_subdirectory(src/modules/client)
   add_subdirectory(src/client)
 endif()
 

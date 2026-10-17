@@ -1,5 +1,5 @@
-# Tags each augusta_* module target (and the runtime targets and executables,
-# augustac_runtime/augustad_runtime and augustac/augustad) with which side
+# Tags each augusta_* module target (and the runtime target and executables,
+# augustad_runtime and augustac/augustad) with which side
 # of the client/server split it belongs to, and checks that no tagged
 # target's declared dependencies cross a boundary it isn't allowed to
 # cross - turning
@@ -64,7 +64,7 @@ function(augusta_check_module_scopes)
 
   foreach(target ${modules})
     # Not every tagged target exists on every platform (augusta_renderer
-    # and augustac_runtime are only added with AUGUSTA_CLIENT - see the root
+    # and augusta_client are only added with AUGUSTA_CLIENT - see the root
     # CMakeLists.txt).
     if(NOT TARGET ${target})
       continue()
@@ -129,14 +129,6 @@ endfunction()
 # go away together once both are empty.
 
 set(AUGUSTA_GLUE_EXCEPTIONS_augustad augustad_liveness augustad_metrics augustad_connection_health augustad_crash)
-
-set(
-  AUGUSTA_GLUE_EXCEPTIONS_augustac
-  augustac_content
-  augustac_frame_mapping
-  augustac_net_stats
-  augustac_lobby_readiness
-)
 
 set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES "")
 
