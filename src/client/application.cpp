@@ -75,11 +75,12 @@ std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
                                             .detail = harness::DescribeScriptError(script.error())});
   }
   if (script->torn) {
-    LW("subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
-       reenact.capture.string());
+    LOG_WARNING(
+        "subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
+        reenact.capture.string());
   }
-  LI("subsystem=client event=reenacting capture={} player={} character={} commands={}", reenact.capture.string(),
-     reenact.player, script->character, script->commands.size());
+  LOG_INFO("subsystem=client event=reenacting capture={} player={} character={} commands={}", reenact.capture.string(),
+           reenact.player, script->character, script->commands.size());
   return *std::move(script);
 }
 
@@ -102,7 +103,7 @@ std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientCon
         pack_path, assets::DescribeVerifiedPackError(verified.error(), pack_path, file_config.public_key_path)));
   }
   auto pack = std::make_unique<const assets::Pack>(*std::move(verified));
-  LI("subsystem=client event=pack_verified path={}", pack->Path().string());
+  LOG_INFO("subsystem=client event=pack_verified path={}", pack->Path().string());
 
   auto content = LoadClientContent(*pack, file_config.character);
   if (!content) {

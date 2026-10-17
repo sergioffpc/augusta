@@ -53,8 +53,8 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
                          .context = {{.key = "directory", .value = config.capture_directory.string()}},
                          .detail = error.message()});
   }
-  LI("subsystem=capture event=capture_enabled directory={} mode={}", config.capture_directory.string(),
-     CaptureModeName(config.capture_mode));
+  LOG_INFO("subsystem=capture event=capture_enabled directory={} mode={}", config.capture_directory.string(),
+           CaptureModeName(config.capture_mode));
   observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,
                                     capture::Header{.engine_version = std::string(EngineVersion()),
@@ -104,7 +104,7 @@ Host::Impl::Impl(const HostConfig& config, Scenario scenario, scripting::Engine 
           .reenactments = config.reenactments,
       }) {
   if (config.reenactments) {
-    LW("subsystem=serverruntime event=reenactments_enabled");
+    LOG_WARNING("subsystem=serverruntime event=reenactments_enabled");
   }
 }
 
@@ -172,10 +172,11 @@ void Host::RecordTiming(const tick::Timing& timing) {
     return;
   }
   const std::lock_guard<std::mutex> lock(impl_->mutex);
-  LD("subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
-     "messages={} stale={} dropped={} overflow={} misbehaving={}",
-     impl_->tick.load(), impl_->players.size(), impl_->match.InMatch(), second->ticks, second->late, second->overrun,
-     second->messages, second->stale, second->dropped, second->overflow, second->misbehaving);
+  LOG_DEBUG(
+      "subsystem=serverruntime event=heartbeat tick={} players={} in_match={} ticks={} late={} overrun={} "
+      "messages={} stale={} dropped={} overflow={} misbehaving={}",
+      impl_->tick.load(), impl_->players.size(), impl_->match.InMatch(), second->ticks, second->late, second->overrun,
+      second->messages, second->stale, second->dropped, second->overflow, second->misbehaving);
 }
 
 std::size_t Host::QueuedCommands(SessionId session) const {

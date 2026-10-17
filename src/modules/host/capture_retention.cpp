@@ -153,7 +153,7 @@ void CaptureDirectory::DeleteOldest() {
     }
   }
   if (!failure.has_value()) {
-    LI("subsystem=capture event=capture_deleted match={} path={}", match_, oldest.path.string());
+    LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", match_, oldest.path.string());
     if (observer_.on_deleted) {
       observer_.on_deleted();
     }
@@ -164,8 +164,8 @@ void CaptureDirectory::DeleteOldest() {
   }
   if (!failure_logged_) {
     failure_logged_ = true;
-    LW("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_, oldest.path.string(),
-       *failure);
+    LOG_WARNING("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_,
+                oldest.path.string(), *failure);
   }
 }
 

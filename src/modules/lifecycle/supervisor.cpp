@@ -99,12 +99,12 @@ void Supervisor::RecordFailure(std::string_view thread, failure::Failure failure
   // outside came before it. Only a failure after an earlier recorded one is a
   // consequence of that one.
   if (first) {
-    LE("subsystem=supervisor event=worker_failed {}", failure::DescribeFailure(failure));
+    LOG_ERROR("subsystem=supervisor event=worker_failed {}", failure::DescribeFailure(failure));
     if (on_first_cause_) {
       on_first_cause_(failure);
     }
   } else {
-    LW("subsystem=supervisor event=worker_failed_after_first_cause {}", failure::DescribeFailure(failure));
+    LOG_WARNING("subsystem=supervisor event=worker_failed_after_first_cause {}", failure::DescribeFailure(failure));
   }
 }
 

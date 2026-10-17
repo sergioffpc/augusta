@@ -233,8 +233,8 @@ VoiceHandle MiniaudioOutput::Play(SoundHandle sound, const std::optional<math::V
     IPLBinauralEffectSettings effect_settings{.hrtf = hrtf_};
     if (const IPLerror error = iplBinauralEffectCreate(context_, &audio_settings_, &effect_settings, &voice.effect);
         error != IPL_STATUS_SUCCESS) {
-      LW("subsystem=audio event=voice_dropped reason=\"binaural effect creation failed\" error={}",
-         static_cast<int>(error));
+      LOG_WARNING("subsystem=audio event=voice_dropped reason=\"binaural effect creation failed\" error={}",
+                  static_cast<int>(error));
       return VoiceHandle{};
     }
   }

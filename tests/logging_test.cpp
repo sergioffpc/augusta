@@ -48,7 +48,7 @@ TEST(LoggingInit, CanBeCalledTwiceAndLoggedThrough) {
   augusta::logging::Init();
   augusta::logging::Init();
 
-  LI("subsystem=test event=logged value={}", 42);
+  LOG_INFO("subsystem=test event=logged value={}", 42);
   SUCCEED();
 }
 
@@ -73,8 +73,8 @@ TEST(LoggingRuntimeLevel, CallsUnderItDoNotEvaluateTheirArguments) {
   int evaluated = 0;
   [[maybe_unused]] const auto side_effect = [&evaluated] { return ++evaluated; };
 
-  LT("subsystem=test event=dropped value={}", side_effect());
-  LD("subsystem=test event=dropped value={}", side_effect());
+  LOG_TRACE("subsystem=test event=dropped value={}", side_effect());
+  LOG_DEBUG("subsystem=test event=dropped value={}", side_effect());
 
   EXPECT_EQ(evaluated, 0);
 }
@@ -85,7 +85,7 @@ TEST(LoggingRuntimeLevel, CallsAtOrAboveItAreWrittenInTheLineFormat) {
 
   const auto before = std::chrono::system_clock::now();
   testing::internal::CaptureStdout();
-  LI("subsystem=test event=written value={}", 7);
+  LOG_INFO("subsystem=test event=written value={}", 7);
   const std::string written = testing::internal::GetCapturedStdout();
   const auto after = std::chrono::system_clock::now();
 
@@ -97,7 +97,7 @@ TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {
   Throttle throttle{std::chrono::hours{1}};
   int evaluated = 0;
 
-  LW_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_WARNING_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
 
   EXPECT_EQ(evaluated, 0);
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
@@ -108,10 +108,10 @@ TEST(LoggingRuntimeLevel, EveryLevelsLimitedVariantUnderItTakesNoThrottleSlot) {
   Throttle throttle{std::chrono::hours{1}};
   int evaluated = 0;
 
-  LT_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
-  LD_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
-  LI_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
-  LE_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_TRACE_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_DEBUG_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_INFO_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_ERROR_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
 
   EXPECT_EQ(evaluated, 0);
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);
@@ -125,7 +125,7 @@ TEST(LoggingRuntimeLevel, ALimitedLineIsWrittenOnceAnInterval) {
   const auto before = std::chrono::system_clock::now();
   testing::internal::CaptureStdout();
   for (int i = 0; i < 3; ++i) {
-    LI_LIMITED(throttle, "subsystem=test event=limited value={}", i);
+    LOG_INFO_LIMITED(throttle, "subsystem=test event=limited value={}", i);
   }
   const std::string written = testing::internal::GetCapturedStdout();
   const auto after = std::chrono::system_clock::now();

@@ -32,11 +32,12 @@ std::string DescribeOutputError(const OutputError& error) {
 Engine::Engine() {
   auto output = OpenOutput();
   if (!output) {
-    LW("subsystem=audio event=output_unavailable reason=\"{}\" fallback=silent", DescribeOutputError(output.error()));
+    LOG_WARNING("subsystem=audio event=output_unavailable reason=\"{}\" fallback=silent",
+                DescribeOutputError(output.error()));
     return;
   }
   output_ = *std::move(output);
-  LI("subsystem=audio event=output_opened");
+  LOG_INFO("subsystem=audio event=output_opened");
 }
 
 Engine::~Engine() = default;

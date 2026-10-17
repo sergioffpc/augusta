@@ -37,7 +37,7 @@ std::expected<renderer::Scene, failure::Failure> LoadScene(const assets::Pack& p
     return std::unexpected(
         ContentFailure(pack, {{.key = "asset", .value = "scene"}}, DescribeSceneError(scene.error())));
   }
-  LI("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
+  LOG_INFO("subsystem=client event=scene_loaded meshes={}", scene->meshes.size());
   return *std::move(scene);
 }
 
@@ -78,7 +78,7 @@ std::expected<Map, failure::Failure> LoadMap(const assets::Pack& pack) {
     return std::unexpected(
         ContentFailure(pack, {{.key = "asset", .value = "collision"}}, map::DescribeMapError(collision.error())));
   }
-  LI("subsystem=client event=map_loaded colliders={}", collision->size());
+  LOG_INFO("subsystem=client event=map_loaded colliders={}", collision->size());
   return Map{.collision = *std::move(collision)};
 }
 
@@ -90,7 +90,7 @@ std::expected<audio::CueSounds, failure::Failure> LoadCueSounds(const assets::Pa
     return std::unexpected(
         ContentFailure(pack, {{.key = "asset", .value = "cue_sounds"}}, audio::DescribeCueSoundError(sounds.error())));
   }
-  LI("subsystem=client event=cue_sounds_loaded cues={}", sounds->size());
+  LOG_INFO("subsystem=client event=cue_sounds_loaded cues={}", sounds->size());
   return *std::move(sounds);
 }
 

@@ -118,7 +118,8 @@ Response Respond(const Sources& sources, const Request& request) {
     }
     return TextResponse(request, http::status::not_found, kTextContentType, "not found\n");
   } catch (const std::exception& error) {
-    LW("subsystem=metrics event=request_failed target={} error={}", std::string(request.target()), error.what());
+    LOG_WARNING("subsystem=metrics event=request_failed target={} error={}", std::string(request.target()),
+                error.what());
     return TextResponse(request, http::status::internal_server_error, kTextContentType, "internal error\n");
   }
 }
@@ -165,7 +166,7 @@ class Session : public std::enable_shared_from_this<Session> {
   }
 
   void Drop(const char* error) {
-    LW("subsystem=metrics event=connection_failed error={}", error);
+    LOG_WARNING("subsystem=metrics event=connection_failed error={}", error);
     beast::error_code ignored;
     stream_.socket().close(ignored);
   }
@@ -280,8 +281,8 @@ struct MetricsEndpoint::Impl {
       Unavailable(EndpointFailure(port, std::move(detail)));
       return;
     }
-    LW("subsystem=metrics event=accept_retrying attempt={} retry_in_ms={} {}", accept_failures, delay->count(),
-       failure::DescribeFailure(EndpointFailure(port, std::move(detail))));
+    LOG_WARNING("subsystem=metrics event=accept_retrying attempt={} retry_in_ms={} {}", accept_failures, delay->count(),
+                failure::DescribeFailure(EndpointFailure(port, std::move(detail))));
     retry.expires_after(*delay);
     retry.async_wait([this](beast::error_code error) {
       if (!error) {
@@ -304,7 +305,7 @@ struct MetricsEndpoint::Impl {
     acceptor.close(ignored);
     retry.cancel();
     io.stop();
-    LE("subsystem=metrics event=unavailable {}", failure::DescribeFailure(failure));
+    LOG_ERROR("subsystem=metrics event=unavailable {}", failure::DescribeFailure(failure));
     available.store(false, std::memory_order_release);
   }
 

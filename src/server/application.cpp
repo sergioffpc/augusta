@@ -71,7 +71,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
     return std::unexpected(ContentFailure(
         pack_path, assets::DescribeVerifiedPackError(pack.error(), pack_path, file_config.public_key_path)));
   }
-  LI("subsystem=server event=pack_verified path={}", pack_path.string());
+  LOG_INFO("subsystem=server event=pack_verified path={}", pack_path.string());
 
   auto content = LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {

@@ -9,11 +9,11 @@ namespace augusta::application {
 
 int Conclude(std::string_view executable, const Outcome& outcome) {
   if (!outcome.has_value()) {
-    LI("subsystem={} event=exiting exit_status={}", executable, kStoppedExitStatus);
+    LOG_INFO("subsystem={} event=exiting exit_status={}", executable, kStoppedExitStatus);
     return kStoppedExitStatus;
   }
-  LC("subsystem={} event=terminal_failure {} exit_status={}", executable, failure::DescribeFailure(*outcome),
-     kFailedExitStatus);
+  LOG_CRITICAL("subsystem={} event=terminal_failure {} exit_status={}", executable, failure::DescribeFailure(*outcome),
+               kFailedExitStatus);
   return kFailedExitStatus;
 }
 

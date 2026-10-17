@@ -1,15 +1,15 @@
 # Logging: `augusta::logging`, Console-Only
 
-`augusta::logging` is a module behind fast macros
-(`LT`/`LD`/`LI`/`LW`/`LE`/`LC`), backed by a single process-wide, thread-safe
-logger writing only to a colored console sink — no file sink, no rotation, for
-either client or server. The library underneath is Boost.Log (ADR-0036). The
-server is deployed to k3s (see ADR-0026), where stdout is captured by the
-platform and shipped to a Logstash pipeline; writing to a local file inside the
-pod would be redundant and wouldn't survive pod eviction, since k8s gives no
-guarantee of persistent local disk across restarts. This follows
-twelve-factor-style logging: the app treats logs as an event stream to stdout
-and leaves capture/routing to the execution environment.
+`augusta::logging` is a module behind fast macros (`LOG_TRACE`/`LOG_DEBUG`/
+`LOG_INFO`/`LOG_WARNING`/`LOG_ERROR`/`LOG_CRITICAL`), backed by a single
+process-wide, thread-safe logger writing only to a colored console sink — no
+file sink, no rotation, for either client or server. The library underneath is
+Boost.Log (ADR-0036). The server is deployed to k3s (see ADR-0026), where stdout
+is captured by the platform and shipped to a Logstash pipeline; writing to a
+local file inside the pod would be redundant and wouldn't survive pod eviction,
+since k8s gives no guarantee of persistent local disk across restarts. This
+follows twelve-factor-style logging: the app treats logs as an event stream to
+stdout and leaves capture/routing to the execution environment.
 
 Compiled-in log level is tied to build type (`AUGUSTA_LOG_ACTIVE_LEVEL`): Debug
 keeps `trace` and above, Release strips everything below `info` at compile time.

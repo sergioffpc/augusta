@@ -45,8 +45,8 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
                                    std::chrono::steady_clock::time_point now) {
   const auto admission = match.Join(peer, request);
   if (!admission.has_value()) {
-    LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
-       DescribeJoinRefusal(admission.error()));
+    LOG_INFO("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
+             DescribeJoinRefusal(admission.error()));
     Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(admission.error())}));
     metrics.joins_refused[admission.error()].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
@@ -57,12 +57,12 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
     SetLobbyGauges();
-    LI("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
-       PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
-       match.GetRoster().version);
+    LOG_INFO("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
+             PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
+             match.GetRoster().version);
     if (request.spawn.has_value()) {
-      LI("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
-         SessionNumber(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);
+      LOG_INFO("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
+               SessionNumber(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);
     }
     SendRoster();
   }
@@ -71,11 +71,11 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
 void Host::Impl::HandleReady(networking::PeerId peer, std::uint32_t version,
                              std::chrono::steady_clock::time_point now) {
   if (match.Ready(peer, version)) {
-    LI("subsystem=serverruntime event=ready peer={} version={}", PeerNumber(peer), version);
+    LOG_INFO("subsystem=serverruntime event=ready peer={} version={}", PeerNumber(peer), version);
   } else {
     // The Roster can change while a Ready is in flight; the client sends another for the new one.
-    LD("subsystem=serverruntime event=ready_ignored peer={} version={} current={}", PeerNumber(peer), version,
-       match.GetRoster().version);
+    LOG_DEBUG("subsystem=serverruntime event=ready_ignored peer={} version={} current={}", PeerNumber(peer), version,
+              match.GetRoster().version);
     Judge(peer, PeerRejection::kStaleReady, now);
   }
 }
@@ -86,15 +86,16 @@ void Host::Impl::HandleCommands(networking::PeerId peer, const std::vector<Seque
   if (!session.has_value()) {
     metrics.commands_received.Increment(commands.size());
     metrics.commands_before_joining.Increment(commands.size());
-    LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
-               PeerNumber(peer));
+    LOG_WARNING_LIMITED(drop_warnings,
+                        "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
+                        PeerNumber(peer));
     Judge(peer, PeerRejection::kCommandsBeforeJoining, now);
     return;
   }
   if (!match.IsPlaying(*session)) {
     metrics.commands_received.Increment(commands.size());
     metrics.commands_outside_match.Increment(commands.size());
-    LT("subsystem=serverruntime event=dropped peer={} reason=\"commands outside a match\"", PeerNumber(peer));
+    LOG_TRACE("subsystem=serverruntime event=dropped peer={} reason=\"commands outside a match\"", PeerNumber(peer));
     Judge(peer, PeerRejection::kCommandsOutsideMatch, now);
     return;
   }
@@ -120,19 +121,21 @@ void Host::Impl::RecordRejection(networking::PeerId peer, const SequencedCommand
   metrics.commands_rejected[rejection].Increment();
   // Commands are repeated until acknowledged, so a stale one is routine.
   if (rejection == Rejection::kStale) {
-    LT("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer), command.sequence,
-       DescribeRejection(rejection));
+    LOG_TRACE("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
+              command.sequence, DescribeRejection(rejection));
   } else {
-    LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
-               PeerNumber(peer), command.sequence, DescribeRejection(rejection));
+    LOG_WARNING_LIMITED(drop_warnings,
+                        "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
+                        PeerNumber(peer), command.sequence, DescribeRejection(rejection));
   }
 }
 
 void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chrono::steady_clock::time_point now) {
   const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(message.payload);
   if (!decoded.has_value()) {
-    LW_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-               PeerNumber(message.from), message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
+    LOG_WARNING_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                        PeerNumber(message.from), message.payload.size(),
+                        protocol::DescribeDecodeError(decoded.error()));
     Judge(message.from, PeerRejection::kUndecodable, now);
     return;
   }
@@ -149,9 +152,10 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
              std::holds_alternative<protocol::ReplayRequestWire>(*decoded)) {
     RefuseAsNoReplayServer(message.from, now);
   } else {
-    LW_LIMITED(drop_warnings,
-               "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
-               PeerNumber(message.from), message.payload.size());
+    LOG_WARNING_LIMITED(
+        drop_warnings,
+        "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
+        PeerNumber(message.from), message.payload.size());
     Judge(message.from, PeerRejection::kNotAClientMessage, now);
   }
 }
@@ -161,8 +165,8 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
 // says what is wrong rather than waiting.
 void Host::Impl::RefuseAsNoReplayServer(networking::PeerId peer, std::chrono::steady_clock::time_point now) {
   constexpr JoinRefusal kReason = JoinRefusal::kNotAReplayServer;
-  LI("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
-     DescribeJoinRefusal(kReason));
+  LOG_INFO("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
+           DescribeJoinRefusal(kReason));
   Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(kReason)}));
   metrics.joins_refused[kReason].Increment();
   Judge(peer, PeerRejection::kJoinRefused, now);
@@ -184,10 +188,11 @@ Verdict Host::Impl::Judge(networking::PeerId peer, PeerRejection rejection, std:
 // departure for a connection this side closes, so the player leaves here.
 void Host::Impl::Expel(networking::PeerId peer, std::string_view reason) {
   if (const std::optional<SessionId> session = match.SessionOf(peer); session.has_value()) {
-    LW("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"", PeerNumber(peer),
-       SessionNumber(*session), reason);
+    LOG_WARNING("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"",
+                PeerNumber(peer), SessionNumber(*session), reason);
   } else {
-    LW("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
+    LOG_WARNING("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer),
+                reason);
   }
   gate.Expelled(peer);
   network.Disconnect(peer);
@@ -211,22 +216,23 @@ void Host::Impl::HandleDisconnect(networking::PeerId peer, Leaving how) {
       break;
     case Departure::kFromLobby:
       metrics.disconnects_from_lobby[how].Increment();
-      LI("subsystem=serverruntime event=lobby_left peer={} session={} how={} players={} version={}", PeerNumber(peer),
-         SessionNumber(*session), LeavingName(how), match.PlayerCount(), match.GetRoster().version);
+      LOG_INFO("subsystem=serverruntime event=lobby_left peer={} session={} how={} players={} version={}",
+               PeerNumber(peer), SessionNumber(*session), LeavingName(how), match.PlayerCount(),
+               match.GetRoster().version);
       SendRoster();
       break;
     case Departure::kFromMatch:
       metrics.disconnects_from_match[how].Increment();
-      LI("subsystem=serverruntime event=match_left peer={} session={} how={} playing={}", PeerNumber(peer),
-         SessionNumber(*session), LeavingName(how), match.Playing().size());
+      LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing={}", PeerNumber(peer),
+               SessionNumber(*session), LeavingName(how), match.Playing().size());
       break;
     case Departure::kEndedMatch:
       // Nobody won a match its last player left, whoever won the one before.
       match_winner = std::nullopt;
       metrics.disconnects_from_match[how].Increment();
       CountMatchEnded(EndReason::kNoPlayersLeft, std::nullopt);
-      LI("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
-         SessionNumber(*session), LeavingName(how));
+      LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
+               SessionNumber(*session), LeavingName(how));
       LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
       break;
   }

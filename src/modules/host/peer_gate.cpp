@@ -74,7 +74,8 @@ void PumpPeers(networking::Server& network, HostMetrics& metrics, std::mutex& mu
     return;
   }
   for (const networking::PeerMessage& message : *received) {
-    LT("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from), message.payload.size());
+    LOG_TRACE("subsystem=serverruntime event=received peer={} bytes={}", PeerNumber(message.from),
+              message.payload.size());
     std::unique_lock<std::mutex> lock(mutex);
     if (gate.WasExpelled(message.from)) {
       continue;

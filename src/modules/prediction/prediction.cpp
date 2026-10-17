@@ -148,9 +148,9 @@ struct World::Impl {
     });
 
     const math::Vec3 jump = replayed.position - tick_state.local_body.position;
-    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f} rifle={}",
-       tick_acknowledgement->sequence, math::Length(authoritative.position - predicted->body.position),
-       math::Length(jump), rifle_differs);
+    LOG_DEBUG("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f} rifle={}",
+              tick_acknowledgement->sequence, math::Length(authoritative.position - predicted->body.position),
+              math::Length(jump), rifle_differs);
     tick_state.total_correction += jump;
     tick_state.local_body = replayed;
     tick_state.rifle_corrections += rifle_differs ? 1U : 0U;

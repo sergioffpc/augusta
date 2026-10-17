@@ -207,7 +207,7 @@ class Dispatch {
     } catch (py::error_already_set& error) {
       error.discard_as_unraisable("augusta_agent: delivering a Report");
     } catch (const std::exception& error) {
-      LE("subsystem=agent event=report_dropped reason=\"{}\"", error.what());
+      LOG_ERROR("subsystem=agent event=report_dropped reason=\"{}\"", error.what());
     }
   }
 

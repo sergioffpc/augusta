@@ -100,11 +100,11 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
     });
     if (!started) {
       started.error().context.push_back({.key = "port", .value = std::to_string(metrics_port)});
-      LE("subsystem=metrics event=unavailable {}", failure::DescribeFailure(started.error()));
+      LOG_ERROR("subsystem=metrics event=unavailable {}", failure::DescribeFailure(started.error()));
       return;
     }
     metrics = *std::move(started);
-    LI("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
+    LOG_INFO("subsystem=serverruntime event=metrics_serving port={}", metrics_port);
   }
 
   // The runtime failure the server met on either thread, if any, for the
@@ -153,7 +153,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   supervisor::WorkerResult TickUntilStopped() {
     const auto delta_time = std::chrono::duration<float>(1.0F / tick_rate_hz);
     const auto tick_duration = std::chrono::duration_cast<tick::Clock::duration>(delta_time);
-    LI("subsystem=serverruntime event=loop_starting loop=simulation");
+    LOG_INFO("subsystem=serverruntime event=loop_starting loop=simulation");
     tick::Clock::time_point deadline = tick::Clock::now();
     while (!workers.StopRequested()) {
       if (std::optional<failure::Failure> lost = CaptureFailureOf(served)) {
@@ -172,7 +172,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
       deadline = tick::NextDeadline(deadline, tick_duration, tick_end);
       std::this_thread::sleep_until(deadline);
     }
-    LI("subsystem=serverruntime event=loop_stopping loop=simulation");
+    LOG_INFO("subsystem=serverruntime event=loop_stopping loop=simulation");
     return {};
   }
 

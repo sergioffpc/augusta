@@ -166,7 +166,7 @@ void Session::ExchangeMessages() {
     return;
   }
   for (const networking::Payload& payload : *received) {
-    LT("subsystem=harness event=received bytes={}", payload.size());
+    LOG_TRACE("subsystem=harness event=received bytes={}", payload.size());
     impl.inbox.Receive(payload);
   }
 }
@@ -221,7 +221,7 @@ void Session::ReportReady(std::uint32_t version) {
     return;
   }
   if (impl_->Send(protocol::ReadyWire{.version = version}, networking::Reliability::kReliable)) {
-    LD("subsystem=harness event=ready version={}", version);
+    LOG_DEBUG("subsystem=harness event=ready version={}", version);
   }
 }
 
