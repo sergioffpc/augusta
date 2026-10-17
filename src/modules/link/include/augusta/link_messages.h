@@ -24,8 +24,8 @@
 /// module reads and writes. The one place a protocol::*Wire type meets an
 /// engine type, for the client's harness, the server's Host and capture alike.
 /// Stateless functions with no transport beneath: pure field-by-field copies,
-/// but for a tick's Commands, which it splits into as many messages as the
-/// protocol's bound needs. Whether a value is one a peer accepts is decided
+/// but for a tick's Commands, of which the tick's one message carries only the
+/// newest within the protocol's bound. Whether a value is one a peer accepts is decided
 /// after, by whoever takes it in. What a peer sends is encoded here too, so a
 /// payload the protocol cannot carry becomes the broken invariant that stops
 /// its runtime (ADR-0033) before anything of it leaves.
@@ -64,6 +64,11 @@ namespace augusta::link {
 [[nodiscard]] EntityBody FromWire(const protocol::EntityStateWire& body);
 
 [[nodiscard]] protocol::AuthoritativeStateWire ToWire(const AuthoritativeState& state);
+/// Fills in state, a message ToWire made, with recipient's own fields alone
+/// (its acknowledged sequence, rifle, health and queued commands), its tick and
+/// bodies left as they were: so one message, its bodies converted once, is
+/// addressed to each recipient in turn.
+void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient);
 [[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);
 
 [[nodiscard]] protocol::ShotWire ToWire(const Shot& shot);
@@ -105,10 +110,14 @@ namespace augusta::link {
 /// A Captured player's Reenact request: a join that names its spawn (ADR-0050).
 [[nodiscard]] JoinRequest FromWire(const protocol::ReenactRequestWire& request);
 
-/// A tick's commands, oldest first, as the messages that carry them, oldest
-/// first: as many as protocol::kMaxCommandsPerMessage needs, none for no
-/// command. Each message's Seen tick is the newest of its own commands'.
-[[nodiscard]] std::vector<protocol::CommandsWire> ToWire(std::span<const SequencedCommand> commands);
+/// The newest of a tick's commands, oldest first, that its one Commands
+/// message carries, as many as the protocol's bound lets: the rest are never
+/// sent, so a sender need keep no more than these.
+[[nodiscard]] std::span<const SequencedCommand> Carried(std::span<const SequencedCommand> commands);
+
+/// A tick's commands, oldest first, as the one message that carries them: the
+/// Carried ones alone. Its Seen tick is the newest of theirs.
+[[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);
 
 /// The commands of one message, oldest first, each with its own Seen time's
 /// tick, never before tick 0.

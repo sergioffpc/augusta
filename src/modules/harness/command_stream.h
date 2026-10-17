@@ -2,7 +2,6 @@
 #define AUGUSTA_HARNESS_COMMAND_STREAM_H_
 
 #include <cstdint>
-#include <deque>
 #include <vector>
 
 #include "augusta/command.h"
@@ -41,7 +40,7 @@ class CommandStream {
 
  private:
   // Keeps command under sequence with the commands server_view does not yet
-  // acknowledge, and returns them all, oldest first.
+  // acknowledge, and returns those one message carries, oldest first.
   std::vector<link::SequencedCommand> Queue(const ServerView& server_view, tick::Sequence sequence,
                                             const command::Command& command);
 
@@ -53,7 +52,7 @@ class CommandStream {
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
-  std::deque<link::SequencedCommand> unacknowledged_;
+  std::vector<link::SequencedCommand> unacknowledged_;
   tick::Sequence next_sequence_ = 1;
 };
 

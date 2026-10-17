@@ -1,11 +1,13 @@
 #include "command_stream.h"
 
+#include <cstddef>
 #include <optional>
 #include <utility>
 #include <vector>
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
+#include "augusta/link_messages.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
@@ -76,14 +78,16 @@ std::vector<link::SequencedCommand> CommandStream::Queue(const ServerView& serve
                                                          const command::Command& command) {
   // Commands the server has already processed need not go again.
   if (server_view.authoritative.has_value()) {
-    while (!unacknowledged_.empty() &&
-           unacknowledged_.front().sequence <= server_view.authoritative->acknowledged_sequence) {
-      unacknowledged_.pop_front();
-    }
+    const tick::Sequence acknowledged = server_view.authoritative->acknowledged_sequence;
+    std::erase_if(unacknowledged_,
+                  [acknowledged](const link::SequencedCommand& sent) { return sent.sequence <= acknowledged; });
   }
-  // However many there are, the Link sends them in as many messages as they need.
+  // Keeps only the newest, those the tick's one message carries: an older one
+  // would never be sent again.
   unacknowledged_.push_back(link::SequencedCommand{.sequence = sequence, .command = command});
-  return {unacknowledged_.begin(), unacknowledged_.end()};
+  const std::size_t carried = link::Carried(unacknowledged_).size();
+  unacknowledged_.erase(unacknowledged_.begin(), unacknowledged_.end() - static_cast<std::ptrdiff_t>(carried));
+  return unacknowledged_;
 }
 
 }  // namespace augusta::harness

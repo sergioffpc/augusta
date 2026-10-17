@@ -364,24 +364,25 @@ EntityBody FromWire(const protocol::EntityStateWire& body) {
 }
 
 protocol::AuthoritativeStateWire ToWire(const AuthoritativeState& state) {
-  protocol::AuthoritativeStateWire result{
-      .tick = state.tick,
-      .bodies = {},
-      .rifle = {.cooldown = state.rifle.cooldown,
-                .reload_remaining = state.rifle.reload_remaining,
-                .recoil_pitch = state.rifle.recoil.pitch,
-                .recoil_yaw = state.rifle.recoil.yaw,
-                .rounds = state.rifle.rounds,
-                .burst_index = state.rifle.burst_index},
-      .health = state.health,
-      .acknowledged_sequence = state.acknowledged_sequence,
-      .queued_commands = state.queued_commands,
-  };
+  protocol::AuthoritativeStateWire result{.tick = state.tick, .bodies = {}};
   result.bodies.reserve(state.bodies.size());
   for (const EntityBody& body : state.bodies) {
     result.bodies.push_back(ToWire(body));
   }
+  Address(result, state);
   return result;
+}
+
+void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient) {
+  state.rifle = {.cooldown = recipient.rifle.cooldown,
+                 .reload_remaining = recipient.rifle.reload_remaining,
+                 .recoil_pitch = recipient.rifle.recoil.pitch,
+                 .recoil_yaw = recipient.rifle.recoil.yaw,
+                 .rounds = recipient.rifle.rounds,
+                 .burst_index = recipient.rifle.burst_index};
+  state.health = recipient.health;
+  state.acknowledged_sequence = recipient.acknowledged_sequence;
+  state.queued_commands = recipient.queued_commands;
 }
 
 AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state) {
@@ -609,15 +610,11 @@ JoinRequest FromWire(const protocol::ReenactRequestWire& request) {
   };
 }
 
-std::vector<protocol::CommandsWire> ToWire(std::span<const SequencedCommand> commands) {
-  constexpr std::size_t kBound = protocol::kMaxCommandsPerMessage;
-  std::vector<protocol::CommandsWire> messages;
-  messages.reserve((commands.size() + kBound - 1) / kBound);
-  for (std::size_t first = 0; first < commands.size(); first += kBound) {
-    messages.push_back(OneMessage(commands.subspan(first, std::min(kBound, commands.size() - first))));
-  }
-  return messages;
+std::span<const SequencedCommand> Carried(std::span<const SequencedCommand> commands) {
+  return commands.last(std::min(commands.size(), protocol::kMaxCommandsPerMessage));
 }
+
+protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands) { return OneMessage(Carried(commands)); }
 
 std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
   std::vector<SequencedCommand> commands;

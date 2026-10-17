@@ -29,14 +29,15 @@ endpoint of its own (ADR-0051), so the Host and the Harness never link
 Host, and the Connection health collector and the client's netcode stats read
 each peer's round trip, loss and queue from the Link, in its own types. Its
 conversions are stateless functions in an internal target of their own
-(`augusta_link_messages`), with no transport beneath, which also splits a tick's
-Commands into messages of at most `protocol::kMaxCommandsPerMessage` each, so
-the Harness never sees the bound. The capture module (`augusta/capture.h`),
-shared by both peers, writes and reads a Match capture's records: its interface
-speaks the engine's types, and it converts them with `augusta_link_messages`
-alone. Inside each peer, modules pass the engine's types, never a `Wire` one:
-each peer names a player by its own Session ID type (`harness::SessionId` for
-the harness's API and ClientRuntime; `host::SessionId` for `host::Match` and
+(`augusta_link_messages`), with no transport beneath, which also keeps only the
+newest of a tick's unacknowledged Commands within
+`protocol::kMaxCommandsPerMessage` in the tick's one Commands message, so the
+Harness never sees the bound. The capture module (`augusta/capture.h`), shared
+by both peers, writes and reads a Match capture's records: its interface speaks
+the engine's types, and it converts them with `augusta_link_messages` alone.
+Inside each peer, modules pass the engine's types, never a `Wire` one: each peer
+names a player by its own Session ID type (`harness::SessionId` for the
+harness's API and ClientRuntime; `host::SessionId` for `host::Match` and
 `host::Host`), a body by its own Entity ID type (`harness::EntityId`, which
 ClientRuntime converts at its own edge into `presentation::EntityId`, so
 `presentation` does not depend on the harness; `host::EntityId`, which

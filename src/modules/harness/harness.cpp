@@ -286,9 +286,7 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);
   if (!tick.send.empty()) {
     // Not accepted, the commands are sent again next tick, as unacknowledged ones always are.
-    for (const protocol::CommandsWire& message : link::ToWire(tick.send)) {
-      impl.Send(message, networking::Reliability::kUnreliable);
-    }
+    impl.Send(link::ToWire(tick.send), networking::Reliability::kUnreliable);
   }
   return tick.state;
 }

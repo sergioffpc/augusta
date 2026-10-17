@@ -1,3 +1,4 @@
+#include <variant>
 #include <vector>
 
 #include <benchmark/benchmark.h>
@@ -35,10 +36,13 @@ void BM_Replication(benchmark::State& state) {
   }
   for (auto _ : state) {
     const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
-    augusta::link::AuthoritativeState addressed = augusta::server::ToLink(updates);
+    augusta::link::AuthoritativeState own = augusta::server::ToLink(updates);
+    augusta::protocol::MessageWire message = augusta::link::ToWire(own);
+    auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
     for (const RecipientUpdate& recipient : updates.recipients) {
-      augusta::server::Address(addressed, recipient);
-      benchmark::DoNotOptimize(augusta::protocol::Encode(augusta::link::ToWire(addressed)).value());
+      augusta::server::Address(own, recipient);
+      augusta::link::Address(addressed, own);
+      benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
     }
   }
 }

@@ -45,15 +45,9 @@ MessageWire ThroughTheWire(const MessageWire& message) {
   return std::get<MessageWire>(augusta::protocol::Decode(augusta::protocol::Encode(message).value()).value());
 }
 
-// commands as the server takes them in: every message that carries them, in order.
+// commands as the server takes them in, from the one message that carries them.
 std::vector<SequencedCommand> Received(const std::vector<SequencedCommand>& commands) {
-  std::vector<SequencedCommand> received;
-  for (const augusta::protocol::CommandsWire& message : ToWire(commands)) {
-    for (const SequencedCommand& command : FromWire(ThroughTheWire(message))) {
-      received.push_back(command);
-    }
-  }
-  return received;
+  return FromWire(ThroughTheWire(ToWire(commands)));
 }
 
 // count commands, numbered from first, each sampled on its own tick.
@@ -206,50 +200,47 @@ TEST(LinkMessagesTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   }
 }
 
-TEST(LinkMessagesTest, NoCommandIsNoMessage) { EXPECT_TRUE(ToWire(std::vector<SequencedCommand>{}).empty()); }
+TEST(LinkMessagesTest, AsManyCommandsAsAMessageCarriesAllTravel) {
+  const std::vector<SequencedCommand> sent = Commands(kMaxCommandsPerMessage);
 
-TEST(LinkMessagesTest, AsManyCommandsAsAMessageCarriesTravelInOne) {
-  const std::vector<augusta::protocol::CommandsWire> messages = ToWire(Commands(kMaxCommandsPerMessage));
+  const std::vector<SequencedCommand> received = Received(sent);
 
-  ASSERT_EQ(messages.size(), 1U);
-  EXPECT_EQ(messages[0].commands.size(), kMaxCommandsPerMessage);
+  ASSERT_EQ(received.size(), kMaxCommandsPerMessage);
+  EXPECT_EQ(received.front().sequence, sent.front().sequence);
+  EXPECT_EQ(received.back().sequence, sent.back().sequence);
 }
 
-// More commands than one message carries are split at the protocol's bound,
-// oldest first, every one of them encoded and reaching the server in order.
-TEST(LinkMessagesTest, CommandsBeyondWhatAMessageCarriesAreSplitAtTheBound) {
+// More unacknowledged commands than a message carries: the tick's one message
+// carries the newest within the protocol's bound, oldest first, and the older
+// ones are never sent.
+TEST(LinkMessagesTest, CommandsBeyondWhatAMessageCarriesLeaveOnlyTheNewest) {
   const std::vector<SequencedCommand> sent = Commands((2 * kMaxCommandsPerMessage) + 1, 30);
 
-  const std::vector<augusta::protocol::CommandsWire> messages = ToWire(sent);
-
-  ASSERT_EQ(messages.size(), 3U);
-  EXPECT_EQ(messages[0].commands.size(), kMaxCommandsPerMessage);
-  EXPECT_EQ(messages[1].commands.size(), kMaxCommandsPerMessage);
-  EXPECT_EQ(messages[2].commands.size(), 1U);
-  for (const augusta::protocol::CommandsWire& message : messages) {
-    EXPECT_TRUE(augusta::protocol::Encode(message).has_value());
-  }
   const std::vector<SequencedCommand> received = Received(sent);
-  ASSERT_EQ(received.size(), sent.size());
-  for (std::size_t i = 0; i < sent.size(); ++i) {
-    EXPECT_EQ(received[i].sequence, sent[i].sequence) << i;
-    EXPECT_EQ(received[i].command.seen_tick, sent[i].command.seen_tick) << i;
+
+  ASSERT_EQ(received.size(), kMaxCommandsPerMessage);
+  const std::size_t first_carried = sent.size() - kMaxCommandsPerMessage;
+  for (std::size_t i = 0; i < received.size(); ++i) {
+    EXPECT_EQ(received[i].sequence, sent[first_carried + i].sequence) << i;
+    EXPECT_EQ(received[i].command.seen_tick, sent[first_carried + i].command.seen_tick) << i;
   }
 }
 
-// Each message's Seen tick is the newest of its own commands', so a command
-// split off from newer ones keeps the Seen time it was sampled on, however far
-// before the newest of the tick it is.
-TEST(LinkMessagesTest, EachMessageOfASplitIsSeenAsOfItsOwnNewestCommand) {
-  std::vector<SequencedCommand> sent = Commands(kMaxCommandsPerMessage + 1);
-  sent.back().command.seen_tick = sent.front().command.seen_tick + 1000;
+// The message's Seen tick is the newest of the commands it carries, as it was
+// before any was left out.
+TEST(LinkMessagesTest, AMessageOfTheNewestCommandsIsSeenAsOfTheNewest) {
+  const std::vector<SequencedCommand> sent = Commands(kMaxCommandsPerMessage + 3);
 
-  const std::vector<augusta::protocol::CommandsWire> messages = ToWire(sent);
+  EXPECT_EQ(ToWire(sent).seen_tick, sent.back().command.seen_tick);
+}
 
-  ASSERT_EQ(messages.size(), 2U);
-  EXPECT_EQ(messages[0].seen_tick, sent[kMaxCommandsPerMessage - 1].command.seen_tick);
-  EXPECT_EQ(messages[1].seen_tick, sent.back().command.seen_tick);
-  EXPECT_EQ(Received(sent).front().command.seen_tick, sent.front().command.seen_tick);
+TEST(LinkMessagesTest, WhatTheMessageCarriesIsAllASenderNeedKeep) {
+  const std::vector<SequencedCommand> few = Commands(2);
+  const std::vector<SequencedCommand> many = Commands(kMaxCommandsPerMessage + 3);
+
+  EXPECT_EQ(augusta::link::Carried(few).size(), few.size());
+  ASSERT_EQ(augusta::link::Carried(many).size(), kMaxCommandsPerMessage);
+  EXPECT_EQ(augusta::link::Carried(many).front().sequence, many[3].sequence);
 }
 
 TEST(LinkMessagesTest, AnExhaustedBodyReachesTheClientStillExhausted) {
@@ -315,6 +306,37 @@ TEST(LinkMessagesTest, TheRecipientsRifleReachesTheClientExactly) {
   const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(ToWire(sent)));
 
   EXPECT_EQ(received.rifle, sent.rifle);
+}
+
+// One message, its bodies converted once, is addressed to each recipient in
+// turn: each is sent its own fields alone, and every body.
+TEST(LinkMessagesTest, AnAddressedStateCarriesItsRecipientsOwnFieldsAndEveryBody) {
+  const augusta::link::AuthoritativeState first{
+      .tick = 9,
+      .acknowledged_sequence = 4,
+      .bodies = {{.entity = EntityId{1}, .body = Body(1.0F, Stance::kStanding)},
+                 {.entity = EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+      .health = 80.0F,
+      .queued_commands = 1,
+  };
+  const augusta::link::AuthoritativeState second{.tick = 1,
+                                                 .acknowledged_sequence = 11,
+                                                 .bodies = {},
+                                                 .rifle = {.rounds = 3},
+                                                 .health = 20.0F,
+                                                 .queued_commands = 5};
+  augusta::protocol::AuthoritativeStateWire message = ToWire(first);
+
+  augusta::link::Address(message, second);
+  const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(message));
+
+  EXPECT_EQ(received.tick, first.tick);
+  ASSERT_EQ(received.bodies.size(), first.bodies.size());
+  EXPECT_EQ(received.bodies[1].entity, EntityId{2});
+  EXPECT_EQ(received.acknowledged_sequence, second.acknowledged_sequence);
+  EXPECT_EQ(received.rifle, second.rifle);
+  EXPECT_EQ(received.health, second.health);
+  EXPECT_EQ(received.queued_commands, second.queued_commands);
 }
 
 // Requirements: US-22

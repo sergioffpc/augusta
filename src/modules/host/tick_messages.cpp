@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "augusta/failure.h"
@@ -66,12 +67,16 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
   }
 
   const replication::Updates updates = replication::PlanUpdates(state, tick, to.recipients);
-  // One state, its bodies mapped once, addressed to each recipient in turn:
-  // only the recipient's own fields change between their payloads.
-  link::AuthoritativeState addressed = ToLink(updates);
+  // One message, its bodies converted once, addressed to each recipient in
+  // turn: only the recipient's own fields change between their payloads. It is
+  // held as the MessageWire Encode takes, so encoding it copies no body.
+  link::AuthoritativeState own = ToLink(updates);
+  protocol::MessageWire message = link::ToWire(own);
+  auto& addressed = std::get<protocol::AuthoritativeStateWire>(message);
   for (const replication::RecipientUpdate& recipient : updates.recipients) {
-    Address(addressed, recipient);
-    add(link::ToWire(addressed), {to.peers.at(FromSimulation(recipient.entity))}, networking::Reliability::kUnreliable);
+    Address(own, recipient);
+    link::Address(addressed, own);
+    add(message, {to.peers.at(FromSimulation(recipient.entity))}, networking::Reliability::kUnreliable);
   }
   for (const replication::Shot& shot : replication::PlanShots(state, tick)) {
     add(link::ToWire(ToLink(shot)), everyone, networking::Reliability::kReliable);
