@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include "answers.h"
 #include "augusta/scripting.h"
 
 // The typed contract between Game policy and the server (ADR-0022): what a
@@ -18,15 +19,15 @@
 // simulation::World in policy_test.cpp; these test the validation alone.
 namespace {
 
+using augusta::policy::ActionRefusal;
+using augusta::policy::MatchEnd;
+using augusta::policy::PolicyAction;
+using augusta::policy::ReadSpawnAssignment;
+using augusta::policy::ReadTickAction;
+using augusta::policy::SessionId;
+using augusta::policy::SpawnRefusal;
 using augusta::scripting::Field;
 using augusta::scripting::Value;
-using augusta::simulation::ActionRefusal;
-using augusta::simulation::MatchEnd;
-using augusta::simulation::PolicyAction;
-using augusta::simulation::ReadSpawnAssignment;
-using augusta::simulation::ReadTickAction;
-using augusta::simulation::SessionId;
-using augusta::simulation::SpawnRefusal;
 
 constexpr SessionId kAlice{1};
 constexpr SessionId kBob{2};

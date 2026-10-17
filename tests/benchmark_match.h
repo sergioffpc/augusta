@@ -12,12 +12,12 @@
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
-#include "augusta/primitives.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "benchmark_scene.h"
 
@@ -35,7 +35,7 @@ namespace augusta::benchmarks {
 inline constexpr std::uint8_t kTickRate = 60;
 inline constexpr float kTick = 1.0F / kTickRate;
 // A full Match (US-02).
-inline constexpr std::uint8_t kPlayers = primitives::kMaxPlayers;
+inline constexpr std::uint8_t kPlayers = limits::kMaxPlayers;
 // How long players walk one way before turning back, and how long they settle
 // and shoot before timing starts, so the bullets in flight are at their usual
 // count.
@@ -69,7 +69,7 @@ inline simulation::Character SquaresCharacter() {
 }
 
 // The example's Game policy, as the server loads it; nullopt if it does not load.
-inline std::optional<scripting::Engine> ExamplePolicy() {
+inline std::optional<policy::Policy> ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = assets::ReadEd25519PublicKeyFile(packs / "test.pub");
   if (!public_key.has_value()) {
@@ -142,10 +142,10 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
   }
   // In a file along -Z, far enough apart that no one walks into another.
   for (std::uint32_t player = 0; player < kPlayers; ++player) {
-    world.AddPlayer(static_cast<simulation::EntityId>(player + 1),
-                    math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)), SquaresCharacter(),
-                    simulation::PlayerIdentity{.session = static_cast<simulation::SessionId>(player + 1),
-                                               .character = std::string()});
+    world.AddPlayer(
+        static_cast<simulation::EntityId>(player + 1), math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)),
+        SquaresCharacter(),
+        simulation::PlayerIdentity{.session = static_cast<policy::SessionId>(player + 1), .character = std::string()});
   }
 
   simulation::State previous = world.Tick({}, kTick).state;

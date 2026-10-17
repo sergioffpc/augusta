@@ -20,6 +20,7 @@
 #include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
+#include "augusta/tick.h"
 #include "command_stream.h"
 #include "inbox.h"
 
@@ -271,7 +272,7 @@ std::optional<float> Session::GetHealth() const {
 
 std::optional<EntityId> Session::GetEntityId() const { return impl_->inbox.View()->OwnEntity(); }
 
-command::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
+tick::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

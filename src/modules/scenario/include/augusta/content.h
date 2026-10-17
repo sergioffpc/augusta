@@ -11,7 +11,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 
 /// \file
 /// What the server loads from its verified pack at startup (ADR-0018): the
@@ -55,7 +55,7 @@ struct Content {
   /// The same for the whole run, and told to every client when it joins.
   parameters::Parameters parameters{};
   /// The scenario's Game policy (ADR-0022); a scenario may lack either script.
-  scripting::Engine policy;
+  policy::Policy policy;
 };
 
 /// Loads startup content from the verified pack for a server ticking at

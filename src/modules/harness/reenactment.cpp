@@ -152,7 +152,7 @@ std::vector<PairedDeath> PairDeaths(const Script& script, const ServerView& view
 Reenactment::Reenactment(Script script)
     : script_(std::move(script)), pacer_(script_.commands, script_.tick_rate_hz, script_.leave) {}
 
-std::optional<command::Command> Reenactment::NextCommand(const ServerView& view, command::Sequence next_sequence,
+std::optional<command::Command> Reenactment::NextCommand(const ServerView& view, tick::Sequence next_sequence,
                                                          tick::Tick round_trip_ticks) {
   if (view.matches_started != 1 || !view.in_match || !view.match_start.has_value()) {
     return command::Command{};
@@ -197,9 +197,9 @@ Progress Reenactment::Check(const ServerView& view, tick::Tick round_trip_ticks)
   if (!script_.leave.has_value() || !done_before_leave_.load()) {
     return Progress::kPlaying;
   }
-  const command::Sequence acknowledged =
-      view.authoritative.has_value() ? view.authoritative->acknowledged_sequence : command::Sequence{0};
-  const command::Sequence last_sent = last_sent_.load();
+  const tick::Sequence acknowledged =
+      view.authoritative.has_value() ? view.authoritative->acknowledged_sequence : tick::Sequence{0};
+  const tick::Sequence last_sent = last_sent_.load();
   const tick::Tick arrives = DueTick(newest, 0, round_trip_ticks);
   const bool all_handed = last_sent <= acknowledged || newest + (last_sent - acknowledged) + 1 < arrives;
   return all_handed && arrives >= first + *script_.leave ? Progress::kLeave : Progress::kPlaying;

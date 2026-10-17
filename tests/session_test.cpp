@@ -44,6 +44,7 @@
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/host_wire.h"
+#include "augusta/limits.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -52,13 +53,12 @@
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
 #include "augusta/prediction.h"
-#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/reenactment.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -480,7 +480,7 @@ bool HasSessionGauges(const ConnectionHealth& health) {
 class JoinTest : public ::testing::Test {
  protected:
   JoinTest()
-      : host_(TestHostConfig(WithPlayerCount(augusta::primitives::kMaxPlayers)),
+      : host_(TestHostConfig(WithPlayerCount(augusta::limits::kMaxPlayers)),
               Scenario{.collision = {},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}},
@@ -519,7 +519,7 @@ class JoinTest : public ::testing::Test {
 
   // Fills the Lobby with kMaxPlayers clients and starts their match.
   void StartAFullMatch() {
-    for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
+    for (std::size_t i = 0; i < augusta::limits::kMaxPlayers; ++i) {
       AddClient();
     }
     ASSERT_TRUE(WaitForAnswers());
@@ -686,7 +686,7 @@ TEST_F(JoinTest, AnAdmittedClientHasNoFailure) {
 
 // Requirements: US-02
 TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
-  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::limits::kMaxPlayers; ++i) {
     AddClient();
   }
   ASSERT_TRUE(WaitForAnswers());
@@ -758,7 +758,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
 
   std::vector<Vec3> first_position(sessions_.size());
   std::vector<Vec3> last_position(sessions_.size());
-  std::vector<augusta::command::Sequence> max_acknowledged(sessions_.size(), 0);
+  std::vector<augusta::tick::Sequence> max_acknowledged(sessions_.size(), 0);
 
   const auto tick_duration = std::chrono::duration<float>(kFixedTick);
   for (int tick = 0; tick < kRoundTicks; ++tick) {
@@ -799,7 +799,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
   }
 
   for (std::size_t i = 0; i < sessions_.size(); ++i) {
-    EXPECT_GE(max_acknowledged[i] + kAckTolerance, static_cast<augusta::command::Sequence>(kRoundTicks))
+    EXPECT_GE(max_acknowledged[i] + kAckTolerance, static_cast<augusta::tick::Sequence>(kRoundTicks))
         << "client " << i << " fell behind: server acknowledged only " << max_acknowledged[i] << " of " << kRoundTicks
         << " ticks";
     EXPECT_GT(Length(last_position[i] - first_position[i]), 0.5F) << "client " << i << " did not move over the round";
@@ -960,10 +960,10 @@ class MovementTest : public ::testing::Test {
   // Ticks the server, without the client sending anything more, until it has
   // processed the command with this sequence or a generous number of ticks has
   // passed; returns the sequence it has processed.
-  augusta::command::Sequence DrainServer(int last_sequence) {
+  augusta::tick::Sequence DrainServer(int last_sequence) {
     constexpr int kMaxTicks = 120;
-    augusta::command::Sequence acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
-    for (int i = 0; i < kMaxTicks && acknowledged < static_cast<augusta::command::Sequence>(last_sequence); ++i) {
+    augusta::tick::Sequence acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    for (int i = 0; i < kMaxTicks && acknowledged < static_cast<augusta::tick::Sequence>(last_sequence); ++i) {
       ServerTickAndDeliver();
       acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
     }
@@ -1057,7 +1057,7 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
     Step(Walking());
   }
 
-  augusta::command::Sequence previous = session_.GetAuthoritativeState()->acknowledged_sequence;
+  augusta::tick::Sequence previous = session_.GetAuthoritativeState()->acknowledged_sequence;
 
   // CommandsWire the server never hears, then one that arrives together with them.
   augusta::networking::SimulateNetworkConditions({.loss_percent = 100.0F});
@@ -1067,11 +1067,11 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   }
   augusta::networking::SimulateNetworkConditions({});
   session_.Tick(Walking(), kFixedTick);
-  const augusta::command::Sequence last_sent = kSettleTicks + kDeliveredSteps + kLostCommands + 1;
+  const augusta::tick::Sequence last_sent = kSettleTicks + kDeliveredSteps + kLostCommands + 1;
 
   // The server consumes one command per tick, so every sequence passes through
   // the acknowledgement in turn; a lost one would make it skip.
-  augusta::command::Sequence acknowledged = 0;
+  augusta::tick::Sequence acknowledged = 0;
   for (int i = 0; i < 12; ++i) {
     ServerTickAndDeliver();
     acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
@@ -1130,7 +1130,7 @@ class PacingTest : public MovementTest {
   // What the client learned from one server tick.
   struct Told {
     std::uint8_t queued_commands = 0;
-    augusta::command::Sequence acknowledged_sequence = 0;
+    augusta::tick::Sequence acknowledged_sequence = 0;
   };
 
   // Runs the match for ticks server ticks with a client whose clock runs
@@ -1259,7 +1259,7 @@ class LoopbackMatch : public ::testing::Test {
   struct HostSetup {
     HostConfig config;
     Scenario scenario;
-    augusta::scripting::Engine policy;
+    augusta::policy::Policy policy;
   };
 
   explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.scenario), std::move(setup.policy)) {}
@@ -1486,8 +1486,8 @@ class PolicySpawnTest : public LoopbackMatch {
     return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)};
   }
 
-  static augusta::scripting::Engine Backwards() {
-    auto policy = augusta::scripting::Engine::Load(R"(
+  static augusta::policy::Policy Backwards() {
+    auto policy = augusta::policy::Policy::Load(R"(
       function assign_spawns(match)
         local assignment = {}
         for i, player in ipairs(match.players) do
@@ -1497,7 +1497,7 @@ class PolicySpawnTest : public LoopbackMatch {
       end
     )");
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 
   static HostSetup BackwardsSetup() {
@@ -1694,7 +1694,7 @@ TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
   constexpr int kSteps = 10;
   Run(kSteps, Forward());
   // Sequences start with the match: nothing was sent from the Lobby.
-  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<augusta::command::Sequence>(kSteps));
+  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<augusta::tick::Sequence>(kSteps));
   EXPECT_GT(states_.at(&first).local_body.position.x, OwnSpawn(first).x);
 }
 
@@ -1890,15 +1890,15 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
            ("augusta_session_capture_" + std::string(test.name()) + "_" + std::to_string(std::random_device{}()));
   }
 
-  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::scripting::Engine policy) {
+  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::policy::Policy policy) {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
     setup.config.capture_directory = directory;
     setup.policy = std::move(policy);
     return setup;
   }
 
-  explicit CaptureHostTest(augusta::scripting::Engine policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
-  CaptureHostTest(const std::filesystem::path& directory, augusta::scripting::Engine policy)
+  explicit CaptureHostTest(augusta::policy::Policy policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
+  CaptureHostTest(const std::filesystem::path& directory, augusta::policy::Policy policy)
       : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory, std::move(policy))) {}
 
   void PlayAMatch() {
@@ -2019,8 +2019,8 @@ class FirstMatchWonCaptureHostTest : public CaptureHostTest {
  protected:
   FirstMatchWonCaptureHostTest() : CaptureHostTest(FirstMatchWon()) {}
 
-  static augusta::scripting::Engine FirstMatchWon() {
-    auto policy = augusta::scripting::Engine::Load(R"(
+  static augusta::policy::Policy FirstMatchWon() {
+    auto policy = augusta::policy::Policy::Load(R"(
       ticks = 0
       function on_tick(match)
         ticks = ticks + 1
@@ -2028,7 +2028,7 @@ class FirstMatchWonCaptureHostTest : public CaptureHostTest {
       end
     )");
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 };
 
@@ -2844,7 +2844,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
   for (const Parameters& bad :
        {Parameters{.stamina = {.deplete_per_second = -1.0F}},
         Parameters{.stamina = {.regen_per_second = std::numeric_limits<float>::quiet_NaN()}}, threshold_of_one,
-        Parameters{.player_count = 0}, Parameters{.player_count = augusta::primitives::kMaxPlayers + 1}}) {
+        Parameters{.player_count = 0}, Parameters{.player_count = augusta::limits::kMaxPlayers + 1}}) {
     // One server for every case: it answers whichever session sent last.
     Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
@@ -3026,30 +3026,30 @@ class RobustnessOf : public MatchOf<kPlayers> {
 };
 
 using RobustnessTest = RobustnessOf<1>;
-using FullMatchRobustnessTest = RobustnessOf<augusta::primitives::kMaxPlayers>;
+using FullMatchRobustnessTest = RobustnessOf<augusta::limits::kMaxPlayers>;
 
 // Requirements: NFR-06
 TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthersStateAndNoOneTakesItsPlace) {
-  for (std::size_t i = 0; i < augusta::primitives::kMaxPlayers; ++i) {
+  for (std::size_t i = 0; i < augusta::limits::kMaxPlayers; ++i) {
     Join();
   }
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers);
+  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers);
   const auto leaver = *sessions_.back()->GetEntityId();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
   Session& ninth = Connect();
   Run(kSettleTicks);
 
   EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::primitives::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers - 1);
 }
 
 // Requirements: NFR-06
@@ -3106,7 +3106,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
 
   // What the adversary has been told of itself, and the bystander of the adversary.
   struct Told {
-    augusta::command::Sequence acknowledged = 0;
+    augusta::tick::Sequence acknowledged = 0;
     std::uint8_t rounds = 0;
     Vec3 position{};
     float yaw = 0.0F;
@@ -3140,7 +3140,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
   }
 
   // A command a real client could send: walking, turned half a radian, firing.
-  static protocol::SequencedCommandWire Acting(augusta::command::Sequence sequence) {
+  static protocol::SequencedCommandWire Acting(augusta::tick::Sequence sequence) {
     protocol::SequencedCommandWire acting{.sequence = sequence};
     acting.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     acting.command.yaw = 0.5F;
@@ -3151,7 +3151,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
   // A message of as many Commands as the protocol allows, each acting, numbered from 1.
   static protocol::CommandsWire MostCommands() {
     protocol::CommandsWire most;
-    for (std::size_t i = 1; i <= augusta::primitives::kMaxCommandsPerMessage; ++i) {
+    for (std::size_t i = 1; i <= augusta::protocol::kMaxCommandsPerMessage; ++i) {
       most.commands.push_back(Acting(i));
     }
     return most;
@@ -3417,10 +3417,10 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
   constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
   const protocol::BytesWire encoded = protocol::Encode(MostCommands()).value();
   const protocol::BytesWire extra =
-      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::primitives::kMaxCommandsPerMessage + 1)}})
+      protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::protocol::kMaxCommandsPerMessage + 1)}})
           .value();
   protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
-  too_many[1] = static_cast<std::byte>(augusta::primitives::kMaxCommandsPerMessage + 1);
+  too_many[1] = static_cast<std::byte>(augusta::protocol::kMaxCommandsPerMessage + 1);
   too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
   const Told before = Now();
@@ -3773,7 +3773,7 @@ TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisc
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks, Forward());
 
-  const auto commands = [](augusta::command::Sequence sequence) {
+  const auto commands = [](augusta::tick::Sequence sequence) {
     augusta::protocol::SequencedCommandWire sequenced{.sequence = sequence};
     sequenced.command.direction = Vec3(1.0F, 0.0F, 0.0F);
     return augusta::protocol::CommandsWire{.commands = {sequenced}};
@@ -3787,7 +3787,7 @@ TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisc
   host_.EndMatch();
   // Commands still arriving after the match ended, and a Ready for the Roster before it.
   for (std::size_t i = 0; i < kFlood; ++i) {
-    raw.Send(commands(static_cast<augusta::command::Sequence>(2 + i)));
+    raw.Send(commands(static_cast<augusta::tick::Sequence>(2 + i)));
     raw.Send(augusta::protocol::ReadyWire{.version = version});
   }
   Run(kSettleTicks, Forward());
@@ -4220,7 +4220,7 @@ class PredictedFireTest : public FireMatchOf<1> {
   }
 
   // The newest of the client's commands the server has told it of.
-  [[nodiscard]] augusta::command::Sequence Acknowledged() const {
+  [[nodiscard]] augusta::tick::Sequence Acknowledged() const {
     const auto state = client_->GetAuthoritativeState();
     return state.has_value() ? state->acknowledged_sequence : 0U;
   }
@@ -4299,11 +4299,11 @@ class PredictedFireTest : public FireMatchOf<1> {
   }
 
   Session* client_ = nullptr;
-  augusta::command::Sequence sequence_ = kSettleTicks;
+  augusta::tick::Sequence sequence_ = kSettleTicks;
   // The rifle the client predicted after each command, by its sequence, and
   // the sequences the server's answer has been compared at.
-  std::map<augusta::command::Sequence, augusta::weapon::State> predicted_;
-  std::set<augusta::command::Sequence> compared_;
+  std::map<augusta::tick::Sequence, augusta::weapon::State> predicted_;
+  std::set<augusta::tick::Sequence> compared_;
 };
 
 // US-08: the ammo count and the reload, predicted exactly as the server applies them.
@@ -4557,7 +4557,7 @@ class HitMatchOf : public LoopbackMatch {
 
   // walled puts a wall across the line, halfway between the shooter and the
   // nearest target; policy is the scenario's Game policy.
-  static HostSetup InALine(bool walled, augusta::scripting::Engine policy) {
+  static HostSetup InALine(bool walled, augusta::policy::Policy policy) {
     Parameters parameters = WithPlayerCount(kPlayers);
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = 30;
@@ -4582,7 +4582,7 @@ class HitMatchOf : public LoopbackMatch {
     return setup;
   }
 
-  explicit HitMatchOf(bool walled = false, augusta::scripting::Engine policy = {})
+  explicit HitMatchOf(bool walled = false, augusta::policy::Policy policy = {})
       : LoopbackMatch(InALine(walled, std::move(policy))) {}
 
   void SetUp() override {
@@ -4626,8 +4626,8 @@ class HitMatchOf : public LoopbackMatch {
       map_impacts_.insert(map_impacts_.end(), state.map_impacts.begin(), state.map_impacts.end());
       shots_fired_.insert(shots_fired_.end(), state.shots.begin(), state.shots.end());
       deaths_.insert(deaths_.end(), state.deaths.begin(), state.deaths.end());
-      for (const augusta::simulation::PolicyAction& action : result.actions) {
-        match_ends_.emplace_back(state.tick, std::get<augusta::simulation::MatchEnd>(action));
+      for (const augusta::policy::PolicyAction& action : result.actions) {
+        match_ends_.emplace_back(state.tick, std::get<augusta::policy::MatchEnd>(action));
       }
     }
   }
@@ -4701,7 +4701,7 @@ class HitMatchOf : public LoopbackMatch {
   std::vector<augusta::simulation::Shot> shots_fired_;
   std::vector<augusta::simulation::Death> deaths_;
   // Every Match end Game policy has decided, with the tick it decided it on.
-  std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>> match_ends_;
+  std::vector<std::pair<augusta::tick::Tick, augusta::policy::MatchEnd>> match_ends_;
   std::map<const Session*, std::vector<HitConfirmation>> confirmations_;
   std::map<const Session*, std::vector<Death>> deaths_received_;
 };
@@ -4952,7 +4952,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
 // 1/256 rad, about 4 cm at the partner. No one has health enough to die.
 class FullAutoMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::limits::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kPairSpacing = 5.0F;
   static constexpr float kPairDistance = 10.0F;
@@ -5019,7 +5019,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
     augusta::weapon::State rifle{};
     float first_x = 0.0F;
     float farthest = 0.0F;
-    augusta::command::Sequence acknowledged = 0;
+    augusta::tick::Sequence acknowledged = 0;
     std::size_t shots = 0;
     std::size_t confirmations = 0;
   };
@@ -5098,7 +5098,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
   EXPECT_GT(fired, kPlayers * 60U);
   for (std::size_t i = 0; i < sessions_.size(); ++i) {
     const Client& client = clients[i];
-    EXPECT_GE(client.acknowledged + kAckTolerance, static_cast<augusta::command::Sequence>(kMatchTicks))
+    EXPECT_GE(client.acknowledged + kAckTolerance, static_cast<augusta::tick::Sequence>(kMatchTicks))
         << "client " << i << " fell behind: server acknowledged only " << client.acknowledged << " of " << kMatchTicks
         << " ticks";
     EXPECT_GT(client.farthest, 0.5F) << "client " << i << " did not move over the match";
@@ -5613,7 +5613,7 @@ TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnE
 // The example scenario's Game policy, read out of its golden server pack by the
 // server's own loader: its rules hand out the Spawn points and end the Match on
 // the last player standing (US-14).
-augusta::scripting::Engine ExamplePolicy() {
+augusta::policy::Policy ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
   EXPECT_TRUE(public_key.has_value());
@@ -5621,7 +5621,7 @@ augusta::scripting::Engine ExamplePolicy() {
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
   auto policy = augusta::server::LoadPolicy(pack.value());
   EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
 // A match of kPlayers in the line, under the example scenario's Game policy:
@@ -5806,7 +5806,7 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 // reload, and whose every round kicks the aim up by 1/256 rad. Five torso hits kill.
 class EightPlayerMatchTest : public LoopbackMatch {
  protected:
-  static constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
+  static constexpr std::size_t kPlayers = augusta::limits::kMaxPlayers;
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kTorsoHeight = 1.2F;
   static constexpr float kSpacing = 4.0F;
@@ -5896,7 +5896,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     // Its rifle as it last predicted it: what it decides to reload by.
     augusta::weapon::State rifle{};
     std::uint32_t sent = 0;
-    augusta::command::Sequence acknowledged = 0;
+    augusta::tick::Sequence acknowledged = 0;
     std::vector<std::uint32_t> victims{};
   };
   std::vector<Client> clients(kPlayers);
@@ -5908,7 +5908,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     }
   };
   std::vector<augusta::simulation::Death> deaths;
-  std::optional<augusta::simulation::MatchEnd> match_end;
+  std::optional<augusta::policy::MatchEnd> match_end;
   auto slowest_tick = std::chrono::steady_clock::duration::zero();
 
   const auto tick_duration = std::chrono::duration<float>(kFixedTick);
@@ -5918,8 +5918,8 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     const augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     slowest_tick = std::max(slowest_tick, std::chrono::steady_clock::now() - tick_start);
     deaths.insert(deaths.end(), result.state.deaths.begin(), result.state.deaths.end());
-    for (const augusta::simulation::PolicyAction& action : result.actions) {
-      match_end = std::get<augusta::simulation::MatchEnd>(action);
+    for (const augusta::policy::PolicyAction& action : result.actions) {
+      match_end = std::get<augusta::policy::MatchEnd>(action);
     }
     for (std::size_t rank = 0; rank < kPlayers; ++rank) {
       Session& session = *by_rank[rank];
@@ -5999,9 +5999,9 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
 // draw reaches it as one.
 class SoloMatchTest : public LoopbackMatch {
  protected:
-  explicit SoloMatchTest(augusta::scripting::Engine policy) : LoopbackMatch(Alone(std::move(policy))) {}
+  explicit SoloMatchTest(augusta::policy::Policy policy) : LoopbackMatch(Alone(std::move(policy))) {}
 
-  static HostSetup Alone(augusta::scripting::Engine policy) {
+  static HostSetup Alone(augusta::policy::Policy policy) {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F)}, WithPlayerCount(1));
     setup.policy = std::move(policy);
     return setup;
@@ -6028,10 +6028,10 @@ class SoloDrawTest : public SoloMatchTest {
  protected:
   SoloDrawTest() : SoloMatchTest(Rules("function on_tick() return {draw = true} end")) {}
 
-  static augusta::scripting::Engine Rules(const char* rules) {
-    auto policy = augusta::scripting::Engine::Load(rules);
+  static augusta::policy::Policy Rules(const char* rules) {
+    auto policy = augusta::policy::Policy::Load(rules);
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 };
 
@@ -6155,7 +6155,7 @@ class AdversaryMatch : public LoopbackMatch {
   // What each honest Session sends on every tick, in the order of sessions_.
   std::vector<Command> honest_commands_;
   // The sequence of the last Command the adversary sent.
-  augusta::command::Sequence sent_ = 0;
+  augusta::tick::Sequence sent_ = 0;
 
  private:
   // Runs the network until the adversary and every honest Session have been
@@ -6662,7 +6662,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   ASSERT_TRUE(current.has_value());
   // Walking, turned, firing and reloading, numbered from 1, as the first Commands of a Match would be.
   protocol::CommandsWire walking;
-  for (augusta::command::Sequence sequence = 1; sequence <= augusta::primitives::kMaxCommandsPerMessage; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= augusta::protocol::kMaxCommandsPerMessage; ++sequence) {
     walking.commands.push_back({.sequence = sequence,
                                 .command = {.direction = Vec3(1.0F, 0.0F, 0.0F),
                                             .yaw = 1.0F,
@@ -6941,7 +6941,7 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, {}, &raw));
-  augusta::command::Sequence sequence = 0;
+  augusta::tick::Sequence sequence = 0;
   const auto out_of_range = [&](std::size_t count) {
     protocol::CommandsWire message;
     for (std::size_t i = 0; i < count; ++i) {
@@ -6955,7 +6955,7 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
   // 7 and 7, then the 16th misbehaviour is the second command of 8.
   raw.Send(out_of_range(7));
   raw.Send(out_of_range(7));
-  raw.Send(out_of_range(augusta::primitives::kMaxCommandsPerMessage));
+  raw.Send(out_of_range(augusta::protocol::kMaxCommandsPerMessage));
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
 
   const HostMetrics& metrics = host_.Metrics();

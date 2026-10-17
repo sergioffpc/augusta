@@ -31,7 +31,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/peer_gate.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
@@ -117,7 +117,7 @@ struct Host::Impl {
   // ignored (peer_gate.h).
   PeerGate gate{metrics};
 
-  Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
+  Impl(const HostConfig& config, Scenario scenario, policy::Policy policy);
 
   // Sending to players (host.cpp), each message as EncodeToSend left it
   // (augusta/host_wire.h), reliably, counted as the transport accepts it (SendCounted).
@@ -162,7 +162,7 @@ struct Host::Impl {
   void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const;
   void CountMatchEnded(EndReason reason, const std::optional<SessionId>& winner);
   void EndMatch(const std::optional<SessionId>& winner, EndReason reason);
-  void Act(const simulation::MatchEnd& end);
+  void Act(const policy::MatchEnd& end);
   void StartMatchIfReady();
   void TakeOutEndedMatch();
   TickInput PrepareTick();

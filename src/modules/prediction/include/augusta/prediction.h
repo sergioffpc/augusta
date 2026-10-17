@@ -9,6 +9,7 @@
 #include "augusta/command.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 /// \file
@@ -107,7 +108,7 @@ struct State {
 /// its rifle after the command with this sequence, the newest of ours it has
 /// processed.
 struct Acknowledgement {
-  command::Sequence sequence = 0;
+  tick::Sequence sequence = 0;
   physics::BodyState body{};
   weapon::State rifle{};
 };
@@ -158,7 +159,7 @@ class World {
   /// while it waits for input, so passing the same one again is harmless -
   /// Reconciliation acts on each acknowledged sequence once. Returns the
   /// tick's Prediction State.
-  State Tick(const command::Command& command, command::Sequence sequence,
+  State Tick(const command::Command& command, tick::Sequence sequence,
              const std::optional<Acknowledgement>& acknowledgement, float delta_time);
 
  private:
