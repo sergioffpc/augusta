@@ -8,8 +8,9 @@
 #include "augusta/math.h"
 
 /// \file
-/// augusta::audio plays spatialized one-shot sound effects on the Windows
-/// client (ARCHITECTURE.md §7's Audio: "consumes presentation state").
+/// augusta::audio plays spatialized one-shot sound effects on the client,
+/// on Windows and Linux (ARCHITECTURE.md §7's Audio: "consumes presentation
+/// state").
 /// Two third-party libraries split the work, neither of which alone does
 /// what a game needs: Steam Audio (ADR-0010) only processes audio buffers
 /// already in memory - it spatializes a voice via HRTF but opens no
