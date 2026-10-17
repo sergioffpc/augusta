@@ -14,7 +14,7 @@ depends on nothing.
 ## Not its responsibility
 
 - Recovering from a failure or logging it: the boundary that owns the scope its
-  Disposition names (lifecycle, the executables).
+  Disposition names (supervisor, application, the executables).
 - Outcomes that are not operational failures: each module's own error type.
 
 ## Decisions
