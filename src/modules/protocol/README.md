@@ -7,7 +7,8 @@
 The Networking Protocol: the messages client and server exchange, and the
 capture's records, with their custom binary encoding. A pure codec - bytes in, a
 message or a typed error out - that treats its input as untrusted, and whose
-messages hold only its own plain `*Wire` types.
+messages hold only its own plain `*Wire` types. An Authoritative State encoded
+once is readdressed to each recipient by rewriting only its own fields' bytes.
 
 ## Not its responsibility
 

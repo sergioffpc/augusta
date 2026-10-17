@@ -97,6 +97,7 @@ using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::PlayerViewWire;
+using augusta::protocol::Readdress;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::ReplayListingWire;
@@ -1072,6 +1073,28 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnHealthExactly) {
 
     EXPECT_EQ(received.health, health);
   }
+}
+
+// A tick's update encoded once and readdressed to each recipient is, byte for
+// byte, what encoding it addressed to that recipient makes: its tick and bodies
+// kept, only the recipient's own fields its own.
+TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
+  const AuthoritativeStateWire first{.tick = 9,
+                                     .bodies = {BodyAt(1, 1.0F), BodyAt(2, -3.5F)},
+                                     .rifle = {.cooldown = 0.25F, .rounds = 30},
+                                     .health = 100.0F,
+                                     .acknowledged_sequence = 41,
+                                     .queued_commands = 2};
+  AuthoritativeStateWire second = first;
+  second.rifle = {.cooldown = 0.0F, .reload_remaining = 1.5F, .recoil_pitch = 0.046875F, .rounds = 7, .burst_index = 2};
+  second.health = 12.5F;
+  second.acknowledged_sequence = 0x0102030405060708ULL;
+  second.queued_commands = 0;
+
+  BytesWire payload = Encode(first).value();
+  ASSERT_TRUE(Readdress(payload, second).has_value());
+
+  EXPECT_EQ(payload, Encode(second).value());
 }
 
 // A 32-bit float's bits, after the rifle: the last four bytes of an update.

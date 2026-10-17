@@ -620,6 +620,14 @@ enum class EncodeError : std::uint8_t {
 /// whole and decodable or not made.
 [[nodiscard]] std::expected<BytesWire, EncodeError> Encode(const MessageWire& message);
 
+/// Rewrites payload, an Authoritative State Encode made, with recipient's own
+/// fields (acknowledged_sequence, queued_commands, rifle and health), its tick
+/// and bodies left as they were: the bytes Encode makes of that state addressed
+/// to recipient, without encoding its bodies again, so a tick's bodies are
+/// encoded once for every recipient. Reports the first of recipient's fields
+/// beyond its limit, as Encode does, and leaves payload as it was.
+[[nodiscard]] std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient);
+
 /// The type message's payload starts with.
 [[nodiscard]] MessageTypeWire TypeOf(const MessageWire& message);
 

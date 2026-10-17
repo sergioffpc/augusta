@@ -184,6 +184,18 @@ void WriteWeaponState(Writer& out, const WeaponStateWire& rifle) {
   WriteSteps(out, rifle.recoil_yaw, math::kAngleGrid);
 }
 
+// An Authoritative State's recipient's own fields after its bodies, which end
+// its payload: fixed in size, so Readdress rewrites them in place.
+void WriteRecipientTail(Writer& out, const AuthoritativeStateWire& state) {
+  WriteU8(out, state.queued_commands);
+  WriteWeaponState(out, state.rifle);
+  // As its bits, as the Parameters' starting health it counts down from.
+  WriteF32(out, state.health);
+}
+
+// Where an Authoritative State's acknowledged sequence lies: after its type and its tick.
+constexpr std::size_t kAcknowledgedSequenceOffset = 1 + (std::numeric_limits<tick::Tick>::digits / kBitsPerByte);
+
 // Walks a payload front to back. The first problem it meets is remembered and
 // every read after it returns a zero value, so a decoder can read all of a
 // message's fields and ask once at the end whether they were all there.
@@ -718,10 +730,7 @@ struct Encoder {
     WriteTick(out, message.tick);
     WriteSequence(out, message.acknowledged_sequence);
     WriteList(out, message.bodies, limits::kMaxPlayers, WriteEntityState);
-    WriteU8(out, message.queued_commands);
-    WriteWeaponState(out, message.rifle);
-    // As its bits, as the Parameters' starting health it counts down from.
-    WriteF32(out, message.health);
+    WriteRecipientTail(out, message);
   }
 
   void operator()(const LobbyWire& message) const {
@@ -976,6 +985,24 @@ std::expected<BytesWire, EncodeError> Encode(const MessageWire& message) {
   Writer out;
   std::visit(Encoder{.out = out}, message);
   return std::move(out).Finish();
+}
+
+std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient) {
+  Writer sequence_out;
+  WriteSequence(sequence_out, recipient.acknowledged_sequence);
+  Writer tail_out;
+  WriteRecipientTail(tail_out, recipient);
+  auto sequence = std::move(sequence_out).Finish();
+  if (!sequence.has_value()) {
+    return std::unexpected(sequence.error());
+  }
+  auto tail = std::move(tail_out).Finish();
+  if (!tail.has_value()) {
+    return std::unexpected(tail.error());
+  }
+  std::ranges::copy(*sequence, payload.begin() + static_cast<std::ptrdiff_t>(kAcknowledgedSequenceOffset));
+  std::ranges::copy(*tail, payload.end() - static_cast<std::ptrdiff_t>(tail->size()));
+  return {};
 }
 
 MessageTypeWire TypeOf(const MessageWire& message) {
