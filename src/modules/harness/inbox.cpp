@@ -41,13 +41,13 @@ std::string_view BodyPartName(ballistics::BodyPart part) {
 void Inbox::Receive(const networking::Payload& payload) {
   const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
   if (!decoded.has_value()) {
-    LOG_WARNING_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"{}\"", payload.size(),
-                        protocol::DescribeDecodeError(decoded.error()));
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"{}\"", payload.size(),
+                     protocol::DescribeDecodeError(decoded.error()));
     return;
   }
   if (!TakeIn(*decoded)) {
-    LOG_WARNING_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
-                        payload.size());
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
+                     payload.size());
   }
 }
 
@@ -96,13 +96,13 @@ bool Inbox::TakeIn(const protocol::MessageWire& message) {
 // a malformed one is, and the client stays unadmitted.
 void Inbox::OnJoinAccepted(const Admission& accepted) {
   if (!parameters::IsValidTickRate(accepted.tick_rate_hz)) {
-    LOG_WARNING_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
-                        accepted.tick_rate_hz);
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
+                     accepted.tick_rate_hz);
     return;
   }
   if (const auto valid = parameters::Validate(accepted.parameters); !valid) {
-    LOG_WARNING_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid parameters\" parameter={}",
-                        valid.error().path);
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid parameters\" parameter={}",
+                     valid.error().path);
     return;
   }
   Publish([&](ServerView& next) { next.accepted = accepted; });
@@ -125,7 +125,7 @@ void Inbox::OnLobby(Lobby lobby) {
 void Inbox::OnMatchStart(MatchStart start) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->accepted.has_value() || (!viewer_ && !IsInMatch(start, current->accepted->session))) {
-    LOG_WARNING_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
     return;
   }
   const std::size_t players = start.players.size();
@@ -168,9 +168,9 @@ void Inbox::OnShot(const Shot& shot) {
     return;
   }
   if (!IsInMatch(*current->match_start, shot.shooter)) {
-    LOG_WARNING_LIMITED(drop_warnings_,
-                        "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
-                        shot.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
+                     shot.tick);
     return;
   }
   shots_.Add(current->matches_started, shot);
@@ -184,8 +184,8 @@ void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
     return;
   }
   if (!IsInMatch(*current->match_start, hit.target)) {
-    LOG_WARNING_LIMITED(drop_warnings_,
-                        "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
     return;
   }
   hit_confirmations_.Add(current->matches_started, hit);
@@ -202,8 +202,7 @@ void Inbox::OnDeath(const Death& death) {
     return;
   }
   if (!IsInMatch(*current->match_start, death.victim) || !IsInMatch(*current->match_start, death.killer)) {
-    LOG_WARNING_LIMITED(drop_warnings_,
-                        "subsystem=harness event=dropped reason=\"death names a body not in the match\"");
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"death names a body not in the match\"");
     return;
   }
   Publish([&](ServerView& next) { next.dead.push_back(death.victim); });
@@ -223,9 +222,9 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
   }
   const auto in_match = [&](const EntityBody& body) { return IsInMatch(*current->match_start, body.entity); };
   if (!std::ranges::all_of(state.bodies, in_match)) {
-    LOG_WARNING_LIMITED(drop_warnings_,
-                        "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"",
-                        state.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"",
+                     state.tick);
     return;
   }
   if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
@@ -245,9 +244,9 @@ void Inbox::OnReplayView(ReplayView view) {
   }
   const auto in_match = [&](const PlayerView& player) { return IsInMatch(*current->match_start, player.entity); };
   if (!std::ranges::all_of(view.players, in_match)) {
-    LOG_WARNING_LIMITED(drop_warnings_,
-                        "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
-                        view.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
+                     view.tick);
     return;
   }
   if (current->replay_view.has_value() && view.tick <= current->replay_view->tick) {

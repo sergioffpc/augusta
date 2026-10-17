@@ -75,9 +75,8 @@ std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
                                             .detail = harness::DescribeScriptError(script.error())});
   }
   if (script->torn) {
-    LOG_WARNING(
-        "subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
-        reenact.capture.string());
+    LOG_WARN("subsystem=client event=capture_torn capture={} reason=\"its last record was cut short and is dropped\"",
+             reenact.capture.string());
   }
   LOG_INFO("subsystem=client event=reenacting capture={} player={} character={} commands={}", reenact.capture.string(),
            reenact.player, script->character, script->commands.size());

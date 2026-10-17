@@ -365,7 +365,7 @@ struct ClientRuntime::Impl {
       if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
         if (reenactment.has_value()) {
           if (const std::optional<std::string> mismatch = reenactment->PlayerCountMismatch(*accepted)) {
-            LOG_WARNING("subsystem=reenactment {}", *mismatch);
+            LOG_WARN("subsystem=reenactment {}", *mismatch);
           }
         }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));

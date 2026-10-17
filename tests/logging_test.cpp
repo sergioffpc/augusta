@@ -97,7 +97,7 @@ TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {
   Throttle throttle{std::chrono::hours{1}};
   int evaluated = 0;
 
-  LOG_WARNING_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
+  LOG_WARN_LIMITED(throttle, "subsystem=test event=dropped value={}", ++evaluated);
 
   EXPECT_EQ(evaluated, 0);
   EXPECT_EQ(throttle.Admit(std::chrono::steady_clock::now()), 0U);

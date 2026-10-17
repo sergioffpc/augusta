@@ -32,8 +32,8 @@ std::string DescribeOutputError(const OutputError& error) {
 Engine::Engine() {
   auto output = OpenOutput();
   if (!output) {
-    LOG_WARNING("subsystem=audio event=output_unavailable reason=\"{}\" fallback=silent",
-                DescribeOutputError(output.error()));
+    LOG_WARN("subsystem=audio event=output_unavailable reason=\"{}\" fallback=silent",
+             DescribeOutputError(output.error()));
     return;
   }
   output_ = *std::move(output);
