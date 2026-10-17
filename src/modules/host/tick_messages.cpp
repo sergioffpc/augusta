@@ -10,6 +10,7 @@
 #include "augusta/host_metrics.h"
 #include "augusta/link_mapping.h"
 #include "augusta/link_messages.h"
+#include "augusta/link_types.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"

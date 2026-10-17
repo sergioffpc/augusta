@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"

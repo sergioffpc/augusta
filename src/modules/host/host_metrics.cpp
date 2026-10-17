@@ -23,7 +23,6 @@
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
-#include "augusta/link_mapping.h"
 #include "augusta/link_messages.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"

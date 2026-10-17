@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -19,11 +18,9 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
-#include "augusta/weapon.h"
 
 /// \file
 /// augusta::harness is where anything that plays talks to the server: the

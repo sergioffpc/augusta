@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/capture_records.h"
 #include "augusta/failure.h"
 #include "augusta/link_messages.h"
 #include "augusta/protocol.h"
