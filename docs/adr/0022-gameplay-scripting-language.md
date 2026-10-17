@@ -86,6 +86,10 @@ keeps game policy separate from mechanism code.
   past its limit or returns something invalid is logged at WARN with its script,
   hook and tick (at most once a second, ADR-0029) and treated as having decided
   nothing. The tick goes on, and the next call runs as usual.
+- **Two modules.** The sandboxed Lua embedding is the scripting module (Engine
+  Layer), which knows nothing of Game policy. The hooks, the views built for
+  them and the typed actions read from their answers are the policy module
+  (Domain Layer), which SimulationWorld and the scenario loader call (ADR-0062).
 - **Deterministic and server-only.** The same rules called with the same views
   return the same decisions; neither client world runs policy (ADR-0024).
 

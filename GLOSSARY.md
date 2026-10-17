@@ -67,6 +67,11 @@ kept for the life of the player's presence on the server; the transport
 connection beneath it, augusta::networking's own peer handle, can in principle
 outlive or be distinct from it)
 
+**Link**: The channel through which one Session exchanges messages with the
+other side: the game's state turned into messages and back, carried by the
+transport connection beneath. _Avoid_: Session (the presence it carries),
+connection, netcode
+
 **Session ID**: The Authoritative server's name for one connected player
 (harness::SessionId on the client, server::SessionId and simulation::SessionId
 on the server, protocol::SessionIdWire on the wire), assigned when it admits the
@@ -200,11 +205,25 @@ without touching mechanism code. _Avoid_: Game logic, gameplay code (too broad â
 conflates policy with mechanism)
 
 **Glue**: What an executable adds to the modules it is built from, and the only
-thing it adds: its entry point, its phases from config to runtime, the threads
-it owns, the modules it builds and the wiring of one's output into another's
-input. It holds neither Mechanism nor Game policy; anything worth a test of its
-own is not Glue and belongs in a module. _Avoid_: Application logic, server
-logic, client logic
+thing it adds: its entry point, which runs one Runtime behind the application
+boundary. An executable stands outside the Layers and uses only the application,
+that Runtime and the Foundation. It holds neither Mechanism nor Game policy;
+anything worth a test of its own is not Glue and belongs in a module. _Avoid_:
+Application logic, server logic, client logic
+
+**Runtime**: What runs a Harness or a Host live for one executable: the threads
+and clock around it, the executable's own configuration and the wiring of the
+modules it drives into one another. _Avoid_: Main loop, app
+
+**Layer**: One level of the stack the modules form, whose modules use only those
+of the level directly below and of the Foundation; a Runtime, which wires them
+together, may use any level below. From the bottom: Foundation, Engine, Domain,
+Services, Cores and Runtimes; executables stand on top, outside them. _Avoid_:
+Tier, level
+
+**Foundation**: The bottom Layer, which every Layer may use: the math, the tick,
+the limits, the failure model, the version and logging, none of which uses
+another module. _Avoid_: Common, utils, primitives
 
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
 mode, such as who spawns where and when the Match is won, chosen together
@@ -293,9 +312,9 @@ _Avoid_: Client session, bot
 
 **Host**: Where every client connects on the server: its socket and
 SimulationWorld without threads or a clock, the server's counterpart of the
-Harness. augustad runs it in real time on its Network I/O and Simulation
-threads, and a test drives it by hand, one network round and one tick at a time.
-_Avoid_: Game server, server session
+Harness. The server's Runtime runs it in real time on its Network I/O and
+Simulation threads, and a test drives it by hand, one network round and one tick
+at a time. _Avoid_: Game server, server session
 
 **Agent**: A player with no one at the keyboard, controlled by a Python script
 through a Harness (ADR-0052): the script observes what the server tells the
