@@ -17,15 +17,15 @@
 namespace {
 
 using augusta::assets::PackHash;
+using augusta::host::Departure;
+using augusta::host::JoinRefusal;
+using augusta::host::JoinRequest;
+using augusta::host::Match;
+using augusta::host::MatchConfig;
+using augusta::host::MatchStart;
+using augusta::host::SessionId;
 using augusta::math::Vec3;
 using augusta::networking::PeerId;
-using augusta::server::Departure;
-using augusta::server::JoinRefusal;
-using augusta::server::JoinRequest;
-using augusta::server::Match;
-using augusta::server::MatchConfig;
-using augusta::server::MatchStart;
-using augusta::server::SessionId;
 
 constexpr const char* kVersion = "1.2.3";
 // The Player count of the matches below, unless a test says otherwise: as many
@@ -126,11 +126,11 @@ TEST(MatchTest, ChecksTheClientPackAfterTheVersionAndBeforeTheCharacter) {
 // by the same version-then-pack order before anything it asks for.
 // Requirements: US-01
 TEST(RefusalOfClientTest, RefusesAnotherVersionFirstThenAnotherPackAndAdmitsTheServersOwn) {
-  const augusta::server::ClientTerms terms{.engine_version = kVersion, .client_pack = {}};
+  const augusta::host::ClientTerms terms{.engine_version = kVersion, .client_pack = {}};
 
-  EXPECT_EQ(augusta::server::RefusalOfClient("other", OtherClientPack(), terms), JoinRefusal::kVersionMismatch);
-  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, OtherClientPack(), terms), JoinRefusal::kPackMismatch);
-  EXPECT_EQ(augusta::server::RefusalOfClient(kVersion, PackHash{}, terms), std::nullopt);
+  EXPECT_EQ(augusta::host::RefusalOfClient("other", OtherClientPack(), terms), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(augusta::host::RefusalOfClient(kVersion, OtherClientPack(), terms), JoinRefusal::kPackMismatch);
+  EXPECT_EQ(augusta::host::RefusalOfClient(kVersion, PackHash{}, terms), std::nullopt);
 }
 
 // Requirements: US-01

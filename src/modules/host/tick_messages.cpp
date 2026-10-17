@@ -16,7 +16,7 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 networking::SendResult SendCounted(networking::Server& network, HostMetrics& metrics, networking::PeerId peer,
                                    const networking::Payload& payload, networking::Reliability reliability) {
@@ -131,4 +131,4 @@ std::expected<void, failure::Failure> SendTickMessages(networking::Server& netwo
   return {};
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

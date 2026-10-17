@@ -40,9 +40,9 @@ using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::CaptureMode;
-using augusta::server::Host;
-using augusta::server::HostConfig;
+using augusta::host::CaptureMode;
+using augusta::host::Host;
+using augusta::host::HostConfig;
 using augusta::server::Scenario;
 using augusta::server::ServerRuntime;
 

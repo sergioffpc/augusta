@@ -16,7 +16,7 @@
 /// exactly one command per tick. Pure (no I/O, no clock), so both are tested
 /// without a network. The gate is the seam the anti-cheat baseline (US-15) grows
 /// into: it checks that a command is well formed, not that it is fair play.
-namespace augusta::server {
+namespace augusta::host {
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and
 /// grow by one per command, so the queue can tell what it has already seen.
@@ -105,6 +105,6 @@ class CommandQueue {
   command::Sequence acknowledged_ = 0;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_COMMAND_QUEUE_H_

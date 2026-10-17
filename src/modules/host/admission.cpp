@@ -6,7 +6,7 @@
 
 #include "augusta/networking.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 void AdmissionDeadlines::Connected(networking::PeerId peer, std::chrono::steady_clock::time_point now) {
   connected_at_.insert_or_assign(peer, now);
@@ -29,4 +29,4 @@ std::vector<networking::PeerId> AdmissionDeadlines::TakeOverdue(std::chrono::ste
   return overdue;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

@@ -97,7 +97,7 @@ struct ScriptError {
 /// How many Commands a Captured player keeps waiting in the server's queue at
 /// most, beyond those a round trip holds in flight: about what the client's
 /// pacing aims for (tick::kTargetQueuedCommands), far below the server's own
-/// bound (server::kMaxQueuedCommands), so a client that ticks faster than the
+/// bound (host::kMaxQueuedCommands), so a client that ticks faster than the
 /// server never overruns the queue and has a Command dropped.
 inline constexpr std::uint64_t kMaxCommandsQueued = 2;
 

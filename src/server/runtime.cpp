@@ -43,16 +43,16 @@ namespace {
 
 // One tick of what a runtime runs: a live Host's of delta_time seconds, or a
 // replay server's, whose every Replay ticks at the rate both run at.
-void TickOnce(Host& host, float delta_time) { static_cast<void>(host.Tick(delta_time)); }
-void TickOnce(ReplayServer& server, float /*delta_time*/) { server.Tick(); }
+void TickOnce(host::Host& host, float delta_time) { static_cast<void>(host.Tick(delta_time)); }
+void TickOnce(host::ReplayServer& server, float /*delta_time*/) { server.Tick(); }
 
 // The failure a strict capture lost a record on (Host::CaptureFailure), and
 // the same once every capture is finished (Host::FinishCapture); a replay
 // server captures nothing.
-std::optional<failure::Failure> CaptureFailureOf(const Host& host) { return host.CaptureFailure(); }
-std::optional<failure::Failure> CaptureFailureOf(const ReplayServer& /*server*/) { return std::nullopt; }
-std::optional<failure::Failure> FinishCaptureOf(Host& host) { return host.FinishCapture(); }
-std::optional<failure::Failure> FinishCaptureOf(ReplayServer& /*server*/) { return std::nullopt; }
+std::optional<failure::Failure> CaptureFailureOf(const host::Host& host) { return host.CaptureFailure(); }
+std::optional<failure::Failure> CaptureFailureOf(const host::ReplayServer& /*server*/) { return std::nullopt; }
+std::optional<failure::Failure> FinishCaptureOf(host::Host& host) { return host.FinishCapture(); }
+std::optional<failure::Failure> FinishCaptureOf(host::ReplayServer& /*server*/) { return std::nullopt; }
 
 }  // namespace
 
@@ -129,7 +129,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // received message is handled, and how long stopping takes.
   supervisor::WorkerResult NetworkThreadMain() {
     constexpr auto kNetworkRoundWait = std::chrono::milliseconds(1);
-    std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + kHeartbeatInterval;
+    std::chrono::steady_clock::time_point next_sample = std::chrono::steady_clock::now() + host::kHeartbeatInterval;
     while (!workers.StopRequested()) {
       const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
       served.PumpNetwork(now);
@@ -138,7 +138,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
       }
       if (now >= next_sample) {
         connection_health.Record(served.SampleConnections());
-        next_sample = now + kHeartbeatInterval;
+        next_sample = now + host::kHeartbeatInterval;
       }
       std::this_thread::sleep_for(kNetworkRoundWait);
     }
@@ -206,14 +206,15 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   void Stop() override { workers.RequestStop(); }
 };
 
-ServerRuntime::ServerRuntime(const HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
+ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
                              scripting::Engine policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<Host>>(config, metrics_port, std::move(scenario), std::move(policy), faults)) {}
+    : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy),
+                                                  faults)) {}
 
-ServerRuntime::ServerRuntime(const ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario,
+ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario,
                              PolicyMaker policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                    faults)) {}
+    : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
+                                                          faults)) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

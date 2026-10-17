@@ -21,8 +21,8 @@
 /// never opening it as a path, so a name from the network reaches no file
 /// outside the directory. It reads the directory afresh each time, so a
 /// capture a live server writes into it is listed once it is whole enough to
-/// read. server::ReplayServer asks it on the Network I/O thread.
-namespace augusta::server {
+/// read. host::ReplayServer asks it on the Network I/O thread.
+namespace augusta::host {
 
 /// What a capture must have been made on for a replay server to replay it:
 /// a Replay needs its server pack's Map, Characters and Game policy, and runs
@@ -101,6 +101,6 @@ class ReplayCatalog {
   std::unordered_map<std::string, Read> read_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_REPLAY_CATALOG_H_

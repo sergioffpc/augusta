@@ -23,7 +23,7 @@
 #include "augusta/tick.h"
 
 /// \file
-/// The server's edge with the Networking Protocol (ADR-0038): what server::Host
+/// The server's edge with the Networking Protocol (ADR-0038): what host::Host
 /// sends, turned from the engine's types into the protocol's plain ones right
 /// before Encode, and what it receives, turned back right after Decode. With
 /// the capture module (augusta/capture.h), which converts a Match capture's
@@ -33,7 +33,7 @@
 /// is decided after, by whoever takes it in. What the server sends is encoded
 /// here too, so a payload the protocol cannot carry becomes the broken
 /// invariant that stops the runtime (ADR-0033) before anything of it leaves.
-namespace augusta::server {
+namespace augusta::host {
 
 /// message encoded, or, if a field of it is beyond what the protocol carries,
 /// no payload but a failure::Code::kInvariantViolated naming its type
@@ -119,6 +119,6 @@ void Address(protocol::AuthoritativeStateWire& state, const replication::Recipie
 /// A Replay a viewer asked for, in the engine's terms.
 [[nodiscard]] ReplayRequest FromWire(const protocol::ReplayRequestWire& request);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_WIRE_H_

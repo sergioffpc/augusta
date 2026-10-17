@@ -21,7 +21,7 @@
 /// SimulationWorld's, which are the same numbers, and the pack's characters into
 /// what SimulationWorld judges hits against; and the World itself, built from
 /// the scenario.
-namespace augusta::server {
+namespace augusta::host {
 
 /// entity as SimulationWorld names the same body.
 [[nodiscard]] simulation::EntityId ToSimulation(EntityId entity);
@@ -46,14 +46,14 @@ namespace augusta::server {
 /// Each of characters as SimulationWorld takes it, by its path. Throws as the
 /// hitbox overload does.
 [[nodiscard]] std::unordered_map<std::string, simulation::Character> ToSimulation(
-    const std::vector<Character>& characters);
+    const std::vector<server::Character>& characters);
 
 /// SimulationWorld on parameters at tick_rate_hz, with scenario's collision and
 /// the scenario's Game policy. Throws failure::ClassifiedFailure
 /// (failure::Code::kInvalidContent) if a map mesh is not a whole triangle list.
 [[nodiscard]] simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
-                                                const Scenario& scenario, scripting::Engine policy);
+                                                const server::Scenario& scenario, scripting::Engine policy);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_SIMULATION_MAPPING_H_

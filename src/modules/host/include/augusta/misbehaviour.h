@@ -14,7 +14,7 @@
 /// disconnected. Pure (no I/O, no clock of its own: the caller hands it the
 /// time), so it is tested without a network. Routine rejections, which an
 /// honest client causes under latency and loss, never count.
-namespace augusta::server {
+namespace augusta::host {
 
 /// Why the server turned away something a peer sent.
 enum class PeerRejection : std::uint8_t {
@@ -92,6 +92,6 @@ class MisbehaviourTracker {
   std::deque<std::chrono::steady_clock::time_point> recent_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_MISBEHAVIOUR_H_

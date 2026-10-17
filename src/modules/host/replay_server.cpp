@@ -44,7 +44,7 @@
 #include "augusta/tick_messages.h"
 #include "augusta/version.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -53,10 +53,10 @@ namespace {
 constexpr SessionId kViewerSession{0};
 
 // The characters' paths, in the scenario's order: what a capture's Joins must name.
-std::vector<std::string> PathsOf(const std::vector<Character>& characters) {
+std::vector<std::string> PathsOf(const std::vector<server::Character>& characters) {
   std::vector<std::string> paths;
   paths.reserve(characters.size());
-  for (const Character& character : characters) {
+  for (const server::Character& character : characters) {
     paths.push_back(character.path);
   }
   return paths;
@@ -139,9 +139,9 @@ struct ReplayServer::Impl {
   const std::size_t max_viewers;
   const ClientTerms terms;
   // What every Replay's World is built from, unchanged for the server's life.
-  const Scenario scenario;
+  const server::Scenario scenario;
   const std::unordered_map<std::string, simulation::Character> characters;
-  const PolicyMaker policy;
+  const server::PolicyMaker policy;
   // Network I/O thread only, without the lock: listing reads the disk.
   ReplayCatalog catalog;
 
@@ -158,7 +158,7 @@ struct ReplayServer::Impl {
   // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
 
-  Impl(const ReplayServerConfig& config, Scenario scenario_in, PolicyMaker policy_in)
+  Impl(const ReplayServerConfig& config, server::Scenario scenario_in, server::PolicyMaker policy_in)
       : metrics(config.tick_rate_hz),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
@@ -396,7 +396,7 @@ struct ReplayServer::Impl {
   }
 };
 
-ReplayServer::ReplayServer(const ReplayServerConfig& config, Scenario scenario, PolicyMaker policy)
+ReplayServer::ReplayServer(const ReplayServerConfig& config, server::Scenario scenario, server::PolicyMaker policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 ReplayServer::~ReplayServer() = default;
@@ -469,4 +469,4 @@ std::optional<failure::Failure> ReplayServer::TakeTransportFailure() { return im
 
 std::optional<failure::Failure> ReplayServer::TakeInvariantFailure() { return impl_->invariant_failure.Take(); }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

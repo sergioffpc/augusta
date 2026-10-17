@@ -14,7 +14,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -82,4 +82,4 @@ void LogCombat(const simulation::State& state) {
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

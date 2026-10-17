@@ -8,7 +8,7 @@
 #include "augusta/simulation.h"
 #include "benchmark_match.h"
 
-// A full Match's Authoritative State replicated as server::Host replicates it
+// A full Match's Authoritative State replicated as host::Host replicates it
 // after each tick (ADR-0044): what each player in the Match is sent
 // (replication::PlanUpdates), in the protocol's terms and encoded, one message
 // per recipient: everything Host does to send its Authoritative State updates
@@ -33,10 +33,10 @@ void BM_Replication(benchmark::State& state) {
   }
   for (auto _ : state) {
     const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
-    augusta::protocol::MessageWire message = augusta::server::ToWire(updates);
+    augusta::protocol::MessageWire message = augusta::host::ToWire(updates);
     auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
     for (const RecipientUpdate& recipient : updates.recipients) {
-      augusta::server::Address(addressed, recipient);
+      augusta::host::Address(addressed, recipient);
       benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
     }
   }

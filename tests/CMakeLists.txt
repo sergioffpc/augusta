@@ -25,7 +25,7 @@ add_executable(
   simulation_benchmark.cpp
 )
 # The tick runs the example scenario's Game policy, as the server loads it from
-# its golden server pack; replication is server::Host's own
+# its golden server pack; replication is host::Host's own
 # (augusta_host), and a render frame plays the golden client pack's cue sounds.
 target_link_libraries(
   augusta_benchmarks

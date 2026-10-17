@@ -4,7 +4,7 @@
 #include <string_view>
 #include <utility>
 
-namespace augusta::server {
+namespace augusta::host {
 
 std::string_view DescribePeerRejection(PeerRejection rejection) {
   switch (rejection) {
@@ -41,4 +41,4 @@ Verdict MisbehaviourTracker::Record(PeerRejection rejection, std::chrono::steady
   return recent_.size() >= kMisbehaviourThreshold ? Verdict::kDisconnect : Verdict::kKeep;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

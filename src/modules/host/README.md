@@ -2,7 +2,8 @@
 
 `augusta_host`, `augusta_host_replay`, `augusta_host_match`,
 `augusta_host_commands`, `augusta_host_misbehaviour`, `augusta_host_admission`,
-`augusta_host_heartbeat`. Server-only: the client never links them.
+`augusta_host_heartbeat`, all in `augusta::host`. Server-only: the client never
+links them.
 
 ## Responsibility
 

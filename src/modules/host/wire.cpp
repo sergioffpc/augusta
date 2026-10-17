@@ -27,7 +27,7 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -340,4 +340,4 @@ std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
   return commands;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

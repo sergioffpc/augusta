@@ -20,7 +20,7 @@
 #include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 simulation::EntityId ToSimulation(EntityId entity) {
   return static_cast<simulation::EntityId>(static_cast<std::uint32_t>(entity));
@@ -66,10 +66,10 @@ simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const
   return result;
 }
 
-std::unordered_map<std::string, simulation::Character> ToSimulation(const std::vector<Character>& characters) {
+std::unordered_map<std::string, simulation::Character> ToSimulation(const std::vector<server::Character>& characters) {
   std::unordered_map<std::string, simulation::Character> result;
   result.reserve(characters.size());
-  for (const Character& character : characters) {
+  for (const server::Character& character : characters) {
     simulation::Character converted{.eye = character.eye, .hitboxes = {}};
     converted.hitboxes.reserve(character.hitboxes.size());
     for (const assets::HitboxData& hitbox : character.hitboxes) {
@@ -81,7 +81,7 @@ std::unordered_map<std::string, simulation::Character> ToSimulation(const std::v
 }
 
 simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
-                                  const Scenario& scenario, scripting::Engine policy) {
+                                  const server::Scenario& scenario, scripting::Engine policy) {
   simulation::World simulation(parameters, tick_rate_hz, std::move(policy));
   if (const auto added = map::AddCollision(simulation, scenario.collision); !added) {
     throw failure::ClassifiedFailure(failure::Failure{
@@ -92,4 +92,4 @@ simulation::World BuildSimulation(const parameters::Parameters& parameters, std:
   return simulation;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

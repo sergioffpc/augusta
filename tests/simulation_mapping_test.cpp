@@ -18,12 +18,12 @@ namespace {
 
 using augusta::assets::BodyPart;
 using augusta::assets::HitboxData;
+using augusta::host::EntityId;
+using augusta::host::FromSimulation;
+using augusta::host::SessionId;
+using augusta::host::ToBallistics;
+using augusta::host::ToSimulation;
 using augusta::math::Vec3;
-using augusta::server::EntityId;
-using augusta::server::FromSimulation;
-using augusta::server::SessionId;
-using augusta::server::ToBallistics;
-using augusta::server::ToSimulation;
 
 HitboxData Triangle(BodyPart part) {
   return {.part = part, .mesh = {.points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, .indices = {0, 1, 2}}};

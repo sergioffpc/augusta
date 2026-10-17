@@ -13,7 +13,7 @@ Scripts/Behaviours phase. It reads Game policy's answers into typed actions
 
 ## Not its responsibility
 
-- Screening commands, encoding and sending state: the server (`server::Host`).
+- Screening commands, encoding and sending state: the server (`host::Host`).
 - The movement, weapon and ballistics rules: physics and gameplay.
 - Running Lua: scripting.
 

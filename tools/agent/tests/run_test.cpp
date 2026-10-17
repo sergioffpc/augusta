@@ -10,7 +10,7 @@
 #include "testing_server.h"
 
 // Whole runs of Agents, composing Intents as load_test.py does, against a
-// server::Host over loopback in the same process.
+// host::Host over loopback in the same process.
 namespace {
 
 using augusta::agent::LoadedPack;

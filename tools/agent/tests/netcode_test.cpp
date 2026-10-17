@@ -14,7 +14,7 @@
 #include "testing_server.h"
 
 // The netcode under an impaired link (ADR-0013): whole runs of Agents,
-// composing Intents as load_test.py does, against a server::Host in the same
+// composing Intents as load_test.py does, against a host::Host in the same
 // process, with the transport's simulated latency, jitter, loss and reordering
 // on every packet either side sends, held
 // to bounds on what reconciliation (ADR-0004) and lag compensation (ADR-0044)

@@ -18,7 +18,7 @@
 /// server until it has been read here into one of a closed set of actions,
 /// validated against what that hook may decide. SimulationWorld reads every
 /// hook's answer through these and hands the server only the result, so
-/// server::Host acts on typed actions and never interprets policy itself.
+/// host::Host acts on typed actions and never interprets policy itself.
 namespace augusta::simulation {
 
 /// The server's name for the player who controls a body (CONTEXT.md, "Session
@@ -27,7 +27,7 @@ namespace augusta::simulation {
 enum class SessionId : std::uint32_t {};
 
 /// Game policy's decision to end the Match (US-14), made by the rules'
-/// on_tick on a tick and taken by server::Host after it (ADR-0023).
+/// on_tick on a tick and taken by host::Host after it (ADR-0023).
 struct MatchEnd {
   /// The session of the player who won, alive in the Match on the tick it was
   /// decided; nullopt for a draw.

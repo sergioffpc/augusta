@@ -99,10 +99,10 @@ using augusta::physics::Stance;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::SessionIdWire;
 namespace protocol = augusta::protocol;
+using augusta::host::ConnectionSample;
+using augusta::host::Host;
+using augusta::host::HostConfig;
 using augusta::server::ConnectionHealth;
-using augusta::server::ConnectionSample;
-using augusta::server::Host;
-using augusta::server::HostConfig;
 using augusta::server::Scenario;
 
 // The Code of the failure::ClassifiedFailure construct throws, or nullopt if it
@@ -1138,7 +1138,7 @@ class PacingTest : public MovementTest {
   std::vector<Told> RunPaced(double clock_rate, int ticks) {
     const auto nominal =
         std::chrono::duration_cast<augusta::tick::Clock::duration>(std::chrono::duration<double>(kFixedTick));
-    const auto self = static_cast<augusta::server::SessionId>(std::to_underlying(*session_.GetSessionId()));
+    const auto self = static_cast<augusta::host::SessionId>(std::to_underlying(*session_.GetSessionId()));
     std::chrono::duration<double> server_next = nominal;
     std::chrono::duration<double> client_next{};
     std::vector<Told> told;
@@ -1147,7 +1147,7 @@ class PacingTest : public MovementTest {
         const std::size_t queued = host_.QueuedCommands(self);
         session_.Tick(Walking(), kFixedTick);
         DeliverUntil(
-            [&] { return host_.QueuedCommands(self) > queued || queued == augusta::server::kMaxQueuedCommands; });
+            [&] { return host_.QueuedCommands(self) > queued || queued == augusta::host::kMaxQueuedCommands; });
         client_next +=
             augusta::tick::PacedTickDuration(nominal, session_.GetAuthoritativeState()->queued_commands) / clock_rate;
       } else {
@@ -1316,12 +1316,12 @@ class LoopbackMatch : public ::testing::Test {
   // movement (ADR-0038) and turn into a correction no real mismatch caused. The
   // patience bounds a test that loses commands on purpose.
   augusta::simulation::TickResult StepEach(const std::vector<Command>& commands) {
-    std::vector<std::pair<const Session*, augusta::server::SessionId>> sending;
+    std::vector<std::pair<const Session*, augusta::host::SessionId>> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
       if (session->GetPhase() == Phase::kMatch && session->GetConnectionState() == ConnectionState::kConnected) {
         sending.emplace_back(session.get(),
-                             static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId())));
+                             static_cast<augusta::host::SessionId>(std::to_underlying(*session->GetSessionId())));
       }
       states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
@@ -1726,7 +1726,7 @@ using MatchCycleTest = MatchOf<2>;
 // The ticks of the pause after a match at the test tick rate.
 std::uint32_t PauseTicks() {
   return static_cast<std::uint32_t>(
-      std::ceil(std::chrono::duration<float>(augusta::server::kMatchPause).count() * kTestTickRate));
+      std::ceil(std::chrono::duration<float>(augusta::host::kMatchPause).count() * kTestTickRate));
 }
 
 // Requirements: US-14
@@ -1989,7 +1989,7 @@ TEST_F(CaptureHostTest, AMatchCapturedToItsEndIsCounted) {
   PlayAMatch();
   ASSERT_FALSE(ReadBack().events.empty());
 
-  const augusta::server::HostMetrics& metrics = host_.Metrics();
+  const augusta::host::HostMetrics& metrics = host_.Metrics();
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (metrics.captures_completed.Value() == 0 && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1997,7 +1997,7 @@ TEST_F(CaptureHostTest, AMatchCapturedToItsEndIsCounted) {
   EXPECT_EQ(metrics.captures_started.Value(), 1U);
   EXPECT_EQ(metrics.captures_completed.Value(), 1U);
   EXPECT_EQ(metrics.capture_stops.Total(), 0U);
-  EXPECT_EQ(metrics.capture_state.load(), augusta::server::CaptureState::kIdle);
+  EXPECT_EQ(metrics.capture_state.load(), augusta::host::CaptureState::kIdle);
   EXPECT_EQ(metrics.capture_directory_files.Value(), 1.0);
   EXPECT_GT(metrics.capture_written_bytes.Value(), 0U);
   EXPECT_EQ(metrics.capture_directory_bytes.Value(), static_cast<double>(metrics.capture_written_bytes.Value()));
@@ -2010,7 +2010,7 @@ TEST_F(CaptureHostTest, CapturesAreCapturingWhileAMatchIsInProgress) {
   ASSERT_TRUE(StartMatch());
   Step();
 
-  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kCapturing);
+  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::host::CaptureState::kCapturing);
 }
 
 // A CaptureHostTest whose scenario's rules end its first Match on its fifth
@@ -2040,7 +2040,7 @@ TEST_F(FirstMatchWonCaptureHostTest, AMatchEveryPlayerLeftEndsAsADrawWhoeverWonT
   Join();
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
-  const augusta::server::HostMetrics& metrics = host_.Metrics();
+  const augusta::host::HostMetrics& metrics = host_.Metrics();
   ASSERT_EQ(metrics.matches_ended_with_winner.Value(), 1U);
 
   ASSERT_TRUE(StartMatch());
@@ -2119,7 +2119,7 @@ class ReenactmentHostTest : public ::testing::Test {
   // reached it, and the State comes back.
   template <typename CommandOf>
   static void Step(Host& host, const std::vector<std::unique_ptr<Session>>& sessions, CommandOf command_of) {
-    std::vector<augusta::server::SessionId> sending;
+    std::vector<augusta::host::SessionId> sending;
     for (std::size_t i = 0; i < sessions.size(); ++i) {
       Session& session = *sessions[i];
       if (session.GetPhase() != Phase::kMatch || session.GetConnectionState() != ConnectionState::kConnected) {
@@ -2130,13 +2130,13 @@ class ReenactmentHostTest : public ::testing::Test {
       if (!command.has_value()) {
         continue;
       }
-      sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*session.GetSessionId())));
+      sending.push_back(static_cast<augusta::host::SessionId>(std::to_underlying(*session.GetSessionId())));
       session.Tick(*command, kFixedTick);
     }
     const auto give_up = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
     ExchangeUntil(host, Pointers(sessions), [&] {
       return std::chrono::steady_clock::now() >= give_up ||
-             std::ranges::all_of(sending, [&](augusta::server::SessionId id) { return host.QueuedCommands(id) > 0; });
+             std::ranges::all_of(sending, [&](augusta::host::SessionId id) { return host.QueuedCommands(id) > 0; });
     });
     host.Tick(kFixedTick);
     Settle(host, Pointers(sessions));
@@ -2553,7 +2553,7 @@ class ScriptedServer {
       if (std::holds_alternative<augusta::protocol::JoinRequestWire>(*decoded)) {
         Send(augusta::protocol::JoinAcceptedWire{.session = kScriptedSession,
                                                  .tick_rate_hz = kTestTickRate,
-                                                 .parameters = augusta::server::ToWire(parameters_),
+                                                 .parameters = augusta::host::ToWire(parameters_),
                                                  .character = kCharacter});
         if (start_match_) {
           Send(StartOfAlone());
@@ -3690,7 +3690,7 @@ std::size_t CountOccurrences(const std::string& log, const std::string& needle) 
 const augusta::protocol::BytesWire kUndecodable{std::byte{0xFF}, std::byte{1}, std::byte{2}};
 
 // More misbehaviour than the server tolerates, with plenty to spare.
-constexpr std::size_t kFlood = 3 * augusta::server::kMisbehaviourThreshold;
+constexpr std::size_t kFlood = 3 * augusta::host::kMisbehaviourThreshold;
 
 // A peer that keeps sending what no honest client sends is disconnected
 // (US-15), as an ordinary departure; routine rejections never disconnect it.
@@ -3834,7 +3834,7 @@ TEST_F(HonestClientTest, AtAHundredMillisecondsOfLatencyAndWithPacketLossAClient
 class AdmissionDeadlineTest : public RobustnessOf<2> {
  protected:
   using Clock = std::chrono::steady_clock;
-  static constexpr auto kDeadline = augusta::server::kAdmissionDeadline;
+  static constexpr auto kDeadline = augusta::host::kAdmissionDeadline;
   static constexpr auto kJustShort = std::chrono::milliseconds(1);
 
   // Runs host_ - its clock stopped at host_time - raw and every session for
@@ -4146,7 +4146,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   Command command = Firing();
   command.yaw = 0.75F;
   command.pitch = -0.25F;
-  const auto shooter_session = static_cast<augusta::server::SessionId>(std::to_underlying(*shooter.GetSessionId()));
+  const auto shooter_session = static_cast<augusta::host::SessionId>(std::to_underlying(*shooter.GetSessionId()));
 
   // One tick, by hand: the server takes in the fire command on its next tick.
   shooter.Tick(command, kFixedTick);
@@ -4261,7 +4261,7 @@ class PredictedFireTest : public FireMatchOf<1> {
   // Ticks the server through the commands that reach it within a tick's time,
   // then lets its answers reach the client.
   void ServeDelivered() {
-    const auto self = static_cast<augusta::server::SessionId>(std::to_underlying(*client_->GetSessionId()));
+    const auto self = static_cast<augusta::host::SessionId>(std::to_underlying(*client_->GetSessionId()));
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     while (host_.QueuedCommands(self) > 0) {
@@ -4869,8 +4869,8 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   // Whether the server holds a command of every client for its next tick.
   [[nodiscard]] bool EveryoneHasACommandQueued() const {
     return std::ranges::all_of(sessions_, [&](const auto& session) {
-      return host_.QueuedCommands(
-                 static_cast<augusta::server::SessionId>(std::to_underlying(*session->GetSessionId()))) > 0;
+      return host_.QueuedCommands(static_cast<augusta::host::SessionId>(std::to_underlying(*session->GetSessionId()))) >
+             0;
     });
   }
 
@@ -6105,15 +6105,15 @@ class AdversaryMatch : public LoopbackMatch {
   // command sent has arrived, or kStepPatience has passed, and everyone is told
   // of the tick. Returns the server's.
   augusta::simulation::TickResult Play(const protocol::CommandsWire& message = {}) {
-    std::vector<augusta::server::SessionId> sending;
+    std::vector<augusta::host::SessionId> sending;
     if (!message.commands.empty()) {
       adversary_.Send(message);
-      sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*adversary_.GetSessionId())));
+      sending.push_back(static_cast<augusta::host::SessionId>(std::to_underlying(*adversary_.GetSessionId())));
     }
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       Session& session = *sessions_[i];
       if (session.GetPhase() == Phase::kMatch && session.IsAlive()) {
-        sending.push_back(static_cast<augusta::server::SessionId>(std::to_underlying(*session.GetSessionId())));
+        sending.push_back(static_cast<augusta::host::SessionId>(std::to_underlying(*session.GetSessionId())));
       }
       states_[&session] = session.Tick(honest_commands_.at(i), kFixedTick);
     }
@@ -6122,7 +6122,7 @@ class AdversaryMatch : public LoopbackMatch {
       adversary_.Serve();
       return std::chrono::steady_clock::now() >= give_up ||
              std::ranges::all_of(sending,
-                                 [&](augusta::server::SessionId session) { return host_.QueuedCommands(session) > 0; });
+                                 [&](augusta::host::SessionId session) { return host_.QueuedCommands(session) > 0; });
     });
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     Deliver(result.state.tick);
@@ -6719,9 +6719,9 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
 // What the Host counts for the metrics endpoint (ADR-0049), read through the
 // Host alone, never over HTTP: each event where it happens, once, for both the
 // series and the heartbeat line.
-using augusta::server::HostMetrics;
-using augusta::server::Leaving;
-using augusta::server::MessageType;
+using augusta::host::HostMetrics;
+using augusta::host::Leaving;
+using augusta::host::MessageType;
 
 using HostCountsTest = MatchOf<2>;
 
@@ -6733,7 +6733,7 @@ std::uint64_t Discarded(const HostMetrics& metrics) {
 
 // Requirements: NFR-07
 TEST_F(HostCountsTest, CapturesAreOffWithoutACaptureDirectory) {
-  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::server::CaptureState::kOff);
+  EXPECT_EQ(host_.Metrics().capture_state.load(), augusta::host::CaptureState::kOff);
 }
 
 // Requirements: NFR-07
@@ -6761,7 +6761,7 @@ TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn
 
   const HostMetrics& metrics = host_.Metrics();
   EXPECT_EQ(metrics.joins_admitted.Value(), 2U);
-  EXPECT_EQ(metrics.joins_refused[augusta::server::JoinRefusal::kLobbyFull].Value(), 1U);
+  EXPECT_EQ(metrics.joins_refused[augusta::host::JoinRefusal::kLobbyFull].Value(), 1U);
   EXPECT_EQ(metrics.joins_refused.Total(), 1U);
   EXPECT_EQ(metrics.sessions.Value(), 2.0);
   EXPECT_EQ(metrics.lobby_players.Value(), 2.0);
@@ -6842,7 +6842,7 @@ TEST_F(HostCountsTest, EveryMessageIsCountedByTypeAndEveryUpdateByItsSize) {
   EXPECT_EQ(sizes.cumulative_counts.back(), updates);
   EXPECT_GT(static_cast<double>(metrics.sent_bytes.Value()), sizes.sum);
   EXPECT_GT(metrics.received_bytes.Value(), 0U);
-  EXPECT_EQ(augusta::server::Totals(metrics).messages, metrics.messages_received.Total());
+  EXPECT_EQ(augusta::host::Totals(metrics).messages, metrics.messages_received.Total());
 }
 
 // Requirements: NFR-07
@@ -6856,13 +6856,13 @@ TEST_F(HostCountsTest, AFloodOfMalformedMessagesIsCountedAsMisbehaviourAndItsDis
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
 
   const HostMetrics& metrics = host_.Metrics();
-  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kUndecodable].Value(),
-            augusta::server::kMisbehaviourThreshold);
-  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.misbehaviour[augusta::host::PeerRejection::kUndecodable].Value(),
+            augusta::host::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::host::kMisbehaviourThreshold);
   EXPECT_EQ(metrics.disconnects_from_lobby[Leaving::kMisbehaving].Value(), 1U);
-  EXPECT_GE(metrics.received_bytes.Value(), augusta::server::kMisbehaviourThreshold * kUndecodable.size());
-  const augusta::server::Activity totals = augusta::server::Totals(metrics);
-  EXPECT_EQ(totals.dropped, augusta::server::kMisbehaviourThreshold);
+  EXPECT_GE(metrics.received_bytes.Value(), augusta::host::kMisbehaviourThreshold * kUndecodable.size());
+  const augusta::host::Activity totals = augusta::host::Totals(metrics);
+  EXPECT_EQ(totals.dropped, augusta::host::kMisbehaviourThreshold);
   EXPECT_EQ(totals.misbehaving, 1U);
 }
 
@@ -6877,7 +6877,7 @@ TEST_F(HostCountsTest, CommandsOutsideAMatchAreDiscardedAsRoutineNotAsMisbehavio
 
   EXPECT_EQ(metrics.commands_received.Value(), 2U);
   EXPECT_EQ(metrics.misbehaviour.Total(), 0U);
-  EXPECT_EQ(augusta::server::Totals(metrics).stale, 2U);
+  EXPECT_EQ(augusta::host::Totals(metrics).stale, 2U);
 }
 
 // Requirements: NFR-07
@@ -6889,7 +6889,7 @@ TEST_F(HostCountsTest, CommandsFromAPeerThatHasNotJoinedAreMisbehaviour) {
   const HostMetrics& metrics = host_.Metrics();
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.misbehaviour.Total() == 1U; }));
 
-  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kCommandsBeforeJoining].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour[augusta::host::PeerRejection::kCommandsBeforeJoining].Value(), 1U);
   EXPECT_EQ(metrics.joins_admitted.Value(), 0U);
   EXPECT_EQ(metrics.commands_received.Value(), 1U);
   EXPECT_EQ(metrics.commands_before_joining.Value(), 1U);
@@ -6901,14 +6901,14 @@ TEST_F(HostCountsTest, APeerDisconnectedForNotBeingAdmittedInTimeIsCountedBefore
   RawClient raw(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(raw.Connect(host_));
 
-  const auto past_the_deadline = std::chrono::steady_clock::now() + augusta::server::kAdmissionDeadline;
+  const auto past_the_deadline = std::chrono::steady_clock::now() + augusta::host::kAdmissionDeadline;
   ASSERT_TRUE(raw.ServeUntil(
       host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }, past_the_deadline));
 
   const HostMetrics& metrics = host_.Metrics();
   EXPECT_EQ(metrics.disconnects_before_admission[Leaving::kMisbehaving].Value(), 1U);
   EXPECT_EQ(metrics.disconnects_from_lobby.Total() + metrics.disconnects_from_match.Total(), 0U);
-  EXPECT_EQ(augusta::server::Totals(metrics).misbehaving, 1U);
+  EXPECT_EQ(augusta::host::Totals(metrics).misbehaving, 1U);
 }
 
 using SoloHostCountsTest = MatchOf<1>;
@@ -6926,9 +6926,9 @@ TEST_F(SoloHostCountsTest, CommandsTheQueueTurnsAwayAreDiscardedByWhy) {
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return metrics.commands_rejected.Total() == 2U; }));
 
   EXPECT_EQ(metrics.commands_received.Value(), 3U);
-  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kStale].Value(), 1U);
-  EXPECT_EQ(metrics.commands_rejected[augusta::server::Rejection::kOutOfRange].Value(), 1U);
-  EXPECT_EQ(metrics.misbehaviour[augusta::server::PeerRejection::kOutOfRangeCommand].Value(), 1U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::host::Rejection::kStale].Value(), 1U);
+  EXPECT_EQ(metrics.commands_rejected[augusta::host::Rejection::kOutOfRange].Value(), 1U);
+  EXPECT_EQ(metrics.misbehaviour[augusta::host::PeerRejection::kOutOfRangeCommand].Value(), 1U);
   EXPECT_EQ(metrics.misbehaviour.Total(), 1U);
   EXPECT_EQ(metrics.commands_received.Value() - Discarded(metrics), 1U);
 }
@@ -6959,8 +6959,8 @@ TEST_F(SoloHostCountsTest, CommandsLeftInTheMessageOfAPeerDisconnectedMidwayAreN
   ASSERT_TRUE(raw.ServeUntil(host_, [&] { return raw.GetConnectionState() == ConnectionState::kDisconnected; }));
 
   const HostMetrics& metrics = host_.Metrics();
-  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::server::kMisbehaviourThreshold);
-  EXPECT_EQ(metrics.commands_received.Value(), augusta::server::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.misbehaviour.Total(), augusta::host::kMisbehaviourThreshold);
+  EXPECT_EQ(metrics.commands_received.Value(), augusta::host::kMisbehaviourThreshold);
   EXPECT_EQ(Discarded(metrics), metrics.commands_received.Value());
 }
 

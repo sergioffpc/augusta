@@ -33,16 +33,16 @@ server::Content LoadContent(const std::filesystem::path& pack_path, const std::f
   return *std::move(content);
 }
 
-server::HostConfig ConfigFor(const server::Content& content, std::uint8_t player_count) {
+host::HostConfig ConfigFor(const server::Content& content, std::uint8_t player_count) {
   parameters::Parameters parameters = content.parameters;
   parameters.player_count = player_count;
-  return server::HostConfig{.tick_rate_hz = kTickRate,
-                            .parameters = parameters,
-                            .listen = {.address = "127.0.0.1:0"},
-                            .server_pack = {},
-                            .capture_directory = {},
-                            .capture_mode = {},
-                            .faults = nullptr};
+  return host::HostConfig{.tick_rate_hz = kTickRate,
+                          .parameters = parameters,
+                          .listen = {.address = "127.0.0.1:0"},
+                          .server_pack = {},
+                          .capture_directory = {},
+                          .capture_mode = {},
+                          .faults = nullptr};
 }
 
 }  // namespace

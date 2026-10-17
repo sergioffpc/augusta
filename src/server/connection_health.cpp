@@ -80,7 +80,7 @@ enum SessionValue : std::uint8_t {
 
 // One Session's gauges, each kNotMeasured until first measured.
 struct SessionGauges {
-  SessionId session{};
+  host::SessionId session{};
   std::array<double, kSessionValueCount> values{};
 };
 
@@ -154,7 +154,7 @@ class PublishedGauges {
       if (!occupied_.load(std::memory_order_relaxed)) {
         return std::nullopt;
       }
-      SessionGauges gauges{.session = SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
+      SessionGauges gauges{.session = host::SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
       for (std::size_t i = 0; i < values_.size(); ++i) {
         gauges.values[i] = values_[i].load(std::memory_order_relaxed);
       }
@@ -227,7 +227,7 @@ struct ConnectionHealth::Impl {
 
   // The slot session's gauges are in, or else a free one; nullopt if every
   // slot is taken, which no more Sessions than the Lobby holds can do.
-  [[nodiscard]] std::optional<std::size_t> SlotOf(SessionId session) const {
+  [[nodiscard]] std::optional<std::size_t> SlotOf(host::SessionId session) const {
     std::optional<std::size_t> free;
     for (std::size_t slot = 0; slot < sessions.size(); ++slot) {
       if (!sessions[slot].has_value()) {
@@ -239,7 +239,7 @@ struct ConnectionHealth::Impl {
     return free;
   }
 
-  void SetGauges(SessionId session, const networking::ConnectionStats& stats) {
+  void SetGauges(host::SessionId session, const networking::ConnectionStats& stats) {
     const std::optional<std::size_t> slot = SlotOf(session);
     if (!slot.has_value()) {
       return;
@@ -261,9 +261,9 @@ struct ConnectionHealth::Impl {
   }
 
   // Removes the gauges of every Session not in samples: it has ended.
-  void RemoveEnded(const std::vector<ConnectionSample>& samples) {
+  void RemoveEnded(const std::vector<host::ConnectionSample>& samples) {
     for (std::optional<SessionGauges>& gauges : sessions) {
-      if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const ConnectionSample& sample) {
+      if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const host::ConnectionSample& sample) {
             return sample.session == gauges->session;
           })) {
         gauges.reset();
@@ -278,10 +278,10 @@ ConnectionHealth::ConnectionHealth() : impl_(std::make_unique<Impl>()) {}
 
 ConnectionHealth::~ConnectionHealth() = default;
 
-void ConnectionHealth::Record(const std::vector<ConnectionSample>& samples) {
+void ConnectionHealth::Record(const std::vector<host::ConnectionSample>& samples) {
   // First, so an ended Session's slot is free for a new one.
   impl_->RemoveEnded(samples);
-  for (const ConnectionSample& sample : samples) {
+  for (const host::ConnectionSample& sample : samples) {
     impl_->ObserveAll(sample.stats);
     if (sample.session.has_value()) {
       impl_->SetGauges(*sample.session, sample.stats);

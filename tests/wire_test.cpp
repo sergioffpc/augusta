@@ -35,11 +35,11 @@
 // types unchanged, bytes and all.
 namespace {
 
+using augusta::host::EntityId;
+using augusta::host::SessionId;
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
-using augusta::server::EntityId;
-using augusta::server::SessionId;
 
 // message as the other peer decodes it.
 template <typename MessageWire>
@@ -50,8 +50,8 @@ MessageWire ThroughTheWire(const MessageWire& message) {
 // What the server sends recipient of updates, as the client takes it in.
 augusta::harness::AuthoritativeState ReceivedBy(const augusta::replication::Updates& updates,
                                                 const augusta::replication::RecipientUpdate& recipient) {
-  augusta::protocol::AuthoritativeStateWire sent = augusta::server::ToWire(updates);
-  augusta::server::Address(sent, recipient);
+  augusta::protocol::AuthoritativeStateWire sent = augusta::host::ToWire(updates);
+  augusta::host::Address(sent, recipient);
   return augusta::harness::FromWire(ThroughTheWire(sent));
 }
 
@@ -94,8 +94,8 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
     sent.seen_fraction = 0.75F;
 
     const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 9, .command = sent}}};
-    const augusta::server::SequencedCommand received =
-        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0);
+    const augusta::host::SequencedCommand received =
+        augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0);
 
     EXPECT_EQ(received.sequence, 9U);
     EXPECT_EQ(received.command.movement.direction, sent.movement.direction);
@@ -121,8 +121,8 @@ TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheSeenTimeItWasSampledO
     sent[i].command.seen_fraction = 0.25F * static_cast<float>(i);
   }
 
-  const std::vector<augusta::server::SequencedCommand> received =
-      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+  const std::vector<augusta::host::SequencedCommand> received =
+      augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
 
   ASSERT_EQ(received.size(), sent.size());
   for (std::size_t i = 0; i < sent.size(); ++i) {
@@ -141,8 +141,8 @@ TEST(WireTest, SeenTimesEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled
     sent[i].command.seen_tick = kLastOf32Bits - 1 + i;
   }
 
-  const std::vector<augusta::server::SequencedCommand> received =
-      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+  const std::vector<augusta::host::SequencedCommand> received =
+      augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
 
   ASSERT_EQ(received.size(), sent.size());
   for (std::size_t i = 0; i < sent.size(); ++i) {
@@ -158,8 +158,8 @@ TEST(WireTest, ASeenTimeTooFarBeforeTheMessagesNewestReachesTheServerAsTheOldest
   sent[0].command.seen_tick = 100;
   sent[1].command.seen_tick = 1000;
 
-  const std::vector<augusta::server::SequencedCommand> received =
-      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+  const std::vector<augusta::host::SequencedCommand> received =
+      augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
 
   EXPECT_EQ(received.at(0).command.seen_tick, 1000U - 255U);
   EXPECT_EQ(received.at(1).command.seen_tick, 1000U);
@@ -170,7 +170,7 @@ TEST(WireTest, ASeenAgeBeyondTheMessagesSeenTickIsTheFirstTick) {
   augusta::protocol::CommandsWire message{.commands = {{.sequence = 1}}, .seen_tick = 3};
   message.commands[0].command.seen_age = 10;
 
-  EXPECT_EQ(augusta::server::FromWire(ThroughTheWire(message)).at(0).command.seen_tick, 0U);
+  EXPECT_EQ(augusta::host::FromWire(ThroughTheWire(message)).at(0).command.seen_tick, 0U);
 }
 
 TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
@@ -183,7 +183,7 @@ TEST(WireTest, EachFlagOfACommandReachesTheServerAsItselfAlone) {
 
     const std::array<augusta::harness::SequencedCommand, 1> commands = {{{.sequence = 1, .command = sent}}};
     const augusta::command::Command received =
-        augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0).command;
+        augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(commands))).at(0).command;
 
     EXPECT_EQ(received.movement.sprint, sent.movement.sprint) << flag;
     EXPECT_EQ(received.ads, sent.ads) << flag;
@@ -280,7 +280,7 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
 
   const augusta::protocol::JoinAcceptedWire received =
       ThroughTheWire(augusta::protocol::JoinAcceptedWire{.session = augusta::protocol::SessionIdWire{1},
-                                                         .parameters = augusta::server::ToWire(parameters),
+                                                         .parameters = augusta::host::ToWire(parameters),
                                                          .character = "soldier"});
 
   // Every parameter travels as its exact bits, so nothing is rounded on the way.
@@ -295,11 +295,11 @@ TEST(WireTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged) {
 }
 
 TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
-  const augusta::server::Roster sent{
+  const augusta::host::Roster sent{
       .version = 7,
       .players = {{.session = SessionId{3}, .character = "medic"}, {.session = SessionId{5}, .character = "sniper"}}};
 
-  const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::Lobby received = augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent)));
 
   EXPECT_EQ(received.version, sent.version);
   ASSERT_EQ(received.roster.size(), sent.players.size());
@@ -310,13 +310,13 @@ TEST(WireTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 }
 
 TEST(WireTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {
-  const augusta::server::MatchStart sent{
+  const augusta::host::MatchStart sent{
       .players = {{.session = SessionId{3}, .entity = EntityId{11}, .character = "medic"},
                   {.session = SessionId{5}, .entity = EntityId{12}, .character = "sniper"}}};
   const std::vector<Vec3> spawns{Vec3(4.0F, 0.5F, -8.0F), Vec3(-1.0F, 0.0F, 2.0F)};
 
   const augusta::harness::MatchStart received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, spawns, 0x1'0000'0042ULL)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent, spawns, 0x1'0000'0042ULL)));
 
   EXPECT_EQ(received.first_tick, 0x1'0000'0042ULL);
   ASSERT_EQ(received.players.size(), sent.players.size());
@@ -335,7 +335,7 @@ TEST(WireTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   const augusta::harness::JoinRequest sent{
       .engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier"};
 
-  const augusta::server::JoinRequest received = augusta::server::FromWire(
+  const augusta::host::JoinRequest received = augusta::host::FromWire(
       ThroughTheWire(std::get<augusta::protocol::JoinRequestWire>(augusta::harness::ToWire(sent))));
 
   EXPECT_EQ(received.engine_version, sent.engine_version);
@@ -355,8 +355,8 @@ TEST(WireTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesTheServerUn
 
   const augusta::protocol::MessageWire wire = augusta::harness::ToWire(sent);
   ASSERT_TRUE(std::holds_alternative<augusta::protocol::ReenactRequestWire>(wire));
-  const augusta::server::JoinRequest received =
-      augusta::server::FromWire(ThroughTheWire(std::get<augusta::protocol::ReenactRequestWire>(wire)));
+  const augusta::host::JoinRequest received =
+      augusta::host::FromWire(ThroughTheWire(std::get<augusta::protocol::ReenactRequestWire>(wire)));
 
   EXPECT_EQ(received.engine_version, sent.engine_version);
   EXPECT_EQ(received.client_pack, sent.client_pack);
@@ -367,10 +367,10 @@ TEST(WireTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesTheServerUn
 TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
-  const augusta::server::Admission sent{.session = SessionId{7}, .character = "soldier"};
+  const augusta::host::Admission sent{.session = SessionId{7}, .character = "soldier"};
 
   const augusta::harness::Admission received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent, 30, parameters)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent, 30, parameters)));
 
   EXPECT_EQ(Number(received.session), Number(sent.session));
   EXPECT_EQ(received.character, sent.character);
@@ -380,7 +380,7 @@ TEST(WireTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
 
 TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
   using ClientRefusal = augusta::harness::JoinRefusal;
-  using ServerRefusal = augusta::server::JoinRefusal;
+  using ServerRefusal = augusta::host::JoinRefusal;
   const std::array<std::pair<ServerRefusal, ClientRefusal>, 9> reasons = {{
       {ServerRefusal::kVersionMismatch, ClientRefusal::kVersionMismatch},
       {ServerRefusal::kLobbyFull, ClientRefusal::kLobbyFull},
@@ -395,7 +395,7 @@ TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
 
   for (const auto& [sent, expected] : reasons) {
     const augusta::protocol::JoinRefusedWire received =
-        ThroughTheWire(augusta::protocol::JoinRefusedWire{.reason = augusta::server::ToWire(sent)});
+        ThroughTheWire(augusta::protocol::JoinRefusedWire{.reason = augusta::host::ToWire(sent)});
     EXPECT_EQ(augusta::harness::FromWire(received.reason), expected) << static_cast<int>(sent);
   }
 }
@@ -407,8 +407,8 @@ TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
     sent[i].command.yaw = 0.25F * static_cast<float>(i);
   }
 
-  const std::vector<augusta::server::SequencedCommand> received =
-      augusta::server::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
+  const std::vector<augusta::host::SequencedCommand> received =
+      augusta::host::FromWire(ThroughTheWire(augusta::harness::ToWire(sent)));
 
   ASSERT_EQ(received.size(), sent.size());
   for (std::size_t i = 0; i < sent.size(); ++i) {
@@ -427,7 +427,7 @@ TEST(WireTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
       .pitch = augusta::math::SnapAngle(0.123456F),
   };
 
-  const augusta::harness::Shot received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+  const augusta::harness::Shot received = augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent)));
 
   EXPECT_EQ(Number(received.shooter), Number(sent.shooter));
   EXPECT_EQ(received.tick, sent.tick);
@@ -447,7 +447,7 @@ TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
     };
 
     const augusta::harness::HitConfirmation received =
-        augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+        augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent)));
 
     EXPECT_EQ(Number(received.target), Number(sent.target));
     EXPECT_EQ(received.part, part);
@@ -456,13 +456,13 @@ TEST(WireTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
 }
 
 TEST(WireTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsADraw) {
-  const augusta::server::MatchEnd won{.players = {SessionId{3}, SessionId{5}}, .winner = SessionId{5}};
-  const augusta::server::MatchEnd drawn{.players = {SessionId{3}, SessionId{5}}, .winner = std::nullopt};
+  const augusta::host::MatchEnd won{.players = {SessionId{3}, SessionId{5}}, .winner = SessionId{5}};
+  const augusta::host::MatchEnd drawn{.players = {SessionId{3}, SessionId{5}}, .winner = std::nullopt};
 
   const augusta::harness::MatchEnd won_received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(won)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(won)));
   const augusta::harness::MatchEnd drawn_received =
-      augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(drawn)));
+      augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(drawn)));
 
   ASSERT_TRUE(won_received.winner.has_value());
   EXPECT_EQ(Number(*won_received.winner), 5U);
@@ -481,7 +481,7 @@ TEST(WireTest, ADeathTheServerTellsReachesTheClientUnchanged) {
         .part = part,
     };
 
-    const augusta::harness::Death received = augusta::harness::FromWire(ThroughTheWire(augusta::server::ToWire(sent)));
+    const augusta::harness::Death received = augusta::harness::FromWire(ThroughTheWire(augusta::host::ToWire(sent)));
 
     EXPECT_EQ(Number(received.victim), Number(sent.victim));
     EXPECT_EQ(Number(received.killer), Number(sent.killer));
@@ -508,13 +508,13 @@ TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) 
       .version = 1, .roster = {{.character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')}}};
   const augusta::protocol::ReadyWire fine{.version = 1};
 
-  for (const auto& encoded : {augusta::server::EncodeToSend(too_long), augusta::harness::EncodeToSend(too_long)}) {
+  for (const auto& encoded : {augusta::host::EncodeToSend(too_long), augusta::harness::EncodeToSend(too_long)}) {
     ASSERT_FALSE(encoded.has_value());
     EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
     EXPECT_EQ(ContextOf(encoded.error(), "message_type"), "6");
     EXPECT_FALSE(encoded.error().detail.empty());
   }
-  EXPECT_EQ(augusta::server::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
+  EXPECT_EQ(augusta::host::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
   EXPECT_EQ(augusta::harness::EncodeToSend(fine).value(), augusta::protocol::Encode(fine).value());
 }
 
@@ -522,10 +522,10 @@ TEST(WireTest, AMessageEitherPeerCannotEncodeIsAnInvariantFailureNamingItsType) 
 // value the protocol lacks, which Encode refuses, rather than as undefined
 // behaviour.
 TEST(WireTest, ACorruptedRefusalIsNotEncoded) {
-  const auto corrupted = static_cast<augusta::server::JoinRefusal>(99);
+  const auto corrupted = static_cast<augusta::host::JoinRefusal>(99);
 
   const auto encoded =
-      augusta::server::EncodeToSend(augusta::protocol::JoinRefusedWire{.reason = augusta::server::ToWire(corrupted)});
+      augusta::host::EncodeToSend(augusta::protocol::JoinRefusedWire{.reason = augusta::host::ToWire(corrupted)});
 
   ASSERT_FALSE(encoded.has_value());
   EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);

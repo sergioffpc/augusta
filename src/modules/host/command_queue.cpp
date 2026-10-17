@@ -7,7 +7,7 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -90,4 +90,4 @@ TickCommand CommandQueue::Next() {
   return TickCommand{.command = command, .acknowledged_sequence = acknowledged_};
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

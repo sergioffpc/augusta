@@ -26,7 +26,7 @@
 /// Simulation thread (ADR-0005). It composes the mechanism modules that
 /// already exist (physics, ballistics, scripting) into the eight ordered
 /// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
-/// (see Phase below); server::Host hands its
+/// (see Phase below); host::Host hands its
 /// per-tick output to augusta::replication to reach clients
 /// (ARCHITECTURE.md §5's "SimulationWorld... emits authoritative state
 /// each tick").
@@ -103,19 +103,19 @@ enum class Phase {
   /// left it (MatchView in simulation.cpp), while the world has players and
   /// policy has not already ended their Match. It may end the Match, with a
   /// winner or as a draw: its answer, validated into a typed action
-  /// (policy_actions.h), goes in the tick's TickResult, for server::Host to act
+  /// (policy_actions.h), goes in the tick's TickResult, for host::Host to act
   /// on after the tick. A hook that fails, or returns a decision it cannot
   /// make, is logged and decides nothing, and the tick goes on. The only phase
   /// not implemented in C++.
   kScriptsBehaviours,
   /// Mechanism. Packages the tick's resolved state into Authoritative
   /// State (State, below), which augusta::replication plans into each
-  /// client's update and server::Host sends.
+  /// client's update and host::Host sends.
   kCommit,
 };
 
 /// The server's name for one dynamic body inside SimulationWorld - today a
-/// player's, later any that moves. The caller picks it (server::Match hands one
+/// player's, later any that moves. The caller picks it (host::Match hands one
 /// to each player at match start) and it is unique among the bodies currently
 /// in the world. It names the body, not whoever controls it: a player's
 /// session is a different number.
@@ -282,8 +282,8 @@ struct State {
 };
 
 /// SimulationWorld's per-tick output (ADR-0023): what the tick resolved, for
-/// server::Host to replicate, and what Game policy decided on it, for
-/// server::Host to act on after the tick. Policy's decisions arrive here typed
+/// host::Host to replicate, and what Game policy decided on it, for
+/// host::Host to act on after the tick. Policy's decisions arrive here typed
 /// and already validated (policy_actions.h), so the server never reads a hook's
 /// answer itself.
 struct TickResult {
@@ -356,7 +356,7 @@ class World {
 
   /// Ends the Match in the world: takes every player and every bullet still in
   /// flight out of it, so nothing carries over to the next, and has Game policy
-  /// decide afresh on the players added from then on. Called by server::Host
+  /// decide afresh on the players added from then on. Called by host::Host
   /// between ticks, on a Match end policy decided or not.
   void EndMatch();
 

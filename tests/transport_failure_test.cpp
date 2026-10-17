@@ -47,6 +47,9 @@ using augusta::harness::Runner;
 using augusta::harness::RunnerHooks;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::host::PeerRejection;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
@@ -55,9 +58,6 @@ using augusta::networking::PeerId;
 using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::PeerRejection;
 using augusta::server::Scenario;
 using augusta::server::ServerRuntime;
 
@@ -442,10 +442,10 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
 // count it, as they do not count one the local transport refused.
 TEST(SendCountedTest, AMessageThePeersConnectionDroppedIsNotCounted) {
   augusta::networking::Server server(Endpoint{.address = "127.0.0.1:0"});
-  augusta::server::HostMetrics metrics(kTickRate);
+  augusta::host::HostMetrics metrics(kTickRate);
 
-  const auto sent = augusta::server::SendCounted(server, metrics, PeerId{42}, Payload{std::byte{1}, std::byte{2}},
-                                                 Reliability::kReliable);
+  const auto sent = augusta::host::SendCounted(server, metrics, PeerId{42}, Payload{std::byte{1}, std::byte{2}},
+                                               Reliability::kReliable);
 
   EXPECT_EQ(sent, SendOutcome::kDropped);
   EXPECT_EQ(metrics.messages_sent.Total(), 0U);

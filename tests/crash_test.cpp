@@ -47,10 +47,10 @@ TEST(CrashFormat, SignalWithoutANameIsWrittenAsItsNumber) {
 // Requirements: NFR-10
 TEST(CrashFormat, FrameLineNamesIndexAddressAndQuotedSymbol) {
   CrashLine line{};
-  EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 3, 0x7f00deadbeefU, "augusta::server::Host::Step(int)"),
+  EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 3, 0x7f00deadbeefU, "augusta::host::Host::Step(int)"),
             LoggedLine(kFixedTime,
                        "subsystem=server event=crash_frame index=3 pc=0x7f00deadbeef "
-                       "symbol=\"augusta::server::Host::Step(int)\""));
+                       "symbol=\"augusta::host::Host::Step(int)\""));
 }
 
 // Requirements: NFR-10

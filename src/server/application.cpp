@@ -44,7 +44,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayR
   if (!policy) {
     return std::unexpected(ContentFailure(pack.Path(), DescribePolicyLoadError(policy.error())));
   }
-  const ReplayServerConfig replay_config{
+  const host::ReplayServerConfig replay_config{
       .tick_rate_hz = file_config.tick_rate_hz,
       .parameters = content.parameters,
       .listen = {.address = file_config.listen_address},
@@ -81,7 +81,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
     return ConstructReplayRuntime(file_config, *pack, *std::move(content), faults);
   }
 
-  const HostConfig host_config{
+  const host::HostConfig host_config{
       .tick_rate_hz = file_config.tick_rate_hz,
       // Every client is sent the rate and these when it joins and predicts with
       // them, so the config file and the scenario's script are the only places
@@ -90,10 +90,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .listen = {.address = file_config.listen_address},
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
-      .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
-      .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
-                                            .max_bytes = file_config.capture_max_mib.transform(
-                                                [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
+      .capture_mode = file_config.strict_capture ? host::CaptureMode::kStrict : host::CaptureMode::kOptional,
+      .capture_retention = host::CaptureRetention{.max_files = file_config.capture_max_files,
+                                                  .max_bytes = file_config.capture_max_mib.transform(
+                                                      [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
       .reenactments = file_config.reenactments,
       .faults = faults,
   };

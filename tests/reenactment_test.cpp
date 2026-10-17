@@ -539,7 +539,7 @@ struct LinkRun {
 LinkRun RunOverALink(const Script& script, int server_period, int client_period, int one_way, int server_ticks) {
   struct Message {
     int arrives = 0;
-    augusta::server::SequencedCommand command;
+    augusta::host::SequencedCommand command;
   };
   struct State {
     int arrives = 0;
@@ -547,7 +547,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
     augusta::command::Sequence acknowledged = 0;
   };
   Reenactment run(script);
-  augusta::server::CommandQueue queue(kTickRate);
+  augusta::host::CommandQueue queue(kTickRate);
   LinkRun result;
   std::vector<Message> to_server;
   std::vector<State> to_client;
@@ -563,7 +563,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
         return message.arrives <= now;
       }
       const auto enqueued = queue.TryEnqueue(message.command);
-      result.dropped += enqueued == augusta::server::Enqueued::kDroppedOldest ? 1 : 0;
+      result.dropped += enqueued == augusta::host::Enqueued::kDroppedOldest ? 1 : 0;
       result.most_queued = std::max(result.most_queued, queue.Queued());
       return true;
     });
@@ -575,7 +575,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
         result.left_before = tick;
       }
       if (connected) {
-        const augusta::server::TickCommand next = queue.Next();
+        const augusta::host::TickCommand next = queue.Next();
         if (next.sent) {
           result.handed.push_back({.tick = tick, .command = next.command});
         }

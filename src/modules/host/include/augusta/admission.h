@@ -13,7 +13,7 @@
 /// peer not admitted to the Lobby within a deadline is to be disconnected, or
 /// idle connections would pile up. Pure (no I/O, no clock of its own: the caller
 /// hands it the time), so it is tested without a network.
-namespace augusta::server {
+namespace augusta::host {
 
 /// How long a connected peer has to be admitted to the Lobby. A boundary
 /// constant, like the misbehaviour threshold: not a Parameter, not a setting.
@@ -43,6 +43,6 @@ class AdmissionDeadlines {
   std::unordered_map<networking::PeerId, std::chrono::steady_clock::time_point> connected_at_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_ADMISSION_H_
