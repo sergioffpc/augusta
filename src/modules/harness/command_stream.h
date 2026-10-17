@@ -7,7 +7,7 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_types.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 
@@ -24,7 +24,7 @@ struct CommandTick {
   prediction::State state{};
   /// Every command the server has not yet acknowledged, this tick's last; empty
   /// when nothing is to be sent, outside a match.
-  std::vector<SequencedCommand> send;
+  std::vector<link::SequencedCommand> send;
 };
 
 /// The predicted player and the stream of commands that moves it on the server.
@@ -41,9 +41,9 @@ class CommandStream {
 
  private:
   // Keeps command under sequence with the commands server_view does not yet
-  // acknowledge, and returns them all, as one message carries them.
-  std::vector<SequencedCommand> Queue(const ServerView& server_view, tick::Sequence sequence,
-                                      const command::Command& command);
+  // acknowledge, and returns them all, oldest first.
+  std::vector<link::SequencedCommand> Queue(const ServerView& server_view, tick::Sequence sequence,
+                                            const command::Command& command);
 
   prediction::World prediction_;
   // Which match the prediction was last started over in
@@ -53,7 +53,7 @@ class CommandStream {
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
-  std::deque<SequencedCommand> unacknowledged_;
+  std::deque<link::SequencedCommand> unacknowledged_;
   tick::Sequence next_sequence_ = 1;
 };
 

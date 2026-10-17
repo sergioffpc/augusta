@@ -85,7 +85,7 @@ struct ViewerMessage {
 /// and, on its last tick, the Match end, reliably. No Hit confirmation: the
 /// viewer fired nothing. Every message is encoded before any is returned, so
 /// if the protocol cannot carry one, the broken invariant is returned instead
-/// (EncodeToSend in wire.h), as ForEachTickMessage does a live tick's.
+/// (link::EncodeToSend, augusta/link_messages.h), as ForEachTickMessage does a live tick's.
 [[nodiscard]] std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const ReplayTick& tick);
 
 /// What of listings a replay server's Replay list names: every one a Replay

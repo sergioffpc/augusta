@@ -50,7 +50,7 @@ using TickMessageSink = std::function<bool(networking::PeerId, const networking:
 /// The decision SendTickMessages puts on the wire, apart so it is tested
 /// without a network. Every message is encoded before any is handed on, so if
 /// the protocol cannot carry one, none of the tick's is: the broken invariant
-/// is returned instead (EncodeToSend in wire.h), for the runtime to stop on.
+/// is returned instead (link::EncodeToSend, augusta/link_messages.h), for the runtime to stop on.
 [[nodiscard]] std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State& state, tick::Tick tick,
                                                                        const TickRecipients& to,
                                                                        const TickMessageSink& send);

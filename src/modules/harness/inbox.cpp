@@ -13,7 +13,7 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -66,25 +66,25 @@ std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return dea
 
 bool Inbox::TakeIn(const protocol::MessageWire& message) {
   if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
-    OnJoinAccepted(FromWire(*accepted));
+    OnJoinAccepted(link::FromWire(*accepted));
   } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
-    OnJoinRefused(FromWire(refused->reason));
+    OnJoinRefused(link::FromWire(refused->reason));
   } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
-    OnAuthoritativeState(FromWire(*state));
+    OnAuthoritativeState(link::FromWire(*state));
   } else if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
-    OnShot(FromWire(*shot));
+    OnShot(link::FromWire(*shot));
   } else if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
-    OnHitConfirmation(FromWire(*hit));
+    OnHitConfirmation(link::FromWire(*hit));
   } else if (const auto* death = std::get_if<protocol::DeathWire>(&message)) {
-    OnDeath(FromWire(*death));
+    OnDeath(link::FromWire(*death));
   } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
-    OnLobby(FromWire(*lobby));
+    OnLobby(link::FromWire(*lobby));
   } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
-    OnMatchStart(FromWire(*start));
+    OnMatchStart(link::FromWire(*start));
   } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
-    OnMatchEnd(FromWire(*end));
+    OnMatchEnd(link::FromWire(*end));
   } else if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
-    OnReplayView(FromWire(*view));
+    OnReplayView(link::FromWire(*view));
   } else {
     return false;
   }

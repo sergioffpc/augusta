@@ -2,7 +2,9 @@
 
 #include <benchmark/benchmark.h>
 
-#include "augusta/host_wire.h"
+#include "augusta/link_mapping.h"
+#include "augusta/link_messages.h"
+#include "augusta/link_types.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
@@ -10,9 +12,9 @@
 
 // A full Match's Authoritative State replicated as server::Host replicates it
 // after each tick (ADR-0044): what each player in the Match is sent
-// (replication::PlanUpdates), in the protocol's terms and encoded, one message
-// per recipient: everything Host does to send its Authoritative State updates
-// but the send itself. Its Shots, Hit confirmations and Deaths are one message
+// (replication::PlanUpdates), in the Link's terms, then the protocol's, and
+// encoded, one message per recipient: everything Host does to send its
+// Authoritative State updates but the send itself. Its Shots, Hit confirmations and Deaths are one message
 // each, not one per recipient, and are not timed here.
 namespace {
 
@@ -33,11 +35,10 @@ void BM_Replication(benchmark::State& state) {
   }
   for (auto _ : state) {
     const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
-    augusta::protocol::MessageWire message = augusta::server::ToWire(updates);
-    auto& addressed = std::get<augusta::protocol::AuthoritativeStateWire>(message);
+    augusta::link::AuthoritativeState addressed = augusta::server::ToLink(updates);
     for (const RecipientUpdate& recipient : updates.recipients) {
       augusta::server::Address(addressed, recipient);
-      benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
+      benchmark::DoNotOptimize(augusta::protocol::Encode(augusta::link::ToWire(addressed)).value());
     }
   }
 }

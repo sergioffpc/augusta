@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -20,8 +19,8 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/link_messages.h"
 #include "augusta/protocol.h"
-#include "augusta/wire.h"
 #include "frame.h"
 
 namespace augusta::capture {
@@ -88,86 +87,6 @@ std::expected<protocol::CaptureHeaderWire, ReadError> ReadHeader(std::istream& i
   }
   return *header;
 }
-
-// The engine's types as the protocol's records carry them, and back: the
-// format's own rules, "winner 0 is a Draw" and "a Join is at offset 0", are
-// kept here.
-
-protocol::CaptureHeaderWire ToWire(const Header& header) {
-  return protocol::CaptureHeaderWire{.server_pack = wire::ToWire(header.server_pack),
-                                     .client_pack = wire::ToWire(header.client_pack),
-                                     .engine_version = header.engine_version,
-                                     .started_unix_ms = header.started.time_since_epoch().count(),
-                                     .format_version = protocol::kCaptureFormatVersion,
-                                     .tick_rate_hz = header.tick_rate_hz};
-}
-
-Header FromWire(const protocol::CaptureHeaderWire& header) {
-  return Header{
-      .engine_version = header.engine_version,
-      .server_pack = wire::FromWire(header.server_pack),
-      .client_pack = wire::FromWire(header.client_pack),
-      .tick_rate_hz = header.tick_rate_hz,
-      .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(header.started_unix_ms))};
-}
-
-protocol::CaptureRecordWire ToWire(Player player, const Join& join) {
-  return protocol::CapturedJoinWire{.spawn = join.spawn,
-                                    .offset = 0,
-                                    .session = static_cast<protocol::SessionIdWire>(join.session),
-                                    .character = join.character,
-                                    .player = player};
-}
-
-struct EventToWire {
-  std::uint32_t offset;
-
-  protocol::CaptureRecordWire operator()(const Command& command) const {
-    // Its Seen time's tick is kept as seen_offset, so it goes as its age 0.
-    return protocol::CapturedCommandWire{.command = wire::ToWire(command.command, command.command.seen_tick),
-                                         .offset = offset,
-                                         .seen_offset = command.seen_offset,
-                                         .player = command.player};
-  }
-  protocol::CaptureRecordWire operator()(const Leave& leave) const {
-    return protocol::CapturedLeaveWire{.offset = offset, .player = leave.player};
-  }
-  protocol::CaptureRecordWire operator()(const Death& death) const {
-    return protocol::CapturedDeathWire{.offset = offset, .victim = death.victim, .killer = death.killer};
-  }
-  protocol::CaptureRecordWire operator()(const MatchEnd& end) const {
-    return protocol::CapturedMatchEndWire{.offset = offset, .winner = end.winner.value_or(0)};
-  }
-};
-
-// Sorts each record after the header into a capture's Joins or events: the
-// file's order has already put every Join first, numbered from 1.
-struct RecordFromWire {
-  Capture& capture;
-
-  void operator()(const protocol::CaptureHeaderWire& /*header*/) const {}
-  void operator()(const protocol::CapturedJoinWire& join) const {
-    capture.joins.push_back(
-        Join{.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn});
-  }
-  void operator()(const protocol::CapturedCommandWire& command) const {
-    capture.events.push_back({.offset = command.offset,
-                              .event = Command{.player = command.player,
-                                               .seen_offset = command.seen_offset,
-                                               .command = wire::FromWire(command.command, 0)}});
-  }
-  void operator()(const protocol::CapturedLeaveWire& leave) const {
-    capture.events.push_back({.offset = leave.offset, .event = Leave{.player = leave.player}});
-  }
-  void operator()(const protocol::CapturedDeathWire& death) const {
-    capture.events.push_back({.offset = death.offset, .event = Death{.victim = death.victim, .killer = death.killer}});
-  }
-  void operator()(const protocol::CapturedMatchEndWire& end) const {
-    capture.events.push_back(
-        {.offset = end.offset,
-         .event = MatchEnd{.winner = end.winner == 0 ? std::nullopt : std::optional<Player>(end.winner)}});
-  }
-};
 
 // The frame of record, or why it has none (Framed).
 std::expected<std::vector<std::byte>, EncodeError> Encode(const protocol::CaptureRecordWire& record) {
@@ -314,16 +233,21 @@ std::expected<Capture, ReadError> ReadCapture(std::istream& in) {
   if (!file.has_value()) {
     return std::unexpected(file.error());
   }
-  Capture capture{.header = FromWire(file->header), .joins = {}, .events = {}, .torn = file->torn};
+  Capture capture{.header = link::FromWire(file->header), .joins = {}, .events = {}, .torn = file->torn};
   capture.events.reserve(file->records.size());
+  // The file's order has already put every Join first, numbered from 1.
   for (const protocol::CaptureRecordWire& record : file->records) {
-    std::visit(RecordFromWire{.capture = capture}, record);
+    if (const auto* join = std::get_if<protocol::CapturedJoinWire>(&record)) {
+      capture.joins.push_back(link::FromWire(*join));
+    } else if (auto event = link::EventFromWire(record)) {
+      capture.events.push_back(*std::move(event));
+    }
   }
   return capture;
 }
 
 std::expected<Encoded, EncodeError> EncodeHeader(const Header& header) {
-  auto frame = Encode(ToWire(header));
+  auto frame = Encode(link::ToWire(header));
   if (!frame.has_value()) {
     return std::unexpected(std::move(frame.error()));
   }
@@ -333,12 +257,13 @@ std::expected<Encoded, EncodeError> EncodeHeader(const Header& header) {
 }
 
 std::expected<Encoded, EncodeError> EncodeJoin(Player player, const Join& join) {
-  return Encode(ToWire(player, join)).transform([](std::vector<std::byte> bytes) { return Encoded(std::move(bytes)); });
+  return Encode(link::ToWire(player, join)).transform([](std::vector<std::byte> bytes) {
+    return Encoded(std::move(bytes));
+  });
 }
 
 std::expected<Encoded, EncodeError> EncodeEvent(const AtOffset<Event>& event) {
-  return Encode(std::visit(EventToWire{.offset = event.offset}, event.event))
-      .transform([](std::vector<std::byte> bytes) { return Encoded(std::move(bytes)); });
+  return Encode(link::ToWire(event)).transform([](std::vector<std::byte> bytes) { return Encoded(std::move(bytes)); });
 }
 
 void Write(std::ostream& out, const Encoded& encoded) {

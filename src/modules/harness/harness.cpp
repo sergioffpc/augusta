@@ -14,7 +14,8 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/first_failure.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_messages.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
@@ -28,9 +29,9 @@ namespace augusta::harness {
 
 struct Session::Impl {
   networking::Endpoint server;
-  JoinRequest join_request;
+  link::JoinRequest join_request;
   // Set for a Replay viewer, which asks with it instead of join_request (ADR-0051).
-  std::optional<ReplayRequest> replay_request;
+  std::optional<link::ReplayRequest> replay_request;
   networking::Client network;
 
   // Network I/O thread only.
@@ -59,7 +60,7 @@ struct Session::Impl {
             .spawn = config.spawn,
         },
         replay_request(config.replay.transform([&config](const std::string& capture) {
-          return ReplayRequest{
+          return link::ReplayRequest{
               .engine_version = config.engine_version, .client_pack = config.client_pack, .capture = capture};
         })),
         network(config.faults),
@@ -80,7 +81,7 @@ struct Session::Impl {
     if (Failed()) {
       return false;
     }
-    auto payload = EncodeToSend(message);
+    auto payload = link::EncodeToSend(message);
     if (!payload.has_value()) {
       invariant_failure.Record(std::move(payload.error()));
       return false;
@@ -155,9 +156,9 @@ void Session::ExchangeMessages() {
     // Once, whatever the transport did with it: reliable delivery is the
     // transport's, and a send it dropped or refused ends the connection or the runtime.
     if (impl.replay_request.has_value()) {
-      impl.Send(ToWire(*impl.replay_request), networking::Reliability::kReliable);
+      impl.Send(link::ToWire(*impl.replay_request), networking::Reliability::kReliable);
     } else {
-      impl.Send(ToWire(impl.join_request), networking::Reliability::kReliable);
+      impl.Send(link::ToWire(impl.join_request), networking::Reliability::kReliable);
     }
     impl.sent_join_request = true;
   }
@@ -285,7 +286,9 @@ prediction::State Session::Tick(const command::Command& command, float delta_tim
   const CommandTick tick = impl.commands.Tick(*impl.inbox.View(), command, delta_time);
   if (!tick.send.empty()) {
     // Not accepted, the commands are sent again next tick, as unacknowledged ones always are.
-    impl.Send(ToWire(tick.send), networking::Reliability::kUnreliable);
+    for (const protocol::CommandsWire& message : link::ToWire(tick.send)) {
+      impl.Send(message, networking::Reliability::kUnreliable);
+    }
   }
   return tick.state;
 }

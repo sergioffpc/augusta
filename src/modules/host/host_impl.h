@@ -119,8 +119,8 @@ struct Host::Impl {
 
   Impl(const HostConfig& config, Scenario scenario, scripting::Engine policy);
 
-  // Sending to players (host.cpp), each message as EncodeToSend left it
-  // (augusta/host_wire.h), reliably, counted as the transport accepts it (SendCounted).
+  // Sending to players (host.cpp), each message as link::EncodeToSend left it
+  // (augusta/link_messages.h), reliably, counted as the transport accepts it (SendCounted).
   // One the protocol could not carry is sent to no one and kept in
   // invariant_failure; a local transport failure is kept in transport_failure.
   // Once either is, the runtime has failed (Failed), and nothing more is sent.

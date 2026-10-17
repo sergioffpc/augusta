@@ -18,6 +18,7 @@
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
+#include "augusta/link_types.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -41,26 +42,9 @@
 namespace augusta::server {
 
 /// The Networking Protocol's message types (ADR-0038), as the metrics label
-/// them: the server's own, since the protocol's stay at its edge (augusta/host_wire.h).
-enum class MessageType : std::uint8_t {
-  kJoinRequest,
-  kJoinAccepted,
-  kJoinRefused,
-  kCommands,
-  kAuthoritativeState,
-  kLobby,
-  kReady,
-  kMatchStart,
-  kMatchEnd,
-  kShot,
-  kHitConfirmation,
-  kDeath,
-  kReplayListRequest,
-  kReplayList,
-  kReplayRequest,
-  kReplayView,
-  kReenactRequest,
-};
+/// them: the Link's (augusta/link_messages.h, TypeOf), since the protocol's
+/// stay at its edge.
+using MessageType = link::MessageType;
 
 using JoinRefusalCounters =
     EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;

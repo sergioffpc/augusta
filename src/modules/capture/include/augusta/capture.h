@@ -1,12 +1,10 @@
 #ifndef AUGUSTA_CAPTURE_H_
 #define AUGUSTA_CAPTURE_H_
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <istream>
-#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -14,10 +12,8 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/assets.h"
-#include "augusta/command.h"
+#include "augusta/capture_records.h"
 #include "augusta/failure.h"
-#include "augusta/math.h"
 
 /// \file
 /// A Match capture's file (ADR-0050), in one place for every side that reads or
@@ -30,8 +26,9 @@
 ///
 /// A file is the capture's magic, then each record's payload after its length
 /// in one byte, the header first, in the Networking Protocol's encoding: the
-/// module converts between its records and the engine's types, so its
-/// interface names no protocol type (ADR-0038). Reading checks the magic, the
+/// Link (augusta/link_messages.h) converts between its records and the
+/// engine's types (augusta/capture_records.h), so its interface names no
+/// protocol type (ADR-0038). Reading checks the magic, the
 /// header's format version and the records' order (every Join first, numbered
 /// from 1, then the events in offset order, each naming a player a Join did,
 /// nothing after the Match end). Pure stream I/O, on whichever thread holds the
@@ -59,77 +56,6 @@ enum class ReadError : std::uint8_t {
 
 /// Whether in starts with a capture's magic. Reads as far as the magic goes.
 [[nodiscard]] bool StartsWithMagic(std::istream& in);
-
-/// What a captured Match ran on and when it started.
-struct Header {
-  /// The capturing engine's version (augusta::EngineVersion).
-  std::string engine_version;
-  assets::PackHash server_pack{};
-  assets::PackHash client_pack{};
-  std::uint8_t tick_rate_hz = 0;
-  /// When the Match started, in UTC.
-  std::chrono::sys_time<std::chrono::milliseconds> started;
-
-  bool operator==(const Header&) const = default;
-};
-
-/// A player's number in a capture: from 1, in its Match start's order, as
-/// `augustac --reenact --player` names it. Player n's Join is Capture::joins[n - 1].
-using Player = std::uint8_t;
-
-/// A player of the Match start, where it spawned on the position grid.
-struct Join {
-  /// Its Session's id on the server that captured it.
-  std::uint32_t session = 0;
-  /// Its Character, by its name in the scenario's manifest (ADR-0042).
-  std::string character;
-  math::Vec3 spawn{};
-
-  bool operator==(const Join&) const = default;
-};
-
-/// A Command its player sent, as the server's command queue handed it to the World.
-struct Command {
-  Player player = 0;
-  /// Its Seen time's tick, as an offset from the Match's first tick: negative
-  /// for a State sent before the Match started. command.seen_tick is 0.
-  std::int32_t seen_offset = 0;
-  command::Command command{};
-
-  bool operator==(const Command&) const = default;
-};
-
-/// A player whose connection ended mid-Match.
-struct Leave {
-  Player player = 0;
-
-  bool operator==(const Leave&) const = default;
-};
-
-struct Death {
-  Player victim = 0;
-  Player killer = 0;
-
-  bool operator==(const Death&) const = default;
-};
-
-struct MatchEnd {
-  /// nullopt for a Draw.
-  std::optional<Player> winner;
-
-  bool operator==(const MatchEnd&) const = default;
-};
-
-using Event = std::variant<Command, Leave, Death, MatchEnd>;
-
-/// An event at its offset in ticks from the Match's first tick.
-template <typename T>
-struct AtOffset {
-  std::uint32_t offset = 0;
-  T event{};
-
-  bool operator==(const AtOffset&) const = default;
-};
 
 struct Capture {
   Header header;

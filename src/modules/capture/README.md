@@ -1,19 +1,21 @@
 # capture
 
-`augusta_capture`. Shared: linked by both the client and the server.
+`augusta_capture`, `augusta_capture_records`. Shared: linked by both the client
+and the server.
 
 ## Responsibility
 
-Owns the Match capture file: reads one and holds it to the format's rules
-(magic, format version, record order) and writes one, converting its records
-between the Networking Protocol's encoding and the engine's types, so its
-interface names no protocol type. Pure stream I/O.
+Owns the Match capture file: what its records say in the engine's types, and
+reading one, held to the format's rules (magic, format version, record order),
+and writing one, in the Networking Protocol's encoding, so its interface names
+no protocol type. Pure stream I/O.
 
 ## Not its responsibility
 
 - Deciding what is captured, when, and how long a capture is kept: host
   (Capturer, capture retention, Replay).
 - Playing a captured player again: harness (`augusta/reenactment.h`).
+- Converting its records to and from the protocol's: link.
 
 ## Decisions
 

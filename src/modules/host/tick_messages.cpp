@@ -8,7 +8,8 @@
 
 #include "augusta/failure.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link_mapping.h"
+#include "augusta/link_messages.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/replication.h"
@@ -50,7 +51,7 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
     if (broken.has_value()) {
       return;
     }
-    auto payload = EncodeToSend(message);
+    auto payload = link::EncodeToSend(message);
     if (!payload.has_value()) {
       broken = std::move(payload.error());
       return;
@@ -64,25 +65,23 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
   }
 
   const replication::Updates updates = replication::PlanUpdates(state, tick, to.recipients);
-  // One message, its bodies converted once, addressed to each recipient in
-  // turn: only the recipient's own fields change between their payloads. It is
-  // held as the MessageWire Encode takes, so encoding it copies no body.
-  protocol::MessageWire message = ToWire(updates);
-  auto& addressed = std::get<protocol::AuthoritativeStateWire>(message);
+  // One state, its bodies mapped once, addressed to each recipient in turn:
+  // only the recipient's own fields change between their payloads.
+  link::AuthoritativeState addressed = ToLink(updates);
   for (const replication::RecipientUpdate& recipient : updates.recipients) {
     Address(addressed, recipient);
-    add(message, {to.peers.at(FromSimulation(recipient.entity))}, networking::Reliability::kUnreliable);
+    add(link::ToWire(addressed), {to.peers.at(FromSimulation(recipient.entity))}, networking::Reliability::kUnreliable);
   }
   for (const replication::Shot& shot : replication::PlanShots(state, tick)) {
-    add(ToWire(shot), everyone, networking::Reliability::kReliable);
+    add(link::ToWire(ToLink(shot)), everyone, networking::Reliability::kReliable);
   }
   for (const replication::HitConfirmation& hit : replication::PlanHitConfirmations(state)) {
     if (const auto shooter = to.peers.find(FromSimulation(hit.recipient)); shooter != to.peers.end()) {
-      add(ToWire(hit), {shooter->second}, networking::Reliability::kReliable);
+      add(link::ToWire(ToLink(hit)), {shooter->second}, networking::Reliability::kReliable);
     }
   }
   for (const replication::Death& death : replication::PlanDeaths(state)) {
-    add(ToWire(death), everyone, networking::Reliability::kReliable);
+    add(link::ToWire(ToLink(death)), everyone, networking::Reliability::kReliable);
   }
   if (broken.has_value()) {
     return std::unexpected(*std::move(broken));
@@ -117,7 +116,8 @@ std::expected<void, failure::Failure> SendTickMessages(networking::Server& netwo
               failed = std::move(sent.error());
               return false;
             }
-            if (*sent == networking::SendOutcome::kAccepted && TypeOf(payload) == MessageType::kAuthoritativeState) {
+            if (*sent == networking::SendOutcome::kAccepted &&
+                link::TypeOf(payload) == MessageType::kAuthoritativeState) {
               metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
             }
             return true;

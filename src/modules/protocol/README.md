@@ -12,8 +12,7 @@ messages hold only its own plain `*Wire` types.
 ## Not its responsibility
 
 - Sockets and delivery: networking.
-- Converting to the engine's types: wire (shared core), `augusta/harness_wire.h`
-  (client), `augusta/host_wire.h` (server).
+- Converting to the engine's types: link (`augusta_link_messages`).
 - Which peer may send what, and what a message means for the Match: the
   receiver.
 

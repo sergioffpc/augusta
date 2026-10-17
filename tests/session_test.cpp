@@ -43,8 +43,8 @@
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
 #include "augusta/limits.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -2553,7 +2553,7 @@ class ScriptedServer {
       if (std::holds_alternative<augusta::protocol::JoinRequestWire>(*decoded)) {
         Send(augusta::protocol::JoinAcceptedWire{.session = kScriptedSession,
                                                  .tick_rate_hz = kTestTickRate,
-                                                 .parameters = augusta::server::ToWire(parameters_),
+                                                 .parameters = augusta::link::ToWire(parameters_),
                                                  .character = kCharacter});
         if (start_match_) {
           Send(StartOfAlone());

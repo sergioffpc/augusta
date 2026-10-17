@@ -27,7 +27,7 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -913,7 +913,7 @@ TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
   EXPECT_EQ(listed.front().name, "1002");
   EXPECT_EQ(listed.back().name, std::to_string(1000 + protocol::kMaxReplayListings + 1));
   // Whatever it names, the list carries.
-  EXPECT_TRUE(protocol::Encode(augusta::server::ToWire(listed)).has_value());
+  EXPECT_TRUE(protocol::Encode(augusta::link::ToWire(listed)).has_value());
 }
 
 }  // namespace

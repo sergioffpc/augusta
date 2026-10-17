@@ -11,11 +11,11 @@ SimulationWorld without threads or a clock, so a test drives a Match by hand,
 one network round and one tick at a time — the counterpart of the client's
 Harness. It holds the bookkeeping kept around a Match (who is in it and whether
 a join is admitted, the Command intake and its sanity gate, each peer's
-misbehaviour count, the admission deadline, the heartbeat counts), the server's
-edge with the Networking Protocol (`augusta/host_wire.h`) and with
-SimulationWorld, what it counts for the metrics endpoint, the Match capture it
-writes and its retention, and the Replay server, which serves a recorded Match
-through the Host's own pieces.
+misbehaviour count, the admission deadline, the heartbeat counts), the mapping
+of its own types into the Link's messages and into SimulationWorld's, what it
+counts for the metrics endpoint, the Match capture it writes and its retention,
+and the Replay server, which serves a recorded Match through the Host's own
+pieces.
 
 ## Not its responsibility
 
@@ -25,7 +25,7 @@ through the Host's own pieces.
   scenario.
 - The lock-free counters it counts with: metrics.
 - Reading and writing the capture file format: capture.
-- The conversions both peers share: wire.
+- Converting the Link's messages to and from the Networking Protocol's: link.
 
 ## Decisions
 

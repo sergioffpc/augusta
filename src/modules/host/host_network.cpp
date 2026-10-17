@@ -13,7 +13,8 @@
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link_mapping.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -47,13 +48,13 @@ void Host::Impl::HandleJoinRequest(networking::PeerId peer, const JoinRequest& r
   if (!admission.has_value()) {
     LOG_INFO("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
              DescribeJoinRefusal(admission.error()));
-    Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(admission.error())}));
+    Reply(peer, link::EncodeToSend(protocol::JoinRefusedWire{.reason = link::ToWire(ToLink(admission.error()))}));
     metrics.joins_refused[admission.error()].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
     return;
   }
   gate.Admitted(peer);
-  Reply(peer, EncodeToSend(ToWire(*admission, tick_rate_hz, parameters)));
+  Reply(peer, link::EncodeToSend(link::ToWire(ToLink(*admission, tick_rate_hz, parameters))));
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
     SetLobbyGauges();
@@ -139,13 +140,13 @@ void Host::Impl::HandleMessage(const networking::PeerMessage& message, std::chro
     Judge(message.from, PeerRejection::kUndecodable, now);
     return;
   }
-  metrics.messages_received[TypeOf(message.payload)].Increment();
+  metrics.messages_received[link::TypeOf(message.payload)].Increment();
   if (const auto* request = std::get_if<protocol::JoinRequestWire>(&*decoded)) {
-    HandleJoinRequest(message.from, FromWire(*request), now);
+    HandleJoinRequest(message.from, link::FromWire(*request), now);
   } else if (const auto* reenact = std::get_if<protocol::ReenactRequestWire>(&*decoded)) {
-    HandleJoinRequest(message.from, FromWire(*reenact), now);
+    HandleJoinRequest(message.from, link::FromWire(*reenact), now);
   } else if (const auto* commands = std::get_if<protocol::CommandsWire>(&*decoded)) {
-    HandleCommands(message.from, FromWire(*commands), now);
+    HandleCommands(message.from, link::FromWire(*commands), now);
   } else if (const auto* ready = std::get_if<protocol::ReadyWire>(&*decoded)) {
     HandleReady(message.from, ready->version, now);
   } else if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded) ||
@@ -167,7 +168,7 @@ void Host::Impl::RefuseAsNoReplayServer(networking::PeerId peer, std::chrono::st
   constexpr JoinRefusal kReason = JoinRefusal::kNotAReplayServer;
   LOG_INFO("subsystem=serverruntime event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
            DescribeJoinRefusal(kReason));
-  Reply(peer, EncodeToSend(protocol::JoinRefusedWire{.reason = ToWire(kReason)}));
+  Reply(peer, link::EncodeToSend(protocol::JoinRefusedWire{.reason = link::ToWire(ToLink(kReason))}));
   metrics.joins_refused[kReason].Increment();
   Judge(peer, PeerRejection::kJoinRefused, now);
 }

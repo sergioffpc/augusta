@@ -22,7 +22,8 @@
 #include "augusta/first_failure.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link_mapping.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
@@ -147,7 +148,7 @@ void Host::Impl::SendRoster() {
   for (const RosterEntry& entry : roster.players) {
     sessions.push_back(entry.session);
   }
-  SendTo(sessions, EncodeToSend(ToWire(roster)));
+  SendTo(sessions, link::EncodeToSend(link::ToWire(ToLink(roster))));
 }
 
 void Host::Impl::SetLobbyGauges() {

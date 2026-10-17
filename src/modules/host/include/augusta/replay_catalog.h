@@ -12,6 +12,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/link_types.h"
 
 /// \file
 /// Which Match captures a replay server replays (ADR-0051): those of its
@@ -35,30 +36,11 @@ struct ReplayTerms {
 };
 
 /// One capture a replay server replays, as a Replay list names it.
-struct ReplayListing {
-  /// Its file name, which a Replay request names it by.
-  std::string name;
-  /// When its Match started, in UTC.
-  std::chrono::sys_time<std::chrono::milliseconds> started;
-  /// How long it lasted, in ticks at tick_rate_hz: up to its Match end, or
-  /// to its last record if it ends partway.
-  std::uint32_t ticks = 0;
-  std::uint8_t tick_rate_hz = 0;
-  /// Its players' Characters, in its Join order.
-  std::vector<std::string> characters;
+using ReplayListing = link::ReplayListing;
 
-  bool operator==(const ReplayListing&) const = default;
-};
-
-/// What a Replay viewer asks for, as a Replay request carries it.
-struct ReplayRequest {
-  /// The client's engine version (augusta::EngineVersion).
-  std::string engine_version;
-  /// The hash of the client pack the client loaded.
-  assets::PackHash client_pack{};
-  /// The capture to watch, by its name in the Replay list: matched, never opened.
-  std::string capture;
-};
+/// What a Replay viewer asks for, as a Replay request carries it: its capture
+/// by its name in the Replay list, matched, never opened.
+using ReplayRequest = link::ReplayRequest;
 
 /// capture, read from the file name, as a Replay list names it, or nullopt if
 /// a replay server on terms does not replay it: made on another pack or at

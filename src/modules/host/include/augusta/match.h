@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 
@@ -94,19 +95,8 @@ struct Admission {
   std::string character;
 };
 
-/// What a peer asks when it joins.
-struct JoinRequest {
-  /// The client's engine version (augusta::EngineVersion).
-  std::string engine_version;
-  /// The hash of the client pack the client loaded.
-  assets::PackHash client_pack{};
-  /// The character the player chose, by its name in the scenario's manifest
-  /// (e.g. "soldier", ADR-0042).
-  std::string character;
-  /// Where a Captured player asks to spawn, which only a Reenact request names
-  /// (ADR-0050); nullopt for a Join request.
-  std::optional<math::Vec3> spawn = std::nullopt;
-};
+/// What a peer asks when it joins, as the Link takes it in.
+using JoinRequest = link::JoinRequest;
 
 /// Why a join is refused.
 enum class JoinRefusal : std::uint8_t {

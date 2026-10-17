@@ -6,10 +6,9 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
-#include "augusta/protocol.h"
 #include "augusta/tick.h"
 
 namespace augusta::harness {
@@ -73,8 +72,8 @@ CommandTick CommandStream::Tick(const ServerView& server_view, const command::Co
   return CommandTick{.state = last_state_, .send = Queue(server_view, sequence, command)};
 }
 
-std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view, tick::Sequence sequence,
-                                                   const command::Command& command) {
+std::vector<link::SequencedCommand> CommandStream::Queue(const ServerView& server_view, tick::Sequence sequence,
+                                                         const command::Command& command) {
   // Commands the server has already processed need not go again.
   if (server_view.authoritative.has_value()) {
     while (!unacknowledged_.empty() &&
@@ -82,11 +81,8 @@ std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view
       unacknowledged_.pop_front();
     }
   }
-  // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
-  unacknowledged_.push_back(SequencedCommand{.sequence = sequence, .command = command});
-  if (unacknowledged_.size() > protocol::kMaxCommandsPerMessage) {
-    unacknowledged_.pop_front();
-  }
+  // However many there are, the Link sends them in as many messages as they need.
+  unacknowledged_.push_back(link::SequencedCommand{.sequence = sequence, .command = command});
   return {unacknowledged_.begin(), unacknowledged_.end()};
 }
 

@@ -33,9 +33,8 @@
 /// is its own bound (kMaxCommandsPerMessage). A type that mirrors one of the engine's
 /// carries the suffix Wire (BodyStateWire for physics::BodyState,
 /// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
-/// read alike where they meet: each peer converts at its edge
-/// and nowhere else, the server in augusta/host_wire.h and the client in
-/// augusta/harness_wire.h, so no module past that edge (Match, replication,
+/// read alike where they meet: the Link converts (augusta/link_messages.h)
+/// and nowhere else, so no module past that edge (Match, replication,
 /// harness::Session's API, presentation) names a Wire type.
 ///
 /// Every message is one payload: a one-byte MessageTypeWire followed by that

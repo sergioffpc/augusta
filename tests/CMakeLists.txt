@@ -571,10 +571,13 @@ augusta_set_end_to_end_test(augusta_transport_failure_tests augustad)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
 
-add_executable(augusta_wire_tests wire_test.cpp)
-target_link_libraries(augusta_wire_tests PRIVATE augusta_harness augusta_host GTest::gtest GTest::gtest_main)
+# The Link's conversions (ADR-0038), with no transport: what one peer sends
+# reaches the other's engine types unchanged, and a tick's Commands are split
+# at the protocol's bound.
+add_executable(augusta_link_messages_tests link_messages_test.cpp)
+target_link_libraries(augusta_link_messages_tests PRIVATE augusta_link_messages GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
-gtest_discover_tests(augusta_wire_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
 target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
@@ -587,7 +590,7 @@ target_link_libraries(augusta_simulation_mapping_tests PRIVATE augusta_host GTes
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
-# harness_wire.h and augusta/host_wire.h convert. Nor does a presentation header name
+# the Link converts (augusta/link_messages.h). Nor does a presentation header name
 # the harness: the client converts (src/client/frame_mapping.h). Nor does the
 # protocol itself include or link anything but augusta_math, augusta_tick and
 # augusta_limits. A source scan, so it builds nothing.

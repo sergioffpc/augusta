@@ -26,7 +26,8 @@
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link_mapping.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -84,21 +85,21 @@ std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const
     reliabilities.push_back(reliability);
   };
   // Every body, and no recipient: a viewer has no rifle, health or Commands of its own.
-  add(ToWire(replication::PlanUpdates(state, state.tick, {})), networking::Reliability::kUnreliable);
+  add(link::ToWire(ToLink(replication::PlanUpdates(state, state.tick, {}))), networking::Reliability::kUnreliable);
   for (const replication::Shot& shot : replication::PlanShots(state, state.tick)) {
-    add(ToWire(shot), networking::Reliability::kReliable);
+    add(link::ToWire(ToLink(shot)), networking::Reliability::kReliable);
   }
   for (const replication::Death& death : replication::PlanDeaths(state)) {
-    add(ToWire(death), networking::Reliability::kReliable);
+    add(link::ToWire(ToLink(death)), networking::Reliability::kReliable);
   }
-  add(ToWire(tick.views, state.tick), networking::Reliability::kUnreliable);
+  add(link::ToWire(ToLink(tick.views, state.tick)), networking::Reliability::kUnreliable);
   if (tick.end.has_value()) {
-    add(ToWire(MatchEnd{.players = {}, .winner = tick.end->winner}), networking::Reliability::kReliable);
+    add(link::ToWire(ToLink(MatchEnd{.players = {}, .winner = tick.end->winner})), networking::Reliability::kReliable);
   }
   std::vector<ViewerMessage> encoded;
   encoded.reserve(messages.size());
   for (std::size_t i = 0; i < messages.size(); ++i) {
-    auto payload = EncodeToSend(messages[i]);
+    auto payload = link::EncodeToSend(messages[i]);
     if (!payload.has_value()) {
       return std::unexpected(std::move(payload.error()));
     }
@@ -192,7 +193,8 @@ struct ReplayServer::Impl {
     networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
     if (!sent.has_value()) {
       transport_failure.Record(std::move(sent.error()));
-    } else if (*sent == networking::SendOutcome::kAccepted && TypeOf(payload) == MessageType::kAuthoritativeState) {
+    } else if (*sent == networking::SendOutcome::kAccepted &&
+               link::TypeOf(payload) == MessageType::kAuthoritativeState) {
       metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
     }
   }
@@ -200,7 +202,7 @@ struct ReplayServer::Impl {
   // Sends message to peer as Deliver does, once encoded: one the protocol
   // cannot carry is sent to no one and kept in invariant_failure.
   void Send(networking::PeerId peer, const protocol::MessageWire& message, networking::Reliability reliability) {
-    auto payload = EncodeToSend(message);
+    auto payload = link::EncodeToSend(message);
     if (!payload.has_value()) {
       invariant_failure.Record(std::move(payload.error()));
       return;
@@ -264,7 +266,7 @@ struct ReplayServer::Impl {
   void Refuse(networking::PeerId peer, JoinRefusal reason, std::chrono::steady_clock::time_point now) {
     LOG_INFO("subsystem=replay event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
              DescribeJoinRefusal(reason));
-    Send(peer, protocol::JoinRefusedWire{.reason = ToWire(reason)}, networking::Reliability::kReliable);
+    Send(peer, protocol::JoinRefusedWire{.reason = link::ToWire(ToLink(reason))}, networking::Reliability::kReliable);
     metrics.joins_refused[reason].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
   }
@@ -285,7 +287,7 @@ struct ReplayServer::Impl {
     const std::vector<ReplayListing> listed = ListedOf(catalog.List());
     lock.lock();
     LOG_INFO("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
-    Send(peer, ToWire(listed), networking::Reliability::kReliable);
+    Send(peer, link::ToWire(listed), networking::Reliability::kReliable);
     Close(peer);
   }
 
@@ -318,9 +320,9 @@ struct ReplayServer::Impl {
         .capture = request.capture, .replay = std::make_unique<Replay>(*std::move(capture), NewWorld(), characters)});
     lock.lock();
     gate.Admitted(peer);
-    Send(peer, ToWire(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters),
+    Send(peer, link::ToWire(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)),
          networking::Reliability::kReliable);
-    Send(peer, ToWire(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick()),
+    Send(peer, link::ToWire(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick())),
          networking::Reliability::kReliable);
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
@@ -348,7 +350,7 @@ struct ReplayServer::Impl {
       Judge(message.from, PeerRejection::kUndecodable, now);
       return;
     }
-    metrics.messages_received[TypeOf(message.payload)].Increment();
+    metrics.messages_received[link::TypeOf(message.payload)].Increment();
     // A viewer has asked for its Replay and sends nothing more: whatever it
     // sends, a request among them, is dropped and judged, and its Replay goes on.
     if (viewers.contains(message.from)) {
@@ -356,7 +358,7 @@ struct ReplayServer::Impl {
     } else if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded)) {
       HandleReplayListRequest(message.from, lock);
     } else if (const auto* request = std::get_if<protocol::ReplayRequestWire>(&*decoded)) {
-      HandleReplayRequest(message.from, FromWire(*request), now, lock);
+      HandleReplayRequest(message.from, link::FromWire(*request), now, lock);
     } else if (std::holds_alternative<protocol::JoinRequestWire>(*decoded) ||
                std::holds_alternative<protocol::ReenactRequestWire>(*decoded)) {
       RefuseToPlay(message.from, now);

@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "augusta/command.h"
+#include "augusta/link_types.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -19,13 +20,10 @@
 /// into: it checks that a command is well formed, not that it is fair play.
 namespace augusta::server {
 
-/// One tick's command and the number its client gave it. Numbers start at 1 and
-/// grow by one per command, so the queue can tell what it has already seen.
-/// They start over with every connection, in tick::Sequence's width (ADR-0038).
-struct SequencedCommand {
-  tick::Sequence sequence = 0;
-  command::Command command{};
-};
+/// One tick's command and the number its client gave it, as the Link takes it
+/// in: numbers grow by one per command, so the queue can tell what it has
+/// already seen.
+using SequencedCommand = link::SequencedCommand;
 
 /// Why a command was not taken in.
 enum class Rejection : std::uint8_t {

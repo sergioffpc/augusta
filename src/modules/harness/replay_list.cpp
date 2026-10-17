@@ -13,7 +13,7 @@
 #include "augusta/faults.h"
 #include "augusta/first_failure.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_messages.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 
@@ -43,14 +43,9 @@ struct ReplayListQuery::Impl {
       return;
     }
     if (const auto* answered = std::get_if<protocol::ReplayListWire>(&*decoded)) {
-      std::vector<ReplayListing> listings;
-      listings.reserve(answered->replays.size());
-      for (const protocol::ReplayListingWire& listing : answered->replays) {
-        listings.push_back(FromWire(listing));
-      }
-      list = std::move(listings);
+      list = link::FromWire(*answered);
     } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
-      refusal = FromWire(refused->reason);
+      refusal = link::FromWire(refused->reason);
     }
   }
 };
