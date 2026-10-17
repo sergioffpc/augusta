@@ -225,8 +225,8 @@ class LogErrorCallback : public PxErrorCallback {
  public:
   // NOLINTNEXTLINE(readability-identifier-naming) - name mandated by PxErrorCallback's own virtual signature.
   void reportError(PxErrorCode::Enum code, const char* message, const char* file, int line) override {
-    LE("subsystem=physics event=physx_error code={} message=\"{}\" file={} line={}", static_cast<int>(code), message,
-       file, line);
+    LOG_ERROR("subsystem=physics event=physx_error code={} message=\"{}\" file={} line={}", static_cast<int>(code),
+              message, file, line);
   }
 };
 
@@ -360,7 +360,7 @@ struct World::Impl {
     scene = physics->createScene(scene_desc);
     controller_manager = PxCreateControllerManager(*scene);
     material = physics->createMaterial(kStaticFriction, kDynamicFriction, kRestitution);
-    LD("subsystem=physics event=world_created");
+    LOG_DEBUG("subsystem=physics event=world_created");
   }
 
   // Decision half of a stance change: a smaller capsule always fits, a taller
@@ -464,7 +464,7 @@ std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionM
   impl_->scene->addActor(*actor);
   impl_->collision_meshes.push_back(cooked);
   impl_->static_actors.push_back(actor);
-  LD("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
+  LOG_DEBUG("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
   return {};
 }
 
@@ -490,7 +490,7 @@ BodyHandle World::CreateBody(const math::Vec3& initial_position) {
   record.controller = controller;
   record.state.position = position;
   impl_->bodies.emplace(handle, std::move(record));
-  LD("subsystem=physics event=body_created handle={}", static_cast<std::uint32_t>(handle));
+  LOG_DEBUG("subsystem=physics event=body_created handle={}", static_cast<std::uint32_t>(handle));
   return handle;
 }
 
@@ -501,7 +501,7 @@ void World::DestroyBody(BodyHandle handle) {
   }
   body_it->second.controller->release();
   impl_->bodies.erase(body_it);
-  LD("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
+  LOG_DEBUG("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
 }
 
 BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time) {

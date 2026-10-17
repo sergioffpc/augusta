@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
   }
   // ParseServerConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
-  LI("subsystem=server event=starting version={}", augusta::EngineVersion());
+  LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
   auto lifecycle = augusta::server::ServerLifecycle(*file_config);
   lifecycle.run = [run = std::move(lifecycle.run)](augusta::server::ServerRuntime& runtime) {

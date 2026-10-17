@@ -256,10 +256,10 @@ struct ClientRuntime::Impl {
   // Logs how a Captured player's run ended, and what it saw beside what its
   // capture holds. Main/Render thread.
   void LogOutcome(const harness::ServerView& view, harness::Progress how) const {
-    LI("subsystem=reenactment event={} player={}", how == harness::Progress::kLeave ? "left" : "ended",
-       reenactment->GetScript().player);
+    LOG_INFO("subsystem=reenactment event={} player={}", how == harness::Progress::kLeave ? "left" : "ended",
+             reenactment->GetScript().player);
     for (const std::string& line : reenactment->Outcome(view, observed_deaths, last_tick, how)) {
-      LI("subsystem=reenactment {}", line);
+      LOG_INFO("subsystem=reenactment {}", line);
     }
   }
 
@@ -293,7 +293,7 @@ struct ClientRuntime::Impl {
       }
       renderer.SetCharacterMesh(character, loaded->mesh);
       presentation.SetCharacterEye(character, loaded->eye);
-      LI("subsystem=clientruntime event=character_loaded character={}", character);
+      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
       lobby_readiness.MarkLoaded(character);
     }
     session->ReportReady(plan->version);
@@ -321,7 +321,7 @@ struct ClientRuntime::Impl {
       }
       renderer.SetCharacterMesh(player.character, loaded->mesh);
       presentation.SetCharacterEye(player.character, loaded->eye);
-      LI("subsystem=clientruntime event=character_loaded character={}", player.character);
+      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", player.character);
       replay_characters.insert(player.character);
     }
     return std::nullopt;
@@ -365,7 +365,7 @@ struct ClientRuntime::Impl {
       if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
         if (reenactment.has_value()) {
           if (const std::optional<std::string> mismatch = reenactment->PlayerCountMismatch(*accepted)) {
-            LW("subsystem=reenactment {}", *mismatch);
+            LOG_WARNING("subsystem=reenactment {}", *mismatch);
           }
         }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
@@ -489,7 +489,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
 
   bool cursor_locked = impl_->input.CursorCaptured();
   impl_->renderer.SetCursorLocked(cursor_locked);
-  LI("subsystem=clientruntime event=loop_starting loop=render");
+  LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");
   while (!impl_->renderer.ShouldClose()) {
     failure = impl_->GetRunFailure();
     if (failure.has_value()) {
@@ -497,7 +497,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     }
     // A Replay viewer's run is over once its Replay is: the server has closed the connection.
     if (impl_->session->ReplayEnded()) {
-      LI("subsystem=clientruntime event=replay_ended");
+      LOG_INFO("subsystem=clientruntime event=replay_ended");
       break;
     }
     if (const auto load_failure = impl_->LoadCharacters(); load_failure.has_value()) {
@@ -524,7 +524,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     impl_->StageRenderFrame(frame_state);
     impl_->renderer.RenderFrame();
   }
-  LI("subsystem=clientruntime event=loop_stopping loop=render");
+  LOG_INFO("subsystem=clientruntime event=loop_stopping loop=render");
   return failure;
 }
 

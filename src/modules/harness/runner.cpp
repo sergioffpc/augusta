@@ -38,8 +38,8 @@ class PredictionActivity {
       correction_m_ += jump;
     }
     if (now - since_ >= kInterval) {
-      LD("subsystem=harness event=heartbeat ticks={} corrections={} correction_m={:.3f}", ticks_, corrections_,
-         correction_m_);
+      LOG_DEBUG("subsystem=harness event=heartbeat ticks={} corrections={} correction_m={:.3f}", ticks_, corrections_,
+                correction_m_);
       ticks_ = 0;
       corrections_ = 0;
       correction_m_ = 0.0F;

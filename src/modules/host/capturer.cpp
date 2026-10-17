@@ -348,7 +348,7 @@ class Capturer::Writer {
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
-    LI("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
+    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
     observer_->OnStarted();
     return Write(*item.encoded);
   }
@@ -403,7 +403,8 @@ class Capturer::Writer {
     file_match_ = 0;
     // A capture that stopped said so once already.
     if (!stopped) {
-      LI("subsystem=capture event=capture_completed match={} path={} records={}", match, path_.string(), records_);
+      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, path_.string(),
+               records_);
       observer_->OnCompleted();
     }
   }
@@ -418,10 +419,10 @@ class Capturer::Writer {
     }
     const CaptureStop stop = StopAt(step);
     if (stop == CaptureStop::kWriteFailed) {
-      LW("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
-         CaptureStopName(stop), CaptureStepName(step), detail);
+      LOG_WARNING("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
+                  CaptureStopName(stop), CaptureStepName(step), detail);
     } else {
-      LW("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
+      LOG_WARNING("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
     }
     observer_->OnStopped(stop);
     if (match == open_match_) {
@@ -440,14 +441,14 @@ class Capturer::Writer {
     loss_ = LostCapture(mode_, match, step, std::move(detail));
     if (mode_ == CaptureMode::kOptional) {
       // This is the boundary that recovers it: the run goes on without it.
-      LE("subsystem=capture event=capture_degraded mode={} {}", CaptureModeName(mode_),
-         failure::DescribeFailure(*loss_));
+      LOG_ERROR("subsystem=capture event=capture_degraded mode={} {}", CaptureModeName(mode_),
+                failure::DescribeFailure(*loss_));
       Enter(CaptureHealth::kDegraded);
     } else {
       // Only the state change: the runtime that stops on the failure writes
       // its one ERR line, with its detail (ADR-0033).
-      LI("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_), match,
-         CaptureStepName(step));
+      LOG_INFO("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_), match,
+               CaptureStepName(step));
       Enter(CaptureHealth::kStopped);
     }
   }
@@ -458,7 +459,7 @@ class Capturer::Writer {
     if (health_ == CaptureHealth::kStopped) {
       return;
     }
-    LI("subsystem=capture event=capture_disabled mode={} lost={}", CaptureModeName(mode_), loss_.has_value());
+    LOG_INFO("subsystem=capture event=capture_disabled mode={} lost={}", CaptureModeName(mode_), loss_.has_value());
     Enter(CaptureHealth::kStopped);
   }
 

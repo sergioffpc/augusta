@@ -650,16 +650,17 @@ struct World::Impl {
     }
     const auto returned = policy.Call(kOnTick, TickView());
     if (!returned) {
-      LW_LIMITED(policy_warnings,
-                 "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                 scripting::kRulesScriptPath, kOnTick, tick, scripting::DescribeHookError(returned.error()));
+      LOG_WARNING_LIMITED(policy_warnings,
+                          "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                          scripting::kRulesScriptPath, kOnTick, tick, scripting::DescribeHookError(returned.error()));
       return;
     }
     const auto action = ReadTickAction(*returned, AliveSessions());
     if (!action) {
-      LW_LIMITED(policy_warnings,
-                 "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 scripting::kRulesScriptPath, kOnTick, tick, DescribeActionRefusal(action.error()));
+      LOG_WARNING_LIMITED(
+          policy_warnings,
+          "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+          scripting::kRulesScriptPath, kOnTick, tick, DescribeActionRefusal(action.error()));
       return;
     }
     if (action->has_value()) {
@@ -686,8 +687,8 @@ struct World::Impl {
     view.push_back(NumberField("spawn_points", static_cast<double>(spawn_points)));
     const auto answer = policy.Call(kAssignSpawns, view);
     if (!answer) {
-      LW("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-         scripting::kRulesScriptPath, kAssignSpawns, tick, scripting::DescribeHookError(answer.error()));
+      LOG_WARNING("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                  scripting::kRulesScriptPath, kAssignSpawns, tick, scripting::DescribeHookError(answer.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     if (std::holds_alternative<std::monostate>(answer->data)) {
@@ -700,8 +701,8 @@ struct World::Impl {
     }
     auto assignment = ReadSpawnAssignment(*answer, sessions, spawn_points);
     if (!assignment) {
-      LW("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-         scripting::kRulesScriptPath, kAssignSpawns, tick, DescribeSpawnRefusal(assignment.error()));
+      LOG_WARNING("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+                  scripting::kRulesScriptPath, kAssignSpawns, tick, DescribeSpawnRefusal(assignment.error()));
       return InOrderSpawns(match_players.size(), spawn_points);
     }
     return *std::move(assignment);

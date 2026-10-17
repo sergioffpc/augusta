@@ -134,7 +134,7 @@ void Host::Impl::StartMatchIfReady() {
   metrics.matches_started.Increment();
   SetLobbyGauges();
   SendTo(sessions, EncodeToSend(ToWire(*start, spawns, match_start_tick)));
-  LI("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
+  LOG_INFO("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 
 // Takes a match that has ended out of the simulation, its capture ending on

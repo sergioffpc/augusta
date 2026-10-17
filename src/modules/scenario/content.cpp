@@ -67,12 +67,12 @@ std::expected<parameters::Parameters, failure::Failure> ReadParameters(const ass
     return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(script.error(), "script")));
   }
   auto parameters = LoadParameters(*script, tick_rate_hz, [script_path](std::string_view message) {
-    LW("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
+    LOG_WARNING("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
   });
   if (!parameters) {
     return std::unexpected(ContentFailure(pack, context, DescribeParametersLoadError(parameters.error())));
   }
-  LI("subsystem=server event=parameters_loaded script={}", script_path);
+  LOG_INFO("subsystem=server event=parameters_loaded script={}", script_path);
   return *std::move(parameters);
 }
 
@@ -83,7 +83,7 @@ std::expected<scripting::Engine, failure::Failure> ReadPolicy(const assets::Pack
     return std::unexpected(ContentFailure(pack, {{.key = "script", .value = std::string(scripting::kRulesScriptPath)}},
                                           DescribePolicyLoadError(policy.error())));
   }
-  LI("subsystem=server event=policy_loaded");
+  LOG_INFO("subsystem=server event=policy_loaded");
   return *std::move(policy);
 }
 
@@ -115,8 +115,8 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   if (!client_pack) {
     return std::unexpected(ContentFailure(pack, {}, "names no client pack"));
   }
-  LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
-     spawn_points->size(), characters->size());
+  LOG_INFO("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
+           spawn_points->size(), characters->size());
 
   auto parameters = ReadParameters(pack, tick_rate_hz);
   if (!parameters) {

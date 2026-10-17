@@ -40,7 +40,7 @@ class TimerResolution {
  public:
   TimerResolution() : raised_(timeBeginPeriod(kPeriodMs) == TIMERR_NOERROR) {
     if (!raised_) {
-      LW("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
+      LOG_WARNING("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
     }
   }
   ~TimerResolution() {
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
   }
   // ParseClientConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
-  LI("subsystem=client event=starting version={}", augusta::EngineVersion());
+  LOG_INFO("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   if (run->mode == augusta::config::ClientMode::kListReplays) {
     // A server address that does not parse throws, classified, from the query;

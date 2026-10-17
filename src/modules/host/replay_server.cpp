@@ -171,8 +171,8 @@ struct ReplayServer::Impl {
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
         network(ListenOnceTheMapBuilds(config.listen), config.faults) {
-    LI("subsystem=replay event=replay_server_started directory={} max_viewers={}", config.captures.string(),
-       max_viewers);
+    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", config.captures.string(),
+             max_viewers);
   }
 
   [[nodiscard]] simulation::World NewWorld() const {
@@ -233,7 +233,7 @@ struct ReplayServer::Impl {
   // peer's connection ended as how says. With mutex held.
   void HandleDisconnect(networking::PeerId peer, Leaving how) {
     if (viewers.contains(peer)) {
-      LI("subsystem=replay event=viewer_left peer={} how={}", PeerNumber(peer), LeavingName(how));
+      LOG_INFO("subsystem=replay event=viewer_left peer={} how={}", PeerNumber(peer), LeavingName(how));
       metrics.disconnects_from_match[how].Increment();
     } else {
       metrics.disconnects_before_admission[how].Increment();
@@ -245,7 +245,7 @@ struct ReplayServer::Impl {
   // reason, which only decides what is logged: a viewer's Replay ends with
   // it. With mutex held.
   void Expel(networking::PeerId peer, std::string_view reason) {
-    LW("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
+    LOG_WARNING("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
     (viewers.contains(peer) ? metrics.disconnects_from_match
                             : metrics.disconnects_before_admission)[Leaving::kMisbehaving]
         .Increment();
@@ -262,7 +262,8 @@ struct ReplayServer::Impl {
 
   // Refuses peer for reason. With mutex held.
   void Refuse(networking::PeerId peer, JoinRefusal reason, std::chrono::steady_clock::time_point now) {
-    LI("subsystem=replay event=join_refused peer={} reason=\"{}\"", PeerNumber(peer), DescribeJoinRefusal(reason));
+    LOG_INFO("subsystem=replay event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
+             DescribeJoinRefusal(reason));
     Send(peer, protocol::JoinRefusedWire{.reason = ToWire(reason)}, networking::Reliability::kReliable);
     metrics.joins_refused[reason].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
@@ -283,7 +284,7 @@ struct ReplayServer::Impl {
     lock.unlock();
     const std::vector<ReplayListing> listed = ListedOf(catalog.List());
     lock.lock();
-    LI("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
+    LOG_INFO("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
     Send(peer, ToWire(listed), networking::Reliability::kReliable);
     Close(peer);
   }
@@ -324,15 +325,15 @@ struct ReplayServer::Impl {
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
     SetGauges();
-    LI("subsystem=replay event=replay_started peer={} capture={} viewers={}", PeerNumber(peer), request.capture,
-       viewers.size());
+    LOG_INFO("subsystem=replay event=replay_started peer={} capture={} viewers={}", PeerNumber(peer), request.capture,
+             viewers.size());
   }
 
   // Drops what message brought and judges its peer, for reason. With mutex held.
   void Drop(const networking::PeerMessage& message, std::string_view reason,
             std::chrono::steady_clock::time_point now) {
-    LW_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-               PeerNumber(message.from), message.payload.size(), reason);
+    LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                        PeerNumber(message.from), message.payload.size(), reason);
     Judge(message.from, PeerRejection::kNotAClientMessage, now);
   }
 
@@ -341,8 +342,9 @@ struct ReplayServer::Impl {
                      std::unique_lock<std::mutex>& lock) {
     const auto decoded = protocol::Decode(message.payload);
     if (!decoded.has_value()) {
-      LW_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                 PeerNumber(message.from), message.payload.size(), protocol::DescribeDecodeError(decoded.error()));
+      LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                          PeerNumber(message.from), message.payload.size(),
+                          protocol::DescribeDecodeError(decoded.error()));
       Judge(message.from, PeerRejection::kUndecodable, now);
       return;
     }
@@ -371,8 +373,8 @@ struct ReplayServer::Impl {
     const auto start = std::chrono::steady_clock::now();
     const ReplayTick tick = viewer.replay->Step();
     if (tick.divergence.has_value()) {
-      LW("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
-         DescribeDivergence(*tick.divergence));
+      LOG_WARNING("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
+                  DescribeDivergence(*tick.divergence));
     }
     // None of the tick is sent if the protocol cannot carry all of it.
     auto messages = ViewerMessages(tick);
@@ -388,8 +390,8 @@ struct ReplayServer::Impl {
     if (!tick.end.has_value()) {
       return false;
     }
-    LI("subsystem=replay event=replay_ended peer={} capture={} ticks={}", PeerNumber(peer), viewer.capture,
-       tick.result.state.tick);
+    LOG_INFO("subsystem=replay event=replay_ended peer={} capture={} ticks={}", PeerNumber(peer), viewer.capture,
+             tick.result.state.tick);
     return true;
   }
 };
@@ -443,8 +445,9 @@ void ReplayServer::RecordTiming(const tick::Timing& timing) {
   if (!second.has_value()) {
     return;
   }
-  LD("subsystem=replay event=heartbeat viewers={} ticks={} late={} overrun={} messages={} dropped={} misbehaving={}",
-     Viewers(), second->ticks, second->late, second->overrun, second->messages, second->dropped, second->misbehaving);
+  LOG_DEBUG(
+      "subsystem=replay event=heartbeat viewers={} ticks={} late={} overrun={} messages={} dropped={} misbehaving={}",
+      Viewers(), second->ticks, second->late, second->overrun, second->messages, second->dropped, second->misbehaving);
 }
 
 std::vector<ConnectionSample> ReplayServer::SampleConnections() {

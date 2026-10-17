@@ -120,60 +120,66 @@ std::string WithSuppressed(std::string message, std::uint32_t count);
     }                                                                                                                 \
   } while (false)
 
-// L-prefixed rather than bare T/D/I/W/E/C: those collide with the T(...)
-// functional-cast idiom GLM's templates use internally (glm/detail/_vectorize.hpp),
-// which breaks compilation wherever a translation unit includes this header
-// before something that pulls in <glm/...> (e.g. client/main.cpp -> runtime.h
-// -> audio.h/physics.h -> math.h).
-// The arguments are a std::format string and its values: LI("event={}", 1).
+// LOG_-prefixed rather than bare level names: bare ones collide with macros and
+// identifiers other headers define - <wingdi.h> (pulled in by <windows.h>, even
+// under WIN32_LEAN_AND_MEAN) defines ERROR as 0, toolchains often pass -DDEBUG,
+// and single letters like T clash with the T(...) functional-cast idiom GLM's
+// templates use internally (glm/detail/_vectorize.hpp).
+// The arguments are a std::format string and its values: LOG_INFO("event={}", 1).
 // Each level's _LIMITED variant takes a logging::Throttle first:
-// LW_LIMITED(throttle, "event={}", 1) (see AUGUSTA_LOG_LIMITED_AT).
+// LOG_WARNING_LIMITED(throttle, "event={}", 1) (see AUGUSTA_LOG_LIMITED_AT).
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_TRACE
-#define LT(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kTrace, __VA_ARGS__)
-#define LT_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kTrace, throttle, __VA_ARGS__)
+#define LOG_TRACE(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kTrace, __VA_ARGS__)
+#define LOG_TRACE_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kTrace, throttle, __VA_ARGS__)
 #else
-#define LT(...) static_cast<void>(0)
-#define LT_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_TRACE(...) static_cast<void>(0)
+#define LOG_TRACE_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
-#define LD(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kDebug, __VA_ARGS__)
-#define LD_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kDebug, throttle, __VA_ARGS__)
+#define LOG_DEBUG(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kDebug, __VA_ARGS__)
+#define LOG_DEBUG_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kDebug, throttle, __VA_ARGS__)
 #else
-#define LD(...) static_cast<void>(0)
-#define LD_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_DEBUG(...) static_cast<void>(0)
+#define LOG_DEBUG_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_INFO
-#define LI(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kInfo, __VA_ARGS__)
-#define LI_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kInfo, throttle, __VA_ARGS__)
+#define LOG_INFO(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kInfo, __VA_ARGS__)
+#define LOG_INFO_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kInfo, throttle, __VA_ARGS__)
 #else
-#define LI(...) static_cast<void>(0)
-#define LI_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_INFO(...) static_cast<void>(0)
+#define LOG_INFO_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_WARN
-#define LW(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
-#define LW_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kWarn, throttle, __VA_ARGS__)
+#define LOG_WARNING(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
+#define LOG_WARNING_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kWarn, throttle, __VA_ARGS__)
 #else
-#define LW(...) static_cast<void>(0)
-#define LW_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_WARNING(...) static_cast<void>(0)
+#define LOG_WARNING_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_ERROR
-#define LE(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kError, __VA_ARGS__)
-#define LE_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kError, throttle, __VA_ARGS__)
+#define LOG_ERROR(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kError, __VA_ARGS__)
+#define LOG_ERROR_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kError, throttle, __VA_ARGS__)
 #else
-#define LE(...) static_cast<void>(0)
-#define LE_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_ERROR(...) static_cast<void>(0)
+#define LOG_ERROR_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_CRITICAL
-#define LC(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kCritical, __VA_ARGS__)
-#define LC_LIMITED(throttle, ...) AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kCritical, throttle, __VA_ARGS__)
+#define LOG_CRITICAL(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kCritical, __VA_ARGS__)
+#define LOG_CRITICAL_LIMITED(throttle, ...) \
+  AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kCritical, throttle, __VA_ARGS__)
 #else
-#define LC(...) static_cast<void>(0)
-#define LC_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_CRITICAL(...) static_cast<void>(0)
+#define LOG_CRITICAL_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #endif  // AUGUSTA_LOGGING_H_
