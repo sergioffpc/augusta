@@ -27,7 +27,7 @@ one's own fields are encoded per player.
 ## Not its responsibility
 
 - Threads, the clock, the metrics endpoint and the lifecycle around a Host:
-  `src/server` (ServerRuntime).
+  server (the server Runtime).
 - What it is handed at startup — the scenario, Parameters and Game policy:
   scenario.
 - The lock-free counters it counts with: metrics.

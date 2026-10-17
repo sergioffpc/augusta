@@ -21,10 +21,10 @@
 /// Conclude then writes the executable's one terminal log event and picks its
 /// exit status. What each phase does, and how a failure is classified within
 /// it, is the executable's or its Runtime's (src/client and the client module,
-/// src/server); the runtime supervisor (supervisor.h) is what hands a
-/// runtime's first cause back to it. Reading the
-/// command line and config file comes first, outside the Lifecycle, since the
-/// log level is set from it; its failure is concluded the same way.
+/// src/server and the server module); the runtime supervisor (supervisor.h) is
+/// what hands a runtime's first cause back to it. Reading the command line and
+/// config file comes first, outside the Lifecycle, since the log level is set
+/// from it; its failure is concluded the same way.
 namespace augusta::application {
 
 /// How an executable ended: nullopt when it stopped as asked (the window was

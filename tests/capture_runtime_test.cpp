@@ -24,8 +24,8 @@
 #include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/parameters.h"
+#include "augusta/server.h"
 #include "augusta/supervisor.h"
-#include "runtime.h"
 
 // A Match capture that cannot be written (ADR-0050), seen from the Host and the
 // ServerRuntime that runs it: an optional one degrades while the server goes

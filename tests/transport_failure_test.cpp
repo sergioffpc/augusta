@@ -24,9 +24,9 @@
 #include "augusta/prediction.h"
 #include "augusta/raw_link.h"
 #include "augusta/runner.h"
+#include "augusta/server.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick_messages.h"
-#include "runtime.h"
 
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
 // the local transport refuses becomes the runtime's typed failure, which its

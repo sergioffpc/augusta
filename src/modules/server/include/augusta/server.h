@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_RUNTIME_H_
-#define AUGUSTA_SERVER_RUNTIME_H_
+#ifndef AUGUSTA_SERVER_H_
+#define AUGUSTA_SERVER_H_
 
 #include <cstdint>
 #include <memory>
@@ -88,4 +88,4 @@ class ServerRuntime {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_RUNTIME_H_
+#endif  // AUGUSTA_SERVER_H_

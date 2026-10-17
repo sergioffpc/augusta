@@ -7,8 +7,8 @@
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/server.h"
 #include "augusta/server_config.h"
-#include "runtime.h"
 
 /// \file
 /// augustad's phases behind the application boundary (application.h,
@@ -17,7 +17,7 @@
 /// running it. Each phase classifies its own failure - an unusable config,
 /// content that does not verify or load, a transport that does not start - so
 /// main() only concludes the one Outcome. The runtime's own failures are its
-/// supervisor's first cause (runtime.h), passed on as they are. main.cpp adds
+/// supervisor's first cause (server.h), passed on as they are. main.cpp adds
 /// only what a test cannot: the signal handlers, and the exit.
 namespace augusta::server {
 

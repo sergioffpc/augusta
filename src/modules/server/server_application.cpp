@@ -1,4 +1,4 @@
-#include "application.h"
+#include "augusta/server_application.h"
 
 #include <cstdint>
 #include <expected>
@@ -20,8 +20,8 @@
 #include "augusta/logging.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
+#include "augusta/server.h"
 #include "augusta/server_config.h"
-#include "runtime.h"
 
 namespace augusta::server {
 

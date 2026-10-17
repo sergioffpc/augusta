@@ -1,3 +1,5 @@
+#include "augusta/server_application.h"
+
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -6,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-#include "application.h"
 #include "augusta/application.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"

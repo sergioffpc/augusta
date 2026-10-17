@@ -1,19 +1,17 @@
-# Tags each augusta_* module target (and the runtime target and executables,
-# augustad_runtime and augustac/augustad) with which side
-# of the client/server split it belongs to, and checks that no tagged
-# target's declared dependencies cross a boundary it isn't allowed to
-# cross - turning
-# docs/ARCHITECTURE.md §5's Shared Core/Client-only/Server-only split
-# into a configure-time check instead of relying on code review to catch
-# a client-only module linked into augustad_runtime (or vice versa).
-# Tagging a module under src/modules also checks it has the README.md
-# stating its responsibility (docs/agents/coding-standards.md).
+# Tags each augusta_* module target (and the executables, augustac and
+# augustad) with which side of the client/server split it belongs to, and
+# checks that no tagged target's declared dependencies cross a boundary it
+# isn't allowed to cross - turning docs/ARCHITECTURE.md §5's Shared
+# Core/Client-only/Server-only split into a configure-time check instead of
+# relying on code review to catch a client-only module linked into the server
+# Runtime (or vice versa). Tagging a module under src/modules also checks it
+# has the README.md stating its responsibility (docs/agents/coding-standards.md).
 #
 # Usage: call augusta_set_module_scope(<target> <SHARED|CLIENT_ONLY|
-# SERVER_ONLY>) right after a module's own add_library() (or after a
-# runtime target's or executable's own target_link_libraries() call),
-# then call augusta_check_module_scopes() exactly once, after every
-# tagged target has been defined.
+# SERVER_ONLY>) right after a module's own add_library() (or after an
+# executable's own target_link_libraries() call), then call
+# augusta_check_module_scopes() exactly once, after every tagged target has
+# been defined.
 include_guard(GLOBAL)
 
 set_property(GLOBAL PROPERTY AUGUSTA_MODULE_SCOPE_TARGETS "")
@@ -26,8 +24,8 @@ function(augusta_set_module_scope target scope)
     )
   endif()
   # Every module states its responsibility in a README.md beside its
-  # CMakeLists.txt (docs/agents/coding-standards.md, Module README). Runtime
-  # targets and executables, tagged from outside src/modules, are not modules.
+  # CMakeLists.txt (docs/agents/coding-standards.md, Module README).
+  # Executables, tagged from outside src/modules, are not modules.
   if(CMAKE_CURRENT_SOURCE_DIR MATCHES "/src/modules/[^/]+$" AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
     message(
       FATAL_ERROR
@@ -127,8 +125,6 @@ endfunction()
 # migration takes its own entries out, an entry naming a target that no longer
 # breaks the rule it excuses fails the configure, and the lists and this check
 # go away together once both are empty.
-
-set(AUGUSTA_GLUE_EXCEPTIONS_augustad augustad_liveness augustad_metrics augustad_connection_health augustad_crash)
 
 set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES "")
 

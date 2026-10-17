@@ -12,8 +12,8 @@ counted: whoever counts builds on it.
 ## Not its responsibility
 
 - What the Host counts: host (`augusta/host_metrics.h`).
-- Each client's Connection health: `src/server` (Connection health collector).
-- Serving `/metrics` and `/livez`: `src/server` (the metrics endpoint).
+- Each client's Connection health: server (Connection health collector).
+- Serving `/metrics` and `/livez`: server (the metrics endpoint).
 
 ## Decisions
 
