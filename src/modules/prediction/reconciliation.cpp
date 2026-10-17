@@ -3,17 +3,18 @@
 #include <optional>
 
 #include "augusta/command.h"
+#include "augusta/tick.h"
 
 namespace augusta::prediction {
 
-void History::Record(command::Sequence sequence, const command::Command& command, const Predicted& predicted) {
+void History::Record(tick::Sequence sequence, const command::Command& command, const Predicted& predicted) {
   entries_.push_back(Entry{.sequence = sequence, .command = command, .predicted = predicted});
   if (entries_.size() > kMaxHistory) {
     entries_.pop_front();
   }
 }
 
-std::optional<Predicted> History::Acknowledge(command::Sequence sequence) {
+std::optional<Predicted> History::Acknowledge(tick::Sequence sequence) {
   while (!entries_.empty() && entries_.front().sequence < sequence) {
     entries_.pop_front();
   }

@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "augusta/policy_actions.h"
-#include "augusta/primitives.h"
+#include "augusta/tick.h"
 
 /// \file
 /// augusta::policy is a scenario's Game policy (ADR-0022): its rules, one Lua
@@ -104,7 +104,7 @@ class Policy {
   /// Calls on_tick with match, as it is on tick: nullopt when it takes no
   /// action, or the action it takes, a MatchEnd whose winner is a player alive
   /// in match.
-  std::expected<std::optional<PolicyAction>, Undecided> OnTick(const MatchView& match, primitives::Tick tick);
+  std::expected<std::optional<PolicyAction>, Undecided> OnTick(const MatchView& match, tick::Tick tick);
 
   /// Calls assign_spawns with match and the number of Spawn points: the Spawn
   /// point, from 0 and below spawn_points, it gives each of match's players, in

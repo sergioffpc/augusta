@@ -4,9 +4,9 @@
 #include <benchmark/benchmark.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "augusta/primitives.h"
 #include "benchmark_scene.h"
 
 // One bullet's ballistics::World::Step (ADR-0002): what SimulationWorld's
@@ -28,7 +28,7 @@ using augusta::physics::StaminaConfig;
 
 constexpr float kTick = 1.0F / 60.0F;
 // Every other player of a full Match.
-constexpr std::size_t kTargets = augusta::primitives::kMaxPlayers - 1;
+constexpr std::size_t kTargets = augusta::limits::kMaxPlayers - 1;
 
 void BM_BallisticsStep(benchmark::State& state) {
   augusta::physics::World map{StaminaConfig{}};

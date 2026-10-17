@@ -16,6 +16,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/reconciliation.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 namespace augusta::prediction {
@@ -70,7 +71,7 @@ struct World::Impl {
   // entity (rather than the systems closing over it directly) is what
   // replaces this.
   command::Command tick_command;
-  command::Sequence tick_sequence = 0;
+  tick::Sequence tick_sequence = 0;
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
 
@@ -211,7 +212,7 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const command::Command& command, command::Sequence sequence,
+State World::Tick(const command::Command& command, tick::Sequence sequence,
                   const std::optional<Acknowledgement>& acknowledgement, float delta_time) {
   impl_->tick_command = command;
   impl_->tick_sequence = sequence;

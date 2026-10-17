@@ -60,7 +60,7 @@ struct ReplayRequest {
 
 /// One tick's command under the sequence this client gave it.
 struct SequencedCommand {
-  command::Sequence sequence = 0;
+  tick::Sequence sequence = 0;
   command::Command command{};
 };
 

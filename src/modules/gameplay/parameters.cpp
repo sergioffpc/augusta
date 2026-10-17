@@ -6,8 +6,8 @@
 #include <numbers>
 #include <string_view>
 
+#include "augusta/limits.h"
 #include "augusta/physics.h"
-#include "augusta/primitives.h"
 
 namespace augusta::parameters {
 namespace {
@@ -54,7 +54,7 @@ std::expected<void, InvalidParameter> ValidateRifle(const Rifle& rifle) {
   if (!FiniteAndAbove(rifle.ads_field_of_view, 0.0F) || rifle.ads_field_of_view >= std::numbers::pi_v<float>) {
     return Invalid("rifle.ads_field_of_view");
   }
-  if (rifle.recoil_pattern.size() > primitives::kMaxRecoilKicks) {
+  if (rifle.recoil_pattern.size() > limits::kMaxRecoilKicks) {
     return Invalid("rifle.recoil_pattern");
   }
   for (const RecoilKick& kick : rifle.recoil_pattern) {
@@ -90,7 +90,7 @@ std::expected<void, InvalidParameter> ValidateAmmo(const Ammo& ammo) {
 }  // namespace
 
 std::expected<void, InvalidParameter> Validate(const Parameters& parameters) {
-  if (parameters.player_count < 1 || parameters.player_count > primitives::kMaxPlayers) {
+  if (parameters.player_count < 1 || parameters.player_count > limits::kMaxPlayers) {
     return Invalid("player_count");
   }
   if (auto valid = ValidateStamina(parameters.stamina); !valid) {

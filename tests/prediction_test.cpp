@@ -11,6 +11,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 // Exercises PredictionWorld's public Tick() surface end-to-end - the local
@@ -106,14 +107,14 @@ class ReconciliationTest : public ::testing::Test {
 
   // What the server would say after command number sequence, if it had the
   // player somewhere other than the rest position.
-  Acknowledgement ServerSays(augusta::command::Sequence sequence, const Vec3& offset) const {
+  Acknowledgement ServerSays(augusta::tick::Sequence sequence, const Vec3& offset) const {
     BodyState body = rest_;
     body.position += offset;
     return Acknowledgement{.sequence = sequence, .body = body};
   }
 
   // What the client itself predicted after command number sequence, moved by offset.
-  [[nodiscard]] Acknowledgement ServerAgreesWithTheClientExcept(augusta::command::Sequence sequence,
+  [[nodiscard]] Acknowledgement ServerAgreesWithTheClientExcept(augusta::tick::Sequence sequence,
                                                                 const Vec3& offset) const {
     BodyState body = states_[sequence - 1];
     body.position += offset;
@@ -121,7 +122,7 @@ class ReconciliationTest : public ::testing::Test {
   }
 
   World world_;
-  augusta::command::Sequence sequence_ = 0;
+  augusta::tick::Sequence sequence_ = 0;
   std::vector<BodyState> states_;
   State latest_;
   BodyState rest_{};
@@ -371,13 +372,13 @@ class WeaponPredictionTest : public ::testing::Test {
   }
 
   // What the client itself predicted after command number sequence.
-  [[nodiscard]] Acknowledgement ServerAgreesWithTheClient(augusta::command::Sequence sequence) const {
+  [[nodiscard]] Acknowledgement ServerAgreesWithTheClient(augusta::tick::Sequence sequence) const {
     const State& state = states_[sequence - 1];
     return Acknowledgement{.sequence = sequence, .body = state.local_body, .rifle = state.rifle};
   }
 
   World world_;
-  augusta::command::Sequence sequence_ = 0;
+  augusta::tick::Sequence sequence_ = 0;
   std::vector<State> states_;
   State latest_;
 };

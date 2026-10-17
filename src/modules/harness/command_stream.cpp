@@ -9,7 +9,8 @@
 #include "augusta/harness_wire.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"
-#include "augusta/primitives.h"
+#include "augusta/protocol.h"
+#include "augusta/tick.h"
 
 namespace augusta::harness {
 
@@ -60,7 +61,7 @@ CommandTick CommandStream::Tick(const ServerView& server_view, const command::Co
     unacknowledged_.clear();
     started_match_ = server_view.matches_started;
   }
-  const command::Sequence sequence = next_sequence_++;
+  const tick::Sequence sequence = next_sequence_++;
   // A dead player's body and rifle are gone from the server: there is nothing
   // to predict or reconcile, and its commands keep only the stream in step.
   if (!server_view.OwnAlive()) {
@@ -72,7 +73,7 @@ CommandTick CommandStream::Tick(const ServerView& server_view, const command::Co
   return CommandTick{.state = last_state_, .send = Queue(server_view, sequence, command)};
 }
 
-std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view, command::Sequence sequence,
+std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view, tick::Sequence sequence,
                                                    const command::Command& command) {
   // Commands the server has already processed need not go again.
   if (server_view.authoritative.has_value()) {
@@ -83,7 +84,7 @@ std::vector<SequencedCommand> CommandStream::Queue(const ServerView& server_view
   }
   // Keeps at most the newest kMaxCommandsPerMessage, all a message can carry.
   unacknowledged_.push_back(SequencedCommand{.sequence = sequence, .command = command});
-  if (unacknowledged_.size() > primitives::kMaxCommandsPerMessage) {
+  if (unacknowledged_.size() > protocol::kMaxCommandsPerMessage) {
     unacknowledged_.pop_front();
   }
   return {unacknowledged_.begin(), unacknowledged_.end()};

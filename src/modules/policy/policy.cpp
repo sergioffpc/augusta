@@ -13,8 +13,8 @@
 
 #include "answers.h"
 #include "augusta/policy_actions.h"
-#include "augusta/primitives.h"
 #include "augusta/scripting.h"
+#include "augusta/tick.h"
 
 namespace augusta::policy {
 namespace {
@@ -112,7 +112,7 @@ std::expected<Policy, LoadError> Policy::Load(std::string_view rules) {
   return policy;
 }
 
-std::expected<std::optional<PolicyAction>, Undecided> Policy::OnTick(const MatchView& match, primitives::Tick tick) {
+std::expected<std::optional<PolicyAction>, Undecided> Policy::OnTick(const MatchView& match, tick::Tick tick) {
   scripting::Value::Record view = ToRecord(match);
   view.push_back(NumberField("tick", static_cast<double>(tick)));
   const auto returned = impl_->Call(kOnTick, view);
