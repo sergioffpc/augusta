@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "augusta/math.h"
-#include "augusta/primitives.h"
+#include "augusta/tick.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -25,11 +25,12 @@
 /// Its messages hold only plain types of its own and the math types, never
 /// another module's structs: a module changing its structs never changes what
 /// travels. The protocol depends on nothing but augusta_math, which also holds
-/// the grids its numbers travel on (augusta/grid.h), and augusta_primitives,
-/// whose Tick and Sequence widths its counters take and whose player, command
-/// and recoil bounds (primitives::kMaxPlayers and the rest) bound its lists;
-/// it neither owns nor re-exports them (tests/protocol_boundary.cmake,
-/// tests/core_boundary.cmake). A type that mirrors one of the engine's
+/// the grids its numbers travel on (augusta/grid.h), augusta_tick, whose Tick
+/// and Sequence widths its counters take, and augusta_limits, whose player and
+/// recoil bounds (limits::kMaxPlayers, limits::kMaxRecoilKicks) bound its
+/// lists; it neither owns nor re-exports them (tests/protocol_boundary.cmake,
+/// tests/core_boundary.cmake). How many commands one Commands message carries
+/// is its own bound (kMaxCommandsPerMessage). A type that mirrors one of the engine's
 /// carries the suffix Wire (BodyStateWire for physics::BodyState,
 /// AuthoritativeStateWire for harness::AuthoritativeState), so the two never
 /// read alike where they meet: each peer converts at its edge
@@ -196,7 +197,7 @@ struct RifleWire {
   float recoil_recovery_per_second = 0.0F;
   float ads_recoil_scale = 0.0F;
   float ads_field_of_view = 0.0F;
-  /// At most primitives::kMaxRecoilKicks.
+  /// At most limits::kMaxRecoilKicks.
   std::vector<RecoilKickWire> recoil_pattern;
   std::uint8_t magazine_capacity = 0;
 
@@ -344,25 +345,29 @@ struct WeaponStateWire {
   bool operator==(const WeaponStateWire&) const = default;
 };
 
+/// The most commands one Commands message carries: a client repeats at most
+/// this many of its newest unacknowledged ones.
+inline constexpr std::size_t kMaxCommandsPerMessage = 8;
+
 /// One tick's command and the number the client gave it. Numbers start at 1 and
 /// grow by one per command, so the server can tell what it has already seen.
 /// They count one connection's commands and start over on the next, in
-/// primitives::Sequence's width, which never wraps.
+/// tick::Sequence's width, which never wraps.
 struct SequencedCommandWire {
-  primitives::Sequence sequence = 0;
+  tick::Sequence sequence = 0;
   CommandWire command{};
 
   bool operator==(const SequencedCommandWire&) const = default;
 };
 
 /// Client to server: recent commands, oldest first. Each message repeats the
-/// ones the client has not seen acknowledged (at most primitives::kMaxCommandsPerMessage,
+/// ones the client has not seen acknowledged (at most kMaxCommandsPerMessage,
 /// the newest), so one lost datagram does not drop input.
 struct CommandsWire {
   std::vector<SequencedCommandWire> commands;
   /// The newest tick of its commands' Seen times (ADR-0044): each says how far
   /// before it its own is (CommandWire::seen_age).
-  primitives::Tick seen_tick = 0;
+  tick::Tick seen_tick = 0;
 
   bool operator==(const CommandsWire&) const = default;
 };
@@ -372,8 +377,8 @@ struct AuthoritativeStateWire {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   /// Ticks count from the server's start and never start over, so they take 64
   /// bits: 32 would wrap after about 828 days at 60 Hz.
-  primitives::Tick tick = 0;
-  /// Every dynamic body in the match, at most primitives::kMaxPlayers (only players have one so far).
+  tick::Tick tick = 0;
+  /// Every dynamic body in the match, at most limits::kMaxPlayers (only players have one so far).
   std::vector<EntityStateWire> bodies;
   /// The recipient's own rifle as of this tick: what it reconciles its
   /// predicted rifle against, as it does its body against its entry in bodies.
@@ -382,7 +387,7 @@ struct AuthoritativeStateWire {
   /// else's is ever sent.
   float health = 0.0F;
   /// The highest command sequence of the recipient that the server has processed, 0 if none.
-  primitives::Sequence acknowledged_sequence = 0;
+  tick::Sequence acknowledged_sequence = 0;
   /// How many of the recipient's commands the server still holds queued after
   /// this tick: what the client paces its own ticks by (ADR-0038).
   std::uint8_t queued_commands = 0;
@@ -403,7 +408,7 @@ struct RosterEntryWire {
 struct LobbyWire {
   /// Numbers this Roster: it grows on every join and leave, so a client can say which one it loaded for.
   std::uint32_t version = 0;
-  /// Every player in the Lobby, the recipient included, at most primitives::kMaxPlayers.
+  /// Every player in the Lobby, the recipient included, at most limits::kMaxPlayers.
   std::vector<RosterEntryWire> roster;
 
   bool operator==(const LobbyWire&) const = default;
@@ -432,10 +437,10 @@ struct MatchPlayerWire {
 
 /// Server to client: the match has started. From here on its players can only leave.
 struct MatchStartWire {
-  /// Every player in the match, the recipient included, at most primitives::kMaxPlayers.
+  /// Every player in the match, the recipient included, at most limits::kMaxPlayers.
   std::vector<MatchPlayerWire> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
-  primitives::Tick first_tick = 0;
+  tick::Tick first_tick = 0;
 
   bool operator==(const MatchStartWire&) const = default;
 };
@@ -452,7 +457,7 @@ struct MatchEndWire {
 /// ADR-0044), told to every player in it, the shooter included.
 struct ShotWire {
   /// The server tick it was fired on.
-  primitives::Tick tick = 0;
+  tick::Tick tick = 0;
   /// Where the round left from.
   math::Vec3 origin{};
   /// The body of the player who fired it.
@@ -510,7 +515,7 @@ struct ReplayListRequestWire {
 struct ReplayListingWire {
   /// When its Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
-  /// Its players' Characters, in its Join order, at most primitives::kMaxPlayers,
+  /// Its players' Characters, in its Join order, at most limits::kMaxPlayers,
   /// each at most kMaxCharacterNameLength bytes.
   std::vector<std::string> characters;
   /// Its file name, which a Replay request names it by; at most kMaxCaptureNameLength bytes.
@@ -565,8 +570,8 @@ struct PlayerViewWire {
 /// saw on one tick of its Replay, which no Authoritative State carries.
 struct ReplayViewWire {
   /// The tick, as the Authoritative State of the same tick names it.
-  primitives::Tick tick = 0;
-  /// Every player handed a Command on the tick, at most primitives::kMaxPlayers.
+  tick::Tick tick = 0;
+  /// Every player handed a Command on the tick, at most limits::kMaxPlayers.
   std::vector<PlayerViewWire> players;
 
   bool operator==(const ReplayViewWire&) const = default;
@@ -611,7 +616,7 @@ enum class EncodeError : std::uint8_t {
 
 /// Encodes message as one payload, or reports the first field beyond its
 /// limit (an engine version over kMaxEngineVersionLength, more than
-/// primitives::kMaxCommandsPerMessage commands, a flag bit or stance a field lacks) and
+/// kMaxCommandsPerMessage commands, a flag bit or stance a field lacks) and
 /// gives no payload at all: checked in every build, so a payload is either
 /// whole and decodable or not made.
 [[nodiscard]] std::expected<BytesWire, EncodeError> Encode(const MessageWire& message);
