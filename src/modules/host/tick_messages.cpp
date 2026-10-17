@@ -4,7 +4,6 @@
 #include <functional>
 #include <optional>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "augusta/failure.h"
