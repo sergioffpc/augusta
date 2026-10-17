@@ -54,7 +54,7 @@ keeps game policy separate from mechanism code.
   (`augusta/policy_actions.h`), validating it as it reads, and hands the server
   only the result: `on_tick`'s answer becomes a `MatchEnd` (with its winner, or
   none for a draw) in the tick's `TickResult`, and `assign_spawns`'s a Spawn
-  point per player. `server::Host` acts on the typed actions and never sees a
+  point per player. `host::Host` acts on the typed actions and never sees a
   hook's raw answer. The set grows only with a decision policy is given, as the
   hook catalogue does; a winner is part of a Match end, not an action of its
   own, and there is no spawn action during a Match since there is no respawn
@@ -86,10 +86,10 @@ keeps game policy separate from mechanism code.
   past its limit or returns something invalid is logged at WARN with its script,
   hook and tick (at most once a second, ADR-0029) and treated as having decided
   nothing. The tick goes on, and the next call runs as usual.
-- **Two modules.** The sandboxed Lua embedding is the scripting module (Engine
-  Layer), which knows nothing of Game policy. The hooks, the views built for
-  them and the typed actions read from their answers are the policy module
-  (Domain Layer), which SimulationWorld and the scenario loader call (ADR-0062).
+- **Two modules.** The sandboxed Lua embedding is the scripting module, which
+  knows nothing of Game policy. The hooks, the views built for them and the
+  typed actions read from their answers are the policy module, which
+  SimulationWorld and the scenario loader call.
 - **Deterministic and server-only.** The same rules called with the same views
   return the same decisions; neither client world runs policy (ADR-0024).
 

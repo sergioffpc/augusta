@@ -65,7 +65,7 @@ math is therefore shared by client and server; deciding a bullet's outcome
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its
 tick and fraction) follow ADR-0038: the smallest types, quantized numbers on its
-grids, and `Wire` types converted only at `server::Host` and `harness::Session`.
+grids, and `Wire` types converted only at `host::Host` and `harness::Session`.
 ADR-0038's table has their layout. Every Command carries its Seen time, not only
 one with fire pressed: whether a Command fires a round is the server's to decide
 (its WeaponHandling keeps the fire rate), not the client's to know.
@@ -82,7 +82,7 @@ one with fire pressed: whether a Command fires a round is the server's to decide
 - **Replication lives with SimulationWorld, in `augusta_simulation`.** Deciding
   what each client is sent of a tick's Authoritative State, its Shots and Hit
   confirmations included, is server-only and stops at the engine's own types: a
-  pure decision tested without a network, which `server::Host` turns into
+  pure decision tested without a network, which `host::Host` turns into
   messages.
 - **A shooter's hit marker lags its shot** by the flight time plus half an RTT.
   That is the price of never showing one that is taken back.

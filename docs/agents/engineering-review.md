@@ -72,7 +72,7 @@ Trace these end to end at L3 when their area is in scope:
 4. **Pack load:** config path and public key → BLAKE3 and Ed25519 verification →
    parse → content, on client and server.
 5. **Policy hook:** SimulationWorld Scripts/Behaviours phase → Lua hook → typed
-   Policy action → `server::Host` (ADR-0022, ADR-0023).
+   Policy action → `host::Host` (ADR-0022, ADR-0023).
 6. **Failure and shutdown:** a worker failure, an exception, or SIGINT/SIGTERM →
    supervisor → stop → join → exit status (ADR-0005, ADR-0033).
 7. **Capture to replay:** Match capture → capture file → Replay or Reenactment

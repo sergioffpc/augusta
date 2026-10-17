@@ -8,14 +8,14 @@ since it's headless. The server's Metrics thread is the HTTP server
 its Matches runs a fourth, which only writes the capture's files (ADR-0050).
 
 Both tick loops — the server's Simulation thread and the client's Prediction
-thread — keep a fixed schedule (`augusta::tick`, the Foundation's tick module,
-which also holds the Tick and the command Sequence; ADR-0062): each tick is due
-one tick after the previous one was due, not one tick after it ended, so a late
-tick never delays the ones after it. A loop more than a few ticks behind
-resynchronises to now instead of running the missed ticks back to back. On
-Windows the client raises the system timer resolution to 1 ms
-(`timeBeginPeriod`) for the life of the process, since the default 15.6 ms would
-not let a thread sleep to a 60 Hz deadline.
+thread — keep a fixed schedule (`augusta::tick`, the tick module, which also
+holds the Tick and the command Sequence): each tick is due one tick after the
+previous one was due, not one tick after it ended, so a late tick never delays
+the ones after it. A loop more than a few ticks behind resynchronises to now
+instead of running the missed ticks back to back. On Windows the client raises
+the system timer resolution to 1 ms (`timeBeginPeriod`) for the life of the
+process, since the default 15.6 ms would not let a thread sleep to a 60 Hz
+deadline.
 
 Both Network I/O threads — the server's and the client's — do one round of
 transport work (connection events, received messages), then wait about 1 ms
@@ -69,7 +69,7 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 - **SimulationWorld returns a TickResult.** The server's Simulation thread owns
   SimulationWorld; each tick returns the tick's Authoritative State, its combat
   events included, and the Game policy actions taken on it, already typed and
-  validated (ADR-0022, ADR-0023). `server::Host` owns the Lobby, Match lifecycle
+  validated (ADR-0022, ADR-0023). `host::Host` owns the Lobby, Match lifecycle
   and replication: it replicates the state and acts on the typed actions, and
   never interprets a policy hook's answer itself.
 - **Metrics are written in place and only read across.** The Simulation and
@@ -82,17 +82,17 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 
 A runtime supervisor (`augusta::supervisor`) owns each runtime's worker threads,
 the one stop request every loop watches, and the first terminal failure, the
-runtime's first cause. It is a module of its own (`augusta_supervisor`,
-Services), apart from the application boundary (`augusta_application`, Runtimes;
-ADR-0033, ADR-0062): the harness supervises its threads without a `main`, and
-each executable's `main` reports a runtime's first cause without owning a
-thread. A worker body returns a typed `failure::Failure` (ADR-0033) when it
-stops on a failure it can name — a transport, an invariant — and the supervisor
-keeps its code, and so its disposition, as given. A worker that cannot be
-started (`worker_creation_failed`) or whose body throws (`worker_failed`) does
-not terminate the process either. Whichever way it arrives, the supervisor adds
-the thread to the failure's context, records it if it is the first, logs it once
-at `ERR`, and requests the stop; a failure after an earlier recorded one is its
+runtime's first cause. It is a module of its own (`augusta_supervisor`), apart
+from the application boundary (`augusta_application`, ADR-0033): the harness
+supervises its threads without a `main`, and each executable's `main` reports a
+runtime's first cause without owning a thread. A worker body returns a typed
+`failure::Failure` (ADR-0033) when it stops on a failure it can name — a
+transport, an invariant — and the supervisor keeps its code, and so its
+disposition, as given. A worker that cannot be started
+(`worker_creation_failed`) or whose body throws (`worker_failed`) does not
+terminate the process either. Whichever way it arrives, the supervisor adds the
+thread to the failure's context, records it if it is the first, logs it once at
+`ERR`, and requests the stop; a failure after an earlier recorded one is its
 consequence and logged at `WARN`. The stop moves the supervisor from running to
 stopping exactly once; from then on it admits no new worker and every loop
 returns at its next check, before its next tick or network round. A tick or

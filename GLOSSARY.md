@@ -69,18 +69,18 @@ outlive or be distinct from it)
 
 **Link**: The channel through which one Session exchanges messages with the
 other side: the game's state turned into messages and back, carried by the
-transport connection beneath. _Avoid_: Session (the presence it carries),
-connection, netcode
+transport connection beneath, which the Link alone owns. _Avoid_: Session (the
+presence it carries), connection, netcode
 
 **Session ID**: The Authoritative server's name for one connected player
-(harness::SessionId on the client, server::SessionId and simulation::SessionId
-on the server, protocol::SessionIdWire on the wire), assigned when it admits the
+(harness::SessionId on the client, host::SessionId and simulation::SessionId on
+the server, protocol::SessionIdWire on the wire), assigned when it admits the
 join. Distinct from the transport's own handle for the connection, and not a
 credential — the server tells senders apart by connection, not by this ID.
 _Avoid_: Player ID, connection ID
 
 **Entity ID**: The Authoritative server's name for one dynamic body
-(server::EntityId and simulation::EntityId on the server, harness::EntityId and
+(host::EntityId and simulation::EntityId on the server, harness::EntityId and
 presentation::EntityId on the client, protocol::EntityIdWire on the wire): a
 player's body today, later anything that moves. It names which body, not who
 moves it: a player's body gets one at Match start, which pairs it with that
@@ -206,24 +206,14 @@ conflates policy with mechanism)
 
 **Glue**: What an executable adds to the modules it is built from, and the only
 thing it adds: its entry point, which runs one Runtime behind the application
-boundary. An executable stands outside the Layers and uses only the application,
-that Runtime and the Foundation. It holds neither Mechanism nor Game policy;
-anything worth a test of its own is not Glue and belongs in a module. _Avoid_:
-Application logic, server logic, client logic
+boundary, and uses only the application, that Runtime, failure, logging and
+version. It holds neither Mechanism nor Game policy; anything worth a test of
+its own is not Glue and belongs in a module. _Avoid_: Application logic, server
+logic, client logic
 
 **Runtime**: What runs a Harness or a Host live for one executable: the threads
 and clock around it, the executable's own configuration and the wiring of the
 modules it drives into one another. _Avoid_: Main loop, app
-
-**Layer**: One level of the stack the modules form, whose modules use only those
-of the level directly below and of the Foundation; a Runtime, which wires them
-together, may use any level below. From the bottom: Foundation, Engine, Domain,
-Services, Cores and Runtimes; executables stand on top, outside them. _Avoid_:
-Tier, level
-
-**Foundation**: The bottom Layer, which every Layer may use: the math, the tick,
-the limits, the failure model, the version and logging, none of which uses
-another module. _Avoid_: Common, utils, primitives
 
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
 mode, such as who spawns where and when the Match is won, chosen together

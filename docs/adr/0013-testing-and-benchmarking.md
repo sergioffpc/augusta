@@ -97,7 +97,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   build together or not at all, with the CMake option `AUGUSTA_TOOLS`, on by
   default: every build, pull requests included, compiles and lints the Agents'
   module and runs its C++ tests, the whole Match loop against an in-process
-  `server::Host` among them, but not the netcode tests below, which every test
+  `host::Host` among them, but not the netcode tests below, which every test
   preset leaves out and only the nightly runs. The script itself is run by hand,
   against a local `augustad` or the r630 cluster's. The server image turns the
   option off: it builds `augustad` alone.
@@ -106,10 +106,10 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   conditions, and a whole run of Agents under them takes minutes of real time.
   So the nightly builds the `linux` preset and runs the tests labelled `netcode`
   (the `linux-netcode` test preset; every other test preset leaves them out):
-  four Agents through five Matches against an in-process `server::Host`, under
-  the transport's own simulated conditions (GameNetworkingSockets' fake packet
-  lag, jitter, loss and reordering, on every packet either side sends) rather
-  than `tc netem`, which would need root on the runner and a server in another
+  four Agents through five Matches against an in-process `host::Host`, under the
+  transport's own simulated conditions (GameNetworkingSockets' fake packet lag,
+  jitter, loss and reordering, on every packet either side sends) rather than
+  `tc netem`, which would need root on the runner and a server in another
   process for no more realism on loopback. Three profiles, one way each, so a
   round trip is twice the latency:
 

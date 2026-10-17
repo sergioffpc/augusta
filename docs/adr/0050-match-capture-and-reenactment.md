@@ -26,9 +26,9 @@ the capture names no tick of the server that made it:
 - **Commands**: each Command a player sent, at the offset of the tick the
   server's command queue handed it to SimulationWorld, its Seen time's tick
   turned into an offset the same way. Only what the client sent: the movement
-  the queue holds or idles on a tick with nothing new (`server::CommandQueue`)
-  is the server's own and is not captured, and a Command a Commands message
-  repeats is captured once.
+  the queue holds or idles on a tick with nothing new (`host::CommandQueue`) is
+  the server's own and is not captured, and a Command a Commands message repeats
+  is captured once.
 - **Leave**: a player whose connection ended mid-Match, at the offset of the
   tick the server took its body out. That is the tick after which the body is
   gone, and the Leave comes before that tick's Commands and Deaths. One

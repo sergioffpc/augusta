@@ -68,7 +68,7 @@ leave.
 - **The mid-match Roster in Join accepted goes away.** The Lobby's membership
   replaces it. The server sends it to everyone in the Lobby whenever it changes.
 - **The Spawn point is assigned at match start, not at join, and by Game
-  policy.** `server::Match` decides who is in a match and when it starts, never
+  policy.** `host::Match` decides who is in a match and when it starts, never
   where anyone spawns: SimulationWorld's Match start runs the scenario's
   `assign_spawns` hook (ADR-0022, ADR-0023), and players take the spawn points
   in order, starting over after the last, when the scenario defines no hook or
