@@ -266,6 +266,11 @@ struct ReplayListRequest {};
 using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, MatchEnd, AuthoritativeState, Shot,
                                    HitConfirmation, Death, ReplayView, std::vector<ReplayListing>>;
 
+/// What a client sends a server: a join (a Reenact request is one that names
+/// its spawn), a Replay request, a Replay list request, a Ready and a tick's
+/// commands, each as what it says.
+using ClientMessage = std::variant<JoinRequest, ReplayRequest, ReplayListRequest, Ready, std::vector<SequencedCommand>>;
+
 /// The Networking Protocol's message types (ADR-0038), in the engine's terms:
 /// what a payload is, for whoever counts what it sends and receives.
 enum class MessageType : std::uint8_t {

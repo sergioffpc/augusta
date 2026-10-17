@@ -1,12 +1,14 @@
 #ifndef AUGUSTA_LINK_H_
 #define AUGUSTA_LINK_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "augusta/failure.h"
@@ -16,14 +18,16 @@
 /// \file
 /// The Link (GLOSSARY.md, ADR-0038): the channel through which one Session
 /// exchanges messages with the other side, owning the transport connection
-/// beneath end to end. This is its client end, which dials the one server it
-/// plays on. It sends and receives the engine's types (augusta/link_types.h),
-/// turned into messages and back by the Link's own conversions, and sends each
-/// with the reliability ADR-0038's table gives its type, so no caller names
-/// one; nothing of the protocol or the transport shows through it.
+/// beneath end to end. Its two ends: the client's (Client), which dials the one
+/// server it plays on, and the server's (Server), which listens and keeps one
+/// channel per peer. Each sends and receives the engine's types
+/// (augusta/link_types.h), turned into messages and back by the Link's own
+/// conversions, and sends each with the reliability ADR-0038's table gives its
+/// type, so no caller names one; nothing of the protocol or the transport shows
+/// through it.
 ///
-/// Like the transport, it is safe to call from any thread, and it owns none:
-/// the caller polls it (PumpEvents, Receive), from the Network I/O thread
+/// Like the transport, both are safe to call from any thread, and own none: the
+/// caller polls them (PumpEvents, Receive), from the Network I/O thread
 /// (ARCHITECTURE.md §8), and may send from another.
 namespace augusta::link {
 
@@ -135,6 +139,151 @@ class Client {
   /// (failure::Code::kTransportReceiveFailed) only when the local transport
   /// cannot receive on the connection it holds.
   [[nodiscard]] std::expected<std::vector<ServerMessage>, failure::Failure> Receive();
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+// ---- Server ----
+
+/// The Link's name for one peer connected to a server: what admission, the peer
+/// gate and misbehaviour know it by. Valid only for the Server that produced
+/// it, from its kConnectRequested event until its kDisconnected one. Distinct
+/// from a Session ID, and not a credential.
+enum class PeerId : std::uint32_t {};
+
+/// One step of a peer's connection, as Server::PumpEvents reports it.
+enum class PeerEventType : std::uint8_t {
+  /// A client is connecting and waits for Accept or Disconnect: until one is
+  /// called, nothing travels to or from it.
+  kConnectRequested,
+  /// An accepted peer completed its handshake: messages travel both ways.
+  kConnected,
+  /// The peer's connection ended, however it ended; its PeerId is no longer valid.
+  kDisconnected,
+};
+
+/// Why a peer's connection ended.
+enum class DisconnectReason : std::uint8_t {
+  /// The peer closed it.
+  kClosedByPeer,
+  /// The transport gave up on it: nothing was heard from the peer for too
+  /// long, or the network failed.
+  kConnectionLost,
+};
+
+struct PeerEvent {
+  PeerId peer{};
+  PeerEventType type = PeerEventType::kConnectRequested;
+  /// Only for kDisconnected.
+  DisconnectReason reason = DisconnectReason::kClosedByPeer;
+};
+
+/// One peer's connection numbers.
+struct PeerStats {
+  PeerId peer{};
+  ConnectionStats stats;
+};
+
+/// One payload a peer sent, as its server takes it in.
+struct PeerMessage {
+  PeerId from{};
+  /// Its size, which a server counts, whatever it turns out to be.
+  std::size_t bytes = 0;
+  /// The type of message it is, or, if it decodes to none, the protocol's words
+  /// for why.
+  std::expected<MessageType, std::string> type;
+  /// What it says, if it is a message a client sends; nullopt for a payload
+  /// that is no message, or a message only a server sends.
+  std::optional<ClientMessage> message;
+};
+
+/// A message for a client, encoded once, so a server sends the same one to as
+/// many peers as need it: its type and its bytes are what a server counts.
+class Outgoing {
+ public:
+  [[nodiscard]] MessageType Type() const { return type_; }
+  [[nodiscard]] std::span<const std::byte> Payload() const { return payload_; }
+
+ private:
+  // The Link's own encoding (link.cpp) is the one way to make one, and its
+  // Server sends the bytes it holds without copying them.
+  friend struct OutgoingAccess;
+  friend class Server;
+  Outgoing(MessageType type, std::vector<std::byte> payload) : type_(type), payload_(std::move(payload)) {}
+
+  MessageType type_;
+  std::vector<std::byte> payload_;
+};
+
+/// A message a server sends, encoded: or, if a field of it is beyond what the
+/// protocol carries, no message but failure::Code::kInvariantViolated naming
+/// its type, which stops the runtime before anything of it leaves (ADR-0033).
+/// A Join refused is its reason; a Replay list, the captures it names.
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Admission& admission);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(JoinRefusal refusal);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Lobby& lobby);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const MatchStart& start);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const MatchEnd& end);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const AuthoritativeState& state);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Shot& shot);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const HitConfirmation& hit);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Death& death);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view);
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings);
+
+/// A server's end of the Link: it listens, and keeps one channel per peer that
+/// connects (US-02: 2-8 players).
+class Server {
+ public:
+  /// Starts listening on local, on a free port of its own choosing if that
+  /// names port 0 (LocalEndpoint). Throws failure::ClassifiedFailure:
+  /// failure::Code::kInvalidConfiguration if local does not parse,
+  /// kListenerSetupFailed if the transport cannot listen there. faults, when
+  /// given, is asked at listener setup and at every send and receive
+  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
+  /// must outlive the Server.
+  explicit Server(const Endpoint& local, failure::Faults* faults = nullptr);
+  /// Ends every peer's connection and stops listening.
+  ~Server();
+
+  /// Not copyable or movable: owns a listening socket and live connections.
+  Server(const Server&) = delete;
+  Server& operator=(const Server&) = delete;
+  Server(Server&&) = delete;
+  Server& operator=(Server&&) = delete;
+
+  /// The address it listens on, with the port it chose if local named port 0.
+  [[nodiscard]] Endpoint LocalEndpoint() const;
+
+  /// What happened to its peers' connections since the last call, in the
+  /// order it happened. Each kConnectRequested must be answered, with Accept
+  /// or Disconnect, before the next call, or the peer is reported again.
+  [[nodiscard]] std::vector<PeerEvent> PumpEvents();
+
+  /// Lets a peer that asked to connect complete its handshake.
+  void Accept(PeerId peer);
+
+  /// Ends peer's connection, refusing it if it is still asking, once what was
+  /// sent to it reliably has been delivered. Nothing if peer is gone already.
+  /// No kDisconnected event follows for a connection this side ends.
+  void Disconnect(PeerId peer);
+
+  /// Sends message to peer with its type's reliability: kDropped if peer is
+  /// not connected, or its connection could not take it. Fails only when the
+  /// local transport refuses the send (failure::Code::kTransportSendFailed).
+  [[nodiscard]] SendResult Send(PeerId peer, const Outgoing& message);
+
+  /// Every payload any peer sent since the last call, in the order it arrived,
+  /// each as what it is (PeerMessage): empty once drained. Fails
+  /// (failure::Code::kTransportReceiveFailed) only when the local transport
+  /// cannot receive.
+  [[nodiscard]] std::expected<std::vector<PeerMessage>, failure::Failure> Receive();
+
+  /// Every connected peer's numbers. Each read clears their max_jitter_us, so
+  /// one caller samples. Neither blocks nor does I/O.
+  [[nodiscard]] std::vector<PeerStats> GetStats() const;
 
  private:
   struct Impl;

@@ -636,4 +636,31 @@ TEST(LinkMessagesTest, AMessageOnlyAClientSendsIsNoServerMessage) {
   EXPECT_FALSE(augusta::link::ServerMessageFromWire(augusta::protocol::ReplayListRequestWire{}).has_value());
 }
 
+// What a server takes in is what a client asks, each as the engine's type of
+// it: a Reenact request is a join that names its spawn (ADR-0050).
+TEST(LinkMessagesTest, AClientMessageReachesTheServerAsWhatItSays) {
+  const auto ready = augusta::link::ClientMessageFromWire(augusta::protocol::ReadyWire{.version = 7});
+  ASSERT_TRUE(ready.has_value());
+  EXPECT_EQ(std::get<augusta::link::Ready>(*ready).version, 7U);
+
+  const auto reenact = augusta::link::ClientMessageFromWire(augusta::protocol::ReenactRequestWire{
+      .engine_version = "1.2.3", .client_pack = {}, .character = "soldier", .spawn = Vec3(1.0F, 2.0F, 3.0F)});
+  ASSERT_TRUE(reenact.has_value());
+  const auto& join = std::get<augusta::link::JoinRequest>(*reenact);
+  EXPECT_EQ(join.character, "soldier");
+  ASSERT_TRUE(join.spawn.has_value());
+  EXPECT_FLOAT_EQ(join.spawn->y, 2.0F);
+
+  const auto commands = augusta::link::ClientMessageFromWire(ToWire(Commands(3)));
+  ASSERT_TRUE(commands.has_value());
+  EXPECT_EQ(std::get<std::vector<SequencedCommand>>(*commands).size(), 3U);
+
+  EXPECT_TRUE(augusta::link::ClientMessageFromWire(augusta::protocol::ReplayListRequestWire{}).has_value());
+}
+
+TEST(LinkMessagesTest, AMessageOnlyAServerSendsIsNoClientMessage) {
+  EXPECT_FALSE(augusta::link::ClientMessageFromWire(ToWire(augusta::link::Shot{})).has_value());
+  EXPECT_FALSE(augusta::link::ClientMessageFromWire(augusta::protocol::ReplayListWire{}).has_value());
+}
+
 }  // namespace

@@ -126,6 +126,10 @@ void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& 
 /// client sends.
 [[nodiscard]] std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& message);
 
+/// message as what a client asks a server, or nullopt if it is one only a
+/// server sends.
+[[nodiscard]] std::optional<ClientMessage> ClientMessageFromWire(const protocol::MessageWire& message);
+
 /// A capture's header, in this engine's format version.
 [[nodiscard]] protocol::CaptureHeaderWire ToWire(const capture::Header& header);
 [[nodiscard]] capture::Header FromWire(const protocol::CaptureHeaderWire& header);

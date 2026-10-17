@@ -668,4 +668,26 @@ std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& 
   return std::nullopt;
 }
 
+std::optional<ClientMessage> ClientMessageFromWire(const protocol::MessageWire& message) {
+  if (const auto* request = std::get_if<protocol::JoinRequestWire>(&message)) {
+    return FromWire(*request);
+  }
+  if (const auto* reenact = std::get_if<protocol::ReenactRequestWire>(&message)) {
+    return FromWire(*reenact);
+  }
+  if (const auto* commands = std::get_if<protocol::CommandsWire>(&message)) {
+    return FromWire(*commands);
+  }
+  if (const auto* ready = std::get_if<protocol::ReadyWire>(&message)) {
+    return Ready{.version = ready->version};
+  }
+  if (const auto* request = std::get_if<protocol::ReplayRequestWire>(&message)) {
+    return FromWire(*request);
+  }
+  if (std::holds_alternative<protocol::ReplayListRequestWire>(message)) {
+    return ReplayListRequest{};
+  }
+  return std::nullopt;
+}
+
 }  // namespace augusta::link

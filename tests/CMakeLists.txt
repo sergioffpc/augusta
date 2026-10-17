@@ -595,7 +595,7 @@ add_executable(augusta_link_transport_tests link_transport_test.cpp)
 target_include_directories(augusta_link_transport_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
 target_link_libraries(
   augusta_link_transport_tests
-  PRIVATE augusta_link augusta_networking GTest::gtest GTest::gtest_main
+  PRIVATE augusta_link augusta_link_messages augusta_networking augusta_protocol GTest::gtest GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
