@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "agent.h"
+#include "augusta/agent.h"
 #include "augusta/netcode_stats.h"
 #include "augusta/networking.h"
 #include "example_run.h"

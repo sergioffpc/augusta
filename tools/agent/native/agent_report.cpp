@@ -1,4 +1,4 @@
-#include "report.h"
+#include "augusta/agent_report.h"
 
 #include <cstdint>
 #include <iterator>
