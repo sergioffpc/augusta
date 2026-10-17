@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792137579590,
+  "lastUpdate": 1792221572132,
   "repoUrl": "https://github.com/sergioffpc/augusta",
   "entries": {
     "Hot paths": [
@@ -818,6 +818,142 @@ window.BENCHMARK_DATA = {
             "value": 45703.72890390594,
             "unit": "ns/iter",
             "extra": "iterations: 5\ncpu: 45699.93622415831 ns\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Sérgio Carvalho",
+            "username": "sergioffpc",
+            "email": "sergioffpc@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "c9aeadad3210a8622cf02b5d52978192544458f7",
+          "message": "Merge pull request #749 from sergioffpc/feature/732-executables-are-glue\n\nrefactor: enforce Executables are Glue and make the Host a module",
+          "timestamp": "2026-10-16T20:26:20Z",
+          "url": "https://github.com/sergioffpc/augusta/commit/c9aeadad3210a8622cf02b5d52978192544458f7"
+        },
+        "date": 1792221571958,
+        "tool": "googlecpp",
+        "benches": [
+          {
+            "name": "BM_BallisticsStep_median",
+            "value": 368.4642301366215,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 368.39510269062083 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/8_median",
+            "value": 127.2089093350017,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 127.20004280519102 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/16_median",
+            "value": 250.30316899076433,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 250.27284793821354 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/64_median",
+            "value": 1012.1977829901783,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1012.1373816133303 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/256_median",
+            "value": 4369.350252706504,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 4369.221322746076 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/1024_median",
+            "value": 18322.924599013706,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 18322.414430233806 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/2048_median",
+            "value": 37546.70867366873,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 37545.52703228321 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/client_median",
+            "value": 96349.52839268654,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 96344.9429396402 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/server_median",
+            "value": 79694.47929396277,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 79690.78943199803 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/unchanged_state_median",
+            "value": 1950.3582274239889,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1950.2068778840294 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/new_state_median",
+            "value": 2343.0107085537556,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 2342.8560409846805 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/authoritative_state_median",
+            "value": 683.6803204365375,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 683.64014934902 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/commands_median",
+            "value": 513.7827782248768,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 513.7530055970212 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/authoritative_state_median",
+            "value": 376.9382150460591,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 376.90743556002775 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/commands_median",
+            "value": 261.04402985550644,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 261.0318012737578 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ReplayViewerTick_median",
+            "value": 46371.668487310206,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 46368.354959035525 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Replication_median",
+            "value": 5662.117879332408,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 5661.479446866431 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTick_median",
+            "value": 45808.90862409404,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 45806.39953917054 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTickBetweenStates_median",
+            "value": 46365.21500299328,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 46363.240207488256 ns\nthreads: 1"
           }
         ]
       }
