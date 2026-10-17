@@ -45,9 +45,9 @@ target_link_libraries(
     augusta_failure
     augusta_gameplay
     augusta_harness
+    augusta_link
     augusta_logging
     augusta_math
-    augusta_networking
     augusta_physics
 )
 set_target_properties(

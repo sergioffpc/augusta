@@ -1,10 +1,13 @@
 #include "augusta/link.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <utility>
@@ -20,25 +23,25 @@
 #include "connection_stats.h"
 #include "peer_message.h"
 #include "reliability.h"
+#include "transport_names.h"
 
 namespace augusta::link {
 
-namespace {
+std::expected<void, failure::Failure> Init(failure::Faults* faults) { return networking::Init(faults); }
 
-ConnectionState ToLink(networking::ConnectionState state) {
-  switch (state) {
-    case networking::ConnectionState::kConnecting:
-      return ConnectionState::kConnecting;
-    case networking::ConnectionState::kConnected:
-      return ConnectionState::kConnected;
-    case networking::ConnectionState::kDisconnected:
-      return ConnectionState::kDisconnected;
-  }
-  // The transport has no other state.
-  return ConnectionState::kDisconnected;
+void Shutdown() { networking::Shutdown(); }
+
+void SimulateNetworkConditions(const SimulatedConditions& conditions) {
+  networking::SimulateNetworkConditions(networking::SimulatedConditions{
+      .latency_ms = conditions.latency_ms,
+      .jitter_mean_ms = conditions.jitter_mean_ms,
+      .jitter_max_ms = conditions.jitter_max_ms,
+      .loss_percent = conditions.loss_percent,
+      .reorder_percent = conditions.reorder_percent,
+      .reorder_delay_ms = conditions.reorder_delay_ms,
+      .timeout_ms = conditions.timeout_ms,
+  });
 }
-
-}  // namespace
 
 struct Client::Impl {
   explicit Impl(failure::Faults* faults) : network(faults) {}
@@ -49,11 +52,7 @@ struct Client::Impl {
     if (!payload.has_value()) {
       return std::unexpected(std::move(payload.error()));
     }
-    networking::SendResult sent = network.Send(*payload, ReliabilityOf(TypeOf(*payload)));
-    if (!sent.has_value()) {
-      return std::unexpected(std::move(sent.error()));
-    }
-    return *sent == networking::SendOutcome::kAccepted ? SendOutcome::kAccepted : SendOutcome::kDropped;
+    return ToLink(network.Send(*payload, ReliabilityOf(TypeOf(*payload))));
   }
 
   // payload as what the server said, or nullopt, with a warning, if it is no
@@ -134,6 +133,29 @@ struct OutgoingAccess {
     const MessageType type = TypeOf(*payload);
     return Outgoing(type, *std::move(payload));
   }
+
+  static std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state,
+                                                               const AuthoritativeState& recipient) {
+    const auto broken = [&state](std::string detail) {
+      return failure::Failure{
+          .code = failure::Code::kInvariantViolated,
+          .context = {{.key = "message_type",
+                       .value = std::to_string(std::to_integer<std::uint8_t>(state.payload_.front()))}},
+          .detail = std::move(detail)};
+    };
+    if (state.type_ != MessageType::kAuthoritativeState) {
+      return std::unexpected(broken("only an authoritative state is readdressed"));
+    }
+    // The recipient's own fields alone are converted: the bodies stay the bytes they are.
+    protocol::AuthoritativeStateWire own;
+    Address(own, recipient);
+    std::vector<std::byte> payload = state.payload_;
+    if (const std::expected<void, protocol::EncodeError> readdressed = protocol::Readdress(payload, own);
+        !readdressed.has_value()) {
+      return std::unexpected(broken(std::string(protocol::DescribeEncodeError(readdressed.error()))));
+    }
+    return Outgoing(state.type_, std::move(payload));
+  }
 };
 
 std::expected<Outgoing, failure::Failure> Encode(const Admission& admission) {
@@ -164,10 +186,31 @@ std::expected<Outgoing, failure::Failure> Encode(const HitConfirmation& hit) {
 
 std::expected<Outgoing, failure::Failure> Encode(const Death& death) { return OutgoingAccess::Make(ToWire(death)); }
 
+std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state, const AuthoritativeState& recipient) {
+  return OutgoingAccess::Readdressed(state, recipient);
+}
+
 std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view) { return OutgoingAccess::Make(ToWire(view)); }
 
 std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings) {
   return OutgoingAccess::Make(ToWire(listings));
+}
+
+std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) {
+  std::vector<ReplayListing> listed;
+  // Newest last, as listings orders them, so the oldest are the ones left out.
+  for (const ReplayListing& listing : std::views::reverse(listings)) {
+    if (listed.size() == protocol::kMaxReplayListings) {
+      break;
+    }
+    // A name no Replay request could carry is no capture a viewer can watch.
+    if (listing.name.size() > protocol::kMaxCaptureNameLength) {
+      continue;
+    }
+    listed.push_back(listing);
+  }
+  std::ranges::reverse(listed);
+  return listed;
 }
 
 PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
@@ -181,32 +224,6 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
   message.message = ClientMessageFromWire(*decoded);
   return message;
 }
-
-namespace {
-
-PeerEventType ToLink(networking::PeerEventType type) {
-  switch (type) {
-    case networking::PeerEventType::kConnectRequested:
-      return PeerEventType::kConnectRequested;
-    case networking::PeerEventType::kConnected:
-      return PeerEventType::kConnected;
-    case networking::PeerEventType::kDisconnected:
-      return PeerEventType::kDisconnected;
-  }
-  // The transport has no other event.
-  return PeerEventType::kDisconnected;
-}
-
-DisconnectReason ToLink(networking::DisconnectReason reason) {
-  return reason == networking::DisconnectReason::kConnectionLost ? DisconnectReason::kConnectionLost
-                                                                 : DisconnectReason::kClosedByPeer;
-}
-
-// The Link names a peer by the number the transport gives its connection.
-PeerId ToLink(networking::PeerId peer) { return PeerId{std::to_underlying(peer)}; }
-networking::PeerId ToTransport(PeerId peer) { return networking::PeerId{std::to_underlying(peer)}; }
-
-}  // namespace
 
 struct Server::Impl {
   Impl(const Endpoint& local, failure::Faults* faults)
@@ -224,7 +241,7 @@ Endpoint Server::LocalEndpoint() const { return Endpoint{.address = impl_->netwo
 std::vector<PeerEvent> Server::PumpEvents() {
   std::vector<PeerEvent> events;
   for (const networking::PeerEvent& event : impl_->network.PumpEvents()) {
-    events.push_back(PeerEvent{.peer = ToLink(event.peer), .type = ToLink(event.type), .reason = ToLink(event.reason)});
+    events.push_back(ToLink(event));
   }
   return events;
 }
@@ -234,11 +251,7 @@ void Server::Accept(PeerId peer) { impl_->network.Accept(ToTransport(peer)); }
 void Server::Disconnect(PeerId peer) { impl_->network.Disconnect(ToTransport(peer)); }
 
 SendResult Server::Send(PeerId peer, const Outgoing& message) {
-  networking::SendResult sent = impl_->network.Send(ToTransport(peer), message.payload_, ReliabilityOf(message.type_));
-  if (!sent.has_value()) {
-    return std::unexpected(std::move(sent.error()));
-  }
-  return *sent == networking::SendOutcome::kAccepted ? SendOutcome::kAccepted : SendOutcome::kDropped;
+  return ToLink(impl_->network.Send(ToTransport(peer), message.payload_, ReliabilityOf(message.type_)));
 }
 
 std::expected<std::vector<PeerMessage>, failure::Failure> Server::Receive() {

@@ -22,7 +22,6 @@
 #include "augusta/intent.h"
 #include "augusta/link.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
@@ -58,8 +57,8 @@ constexpr float kGroundHeight = -0.5F;
 
 class RunnerEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kRunnerEnvironment =

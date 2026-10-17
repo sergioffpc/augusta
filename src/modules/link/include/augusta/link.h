@@ -31,6 +31,55 @@
 /// (ARCHITECTURE.md §8), and may send from another.
 namespace augusta::link {
 
+// ---- The transport, process-wide ----
+
+/// The one-time, process-wide setup of the transport beneath every Link (ADR-0003):
+/// call it once at process startup, before any Client or Server is constructed.
+/// Fails (failure::Code::kTransportInitFailed) with the transport's own words
+/// as detail, which its caller reports. faults, when given, is asked first
+/// (failure::Site::kDependencyInit), so a test makes it fail.
+[[nodiscard]] std::expected<void, failure::Failure> Init(failure::Faults* faults = nullptr);
+
+/// Releases what Init set up: at most once, after every Client and Server is
+/// gone. augustac and augustad never call it, as the process's exit reclaims it
+/// all; a process that makes and ends Links before it exits (a test) does, or
+/// the transport's still-referenced state reads as a leak under ASan.
+void Shutdown();
+
+/// Network conditions imposed on the real transport, for tests (e.g. NFR-02's 100 ms).
+struct SimulatedConditions {
+  /// Extra delay on every packet this process sends, in milliseconds.
+  int latency_ms = 0;
+  /// A random delay added on top of latency_ms to every packet this process
+  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// jitter_max_ms, in milliseconds; 0 adds none. A packet never overtakes one
+  /// sent before it, so jitter alone clumps packets but keeps their order.
+  int jitter_mean_ms = 0;
+  int jitter_max_ms = 0;
+  /// Share of packets this process sends that are dropped, 0..100.
+  float loss_percent = 0.0F;
+  /// Share of packets this process sends that are held back a further
+  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  float reorder_percent = 0.0F;
+  int reorder_delay_ms = 0;
+  /// How long a connection may hear nothing from its peer before it counts as
+  /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
+  /// transport's own default (about 10 seconds), too long for a test to wait.
+  /// Unlike the others it only reaches connections made after it is set.
+  int timeout_ms = 0;
+};
+
+/// Imposes conditions on every connection of the process from now on; a
+/// default-constructed one restores the real network. Process-wide and at the
+/// packet level: the latency is one-way, so two ends in one process see a round
+/// trip of about twice latency_ms, and loss drops whole packets, which reliable
+/// messages survive by retransmission and unreliable ones do not. Needs Init.
+/// For tests only: set it once the connection is up (the handshake is subject
+/// to it too), and reset it before the next test.
+void SimulateNetworkConditions(const SimulatedConditions& conditions);
+
+// ---- The client's end ----
+
 /// A server's address in "host:port" form (e.g. "192.168.1.10:27015"): a
 /// numeric IP, not a hostname, since players connect directly by IP and port.
 struct Endpoint {
@@ -232,6 +281,22 @@ class Outgoing {
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Death& death);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings);
+
+/// state, an Authoritative State encoded for one recipient, encoded for
+/// recipient instead: recipient's own fields (its acknowledged sequence, rifle,
+/// health and queued commands) in place of state's, its tick and bodies state's
+/// bytes, not encoded again. The bytes Encode makes of recipient with state's
+/// tick and bodies, so a tick's bodies are encoded once however many players
+/// are sent them. failure::Code::kInvariantViolated if state is no
+/// Authoritative State, or a field of recipient's is beyond what the protocol
+/// carries.
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state,
+                                                                    const AuthoritativeState& recipient);
+
+/// What of listings, newest last, a Replay list carries: every one a Replay
+/// request can name, the newest the list holds if there are more, in the same
+/// order.
+[[nodiscard]] std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings);
 
 /// A server's end of the Link: it listens, and keeps one channel per peer that
 /// connects (US-02: 2-8 players).

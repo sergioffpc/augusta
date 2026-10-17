@@ -11,8 +11,8 @@
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/server_config.h"
 
 // augustad's application boundary (ADR-0033), on the example scenario's
@@ -41,8 +41,8 @@ const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 // so the tests below replace the initialize phase unless they make it fail.
 class ServerApplicationEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kServerApplicationEnvironment =

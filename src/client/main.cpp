@@ -19,7 +19,6 @@
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/reenactment.h"
 #include "augusta/renderer.h"
 #include "augusta/version.h"
@@ -80,7 +79,7 @@ constexpr auto kReplayListPollInterval = std::chrono::milliseconds(10);
 // augustac --replays (ADR-0051): asks the server file_config names for the
 // captures it replays and prints them, or says why it could not.
 augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& file_config) {
-  if (auto initialized = augusta::networking::Init(); !initialized) {
+  if (auto initialized = augusta::link::Init(); !initialized) {
     return std::move(initialized.error());
   }
   augusta::harness::ReplayListQuery query(augusta::link::Endpoint{.address = file_config.server_address});
@@ -147,8 +146,8 @@ augusta::application::Lifecycle<Client> ClientLifecycle(const augusta::config::C
                                                         const std::optional<augusta::harness::Script>& reenactment,
                                                         const std::optional<std::string>& replay) {
   return {
-      // Once, process-wide, before any ClientRuntime is constructed (networking.h).
-      .initialize = [] { return augusta::networking::Init(); },
+      // Once, process-wide, before any ClientRuntime is constructed (link.h).
+      .initialize = [] { return augusta::link::Init(); },
       .construct = [&file_config, &reenactment, &replay] { return ConstructClient(file_config, reenactment, replay); },
       .run = [](Client& client) { return client.runtime->Run(); },
   };

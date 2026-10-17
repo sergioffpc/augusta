@@ -16,7 +16,7 @@ target_link_libraries(
 add_executable(augusta_agent_run_tests run_test.cpp)
 target_link_libraries(
   augusta_agent_run_tests
-  PRIVATE augusta_agent_match_loop augusta_agent_testing_server augusta_networking GTest::gtest GTest::gtest_main
+  PRIVATE augusta_agent_match_loop augusta_agent_testing_server augusta_link GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_agent_run_tests
@@ -37,7 +37,7 @@ target_link_libraries(
     augusta_agent_match_loop
     augusta_agent_testing_server
     augusta_harness
-    augusta_networking
+    augusta_link
     GTest::gtest
     GTest::gtest_main
 )

@@ -16,8 +16,8 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
 #include "augusta/server_config.h"
@@ -118,9 +118,9 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
 application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
                                                       failure::Faults* faults) {
   return {
-      // networking::Init() must run once, process-wide, before any Server is
-      // constructed - see networking.h.
-      .initialize = [faults] { return networking::Init(faults); },
+      // link::Init() must run once, process-wide, before any Server is
+      // constructed - see link.h.
+      .initialize = [faults] { return link::Init(faults); },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };

@@ -34,12 +34,12 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
+#include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/version.h"
 
@@ -55,9 +55,9 @@ using augusta::host::Host;
 using augusta::host::HostConfig;
 using augusta::host::ReplayServer;
 using augusta::host::ReplayServerConfig;
+using augusta::link::ConnectionState;
 using augusta::link::Endpoint;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionState;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::scenario::Scenario;
@@ -87,8 +87,8 @@ constexpr const char* kLastManStanding = R"(
 
 class NetworkEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kNetworkEnvironment =
@@ -181,12 +181,11 @@ class RawClient {
     client_.PumpEvents();
     if (!pending_.empty() && client_.GetState() == ConnectionState::kConnected) {
       for (const protocol::MessageWire& message : pending_) {
-        ASSERT_TRUE(
-            client_.Send(protocol::Encode(message).value(), augusta::networking::Reliability::kReliable).has_value());
+        ASSERT_TRUE(client_.Send(protocol::Encode(message).value()).has_value());
       }
       pending_.clear();
     }
-    for (const auto& payload : client_.ReceiveMessages().value()) {
+    for (const auto& payload : client_.Receive().value()) {
       if (auto message = protocol::Decode(payload); message.has_value()) {
         received_.push_back(*std::move(message));
       }
@@ -216,7 +215,7 @@ class RawClient {
   }
 
  private:
-  augusta::networking::Client client_;
+  augusta::link::RawClient client_;
   std::vector<protocol::MessageWire> pending_;
   std::vector<protocol::MessageWire> received_;
 };
@@ -767,7 +766,7 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
     const augusta::link::Server server(Endpoint{.address = kLoopbackAnyPort});
     gone = server.LocalEndpoint();
   }
-  augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
+  augusta::link::SimulateNetworkConditions({.timeout_ms = 500});
   augusta::harness::ReplayListQuery query({.address = gone.address});
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -775,7 +774,7 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
     query.Pump();
     std::this_thread::sleep_for(kPollInterval);
   }
-  augusta::networking::SimulateNetworkConditions({});
+  augusta::link::SimulateNetworkConditions({});
 
   ASSERT_TRUE(query.GetFailure().has_value());
   EXPECT_EQ(query.GetFailure()->kind, augusta::harness::FailureKind::kServerUnreachable);
@@ -912,7 +911,7 @@ TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
                                                   .tick_rate_hz = kTickRate,
                                                   .characters = {}});
 
-  const std::vector<augusta::host::ReplayListing> listed = augusta::host::ListedOf(listings);
+  const std::vector<augusta::host::ReplayListing> listed = augusta::link::ListedOf(listings);
 
   ASSERT_EQ(listed.size(), protocol::kMaxReplayListings);
   EXPECT_EQ(listed.front().name, "1002");

@@ -42,14 +42,7 @@ add_library(augustad_runtime STATIC runtime.cpp)
 target_include_directories(augustad_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_runtime
-  PUBLIC
-    augusta_host
-    augusta_host_replay
-    augusta_failure
-    augusta_gameplay
-    augusta_networking
-    augusta_physics
-    augusta_simulation
+  PUBLIC augusta_host augusta_host_replay augusta_failure augusta_gameplay augusta_physics augusta_simulation
   PRIVATE augusta_assets augusta_logging augusta_supervisor augustad_connection_health augustad_metrics
 )
 augusta_set_module_scope(augustad_runtime SERVER_ONLY)
@@ -62,7 +55,7 @@ target_include_directories(augustad_application PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(
   augustad_application
   PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augustad_runtime
-  PRIVATE augusta_assets augusta_logging augusta_networking augusta_scenario augusta_scenario_policy_loader augusta_host
+  PRIVATE augusta_assets augusta_link augusta_logging augusta_scenario augusta_scenario_policy_loader augusta_host
 )
 augusta_set_module_scope(augustad_application SERVER_ONLY)
 

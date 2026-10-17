@@ -82,10 +82,6 @@ struct ReplayServerConfig {
 /// (link::Encode, augusta/link.h), as ForEachTickMessage does a live tick's.
 [[nodiscard]] std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(const ReplayTick& tick);
 
-/// What of listings a replay server's Replay list names: every one a Replay
-/// request can name, the newest the list holds if there are more.
-[[nodiscard]] std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings);
-
 /// A replay server's listening socket and its Replays, without threads or a clock.
 class ReplayServer {
  public:

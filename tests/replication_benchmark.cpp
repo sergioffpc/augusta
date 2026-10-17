@@ -11,10 +11,11 @@
 
 // A full Match's Authoritative State replicated as host::Host replicates it
 // after each tick (ADR-0044): what each player in the Match is sent
-// (replication::PlanUpdates), in the Link's terms, encoded by the Link, one
-// message per recipient: everything Host does to send its
-// Authoritative State updates but the send itself. Its Shots, Hit confirmations and Deaths are one message
-// each, not one per recipient, and are not timed here.
+// (replication::PlanUpdates), in the Link's terms, its bodies encoded by the
+// Link once and readdressed to each recipient, one message per recipient:
+// everything Host does to send its Authoritative State updates but the send
+// itself. Its Shots, Hit confirmations and Deaths are one message each, not one
+// per recipient, and are not timed here.
 namespace {
 
 using augusta::replication::Recipient;
@@ -35,9 +36,11 @@ void BM_Replication(benchmark::State& state) {
   for (auto _ : state) {
     const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
     augusta::link::AuthoritativeState own = augusta::host::ToLink(updates);
+    augusta::host::Address(own, updates.recipients.front());
+    const augusta::link::Outgoing shared = augusta::link::Encode(own).value();
     for (const RecipientUpdate& recipient : updates.recipients) {
       augusta::host::Address(own, recipient);
-      benchmark::DoNotOptimize(augusta::link::Encode(own).value());
+      benchmark::DoNotOptimize(augusta::link::Readdressed(shared, own).value());
     }
   }
 }

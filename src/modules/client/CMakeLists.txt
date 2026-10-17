@@ -58,7 +58,7 @@ target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_client_content augusta_assets augusta_client_config augusta_config augusta_failure augusta_harness
-  PRIVATE augusta_logging augusta_networking
+  PRIVATE augusta_logging
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 
@@ -76,8 +76,8 @@ target_link_libraries(
     augusta_harness
     augusta_hud
     augusta_input
-    # augustac's networking::Init, once per process, until the Link offers it.
-    augusta_networking
+    # augustac's link::Init, once per process.
+    augusta_link
     augusta_renderer
     augusta_window
   # nvtx3-cpp: client.cpp names the Main/Render, Simulation, and Network I/O

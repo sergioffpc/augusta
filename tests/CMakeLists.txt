@@ -419,8 +419,8 @@ target_link_libraries(
     augusta_harness
     augustad_connection_health
     augusta_host
+    augusta_link
     augusta_link_messages
-    augusta_networking
     augusta_protocol
     augusta_scenario_parameters_loader
     augusta_scenario_policy_loader
@@ -448,7 +448,7 @@ target_link_libraries(
     augusta_config
     augusta_failure
     augusta_logging
-    augusta_networking
+    augusta_link
     augusta_server_config
     GTest::gtest
     GTest::gtest_main
@@ -500,9 +500,9 @@ target_link_libraries(
   PRIVATE
     augusta_host_replay
     augusta_harness
+    augusta_link
     augusta_link_messages
     augusta_logging
-    augusta_networking
     augusta_protocol
     augusta_policy
     augusta_version
@@ -541,7 +541,7 @@ target_link_libraries(
     augusta_failure
     augusta_gameplay
     augusta_logging
-    augusta_networking
+    augusta_link
     augusta_supervisor
     GTest::gtest
     GTest::gtest_main
@@ -570,7 +570,7 @@ gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(
   augusta_runner_tests
-  PRIVATE augusta_harness augusta_host augusta_networking augusta_protocol GTest::gtest GTest::gtest_main
+  PRIVATE augusta_harness augusta_host augusta_link augusta_protocol GTest::gtest GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
@@ -581,14 +581,7 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE
-    augusta_harness
-    augusta_host
-    augusta_networking
-    augusta_supervisor
-    augustad_runtime
-    GTest::gtest
-    GTest::gtest_main
+  PRIVATE augusta_harness augusta_host augusta_link augusta_supervisor augustad_runtime GTest::gtest GTest::gtest_main
 )
 # It runs a real ServerRuntime, so it is allowed augustad's own runtime
 # (ADR-0060).
@@ -640,8 +633,10 @@ add_test(
 # sampler in its public headers: the grids and the Command they need are shared
 # core modules of their own. Nor do tick and limits depend on any other module,
 # nor does anything else give the Tick or the Sequence a type of its own or
-# declare a bound again, even as an alias. A source scan, so it builds
-# nothing.
+# declare a bound again, even as an alias. Nor do the harness and the host reach
+# beneath the Link, nor does any target but augusta_link (and the transport's
+# own tests) link networking, which it first proves on a planted violation. A
+# source scan, so it builds nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake

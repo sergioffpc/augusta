@@ -17,12 +17,12 @@ the Link's peer identity, the mapping of its own types into the Link's messages
 and into SimulationWorld's, what it counts for the metrics endpoint, the
 connection samples it reads from the Link's per-peer stats, the Match capture it
 writes and its retention, and the Replay server, which serves a recorded Match
-through the Host's own pieces.
+to Replay viewers through a Link endpoint of its own and the Host's own pieces.
 
 It speaks to the Link alone (`augusta/link.h`): no target here links the
-protocol or networking, which `tests/core_boundary.cmake` checks. The Replay
-server still takes the Replay list's bounds from the protocol until it has a
-Link endpoint of its own.
+protocol or networking, which `tests/core_boundary.cmake` checks. A tick's
+Authoritative State is encoded once and readdressed to each player, so only each
+one's own fields are encoded per player.
 
 ## Not its responsibility
 
@@ -32,8 +32,9 @@ Link endpoint of its own.
   scenario.
 - The lock-free counters it counts with: metrics.
 - Reading and writing the capture file format: capture.
-- The listening socket, the channel per peer, each message's reliability and
-  converting the Link's messages to and from the Networking Protocol's: link.
+- The listening socket, the channel per peer, each message's reliability,
+  converting the Link's messages to and from the Networking Protocol's, and what
+  a Replay list can carry: link.
 
 ## Decisions
 

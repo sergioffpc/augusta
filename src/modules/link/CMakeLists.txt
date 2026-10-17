@@ -21,12 +21,14 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_link_messages SHARED)
 
-# The Link itself (augusta/link.h, ADR-0038): the client's end, which connects,
-# sends and receives the engine's types, each message with its reliability, and
-# reads its connection's numbers. The conversions, the protocol and the
-# transport are linked privately, so nothing that speaks to the Link reaches
-# them through it.
-add_library(augusta_link STATIC link.cpp)
+# The Link itself (augusta/link.h, ADR-0038): its two ends, which send and
+# receive the engine's types, each message with its reliability, and read their
+# connections' numbers; the transport's process-wide setup and, for tests, its
+# simulated conditions and raw ends (augusta/raw_link.h). The only target that
+# links networking (tests/core_boundary.cmake). The conversions, the protocol
+# and the transport are linked privately, so nothing that speaks to the Link
+# reaches them through it.
+add_library(augusta_link STATIC link.cpp raw_link.cpp)
 target_include_directories(augusta_link PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_link

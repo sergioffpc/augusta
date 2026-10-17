@@ -1,6 +1,5 @@
 #include "augusta/replay_server.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +8,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -35,7 +33,6 @@
 #include "augusta/parameters.h"
 #include "augusta/peer_gate.h"
 #include "augusta/policy_loader.h"
-#include "augusta/protocol.h"
 #include "augusta/replay.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/replication.h"
@@ -100,23 +97,6 @@ std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(cons
     encoded.push_back(*std::move(message));
   }
   return encoded;
-}
-
-std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) {
-  std::vector<ReplayListing> listed;
-  // Newest last, as the listing orders them, so the oldest are the ones left out.
-  for (const ReplayListing& listing : std::views::reverse(listings)) {
-    if (listed.size() == protocol::kMaxReplayListings) {
-      break;
-    }
-    // A name no Replay request could carry is no capture a viewer can watch.
-    if (listing.name.size() > protocol::kMaxCaptureNameLength) {
-      continue;
-    }
-    listed.push_back(listing);
-  }
-  std::ranges::reverse(listed);
-  return listed;
 }
 
 struct ReplayServer::Impl {
@@ -276,7 +256,7 @@ struct ReplayServer::Impl {
   // holds mutex, let go, so no tick waits on the disk.
   void HandleReplayListRequest(link::PeerId peer, std::unique_lock<std::mutex>& lock) {
     lock.unlock();
-    const std::vector<ReplayListing> listed = ListedOf(catalog.List());
+    const std::vector<ReplayListing> listed = link::ListedOf(catalog.List());
     lock.lock();
     LOG_INFO("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
     Send(peer, link::Encode(listed));

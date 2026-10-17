@@ -10,12 +10,18 @@ other side, owning the transport connection beneath.
 
 - `augusta_link` (`augusta/link.h`): its two ends. The client's connects to the
   server; the server's listens and keeps one channel per peer, naming each by a
-  peer identity of its own and taking in each payload as what a client says.
-  Each end sends and receives the engine's types, each message with the
-  reliability ADR-0038's table gives its type (a server's message encoded once,
-  for as many peers as need it), and reads each connection's round trip, loss
-  and queue in its own types. The conversions, the protocol and networking are
-  linked privately, so whatever speaks to it reaches none of them.
+  peer identity of its own and taking in each payload as what a client says; a
+  replay server opens one of its own. Each end sends and receives the engine's
+  types, each message with the reliability ADR-0038's table gives its type (a
+  server's message encoded once, for as many peers as need it, and a tick's
+  Authoritative State readdressed to each recipient without encoding its bodies
+  again), and reads each connection's round trip, loss and queue in its own
+  types. It keeps a Replay list within what the protocol carries. It owns the
+  transport's process-wide setup (`Init`, `Shutdown`) and, for tests, its
+  simulated network conditions and raw ends that carry bytes as they are
+  (`augusta/raw_link.h`). The only target that links networking
+  (`tests/core_boundary.cmake`); the conversions, the protocol and networking
+  are linked privately, so whatever speaks to it reaches none of them.
 - `augusta_link_messages` (`augusta/link_messages.h`): the Link's conversions,
   every one between the game's state and the Networking Protocol's messages,
   both ways, keeping only the newest of a tick's unacknowledged Commands within

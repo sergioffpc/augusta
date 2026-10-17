@@ -18,10 +18,15 @@
 # either may include the protocol's, networking's or the Link's conversions'
 # header or name the protocol or networking, and neither's CMakeLists.txt may
 # link any of their targets, so every message each exchanges goes through
-# augusta/link.h. The replay server (src/modules/host/replay_server.cpp,
-# augusta_host_replay) is the one exception until it has a Link endpoint of its
-# own (ADR-0051): it may still take the Replay list's bounds from the protocol,
-# and nothing else beneath the Link.
+# augusta/link.h, the replay server's among them (ADR-0051).
+#
+# Keeps networking beneath the Link alone (ADR-0038): no target but augusta_link
+# links augusta_networking, bar networking's own tests and the Link's test of
+# what it decides about the transport (augusta_link_transport_tests), which
+# reach the private headers each tests. Every other end of the transport, a
+# test's raw one too, is the Link's (augusta/link.h, augusta/raw_link.h). The
+# check proves itself first on a planted violation, so it cannot pass by
+# matching nothing.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -128,20 +133,10 @@ endforeach()
 
 # What of module's sources, and of the targets its CMakeLists.txt links, reaches
 # beneath the Link: each a line of out_violations, with the number of sources
-# scanned in out_count. The sources and targets named as exceptions may reach
-# the protocol, and only it.
+# scanned in out_count.
 set(beneath_the_link "(^|[^A-Za-z0-9_])(protocol|networking)::|augusta/(protocol|networking|link_messages)\\.h")
 set(beneath_the_link_targets "(^|[^A-Za-z0-9_])augusta_(protocol|networking|link_messages)([^A-Za-z0-9_]|$)")
-set(beneath_the_protocol "(^|[^A-Za-z0-9_])networking::|augusta/(networking|link_messages)\\.h")
-set(beneath_the_protocol_targets "(^|[^A-Za-z0-9_])augusta_(networking|link_messages)([^A-Za-z0-9_]|$)")
-function(
-  check_on_the_link
-  module
-  source_exceptions
-  target_exceptions
-  out_violations
-  out_count
-)
+function(check_on_the_link module out_violations out_count)
   file(
     GLOB_RECURSE module_sources
     "${SOURCE_DIR}/src/modules/${module}/*.h"
@@ -154,11 +149,7 @@ function(
   set(violations "")
   foreach(source ${module_sources})
     file(RELATIVE_PATH relative "${SOURCE_DIR}" "${source}")
-    set(forbidden "${beneath_the_link}")
-    if(relative IN_LIST source_exceptions)
-      set(forbidden "${beneath_the_protocol}")
-    endif()
-    file(STRINGS "${source}" lines REGEX "${forbidden}")
+    file(STRINGS "${source}" lines REGEX "${beneath_the_link}")
     foreach(line ${lines})
       string(STRIP "${line}" line)
       # A comment may name what lies beneath the Link; only code depends on it.
@@ -175,12 +166,7 @@ function(
   string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" calls "${listfile}")
   foreach(call ${calls})
     string(REGEX REPLACE "[ \t\r\n]+" " " call "${call}")
-    string(REGEX MATCH "^target_link_libraries\\( ?([A-Za-z0-9_]+)" target_match "${call}")
-    set(forbidden "${beneath_the_link_targets}")
-    if(CMAKE_MATCH_1 IN_LIST target_exceptions)
-      set(forbidden "${beneath_the_protocol_targets}")
-    endif()
-    if(call MATCHES "${forbidden}")
+    if(call MATCHES "${beneath_the_link_targets}")
       list(APPEND violations "  src/modules/${module}/CMakeLists.txt: ${call}")
     endif()
   endforeach()
@@ -188,9 +174,75 @@ function(
   set(${out_count} "${module_count}" PARENT_SCOPE)
 endfunction()
 
-check_on_the_link(harness "" "" harness_violations harness_count)
-# Shrinks to nothing once the replay server has a Link endpoint of its own.
-check_on_the_link(host "src/modules/host/replay_server.cpp" "augusta_host_replay" host_violations host_count)
+check_on_the_link(harness harness_violations harness_count)
+check_on_the_link(host host_violations host_count)
+
+# Each target_link_libraries call of listfile, a CMake listfile's text, that
+# links augusta_networking for a target allowed none: each a line of
+# out_violations, the call named by where.
+set(networking_target "(^|[^A-Za-z0-9_])augusta_networking([^A-Za-z0-9_]|$)")
+set(
+  networking_linkers
+  augusta_link
+  augusta_networking_tests
+  augusta_send_flags_tests
+  augusta_transport_events_tests
+  augusta_link_transport_tests
+)
+function(check_networking_links listfile where out_violations)
+  string(REGEX REPLACE "#[^\n]*" "" listfile "${listfile}")
+  string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" calls "${listfile}")
+  set(violations "")
+  foreach(call ${calls})
+    string(REGEX REPLACE "[ \t\r\n]+" " " call "${call}")
+    string(REGEX MATCH "^target_link_libraries\\( ?([A-Za-z0-9_]+)(.*)$" target_match "${call}")
+    set(target "${CMAKE_MATCH_1}")
+    set(linked "${CMAKE_MATCH_2}")
+    if(linked MATCHES "${networking_target}" AND NOT target IN_LIST networking_linkers)
+      list(APPEND violations "  ${where}: ${call}")
+    endif()
+  endforeach()
+  set(${out_violations} "${violations}" PARENT_SCOPE)
+endfunction()
+
+# First a planted target that links networking, which the check must refuse,
+# and augusta_link and networking itself, which it must let through: so it
+# cannot pass by matching nothing.
+set(networking_self_test "")
+check_networking_links(
+  "target_link_libraries(\n  augusta_planted\n  # a comment (with parentheses)\n  PRIVATE augusta_logging augusta_networking\n)"
+  "planted"
+  planted_violations
+)
+if(NOT planted_violations MATCHES "augusta_planted")
+  string(APPEND networking_self_test "  it lets a planted target link augusta_networking\n")
+endif()
+check_networking_links(
+  "target_link_libraries(augusta_link PRIVATE augusta_networking)\ntarget_link_libraries(augusta_networking PUBLIC augusta_failure)"
+  "allowed"
+  allowed_violations
+)
+if(allowed_violations)
+  string(APPEND networking_self_test "  it refuses what it allows:\n${allowed_violations}\n")
+endif()
+
+file(
+  GLOB_RECURSE listfiles
+  "${SOURCE_DIR}/src/*CMakeLists.txt"
+  "${SOURCE_DIR}/tests/*CMakeLists.txt"
+  "${SOURCE_DIR}/tools/*CMakeLists.txt"
+  "${SOURCE_DIR}/cmake/*.cmake"
+)
+list(APPEND listfiles "${SOURCE_DIR}/CMakeLists.txt")
+list(FILTER listfiles EXCLUDE REGEX "/(\\.venv|node_modules)/")
+list(LENGTH listfiles listfile_count)
+set(networking_violations "")
+foreach(path ${listfiles})
+  file(READ "${path}" listfile)
+  file(RELATIVE_PATH relative "${SOURCE_DIR}" "${path}")
+  check_networking_links("${listfile}" "${relative}" found)
+  list(APPEND networking_violations ${found})
+endforeach()
 
 set(report "")
 if(violations)
@@ -228,6 +280,16 @@ if(host_violations)
     "The host reaches beneath the Link - send and receive through augusta/link.h instead:\n${host_report}\n"
   )
 endif()
+if(networking_self_test)
+  string(APPEND report "The networking check does not fire as it must:\n${networking_self_test}")
+endif()
+if(networking_violations)
+  list(JOIN networking_violations "\n" networking_report)
+  string(
+    APPEND report
+    "A target other than augusta_link links augusta_networking - speak through augusta/link.h (in a test, augusta/raw_link.h) instead:\n${networking_report}\n"
+  )
+endif()
 if(report)
   string(STRIP "${report}" report)
   message(FATAL_ERROR "${report}")
@@ -235,5 +297,5 @@ endif()
 list(LENGTH headers count)
 message(
   STATUS
-  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone"
+  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone, and ${listfile_count} listfiles linking networking only for augusta_link and the transport's own tests"
 )

@@ -65,8 +65,8 @@ class ClientRuntime {
   /// own header; audio::Engine never throws, and is silent without an output
   /// device).
   ///
-  /// augusta::networking::Init() must already have been called once,
-  /// process-wide, before this constructor runs (see networking.h) -
+  /// augusta::link::Init() must already have been called once,
+  /// process-wide, before this constructor runs (see link.h) -
   /// ClientRuntime doesn't call it itself since Init() is a one-time
   /// process concern, not a per-instance one.
   ///

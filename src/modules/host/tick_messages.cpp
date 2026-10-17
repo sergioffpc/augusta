@@ -61,12 +61,17 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
   }
 
   const replication::Updates updates = replication::PlanUpdates(state, tick, to.recipients);
-  // One state, its bodies mapped once, addressed to each recipient in turn:
-  // only the recipient's own fields change between their messages.
-  link::AuthoritativeState own = ToLink(updates);
-  for (const replication::RecipientUpdate& recipient : updates.recipients) {
-    Address(own, recipient);
-    add(link::Encode(own), {to.peers.at(FromSimulation(recipient.entity))});
+  // One state, its bodies mapped and encoded once, readdressed to each
+  // recipient in turn: only the recipient's own fields are encoded for each.
+  if (!updates.recipients.empty()) {
+    link::AuthoritativeState own = ToLink(updates);
+    Address(own, updates.recipients.front());
+    const std::expected<link::Outgoing, failure::Failure> shared = link::Encode(own);
+    for (const replication::RecipientUpdate& recipient : updates.recipients) {
+      Address(own, recipient);
+      add(shared.and_then([&own](const link::Outgoing& encoded) { return link::Readdressed(encoded, own); }),
+          {to.peers.at(FromSimulation(recipient.entity))});
+    }
   }
   for (const replication::Shot& shot : replication::PlanShots(state, tick)) {
     add(link::Encode(ToLink(shot)), everyone);

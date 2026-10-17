@@ -21,8 +21,8 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/supervisor.h"
 #include "runtime.h"
@@ -53,8 +53,8 @@ constexpr auto kPatience = std::chrono::seconds(10);
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =

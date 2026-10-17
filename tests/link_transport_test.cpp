@@ -135,4 +135,41 @@ TEST(EncodeTest, AMessageTheProtocolCannotCarryIsABrokenInvariant) {
   EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
 }
 
+// A tick's Authoritative State, its bodies encoded once, readdressed to another
+// recipient is what encoding it for that recipient makes, byte for byte: every
+// recipient is sent the bytes it always was.
+TEST(ReaddressedTest, IsTheStateEncodedForItsRecipient) {
+  const augusta::link::AuthoritativeState first{
+      .tick = 120,
+      .acknowledged_sequence = 17,
+      .bodies = {{.entity = augusta::link::EntityId{3}, .body = {}, .yaw = 0.5F},
+                 {.entity = augusta::link::EntityId{4}, .body = {}, .yaw = -1.25F}},
+      .rifle = {},
+      .health = 100.0F,
+      .queued_commands = 2};
+  augusta::link::AuthoritativeState second = first;
+  second.acknowledged_sequence = 99;
+  second.rifle.rounds = 12;
+  second.health = 40.0F;
+  second.queued_commands = 0;
+
+  const auto shared = augusta::link::Encode(first);
+  ASSERT_TRUE(shared.has_value());
+  const auto readdressed = augusta::link::Readdressed(*shared, second);
+  ASSERT_TRUE(readdressed.has_value());
+
+  EXPECT_EQ(readdressed->Type(), MessageType::kAuthoritativeState);
+  const auto expected = augusta::protocol::Encode(augusta::link::ToWire(second)).value();
+  EXPECT_EQ(std::vector<std::byte>(readdressed->Payload().begin(), readdressed->Payload().end()), expected);
+}
+
+// Only an Authoritative State has a recipient's own fields to readdress.
+TEST(ReaddressedTest, AnyOtherMessageIsABrokenInvariant) {
+  const auto shot = augusta::link::Encode(augusta::link::Shot{});
+  ASSERT_TRUE(shot.has_value());
+  const auto readdressed = augusta::link::Readdressed(*shot, augusta::link::AuthoritativeState{});
+  ASSERT_FALSE(readdressed.has_value());
+  EXPECT_EQ(readdressed.error().code, augusta::failure::Code::kInvariantViolated);
+}
+
 }  // namespace

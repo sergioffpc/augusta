@@ -85,10 +85,9 @@ target_link_libraries(
 augusta_set_module_scope(augusta_host SERVER_ONLY)
 
 # The Replay server (see augusta/replay_server.h, ADR-0051): it serves a
-# recorded Match through the Host's own log, metrics and peer gate, so it moves
-# with the Host; splitting it out is a later decision. It still takes the
-# Replay list's bounds from the protocol until it has a Link endpoint of its
-# own: the one exception tests/core_boundary.cmake names.
+# recorded Match to Replay viewers through a Link endpoint of its own, with the
+# Host's own log, metrics and peer gate, so it moves with the Host; splitting it
+# out is a later decision.
 add_library(augusta_host_replay STATIC replay_server.cpp)
-target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_protocol augusta_version)
+target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_version)
 augusta_set_module_scope(augusta_host_replay SERVER_ONLY)
