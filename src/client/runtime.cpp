@@ -39,7 +39,6 @@
 #include "augusta/runner.h"
 #include "augusta/tick.h"
 #include "augusta/window.h"
-#include "augusta/window_events.h"
 #include "character_loader.h"
 #include "content.h"
 #include "frame_mapping.h"
