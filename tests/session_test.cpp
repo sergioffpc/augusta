@@ -31,6 +31,7 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/command_queue.h"
