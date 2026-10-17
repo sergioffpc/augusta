@@ -49,16 +49,16 @@ keeps game policy separate from mechanism code.
   strings), and C++ validates every returned value against what that hook may
   decide: an unknown key, a wrong type or an out-of-range value is refused.
   Returning nil decides nothing.
-- **What a hook decides reaches the server as a typed action.** SimulationWorld
-  reads each answer into one of a closed set of C++ types
-  (`augusta/policy_actions.h`), validating it as it reads, and hands the server
-  only the result: `on_tick`'s answer becomes a `MatchEnd` (with its winner, or
-  none for a draw) in the tick's `TickResult`, and `assign_spawns`'s a Spawn
-  point per player. `host::Host` acts on the typed actions and never sees a
-  hook's raw answer. The set grows only with a decision policy is given, as the
-  hook catalogue does; a winner is part of a Match end, not an action of its
-  own, and there is no spawn action during a Match since there is no respawn
-  (ADR-0023).
+- **What a hook decides reaches the server as a typed action.** The policy
+  module reads each answer into one of a closed set of C++ types
+  (`augusta/policy_actions.h`), validating it as it reads, and SimulationWorld
+  hands the server only the result: `on_tick`'s answer becomes a `MatchEnd`
+  (with its winner, or none for a draw) in the tick's `TickResult`, and
+  `assign_spawns`'s a Spawn point per player. `host::Host` acts on the typed
+  actions and never sees a hook's raw answer. The set grows only with a decision
+  policy is given, as the hook catalogue does; a winner is part of a Match end,
+  not an action of its own, and there is no spawn action during a Match since
+  there is no respawn (ADR-0023).
 - **Spawn assignment** is the rules' `assign_spawns(match)`, called once at
   Match start (ADR-0023). Its view holds `player_count`, `spawn_points` (how
   many the Map has) and `players`, a list of `{session, entity, character}`

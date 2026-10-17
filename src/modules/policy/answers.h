@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_POLICY_ACTIONS_H_
-#define AUGUSTA_POLICY_ACTIONS_H_
+#ifndef AUGUSTA_POLICY_ANSWERS_H_
+#define AUGUSTA_POLICY_ANSWERS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -7,38 +7,16 @@
 #include <optional>
 #include <span>
 #include <string_view>
-#include <variant>
 #include <vector>
 
+#include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 
 /// \file
-/// The typed contract between Game policy and the rest of the server
-/// (ADR-0022): a hook returns plain data, and nothing it returns reaches the
-/// server until it has been read here into one of a closed set of actions,
-/// validated against what that hook may decide. SimulationWorld reads every
-/// hook's answer through these and hands the server only the result, so
-/// host::Host acts on typed actions and never interprets policy itself.
-namespace augusta::simulation {
-
-/// The server's name for the player who controls a body (CONTEXT.md, "Session
-/// ID"): how Game policy names a player, and a Match end its winner. The
-/// server's start at 1; 0 is no player's, and never a winner.
-enum class SessionId : std::uint32_t {};
-
-/// Game policy's decision to end the Match (US-14), made by the rules'
-/// on_tick on a tick and taken by host::Host after it (ADR-0023).
-struct MatchEnd {
-  /// The session of the player who won, alive in the Match on the tick it was
-  /// decided; nullopt for a draw.
-  std::optional<SessionId> winner;
-
-  bool operator==(const MatchEnd&) const = default;
-};
-
-/// Every action the rules' on_tick may take. A closed set: it grows only
-/// with a decision Game policy is given (ADR-0022).
-using PolicyAction = std::variant<MatchEnd>;
+/// How augusta::policy reads a hook's answer, plain data, into what that hook
+/// may decide (ADR-0022): validated as it is read, so nothing else reaches the
+/// server. Private to the policy module; its tests reach it directly.
+namespace augusta::policy {
 
 /// Why a value on_tick returned is not an action it may take.
 enum class ActionRefusal : std::uint8_t {
@@ -79,6 +57,6 @@ enum class SpawnRefusal : std::uint8_t {
 [[nodiscard]] std::expected<std::vector<std::size_t>, SpawnRefusal> ReadSpawnAssignment(
     const scripting::Value& answer, std::span<const SessionId> players, std::size_t spawn_points);
 
-}  // namespace augusta::simulation
+}  // namespace augusta::policy
 
-#endif  // AUGUSTA_POLICY_ACTIONS_H_
+#endif  // AUGUSTA_POLICY_ANSWERS_H_

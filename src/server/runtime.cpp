@@ -16,9 +16,9 @@
 #include "augusta/heartbeat.h"
 #include "augusta/host.h"
 #include "augusta/logging.h"
+#include "augusta/policy.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
-#include "augusta/scripting.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
 #include "connection_health.h"
@@ -207,7 +207,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
 };
 
 ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                             scripting::Engine policy, failure::Faults* faults)
+                             policy::Policy policy, failure::Faults* faults)
     : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy),
                                                   faults)) {}
 

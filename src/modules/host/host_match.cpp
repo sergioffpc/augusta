@@ -89,9 +89,9 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
 }
 
 // Acts on Game policy's Match end, after the tick it was decided on.
-void Host::Impl::Act(const simulation::MatchEnd& end) {
+void Host::Impl::Act(const policy::MatchEnd& end) {
   const std::lock_guard<std::mutex> lock(mutex);
-  EndMatch(end.winner.transform([](simulation::SessionId winner) { return FromSimulation(winner); }),
+  EndMatch(end.winner.transform([](policy::SessionId winner) { return FromSimulation(winner); }),
            EndReason::kWinCondition);
 }
 
@@ -234,7 +234,7 @@ simulation::TickResult Host::Tick(float delta_time) {
   LogCombat(result.state);
   // After the tick's own messages, so a client hears the deaths that ended the
   // match before it hears that it has.
-  for (const simulation::PolicyAction& action : result.actions) {
+  for (const policy::PolicyAction& action : result.actions) {
     std::visit([&impl](const auto& typed) { impl.Act(typed); }, action);
   }
   return result;

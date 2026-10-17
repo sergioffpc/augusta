@@ -9,8 +9,8 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host.h"
+#include "augusta/policy.h"
 #include "augusta/replay_server.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 /// \file
@@ -37,7 +37,7 @@ class ServerRuntime {
   /// endpoint; see Run(). faults, for tests only, is asked by its supervisor
   /// at each worker's creation and execution, and must outlive Run().
   ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                scripting::Engine policy = {}, failure::Faults* faults = nullptr);
+                policy::Policy policy = {}, failure::Faults* faults = nullptr);
 
   /// A replay server's runtime (ADR-0051): as above, but what it runs is a
   /// ReplayServer on config, scenario and policy (see replay_server.h, which

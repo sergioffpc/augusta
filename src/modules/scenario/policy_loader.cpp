@@ -5,12 +5,12 @@
 #include <utility>
 
 #include "augusta/assets.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 
 namespace augusta::scenario {
 
 std::string DescribePolicyLoadError(const PolicyLoadError& error) {
-  const std::string script(scripting::kRulesScriptPath);
+  const std::string script(policy::kRulesScriptPath);
   switch (error.code) {
     case PolicyLoadErrorCode::kUnreadable:
       return "the policy script " + script + " is unreadable: " + error.subject;
@@ -20,33 +20,33 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error) {
   return "the policy script " + script + " is invalid";
 }
 
-std::expected<scripting::Engine, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
-  const auto rules = pack.ResolveScript(scripting::kRulesScriptPath);
+std::expected<policy::Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
+  const auto rules = pack.ResolveScript(policy::kRulesScriptPath);
   if (!rules) {
     if (rules.error() == assets::ResolveError::kNotFound) {
-      return scripting::Engine{};
+      return policy::Policy{};
     }
     return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kUnreadable,
                                            .subject = assets::DescribeResolveError(rules.error(), "script")});
   }
-  auto engine = scripting::Engine::Load(*rules);
-  if (!engine) {
+  auto loaded = policy::Policy::Load(*rules);
+  if (!loaded) {
     return std::unexpected(
-        PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(engine.error().message)});
+        PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(loaded.error().message)});
   }
-  return *std::move(engine);
+  return *std::move(loaded);
 }
 
 std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
-  const auto rules = pack.ResolveScript(scripting::kRulesScriptPath);
+  const auto rules = pack.ResolveScript(policy::kRulesScriptPath);
   if (!rules && rules.error() == assets::ResolveError::kNotFound) {
-    return PolicyMaker([] { return scripting::Engine{}; });
+    return PolicyMaker([] { return policy::Policy{}; });
   }
   if (auto checked = LoadPolicy(pack); !checked) {
     return std::unexpected(std::move(checked.error()));
   }
   // Loaded once already, from the same text: Load cannot fail now.
-  return PolicyMaker([text = *rules] { return *scripting::Engine::Load(text); });
+  return PolicyMaker([text = *rules] { return *policy::Policy::Load(text); });
 }
 
 }  // namespace augusta::scenario

@@ -24,7 +24,7 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
@@ -92,7 +92,7 @@ class Host {
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
   /// can't be created, or what networking::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see augusta/content.h).
-  Host(const HostConfig& config, scenario::Scenario scenario, scripting::Engine policy = {});
+  Host(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy = {});
   ~Host();
 
   /// Not copyable or movable: owns the listening socket.

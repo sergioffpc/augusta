@@ -7,15 +7,15 @@
 Orchestrates SimulationWorld: the single authoritative ECS pipeline, run once
 per tick on the Simulation thread, with players and bullets as entities, hit
 detection against hitboxes as they were the Shooter's delay ago, and the
-Scripts/Behaviours phase. It reads Game policy's answers into typed actions
-(`augusta/policy_actions.h`) and decides what each client is sent
-(`augusta/replication.h`).
+Scripts/Behaviours phase, which calls Game policy and hands its typed actions
+(`augusta/policy_actions.h`) on in the tick's result. It decides what each
+client is sent (`augusta/replication.h`).
 
 ## Not its responsibility
 
 - Screening commands, encoding and sending state: the server (`host::Host`).
 - The movement, weapon and ballistics rules: physics and gameplay.
-- Running Lua: scripting.
+- Game policy's hooks, their views and reading their answers: policy.
 
 ## Decisions
 

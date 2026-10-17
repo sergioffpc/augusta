@@ -15,7 +15,7 @@ handed it already loaded.
 ## Not its responsibility
 
 - Verifying and reading the pack itself: assets.
-- Running the Game policy each tick: scripting and simulation.
+- Running the Game policy each tick: policy and simulation.
 - Sending the Parameters to clients: host.
 
 ## Decisions
