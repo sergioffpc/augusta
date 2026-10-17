@@ -28,10 +28,10 @@
 #include "augusta/tick.h"
 
 /// \file
-/// augusta::server::ReplayServer is augustad in the replay mode of ADR-0051:
+/// augusta::host::ReplayServer is augustad in the replay mode of ADR-0051:
 /// with `replay.captures` set it runs no Lobby and no Match, only Replays. It
 /// is the network boundary and the Replays' SimulationWorlds without the
-/// threads and the clock, as server::Host is a live server's: ServerRuntime
+/// threads and the clock, as host::Host is a live server's: ServerRuntime
 /// runs PumpNetwork on the Network I/O thread and Tick on the Simulation
 /// thread, and a test calls both by hand.
 ///
@@ -53,7 +53,7 @@
 /// Replay logs the first Death or Match end that differs from its capture's
 /// (NFR-09). Both threads count what they do into the server's metrics, as
 /// Host's do (host_metrics.h, ADR-0049).
-namespace augusta::server {
+namespace augusta::host {
 
 /// Everything a ReplayServer needs beyond its scenario.
 struct ReplayServerConfig {
@@ -100,7 +100,7 @@ class ReplayServer {
   /// failure::ClassifiedFailure: kInvalidContent for that Map,
   /// kInvalidConfiguration if config.captures is not a directory, or what
   /// networking::Server's constructor throws.
-  ReplayServer(const ReplayServerConfig& config, Scenario scenario, PolicyMaker policy);
+  ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, scenario::PolicyMaker policy);
   ~ReplayServer();
 
   ReplayServer(const ReplayServer&) = delete;
@@ -139,6 +139,6 @@ class ReplayServer {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_REPLAY_SERVER_H_

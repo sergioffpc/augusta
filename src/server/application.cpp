@@ -39,12 +39,13 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
 // Replay's World makes the pack's Game policy afresh, so the policy is kept
 // as what makes it rather than as the one engine content loaded.
 std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
-    const config::ServerConfig& file_config, const assets::Pack& pack, Content content, failure::Faults* faults) {
-  auto policy = LoadPolicyMaker(pack);
+    const config::ServerConfig& file_config, const assets::Pack& pack, scenario::Content content,
+    failure::Faults* faults) {
+  auto policy = scenario::LoadPolicyMaker(pack);
   if (!policy) {
-    return std::unexpected(ContentFailure(pack.Path(), DescribePolicyLoadError(policy.error())));
+    return std::unexpected(ContentFailure(pack.Path(), scenario::DescribePolicyLoadError(policy.error())));
   }
-  const ReplayServerConfig replay_config{
+  const host::ReplayServerConfig replay_config{
       .tick_rate_hz = file_config.tick_rate_hz,
       .parameters = content.parameters,
       .listen = {.address = file_config.listen_address},
@@ -73,7 +74,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
   }
   LOG_INFO("subsystem=server event=pack_verified path={}", pack_path.string());
 
-  auto content = LoadServerContent(*pack, file_config.tick_rate_hz);
+  auto content = scenario::LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {
     return std::unexpected(std::move(content.error()));
   }
@@ -81,7 +82,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
     return ConstructReplayRuntime(file_config, *pack, *std::move(content), faults);
   }
 
-  const HostConfig host_config{
+  const host::HostConfig host_config{
       .tick_rate_hz = file_config.tick_rate_hz,
       // Every client is sent the rate and these when it joins and predicts with
       // them, so the config file and the scenario's script are the only places
@@ -90,10 +91,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .listen = {.address = file_config.listen_address},
       .server_pack = pack->Hash(),
       .capture_directory = file_config.capture_directory,
-      .capture_mode = file_config.strict_capture ? CaptureMode::kStrict : CaptureMode::kOptional,
-      .capture_retention = CaptureRetention{.max_files = file_config.capture_max_files,
-                                            .max_bytes = file_config.capture_max_mib.transform(
-                                                [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
+      .capture_mode = file_config.strict_capture ? host::CaptureMode::kStrict : host::CaptureMode::kOptional,
+      .capture_retention = host::CaptureRetention{.max_files = file_config.capture_max_files,
+                                                  .max_bytes = file_config.capture_max_mib.transform(
+                                                      [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
       .reenactments = file_config.reenactments,
       .faults = faults,
   };

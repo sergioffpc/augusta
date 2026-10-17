@@ -18,10 +18,10 @@
 // What ConnectionHealth records, read back as the metrics endpoint collects it.
 namespace {
 
+using augusta::host::ConnectionSample;
+using augusta::host::SessionId;
 using augusta::networking::ConnectionStats;
 using augusta::server::ConnectionHealth;
-using augusta::server::ConnectionSample;
-using augusta::server::SessionId;
 
 constexpr SessionId kSession{7};
 constexpr SessionId kOtherSession{8};

@@ -70,7 +70,7 @@ struct Command {
 
 /// How long the server's command queue repeats a player's last movement on
 /// the ticks no new Command arrived for, before it idles
-/// (server::CommandQueue); a Captured player fills a capture's gaps the same
+/// (host::CommandQueue); a Captured player fills a capture's gaps the same
 /// way (ADR-0050).
 inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
 

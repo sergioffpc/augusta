@@ -4,8 +4,8 @@
 #include <chrono>
 #include <optional>
 
+#include "augusta/hud.h"
 #include "augusta/networking.h"
-#include "augusta/renderer.h"
 
 namespace augusta::client {
 
@@ -22,8 +22,8 @@ std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats)
   return (1.0F - std::min(*worst_quality, 1.0F)) * 100.0F;
 }
 
-std::optional<renderer::DebugHudNetStats> HudNetStats::Update(const std::optional<networking::ConnectionStats>& stats,
-                                                              std::chrono::steady_clock::time_point now) {
+std::optional<hud::NetStats> HudNetStats::Update(const std::optional<networking::ConnectionStats>& stats,
+                                                 std::chrono::steady_clock::time_point now) {
   if (!stats.has_value()) {
     jitter_window_start_.reset();
     jitter_window_max_us_ = -1;
@@ -42,11 +42,11 @@ std::optional<renderer::DebugHudNetStats> HudNetStats::Update(const std::optiona
     jitter_window_max_us_ = -1;
     jitter_window_start_ = now;
   }
-  return renderer::DebugHudNetStats{.rtt_ms = stats->ping_ms,
-                                    .jitter_ms = jitter_ms_,
-                                    .loss_percent = PacketLossPercent(*stats),
-                                    .in_bytes_per_sec = stats->in_bytes_per_sec,
-                                    .out_bytes_per_sec = stats->out_bytes_per_sec};
+  return hud::NetStats{.rtt_ms = stats->ping_ms,
+                       .jitter_ms = jitter_ms_,
+                       .loss_percent = PacketLossPercent(*stats),
+                       .in_bytes_per_sec = stats->in_bytes_per_sec,
+                       .out_bytes_per_sec = stats->out_bytes_per_sec};
 }
 
 void NetStatsCounters::Sample(const std::optional<networking::ConnectionStats>& stats) {

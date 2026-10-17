@@ -40,7 +40,7 @@ class ConnectionHealth final : public prometheus::Collectable {
   /// Session's gauge keeps its last measured value meanwhile. A Session missing
   /// from samples has ended, and its gauges are removed. From one thread (the
   /// Network I/O thread); never waits on Collect.
-  void Record(const std::vector<ConnectionSample>& samples);
+  void Record(const std::vector<host::ConnectionSample>& samples);
 
   /// The augustad_connection_* and augustad_session_connection_* families,
   /// every Session's gauges as one Record left them. From any thread.

@@ -12,7 +12,7 @@
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 void PeerGate::Connected(networking::PeerId peer, std::chrono::steady_clock::time_point now) {
   admission_deadlines_.Connected(peer, now);
@@ -91,4 +91,4 @@ void PumpPeers(networking::Server& network, HostMetrics& metrics, std::mutex& mu
   gate.EndRound();
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

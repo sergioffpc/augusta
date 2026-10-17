@@ -42,7 +42,7 @@
 /// thread's side (connections, messages, misbehaving peers) and host_match.cpp
 /// the Simulation thread's (ticks, and matches starting and ending). Private to
 /// Host: nothing else includes it.
-namespace augusta::server {
+namespace augusta::host {
 
 struct Host::Impl {
   // What the server keeps per joined client.
@@ -117,7 +117,7 @@ struct Host::Impl {
   // ignored (peer_gate.h).
   PeerGate gate{metrics};
 
-  Impl(const HostConfig& config, Scenario scenario, policy::Policy policy);
+  Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy);
 
   // Sending to players (host.cpp), each message as link::EncodeToSend left it
   // (augusta/link_messages.h), reliably, counted as the transport accepts it (SendCounted).
@@ -171,6 +171,6 @@ struct Host::Impl {
   void SendTick(const simulation::State& state, const TickRecipients& to);
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_IMPL_H_

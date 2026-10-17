@@ -24,13 +24,13 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::host::Divergence;
+using augusta::host::EntityId;
+using augusta::host::Replay;
+using augusta::host::ReplayCheck;
+using augusta::host::ReplayTick;
+using augusta::host::SessionId;
 using augusta::math::Vec3;
-using augusta::server::Divergence;
-using augusta::server::EntityId;
-using augusta::server::Replay;
-using augusta::server::ReplayCheck;
-using augusta::server::ReplayTick;
-using augusta::server::SessionId;
 using augusta::simulation::Character;
 
 namespace capture = augusta::capture;
@@ -353,8 +353,8 @@ TEST(ReplayCheckTest, ADivergenceIsDescribedWithBothSides) {
                        .captured_end = capture::MatchEnd{.winner = 1},
                        .resolved_end = capture::MatchEnd{}};
 
-  EXPECT_EQ(augusta::server::DescribeDivergence(death), "marker=death offset=4 captured=[2<-1] resolved=[]");
-  EXPECT_EQ(augusta::server::DescribeDivergence(end), "marker=match_end offset=9 captured=winner:1 resolved=draw");
+  EXPECT_EQ(augusta::host::DescribeDivergence(death), "marker=death offset=4 captured=[2<-1] resolved=[]");
+  EXPECT_EQ(augusta::host::DescribeDivergence(end), "marker=match_end offset=9 captured=winner:1 resolved=draw");
 }
 
 }  // namespace

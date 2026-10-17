@@ -11,7 +11,7 @@ target_link_libraries(
   PRIVATE augusta_gameplay augusta_math augusta_physics
 )
 
-# Whole runs of Agents against a server::Host in the same process, through the
+# Whole runs of Agents against a host::Host in the same process, through the
 # example scenario's packs and Game policy.
 add_executable(augusta_agent_run_tests run_test.cpp)
 target_link_libraries(

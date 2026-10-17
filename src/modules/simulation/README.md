@@ -13,7 +13,7 @@ client is sent (`augusta/replication.h`).
 
 ## Not its responsibility
 
-- Screening commands, encoding and sending state: the server (`server::Host`).
+- Screening commands, encoding and sending state: the server (`host::Host`).
 - The movement, weapon and ballistics rules: physics and gameplay.
 - Game policy's hooks, their views and reading their answers: policy.
 

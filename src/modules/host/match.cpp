@@ -12,7 +12,7 @@
 #include "augusta/assets.h"
 #include "augusta/networking.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 Match::Match(MatchConfig config)
     : terms_{.engine_version = std::move(config.engine_version), .client_pack = config.client_pack},
@@ -207,4 +207,4 @@ std::vector<Match::Member> Match::MembersBySession() const {
   return members;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

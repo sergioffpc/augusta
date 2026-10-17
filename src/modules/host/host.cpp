@@ -34,7 +34,7 @@
 #include "augusta/version.h"
 #include "host_impl.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -76,10 +76,10 @@ std::uint32_t PauseTicks(std::uint8_t tick_rate_hz) {
 }
 
 // The path of each of characters, in the same order: all Match needs of them.
-std::vector<std::string> CharacterPaths(const std::vector<Character>& characters) {
+std::vector<std::string> CharacterPaths(const std::vector<scenario::Character>& characters) {
   std::vector<std::string> paths;
   paths.reserve(characters.size());
-  for (const Character& character : characters) {
+  for (const scenario::Character& character : characters) {
     paths.push_back(character.path);
   }
   return paths;
@@ -87,7 +87,7 @@ std::vector<std::string> CharacterPaths(const std::vector<Character>& characters
 
 }  // namespace
 
-Host::Impl::Impl(const HostConfig& config, Scenario scenario, policy::Policy policy)
+Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
       capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
@@ -157,7 +157,7 @@ void Host::Impl::SetLobbyGauges() {
   metrics.match_in_progress.Set(match.InMatch() ? 1.0 : 0.0);
 }
 
-Host::Host(const HostConfig& config, Scenario scenario, policy::Policy policy)
+Host::Host(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 Host::~Host() = default;
@@ -212,4 +212,4 @@ std::optional<failure::Failure> Host::FinishCapture() {
 
 std::optional<failure::Failure> Host::TakeTransportFailure() { return impl_->transport_failure.Take(); }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

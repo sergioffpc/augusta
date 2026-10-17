@@ -41,12 +41,12 @@ using augusta::harness::RunnerHooks;
 using augusta::harness::ServerView;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
+using augusta::host::Host;
+using augusta::host::HostConfig;
 using augusta::math::Vec3;
 using augusta::networking::Endpoint;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 
 constexpr std::uint8_t kTickRate = 60;
 constexpr float kFixedTick = 1.0F / kTickRate;

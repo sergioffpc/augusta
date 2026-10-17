@@ -26,14 +26,14 @@ namespace {
 
 namespace capture = augusta::capture;
 
-using augusta::server::CaptureEntrant;
-using augusta::server::Capturer;
-using augusta::server::EntityId;
-using augusta::server::ListingOf;
-using augusta::server::ReplayCatalog;
-using augusta::server::ReplayListing;
-using augusta::server::ReplayTerms;
-using augusta::server::SessionId;
+using augusta::host::CaptureEntrant;
+using augusta::host::Capturer;
+using augusta::host::EntityId;
+using augusta::host::ListingOf;
+using augusta::host::ReplayCatalog;
+using augusta::host::ReplayListing;
+using augusta::host::ReplayTerms;
+using augusta::host::SessionId;
 
 constexpr std::uint8_t kTickRate = 60;
 
@@ -85,7 +85,7 @@ class ReplayCatalogTest : public ::testing::Test {
       capturer.EndMatch(100 + last_offset, std::nullopt);
     }
     // Its only Match, the first of its run: destroying it wrote the file.
-    return augusta::server::CaptureFileName(
+    return augusta::host::CaptureFileName(
         std::chrono::floor<std::chrono::milliseconds>(kStarted + std::chrono::seconds(written_)), 1);
   }
 

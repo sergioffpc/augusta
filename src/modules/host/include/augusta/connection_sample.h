@@ -11,7 +11,7 @@
 /// transport (Host::SampleConnections) and ConnectionHealth records it
 /// (connection_health.h, ADR-0049). A plain struct of its own, so Host need not
 /// depend on the metrics that consume it.
-namespace augusta::server {
+namespace augusta::host {
 
 /// One connection's transport measurements, with the Session it carries.
 struct ConnectionSample {
@@ -21,6 +21,6 @@ struct ConnectionSample {
   networking::ConnectionStats stats;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_CONNECTION_SAMPLE_H_

@@ -17,15 +17,15 @@ namespace {
 using augusta::command::Command;
 using augusta::command::HeldTicks;
 using augusta::command::kMaxHeldTime;
+using augusta::host::CommandQueue;
+using augusta::host::Enqueued;
+using augusta::host::kMaxMovementMagnitude;
+using augusta::host::kMaxPitch;
+using augusta::host::kMaxQueuedCommands;
+using augusta::host::Rejection;
+using augusta::host::SequencedCommand;
+using augusta::host::Validate;
 using augusta::math::Vec3;
-using augusta::server::CommandQueue;
-using augusta::server::Enqueued;
-using augusta::server::kMaxMovementMagnitude;
-using augusta::server::kMaxPitch;
-using augusta::server::kMaxQueuedCommands;
-using augusta::server::Rejection;
-using augusta::server::SequencedCommand;
-using augusta::server::Validate;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
@@ -97,7 +97,7 @@ TEST(ValidateTest, AcceptsADiagonalAndALookStraightUp) {
 
 TEST(ValidateTest, EveryRejectionHasADescription) {
   for (const Rejection rejection : {Rejection::kStale, Rejection::kNonFinite, Rejection::kOutOfRange}) {
-    EXPECT_FALSE(augusta::server::DescribeRejection(rejection).empty());
+    EXPECT_FALSE(augusta::host::DescribeRejection(rejection).empty());
   }
 }
 

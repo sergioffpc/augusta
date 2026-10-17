@@ -59,7 +59,7 @@ Capture FullMatchCapture() {
   return capture;
 }
 
-std::unique_ptr<augusta::server::Replay> StartReplay(const Capture& capture) {
+std::unique_ptr<augusta::host::Replay> StartReplay(const Capture& capture) {
   auto policy = augusta::benchmarks::ExamplePolicy();
   if (!policy.has_value()) {
     return nullptr;
@@ -71,12 +71,12 @@ std::unique_ptr<augusta::server::Replay> StartReplay(const Capture& capture) {
   }
   static const std::unordered_map<std::string, augusta::simulation::Character> kCharacters = {
       {kCharacter, augusta::benchmarks::SquaresCharacter()}};
-  return std::make_unique<augusta::server::Replay>(capture, std::move(world), kCharacters);
+  return std::make_unique<augusta::host::Replay>(capture, std::move(world), kCharacters);
 }
 
 void BM_ReplayViewerTick(benchmark::State& state) {
   const Capture capture = FullMatchCapture();
-  std::unique_ptr<augusta::server::Replay> replay = StartReplay(capture);
+  std::unique_ptr<augusta::host::Replay> replay = StartReplay(capture);
   if (replay == nullptr) {
     state.SkipWithError("the example's Game policy or the floor does not load");
     return;
@@ -87,8 +87,8 @@ void BM_ReplayViewerTick(benchmark::State& state) {
       replay = StartReplay(capture);
       state.ResumeTiming();
     }
-    const augusta::server::ReplayTick tick = replay->Step();
-    auto messages = augusta::server::ViewerMessages(tick);
+    const augusta::host::ReplayTick tick = replay->Step();
+    auto messages = augusta::host::ViewerMessages(tick);
     benchmark::DoNotOptimize(messages);
   }
 }

@@ -19,9 +19,9 @@ namespace {
 using augusta::assets::AssetEntry;
 using augusta::assets::AssetType;
 using augusta::assets::Pack;
-using augusta::server::LoadPolicy;
-using augusta::server::LoadPolicyMaker;
-using augusta::server::PolicyLoadErrorCode;
+using augusta::scenario::LoadPolicy;
+using augusta::scenario::LoadPolicyMaker;
+using augusta::scenario::PolicyLoadErrorCode;
 
 AssetEntry ScriptEntry(std::string path, std::string_view text) {
   return AssetEntry{
@@ -63,7 +63,7 @@ TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
 
   auto engine = LoadPolicy(pack);
 
-  ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
+  ASSERT_TRUE(engine.has_value()) << augusta::scenario::DescribePolicyLoadError(engine.error());
   EXPECT_TRUE(EndsTheMatch(*engine));
 }
 
@@ -78,7 +78,7 @@ TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
 
   const auto make = LoadPolicyMaker(pack);
 
-  ASSERT_TRUE(make.has_value()) << augusta::server::DescribePolicyLoadError(make.error());
+  ASSERT_TRUE(make.has_value()) << augusta::scenario::DescribePolicyLoadError(make.error());
   augusta::policy::Policy first = (*make)();
   augusta::policy::Policy second = (*make)();
   EXPECT_FALSE(EndsTheMatch(first));
@@ -113,7 +113,7 @@ TEST_F(PolicyLoaderTest, APackWithoutRulesHasNoPolicy) {
 
   auto engine = LoadPolicy(pack);
 
-  ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
+  ASSERT_TRUE(engine.has_value()) << augusta::scenario::DescribePolicyLoadError(engine.error());
   EXPECT_FALSE(EndsTheMatch(*engine));
 }
 
@@ -125,7 +125,7 @@ TEST_F(PolicyLoaderTest, RulesWithASyntaxErrorAreAnErrorNamingTheScript) {
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kScriptError);
-  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
+  EXPECT_NE(augusta::scenario::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
@@ -137,7 +137,7 @@ TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kUnreadable);
-  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
+  EXPECT_NE(augusta::scenario::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 }  // namespace

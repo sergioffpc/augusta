@@ -7,7 +7,7 @@
 #include "augusta/assets.h"
 #include "augusta/policy.h"
 
-namespace augusta::server {
+namespace augusta::scenario {
 
 std::string DescribePolicyLoadError(const PolicyLoadError& error) {
   const std::string script(policy::kRulesScriptPath);
@@ -49,4 +49,4 @@ std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& 
   return PolicyMaker([text = *rules] { return *policy::Policy::Load(text); });
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario

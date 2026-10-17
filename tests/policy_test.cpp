@@ -321,10 +321,10 @@ TEST_F(PolicyTest, TheParametersScriptAndTheRulesShareNoGlobals) {
     end
   )");
   ASSERT_TRUE(policy.has_value());
-  const auto parameters = augusta::server::LoadParameters(
+  const auto parameters = augusta::scenario::LoadParameters(
       "if policy_global ~= nil then error('sees the policy global') end\nparameters_global = 1\n" + ExampleParameters(),
       kTickRate);
-  ASSERT_TRUE(parameters.has_value()) << augusta::server::DescribeParametersLoadError(parameters.error());
+  ASSERT_TRUE(parameters.has_value()) << augusta::scenario::DescribeParametersLoadError(parameters.error());
   World world = WithAlice(*std::move(policy), *parameters);
 
   EXPECT_EQ(LogOfTicks(world, 1), "");
@@ -569,8 +569,8 @@ Policy ExamplePolicy() {
   EXPECT_TRUE(public_key.has_value());
   auto pack = augusta::assets::Pack::Load(packs / "server.pack", public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
-  auto policy = augusta::server::LoadPolicy(pack.value());
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::scenario::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : Policy{};
 }
 

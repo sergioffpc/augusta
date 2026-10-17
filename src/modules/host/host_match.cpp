@@ -30,7 +30,7 @@
 #include "augusta/tick_messages.h"
 #include "host_impl.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 // Every queue length fits the byte an Authoritative State update tells it in.
 static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
@@ -57,7 +57,7 @@ void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
 // One line for every match that ends (ADR-0029): why, who won, how many
 // ticks it lasted, counting the one it ended on, and how many were in it.
 void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
-  server::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
+  host::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
 }
 
 // Counts a match that ended for reason, with winner or as a draw: how, and how
@@ -246,4 +246,4 @@ void Host::EndMatch() {
   impl_->EndMatch(std::nullopt, EndReason::kEndedByTheHost);
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

@@ -3,33 +3,31 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
-#include "augusta/input.h"
 #include "augusta/math.h"
+#include "augusta/window.h"
 
 /// \file
 /// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
-/// exclusively by the client. It also owns the client's single OS
-/// window, a GLFW one: there is no separate augusta::window module
-/// (ADR-0059). The window/device-event vocabulary (Key, KeyEvent, EventSink,
-/// ...) lives in augusta::input instead, even though Renderer is the one
-/// that pushes those events - see input.h's header comment for why the
-/// dependency has to run this direction and not the other.
+/// exclusively by the client. It creates and owns the client's single
+/// window::Window and makes its Vulkan surface, but knows nothing of input:
+/// the client Runtime drains the window's events itself (GetWindow, then
+/// Window::Poll) and hands them to input.
 ///
-/// PumpEvents and RenderFrame are deliberately two separate calls, not one
-/// opaque loop, because this engine's threads don't share a cadence
+/// Draining the window and RenderFrame are deliberately two separate calls,
+/// not one opaque loop, because this engine's threads don't share a cadence
 /// (ARCHITECTURE.md §8, ADR-0005): PredictionWorld ticks on the Prediction
 /// thread at a fixed rate decoupled from how often a frame is actually
-/// presented on the Main/Render thread. PumpEvents just drains the
-/// OS's event queue (cheap, safe to call often, e.g. once per
-/// Prediction tick's worth of wall time even though it runs on the
-/// Main/Render thread); RenderFrame does the actual GPU work and should be
-/// called at the app's presentation rate instead. ClientRuntime's Run()
-/// loop decides that split; this module just exposes the two primitives.
+/// presented on the Main/Render thread. Window::Poll just drains the OS's
+/// event queue (cheap, safe to call often); RenderFrame does the actual GPU
+/// work and should be called at the app's presentation rate instead.
+/// ClientRuntime's Run() loop decides that split.
+///
+/// The debug HUD it draws is the text lines it is handed (SetTextLines): what
+/// they say is augusta::hud's.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -41,10 +39,6 @@
 /// Slang shaders (ADR-0014). Not drawn yet: the local player's own body and
 /// weapon model, and skeletal animation.
 namespace augusta::renderer {
-
-/// Default initial client-area size, in pixels (see Config::width/height).
-constexpr std::uint32_t kDefaultWidth = 1920;
-constexpr std::uint32_t kDefaultHeight = 1080;
 
 /// Which Vulkan device the Renderer draws with.
 enum class Adapter : std::uint8_t {
@@ -71,16 +65,10 @@ enum class Validation : std::uint8_t {
 
 /// Initial window/renderer parameters.
 struct Config {
-  /// Window title, shown in the OS title bar and taskbar.
-  std::string title;
-  /// Initial client-area size, in pixels. The window is resizable by the
-  /// user afterward via standard OS chrome.
-  std::uint32_t width = kDefaultWidth;
-  std::uint32_t height = kDefaultHeight;
+  /// The window the Renderer creates: hidden, for a test that only reads
+  /// frames back (CaptureFrame).
+  window::Config window;
   Adapter adapter = Adapter::kHardware;
-  /// True to hide the window, for a test that only reads frames back
-  /// (CaptureFrame).
-  bool hidden = false;
   Validation validation = Validation::kOff;
 };
 
@@ -90,12 +78,6 @@ struct CapturedFrame {
   std::uint32_t width = 0;
   std::uint32_t height = 0;
   std::vector<std::uint8_t> pixels;
-};
-
-/// A client-area size, in pixels.
-struct Size {
-  std::uint32_t width = 0;
-  std::uint32_t height = 0;
 };
 
 /// One triangle-list mesh with its positions already in world space (Y-up,
@@ -145,9 +127,8 @@ inline constexpr math::Vec3 kDefaultRemotePlayerColor{0.85F, 0.25F, 0.25F};
 /// feet - the same convention the character's mesh was cooked around, ADR-
 /// 0041), drawn as authored: a stance shows once animation poses the mesh,
 /// not before. The renderer doesn't know whose player this is;
-/// ClientRuntime maps presentation::RemotePlayer into this, keeping this
-/// module's only dependency augusta_input (no presentation/physics/protocol
-/// header here).
+/// ClientRuntime maps presentation::RemotePlayer into this (no presentation,
+/// physics or protocol header here).
 struct RemotePlayer {
   math::Vec3 position{};
   /// Where it faces, in radians about +Y: 0 looks down -Z, and a positive yaw
@@ -186,45 +167,19 @@ struct Overlay {
   bool hit_marker = false;
 };
 
-/// Connection numbers for the debug HUD. The renderer only formats them: how
-/// they are sourced from the transport is the caller's business.
-struct DebugHudNetStats {
-  /// Round-trip time to the server, in milliseconds.
-  int rtt_ms = 0;
-  /// Recent worst jitter in milliseconds; nullopt if not measured yet.
-  std::optional<float> jitter_ms;
-  /// Packet loss in percent (worst of the two directions); nullopt if not
-  /// measured yet.
-  std::optional<float> loss_percent;
-  /// Actual throughput over the connection, in bytes per second.
-  float in_bytes_per_sec = 0.0F;
-  float out_bytes_per_sec = 0.0F;
-};
-
-/// What the debug HUD (a green one-line readout over the frame, e.g.
-/// `FPS: 120 (8.3ms) | RTT: 10ms | ...`) shows besides the frame time the
-/// renderer measures itself.
-struct DebugHudStats {
-  /// nullopt while not connected (drawn as `RTT: --`).
-  std::optional<DebugHudNetStats> net;
-};
-
-/// Owns the client's single OS window, GPU device, and swapchain. The
-/// client constructs exactly one, on the Main/Render thread.
+/// Owns the client's single window, GPU device, and swapchain. The client
+/// constructs exactly one, on the Main/Render thread.
 class Renderer {
  public:
-  /// Creates the window and GPU device per config, and wires this
-  /// Renderer to push keyboard/mouse events to input_sink as the window
-  /// delivers them (see input::EventSink). Throws std::runtime_error if
-  /// window or device creation fails - there is no recoverable path for a
-  /// client that can't render: no Vulkan 1.3, no device of config's adapter,
-  /// or Validation::kRequired without its layer. input_sink must outlive this
-  /// Renderer.
+  /// Creates the window and GPU device per config. Throws
+  /// std::runtime_error if window or device creation fails - there is no
+  /// recoverable path for a client that can't render: no Vulkan 1.3, no
+  /// device of config's adapter, or Validation::kRequired without its layer.
   ///
   /// Under validation, the constructor, RenderFrame and CaptureFrame also
   /// throw std::runtime_error once the validation layer has reported an
   /// error: API misuse is a bug, and fails where it is found.
-  Renderer(const Config& config, input::EventSink& input_sink);
+  explicit Renderer(const Config& config);
 
   /// The window, device and swapchain are unique hardware resources owned
   /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
@@ -238,30 +193,18 @@ class Renderer {
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
 
-  /// Drains the window's event queue and returns immediately - never
-  /// waits for or presents a frame. Updates the state ShouldClose/GetSize
-  /// return, and synchronously calls input_sink's matching method for
-  /// every keyboard/mouse event seen. Must be called from the same
-  /// thread that constructed this Renderer (the Main/Render thread); see
-  /// the header comment for why this is separate from RenderFrame.
-  void PumpEvents();
+  /// The window this Renderer draws into, for the client Runtime to drain
+  /// (Window::Poll), ask whether it should close and lock its cursor. It lives
+  /// as long as this Renderer. From the Main/Render thread.
+  [[nodiscard]] window::Window& GetWindow();
 
-  /// True once the user has requested the window close (clicked the
-  /// title bar's close button, Alt+F4, ...), as of the most recent
-  /// PumpEvents call. The app's main loop is responsible for actually
-  /// exiting - Renderer keeps working regardless, until destroyed.
-  [[nodiscard]] bool ShouldClose() const;
-
-  /// Current client-area size, as of the most recent PumpEvents call.
-  [[nodiscard]] Size GetSize() const;
-
-  /// Draws and presents one frame - the actual GPU work. Call this at
-  /// the app's target presentation rate (e.g. vsynced to the display),
-  /// independently of how often PumpEvents is called. From the
-  /// Main/Render thread.
+  /// Draws and presents one frame - the actual GPU work, at the window's size
+  /// as of its last Poll. Call this at the app's target presentation rate
+  /// (e.g. vsynced to the display), independently of how often the window is
+  /// drained. From the Main/Render thread.
   ///
   /// Draws the scene last passed to SetScene (just the cleared frame and the
-  /// debug HUD until then).
+  /// debug HUD's lines until then).
   void RenderFrame();
 
   /// Reads back the frame the last RenderFrame drew, waiting for the GPU to
@@ -310,19 +253,11 @@ class Renderer {
   /// frame. From the Main/Render thread.
   void SetOverlay(const Overlay& overlay);
 
-  /// Hides the OS cursor and captures it for continuous mouselook: mouse
-  /// move events keep reporting a position that never stops at the window
-  /// edge (as opposed to the free OS cursor a menu/UI would need - no such
-  /// UI exists yet, so callers enable this once and leave it on).
-  /// Idempotent. GLFW's disabled cursor, with raw mouse motion where the
-  /// system has it: GLFW itself releases the capture while the window is out
-  /// of focus and takes it again when it regains it.
-  void SetCursorLocked(bool locked);
-
-  /// Updates the values the debug HUD shows, from the Main/Render
-  /// thread. Call as often as they change; the HUD is drawn by every
-  /// RenderFrame.
-  void SetDebugHudStats(const DebugHudStats& stats);
+  /// Replaces the debug HUD's text lines, drawn green in the frame's top left,
+  /// one under the other, over everything else, by every RenderFrame from then
+  /// on; none until the first call. Cheap enough to call every frame. From the
+  /// Main/Render thread.
+  void SetTextLines(std::vector<std::string> lines);
 
  private:
   struct Impl;

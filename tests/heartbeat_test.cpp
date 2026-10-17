@@ -9,9 +9,9 @@
 // line is ever written here.
 namespace {
 
-using augusta::server::Activity;
-using augusta::server::Heartbeat;
-using augusta::server::kHeartbeatInterval;
+using augusta::host::Activity;
+using augusta::host::Heartbeat;
+using augusta::host::kHeartbeatInterval;
 using Clock = std::chrono::steady_clock;
 
 const Clock::time_point kStart{};

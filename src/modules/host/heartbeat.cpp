@@ -3,7 +3,7 @@
 #include <chrono>
 #include <optional>
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -35,4 +35,4 @@ std::optional<Activity> Heartbeat::Record(const Activity& totals, std::chrono::s
   return second;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

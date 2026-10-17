@@ -21,7 +21,7 @@
 /// name them by the same numbers. The Link alone turns those into the
 /// protocol's. What a client sends needs none: a join, a Replay request and a
 /// command are the Link's own types on the server too.
-namespace augusta::server {
+namespace augusta::host {
 
 [[nodiscard]] link::SessionId ToLink(SessionId session);
 
@@ -63,6 +63,6 @@ void Address(link::AuthoritativeState& state, const replication::RecipientUpdate
 /// What each player of a Replay looked like on tick, as its viewer's Replay view.
 [[nodiscard]] link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_LINK_MAPPING_H_

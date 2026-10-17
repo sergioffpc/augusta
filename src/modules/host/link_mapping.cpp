@@ -15,7 +15,7 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 link::SessionId ToLink(SessionId session) { return static_cast<link::SessionId>(std::to_underlying(session)); }
 
@@ -127,4 +127,4 @@ link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick) {
   return view;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

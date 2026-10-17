@@ -14,7 +14,7 @@
 /// event once and cannot disagree; Host hands it the totals and writes the line.
 /// Pure (no I/O, no clock of its own: the caller hands it the time), so it is
 /// tested without a network.
-namespace augusta::server {
+namespace augusta::host {
 
 inline constexpr std::chrono::seconds kHeartbeatInterval{1};
 
@@ -57,6 +57,6 @@ class Heartbeat {
   std::chrono::steady_clock::time_point since_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HEARTBEAT_H_

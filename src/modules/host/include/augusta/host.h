@@ -29,7 +29,7 @@
 #include "augusta/tick.h"
 
 /// \file
-/// augusta::server::Host is the server's network boundary and the
+/// augusta::host::Host is the server's network boundary and the
 /// authoritative SimulationWorld (ADR-0023) without the threads and the clock:
 /// ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
 /// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
@@ -50,7 +50,7 @@
 /// (dropped, judged, disconnected); a failure of the local transport is the
 /// runtime's, which Host keeps for a worker to take (TakeTransportFailure) and
 /// escalate (ADR-0033).
-namespace augusta::server {
+namespace augusta::host {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
@@ -92,7 +92,7 @@ class Host {
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
   /// can't be created, or what networking::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see augusta/content.h).
-  Host(const HostConfig& config, Scenario scenario, policy::Policy policy = {});
+  Host(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy = {});
   ~Host();
 
   /// Not copyable or movable: owns the listening socket.
@@ -134,7 +134,7 @@ class Host {
   /// tick's hits and deaths, and returns what the tick resolved and what Game
   /// policy decided on it. Starts a match first if the
   /// Lobby is full and Ready and the pause after the last one
-  /// (server::kMatchPause, counted in these ticks) has passed. Then takes the
+  /// (host::kMatchPause, counted in these ticks) has passed. Then takes the
   /// actions Game policy took on the tick, typed and validated by
   /// SimulationWorld (simulation::TickResult): a Match end ends the match
   /// after the tick, as EndMatch does, with policy's winner or as a draw.
@@ -191,6 +191,6 @@ class Host {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_H_

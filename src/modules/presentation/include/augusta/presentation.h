@@ -273,8 +273,7 @@ struct State {
 /// world, neither of which is meaningful.
 class World {
  public:
-  /// audio_engine must outlive this World - the same reference-not-owned
-  /// pattern as augusta::renderer::Renderer's input_sink parameter:
+  /// audio_engine must outlive this World, which references it, not owns it:
   /// ClientRuntime (src/client/runtime.h) constructs the client's one
   /// audio::Engine and wires it to this World's AudioCues phase, which plays
   /// cue_sounds, loaded into audio_engine here. eye is the local player's character's eye

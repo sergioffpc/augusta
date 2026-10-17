@@ -34,7 +34,7 @@
 #include "augusta/match.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -649,4 +649,4 @@ void Capturer::Queue(std::expected<capture::Encoded, capture::EncodeError> encod
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

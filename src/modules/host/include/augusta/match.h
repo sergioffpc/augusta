@@ -17,7 +17,7 @@
 #include "augusta/networking.h"
 
 /// \file
-/// augusta::server::Match is the server's book of who is playing, in the Lobby
+/// augusta::host::Match is the server's book of who is playing, in the Lobby
 /// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
 /// names each admitted peer with a session ID of its own making, remembers its
 /// character, numbers every version of the Lobby's Roster, counts who is Ready
@@ -28,7 +28,7 @@
 /// start. Pure bookkeeping (no I/O, no clock: Host
 /// tells it each tick that passes), so all of it is tested without a network;
 /// what to do with the answer - reply, log, spawn bodies - is Host's mechanism.
-namespace augusta::server {
+namespace augusta::host {
 
 /// The least time between one match ending and the next starting, so a Lobby
 /// that stays full leaves anyone who is done the time to leave (ADR-0043).
@@ -261,6 +261,6 @@ class Match {
   std::unordered_map<networking::PeerId, Member> members_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_MATCH_H_

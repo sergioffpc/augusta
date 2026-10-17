@@ -16,8 +16,8 @@
 #include "augusta/networking.h"
 
 /// \file
-/// What every augustad server - a live server::Host and a replay
-/// server::ReplayServer (ADR-0051) - does with a peer before and around what
+/// What every augustad server - a live host::Host and a replay
+/// host::ReplayServer (ADR-0051) - does with a peer before and around what
 /// it asks for: every connection is accepted, since a refusal needs one to
 /// travel on; a peer not admitted within kAdmissionDeadline (augusta/admission.h), or
 /// that keeps sending what no honest client sends (augusta/misbehaviour.h), is
@@ -26,7 +26,7 @@
 /// of a server's Network I/O work through it, so each server only says what a
 /// message, a departure and an expulsion mean to it. Both are guarded by the
 /// owning server's lock.
-namespace augusta::server {
+namespace augusta::host {
 
 /// Each connected peer's admission deadline and misbehaviour, and the peers
 /// expelled in the round under way. Its owner's lock guards every call.
@@ -88,6 +88,6 @@ void PumpPeers(networking::Server& network, HostMetrics& metrics, std::mutex& mu
                std::chrono::steady_clock::time_point now, const PeerHandlers& handlers,
                failure::FirstFailure& transport_failure);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_PEER_GATE_H_

@@ -1,7 +1,7 @@
 # The client's private libraries below use renderer.h's plain types only, so
 # they take that header's directory rather than linking augusta_renderer:
-# their tests need neither a GPU nor a window. renderer.h includes input.h,
-# hence augusta_input.
+# their tests need neither a GPU nor a window. renderer.h includes window.h,
+# which needs no GLFW, hence augusta_window_events.
 
 # What the client loads from its verified pack at startup: the scene graph as
 # renderer::Scene (see scene_loader.h), the characters other players bring (see
@@ -13,7 +13,7 @@ target_include_directories(
 )
 target_link_libraries(
   augustac_content
-  PUBLIC augusta_assets augusta_cues augusta_failure augusta_input augusta_math augusta_physics
+  PUBLIC augusta_assets augusta_cues augusta_failure augusta_math augusta_physics augusta_window_events
   PRIVATE augusta_logging
 )
 augusta_set_module_scope(augustac_content CLIENT_ONLY)
@@ -27,7 +27,7 @@ target_include_directories(
 )
 target_link_libraries(
   augustac_frame_mapping
-  PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation
+  PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation augusta_window_events
 )
 augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
 
@@ -35,11 +35,8 @@ augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
 # them (see net_stats.h). nvtx3-cpp (third_party/nvtx, see the root
 # CMakeLists.txt) is header-only.
 add_library(augustac_net_stats STATIC net_stats.cpp)
-target_include_directories(
-  augustac_net_stats
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
-)
-target_link_libraries(augustac_net_stats PUBLIC augusta_input augusta_networking nvtx3-cpp)
+target_include_directories(augustac_net_stats PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(augustac_net_stats PUBLIC augusta_hud augusta_networking nvtx3-cpp)
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max in net_stats.cpp.
 target_compile_definitions(augustac_net_stats PRIVATE NOMINMAX)
@@ -74,9 +71,11 @@ target_link_libraries(
     augusta_assets
     augusta_failure
     augusta_harness
+    augusta_hud
     augusta_input
     augusta_networking
     augusta_renderer
+    augusta_window
   # nvtx3-cpp: runtime.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE

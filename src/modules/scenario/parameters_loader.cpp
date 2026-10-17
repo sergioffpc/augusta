@@ -20,7 +20,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 
-namespace augusta::server {
+namespace augusta::scenario {
 namespace {
 
 constexpr std::string_view kPlayerCountKey = "player_count";
@@ -392,4 +392,4 @@ std::expected<parameters::Parameters, ParametersLoadError> LoadParameters(std::s
   return parameters;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario

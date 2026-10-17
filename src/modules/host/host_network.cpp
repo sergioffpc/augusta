@@ -23,7 +23,7 @@
 #include "augusta/protocol.h"
 #include "host_impl.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -262,4 +262,4 @@ std::vector<ConnectionSample> Host::SampleConnections() {
   return samples;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

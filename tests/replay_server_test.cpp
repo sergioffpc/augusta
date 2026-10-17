@@ -50,16 +50,16 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::host::ReplayServer;
+using augusta::host::ReplayServerConfig;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::ReplayServer;
-using augusta::server::ReplayServerConfig;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 namespace protocol = augusta::protocol;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -280,7 +280,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   if (!spawned_first(*sessions[0])) {
     std::swap(sessions[0], sessions[1]);
   }
-  const auto shooter = static_cast<augusta::server::SessionId>(std::to_underlying(*sessions[0]->GetSessionId()));
+  const auto shooter = static_cast<augusta::host::SessionId>(std::to_underlying(*sessions[0]->GetSessionId()));
   Command fire;
   const Vec3 aim = Vec3(0.0F, 1.65F - kEyeHeight, -kSpacing);
   fire.yaw = 0.0F;
@@ -814,7 +814,7 @@ TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
       .engine_version = std::string(augusta::EngineVersion()), .client_pack = {}, .character = kCharacter});
   viewer.Send(RequestFor(name));
   ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] {
-    return server->Metrics().messages_received[augusta::server::MessageType::kReplayRequest].Value() == 2;
+    return server->Metrics().messages_received[augusta::host::MessageType::kReplayRequest].Value() == 2;
   }));
   EXPECT_EQ(server->Viewers(), 1U);
 
@@ -822,7 +822,7 @@ TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
   EXPECT_TRUE(viewer.ReceivedOf<protocol::ReplayListWire>().empty());
   EXPECT_TRUE(viewer.ReceivedOf<protocol::JoinRefusedWire>().empty());
   EXPECT_EQ(viewer.ReceivedOf<protocol::MatchEndWire>().size(), 1U);
-  EXPECT_EQ(server->Metrics().misbehaviour[augusta::server::PeerRejection::kNotAClientMessage].Value(), 3U);
+  EXPECT_EQ(server->Metrics().misbehaviour[augusta::host::PeerRejection::kNotAClientMessage].Value(), 3U);
 }
 
 // Each Replay's tick is timed into the server's metrics, so what every
@@ -897,18 +897,18 @@ TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
 
 // A list of more captures than a Replay list holds names the newest.
 TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
-  std::vector<augusta::server::ReplayListing> listings;
+  std::vector<augusta::host::ReplayListing> listings;
   for (std::size_t i = 0; i < protocol::kMaxReplayListings + 2; ++i) {
-    listings.push_back(augusta::server::ReplayListing{
+    listings.push_back(augusta::host::ReplayListing{
         .name = std::to_string(1000 + i), .started = {}, .ticks = 1, .tick_rate_hz = kTickRate, .characters = {}});
   }
-  listings.push_back(augusta::server::ReplayListing{.name = std::string(protocol::kMaxCaptureNameLength + 1, 'z'),
-                                                    .started = {},
-                                                    .ticks = 1,
-                                                    .tick_rate_hz = kTickRate,
-                                                    .characters = {}});
+  listings.push_back(augusta::host::ReplayListing{.name = std::string(protocol::kMaxCaptureNameLength + 1, 'z'),
+                                                  .started = {},
+                                                  .ticks = 1,
+                                                  .tick_rate_hz = kTickRate,
+                                                  .characters = {}});
 
-  const std::vector<augusta::server::ReplayListing> listed = augusta::server::ListedOf(listings);
+  const std::vector<augusta::host::ReplayListing> listed = augusta::host::ListedOf(listings);
 
   ASSERT_EQ(listed.size(), protocol::kMaxReplayListings);
   EXPECT_EQ(listed.front().name, "1002");

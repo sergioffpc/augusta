@@ -7,7 +7,7 @@
 #include "net_stats.h"
 
 // Unit tests for what the debug HUD shows of the connection. Links no GPU or
-// window: they only use renderer.h's plain types.
+// window: they only use hud.h's types.
 namespace {
 
 using augusta::client::HudNetStats;

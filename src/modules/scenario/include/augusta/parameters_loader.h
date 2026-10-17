@@ -10,14 +10,14 @@
 #include "augusta/parameters.h"
 
 /// \file
-/// augusta::server::LoadParameters turns the server's Parameters script (ADR-0039)
+/// augusta::scenario::LoadParameters turns the server's Parameters script (ADR-0039)
 /// into the validated, immutable Parameters struct. It is a pure function of
 /// the script text and the server's tick rate, which the script may read to
 /// check its own values against: no file, socket or clock, so it is tested with
 /// scripts as strings. The server reads the text out of its pack (ADR-0039) and this turns
 /// it into Parameters. Server-only, since a client never reads the script: it is
 /// sent the result (ADR-0038).
-namespace augusta::server {
+namespace augusta::scenario {
 
 /// Why a script is not a Parameters.
 enum class ParametersLoadErrorCode {
@@ -61,6 +61,6 @@ std::expected<parameters::Parameters, ParametersLoadError> LoadParameters(std::s
                                                                           std::uint8_t tick_rate_hz,
                                                                           const ParametersWarningSink& on_warning = {});
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario
 
 #endif  // AUGUSTA_PARAMETERS_LOADER_H_

@@ -22,6 +22,8 @@
 // peer is sent which bytes, how reliably, and in what order (ADR-0044).
 namespace {
 
+using augusta::host::ForEachTickMessage;
+using augusta::host::TickRecipients;
 using augusta::networking::Payload;
 using augusta::networking::PeerId;
 using augusta::networking::Reliability;
@@ -30,8 +32,6 @@ using augusta::protocol::BodyStateWire;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
 using augusta::protocol::StanceWire;
-using augusta::server::ForEachTickMessage;
-using augusta::server::TickRecipients;
 using augusta::simulation::EntityId;
 using augusta::simulation::EntityState;
 using augusta::simulation::State;
@@ -66,9 +66,8 @@ TickRecipients ThreePlayers() {
       {.entity = EntityId{1}, .acknowledged_sequence = 900, .queued_commands = 3},
       {.entity = EntityId{3}, .acknowledged_sequence = 5, .queued_commands = 0},
   };
-  to.peers = {{augusta::server::EntityId{1}, kPeer1},
-              {augusta::server::EntityId{2}, kPeer2},
-              {augusta::server::EntityId{3}, kPeer3}};
+  to.peers = {
+      {augusta::host::EntityId{1}, kPeer1}, {augusta::host::EntityId{2}, kPeer2}, {augusta::host::EntityId{3}, kPeer3}};
   return to;
 }
 

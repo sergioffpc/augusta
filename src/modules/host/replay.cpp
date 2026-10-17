@@ -20,7 +20,7 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -250,4 +250,4 @@ ReplayTick Replay::Step() {
   return tick;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

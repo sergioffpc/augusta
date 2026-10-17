@@ -23,7 +23,7 @@
 /// that reliability (ForEachTickMessage, tested without a network), and sends
 /// them on the Host's connections, counting each into the Host's metrics
 /// (host_metrics.h).
-namespace augusta::server {
+namespace augusta::host {
 
 /// Who a tick's messages go to: each player in the match.
 struct TickRecipients {
@@ -66,6 +66,6 @@ using TickMessageSink = std::function<bool(networking::PeerId, const networking:
                                                                      const TickRecipients& to,
                                                                      const std::function<bool()>& halted);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_TICK_MESSAGES_H_
