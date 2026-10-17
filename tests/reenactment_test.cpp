@@ -518,7 +518,7 @@ TEST(ReenactmentTest, AServerOfAnotherPlayerCountIsSaidSo) {
 
 // --- A run against a server's queue over a link ---
 
-// A Captured player's client and a server's command queue (server::
+// A Captured player's client and a server's command queue (host::
 // CommandQueue) over a link of one_way ticks each way, the server ticking
 // every server_period units of time and the client every client_period: how
 // many Commands the queue dropped, each one it handed to the World and on

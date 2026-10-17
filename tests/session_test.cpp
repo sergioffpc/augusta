@@ -102,8 +102,8 @@ namespace protocol = augusta::protocol;
 using augusta::host::ConnectionSample;
 using augusta::host::Host;
 using augusta::host::HostConfig;
+using augusta::scenario::Scenario;
 using augusta::server::ConnectionHealth;
-using augusta::server::Scenario;
 
 // The Code of the failure::ClassifiedFailure construct throws, or nullopt if it
 // throws none.
@@ -2446,7 +2446,7 @@ TEST_F(StaminaTest, AClientThatPredictsCorrectlyNeverCorrectsForTheRoundingOnThe
 class ScriptedParametersTest : public LoopbackMatch {
  protected:
   static augusta::parameters::Parameters LoadScript() {
-    const auto loaded = augusta::server::LoadParameters(
+    const auto loaded = augusta::scenario::LoadParameters(
         "local sprint_seconds = 1\n"
         "return {\n"
         "  player_count = 1,\n"
@@ -5619,8 +5619,8 @@ augusta::scripting::Engine ExamplePolicy() {
   EXPECT_TRUE(public_key.has_value());
   auto pack = augusta::assets::Pack::Load(packs / "server.pack", public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
-  auto policy = augusta::server::LoadPolicy(pack.value());
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::scenario::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::scripting::Engine{};
 }
 

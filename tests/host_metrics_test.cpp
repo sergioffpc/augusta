@@ -43,7 +43,7 @@ using augusta::host::Leaving;
 using augusta::host::PeerRejection;
 using augusta::host::Rejection;
 using augusta::host::Totals;
-using augusta::server::Histogram;
+using augusta::metrics::Histogram;
 using prometheus::ClientMetric;
 using prometheus::MetricFamily;
 using prometheus::MetricType;

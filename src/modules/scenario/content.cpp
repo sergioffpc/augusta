@@ -18,7 +18,7 @@
 #include "augusta/policy_loader.h"
 #include "augusta/scripting.h"
 
-namespace augusta::server {
+namespace augusta::scenario {
 
 namespace {
 
@@ -141,4 +141,4 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   };
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario

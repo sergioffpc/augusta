@@ -36,15 +36,15 @@ class ServerRuntime {
   /// host.h). Does not yet spawn any thread or start the metrics
   /// endpoint; see Run(). faults, for tests only, is asked by its supervisor
   /// at each worker's creation and execution, and must outlive Run().
-  ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
+  ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
                 scripting::Engine policy = {}, failure::Faults* faults = nullptr);
 
   /// A replay server's runtime (ADR-0051): as above, but what it runs is a
   /// ReplayServer on config, scenario and policy (see replay_server.h, which
   /// says what it throws), whose Replays each tick at config.tick_rate_hz. It
   /// captures nothing, so it has no capture to fail.
-  ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario,
-                PolicyMaker policy, failure::Faults* faults = nullptr);
+  ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
+                scenario::PolicyMaker policy, failure::Faults* faults = nullptr);
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do

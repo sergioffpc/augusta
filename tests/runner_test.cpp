@@ -46,7 +46,7 @@ using augusta::host::HostConfig;
 using augusta::math::Vec3;
 using augusta::networking::Endpoint;
 using augusta::physics::CollisionMesh;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 
 constexpr std::uint8_t kTickRate = 60;
 constexpr float kFixedTick = 1.0F / kTickRate;

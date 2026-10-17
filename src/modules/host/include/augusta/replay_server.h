@@ -100,7 +100,7 @@ class ReplayServer {
   /// failure::ClassifiedFailure: kInvalidContent for that Map,
   /// kInvalidConfiguration if config.captures is not a directory, or what
   /// networking::Server's constructor throws.
-  ReplayServer(const ReplayServerConfig& config, server::Scenario scenario, server::PolicyMaker policy);
+  ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, scenario::PolicyMaker policy);
   ~ReplayServer();
 
   ReplayServer(const ReplayServer&) = delete;

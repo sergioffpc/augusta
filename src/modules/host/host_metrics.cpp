@@ -204,13 +204,13 @@ constexpr std::string_view CaptureStateLabel(CaptureState state) {
 
 // Each range of counters is exactly the values its label names: an enum value
 // added, or a reorder, fails here rather than indexing past a range.
-static_assert(server::LabelledExactly<JoinRefusalCounters>(JoinRefusalLabel));
-static_assert(server::LabelledExactly<LeavingCounters>(LeavingLabel));
-static_assert(server::LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
-static_assert(server::LabelledExactly<MessageCounters>(MessageTypeLabel));
-static_assert(server::LabelledExactly<RejectionCounters>(RejectionLabel));
-static_assert(server::LabelledExactly<BodyPartCounters>(BodyPartLabel));
-static_assert(server::LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
+static_assert(metrics::LabelledExactly<JoinRefusalCounters>(JoinRefusalLabel));
+static_assert(metrics::LabelledExactly<LeavingCounters>(LeavingLabel));
+static_assert(metrics::LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
+static_assert(metrics::LabelledExactly<MessageCounters>(MessageTypeLabel));
+static_assert(metrics::LabelledExactly<RejectionCounters>(RejectionLabel));
+static_assert(metrics::LabelledExactly<BodyPartCounters>(BodyPartLabel));
+static_assert(metrics::LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
 
 // What Judge counts as misbehaviour is what MisbehaviourCounters has a counter for.
 consteval bool MisbehaviourIsLabelled() {
@@ -228,16 +228,16 @@ MetricFamily Family(std::string name, std::string help, MetricType type, std::ve
   return MetricFamily{.name = std::move(name), .help = std::move(help), .type = type, .metric = std::move(series)};
 }
 
-MetricFamily CounterFamily(std::string name, std::string help, const server::Counter& counter) {
-  return Family(std::move(name), std::move(help), MetricType::Counter, {server::CounterSeries(counter)});
+MetricFamily CounterFamily(std::string name, std::string help, const metrics::Counter& counter) {
+  return Family(std::move(name), std::move(help), MetricType::Counter, {metrics::CounterSeries(counter)});
 }
 
-MetricFamily GaugeFamily(std::string name, std::string help, const server::Gauge& gauge) {
-  return Family(std::move(name), std::move(help), MetricType::Gauge, {server::GaugeSeries(gauge)});
+MetricFamily GaugeFamily(std::string name, std::string help, const metrics::Gauge& gauge) {
+  return Family(std::move(name), std::move(help), MetricType::Gauge, {metrics::GaugeSeries(gauge)});
 }
 
-MetricFamily HistogramFamily(std::string name, std::string help, const server::Histogram& histogram) {
-  return Family(std::move(name), std::move(help), MetricType::Histogram, {server::HistogramSeries(histogram)});
+MetricFamily HistogramFamily(std::string name, std::string help, const metrics::Histogram& histogram) {
+  return Family(std::move(name), std::move(help), MetricType::Histogram, {metrics::HistogramSeries(histogram)});
 }
 
 // One series of counters per value of its key, labelled name="label(key)" and,
@@ -248,7 +248,7 @@ void AppendLabelled(std::vector<ClientMetric>& series, const Counters& counters,
   for (const auto key : Counters::Keys()) {
     Labels labels = fixed;
     labels.push_back({.name = name, .value = std::string(label(key))});
-    series.push_back(server::CounterSeries(counters[key], std::move(labels)));
+    series.push_back(metrics::CounterSeries(counters[key], std::move(labels)));
   }
 }
 
@@ -286,9 +286,9 @@ void AppendLobbyAndMatch(std::vector<MetricFamily>& families, const HostMetrics&
   families.push_back(CounterFamily("augustad_matches_started_total", "Matches started.", metrics.matches_started));
   families.push_back(
       Family("augustad_matches_ended_total", "Matches ended, by outcome.", MetricType::Counter,
-             {server::CounterSeries(metrics.matches_ended_with_winner, {{.name = "outcome", .value = "winner"}}),
-              server::CounterSeries(metrics.matches_ended_drawn, {{.name = "outcome", .value = "draw"}}),
-              server::CounterSeries(metrics.matches_ended_abandoned, {{.name = "outcome", .value = "abandoned"}})}));
+             {metrics::CounterSeries(metrics.matches_ended_with_winner, {{.name = "outcome", .value = "winner"}}),
+              metrics::CounterSeries(metrics.matches_ended_drawn, {{.name = "outcome", .value = "draw"}}),
+              metrics::CounterSeries(metrics.matches_ended_abandoned, {{.name = "outcome", .value = "abandoned"}})}));
   families.push_back(
       HistogramFamily("augustad_match_duration_seconds", "How long each match lasted.", metrics.match_duration));
 }
@@ -296,7 +296,7 @@ void AppendLobbyAndMatch(std::vector<MetricFamily>& families, const HostMetrics&
 void AppendSessions(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
   families.push_back(GaugeFamily("augustad_sessions", "Players joined, in the Lobby or the match.", metrics.sessions));
   std::vector<ClientMetric> joins = {
-      server::CounterSeries(metrics.joins_admitted, {{.name = "result", .value = "admitted"}})};
+      metrics::CounterSeries(metrics.joins_admitted, {{.name = "result", .value = "admitted"}})};
   AppendLabelled(joins, metrics.joins_refused, "reason", JoinRefusalLabel, {{.name = "result", .value = "refused"}});
   families.push_back(Family("augustad_joins_total", "Joins, by result and a refusal's reason.", MetricType::Counter,
                             std::move(joins)));
@@ -327,11 +327,11 @@ void AppendNetwork(std::vector<MetricFamily>& families, const HostMetrics& metri
       CounterFamily("augustad_commands_received_total", "Commands received.", metrics.commands_received));
   std::vector<ClientMetric> discarded;
   AppendLabelled(discarded, metrics.commands_rejected, "reason", RejectionLabel);
-  discarded.push_back(server::CounterSeries(metrics.commands_overflowed, {{.name = "reason", .value = "overflow"}}));
+  discarded.push_back(metrics::CounterSeries(metrics.commands_overflowed, {{.name = "reason", .value = "overflow"}}));
   discarded.push_back(
-      server::CounterSeries(metrics.commands_outside_match, {{.name = "reason", .value = "outside_match"}}));
+      metrics::CounterSeries(metrics.commands_outside_match, {{.name = "reason", .value = "outside_match"}}));
   discarded.push_back(
-      server::CounterSeries(metrics.commands_before_joining, {{.name = "reason", .value = "before_joining"}}));
+      metrics::CounterSeries(metrics.commands_before_joining, {{.name = "reason", .value = "before_joining"}}));
   families.push_back(Family("augustad_commands_discarded_total", "Commands discarded, by why.", MetricType::Counter,
                             std::move(discarded)));
 }

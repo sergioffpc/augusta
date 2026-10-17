@@ -1,6 +1,7 @@
 # metrics
 
-`augusta_metrics`. Server-only: the client never links it.
+`augusta_metrics`, in `augusta::metrics`. Server-only: the client never links
+it.
 
 ## Responsibility
 

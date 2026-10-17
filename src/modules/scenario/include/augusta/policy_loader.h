@@ -9,11 +9,11 @@
 #include "augusta/scripting.h"
 
 /// \file
-/// augusta::server::LoadPolicy reads a scenario's Game policy, its rules script,
+/// augusta::scenario::LoadPolicy reads a scenario's Game policy, its rules script,
 /// out of the server pack (ADR-0022, ADR-0039) and loads it into the engine
 /// SimulationWorld runs it in. The server calls it at startup, before it opens a socket, so a
 /// pack whose policy does not load exits like a bad pack does. Server-only.
-namespace augusta::server {
+namespace augusta::scenario {
 
 /// Why a pack's Game policy did not load.
 enum class PolicyLoadErrorCode {
@@ -48,6 +48,6 @@ using PolicyMaker = std::function<scripting::Engine()>;
 /// the rules are checked once, here, so making them again cannot fail.
 std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack);
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario
 
 #endif  // AUGUSTA_POLICY_LOADER_H_

@@ -37,7 +37,7 @@ class Server {
   [[nodiscard]] std::string Address() const;
 
  private:
-  Server(server::Content content, std::uint8_t player_count);
+  Server(scenario::Content content, std::uint8_t player_count);
   void Serve(const std::stop_token& stop);
 
   host::Host host_;

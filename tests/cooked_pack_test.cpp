@@ -73,9 +73,9 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
 TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
   EXPECT_TRUE(server_->ResolveScript(augusta::scripting::kRulesScriptPath).has_value());
 
-  const auto policy = augusta::server::LoadPolicy(*server_);
+  const auto policy = augusta::scenario::LoadPolicy(*server_);
 
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
 }
 
 // The client puts the camera at it and the server fires Shots from it, so both

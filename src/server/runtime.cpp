@@ -82,7 +82,7 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   supervisor::Supervisor workers;
 
   template <typename Config, typename Policy>
-  Running(const Config& config, std::uint16_t metrics_port_in, Scenario scenario, Policy policy,
+  Running(const Config& config, std::uint16_t metrics_port_in, scenario::Scenario scenario, Policy policy,
           failure::Faults* faults)
       : tick_rate_hz(config.tick_rate_hz),
         metrics_port(metrics_port_in),
@@ -206,13 +206,13 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   void Stop() override { workers.RequestStop(); }
 };
 
-ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, Scenario scenario,
+ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
                              scripting::Engine policy, failure::Faults* faults)
     : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy),
                                                   faults)) {}
 
-ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, Scenario scenario,
-                             PolicyMaker policy, failure::Faults* faults)
+ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port,
+                             scenario::Scenario scenario, scenario::PolicyMaker policy, failure::Faults* faults)
     : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
                                                           faults)) {}
 

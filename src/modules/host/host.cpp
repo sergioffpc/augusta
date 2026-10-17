@@ -75,10 +75,10 @@ std::uint32_t PauseTicks(std::uint8_t tick_rate_hz) {
 }
 
 // The path of each of characters, in the same order: all Match needs of them.
-std::vector<std::string> CharacterPaths(const std::vector<server::Character>& characters) {
+std::vector<std::string> CharacterPaths(const std::vector<scenario::Character>& characters) {
   std::vector<std::string> paths;
   paths.reserve(characters.size());
-  for (const server::Character& character : characters) {
+  for (const scenario::Character& character : characters) {
     paths.push_back(character.path);
   }
   return paths;
@@ -86,7 +86,7 @@ std::vector<std::string> CharacterPaths(const std::vector<server::Character>& ch
 
 }  // namespace
 
-Host::Impl::Impl(const HostConfig& config, server::Scenario scenario, scripting::Engine policy)
+Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, scripting::Engine policy)
     : metrics(config.tick_rate_hz),
       simulation(BuildSimulation(config.parameters, config.tick_rate_hz, scenario, std::move(policy))),
       capturer(BuildCapturer(config, scenario.client_pack, capture_metrics)),
@@ -156,7 +156,7 @@ void Host::Impl::SetLobbyGauges() {
   metrics.match_in_progress.Set(match.InMatch() ? 1.0 : 0.0);
 }
 
-Host::Host(const HostConfig& config, server::Scenario scenario, scripting::Engine policy)
+Host::Host(const HostConfig& config, scenario::Scenario scenario, scripting::Engine policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 Host::~Host() = default;

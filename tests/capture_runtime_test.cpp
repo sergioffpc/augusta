@@ -43,7 +43,7 @@ using augusta::failure::Site;
 using augusta::host::CaptureMode;
 using augusta::host::Host;
 using augusta::host::HostConfig;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 using augusta::server::ServerRuntime;
 
 constexpr std::uint8_t kTickRate = 60;

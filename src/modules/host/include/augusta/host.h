@@ -92,7 +92,7 @@ class Host {
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
   /// can't be created, or what networking::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see augusta/content.h).
-  Host(const HostConfig& config, server::Scenario scenario, scripting::Engine policy = {});
+  Host(const HostConfig& config, scenario::Scenario scenario, scripting::Engine policy = {});
   ~Host();
 
   /// Not copyable or movable: owns the listening socket.

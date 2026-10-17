@@ -60,7 +60,7 @@ std::optional<double> JitterSeconds(const networking::ConnectionStats& stats) {
   return Measured(stats.max_jitter_us, kMicrosecondsPerSecond);
 }
 
-void Observe(Histogram& histogram, const std::optional<double>& value) {
+void Observe(metrics::Histogram& histogram, const std::optional<double>& value) {
   if (value.has_value()) {
     histogram.Observe(*value);
   }
@@ -210,10 +210,10 @@ MetricFamily SessionFamily(std::string name, std::string help, const std::vector
 
 struct ConnectionHealth::Impl {
   // Over every connection.
-  Histogram rtt{kRttBucketsSeconds};
-  Histogram quality_local{kQualityBuckets};
-  Histogram quality_remote{kQualityBuckets};
-  Histogram jitter{kJitterBucketsSeconds};
+  metrics::Histogram rtt{kRttBucketsSeconds};
+  metrics::Histogram quality_local{kQualityBuckets};
+  metrics::Histogram quality_remote{kQualityBuckets};
+  metrics::Histogram jitter{kJitterBucketsSeconds};
   // By Session: the writer's own copy, and what the endpoint reads of it.
   SessionSlots sessions;
   PublishedGauges published;
@@ -295,15 +295,15 @@ std::vector<MetricFamily> ConnectionHealth::Collect() const {
   return {
       HistogramFamily("augustad_connection_rtt_seconds",
                       "Every connection's round-trip time, sampled once a heartbeat interval.",
-                      {HistogramSeries(impl_->rtt)}),
+                      {metrics::HistogramSeries(impl_->rtt)}),
       HistogramFamily(
           "augustad_connection_quality_ratio",
           "Every connection's share of packets delivered, as measured here (local) and by the client (remote).",
-          {HistogramSeries(impl_->quality_local, {{.name = "direction", .value = "local"}}),
-           HistogramSeries(impl_->quality_remote, {{.name = "direction", .value = "remote"}})}),
+          {metrics::HistogramSeries(impl_->quality_local, {{.name = "direction", .value = "local"}}),
+           metrics::HistogramSeries(impl_->quality_remote, {{.name = "direction", .value = "remote"}})}),
       HistogramFamily("augustad_connection_jitter_seconds",
                       "Every connection's worst jitter over each heartbeat interval.",
-                      {HistogramSeries(impl_->jitter)}),
+                      {metrics::HistogramSeries(impl_->jitter)}),
       SessionFamily("augustad_session_connection_rtt_seconds", "The round-trip time of each Session's connection.",
                     sessions, {{.value = kRtt}}),
       SessionFamily("augustad_session_connection_quality_ratio",

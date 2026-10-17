@@ -117,7 +117,7 @@ struct Host::Impl {
   // ignored (peer_gate.h).
   PeerGate gate{metrics};
 
-  Impl(const HostConfig& config, server::Scenario scenario, scripting::Engine policy);
+  Impl(const HostConfig& config, scenario::Scenario scenario, scripting::Engine policy);
 
   // Sending to players (host.cpp), each message as EncodeToSend left it
   // (augusta/host_wire.h), reliably, counted as the transport accepts it (SendCounted).

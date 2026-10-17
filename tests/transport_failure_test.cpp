@@ -58,7 +58,7 @@ using augusta::networking::PeerId;
 using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::physics::CollisionMesh;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 using augusta::server::ServerRuntime;
 
 constexpr std::uint8_t kTickRate = 60;

@@ -39,10 +39,11 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
 // Replay's World makes the pack's Game policy afresh, so the policy is kept
 // as what makes it rather than as the one engine content loaded.
 std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
-    const config::ServerConfig& file_config, const assets::Pack& pack, Content content, failure::Faults* faults) {
-  auto policy = LoadPolicyMaker(pack);
+    const config::ServerConfig& file_config, const assets::Pack& pack, scenario::Content content,
+    failure::Faults* faults) {
+  auto policy = scenario::LoadPolicyMaker(pack);
   if (!policy) {
-    return std::unexpected(ContentFailure(pack.Path(), DescribePolicyLoadError(policy.error())));
+    return std::unexpected(ContentFailure(pack.Path(), scenario::DescribePolicyLoadError(policy.error())));
   }
   const host::ReplayServerConfig replay_config{
       .tick_rate_hz = file_config.tick_rate_hz,
@@ -73,7 +74,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
   }
   LOG_INFO("subsystem=server event=pack_verified path={}", pack_path.string());
 
-  auto content = LoadServerContent(*pack, file_config.tick_rate_hz);
+  auto content = scenario::LoadServerContent(*pack, file_config.tick_rate_hz);
   if (!content) {
     return std::unexpected(std::move(content.error()));
   }

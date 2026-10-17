@@ -58,7 +58,7 @@ using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 namespace protocol = augusta::protocol;
 
 constexpr std::uint8_t kTickRate = 60;
