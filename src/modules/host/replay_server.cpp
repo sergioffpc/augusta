@@ -26,12 +26,11 @@
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/link_mapping.h"
-#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/peer_gate.h"
 #include "augusta/policy_loader.h"
@@ -76,34 +75,28 @@ std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
 
 }  // namespace
 
-std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const ReplayTick& tick) {
+std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(const ReplayTick& tick) {
   const simulation::State& state = tick.result.state;
-  std::vector<protocol::MessageWire> messages;
-  std::vector<networking::Reliability> reliabilities;
-  const auto add = [&](protocol::MessageWire message, networking::Reliability reliability) {
-    messages.push_back(std::move(message));
-    reliabilities.push_back(reliability);
-  };
+  std::vector<std::expected<link::Outgoing, failure::Failure>> messages;
   // Every body, and no recipient: a viewer has no rifle, health or Commands of its own.
-  add(link::ToWire(ToLink(replication::PlanUpdates(state, state.tick, {}))), networking::Reliability::kUnreliable);
+  messages.push_back(link::Encode(ToLink(replication::PlanUpdates(state, state.tick, {}))));
   for (const replication::Shot& shot : replication::PlanShots(state, state.tick)) {
-    add(link::ToWire(ToLink(shot)), networking::Reliability::kReliable);
+    messages.push_back(link::Encode(ToLink(shot)));
   }
   for (const replication::Death& death : replication::PlanDeaths(state)) {
-    add(link::ToWire(ToLink(death)), networking::Reliability::kReliable);
+    messages.push_back(link::Encode(ToLink(death)));
   }
-  add(link::ToWire(ToLink(tick.views, state.tick)), networking::Reliability::kUnreliable);
+  messages.push_back(link::Encode(ToLink(tick.views, state.tick)));
   if (tick.end.has_value()) {
-    add(link::ToWire(ToLink(MatchEnd{.players = {}, .winner = tick.end->winner})), networking::Reliability::kReliable);
+    messages.push_back(link::Encode(ToLink(MatchEnd{.players = {}, .winner = tick.end->winner})));
   }
-  std::vector<ViewerMessage> encoded;
+  std::vector<link::Outgoing> encoded;
   encoded.reserve(messages.size());
-  for (std::size_t i = 0; i < messages.size(); ++i) {
-    auto payload = link::EncodeToSend(messages[i]);
-    if (!payload.has_value()) {
-      return std::unexpected(std::move(payload.error()));
+  for (std::expected<link::Outgoing, failure::Failure>& message : messages) {
+    if (!message.has_value()) {
+      return std::unexpected(std::move(message.error()));
     }
-    encoded.push_back({.payload = *std::move(payload), .reliability = reliabilities[i]});
+    encoded.push_back(*std::move(message));
   }
   return encoded;
 }
@@ -146,14 +139,14 @@ struct ReplayServer::Impl {
   // Network I/O thread only, without the lock: listing reads the disk.
   ReplayCatalog catalog;
 
-  networking::Server network;
+  link::Server network;
   failure::FirstFailure transport_failure;
   failure::FirstFailure invariant_failure;
 
   // Guards everything below: the Network I/O thread adds viewers, and both
   // threads take them out.
   mutable std::mutex mutex;
-  std::unordered_map<networking::PeerId, std::shared_ptr<Viewer>> viewers;
+  std::unordered_map<link::PeerId, std::shared_ptr<Viewer>> viewers;
   PeerGate gate{metrics};
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
   // Simulation thread only.
@@ -182,32 +175,30 @@ struct ReplayServer::Impl {
 
   // listen, once a World of the scenario has been built: a Map that is
   // rejected throws before the socket exists, so it leaves no bound port behind.
-  [[nodiscard]] const networking::Endpoint& ListenOnceTheMapBuilds(const networking::Endpoint& listen) const {
+  [[nodiscard]] const link::Endpoint& ListenOnceTheMapBuilds(const link::Endpoint& listen) const {
     static_cast<void>(NewWorld());
     return listen;
   }
 
-  // Sends payload, an encoded message, to peer as reliability says, counted
-  // as Host counts what it sends. From either thread, with or without the lock.
-  void Deliver(networking::PeerId peer, const networking::Payload& payload, networking::Reliability reliability) {
-    networking::SendResult sent = SendCounted(network, metrics, peer, payload, reliability);
+  // Sends message, encoded, to peer, counted as Host counts what it sends.
+  // From either thread, with or without the lock.
+  void Deliver(link::PeerId peer, const link::Outgoing& message) {
+    link::SendResult sent = SendCounted(network, metrics, peer, message);
     if (!sent.has_value()) {
       transport_failure.Record(std::move(sent.error()));
-    } else if (*sent == networking::SendOutcome::kAccepted &&
-               link::TypeOf(payload) == MessageType::kAuthoritativeState) {
-      metrics.authoritative_state_update_bytes.Observe(static_cast<double>(payload.size()));
+    } else if (*sent == link::SendOutcome::kAccepted && message.Type() == MessageType::kAuthoritativeState) {
+      metrics.authoritative_state_update_bytes.Observe(static_cast<double>(message.Payload().size()));
     }
   }
 
-  // Sends message to peer as Deliver does, once encoded: one the protocol
-  // cannot carry is sent to no one and kept in invariant_failure.
-  void Send(networking::PeerId peer, const protocol::MessageWire& message, networking::Reliability reliability) {
-    auto payload = link::EncodeToSend(message);
-    if (!payload.has_value()) {
-      invariant_failure.Record(std::move(payload.error()));
+  // Sends message to peer as Deliver does: one the protocol cannot carry is
+  // sent to no one and kept in invariant_failure.
+  void Send(link::PeerId peer, const std::expected<link::Outgoing, failure::Failure>& message) {
+    if (!message.has_value()) {
+      invariant_failure.Record(message.error());
       return;
     }
-    Deliver(peer, *payload, reliability);
+    Deliver(peer, *message);
   }
 
   void SetGauges() {
@@ -217,7 +208,7 @@ struct ReplayServer::Impl {
 
   // Everything of peer, whose connection is gone, is forgotten, its Replay
   // with it. With mutex held.
-  void Forget(networking::PeerId peer) {
+  void Forget(link::PeerId peer) {
     gate.Left(peer);
     viewers.erase(peer);
     SetGauges();
@@ -226,14 +217,14 @@ struct ReplayServer::Impl {
   // Closes peer's connection from this side, once what was sent to it
   // reliably has arrived. The transport reports no departure for it, so its
   // state goes here. With mutex held.
-  void Close(networking::PeerId peer) {
+  void Close(link::PeerId peer) {
     network.Disconnect(peer);
     gate.Expelled(peer);
     Forget(peer);
   }
 
   // peer's connection ended as how says. With mutex held.
-  void HandleDisconnect(networking::PeerId peer, Leaving how) {
+  void HandleDisconnect(link::PeerId peer, Leaving how) {
     if (viewers.contains(peer)) {
       LOG_INFO("subsystem=replay event=viewer_left peer={} how={}", PeerNumber(peer), LeavingName(how));
       metrics.disconnects_from_match[how].Increment();
@@ -246,7 +237,7 @@ struct ReplayServer::Impl {
   // Disconnects peer for misbehaving or for not asking in time, for
   // reason, which only decides what is logged: a viewer's Replay ends with
   // it. With mutex held.
-  void Expel(networking::PeerId peer, std::string_view reason) {
+  void Expel(link::PeerId peer, std::string_view reason) {
     LOG_WARNING("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
     (viewers.contains(peer) ? metrics.disconnects_from_match
                             : metrics.disconnects_before_admission)[Leaving::kMisbehaving]
@@ -256,17 +247,17 @@ struct ReplayServer::Impl {
 
   // Counts rejection toward peer's misbehaviour, and expels it once it has
   // misbehaved too often. With mutex held.
-  void Judge(networking::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now) {
+  void Judge(link::PeerId peer, PeerRejection rejection, std::chrono::steady_clock::time_point now) {
     if (gate.Judge(peer, rejection, now) == Verdict::kDisconnect) {
       Expel(peer, DescribePeerRejection(rejection));
     }
   }
 
   // Refuses peer for reason. With mutex held.
-  void Refuse(networking::PeerId peer, JoinRefusal reason, std::chrono::steady_clock::time_point now) {
+  void Refuse(link::PeerId peer, JoinRefusal reason, std::chrono::steady_clock::time_point now) {
     LOG_INFO("subsystem=replay event=join_refused peer={} reason=\"{}\"", PeerNumber(peer),
              DescribeJoinRefusal(reason));
-    Send(peer, protocol::JoinRefusedWire{.reason = link::ToWire(ToLink(reason))}, networking::Reliability::kReliable);
+    Send(peer, link::Encode(ToLink(reason)));
     metrics.joins_refused[reason].Increment();
     Judge(peer, PeerRejection::kJoinRefused, now);
   }
@@ -274,7 +265,7 @@ struct ReplayServer::Impl {
   // A replay server plays no Match: whatever asks to play in one - a Join
   // request, and a Reenact request (ADR-0050) - is refused here, the same way.
   // With mutex held.
-  void RefuseToPlay(networking::PeerId peer, std::chrono::steady_clock::time_point now) {
+  void RefuseToPlay(link::PeerId peer, std::chrono::steady_clock::time_point now) {
     Refuse(peer, JoinRefusal::kReplayServer, now);
   }
 
@@ -282,12 +273,12 @@ struct ReplayServer::Impl {
   // closes the connection: a peer asks once a connection, and what else it
   // sent in the round is ignored. The directory is looked at with lock, which
   // holds mutex, let go, so no tick waits on the disk.
-  void HandleReplayListRequest(networking::PeerId peer, std::unique_lock<std::mutex>& lock) {
+  void HandleReplayListRequest(link::PeerId peer, std::unique_lock<std::mutex>& lock) {
     lock.unlock();
     const std::vector<ReplayListing> listed = ListedOf(catalog.List());
     lock.lock();
     LOG_INFO("subsystem=replay event=replay_list peer={} captures={}", PeerNumber(peer), listed.size());
-    Send(peer, link::ToWire(listed), networking::Reliability::kReliable);
+    Send(peer, link::Encode(listed));
     Close(peer);
   }
 
@@ -297,8 +288,8 @@ struct ReplayServer::Impl {
   // the Network I/O thread and with lock, which holds mutex, let go, so no
   // tick waits on either. Only this thread adds viewers, so none joins in the
   // meantime.
-  void HandleReplayRequest(networking::PeerId peer, const ReplayRequest& request,
-                           std::chrono::steady_clock::time_point now, std::unique_lock<std::mutex>& lock) {
+  void HandleReplayRequest(link::PeerId peer, const ReplayRequest& request, std::chrono::steady_clock::time_point now,
+                           std::unique_lock<std::mutex>& lock) {
     if (const std::optional<JoinRefusal> refusal =
             RefusalOfClient(request.engine_version, request.client_pack, terms)) {
       Refuse(peer, *refusal, now);
@@ -320,10 +311,8 @@ struct ReplayServer::Impl {
         .capture = request.capture, .replay = std::make_unique<Replay>(*std::move(capture), NewWorld(), characters)});
     lock.lock();
     gate.Admitted(peer);
-    Send(peer, link::ToWire(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)),
-         networking::Reliability::kReliable);
-    Send(peer, link::ToWire(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick())),
-         networking::Reliability::kReliable);
+    Send(peer, link::Encode(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)));
+    Send(peer, link::Encode(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick())));
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
     SetGauges();
@@ -332,35 +321,39 @@ struct ReplayServer::Impl {
   }
 
   // Drops what message brought and judges its peer, for reason. With mutex held.
-  void Drop(const networking::PeerMessage& message, std::string_view reason,
-            std::chrono::steady_clock::time_point now) {
+  void Drop(const link::PeerMessage& message, std::string_view reason, std::chrono::steady_clock::time_point now) {
     LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                        PeerNumber(message.from), message.payload.size(), reason);
+                        PeerNumber(message.from), message.bytes, reason);
     Judge(message.from, PeerRejection::kNotAClientMessage, now);
   }
 
   // With lock, which holds mutex.
-  void HandleMessage(const networking::PeerMessage& message, std::chrono::steady_clock::time_point now,
+  void HandleMessage(const link::PeerMessage& message, std::chrono::steady_clock::time_point now,
                      std::unique_lock<std::mutex>& lock) {
-    const auto decoded = protocol::Decode(message.payload);
-    if (!decoded.has_value()) {
+    if (!message.type.has_value()) {
       LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                          PeerNumber(message.from), message.payload.size(),
-                          protocol::DescribeDecodeError(decoded.error()));
+                          PeerNumber(message.from), message.bytes, message.type.error());
       Judge(message.from, PeerRejection::kUndecodable, now);
       return;
     }
-    metrics.messages_received[link::TypeOf(message.payload)].Increment();
+    metrics.messages_received[*message.type].Increment();
     // A viewer has asked for its Replay and sends nothing more: whatever it
     // sends, a request among them, is dropped and judged, and its Replay goes on.
     if (viewers.contains(message.from)) {
       Drop(message, "a viewer sends nothing", now);
-    } else if (std::holds_alternative<protocol::ReplayListRequestWire>(*decoded)) {
+      return;
+    }
+    if (!message.message.has_value()) {
+      Drop(message, "not a replay request", now);
+      return;
+    }
+    const link::ClientMessage& said = *message.message;
+    if (std::holds_alternative<link::ReplayListRequest>(said)) {
       HandleReplayListRequest(message.from, lock);
-    } else if (const auto* request = std::get_if<protocol::ReplayRequestWire>(&*decoded)) {
-      HandleReplayRequest(message.from, link::FromWire(*request), now, lock);
-    } else if (std::holds_alternative<protocol::JoinRequestWire>(*decoded) ||
-               std::holds_alternative<protocol::ReenactRequestWire>(*decoded)) {
+    } else if (const auto* request = std::get_if<ReplayRequest>(&said)) {
+      HandleReplayRequest(message.from, *request, now, lock);
+    } else if (std::holds_alternative<JoinRequest>(said)) {
+      // A Join request, or a Reenact request (ADR-0050).
       RefuseToPlay(message.from, now);
     } else {
       Drop(message, "not a replay request", now);
@@ -371,7 +364,7 @@ struct ReplayServer::Impl {
   // into the metrics; returns whether the Replay has ended. Simulation thread,
   // without the lock: only this thread steps a Replay, and the transport and
   // the metrics are safe from any thread.
-  bool TickViewer(networking::PeerId peer, Viewer& viewer) {
+  bool TickViewer(link::PeerId peer, Viewer& viewer) {
     const auto start = std::chrono::steady_clock::now();
     const ReplayTick tick = viewer.replay->Step();
     if (tick.divergence.has_value()) {
@@ -383,8 +376,8 @@ struct ReplayServer::Impl {
     if (!messages.has_value()) {
       invariant_failure.Record(std::move(messages.error()));
     } else {
-      for (const ViewerMessage& message : *messages) {
-        Deliver(peer, message.payload, message.reliability);
+      for (const link::Outgoing& message : *messages) {
+        Deliver(peer, message);
       }
     }
     metrics.replay_tick_duration.Observe(
@@ -403,30 +396,30 @@ ReplayServer::ReplayServer(const ReplayServerConfig& config, scenario::Scenario 
 
 ReplayServer::~ReplayServer() = default;
 
-networking::Endpoint ReplayServer::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
+link::Endpoint ReplayServer::ListenEndpoint() const { return impl_->network.LocalEndpoint(); }
 
 void ReplayServer::PumpNetwork(std::chrono::steady_clock::time_point now) {
   Impl& impl = *impl_;
   PumpPeers(impl.network, impl.metrics, impl.mutex, impl.gate, now,
             PeerHandlers{
-                .disconnected = [&impl](networking::PeerId peer, Leaving how) { impl.HandleDisconnect(peer, how); },
-                .message = [&impl, now](const networking::PeerMessage& message,
+                .disconnected = [&impl](link::PeerId peer, Leaving how) { impl.HandleDisconnect(peer, how); },
+                .message = [&impl, now](const link::PeerMessage& message,
                                         std::unique_lock<std::mutex>& lock) { impl.HandleMessage(message, now, lock); },
-                .overdue = [&impl](networking::PeerId peer) { impl.Expel(peer, "not admitted in time"); },
+                .overdue = [&impl](link::PeerId peer) { impl.Expel(peer, "not admitted in time"); },
             },
             impl.transport_failure);
 }
 
 void ReplayServer::Tick() {
   Impl& impl = *impl_;
-  std::vector<std::pair<networking::PeerId, std::shared_ptr<Impl::Viewer>>> watching;
+  std::vector<std::pair<link::PeerId, std::shared_ptr<Impl::Viewer>>> watching;
   {
     const std::lock_guard<std::mutex> lock(impl.mutex);
     watching.assign(impl.viewers.begin(), impl.viewers.end());
   }
   // Each Replay is stepped without the lock, so the Network I/O thread waits
   // on none of them: only a viewer's own lookup is under it.
-  std::vector<std::pair<networking::PeerId, std::shared_ptr<Impl::Viewer>>> ended;
+  std::vector<std::pair<link::PeerId, std::shared_ptr<Impl::Viewer>>> ended;
   for (const auto& [peer, viewer] : watching) {
     if (impl.TickViewer(peer, *viewer)) {
       ended.emplace_back(peer, viewer);
@@ -454,7 +447,7 @@ void ReplayServer::RecordTiming(const tick::Timing& timing) {
 
 std::vector<ConnectionSample> ReplayServer::SampleConnections() {
   std::vector<ConnectionSample> samples;
-  for (const networking::PeerStats& peer : impl_->network.GetStats()) {
+  for (const link::PeerStats& peer : impl_->network.GetStats()) {
     samples.push_back(ConnectionSample{.session = std::nullopt, .stats = peer.stats});
   }
   return samples;

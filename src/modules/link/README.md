@@ -8,12 +8,14 @@ by both the client and the server.
 The Link: the channel through which one Session exchanges messages with the
 other side, owning the transport connection beneath.
 
-- `augusta_link` (`augusta/link.h`): the client's end, which connects to the
-  server, sends and receives the engine's types, each message with the
-  reliability ADR-0038's table gives its type, and reads the connection's round
-  trip, loss and queue in its own types. The conversions, the protocol and
-  networking are linked privately, so whatever speaks to it reaches none of
-  them.
+- `augusta_link` (`augusta/link.h`): its two ends. The client's connects to the
+  server; the server's listens and keeps one channel per peer, naming each by a
+  peer identity of its own and taking in each payload as what a client says.
+  Each end sends and receives the engine's types, each message with the
+  reliability ADR-0038's table gives its type (a server's message encoded once,
+  for as many peers as need it), and reads each connection's round trip, loss
+  and queue in its own types. The conversions, the protocol and networking are
+  linked privately, so whatever speaks to it reaches none of them.
 - `augusta_link_messages` (`augusta/link_messages.h`): the Link's conversions,
   every one between the game's state and the Networking Protocol's messages,
   both ways, keeping only the newest of a tick's unacknowledged Commands within
@@ -28,10 +30,9 @@ other side, owning the transport connection beneath.
 
 - The codec and the messages' bytes: protocol.
 - Sockets and delivery: networking, beneath `augusta_link` alone.
-- The server's end, its listening socket and its channel per peer: the Host
-  still holds them over networking.
 - Each peer's own types (the Host's Match and replication, the harness's
-  sessions) and building the Link's from them: host and harness.
+  sessions) and building the Link's from them, and what a server does with a
+  peer (admission, misbehaviour): host and harness.
 - Reading and writing a capture's file, and the format's record order: capture.
 - Whether a value is acceptable: whoever takes it in.
 

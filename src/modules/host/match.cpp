@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/networking.h"
+#include "augusta/link.h"
 
 namespace augusta::host {
 
@@ -57,7 +57,7 @@ std::optional<JoinRefusal> RefusalOfClient(std::string_view engine_version, cons
   return std::nullopt;
 }
 
-std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const JoinRequest& request) {
+std::expected<Admission, JoinRefusal> Match::Join(link::PeerId peer, const JoinRequest& request) {
   if (const auto existing = members_.find(peer); existing != members_.end()) {
     return Admission{.session = existing->second.session, .character = existing->second.character};
   }
@@ -90,7 +90,7 @@ std::expected<Admission, JoinRefusal> Match::Join(networking::PeerId peer, const
   return Admission{.session = member.session, .character = member.character};
 }
 
-Departure Match::Leave(networking::PeerId peer) {
+Departure Match::Leave(link::PeerId peer) {
   if (members_.erase(peer) == 0) {
     return Departure::kNone;
   }
@@ -111,7 +111,7 @@ Departure Match::Leave(networking::PeerId peer) {
   return Departure::kFromLobby;
 }
 
-bool Match::Ready(networking::PeerId peer, std::uint32_t version) {
+bool Match::Ready(link::PeerId peer, std::uint32_t version) {
   const auto found = members_.find(peer);
   if (in_match_ || found == members_.end() || version != roster_version_) {
     return false;
@@ -120,7 +120,7 @@ bool Match::Ready(networking::PeerId peer, std::uint32_t version) {
   return true;
 }
 
-bool Match::IsReady(networking::PeerId peer) const {
+bool Match::IsReady(link::PeerId peer) const {
   const auto found = members_.find(peer);
   return !in_match_ && found != members_.end() && found->second.ready_version == roster_version_;
 }
@@ -190,7 +190,7 @@ Roster Match::GetRoster() const {
   return roster;
 }
 
-std::optional<SessionId> Match::SessionOf(networking::PeerId peer) const {
+std::optional<SessionId> Match::SessionOf(link::PeerId peer) const {
   const auto found = members_.find(peer);
   return found == members_.end() ? std::nullopt : std::optional(found->second.session);
 }

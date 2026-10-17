@@ -43,8 +43,8 @@ using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::host::Host;
 using augusta::host::HostConfig;
+using augusta::link::Endpoint;
 using augusta::math::Vec3;
-using augusta::networking::Endpoint;
 using augusta::physics::CollisionMesh;
 using augusta::scenario::Scenario;
 

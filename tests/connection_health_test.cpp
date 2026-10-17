@@ -12,15 +12,15 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/connection_sample.h"
+#include "augusta/link.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 
 // What ConnectionHealth records, read back as the metrics endpoint collects it.
 namespace {
 
 using augusta::host::ConnectionSample;
 using augusta::host::SessionId;
-using augusta::networking::ConnectionStats;
+using augusta::link::ConnectionStats;
 using augusta::server::ConnectionHealth;
 
 constexpr SessionId kSession{7};

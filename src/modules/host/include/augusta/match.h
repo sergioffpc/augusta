@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 
 /// \file
 /// augusta::host::Match is the server's book of who is playing, in the Lobby
@@ -35,8 +35,8 @@ namespace augusta::host {
 inline constexpr std::chrono::seconds kMatchPause{5};
 
 /// The server's name for one connected player (CONTEXT.md, "Session ID"),
-/// which Match makes when it admits a join. Distinct from the transport's
-/// handle for the connection, and not a credential.
+/// which Match makes when it admits a join. Distinct from the Link's peer
+/// identity for the connection, and not a credential.
 enum class SessionId : std::uint32_t {};
 
 /// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), which
@@ -171,7 +171,7 @@ struct MatchConfig {
   bool reenactments = false;
 };
 
-/// The Lobby, and the match its players go on to, keyed by the transport's handle for each player.
+/// The Lobby, and the match its players go on to, keyed by the Link's peer identity of each player.
 class Match {
  public:
   explicit Match(MatchConfig config);
@@ -181,20 +181,20 @@ class Match {
   /// version, then its pack, then its character, then whether a match is in
   /// progress, then whether the Lobby is full. A peer that has already joined
   /// gets the admission it already has.
-  [[nodiscard]] std::expected<Admission, JoinRefusal> Join(networking::PeerId peer, const JoinRequest& request);
+  [[nodiscard]] std::expected<Admission, JoinRefusal> Join(link::PeerId peer, const JoinRequest& request);
 
   /// Removes peer from the Lobby or the match it is in, and says which. A
   /// departure from the Lobby leaves whoever was Ready still Ready.
-  Departure Leave(networking::PeerId peer);
+  Departure Leave(link::PeerId peer);
 
   /// Records that peer's client has loaded everything needed to draw the Roster
   /// of version. Only the current version counts: returns whether peer is now
   /// Ready for it, false for an older version, a match in progress or a peer
   /// that has not joined.
-  bool Ready(networking::PeerId peer, std::uint32_t version);
+  bool Ready(link::PeerId peer, std::uint32_t version);
 
   /// Whether peer is in the Lobby and Ready for its current Roster.
-  [[nodiscard]] bool IsReady(networking::PeerId peer) const;
+  [[nodiscard]] bool IsReady(link::PeerId peer) const;
 
   /// Counts one server tick passing, towards the pause after a match.
   void Tick();
@@ -225,7 +225,7 @@ class Match {
   [[nodiscard]] Roster GetRoster() const;
 
   /// The session of peer, or nullopt if it has not joined.
-  [[nodiscard]] std::optional<SessionId> SessionOf(networking::PeerId peer) const;
+  [[nodiscard]] std::optional<SessionId> SessionOf(link::PeerId peer) const;
 
   /// How many players have joined and not left, in the Lobby or the match.
   [[nodiscard]] std::size_t PlayerCount() const;
@@ -258,7 +258,7 @@ class Match {
   std::uint32_t next_session_ = 1;
   // Entity IDs likewise: a body of one match is never mistaken for one of another.
   std::uint32_t next_entity_ = 1;
-  std::unordered_map<networking::PeerId, Member> members_;
+  std::unordered_map<link::PeerId, Member> members_;
 };
 
 }  // namespace augusta::host

@@ -7,16 +7,22 @@ links them.
 
 ## Responsibility
 
-Where every client connects on the server: the Host is its socket and
-SimulationWorld without threads or a clock, so a test drives a Match by hand,
-one network round and one tick at a time — the counterpart of the client's
+Where every client connects on the server: the Host is the server's end of the
+Link and SimulationWorld without threads or a clock, so a test drives a Match by
+hand, one network round and one tick at a time — the counterpart of the client's
 Harness. It holds the bookkeeping kept around a Match (who is in it and whether
 a join is admitted, the Command intake and its sanity gate, each peer's
-misbehaviour count, the admission deadline, the heartbeat counts), the mapping
-of its own types into the Link's messages and into SimulationWorld's, what it
-counts for the metrics endpoint, the Match capture it writes and its retention,
-and the Replay server, which serves a recorded Match through the Host's own
-pieces.
+misbehaviour count, the admission deadline, the heartbeat counts), each keyed by
+the Link's peer identity, the mapping of its own types into the Link's messages
+and into SimulationWorld's, what it counts for the metrics endpoint, the
+connection samples it reads from the Link's per-peer stats, the Match capture it
+writes and its retention, and the Replay server, which serves a recorded Match
+through the Host's own pieces.
+
+It speaks to the Link alone (`augusta/link.h`): no target here links the
+protocol or networking, which `tests/core_boundary.cmake` checks. The Replay
+server still takes the Replay list's bounds from the protocol until it has a
+Link endpoint of its own.
 
 ## Not its responsibility
 
@@ -26,7 +32,8 @@ pieces.
   scenario.
 - The lock-free counters it counts with: metrics.
 - Reading and writing the capture file format: capture.
-- Converting the Link's messages to and from the Networking Protocol's: link.
+- The listening socket, the channel per peer, each message's reliability and
+  converting the Link's messages to and from the Networking Protocol's: link.
 
 ## Decisions
 

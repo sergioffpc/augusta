@@ -18,8 +18,8 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/policy.h"
 #include "augusta/policy_loader.h"
@@ -61,7 +61,7 @@ struct ReplayServerConfig {
   std::uint8_t tick_rate_hz = 0;
   /// What every Replay's World runs on and every viewer is told.
   parameters::Parameters parameters{};
-  networking::Endpoint listen{};
+  link::Endpoint listen{};
   /// The hash of the server pack the content was loaded from: only captures made on it are replayed.
   assets::PackHash server_pack{};
   /// The directory of captures to replay, which must exist.
@@ -73,20 +73,14 @@ struct ReplayServerConfig {
   failure::Faults* faults = nullptr;
 };
 
-/// One message a Replay viewer is sent, encoded, and how.
-struct ViewerMessage {
-  networking::Payload payload;
-  networking::Reliability reliability{};
-};
-
-/// What a Replay viewer is sent for tick of its Replay, in order: the tick's
-/// Authoritative State, with every body and none of a player's own fields,
-/// unreliably; every Shot and Death, reliably; its Replay view, unreliably;
-/// and, on its last tick, the Match end, reliably. No Hit confirmation: the
+/// What a Replay viewer is sent for tick of its Replay, in order, each with the
+/// reliability the Link gives its type: the tick's Authoritative State, with
+/// every body and none of a player's own fields; every Shot and Death; its
+/// Replay view; and, on its last tick, the Match end. No Hit confirmation: the
 /// viewer fired nothing. Every message is encoded before any is returned, so
 /// if the protocol cannot carry one, the broken invariant is returned instead
-/// (link::EncodeToSend, augusta/link_messages.h), as ForEachTickMessage does a live tick's.
-[[nodiscard]] std::expected<std::vector<ViewerMessage>, failure::Failure> ViewerMessages(const ReplayTick& tick);
+/// (link::Encode, augusta/link.h), as ForEachTickMessage does a live tick's.
+[[nodiscard]] std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(const ReplayTick& tick);
 
 /// What of listings a replay server's Replay list names: every one a Replay
 /// request can name, the newest the list holds if there are more.
@@ -99,7 +93,7 @@ class ReplayServer {
   /// before a socket exists, as Host's constructor does. Throws
   /// failure::ClassifiedFailure: kInvalidContent for that Map,
   /// kInvalidConfiguration if config.captures is not a directory, or what
-  /// networking::Server's constructor throws.
+  /// link::Server's constructor throws.
   ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, scenario::PolicyMaker policy);
   ~ReplayServer();
 
@@ -109,7 +103,7 @@ class ReplayServer {
   ReplayServer& operator=(ReplayServer&&) = delete;
 
   /// The address it listens on, with the port it chose if config.listen named port 0.
-  [[nodiscard]] networking::Endpoint ListenEndpoint() const;
+  [[nodiscard]] link::Endpoint ListenEndpoint() const;
 
   /// One round of the Network I/O thread's work, at now: connections, and the
   /// requests they bring. A Replay is built here, its capture read and its

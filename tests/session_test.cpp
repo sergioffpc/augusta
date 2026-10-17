@@ -92,9 +92,9 @@ using augusta::harness::SessionConfig;
 using augusta::harness::SessionId;
 using augusta::harness::Shot;
 using augusta::link::ConnectionState;
+using augusta::link::Endpoint;
 using augusta::math::Length;
 using augusta::math::Vec3;
-using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
@@ -149,8 +149,8 @@ constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
 // An address nobody listens at: the one a server chose and has since closed.
 // Another process's server could draw it again, but only one port in 16384 does.
 Endpoint UnusedLoopbackEndpoint() {
-  const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
-  return server.LocalEndpoint();
+  const augusta::networking::Server server(augusta::networking::Endpoint{.address = kLoopbackAnyPort});
+  return Endpoint{.address = server.LocalEndpoint().address};
 }
 
 // A test server's settings: the test tick rate unless a test says otherwise.
@@ -195,7 +195,9 @@ class RawClient {
   // does neither, and its test sends every message itself.
   enum class Mode : std::uint8_t { kCooperative, kScripted };
 
-  explicit RawClient(const Endpoint& server, Mode mode = Mode::kCooperative) : mode_(mode) { client_.Connect(server); }
+  explicit RawClient(const Endpoint& server, Mode mode = Mode::kCooperative) : mode_(mode) {
+    client_.Connect({.address = server.address});
+  }
 
   ~RawClient() { client_.Disconnect(); }
 
@@ -2529,10 +2531,10 @@ constexpr EntityIdWire kScriptedEntity{101};
 // that are no message.
 class ScriptedServer {
  public:
-  ScriptedServer() : server_(Endpoint{.address = kLoopbackAnyPort}) {}
+  ScriptedServer() : server_(augusta::networking::Endpoint{.address = kLoopbackAnyPort}) {}
 
   // The address it listens on, for its client to connect to.
-  [[nodiscard]] Endpoint LocalEndpoint() const { return server_.LocalEndpoint(); }
+  [[nodiscard]] Endpoint LocalEndpoint() const { return Endpoint{.address = server_.LocalEndpoint().address}; }
 
   // Connects session and answers its join with parameters, then with a Match
   // start of it alone if start_match, and reports whether the session was

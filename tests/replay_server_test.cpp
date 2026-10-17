@@ -54,9 +54,9 @@ using augusta::host::Host;
 using augusta::host::HostConfig;
 using augusta::host::ReplayServer;
 using augusta::host::ReplayServerConfig;
+using augusta::link::Endpoint;
 using augusta::math::Vec3;
 using augusta::networking::ConnectionState;
-using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::scenario::Scenario;
@@ -169,7 +169,7 @@ class TempDirectory {
 // every message it receives.
 class RawClient {
  public:
-  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
+  explicit RawClient(const Endpoint& server) { client_.Connect({.address = server.address}); }
   ~RawClient() { client_.Disconnect(); }
   RawClient(const RawClient&) = delete;
   RawClient& operator=(const RawClient&) = delete;
@@ -763,7 +763,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
 TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   Endpoint gone;
   {
-    const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
+    const augusta::link::Server server(Endpoint{.address = kLoopbackAnyPort});
     gone = server.LocalEndpoint();
   }
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});

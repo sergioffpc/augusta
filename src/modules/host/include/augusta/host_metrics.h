@@ -18,6 +18,7 @@
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
+#include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
@@ -42,8 +43,8 @@
 namespace augusta::host {
 
 /// The Networking Protocol's message types (ADR-0038), as the metrics label
-/// them: the Link's (augusta/link_messages.h, TypeOf), since the protocol's
-/// stay at its edge.
+/// them: the Link's (augusta/link_types.h), since the protocol's stay
+/// beneath it.
 using MessageType = link::MessageType;
 
 using JoinRefusalCounters =
@@ -197,8 +198,8 @@ class CaptureMetrics final : public CaptureObserver {
 /// the heartbeat line counts nothing of its own.
 [[nodiscard]] Activity Totals(const HostMetrics& metrics);
 
-/// Counts payload, an encoded message the server is sending, by its type and size.
-void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);
+/// Counts message, which the server is sending, by its type and size.
+void CountSent(HostMetrics& metrics, const link::Outgoing& message);
 
 }  // namespace augusta::host
 

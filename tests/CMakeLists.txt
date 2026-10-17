@@ -419,6 +419,9 @@ target_link_libraries(
     augusta_harness
     augustad_connection_health
     augusta_host
+    augusta_link_messages
+    augusta_networking
+    augusta_protocol
     augusta_scenario_parameters_loader
     augusta_scenario_policy_loader
     augusta_logging
@@ -497,7 +500,10 @@ target_link_libraries(
   PRIVATE
     augusta_host_replay
     augusta_harness
+    augusta_link_messages
     augusta_logging
+    augusta_networking
+    augusta_protocol
     augusta_policy
     augusta_version
     GTest::gtest
@@ -562,7 +568,10 @@ target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math 
 gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_runner_tests runner_test.cpp)
-target_link_libraries(augusta_runner_tests PRIVATE augusta_harness augusta_host GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_runner_tests
+  PRIVATE augusta_harness augusta_host augusta_networking augusta_protocol GTest::gtest GTest::gtest_main
+)
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 
@@ -572,7 +581,14 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE augusta_harness augusta_host augusta_supervisor augustad_runtime GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_harness
+    augusta_host
+    augusta_networking
+    augusta_supervisor
+    augustad_runtime
+    GTest::gtest
+    GTest::gtest_main
 )
 # It runs a real ServerRuntime, so it is allowed augustad's own runtime
 # (ADR-0060).
@@ -601,7 +617,7 @@ target_link_libraries(
 gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
-target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host augusta_protocol GTest::gtest GTest::gtest_main)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
 

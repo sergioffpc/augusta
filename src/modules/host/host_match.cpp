@@ -18,7 +18,6 @@
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link_mapping.h"
-#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -81,7 +80,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
   if (!ended.has_value()) {
     return;
   }
-  SendTo(ended->players, link::EncodeToSend(link::ToWire(ToLink(*ended))));
+  SendTo(ended->players, link::Encode(ToLink(*ended)));
   match_winner = ended->winner;
   CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
@@ -134,7 +133,7 @@ void Host::Impl::StartMatchIfReady() {
   }
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, link::EncodeToSend(link::ToWire(ToLink(*start, spawns, match_start_tick))));
+  SendTo(sessions, link::Encode(ToLink(*start, spawns, match_start_tick)));
   LOG_INFO("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 

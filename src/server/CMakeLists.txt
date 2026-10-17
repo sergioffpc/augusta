@@ -33,7 +33,7 @@ add_library(augustad_connection_health STATIC connection_health.cpp)
 target_include_directories(augustad_connection_health PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augustad_connection_health
-  PUBLIC augusta_host augusta_metrics augusta_networking augusta_host_match
+  PUBLIC augusta_host augusta_metrics augusta_link augusta_host_match
   PRIVATE augusta_limits
 )
 augusta_set_module_scope(augustad_connection_health SERVER_ONLY)

@@ -31,7 +31,7 @@ namespace augusta::server {
 class ServerRuntime {
  public:
   /// Constructs SimulationWorld with scenario's collision and the scenario's
-  /// Game policy, and starts networking::Server listening on config.listen,
+  /// Game policy, and starts the Link's server end listening on config.listen,
   /// throwing the failure::ClassifiedFailure Host's constructor does (see
   /// host.h). Does not yet spawn any thread or start the metrics
   /// endpoint; see Run(). faults, for tests only, is asked by its supervisor

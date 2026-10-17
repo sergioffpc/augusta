@@ -5,14 +5,14 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/networking.h"
+#include "augusta/link.h"
 
 // The deadlines are pure: time is handed to them, and no peer is ever really disconnected here.
 namespace {
 
 using augusta::host::AdmissionDeadlines;
 using augusta::host::kAdmissionDeadline;
-using augusta::networking::PeerId;
+using augusta::link::PeerId;
 using Clock = std::chrono::steady_clock;
 using Peers = std::vector<PeerId>;
 

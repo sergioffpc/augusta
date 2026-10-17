@@ -19,9 +19,9 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
@@ -62,7 +62,7 @@ struct HostConfig {
   /// the Player count a match starts with.
   parameters::Parameters parameters{};
   /// Local address to listen on (US-01).
-  networking::Endpoint listen{};
+  link::Endpoint listen{};
   /// The hash of the server pack the content was loaded from, which a capture names.
   assets::PackHash server_pack{};
   /// The directory to capture every Match into (ADR-0050), created if
@@ -77,7 +77,7 @@ struct HostConfig {
   /// names (ADR-0050); without it each is refused. Never for a server open to players.
   bool reenactments = false;
   /// For a test: asked at listener setup, at every send and receive
-  /// (networking.h) and at the capture's write and flush, so the transport or
+  /// (augusta/link.h) and at the capture's write and flush, so the transport or
   /// the disk fails there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
 };
@@ -90,7 +90,7 @@ class Host {
   /// failure::ClassifiedFailure, its Code saying which: kInvalidContent if a map
   /// mesh, or a character's hitbox, is not a whole triangle list (see
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
-  /// can't be created, or what networking::Server's constructor throws.
+  /// can't be created, or what link::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see augusta/content.h).
   Host(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy = {});
   ~Host();
@@ -102,7 +102,7 @@ class Host {
   Host& operator=(Host&&) = delete;
 
   /// The address it listens on: HostConfig::listen's, with the port it chose if that named port 0.
-  [[nodiscard]] networking::Endpoint ListenEndpoint() const;
+  [[nodiscard]] link::Endpoint ListenEndpoint() const;
 
   /// The first message or record the Host could not encode, as the broken
   /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
@@ -121,7 +121,7 @@ class Host {
   /// and leaves as if it had left.
   void PumpNetwork(std::chrono::steady_clock::time_point now);
 
-  /// The transport's measurements of every open connection, each with the
+  /// The Link's numbers for every open connection, each with the
   /// Session it carries if its client has joined: what ConnectionHealth
   /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
   /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O

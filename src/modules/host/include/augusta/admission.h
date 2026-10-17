@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "augusta/networking.h"
+#include "augusta/link.h"
 
 /// \file
 /// The server's boundary for a peer that connects and never joins: every
@@ -26,21 +26,21 @@ inline constexpr std::chrono::seconds kAdmissionDeadline{30};
 class AdmissionDeadlines {
  public:
   /// Starts peer's deadline, at now.
-  void Connected(networking::PeerId peer, std::chrono::steady_clock::time_point now);
+  void Connected(link::PeerId peer, std::chrono::steady_clock::time_point now);
 
   /// Ends peer's deadline: it is in the Lobby. Nothing if it had none.
-  void Admitted(networking::PeerId peer);
+  void Admitted(link::PeerId peer);
 
   /// Ends peer's deadline: its connection is gone. Nothing if it had none.
-  void Left(networking::PeerId peer);
+  void Left(link::PeerId peer);
 
   /// The peers whose kAdmissionDeadline has passed at now, which are to be
   /// disconnected; their deadlines end, so each is returned once.
-  [[nodiscard]] std::vector<networking::PeerId> TakeOverdue(std::chrono::steady_clock::time_point now);
+  [[nodiscard]] std::vector<link::PeerId> TakeOverdue(std::chrono::steady_clock::time_point now);
 
  private:
   // When each peer not yet admitted connected.
-  std::unordered_map<networking::PeerId, std::chrono::steady_clock::time_point> connected_at_;
+  std::unordered_map<link::PeerId, std::chrono::steady_clock::time_point> connected_at_;
 };
 
 }  // namespace augusta::host

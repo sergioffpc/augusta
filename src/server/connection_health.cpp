@@ -21,9 +21,9 @@
 
 #include "augusta/connection_sample.h"
 #include "augusta/limits.h"
+#include "augusta/link.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 
 namespace augusta::server {
 namespace {
@@ -45,18 +45,18 @@ constexpr std::array kJitterBucketsSeconds{0.001, 0.002, 0.005, 0.01, 0.02, 0.05
 constexpr std::size_t kSlotCount = limits::kMaxPlayers;
 
 // Decision: what the transport has measured, in base units. Quality and jitter
-// read negative until it has (networking::ConnectionStats); nullopt then.
+// read negative until it has (link::ConnectionStats); nullopt then.
 std::optional<double> Measured(double value, double per_base_unit) {
   return value >= 0.0 ? std::optional<double>(value / per_base_unit) : std::nullopt;
 }
 
-std::optional<double> RttSeconds(const networking::ConnectionStats& stats) {
+std::optional<double> RttSeconds(const link::ConnectionStats& stats) {
   return Measured(stats.ping_ms, kMillisecondsPerSecond);
 }
 
 std::optional<double> QualityRatio(float quality) { return Measured(quality, 1.0); }
 
-std::optional<double> JitterSeconds(const networking::ConnectionStats& stats) {
+std::optional<double> JitterSeconds(const link::ConnectionStats& stats) {
   return Measured(stats.max_jitter_us, kMicrosecondsPerSecond);
 }
 
@@ -218,7 +218,7 @@ struct ConnectionHealth::Impl {
   SessionSlots sessions;
   PublishedGauges published;
 
-  void ObserveAll(const networking::ConnectionStats& stats) {
+  void ObserveAll(const link::ConnectionStats& stats) {
     Observe(rtt, RttSeconds(stats));
     Observe(quality_local, QualityRatio(stats.quality_local));
     Observe(quality_remote, QualityRatio(stats.quality_remote));
@@ -239,7 +239,7 @@ struct ConnectionHealth::Impl {
     return free;
   }
 
-  void SetGauges(host::SessionId session, const networking::ConnectionStats& stats) {
+  void SetGauges(host::SessionId session, const link::ConnectionStats& stats) {
     const std::optional<std::size_t> slot = SlotOf(session);
     if (!slot.has_value()) {
       return;

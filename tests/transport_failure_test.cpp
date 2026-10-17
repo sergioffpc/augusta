@@ -51,10 +51,9 @@ using augusta::harness::SessionConfig;
 using augusta::host::Host;
 using augusta::host::HostConfig;
 using augusta::host::PeerRejection;
+using augusta::link::Endpoint;
 using augusta::math::Vec3;
-using augusta::networking::Endpoint;
 using augusta::networking::Payload;
-using augusta::networking::PeerId;
 using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::physics::CollisionMesh;
@@ -242,7 +241,7 @@ TEST_F(TransportFailureTest, ATransportFailureIsTakenOnlyOnce) {
 // dropped and judged, and the server's transport has not failed.
 TEST_F(TransportFailureTest, MalformedPeerInputIsThePeersOutcomeNotATransportFailure) {
   augusta::networking::Client intruder;
-  intruder.Connect(host_.ListenEndpoint());
+  intruder.Connect({.address = host_.ListenEndpoint().address});
   ASSERT_TRUE(PollUntil(
       [&] {
         host_.PumpNetwork(std::chrono::steady_clock::now());
@@ -445,13 +444,13 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
 // A message the peer's connection dropped was never sent, so the metrics do not
 // count it, as they do not count one the local transport refused.
 TEST(SendCountedTest, AMessageThePeersConnectionDroppedIsNotCounted) {
-  augusta::networking::Server server(Endpoint{.address = "127.0.0.1:0"});
+  augusta::link::Server server(Endpoint{.address = "127.0.0.1:0"});
   augusta::host::HostMetrics metrics(kTickRate);
 
-  const auto sent = augusta::host::SendCounted(server, metrics, PeerId{42}, Payload{std::byte{1}, std::byte{2}},
-                                               Reliability::kReliable);
+  const auto sent = augusta::host::SendCounted(server, metrics, augusta::link::PeerId{42},
+                                               augusta::link::Encode(augusta::link::MatchEnd{}).value());
 
-  EXPECT_EQ(sent, SendOutcome::kDropped);
+  EXPECT_EQ(sent, augusta::link::SendOutcome::kDropped);
   EXPECT_EQ(metrics.messages_sent.Total(), 0U);
   EXPECT_EQ(metrics.sent_bytes.Value(), 0U);
 }

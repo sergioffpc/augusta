@@ -10,8 +10,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/link.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 
 // The Lobby and the match are pure bookkeeping: no socket is opened here.
 namespace {
@@ -24,8 +24,8 @@ using augusta::host::Match;
 using augusta::host::MatchConfig;
 using augusta::host::MatchStart;
 using augusta::host::SessionId;
+using augusta::link::PeerId;
 using augusta::math::Vec3;
-using augusta::networking::PeerId;
 
 constexpr const char* kVersion = "1.2.3";
 // The Player count of the matches below, unless a test says otherwise: as many

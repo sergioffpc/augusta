@@ -23,7 +23,7 @@
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
-#include "augusta/link_messages.h"
+#include "augusta/link.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -473,9 +473,9 @@ Activity Totals(const HostMetrics& metrics) {
   };
 }
 
-void CountSent(HostMetrics& metrics, std::span<const std::byte> payload) {
-  metrics.sent_bytes.Increment(payload.size());
-  metrics.messages_sent[link::TypeOf(payload)].Increment();
+void CountSent(HostMetrics& metrics, const link::Outgoing& message) {
+  metrics.sent_bytes.Increment(message.Payload().size());
+  metrics.messages_sent[message.Type()].Increment();
 }
 
 void CaptureMetrics::SetRetention(const CaptureRetention& retention) {

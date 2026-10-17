@@ -6,8 +6,8 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/link.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
@@ -38,8 +38,8 @@ enum class Leaving : std::uint8_t {
   kMisbehaving,
 };
 
-/// The transport's handle as a number, for log lines.
-[[nodiscard]] std::uint32_t PeerNumber(networking::PeerId peer);
+/// The Link's peer identity as a number, for log lines.
+[[nodiscard]] std::uint32_t PeerNumber(link::PeerId peer);
 
 [[nodiscard]] std::uint32_t SessionNumber(SessionId session);
 
