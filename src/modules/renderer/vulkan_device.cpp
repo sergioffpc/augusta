@@ -65,7 +65,7 @@ bool LoadsValidationLayer(Validation validation, bool layer_found) {
       return false;
     case Validation::kIfAvailable:
       if (!layer_found) {
-        LOG_WARNING(
+        LOG_WARN(
             "subsystem=renderer event=vulkan_validation_unavailable layer={} hint=\"add the folder of its JSON "
             "manifest "
             "to VK_ADD_LAYER_PATH\"",
@@ -195,7 +195,7 @@ void VulkanDevice::NvrhiMessages::message(nvrhi::MessageSeverity severity, const
       LOG_DEBUG("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
     case nvrhi::MessageSeverity::Warning:
-      LOG_WARNING("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+      LOG_WARN("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
     case nvrhi::MessageSeverity::Error:
       LOG_ERROR("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
@@ -211,12 +211,12 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
                                                                    const vk::DebugUtilsMessengerCallbackDataEXT* data,
                                                                    void* user_data) {
   if (severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
-    LOG_WARNING("subsystem=renderer event=vulkan_validation_warning message=\"{}\"", data->pMessage);
+    LOG_WARN("subsystem=renderer event=vulkan_validation_warning message=\"{}\"", data->pMessage);
     return vk::False;
   }
   // Warning, not error: the Renderer throws it, and the boundary that catches
   // it writes the one ERR line (ADR-0033).
-  LOG_WARNING("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
+  LOG_WARN("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
   auto& device = *static_cast<VulkanDevice*>(user_data);
   const std::lock_guard<std::mutex> lock(device.validation_mutex_);
   if (!device.validation_error_) {

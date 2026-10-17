@@ -67,7 +67,7 @@ std::expected<parameters::Parameters, failure::Failure> ReadParameters(const ass
     return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(script.error(), "script")));
   }
   auto parameters = LoadParameters(*script, tick_rate_hz, [script_path](std::string_view message) {
-    LOG_WARNING("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
+    LOG_WARN("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
   });
   if (!parameters) {
     return std::unexpected(ContentFailure(pack, context, DescribeParametersLoadError(parameters.error())));

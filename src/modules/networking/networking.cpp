@@ -179,7 +179,7 @@ void LogTransportEvent(std::string_view role, const TransportEvent& event) {
           role, event.connection, event.remote_address);
       break;
     case TransportState::kProblemDetectedLocally:
-      LOG_WARNING(
+      LOG_WARN(
           "subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
           "reason=problem_detected_locally",
           role, event.connection, event.remote_address);
@@ -421,7 +421,7 @@ void Client::Connect(const Endpoint& server) {
   // so this is the only place that can report it.
   if (impl_->connection == k_HSteamNetConnection_Invalid) {
     impl_->state = ConnectionState::kDisconnected;
-    LOG_WARNING(
+    LOG_WARN(
         "subsystem=networking event=state_changed role=client state=disconnected reason=connection_not_created "
         "server_addr={}",
         server.address);
@@ -476,7 +476,7 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
       return SendOutcome::kDropped;
     case SendVerdict::kDroppedEndingConnection:
       // Its status-changed events are dropped with it: the client forgets it here.
-      LOG_WARNING("subsystem=networking event=state_changed role=client state=disconnected reason=send_queue_full");
+      LOG_WARN("subsystem=networking event=state_changed role=client state=disconnected reason=send_queue_full");
       SteamNetworkingSockets()->CloseConnection(impl_->connection, 0, nullptr, false);
       impl_->connection = k_HSteamNetConnection_Invalid;
       impl_->state = ConnectionState::kDisconnected;
@@ -550,7 +550,7 @@ struct Server::Impl {
     if (!joined) {
       // The poll group is valid from construction on, so it is the connection
       // that is gone: the peer's outcome, reported as its departure.
-      LOG_WARNING(
+      LOG_WARN(
           "subsystem=networking event=state_changed role=server state=disconnected peer={} "
           "reason=poll_group_join_failed",
           event.connection);
@@ -668,9 +668,8 @@ SendResult Server::Impl::SendLocked(HSteamNetConnection connection, const Payloa
     case SendVerdict::kDropped:
       return SendOutcome::kDropped;
     case SendVerdict::kDroppedEndingConnection:
-      LOG_WARNING(
-          "subsystem=networking event=state_changed role=server state=disconnected peer={} reason=send_queue_full",
-          connection);
+      LOG_WARN("subsystem=networking event=state_changed role=server state=disconnected peer={} reason=send_queue_full",
+               connection);
       call = peers.Lose(connection);
       return SendOutcome::kDropped;
     case SendVerdict::kLocalFailure:

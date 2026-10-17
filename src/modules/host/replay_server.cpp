@@ -245,7 +245,7 @@ struct ReplayServer::Impl {
   // reason, which only decides what is logged: a viewer's Replay ends with
   // it. With mutex held.
   void Expel(networking::PeerId peer, std::string_view reason) {
-    LOG_WARNING("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
+    LOG_WARN("subsystem=replay event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
     (viewers.contains(peer) ? metrics.disconnects_from_match
                             : metrics.disconnects_before_admission)[Leaving::kMisbehaving]
         .Increment();
@@ -332,8 +332,8 @@ struct ReplayServer::Impl {
   // Drops what message brought and judges its peer, for reason. With mutex held.
   void Drop(const networking::PeerMessage& message, std::string_view reason,
             std::chrono::steady_clock::time_point now) {
-    LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                        PeerNumber(message.from), message.payload.size(), reason);
+    LOG_WARN_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                     PeerNumber(message.from), message.payload.size(), reason);
     Judge(message.from, PeerRejection::kNotAClientMessage, now);
   }
 
@@ -342,9 +342,9 @@ struct ReplayServer::Impl {
                      std::unique_lock<std::mutex>& lock) {
     const auto decoded = protocol::Decode(message.payload);
     if (!decoded.has_value()) {
-      LOG_WARNING_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                          PeerNumber(message.from), message.payload.size(),
-                          protocol::DescribeDecodeError(decoded.error()));
+      LOG_WARN_LIMITED(drop_warnings, "subsystem=replay event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                       PeerNumber(message.from), message.payload.size(),
+                       protocol::DescribeDecodeError(decoded.error()));
       Judge(message.from, PeerRejection::kUndecodable, now);
       return;
     }
@@ -373,8 +373,8 @@ struct ReplayServer::Impl {
     const auto start = std::chrono::steady_clock::now();
     const ReplayTick tick = viewer.replay->Step();
     if (tick.divergence.has_value()) {
-      LOG_WARNING("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
-                  DescribeDivergence(*tick.divergence));
+      LOG_WARN("subsystem=replay event=replay_diverged peer={} capture={} {}", PeerNumber(peer), viewer.capture,
+               DescribeDivergence(*tick.divergence));
     }
     // None of the tick is sent if the protocol cannot carry all of it.
     auto messages = ViewerMessages(tick);

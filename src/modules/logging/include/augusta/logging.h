@@ -127,7 +127,7 @@ std::string WithSuppressed(std::string message, std::uint32_t count);
 // templates use internally (glm/detail/_vectorize.hpp).
 // The arguments are a std::format string and its values: LOG_INFO("event={}", 1).
 // Each level's _LIMITED variant takes a logging::Throttle first:
-// LOG_WARNING_LIMITED(throttle, "event={}", 1) (see AUGUSTA_LOG_LIMITED_AT).
+// LOG_WARN_LIMITED(throttle, "event={}", 1) (see AUGUSTA_LOG_LIMITED_AT).
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_TRACE
 #define LOG_TRACE(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kTrace, __VA_ARGS__)
 #define LOG_TRACE_LIMITED(throttle, ...) \
@@ -156,12 +156,12 @@ std::string WithSuppressed(std::string message, std::uint32_t count);
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_WARN
-#define LOG_WARNING(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
-#define LOG_WARNING_LIMITED(throttle, ...) \
+#define LOG_WARN(...) AUGUSTA_LOG_AT(::augusta::logging::Severity::kWarn, __VA_ARGS__)
+#define LOG_WARN_LIMITED(throttle, ...) \
   AUGUSTA_LOG_LIMITED_AT(::augusta::logging::Severity::kWarn, throttle, __VA_ARGS__)
 #else
-#define LOG_WARNING(...) static_cast<void>(0)
-#define LOG_WARNING_LIMITED(throttle, ...) static_cast<void>(0)
+#define LOG_WARN(...) static_cast<void>(0)
+#define LOG_WARN_LIMITED(throttle, ...) static_cast<void>(0)
 #endif
 
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_ERROR

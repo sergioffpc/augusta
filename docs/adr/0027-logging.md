@@ -1,7 +1,7 @@
 # Logging: `augusta::logging`, Console-Only
 
 `augusta::logging` is a module behind fast macros (`LOG_TRACE`/`LOG_DEBUG`/
-`LOG_INFO`/`LOG_WARNING`/`LOG_ERROR`/`LOG_CRITICAL`), backed by a single
+`LOG_INFO`/`LOG_WARN`/`LOG_ERROR`/`LOG_CRITICAL`), backed by a single
 process-wide, thread-safe logger writing only to a colored console sink — no
 file sink, no rotation, for either client or server. The library underneath is
 Boost.Log (ADR-0036). The server is deployed to k3s (see ADR-0026), where stdout

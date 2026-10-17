@@ -164,8 +164,8 @@ void CaptureDirectory::DeleteOldest() {
   }
   if (!failure_logged_) {
     failure_logged_ = true;
-    LOG_WARNING("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_,
-                oldest.path.string(), *failure);
+    LOG_WARN("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_,
+             oldest.path.string(), *failure);
   }
 }
 

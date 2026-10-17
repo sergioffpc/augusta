@@ -104,7 +104,7 @@ void Supervisor::RecordFailure(std::string_view thread, failure::Failure failure
       on_first_cause_(failure);
     }
   } else {
-    LOG_WARNING("subsystem=supervisor event=worker_failed_after_first_cause {}", failure::DescribeFailure(failure));
+    LOG_WARN("subsystem=supervisor event=worker_failed_after_first_cause {}", failure::DescribeFailure(failure));
   }
 }
 
