@@ -287,11 +287,11 @@ server pack, what the server needs to simulate it, which names the client pack
 cooked with it. Nothing in a pack is trusted until its signature verifies
 (ADR-0030, ADR-0031). _Avoid_: Asset bundle, archive, package
 
-**Map**: The static space a match is played in - its collision, spawn points and
-hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. Its
-collision is built into the physics of both the client's PredictionWorld and the
-server's SimulationWorld. _Avoid_: Level, stage (a _scene graph_ is how the pack
-stores the map, not the map itself)
+**Map**: The static space a match is played in - its collision, spawn points,
+hitboxes and Acoustic geometry - authored in OpenUSD (ADR-0015) and cooked into
+the signed pack. Its collision is built into the physics of both the client's
+PredictionWorld and the server's SimulationWorld. _Avoid_: Level, stage (a
+_scene graph_ is how the pack stores the map, not the map itself)
 
 **Harness**: Where anything that plays connects to the server: the client's
 network connection and PredictionWorld without a window or GPU. The real client,
@@ -402,6 +402,25 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 from a living player's eye, chosen in Session order and moved on with fire, and
 its input moves, turns and fires nothing. It never respawns. _Avoid_: Ghost,
 observer, dead cam
+
+### Audio
+
+**Acoustic geometry**: The surfaces sound bounces off, is blocked by and passes
+through: shapes authored for that alone in a Map or a Prop, never drawn and
+never collided with, each with one Acoustic material. _Avoid_: Audio mesh, sound
+collision (the Map's collision is not what sound sees)
+
+**Acoustic material**: What a surface of Acoustic geometry does to sound - how
+much it absorbs, scatters and lets through - named from the authored catalogue
+of them. _Avoid_: Audio material, surface type (a render material is unrelated)
+
+**Probe volume**: A region of a Map where sound is heard, filled with points
+whose reflections and paths are baked ahead of play. _Avoid_: Reverb zone, audio
+volume
+
+**Foot contact**: A moment authored in a locomotion clip when one foot lands,
+heard as a footstep whenever a player's stride passes it. _Avoid_: Footstep
+event, foot plant (foot placement is a cosmetic layer, ADR-0061)
 
 ### Deployment
 

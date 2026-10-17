@@ -419,10 +419,10 @@ class Capturer::Writer {
     }
     const CaptureStop stop = StopAt(step);
     if (stop == CaptureStop::kWriteFailed) {
-      LOG_WARNING("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
-                  CaptureStopName(stop), CaptureStepName(step), detail);
+      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
+               CaptureStopName(stop), CaptureStepName(step), detail);
     } else {
-      LOG_WARNING("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
+      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
     }
     observer_->OnStopped(stop);
     if (match == open_match_) {

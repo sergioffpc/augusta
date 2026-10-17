@@ -85,9 +85,8 @@ void Host::Impl::HandleCommands(link::PeerId peer, const std::vector<SequencedCo
   if (!session.has_value()) {
     metrics.commands_received.Increment(commands.size());
     metrics.commands_before_joining.Increment(commands.size());
-    LOG_WARNING_LIMITED(drop_warnings,
-                        "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
-                        PeerNumber(peer));
+    LOG_WARN_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped peer={} reason=\"commands before joining\"",
+                     PeerNumber(peer));
     Judge(peer, PeerRejection::kCommandsBeforeJoining, now);
     return;
   }
@@ -123,25 +122,23 @@ void Host::Impl::RecordRejection(link::PeerId peer, const SequencedCommand& comm
     LOG_TRACE("subsystem=serverruntime event=dropped peer={} sequence={} reason=\"{}\"", PeerNumber(peer),
               command.sequence, DescribeRejection(rejection));
   } else {
-    LOG_WARNING_LIMITED(drop_warnings,
-                        "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
-                        PeerNumber(peer), command.sequence, DescribeRejection(rejection));
+    LOG_WARN_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} sequence={} reason=\"{}\"",
+                     PeerNumber(peer), command.sequence, DescribeRejection(rejection));
   }
 }
 
 void Host::Impl::HandleMessage(const link::PeerMessage& message, std::chrono::steady_clock::time_point now) {
   if (!message.type.has_value()) {
-    LOG_WARNING_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
-                        PeerNumber(message.from), message.bytes, message.type.error());
+    LOG_WARN_LIMITED(drop_warnings, "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"{}\"",
+                     PeerNumber(message.from), message.bytes, message.type.error());
     Judge(message.from, PeerRejection::kUndecodable, now);
     return;
   }
   metrics.messages_received[*message.type].Increment();
   if (!message.message.has_value()) {
-    LOG_WARNING_LIMITED(
-        drop_warnings,
-        "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
-        PeerNumber(message.from), message.bytes);
+    LOG_WARN_LIMITED(drop_warnings,
+                     "subsystem=serverruntime event=dropped_malformed peer={} bytes={} reason=\"not a client message\"",
+                     PeerNumber(message.from), message.bytes);
     Judge(message.from, PeerRejection::kNotAClientMessage, now);
     return;
   }
@@ -186,11 +183,10 @@ Verdict Host::Impl::Judge(link::PeerId peer, PeerRejection rejection, std::chron
 // departure for a connection this side closes, so the player leaves here.
 void Host::Impl::Expel(link::PeerId peer, std::string_view reason) {
   if (const std::optional<SessionId> session = match.SessionOf(peer); session.has_value()) {
-    LOG_WARNING("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"",
-                PeerNumber(peer), SessionNumber(*session), reason);
+    LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"",
+             PeerNumber(peer), SessionNumber(*session), reason);
   } else {
-    LOG_WARNING("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer),
-                reason);
+    LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
   }
   gate.Expelled(peer);
   network.Disconnect(peer);

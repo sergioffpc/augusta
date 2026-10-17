@@ -40,7 +40,7 @@ class TimerResolution {
  public:
   TimerResolution() : raised_(timeBeginPeriod(kPeriodMs) == TIMERR_NOERROR) {
     if (!raised_) {
-      LOG_WARNING("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
+      LOG_WARN("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
     }
   }
   ~TimerResolution() {

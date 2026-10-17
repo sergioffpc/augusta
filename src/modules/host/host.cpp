@@ -104,7 +104,7 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
           .reenactments = config.reenactments,
       }) {
   if (config.reenactments) {
-    LOG_WARNING("subsystem=serverruntime event=reenactments_enabled");
+    LOG_WARN("subsystem=serverruntime event=reenactments_enabled");
   }
 }
 

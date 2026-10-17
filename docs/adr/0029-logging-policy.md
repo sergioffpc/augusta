@@ -48,13 +48,12 @@ sink, delays the thread that writes it. Two rules keep the volume down:
   and the series count each event once. The trend is in that line; per-phase
   timing is the profiler's job (the NVTX ranges), not the log's.
 - **Peer-provoked warnings are limited.** A `WARN` a peer can cause as often as
-  it likes (a malformed or out-of-turn message) goes through
-  `LOG_WARNING_LIMITED` and a `logging::Throttle`: one line a second, ending
-  `suppressed=<n>` when it stands for more. The heartbeat still counts every
-  one. Every level has such a variant (`LOG_TRACE_LIMITED` through
-  `LOG_CRITICAL_LIMITED`), for a line of any level a peer can provoke at will. A
-  disconnect for misbehaving is not limited: it ends the connection, so it is
-  one `WARN` per connection.
+  it likes (a malformed or out-of-turn message) goes through `LOG_WARN_LIMITED`
+  and a `logging::Throttle`: one line a second, ending `suppressed=<n>` when it
+  stands for more. The heartbeat still counts every one. Every level has such a
+  variant (`LOG_TRACE_LIMITED` through `LOG_CRITICAL_LIMITED`), for a line of
+  any level a peer can provoke at will. A disconnect for misbehaving is not
+  limited: it ends the connection, so it is one `WARN` per connection.
 
 ## Consequences
 

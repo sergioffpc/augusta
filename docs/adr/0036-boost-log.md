@@ -11,7 +11,7 @@ What changes underneath:
 - The module is a small compiled library. Boost.Log stays behind `logging.cpp`,
   so `logging.h` includes only the standard library and no other translation
   unit pays for Boost.Log's headers.
-- The macros (`LOG_TRACE`/`LOG_DEBUG`/`LOG_INFO`/`LOG_WARNING`/`LOG_ERROR`/
+- The macros (`LOG_TRACE`/`LOG_DEBUG`/`LOG_INFO`/`LOG_WARN`/`LOG_ERROR`/
   `LOG_CRITICAL`) keep their `std::format`-style `{}` call syntax, so no call
   site changed. Each first checks the runtime floor, then formats with
   `std::format` and hands the finished line to `augusta::logging::Write`.

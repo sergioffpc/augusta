@@ -596,11 +596,11 @@ struct World::Impl {
   // kPolicyWarningInterval, as policy may fail every tick.
   void WarnUndecidedOnTick(const policy::Undecided& undecided) {
     if (undecided.code == policy::UndecidedCode::kHookFailed) {
-      LOG_WARNING_LIMITED(policy_warnings,
-                          "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                          policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
+      LOG_WARN_LIMITED(policy_warnings,
+                       "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                       policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
     } else {
-      LOG_WARNING_LIMITED(
+      LOG_WARN_LIMITED(
           policy_warnings,
           "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
           policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
@@ -620,11 +620,11 @@ struct World::Impl {
     auto assignment = policy.AssignSpawns(view, spawn_points);
     if (!assignment) {
       if (assignment.error().code == policy::UndecidedCode::kHookFailed) {
-        LOG_WARNING("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                    policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
+        LOG_WARN("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
       } else {
-        LOG_WARNING("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                    policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
+        LOG_WARN("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
       }
       return InOrderSpawns(match_players.size(), spawn_points);
     }

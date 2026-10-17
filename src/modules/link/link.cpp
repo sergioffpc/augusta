@@ -61,14 +61,14 @@ struct Client::Impl {
     LOG_TRACE("subsystem=link event=received bytes={}", payload.size());
     const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
     if (!decoded.has_value()) {
-      LOG_WARNING_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"{}\"", payload.size(),
-                          protocol::DescribeDecodeError(decoded.error()));
+      LOG_WARN_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"{}\"", payload.size(),
+                       protocol::DescribeDecodeError(decoded.error()));
       return std::nullopt;
     }
     std::optional<ServerMessage> message = ServerMessageFromWire(*decoded);
     if (!message.has_value()) {
-      LOG_WARNING_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"not a server message\"",
-                          payload.size());
+      LOG_WARN_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"not a server message\"",
+                       payload.size());
     }
     return message;
   }
