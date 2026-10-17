@@ -35,10 +35,10 @@
 #include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/replay_catalog.h"
-#include "augusta/scripting.h"
 #include "augusta/version.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
@@ -137,10 +137,10 @@ Parameters Rules() {
   return parameters;
 }
 
-augusta::scripting::Engine Policy() {
-  auto policy = augusta::scripting::Engine::Load(kLastManStanding);
+augusta::policy::Policy Policy() {
+  auto policy = augusta::policy::Policy::Load(kLastManStanding);
   EXPECT_TRUE(policy.has_value());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
 // A directory of the test's own, gone with it.

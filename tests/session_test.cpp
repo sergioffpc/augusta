@@ -52,13 +52,13 @@
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
 #include "augusta/prediction.h"
 #include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/reenactment.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -1259,7 +1259,7 @@ class LoopbackMatch : public ::testing::Test {
   struct HostSetup {
     HostConfig config;
     Scenario scenario;
-    augusta::scripting::Engine policy;
+    augusta::policy::Policy policy;
   };
 
   explicit LoopbackMatch(HostSetup setup) : host_(setup.config, std::move(setup.scenario), std::move(setup.policy)) {}
@@ -1486,8 +1486,8 @@ class PolicySpawnTest : public LoopbackMatch {
     return {Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)};
   }
 
-  static augusta::scripting::Engine Backwards() {
-    auto policy = augusta::scripting::Engine::Load(R"(
+  static augusta::policy::Policy Backwards() {
+    auto policy = augusta::policy::Policy::Load(R"(
       function assign_spawns(match)
         local assignment = {}
         for i, player in ipairs(match.players) do
@@ -1497,7 +1497,7 @@ class PolicySpawnTest : public LoopbackMatch {
       end
     )");
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 
   static HostSetup BackwardsSetup() {
@@ -1890,15 +1890,15 @@ class CaptureHostTest : private CaptureDirectory, public LoopbackMatch {
            ("augusta_session_capture_" + std::string(test.name()) + "_" + std::to_string(std::random_device{}()));
   }
 
-  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::scripting::Engine policy) {
+  static HostSetup CaptureSetup(const std::filesystem::path& directory, augusta::policy::Policy policy) {
     HostSetup setup = OnTheFloor(SpawnPoints(), WithPlayerCount(2));
     setup.config.capture_directory = directory;
     setup.policy = std::move(policy);
     return setup;
   }
 
-  explicit CaptureHostTest(augusta::scripting::Engine policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
-  CaptureHostTest(const std::filesystem::path& directory, augusta::scripting::Engine policy)
+  explicit CaptureHostTest(augusta::policy::Policy policy = {}) : CaptureHostTest(Directory(), std::move(policy)) {}
+  CaptureHostTest(const std::filesystem::path& directory, augusta::policy::Policy policy)
       : CaptureDirectory(directory), LoopbackMatch(CaptureSetup(directory, std::move(policy))) {}
 
   void PlayAMatch() {
@@ -2019,8 +2019,8 @@ class FirstMatchWonCaptureHostTest : public CaptureHostTest {
  protected:
   FirstMatchWonCaptureHostTest() : CaptureHostTest(FirstMatchWon()) {}
 
-  static augusta::scripting::Engine FirstMatchWon() {
-    auto policy = augusta::scripting::Engine::Load(R"(
+  static augusta::policy::Policy FirstMatchWon() {
+    auto policy = augusta::policy::Policy::Load(R"(
       ticks = 0
       function on_tick(match)
         ticks = ticks + 1
@@ -2028,7 +2028,7 @@ class FirstMatchWonCaptureHostTest : public CaptureHostTest {
       end
     )");
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 };
 
@@ -4557,7 +4557,7 @@ class HitMatchOf : public LoopbackMatch {
 
   // walled puts a wall across the line, halfway between the shooter and the
   // nearest target; policy is the scenario's Game policy.
-  static HostSetup InALine(bool walled, augusta::scripting::Engine policy) {
+  static HostSetup InALine(bool walled, augusta::policy::Policy policy) {
     Parameters parameters = WithPlayerCount(kPlayers);
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = 30;
@@ -4582,7 +4582,7 @@ class HitMatchOf : public LoopbackMatch {
     return setup;
   }
 
-  explicit HitMatchOf(bool walled = false, augusta::scripting::Engine policy = {})
+  explicit HitMatchOf(bool walled = false, augusta::policy::Policy policy = {})
       : LoopbackMatch(InALine(walled, std::move(policy))) {}
 
   void SetUp() override {
@@ -4626,8 +4626,8 @@ class HitMatchOf : public LoopbackMatch {
       map_impacts_.insert(map_impacts_.end(), state.map_impacts.begin(), state.map_impacts.end());
       shots_fired_.insert(shots_fired_.end(), state.shots.begin(), state.shots.end());
       deaths_.insert(deaths_.end(), state.deaths.begin(), state.deaths.end());
-      for (const augusta::simulation::PolicyAction& action : result.actions) {
-        match_ends_.emplace_back(state.tick, std::get<augusta::simulation::MatchEnd>(action));
+      for (const augusta::policy::PolicyAction& action : result.actions) {
+        match_ends_.emplace_back(state.tick, std::get<augusta::policy::MatchEnd>(action));
       }
     }
   }
@@ -4701,7 +4701,7 @@ class HitMatchOf : public LoopbackMatch {
   std::vector<augusta::simulation::Shot> shots_fired_;
   std::vector<augusta::simulation::Death> deaths_;
   // Every Match end Game policy has decided, with the tick it decided it on.
-  std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>> match_ends_;
+  std::vector<std::pair<augusta::tick::Tick, augusta::policy::MatchEnd>> match_ends_;
   std::map<const Session*, std::vector<HitConfirmation>> confirmations_;
   std::map<const Session*, std::vector<Death>> deaths_received_;
 };
@@ -5613,7 +5613,7 @@ TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnE
 // The example scenario's Game policy, read out of its golden server pack by the
 // server's own loader: its rules hand out the Spawn points and end the Match on
 // the last player standing (US-14).
-augusta::scripting::Engine ExamplePolicy() {
+augusta::policy::Policy ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
   EXPECT_TRUE(public_key.has_value());
@@ -5621,7 +5621,7 @@ augusta::scripting::Engine ExamplePolicy() {
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
   auto policy = augusta::server::LoadPolicy(pack.value());
   EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
 // A match of kPlayers in the line, under the example scenario's Game policy:
@@ -5908,7 +5908,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     }
   };
   std::vector<augusta::simulation::Death> deaths;
-  std::optional<augusta::simulation::MatchEnd> match_end;
+  std::optional<augusta::policy::MatchEnd> match_end;
   auto slowest_tick = std::chrono::steady_clock::duration::zero();
 
   const auto tick_duration = std::chrono::duration<float>(kFixedTick);
@@ -5918,8 +5918,8 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
     const augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     slowest_tick = std::max(slowest_tick, std::chrono::steady_clock::now() - tick_start);
     deaths.insert(deaths.end(), result.state.deaths.begin(), result.state.deaths.end());
-    for (const augusta::simulation::PolicyAction& action : result.actions) {
-      match_end = std::get<augusta::simulation::MatchEnd>(action);
+    for (const augusta::policy::PolicyAction& action : result.actions) {
+      match_end = std::get<augusta::policy::MatchEnd>(action);
     }
     for (std::size_t rank = 0; rank < kPlayers; ++rank) {
       Session& session = *by_rank[rank];
@@ -5999,9 +5999,9 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
 // draw reaches it as one.
 class SoloMatchTest : public LoopbackMatch {
  protected:
-  explicit SoloMatchTest(augusta::scripting::Engine policy) : LoopbackMatch(Alone(std::move(policy))) {}
+  explicit SoloMatchTest(augusta::policy::Policy policy) : LoopbackMatch(Alone(std::move(policy))) {}
 
-  static HostSetup Alone(augusta::scripting::Engine policy) {
+  static HostSetup Alone(augusta::policy::Policy policy) {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F)}, WithPlayerCount(1));
     setup.policy = std::move(policy);
     return setup;
@@ -6028,10 +6028,10 @@ class SoloDrawTest : public SoloMatchTest {
  protected:
   SoloDrawTest() : SoloMatchTest(Rules("function on_tick() return {draw = true} end")) {}
 
-  static augusta::scripting::Engine Rules(const char* rules) {
-    auto policy = augusta::scripting::Engine::Load(rules);
+  static augusta::policy::Policy Rules(const char* rules) {
+    auto policy = augusta::policy::Policy::Load(rules);
     EXPECT_TRUE(policy.has_value());
-    return policy ? *std::move(policy) : augusta::scripting::Engine{};
+    return policy ? *std::move(policy) : augusta::policy::Policy{};
   }
 };
 

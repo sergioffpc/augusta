@@ -197,10 +197,10 @@ std::vector<simulation::PlayerCommand> Replay::TakeCommands(std::vector<PlayerVi
 }
 
 std::optional<ReplayEnd> Replay::EndOf(std::uint32_t offset, const simulation::TickResult& result) const {
-  for (const simulation::PolicyAction& action : result.actions) {
-    if (const auto* end = std::get_if<simulation::MatchEnd>(&action)) {
+  for (const policy::PolicyAction& action : result.actions) {
+    if (const auto* end = std::get_if<policy::MatchEnd>(&action)) {
       return ReplayEnd{.winner =
-                           end->winner.transform([](simulation::SessionId winner) { return FromSimulation(winner); })};
+                           end->winner.transform([](policy::SessionId winner) { return FromSimulation(winner); })};
     }
   }
   if (offset < last_offset_) {
@@ -230,8 +230,8 @@ ReplayTick Replay::Step() {
                                     .killer = static_cast<capture::Player>(death.killer)});
   }
   std::optional<capture::MatchEnd> resolved_end;
-  for (const simulation::PolicyAction& action : tick.result.actions) {
-    if (const auto* end = std::get_if<simulation::MatchEnd>(&action)) {
+  for (const policy::PolicyAction& action : tick.result.actions) {
+    if (const auto* end = std::get_if<policy::MatchEnd>(&action)) {
       capture::MatchEnd captured;
       if (end->winner.has_value()) {
         const SessionId winner = FromSimulation(*end->winner);

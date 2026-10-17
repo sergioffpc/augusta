@@ -11,8 +11,8 @@
 #include "augusta/content.h"
 #include "augusta/match.h"
 #include "augusta/parameters.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 /// \file
@@ -30,10 +30,10 @@ namespace augusta::server {
 [[nodiscard]] EntityId FromSimulation(simulation::EntityId entity);
 
 /// session as SimulationWorld's Game policy names the same player.
-[[nodiscard]] simulation::SessionId ToSimulation(SessionId session);
+[[nodiscard]] policy::SessionId ToSimulation(SessionId session);
 
 /// A Game policy player's session as Match named it; the inverse of ToSimulation.
-[[nodiscard]] SessionId FromSimulation(simulation::SessionId session);
+[[nodiscard]] SessionId FromSimulation(policy::SessionId session);
 
 [[nodiscard]] ballistics::BodyPart ToBallistics(assets::BodyPart part);
 
@@ -52,7 +52,7 @@ namespace augusta::server {
 /// the scenario's Game policy. Throws failure::ClassifiedFailure
 /// (failure::Code::kInvalidContent) if a map mesh is not a whole triangle list.
 [[nodiscard]] simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
-                                                const Scenario& scenario, scripting::Engine policy);
+                                                const Scenario& scenario, policy::Policy policy);
 
 }  // namespace augusta::server
 

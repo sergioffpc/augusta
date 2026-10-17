@@ -16,8 +16,8 @@
 #include "augusta/match.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 namespace augusta::server {
@@ -30,11 +30,11 @@ EntityId FromSimulation(simulation::EntityId entity) {
   return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
 }
 
-simulation::SessionId ToSimulation(SessionId session) {
-  return static_cast<simulation::SessionId>(std::to_underlying(session));
+policy::SessionId ToSimulation(SessionId session) {
+  return static_cast<policy::SessionId>(std::to_underlying(session));
 }
 
-SessionId FromSimulation(simulation::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
+SessionId FromSimulation(policy::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
 
 ballistics::BodyPart ToBallistics(assets::BodyPart part) {
   switch (part) {
@@ -81,7 +81,7 @@ std::unordered_map<std::string, simulation::Character> ToSimulation(const std::v
 }
 
 simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
-                                  const Scenario& scenario, scripting::Engine policy) {
+                                  const Scenario& scenario, policy::Policy policy) {
   simulation::World simulation(parameters, tick_rate_hz, std::move(policy));
   if (const auto added = map::AddCollision(simulation, scenario.collision); !added) {
     throw failure::ClassifiedFailure(failure::Failure{

@@ -228,7 +228,7 @@ target_link_libraries(
   augusta_policy_tests
   PRIVATE
     augusta_simulation
-    augusta_scripting
+    augusta_policy
     augusta_scenario_parameters_loader
     augusta_scenario_policy_loader
     augusta_logging
@@ -247,10 +247,14 @@ target_compile_definitions(
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_policy_tests DISCOVERY_TIMEOUT 30)
 
-# What a hook's answer becomes once C++ validates it, apart from any script.
+# What a hook's answer becomes once C++ validates it, apart from any script:
+# the policy module's private reading of answers (answers.h).
 add_executable(augusta_policy_actions_tests policy_actions_test.cpp)
-target_link_libraries(augusta_policy_actions_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
-# Links PhysX through augusta_simulation, so the same first-launch cost applies as below.
+target_include_directories(augusta_policy_actions_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/policy)
+target_link_libraries(
+  augusta_policy_actions_tests
+  PRIVATE augusta_policy augusta_scripting GTest::gtest GTest::gtest_main
+)
 gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 
 # The example scenario's shipped rules, loaded out of a pack built with
@@ -468,7 +472,7 @@ gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_server_replay_tests server_replay_test.cpp)
 target_link_libraries(
   augusta_server_replay_tests
-  PRIVATE augusta_host augusta_scripting augusta_simulation GTest::gtest GTest::gtest_main
+  PRIVATE augusta_host augusta_policy augusta_simulation GTest::gtest GTest::gtest_main
 )
 gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
 
@@ -485,7 +489,7 @@ target_link_libraries(
     augusta_host_replay
     augusta_harness
     augusta_logging
-    augusta_scripting
+    augusta_policy
     augusta_version
     GTest::gtest
     GTest::gtest_main

@@ -26,8 +26,8 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
-#include "augusta/scripting.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "hitbox_history.h"
@@ -232,15 +232,9 @@ ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::
 
 EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
 
-// The rules' hook called every tick in Scripts/Behaviours (ADR-0022).
-constexpr std::string_view kOnTick = "on_tick";
-
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
 constexpr std::chrono::seconds kPolicyWarningInterval{1};
-
-// The rules' hook called once at Match start (ADR-0022).
-constexpr std::string_view kAssignSpawns = "assign_spawns";
 
 // The Spawn point, from 0, each of a Match's players takes with no Game policy
 // for it: in order, starting over after the last.
@@ -252,58 +246,16 @@ std::vector<std::size_t> InOrderSpawns(std::size_t players, std::size_t spawn_po
   return indices;
 }
 
-scripting::Field NumberField(std::string key, double value) {
-  return scripting::Field{.key = std::move(key), .value = {.data = value}};
-}
-
-scripting::Field BoolField(std::string key, bool value) {
-  return scripting::Field{.key = std::move(key), .value = {.data = value}};
-}
-
-scripting::Field StringField(std::string key, std::string value) {
-  return scripting::Field{.key = std::move(key), .value = {.data = std::move(value)}};
-}
-
-// One player in the Match as Game policy sees it (ADR-0022).
-struct ViewedPlayer {
-  EntityId entity{};
-  PlayerIdentity identity{};
-  bool alive = true;
-  float health = 0.0F;
-  // The body of whoever killed it, only on the tick it was killed.
-  std::optional<EntityId> killer;
-};
-
-// player as a hook sees it, its fields ordered by key.
-scripting::Value PlayerView(const ViewedPlayer& player) {
-  scripting::Value::Record record{
-      BoolField("alive", player.alive),
-      StringField("character", player.identity.character),
-      NumberField("entity", std::to_underlying(player.entity)),
-      NumberField("health", player.health),
-      BoolField("killed", player.killer.has_value()),
-  };
-  if (player.killer.has_value()) {
-    record.push_back(NumberField("killer", std::to_underlying(*player.killer)));
-  }
-  record.push_back(NumberField("session", std::to_underlying(player.identity.session)));
-  return scripting::Value{.data = std::move(record)};
-}
-
-// The read-only view of the Match every Game policy hook is handed (ADR-0022):
-// the Player count and every player in the Match, ordered by session. Each hook
-// appends what is its own (the tick, the number of Spawn points), keeping the
-// keys in order, as Value::Record wants.
-scripting::Value::Record MatchView(std::size_t player_count, std::vector<ViewedPlayer> players) {
-  std::ranges::sort(players, {}, [](const ViewedPlayer& player) { return player.identity.session; });
-  scripting::Value::List roster;
-  roster.reserve(players.size());
-  for (const ViewedPlayer& player : players) {
-    roster.push_back(PlayerView(player));
-  }
-  return scripting::Value::Record{
-      NumberField("player_count", static_cast<double>(player_count)),
-      scripting::Field{.key = "players", .value = {.data = std::move(roster)}},
+// player as Game policy sees it (ADR-0022).
+policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool alive, float health,
+                          std::optional<EntityId> killer) {
+  return policy::PlayerView{
+      .entity = std::to_underlying(entity),
+      .session = identity.session,
+      .character = identity.character,
+      .alive = alive,
+      .health = health,
+      .killer = killer.transform([](EntityId body) { return std::to_underlying(body); }),
   };
 }
 
@@ -332,7 +284,7 @@ struct World::Impl {
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
-  scripting::Engine policy;
+  policy::Policy policy;
   logging::Throttle policy_warnings{kPolicyWarningInterval};
   // Whether policy has ended the Match the world's players are in: it then
   // decides no more until EndMatch.
@@ -343,7 +295,7 @@ struct World::Impl {
   // Scripts/Behaviours for Tick to return.
   std::unordered_map<EntityId, command::Command> tick_commands;
   State committed;
-  std::vector<PolicyAction> actions;
+  std::vector<policy::PolicyAction> actions;
   std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
   // judges it to be.
@@ -361,12 +313,12 @@ struct World::Impl {
   std::vector<ballistics::Hitbox> bullet_hitboxes;
   std::vector<PlayerHit> player_hits;
 
-  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, scripting::Engine policy_engine)
+  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy)
       : parameters(params),
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
-        policy(std::move(policy_engine)),
+        policy(std::move(game_policy)),
         targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
@@ -609,35 +561,18 @@ struct World::Impl {
   }
 
   // The Match view on_tick is handed, as Damage left it this tick: every player
-  // in the world, with who killed it if it died this tick, and the tick.
-  // Players who left are not in the world, so not in it either.
-  [[nodiscard]] scripting::Value::Record TickView() const {
-    std::vector<ViewedPlayer> viewed;
-    viewed.reserve(players.size());
+  // in the world, with who killed it if it died this tick. Players who left
+  // are not in the world, so not in it either.
+  [[nodiscard]] policy::MatchView TickView() const {
+    policy::MatchView view{.player_count = parameters.player_count, .players = {}};
+    view.players.reserve(players.size());
     for (const auto& [entity, slot] : players) {
       const auto death = std::ranges::find(committed.deaths, entity, &Death::victim);
-      viewed.push_back(ViewedPlayer{
-          .entity = entity,
-          .identity = slot.identity,
-          .alive = slot.body.has_value(),
-          .health = slot.entity.get<Health>().value,
-          .killer = death == committed.deaths.end() ? std::nullopt : std::optional<EntityId>(death->killer),
-      });
+      view.players.push_back(
+          ViewOf(entity, slot.identity, slot.body.has_value(), slot.entity.get<Health>().value,
+                 death == committed.deaths.end() ? std::nullopt : std::optional<EntityId>(death->killer)));
     }
-    scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
-    view.push_back(NumberField("tick", static_cast<double>(tick)));
     return view;
-  }
-
-  // The sessions of the players alive in the world.
-  [[nodiscard]] std::vector<SessionId> AliveSessions() const {
-    std::vector<SessionId> alive;
-    for (const auto& [entity, slot] : players) {
-      if (slot.body.has_value()) {
-        alive.push_back(slot.identity.session);
-      }
-    }
-    return alive;
   }
 
   // Calls the rules' on_tick with the Match view while the world has a
@@ -648,23 +583,22 @@ struct World::Impl {
     if (players.empty() || match_ended_by_policy) {
       return;
     }
-    const auto returned = policy.Call(kOnTick, TickView());
-    if (!returned) {
-      LOG_WARNING_LIMITED(policy_warnings,
-                          "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                          scripting::kRulesScriptPath, kOnTick, tick, scripting::DescribeHookError(returned.error()));
-      return;
-    }
-    const auto action = ReadTickAction(*returned, AliveSessions());
+    const auto action = policy.OnTick(TickView(), tick);
     if (!action) {
-      LOG_WARNING_LIMITED(
-          policy_warnings,
-          "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-          scripting::kRulesScriptPath, kOnTick, tick, DescribeActionRefusal(action.error()));
+      if (action.error().code == policy::UndecidedCode::kHookFailed) {
+        LOG_WARNING_LIMITED(policy_warnings,
+                            "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                            policy::kRulesScriptPath, policy::kOnTick, tick, action.error().description);
+      } else {
+        LOG_WARNING_LIMITED(
+            policy_warnings,
+            "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+            policy::kRulesScriptPath, policy::kOnTick, tick, action.error().description);
+      }
       return;
     }
     if (action->has_value()) {
-      match_ended_by_policy = std::holds_alternative<MatchEnd>(**action);
+      match_ended_by_policy = std::holds_alternative<policy::MatchEnd>(**action);
       actions.push_back(**action);
     }
   }
@@ -674,38 +608,26 @@ struct World::Impl {
   // defined, answers nil or is refused. A refusal is logged; as a hook is
   // called once a Match, it is not limited.
   std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
-    std::vector<ViewedPlayer> viewed;
-    viewed.reserve(match_players.size());
+    policy::MatchView view{.player_count = parameters.player_count, .players = {}};
+    view.players.reserve(match_players.size());
     for (const MatchPlayer& player : match_players) {
-      viewed.push_back(ViewedPlayer{.entity = player.entity,
-                                    .identity = player.identity,
-                                    .alive = true,
-                                    .health = parameters.starting_health,
-                                    .killer = std::nullopt});
+      view.players.push_back(ViewOf(player.entity, player.identity, true, parameters.starting_health, std::nullopt));
     }
-    scripting::Value::Record view = MatchView(parameters.player_count, std::move(viewed));
-    view.push_back(NumberField("spawn_points", static_cast<double>(spawn_points)));
-    const auto answer = policy.Call(kAssignSpawns, view);
-    if (!answer) {
-      LOG_WARNING("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                  scripting::kRulesScriptPath, kAssignSpawns, tick, scripting::DescribeHookError(answer.error()));
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    if (std::holds_alternative<std::monostate>(answer->data)) {
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    std::vector<SessionId> sessions;
-    sessions.reserve(match_players.size());
-    for (const MatchPlayer& player : match_players) {
-      sessions.push_back(player.identity.session);
-    }
-    auto assignment = ReadSpawnAssignment(*answer, sessions, spawn_points);
+    auto assignment = policy.AssignSpawns(view, spawn_points);
     if (!assignment) {
-      LOG_WARNING("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                  scripting::kRulesScriptPath, kAssignSpawns, tick, DescribeSpawnRefusal(assignment.error()));
+      if (assignment.error().code == policy::UndecidedCode::kHookFailed) {
+        LOG_WARNING("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                    policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
+      } else {
+        LOG_WARNING("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+                    policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
+      }
       return InOrderSpawns(match_players.size(), spawn_points);
     }
-    return *std::move(assignment);
+    if (!assignment->has_value()) {
+      return InOrderSpawns(match_players.size(), spawn_points);
+    }
+    return **std::move(assignment);
   }
 
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
@@ -716,7 +638,7 @@ struct World::Impl {
   }
 };
 
-World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, scripting::Engine policy)
+World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy)
     : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy))) {}
 
 World::~World() = default;

@@ -1,4 +1,4 @@
-#include "augusta/policy_actions.h"
+#include "answers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,9 +11,10 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 
-namespace augusta::simulation {
+namespace augusta::policy {
 
 namespace {
 
@@ -126,4 +127,4 @@ std::expected<std::vector<std::size_t>, SpawnRefusal> ReadSpawnAssignment(const 
   return indices;
 }
 
-}  // namespace augusta::simulation
+}  // namespace augusta::policy

@@ -22,9 +22,9 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/prediction.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
@@ -372,9 +372,8 @@ std::string AnsweringRules(const std::vector<std::string>& answers) {
 // Requirements: US-14
 RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlwaysAPlayerAliveInIt, ()) {
   constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
-  const std::map<augusta::simulation::EntityId, augusta::simulation::SessionId> sessions = {
-      {kPlayer, static_cast<augusta::simulation::SessionId>(11)},
-      {kOther, static_cast<augusta::simulation::SessionId>(12)}};
+  const std::map<augusta::simulation::EntityId, augusta::policy::SessionId> sessions = {
+      {kPlayer, static_cast<augusta::policy::SessionId>(11)}, {kOther, static_cast<augusta::policy::SessionId>(12)}};
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   parameters.rifle.rounds_per_minute = 3600.0F;
@@ -390,7 +389,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
   const std::vector<std::string> answers =
       *rc::gen::container<std::vector<std::string>>(commands.size(), MatchEndAnswer());
   const std::size_t second_match = *rc::gen::inRange<std::size_t>(1, commands.size());
-  auto policy = augusta::scripting::Engine::Load(AnsweringRules(answers));
+  auto policy = augusta::policy::Policy::Load(AnsweringRules(answers));
   RC_ASSERT(policy.has_value());
 
   augusta::simulation::World world(parameters, kTickRate, *std::move(policy));
@@ -409,8 +408,8 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
     const auto result = world.Tick(
         {{.entity = kPlayer, .command = commands[i]}, {.entity = kOther, .command = other_commands[i]}}, kTick);
     died = died || !result.state.deaths.empty();
-    for (const augusta::simulation::PolicyAction& action : result.actions) {
-      const auto& end = std::get<augusta::simulation::MatchEnd>(action);
+    for (const augusta::policy::PolicyAction& action : result.actions) {
+      const auto& end = std::get<augusta::policy::MatchEnd>(action);
       RC_ASSERT(++match_ends == 1);
       if (const auto winner = end.winner) {
         ++winners;
