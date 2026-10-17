@@ -15,8 +15,10 @@ player's reenactment and the netcode statistics a run leaves.
 - The window, input devices, rendering, audio and PresentationWorld:
   `src/client` wires those around a Session.
 - Predicting a tick: prediction.
-- Converting what it sends and receives to and from the Networking Protocol's
-  messages, and splitting a tick's Commands into them: link.
+- The connection, and what it sends and receives as the Networking Protocol's
+  messages, with each one's reliability and the newest of a tick's Commands its
+  one message carries: link, which the harness speaks to alone, never the
+  protocol or networking (`tests/core_boundary.cmake`).
 - Reading a capture file: capture.
 - Python bindings for Agents: `tools/agent`.
 

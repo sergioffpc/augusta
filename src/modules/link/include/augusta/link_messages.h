@@ -22,7 +22,8 @@
 /// Encode, and what it receives, turned back right after Decode; and a Match
 /// capture's records (augusta/capture_records.h, ADR-0050), which the capture
 /// module reads and writes. The one place a protocol::*Wire type meets an
-/// engine type, for the client's harness, the server's Host and capture alike.
+/// engine type, for the Link's client end (augusta/link.h), the server's Host
+/// and capture alike.
 /// Stateless functions with no transport beneath: pure field-by-field copies,
 /// but for a tick's Commands, of which the tick's one message carries only the
 /// newest within the protocol's bound. Whether a value is one a peer accepts is decided
@@ -110,18 +111,20 @@ void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& 
 /// A Captured player's Reenact request: a join that names its spawn (ADR-0050).
 [[nodiscard]] JoinRequest FromWire(const protocol::ReenactRequestWire& request);
 
-/// The newest of a tick's commands, oldest first, that its one Commands
-/// message carries, as many as the protocol's bound lets: the rest are never
-/// sent, so a sender need keep no more than these.
-[[nodiscard]] std::span<const SequencedCommand> Carried(std::span<const SequencedCommand> commands);
-
 /// A tick's commands, oldest first, as the one message that carries them: the
-/// Carried ones alone. Its Seen tick is the newest of theirs.
+/// Carried ones (augusta/link_types.h) alone. Its Seen tick is the newest of theirs.
 [[nodiscard]] protocol::CommandsWire ToWire(std::span<const SequencedCommand> commands);
 
 /// The commands of one message, oldest first, each with its own Seen time's
 /// tick, never before tick 0.
 [[nodiscard]] std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message);
+
+[[nodiscard]] protocol::ReadyWire ToWire(const Ready& ready);
+[[nodiscard]] protocol::ReplayListRequestWire ToWire(ReplayListRequest request);
+
+/// message as what a server says to a client, or nullopt if it is one only a
+/// client sends.
+[[nodiscard]] std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& message);
 
 /// A capture's header, in this engine's format version.
 [[nodiscard]] protocol::CaptureHeaderWire ToWire(const capture::Header& header);

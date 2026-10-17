@@ -241,7 +241,8 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
     augusta::prediction::World world;
     EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
     sessions.push_back(std::make_unique<augusta::harness::Session>(
-        augusta::harness::SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, std::move(world)));
+        augusta::harness::SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
+        std::move(world)));
     sessions.back()->Connect();
   }
   const auto pump = [&] {
@@ -620,7 +621,8 @@ class ReplayViewerTest : public ReplayServerTest {
  protected:
   std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture) {
     auto viewer = std::make_unique<augusta::harness::Session>(
-        augusta::harness::SessionConfig{.server = server.ListenEndpoint(), .character = {}, .replay = capture},
+        augusta::harness::SessionConfig{
+            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture},
         augusta::prediction::World());
     viewer->Connect();
     return viewer;
@@ -711,7 +713,7 @@ TEST_F(ReplayViewerTest, AViewerOfACaptureTheServerDoesNotReplayIsRefusedForIt) 
 TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
-      augusta::harness::SessionConfig{.server = server->ListenEndpoint(), .character = kCharacter},
+      augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address}, .character = kCharacter},
       augusta::prediction::World());
   player.Connect();
 
@@ -725,8 +727,9 @@ TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequest
 TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
-      augusta::harness::SessionConfig{
-          .server = server->ListenEndpoint(), .character = kCharacter, .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
+      augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address},
+                                      .character = kCharacter,
+                                      .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
       augusta::prediction::World());
   player.Connect();
 
@@ -741,7 +744,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   const std::string name = CaptureAKill(directory_.Path());
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
-  augusta::harness::ReplayListQuery query(server->ListenEndpoint());
+  augusta::harness::ReplayListQuery query({.address = server->ListenEndpoint().address});
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (!query.List().has_value() && !query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -764,7 +767,7 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
     gone = server.LocalEndpoint();
   }
   augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
-  augusta::harness::ReplayListQuery query(gone);
+  augusta::harness::ReplayListQuery query({.address = gone.address});
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (!query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -860,7 +863,7 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
                        .capture_directory = {},
                        .faults = nullptr},
             TwoInALine());
-  augusta::harness::ReplayListQuery query(host.ListenEndpoint());
+  augusta::harness::ReplayListQuery query({.address = host.ListenEndpoint().address});
   RawClient viewer(host.ListenEndpoint());
   viewer.Send(RequestFor("a.capture"));
 

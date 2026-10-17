@@ -36,7 +36,7 @@ augusta_set_module_scope(augustac_frame_mapping CLIENT_ONLY)
 # CMakeLists.txt) is header-only.
 add_library(augustac_net_stats STATIC net_stats.cpp)
 target_include_directories(augustac_net_stats PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augustac_net_stats PUBLIC augusta_hud augusta_networking nvtx3-cpp)
+target_link_libraries(augustac_net_stats PUBLIC augusta_hud augusta_link nvtx3-cpp)
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max in net_stats.cpp.
 target_compile_definitions(augustac_net_stats PRIVATE NOMINMAX)
@@ -73,6 +73,7 @@ target_link_libraries(
     augusta_harness
     augusta_hud
     augusta_input
+    # main.cpp's networking::Init, once per process, until the Link offers it.
     augusta_networking
     augusta_renderer
     augusta_window

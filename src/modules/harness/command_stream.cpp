@@ -7,7 +7,6 @@
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/link_messages.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/prediction.h"

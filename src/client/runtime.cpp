@@ -26,11 +26,11 @@
 #include "augusta/hud.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
+#include "augusta/link.h"
 #include "augusta/local_view.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/presentation.h"
@@ -144,7 +144,7 @@ struct ClientRuntime::Impl {
   }
 
   void SampleNetworkStats() {
-    const std::optional<networking::ConnectionStats> stats = session->GetConnectionStats();
+    const std::optional<link::ConnectionStats> stats = session->GetConnectionStats();
     if (const std::optional<std::uint8_t> rate = session->GetTickRate(); stats.has_value() && rate.has_value()) {
       round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, *rate));
     }

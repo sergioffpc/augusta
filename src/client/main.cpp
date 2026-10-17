@@ -82,7 +82,7 @@ augusta::application::Outcome ListReplays(const augusta::config::ClientConfig& f
   if (auto initialized = augusta::networking::Init(); !initialized) {
     return std::move(initialized.error());
   }
-  augusta::harness::ReplayListQuery query(augusta::networking::Endpoint{.address = file_config.server_address});
+  augusta::harness::ReplayListQuery query(augusta::link::Endpoint{.address = file_config.server_address});
   const auto deadline = std::chrono::steady_clock::now() + kReplayListPatience;
   while (!query.List().has_value() && !query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
     query.Pump();

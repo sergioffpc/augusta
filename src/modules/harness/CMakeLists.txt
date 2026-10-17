@@ -19,14 +19,14 @@ target_link_libraries(
     augusta_assets
     augusta_gameplay
     augusta_math
-    augusta_networking
     augusta_prediction
     augusta_failure
     augusta_physics
-    augusta_protocol
     augusta_capture
     augusta_supervisor
-    augusta_link_messages
+    # The Link alone: it owns the transport and the protocol beneath, which the
+    # harness never links (ADR-0038, tests/core_boundary.cmake).
+    augusta_link
     augusta_version
   # nvtx3-cpp: runner.cpp names the Prediction and Network I/O loops for Nsight Systems.
   # augusta_input: intent.cpp aims within the pitch a player may look at.

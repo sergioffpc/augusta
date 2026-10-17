@@ -90,9 +90,9 @@ using augusta::harness::Session;
 using augusta::harness::SessionConfig;
 using augusta::harness::SessionId;
 using augusta::harness::Shot;
+using augusta::link::ConnectionState;
 using augusta::math::Length;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
@@ -167,7 +167,7 @@ HostConfig TestHostConfig(const Parameters& parameters = kTestParameters, std::u
 
 // A client of the server at server playing character.
 SessionConfig TestSessionConfig(const Endpoint& server, const std::string& character = kCharacter) {
-  return SessionConfig{.server = server, .character = character};
+  return SessionConfig{.server = {.address = server.address}, .character = character};
 }
 
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
@@ -222,7 +222,7 @@ class RawClient {
 
   // Runs host and client until the connection is up.
   bool Connect(Host& host) {
-    return ServeUntil(host, [&] { return client_.GetState() == ConnectionState::kConnected; });
+    return ServeUntil(host, [&] { return client_.GetState() == augusta::networking::ConnectionState::kConnected; });
   }
 
   // Runs host and client until the server has admitted this one to the Lobby.
@@ -234,7 +234,8 @@ class RawClient {
   // if cooperative, asks to join once connected.
   void Serve() {
     client_.PumpEvents();
-    if (mode_ == Mode::kCooperative && !requested_ && client_.GetState() == ConnectionState::kConnected) {
+    if (mode_ == Mode::kCooperative && !requested_ &&
+        client_.GetState() == augusta::networking::ConnectionState::kConnected) {
       Send(HonestJoinRequest());
       requested_ = true;
     }
@@ -243,7 +244,18 @@ class RawClient {
 
   [[nodiscard]] bool InMatch() const { return !ReceivedOf<augusta::protocol::MatchStartWire>().empty(); }
 
-  [[nodiscard]] ConnectionState GetConnectionState() const { return client_.GetState(); }
+  // Its connection as the Link names a Session's, so the two compare.
+  [[nodiscard]] ConnectionState GetConnectionState() const {
+    switch (client_.GetState()) {
+      case augusta::networking::ConnectionState::kConnecting:
+        return ConnectionState::kConnecting;
+      case augusta::networking::ConnectionState::kConnected:
+        return ConnectionState::kConnected;
+      case augusta::networking::ConnectionState::kDisconnected:
+        return ConnectionState::kDisconnected;
+    }
+    return ConnectionState::kDisconnected;
+  }
 
   // The session the server admitted this client as, if it has.
   [[nodiscard]] std::optional<SessionIdWire> GetSessionId() const {
@@ -499,7 +511,7 @@ class JoinTest : public ::testing::Test {
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
                      const augusta::assets::PackHash& client_pack = ClientPack(1)) {
-    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = host_.ListenEndpoint(),
+    sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
                                                                 .character = character},
@@ -628,7 +640,7 @@ TEST_F(JoinTest, ARefusedClientReportsTheRefusalAsItsFailure) {
 
 // Requirements: US-21
 TEST_F(JoinTest, AClientThatAsksForItsSpawnIsRefusedByAServerThatTakesNoReenactments) {
-  sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = host_.ListenEndpoint(),
+  sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                                               .client_pack = ClientPack(1),
                                                               .character = kCharacter,
                                                               .spawn = Vec3(1.0F, 0.0F, 1.0F)},
@@ -2195,9 +2207,10 @@ class ReenactmentHostTest : public ::testing::Test {
     std::vector<std::unique_ptr<Reenactment>> runs;
     for (const augusta::capture::Player player : {augusta::capture::Player{2}, augusta::capture::Player{1}}) {
       Script script = ReadPlayer(playtest_, player);
-      sessions.push_back(std::make_unique<Session>(
-          SessionConfig{.server = host->ListenEndpoint(), .character = script.character, .spawn = script.spawn},
-          WorldWithFloorAt(kFloorY)));
+      sessions.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host->ListenEndpoint().address},
+                                                                 .character = script.character,
+                                                                 .spawn = script.spawn},
+                                                   WorldWithFloorAt(kFloorY)));
       sessions.back()->Connect();
       runs.push_back(std::make_unique<Reenactment>(std::move(script)));
     }
@@ -2291,7 +2304,8 @@ TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWher
   const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
   std::vector<std::unique_ptr<Session>> sessions;
   sessions.push_back(std::make_unique<Session>(
-      SessionConfig{.server = host->ListenEndpoint(), .character = kCharacter, .spawn = Vec3(7, kFloorY, 7)},
+      SessionConfig{
+          .server = {.address = host->ListenEndpoint().address}, .character = kCharacter, .spawn = Vec3(7, kFloorY, 7)},
       WorldWithFloorAt(kFloorY)));
   sessions.push_back(std::make_unique<Session>(TestSessionConfig(host->ListenEndpoint()), WorldWithFloorAt(kFloorY)));
   for (const auto& session : sessions) {

@@ -588,6 +588,18 @@ target_link_libraries(augusta_link_messages_tests PRIVATE augusta_link_messages 
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30)
 
+# What the Link decides about the transport beneath it is in headers private to
+# the link module, tested apart from a live connection through a private
+# include path, as networking's send flags are.
+add_executable(augusta_link_transport_tests link_transport_test.cpp)
+target_include_directories(augusta_link_transport_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
+target_link_libraries(
+  augusta_link_transport_tests
+  PRIVATE augusta_link augusta_networking GTest::gtest GTest::gtest_main
+)
+# Links networking and PhysX, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_tick_messages_tests tick_messages_test.cpp)
 target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
 # Links networking and PhysX through augusta_host, so the same first-launch cost applies as above.

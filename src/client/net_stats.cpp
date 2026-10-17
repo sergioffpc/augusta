@@ -5,11 +5,11 @@
 #include <optional>
 
 #include "augusta/hud.h"
-#include "augusta/networking.h"
+#include "augusta/link.h"
 
 namespace augusta::client {
 
-std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats) {
+std::optional<float> PacketLossPercent(const link::ConnectionStats& stats) {
   std::optional<float> worst_quality;
   for (const float quality : {stats.quality_local, stats.quality_remote}) {
     if (quality >= 0.0F) {
@@ -22,7 +22,7 @@ std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats)
   return (1.0F - std::min(*worst_quality, 1.0F)) * 100.0F;
 }
 
-std::optional<hud::NetStats> HudNetStats::Update(const std::optional<networking::ConnectionStats>& stats,
+std::optional<hud::NetStats> HudNetStats::Update(const std::optional<link::ConnectionStats>& stats,
                                                  std::chrono::steady_clock::time_point now) {
   if (!stats.has_value()) {
     jitter_window_start_.reset();
@@ -49,7 +49,7 @@ std::optional<hud::NetStats> HudNetStats::Update(const std::optional<networking:
                        .out_bytes_per_sec = stats->out_bytes_per_sec};
 }
 
-void NetStatsCounters::Sample(const std::optional<networking::ConnectionStats>& stats) {
+void NetStatsCounters::Sample(const std::optional<link::ConnectionStats>& stats) {
   if (!stats.has_value()) {
     ping_ms_.sample_no_value(nvtx3::no_value_reason::unavailable);
     quality_local_.sample_no_value(nvtx3::no_value_reason::unavailable);

@@ -28,6 +28,7 @@
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/netcode_stats.h"
@@ -76,8 +77,8 @@ using augusta::harness::Reload;
 using augusta::harness::RosterEntry;
 using augusta::harness::Shot;
 using augusta::harness::TriggerIntent;
+using augusta::link::ConnectionStats;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionStats;
 using augusta::networking::SimulatedConditions;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;

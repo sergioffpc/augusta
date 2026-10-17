@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -624,6 +625,47 @@ std::vector<SequencedCommand> FromWire(const protocol::CommandsWire& message) {
         SequencedCommand{.sequence = command.sequence, .command = FromWire(command.command, message.seen_tick)});
   }
   return commands;
+}
+
+protocol::ReadyWire ToWire(const Ready& ready) { return protocol::ReadyWire{.version = ready.version}; }
+
+protocol::ReplayListRequestWire ToWire(ReplayListRequest /*request*/) { return protocol::ReplayListRequestWire{}; }
+
+std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& message) {
+  if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
+    return FromWire(*accepted);
+  }
+  if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
+    return FromWire(refused->reason);
+  }
+  if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
+    return FromWire(*state);
+  }
+  if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
+    return FromWire(*shot);
+  }
+  if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
+    return FromWire(*hit);
+  }
+  if (const auto* death = std::get_if<protocol::DeathWire>(&message)) {
+    return FromWire(*death);
+  }
+  if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
+    return FromWire(*lobby);
+  }
+  if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
+    return FromWire(*start);
+  }
+  if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
+    return FromWire(*end);
+  }
+  if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
+    return FromWire(*view);
+  }
+  if (const auto* list = std::get_if<protocol::ReplayListWire>(&message)) {
+    return FromWire(*list);
+  }
+  return std::nullopt;
 }
 
 }  // namespace augusta::link

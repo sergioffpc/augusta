@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/networking.h"
+#include "augusta/link.h"
 #include "net_stats.h"
 
 // Unit tests for what the debug HUD shows of the connection. Links no GPU or
@@ -12,7 +12,7 @@ namespace {
 
 using augusta::client::HudNetStats;
 using augusta::client::PacketLossPercent;
-using augusta::networking::ConnectionStats;
+using augusta::link::ConnectionStats;
 using std::chrono::milliseconds;
 
 constexpr float kTolerance = 1e-4F;

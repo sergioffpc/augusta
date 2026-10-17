@@ -121,7 +121,8 @@ class RunnerTest : public ::testing::Test {
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(SessionConfig{.server = host_.ListenEndpoint(), .character = kCharacter}, WorldWithFloor()) {}
+        session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address}, .character = kCharacter},
+                 WorldWithFloor()) {}
 
   // Runs the host at the tick rate - its network work, then a Tick - and has
   // the session report Ready for every Roster it is sent, as a client that has
@@ -324,7 +325,7 @@ TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAre
 // sent, in any build: the Network I/O thread stops on a broken invariant
 // (ADR-0033) instead, and the server admits no one.
 TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvariantFailureOfTheNetworkThread) {
-  Session session(SessionConfig{.server = host_.ListenEndpoint(),
+  Session session(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},
                   WorldWithFloor());
   const Runner runner(

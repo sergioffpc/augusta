@@ -8,7 +8,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/hud.h"
-#include "augusta/networking.h"
+#include "augusta/link.h"
 
 /// \file
 /// What the client makes of its connection's numbers, sampled once per Network
@@ -19,7 +19,7 @@ namespace augusta::client {
 /// Packet loss in percent, from the worse of the two directions; nullopt while
 /// neither is measured. Qualities are 0..1 (1 = no loss); negative means not
 /// measured yet.
-[[nodiscard]] std::optional<float> PacketLossPercent(const networking::ConnectionStats& stats);
+[[nodiscard]] std::optional<float> PacketLossPercent(const link::ConnectionStats& stats);
 
 /// Turns the connection's numbers into the debug HUD's. ConnectionStats reports
 /// jitter as a high-water mark cleared by every read, and the Network I/O thread
@@ -31,7 +31,7 @@ class HudNetStats {
 
   /// What the HUD shows after stats, sampled at now; nullopt while there is no
   /// connection to measure, which also starts the jitter window over.
-  [[nodiscard]] std::optional<hud::NetStats> Update(const std::optional<networking::ConnectionStats>& stats,
+  [[nodiscard]] std::optional<hud::NetStats> Update(const std::optional<link::ConnectionStats>& stats,
                                                     std::chrono::steady_clock::time_point now);
 
  private:
@@ -43,14 +43,14 @@ class HudNetStats {
 };
 
 /// NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
-/// networking::ConnectionStats field-for-field - plotted on the Nsight Systems
+/// link::ConnectionStats field-for-field - plotted on the Nsight Systems
 /// timeline alongside the Simulation/Network/Render ranges. A sample without
 /// stats (not yet kConnected) is recorded as having no value rather than skipped,
 /// so the timeline shows an explicit gap rather than a misleading flat line at
 /// whatever value came before.
 class NetStatsCounters {
  public:
-  void Sample(const std::optional<networking::ConnectionStats>& stats);
+  void Sample(const std::optional<link::ConnectionStats>& stats);
 
  private:
   nvtx3::counter<double> ping_ms_{"network.ping_ms", "Round-trip time to server"};

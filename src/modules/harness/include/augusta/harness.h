@@ -14,9 +14,9 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
@@ -37,8 +37,8 @@
 /// (Tick), and hands in the input for that tick. The two are meant for two
 /// different threads, as in Runner: Connect, Disconnect, PumpEvents,
 /// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
-/// I/O thread, and Tick from the Prediction thread (the transport is safe to
-/// send from both). A failure of the local transport inside any of them is kept
+/// I/O thread, and Tick from the Prediction thread (the Link is safe to send
+/// from both). A failure of the local transport inside any of them is kept
 /// for the caller to take (Session::TakeTransportFailure) and stop on, and the
 /// Session sends nothing more after it, or after a broken invariant; the
 /// server ending the connection is the Session's own Failure instead.
@@ -155,7 +155,7 @@ struct ServerView {
 /// What a Session needs to connect.
 struct SessionConfig {
   /// The dedicated server to connect to (US-01).
-  networking::Endpoint server{};
+  link::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
   std::string engine_version = std::string(EngineVersion());
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
@@ -164,7 +164,7 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
-  /// For a test: asked at every send and receive (networking.h), so the
+  /// For a test: asked at every send and receive (link.h), so the
   /// transport fails there; null otherwise. Must outlive the Session.
   failure::Faults* faults = nullptr;
   /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
@@ -213,7 +213,7 @@ class Session {
   [[nodiscard]] std::shared_ptr<const ServerView> GetServerView() const;
 
   /// Whether the connection is still connecting, connected or disconnected.
-  [[nodiscard]] networking::ConnectionState GetConnectionState() const;
+  [[nodiscard]] link::ConnectionState GetConnectionState() const;
 
   /// Why this session has ended on its own, or nullopt while it has not: before
   /// Connect, while connecting or connected, and after Disconnect (which the
@@ -241,7 +241,7 @@ class Session {
   [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// The connection's quality numbers, or nullopt if not connected.
-  [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
+  [[nodiscard]] std::optional<link::ConnectionStats> GetConnectionStats() const;
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
@@ -373,7 +373,7 @@ class Session {
 class ReplayListQuery {
  public:
   /// Begins connecting to server; returns immediately. faults, for a test, as SessionConfig::faults.
-  explicit ReplayListQuery(const networking::Endpoint& server, failure::Faults* faults = nullptr);
+  explicit ReplayListQuery(const link::Endpoint& server, failure::Faults* faults = nullptr);
   ~ReplayListQuery();
 
   ReplayListQuery(const ReplayListQuery&) = delete;

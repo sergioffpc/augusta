@@ -16,9 +16,9 @@
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
+#include "augusta/link.h"
 #include "augusta/map.h"
 #include "augusta/netcode_stats.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/runner.h"
 #include "report.h"
@@ -63,7 +63,7 @@ struct AgentStats {
   harness::NetcodeStats netcode;
   /// As of its last round of network work while connected; nullopt before it
   /// first connected. Its max_jitter_us is that round's.
-  std::optional<networking::ConnectionStats> connection;
+  std::optional<link::ConnectionStats> connection;
 };
 
 /// When an Agent reports Ready.
@@ -147,7 +147,7 @@ class Agent {
   // Added to on the Prediction and Network I/O threads, read by Stats on any.
   mutable std::mutex stats_mutex_;
   harness::NetcodeTally tally_;
-  std::optional<networking::ConnectionStats> connection_;
+  std::optional<link::ConnectionStats> connection_;
   std::atomic<std::uint64_t> next_intent_{0};
   std::atomic<bool> failure_reported_{false};
   // The Network I/O thread's only.

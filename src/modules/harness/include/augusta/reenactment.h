@@ -90,7 +90,7 @@ struct ScriptError {
 /// reach it, round_trip_ticks plus one after that State.
 [[nodiscard]] tick::Tick DueTick(tick::Tick newest_tick, std::uint64_t ahead, tick::Tick round_trip_ticks);
 
-/// A round trip of ping_ms (networking::ConnectionStats) in whole ticks at
+/// A round trip of ping_ms (link::ConnectionStats) in whole ticks at
 /// tick_rate_hz, rounded up; 0 for none measured yet.
 [[nodiscard]] tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz);
 

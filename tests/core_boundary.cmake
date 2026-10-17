@@ -14,6 +14,11 @@
 # again (the commands-per-message bound is the protocol's own), with a value of
 # its own or as an alias.
 #
+# Keeps the harness on the Link alone (ADR-0038): no harness source may include
+# the protocol's, networking's or the Link's conversions' header or name the
+# protocol or networking, and its CMakeLists.txt may link none of their
+# targets, so every message it exchanges goes through augusta/link.h.
+#
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P core_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
   message(FATAL_ERROR "core_boundary.cmake: pass -DSOURCE_DIR=<repo root>")
@@ -117,6 +122,39 @@ foreach(source ${sources})
   endforeach()
 endforeach()
 
+# The harness's sources, and what its CMakeLists.txt links.
+file(GLOB_RECURSE harness_sources "${SOURCE_DIR}/src/modules/harness/*.h" "${SOURCE_DIR}/src/modules/harness/*.cpp")
+if(NOT harness_sources)
+  message(FATAL_ERROR "core_boundary.cmake: no harness sources found under ${SOURCE_DIR}")
+endif()
+list(LENGTH harness_sources harness_count)
+set(beneath_the_link "(^|[^A-Za-z0-9_])(protocol|networking)::|augusta/(protocol|networking|link_messages)\\.h")
+set(harness_violations "")
+foreach(source ${harness_sources})
+  file(STRINGS "${source}" lines REGEX "${beneath_the_link}")
+  foreach(line ${lines})
+    string(STRIP "${line}" line)
+    # A comment may name what lies beneath the Link; only code depends on it.
+    if(line MATCHES "^//")
+      continue()
+    endif()
+    file(RELATIVE_PATH relative "${SOURCE_DIR}" "${source}")
+    list(APPEND harness_violations "  ${relative}: ${line}")
+  endforeach()
+endforeach()
+file(
+  STRINGS "${SOURCE_DIR}/src/modules/harness/CMakeLists.txt"
+  lines
+  REGEX "(^|[^A-Za-z0-9_])augusta_(protocol|networking|link_messages)([^A-Za-z0-9_]|$)"
+)
+foreach(line ${lines})
+  string(STRIP "${line}" line)
+  if(line MATCHES "^#")
+    continue()
+  endif()
+  list(APPEND harness_violations "  src/modules/harness/CMakeLists.txt: ${line}")
+endforeach()
+
 set(report "")
 if(violations)
   list(JOIN violations "\n" core_report)
@@ -139,6 +177,13 @@ if(definition_violations)
     "A counter or bound tick, limits or the protocol owns is defined again - take it from augusta/tick.h, augusta/limits.h or augusta/protocol.h instead:\n${definition_report}\n"
   )
 endif()
+if(harness_violations)
+  list(JOIN harness_violations "\n" harness_report)
+  string(
+    APPEND report
+    "The harness reaches beneath the Link - send and receive through augusta/link.h instead:\n${harness_report}\n"
+  )
+endif()
 if(report)
   string(STRIP "${report}" report)
   message(FATAL_ERROR "${report}")
@@ -146,5 +191,5 @@ endif()
 list(LENGTH headers count)
 message(
   STATUS
-  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else"
+  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness sources on the Link alone"
 )

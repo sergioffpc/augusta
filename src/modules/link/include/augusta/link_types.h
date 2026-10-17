@@ -4,7 +4,9 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -242,6 +244,27 @@ struct SequencedCommand {
   tick::Sequence sequence = 0;
   command::Command command{};
 };
+
+/// The newest of a tick's commands, oldest first, that its one Commands
+/// message carries, as many as the protocol's bound lets: the rest are never
+/// sent, so a sender need keep no more than these.
+[[nodiscard]] std::span<const SequencedCommand> Carried(std::span<const SequencedCommand> commands);
+
+/// A client has loaded what it needs to draw everyone in the Roster of version
+/// (ADR-0043).
+struct Ready {
+  std::uint32_t version = 0;
+};
+
+/// A client asks a replay server which captures it replays (ADR-0051); it
+/// says nothing more.
+struct ReplayListRequest {};
+
+/// What a server sends a client: Join accepted (an Admission), Join refused
+/// (its reason), and the rest each as what it says; a Replay list as the
+/// captures it names.
+using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, MatchEnd, AuthoritativeState, Shot,
+                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>>;
 
 /// The Networking Protocol's message types (ADR-0038), in the engine's terms:
 /// what a payload is, for whoever counts what it sends and receives.

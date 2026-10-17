@@ -615,4 +615,25 @@ TEST(LinkMessagesTest, AnEncodedMessageIsOfTheTypeItsFirstByteSays) {
             augusta::link::MessageType::kShot);
 }
 
+TEST(LinkMessagesTest, AReadyTheClientSendsReachesTheServerWithItsVersion) {
+  EXPECT_EQ(ToWire(augusta::link::Ready{.version = 7}), augusta::protocol::ReadyWire{.version = 7});
+}
+
+// What a client takes in is what a server says, each as the engine's type of it.
+TEST(LinkMessagesTest, AServerMessageReachesTheClientAsWhatItSays) {
+  const auto refused = augusta::link::ServerMessageFromWire(
+      augusta::protocol::JoinRefusedWire{.reason = ToWire(augusta::link::JoinRefusal::kLobbyFull)});
+  ASSERT_TRUE(refused.has_value());
+  EXPECT_EQ(std::get<augusta::link::JoinRefusal>(*refused), augusta::link::JoinRefusal::kLobbyFull);
+
+  const auto list = augusta::link::ServerMessageFromWire(augusta::protocol::ReplayListWire{});
+  ASSERT_TRUE(list.has_value());
+  EXPECT_TRUE(std::get<std::vector<augusta::link::ReplayListing>>(*list).empty());
+}
+
+TEST(LinkMessagesTest, AMessageOnlyAClientSendsIsNoServerMessage) {
+  EXPECT_FALSE(augusta::link::ServerMessageFromWire(augusta::protocol::ReadyWire{.version = 1}).has_value());
+  EXPECT_FALSE(augusta::link::ServerMessageFromWire(augusta::protocol::ReplayListRequestWire{}).has_value());
+}
+
 }  // namespace

@@ -51,7 +51,6 @@ using augusta::host::Host;
 using augusta::host::HostConfig;
 using augusta::host::PeerRejection;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionState;
 using augusta::networking::Endpoint;
 using augusta::networking::Payload;
 using augusta::networking::PeerId;
@@ -136,7 +135,9 @@ class TransportFailureTest : public ::testing::Test {
  protected:
   TransportFailureTest()
       : host_(HostConfigWith(&host_faults_), TestScenario()),
-        session_(SessionConfig{.server = host_.ListenEndpoint(), .character = kCharacter, .faults = &session_faults_},
+        session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
+                               .character = kCharacter,
+                               .faults = &session_faults_},
                  WorldWithFloor()) {}
 
   // One round of both sides' network work.
@@ -310,7 +311,8 @@ TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
 
 TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRuntimeFailure) {
   session_.Connect();
-  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetConnectionState() == ConnectionState::kConnected; }));
+  ASSERT_TRUE(
+      ExchangeUntil([&] { return session_.GetConnectionState() == augusta::link::ConnectionState::kConnected; }));
   session_faults_.Arm(Site::kTransportReceive, "connection handle gone");
 
   session_.ExchangeMessages();
@@ -413,7 +415,8 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
   HostConfig config = HostConfigWith(nullptr);
   config.parameters.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
   Host host(config, TestScenario());
-  Session session(SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, WorldWithFloor());
+  Session session(SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
+                  WorldWithFloor());
   const auto exchange = [&] {
     host.PumpNetwork(std::chrono::steady_clock::now());
     session.PumpEvents();

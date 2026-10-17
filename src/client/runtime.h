@@ -8,7 +8,7 @@
 #include "augusta/assets.h"
 #include "augusta/failure.h"
 #include "augusta/input.h"
-#include "augusta/networking.h"
+#include "augusta/link.h"
 #include "augusta/reenactment.h"
 #include "augusta/renderer.h"
 #include "content.h"
@@ -35,7 +35,7 @@ struct RuntimeConfig {
   renderer::Config renderer;
   input::Config input;
   /// The dedicated server to connect to (US-01).
-  networking::Endpoint server;
+  link::Endpoint server;
   /// The character to ask to play, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   /// The hash of the client pack loaded, which the server checks is the one
