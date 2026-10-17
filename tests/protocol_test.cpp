@@ -21,6 +21,20 @@
 #include "augusta/math.h"
 #include "augusta/primitives.h"
 
+// ThreadSanitizer's runtime defines operator new and delete itself, so a build
+// under it cannot replace them: there the allocation count is not kept and the
+// test reading it is skipped.
+#if defined(__SANITIZE_THREAD__)
+#define AUGUSTA_COUNTS_ALLOCATIONS 0
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define AUGUSTA_COUNTS_ALLOCATIONS 0
+#endif
+#endif
+#ifndef AUGUSTA_COUNTS_ALLOCATIONS
+#define AUGUSTA_COUNTS_ALLOCATIONS 1
+#endif
+
 // Every byte operator new has handed out in this binary. Decode gives back no
 // message when it refuses one, so this is the only way to see what it
 // allocated on the way.
@@ -28,6 +42,7 @@ namespace {
 std::size_t bytes_allocated = 0;
 }  // namespace
 
+#if AUGUSTA_COUNTS_ALLOCATIONS
 void* operator new(std::size_t size) {
   bytes_allocated += size;
   if (void* block = std::malloc(size == 0 ? 1 : size)) {
@@ -39,6 +54,7 @@ void* operator new(std::size_t size) {
 void operator delete(void* block) noexcept { std::free(block); }
 
 void operator delete(void* block, std::size_t /*size*/) noexcept { std::free(block); }
+#endif
 
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
@@ -736,6 +752,9 @@ std::size_t BytesDecodeAllocates(const BytesWire& payload) {
 // 255 listings allocate no more than two claiming one.
 // Requirements: NFR-12
 TEST(ProtocolTest, AListCountingPastTheEndOfThePayloadIsTruncatedWithoutAllocatingForIt) {
+  if (!AUGUSTA_COUNTS_ALLOCATIONS) {
+    GTEST_SKIP() << "operator new is ThreadSanitizer's in this build, so allocations are not counted";
+  }
   const BytesWire claims_one = BytesOf({kReplayListType, 1});
   const BytesWire claims_most =
       BytesOf({kReplayListType, static_cast<std::uint8_t>(augusta::protocol::kMaxReplayListings)});
