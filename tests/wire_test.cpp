@@ -116,7 +116,7 @@ TEST(WireTest, ACommandTheClientSendsReachesTheServerUnchanged) {
 TEST(WireTest, EachCommandOfAMessageReachesTheServerWithTheSeenTimeItWasSampledOn) {
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    sent[i].sequence = static_cast<augusta::command::Sequence>(40 + i);
+    sent[i].sequence = static_cast<augusta::tick::Sequence>(40 + i);
     sent[i].command.seen_tick = 70000 + (2 * i);
     sent[i].command.seen_fraction = 0.25F * static_cast<float>(i);
   }
@@ -137,7 +137,7 @@ TEST(WireTest, SeenTimesEitherSideOfThirtyTwoBitsReachTheServerAsTheyWereSampled
   constexpr augusta::tick::Tick kLastOf32Bits = std::numeric_limits<std::uint32_t>::max();
   std::vector<augusta::harness::SequencedCommand> sent(4);
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    sent[i].sequence = static_cast<augusta::command::Sequence>(1 + i);
+    sent[i].sequence = static_cast<augusta::tick::Sequence>(1 + i);
     sent[i].command.seen_tick = kLastOf32Bits - 1 + i;
   }
 
@@ -403,7 +403,7 @@ TEST(WireTest, EveryRefusalTheServerSendsReachesTheClientAsTheSameReason) {
 TEST(WireTest, TheCommandsTheClientSendsReachTheServerInOrder) {
   std::vector<augusta::harness::SequencedCommand> sent(3);
   for (std::size_t i = 0; i < sent.size(); ++i) {
-    sent[i].sequence = static_cast<augusta::command::Sequence>(4 + i);
+    sent[i].sequence = static_cast<augusta::tick::Sequence>(4 + i);
     sent[i].command.yaw = 0.25F * static_cast<float>(i);
   }
 

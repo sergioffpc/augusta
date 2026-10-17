@@ -335,7 +335,7 @@ Script ThreePlayerScript() {
 // A view of the first Match, its players at the Script's spawns with
 // sessions 11, 12 and 13 and bodies 21, 22 and 23, its newest State of tick
 // (none if nullopt) acknowledging acknowledged.
-ServerView InMatch(std::optional<Tick> tick, augusta::command::Sequence acknowledged = 0) {
+ServerView InMatch(std::optional<Tick> tick, augusta::tick::Sequence acknowledged = 0) {
   ServerView view;
   view.matches_started = 1;
   view.in_match = true;
@@ -412,7 +412,7 @@ TEST(ReenactmentTest, ItLeavesOnlyOnceEveryCommandBeforeItsLeaveHasReachedTheWor
   script.commands = AtOffsets({37, 38, 39});
   Reenactment run(script);
   // Sequences 1 to 3 go for offsets 37 to 39, the last before the Leave at 40.
-  for (augusta::command::Sequence sequence = 1; sequence <= 3; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= 3; ++sequence) {
     ASSERT_TRUE(run.NextCommand(InMatch(kFirstTick + 35 + sequence, sequence - 1), sequence, 0).has_value());
   }
   ASSERT_FALSE(run.NextCommand(InMatch(kFirstTick + 39, 2), 4, 0).has_value());
@@ -544,7 +544,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
   struct State {
     int arrives = 0;
     Tick tick = 0;
-    augusta::command::Sequence acknowledged = 0;
+    augusta::tick::Sequence acknowledged = 0;
   };
   Reenactment run(script);
   augusta::host::CommandQueue queue(kTickRate);
@@ -554,7 +554,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
   std::optional<State> newest;
   std::optional<int> disconnect_arrives;
   bool connected = true;
-  augusta::command::Sequence next_sequence = 1;
+  augusta::tick::Sequence next_sequence = 1;
   const int latency = one_way * server_period;
   const Tick round_trip = 2 * static_cast<Tick>(one_way);
   for (int now = 0; now <= server_ticks * server_period; ++now) {

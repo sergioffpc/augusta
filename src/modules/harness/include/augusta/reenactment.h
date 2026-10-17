@@ -203,7 +203,7 @@ class Reenactment {
   /// pacing has none to send. Outside it, an idle Command, which a Session
   /// outside a match does not send. Only the first Match is reenacted: the
   /// run ends with it.
-  [[nodiscard]] std::optional<command::Command> NextCommand(const ServerView& view, command::Sequence next_sequence,
+  [[nodiscard]] std::optional<command::Command> NextCommand(const ServerView& view, tick::Sequence next_sequence,
                                                             tick::Tick round_trip_ticks);
 
   /// Whether, as of view, the run plays on, leaves at its captured Leave, or
@@ -230,7 +230,7 @@ class Reenactment {
   std::uint64_t sent_in_match_ = 0;
   // Written on the Prediction thread, read by Check: the sequence of the last
   // Command sent, 0 for none, and whether the pacing is done before the Leave.
-  std::atomic<command::Sequence> last_sent_{0};
+  std::atomic<tick::Sequence> last_sent_{0};
   std::atomic<bool> done_before_leave_{false};
 };
 

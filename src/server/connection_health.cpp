@@ -20,10 +20,10 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/connection_sample.h"
+#include "augusta/limits.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/networking.h"
-#include "augusta/primitives.h"
 
 namespace augusta::server {
 namespace {
@@ -42,7 +42,7 @@ constexpr std::array kQualityBuckets{0.5, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995, 0.9
 constexpr std::array kJitterBucketsSeconds{0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2};
 
 // No more Sessions than the Lobby holds are live at once.
-constexpr std::size_t kSlotCount = primitives::kMaxPlayers;
+constexpr std::size_t kSlotCount = limits::kMaxPlayers;
 
 // Decision: what the transport has measured, in base units. Quality and jitter
 // read negative until it has (networking::ConnectionStats); nullopt then.

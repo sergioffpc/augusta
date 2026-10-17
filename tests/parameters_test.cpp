@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/primitives.h"
+#include "augusta/limits.h"
 
 // The decisions about Parameters that the server and every client share (ADR-0039)
 // are pure: values in, a verdict out.
@@ -39,7 +39,7 @@ TEST(ValidateTest, EachValueOutsideItsRangeIsNamedByItsPath) {
 
 // Requirements: US-22
 TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
-  for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{augusta::primitives::kMaxPlayers}}) {
+  for (const std::uint8_t count : {std::uint8_t{1}, std::uint8_t{augusta::limits::kMaxPlayers}}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 
@@ -49,8 +49,8 @@ TEST(ValidateTest, APlayerCountFromOneToTheMostAMatchHoldsPasses) {
 
 // Requirements: US-22
 TEST(ValidateTest, APlayerCountOfZeroOrAboveTheMostAMatchHoldsIsNamed) {
-  for (const std::uint8_t count : {std::uint8_t{0}, std::uint8_t{augusta::primitives::kMaxPlayers + 1},
-                                   std::numeric_limits<std::uint8_t>::max()}) {
+  for (const std::uint8_t count :
+       {std::uint8_t{0}, std::uint8_t{augusta::limits::kMaxPlayers + 1}, std::numeric_limits<std::uint8_t>::max()}) {
     Parameters parameters = kUsable;
     parameters.player_count = count;
 
@@ -82,7 +82,7 @@ TEST(ValidateTest, EachRifleAmmoOrHealthValueOutsideItsRangeIsNamedByItsPath) {
       {[](Parameters& p) { p.rifle.ads_field_of_view = 0.0F; }, "rifle.ads_field_of_view"},
       {[](Parameters& p) { p.rifle.ads_field_of_view = std::numbers::pi_v<float>; }, "rifle.ads_field_of_view"},
       {[](Parameters& p) { p.rifle.recoil_pattern = {{.pitch = kNan, .yaw = 0.0F}}; }, "rifle.recoil_pattern"},
-      {[](Parameters& p) { p.rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1); },
+      {[](Parameters& p) { p.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1); },
        "rifle.recoil_pattern"},
       {[](Parameters& p) { p.rifle.magazine_capacity = 0; }, "rifle.magazine_capacity"},
       {[](Parameters& p) { p.ammo.gravity = -9.81F; }, "ammo.gravity"},
@@ -107,7 +107,7 @@ TEST(ValidateTest, ARecoilPatternMayBeEmptyOrHoldTheMostKicksTheWireCarries) {
   Parameters none = kUsable;
   none.rifle.recoil_pattern.clear();
   Parameters most = kUsable;
-  most.rifle.recoil_pattern.assign(augusta::primitives::kMaxRecoilKicks, {.pitch = 0.01F, .yaw = -0.002F});
+  most.rifle.recoil_pattern.assign(augusta::limits::kMaxRecoilKicks, {.pitch = 0.01F, .yaw = -0.002F});
 
   EXPECT_TRUE(Validate(none).has_value());
   EXPECT_TRUE(Validate(most).has_value());

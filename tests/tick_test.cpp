@@ -2,11 +2,14 @@
 
 #include <chrono>
 #include <cmath>
+#include <concepts>
 #include <cstdint>
 
 #include <gtest/gtest.h>
 
 // Pure: the schedule is fed the times, so a fake clock stands in for the loop's.
+// Links augusta_tick alone, so this file compiles only while the header includes
+// nothing of the engine's.
 namespace {
 
 using augusta::tick::Clock;
@@ -17,10 +20,19 @@ using augusta::tick::kMaxTicksBehind;
 using augusta::tick::Measure;
 using augusta::tick::NextDeadline;
 using augusta::tick::PacedTickDuration;
+using augusta::tick::Sequence;
+using augusta::tick::Tick;
 
 constexpr Clock::duration kTick = std::chrono::microseconds{16'667};  // 60 Hz.
 constexpr Clock::duration kWork = std::chrono::milliseconds{2};
 const Clock::time_point kStart{std::chrono::seconds{100}};
+
+// ADR-0038: a tick and a command sequence are 64 bits wide and never wrap,
+// so every receiver orders them as plain unsigned numbers.
+TEST(TickTest, ATickAndACommandSequenceAreSixtyFourBitUnsignedCounters) {
+  EXPECT_TRUE((std::same_as<Tick, std::uint64_t>));
+  EXPECT_TRUE((std::same_as<Sequence, std::uint64_t>));
+}
 
 // Requirements: NFR-01
 TEST(TickTest, TicksThatFinishInTimeAreDueEvenlySpaced) {

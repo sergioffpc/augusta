@@ -70,7 +70,7 @@ struct AuthoritativeState {
   /// The server tick this state is from; a client keeps only the newest it has seen.
   tick::Tick tick = 0;
   /// The highest command sequence of this client that the server has processed, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
+  tick::Sequence acknowledged_sequence = 0;
   /// Every dynamic body in the match.
   std::vector<EntityBody> bodies;
   /// This client's own player's rifle as of that tick: what its predicted rifle
@@ -489,7 +489,7 @@ class Session {
   /// caller that paces its commands to the server's ticks counts from (the
   /// Authoritative State's acknowledged sequence is the last handed to the
   /// World). Prediction thread, as Tick.
-  [[nodiscard]] command::Sequence NextSequence() const;
+  [[nodiscard]] tick::Sequence NextSequence() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// The Seen time command reports (command::Command) is the caller's to fill, from

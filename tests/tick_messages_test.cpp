@@ -9,11 +9,11 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/failure.h"
+#include "augusta/limits.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
-#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -228,7 +228,7 @@ TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
 // failure stops the runtime (ADR-0033).
 TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFailure) {
   State state = TwoBodies();
-  while (state.bodies.size() <= augusta::primitives::kMaxPlayers) {
+  while (state.bodies.size() <= augusta::limits::kMaxPlayers) {
     EntityState body = state.bodies.front();
     body.entity = EntityId{static_cast<std::uint32_t>(state.bodies.size() + 1)};
     state.bodies.push_back(body);

@@ -15,12 +15,12 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
 #include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
-#include "augusta/primitives.h"
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick_messages.h"
@@ -411,7 +411,7 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
 // changed.
 TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantFailureAndNothingIsSent) {
   HostConfig config = HostConfigWith(nullptr);
-  config.parameters.rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
+  config.parameters.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
   Host host(config, TestScenario());
   Session session(SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, WorldWithFloor());
   const auto exchange = [&] {

@@ -16,8 +16,9 @@
 #include <vector>
 
 #include "augusta/grid.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
-#include "augusta/primitives.h"
+#include "augusta/tick.h"
 
 namespace augusta::protocol {
 
@@ -82,11 +83,11 @@ void WriteUnsigned(Writer& out, Unsigned value) {
 
 void WriteU32(Writer& out, std::uint32_t value) { WriteUnsigned(out, value); }
 
-// A tick in as many bytes as primitives::Tick has.
-void WriteTick(Writer& out, primitives::Tick value) { WriteUnsigned(out, value); }
+// A tick in as many bytes as tick::Tick has.
+void WriteTick(Writer& out, tick::Tick value) { WriteUnsigned(out, value); }
 
-// A command sequence in as many bytes as primitives::Sequence has.
-void WriteSequence(Writer& out, primitives::Sequence value) { WriteUnsigned(out, value); }
+// A command sequence in as many bytes as tick::Sequence has.
+void WriteSequence(Writer& out, tick::Sequence value) { WriteUnsigned(out, value); }
 
 void WriteF32(Writer& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
 
@@ -202,9 +203,9 @@ class Reader {
 
   std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
 
-  primitives::Tick ReadTick() { return ReadUnsigned<primitives::Tick>(); }
+  tick::Tick ReadTick() { return ReadUnsigned<tick::Tick>(); }
 
-  primitives::Sequence ReadSequence() { return ReadUnsigned<primitives::Sequence>(); }
+  tick::Sequence ReadSequence() { return ReadUnsigned<tick::Sequence>(); }
 
   float ReadF32() { return std::bit_cast<float>(ReadU32()); }
 
@@ -400,7 +401,7 @@ RifleWire ReadRifle(Reader& reader) {
   rifle.recoil_recovery_per_second = reader.ReadF32();
   rifle.ads_recoil_scale = reader.ReadF32();
   rifle.ads_field_of_view = reader.ReadF32();
-  rifle.recoil_pattern = ReadList(reader, primitives::kMaxRecoilKicks, [](Reader& kick_reader) {
+  rifle.recoil_pattern = ReadList(reader, limits::kMaxRecoilKicks, [](Reader& kick_reader) {
     RecoilKickWire kick;
     kick.pitch = kick_reader.ReadF32();
     kick.yaw = kick_reader.ReadF32();
@@ -447,8 +448,8 @@ JoinRefusedWire ReadJoinRefused(Reader& reader) {
 
 CommandsWire ReadCommands(Reader& reader) {
   CommandsWire message;
-  message.commands = ReadList(reader, primitives::kMaxCommandsPerMessage, [](Reader& sequenced) {
-    const primitives::Sequence sequence = sequenced.ReadSequence();
+  message.commands = ReadList(reader, kMaxCommandsPerMessage, [](Reader& sequenced) {
+    const tick::Sequence sequence = sequenced.ReadSequence();
     return SequencedCommandWire{.sequence = sequence, .command = ReadCommand(sequenced)};
   });
   message.seen_tick = reader.ReadTick();
@@ -470,7 +471,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
   AuthoritativeStateWire state;
   state.tick = reader.ReadTick();
   state.acknowledged_sequence = reader.ReadSequence();
-  state.bodies = ReadList(reader, primitives::kMaxPlayers, ReadEntityState);
+  state.bodies = ReadList(reader, limits::kMaxPlayers, ReadEntityState);
   state.queued_commands = reader.ReadU8();
   state.rifle = ReadWeaponState(reader);
   state.health = reader.ReadF32();
@@ -480,7 +481,7 @@ AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
 LobbyWire ReadLobby(Reader& reader) {
   LobbyWire lobby;
   lobby.version = reader.ReadU32();
-  lobby.roster = ReadList(reader, primitives::kMaxPlayers, [](Reader& entry) {
+  lobby.roster = ReadList(reader, limits::kMaxPlayers, [](Reader& entry) {
     const auto session = static_cast<SessionIdWire>(entry.ReadU32());
     return RosterEntryWire{.session = session, .character = entry.ReadCharacter()};
   });
@@ -498,7 +499,7 @@ MatchPlayerWire ReadMatchPlayer(Reader& reader) {
 
 MatchStartWire ReadMatchStart(Reader& reader) {
   MatchStartWire start;
-  start.players = ReadList(reader, primitives::kMaxPlayers, ReadMatchPlayer);
+  start.players = ReadList(reader, limits::kMaxPlayers, ReadMatchPlayer);
   start.first_tick = reader.ReadTick();
   return start;
 }
@@ -538,7 +539,7 @@ ReplayListingWire ReadReplayListing(Reader& reader) {
   listing.ticks = reader.ReadU32();
   listing.tick_rate_hz = reader.ReadU8();
   listing.characters =
-      ReadList(reader, primitives::kMaxPlayers, [](Reader& character) { return character.ReadCharacter(); });
+      ReadList(reader, limits::kMaxPlayers, [](Reader& character) { return character.ReadCharacter(); });
   return listing;
 }
 
@@ -562,7 +563,7 @@ PlayerViewWire ReadPlayerView(Reader& reader) {
 ReplayViewWire ReadReplayView(Reader& reader) {
   ReplayViewWire view;
   view.tick = reader.ReadTick();
-  view.players = ReadList(reader, primitives::kMaxPlayers, ReadPlayerView);
+  view.players = ReadList(reader, limits::kMaxPlayers, ReadPlayerView);
   return view;
 }
 
@@ -615,7 +616,7 @@ void WriteRifle(Writer& out, const RifleWire& rifle) {
   WriteF32(out, rifle.recoil_recovery_per_second);
   WriteF32(out, rifle.ads_recoil_scale);
   WriteF32(out, rifle.ads_field_of_view);
-  WriteList(out, rifle.recoil_pattern, primitives::kMaxRecoilKicks, [](Writer& kick_out, const RecoilKickWire& kick) {
+  WriteList(out, rifle.recoil_pattern, limits::kMaxRecoilKicks, [](Writer& kick_out, const RecoilKickWire& kick) {
     WriteF32(kick_out, kick.pitch);
     WriteF32(kick_out, kick.yaw);
   });
@@ -664,10 +665,10 @@ void WriteDeath(Writer& out, const DeathWire& death) {
 
 void WriteReplayListing(Writer& out, const ReplayListingWire& listing) {
   WriteString(out, listing.name, kMaxCaptureNameLength);
-  WriteTick(out, std::bit_cast<primitives::Tick>(listing.started_unix_ms));
+  WriteTick(out, std::bit_cast<tick::Tick>(listing.started_unix_ms));
   WriteU32(out, listing.ticks);
   WriteU8(out, listing.tick_rate_hz);
-  WriteList(out, listing.characters, primitives::kMaxPlayers,
+  WriteList(out, listing.characters, limits::kMaxPlayers,
             [](Writer& character_out, const std::string& character) { WriteCharacter(character_out, character); });
 }
 
@@ -704,7 +705,7 @@ struct Encoder {
 
   void operator()(const CommandsWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kCommands));
-    WriteList(out, message.commands, primitives::kMaxCommandsPerMessage,
+    WriteList(out, message.commands, kMaxCommandsPerMessage,
               [](Writer& command_out, const SequencedCommandWire& sequenced) {
                 WriteSequence(command_out, sequenced.sequence);
                 WriteCommand(command_out, sequenced.command);
@@ -716,7 +717,7 @@ struct Encoder {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
     WriteTick(out, message.tick);
     WriteSequence(out, message.acknowledged_sequence);
-    WriteList(out, message.bodies, primitives::kMaxPlayers, WriteEntityState);
+    WriteList(out, message.bodies, limits::kMaxPlayers, WriteEntityState);
     WriteU8(out, message.queued_commands);
     WriteWeaponState(out, message.rifle);
     // As its bits, as the Parameters' starting health it counts down from.
@@ -726,7 +727,7 @@ struct Encoder {
   void operator()(const LobbyWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kLobby));
     WriteU32(out, message.version);
-    WriteList(out, message.roster, primitives::kMaxPlayers, [](Writer& entry_out, const RosterEntryWire& entry) {
+    WriteList(out, message.roster, limits::kMaxPlayers, [](Writer& entry_out, const RosterEntryWire& entry) {
       WriteU32(entry_out, static_cast<std::uint32_t>(entry.session));
       WriteCharacter(entry_out, entry.character);
     });
@@ -739,7 +740,7 @@ struct Encoder {
 
   void operator()(const MatchStartWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
-    WriteList(out, message.players, primitives::kMaxPlayers, WriteMatchPlayer);
+    WriteList(out, message.players, limits::kMaxPlayers, WriteMatchPlayer);
     WriteTick(out, message.first_tick);
   }
 
@@ -792,7 +793,7 @@ struct Encoder {
   void operator()(const ReplayViewWire& message) const {
     WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayView));
     WriteTick(out, message.tick);
-    WriteList(out, message.players, primitives::kMaxPlayers, WritePlayerView);
+    WriteList(out, message.players, limits::kMaxPlayers, WritePlayerView);
   }
 };
 
@@ -882,7 +883,7 @@ struct CaptureRecordEncoder {
     WritePackHash(out, header.server_pack);
     WritePackHash(out, header.client_pack);
     WriteU8(out, header.tick_rate_hz);
-    WriteTick(out, std::bit_cast<primitives::Tick>(header.started_unix_ms));
+    WriteTick(out, std::bit_cast<tick::Tick>(header.started_unix_ms));
   }
 
   void operator()(const CapturedJoinWire& join) const {

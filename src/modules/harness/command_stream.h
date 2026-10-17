@@ -9,6 +9,7 @@
 #include "augusta/harness.h"
 #include "augusta/harness_wire.h"
 #include "augusta/prediction.h"
+#include "augusta/tick.h"
 
 /// \file
 /// The client's side of each tick in a Session (ADR-0021, ADR-0024): its own
@@ -36,12 +37,12 @@ class CommandStream {
   [[nodiscard]] CommandTick Tick(const ServerView& server_view, const command::Command& command, float delta_time);
 
   /// The sequence the next command sent goes under.
-  [[nodiscard]] command::Sequence NextSequence() const { return next_sequence_; }
+  [[nodiscard]] tick::Sequence NextSequence() const { return next_sequence_; }
 
  private:
   // Keeps command under sequence with the commands server_view does not yet
   // acknowledge, and returns them all, as one message carries them.
-  std::vector<SequencedCommand> Queue(const ServerView& server_view, command::Sequence sequence,
+  std::vector<SequencedCommand> Queue(const ServerView& server_view, tick::Sequence sequence,
                                       const command::Command& command);
 
   prediction::World prediction_;
@@ -53,7 +54,7 @@ class CommandStream {
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
   std::deque<SequencedCommand> unacknowledged_;
-  command::Sequence next_sequence_ = 1;
+  tick::Sequence next_sequence_ = 1;
 };
 
 }  // namespace augusta::harness
