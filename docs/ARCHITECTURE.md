@@ -88,6 +88,8 @@ IP:port.
 ## 4. Solution Strategy
 
 - ECS-based simulation core (Flecs), shared between client and server
+- Strict module layers: each module uses only the Layer directly below and the
+  Foundation, and a Runtime, which wires them, any Layer below (§5, ADR-0062)
 - PhysX for general collision/movement; custom-built ballistics module for
   bullet physics (the project's core learning focus)
 - Server-authoritative model: server is the single source of truth for all
@@ -127,96 +129,156 @@ IP:port.
                +-------------------------------------+
 ```
 
-Each block below is a module under `src/modules/`, scoped to the side or sides
-it is compiled into. The executables themselves - augustad, augustac and the C++
-tools - are Glue: their applications and runtimes build these modules and wire
-them together, and hold neither Mechanism nor Game policy (ADR-0060).
+The modules under `src/modules/` form six Layers (ADR-0062). A module uses only
+modules of the Layer directly below its own and of the Foundation; a Runtime,
+which wires modules of several Layers together, may use any Layer below.
+Executables stand on top, outside the Layers: each is Glue that runs one Runtime
+behind the application, and uses nothing else but the Foundation (ADR-0060).
+Each module is scoped to the side it is compiled into: shared, client-only
+(`CLIENT_ONLY`) or server-only (`SERVER_ONLY`, ADR-0006), independently of its
+Layer. Each World is its own Flecs world instance (ADR-0001), built directly on
+the library inside its module.
 
-**Shared Core** (compiled into both client and server)
+```text
+Executables    augustac · augustad · the Agent's Python module
+L5 Runtimes    client · server · agent · application
+L4 Cores       harness · host
+L3 Services    prediction · presentation · simulation · scenario · input ·
+               renderer · hud · audio · link · capture · content ·
+               supervisor · config · metrics
+L2 Domain      gameplay · dynamics · policy · protocol · assets ·
+               networking · window
+L1 Engine      physics · scripting
+L0 Foundation  math · tick · limits · failure · version · logging
+```
 
-- ECS (Flecs) — shared entity/component data: players, bullets. Each World below
-  is its own Flecs world instance built directly on the library; not a separate
-  wrapped module in its own right.
-- Physics — PhysX wrapper (collision, movement, rigid-body dynamics); one
-  interface used identically by PredictionWorld and SimulationWorld. Props are
-  simulated only by the server and moved kinematically on the client; Cosmetic
-  bodies (ragdolls, debris) only on the client (ADR-0045). Particles are the
-  renderer's, not physics'. It also builds a map's static collision from a
-  verified Pack (augusta/map.h), so it depends on augusta_assets
-- Gameplay — the gameplay rules both Worlds apply identically, in one module
-  (augusta_gameplay) with a header and namespace per concept. It builds on
-  Physics and the Primitives and stays below the Networking Protocol and the
-  client's Input handling: the protocol links none of it, and Input builds its
-  Commands with it. Its concepts:
+**L0 Foundation** (shared; uses no other module, and every Layer may use it)
+
+- math — the math types (GLM) and the grids numbers travel on
+- tick — the simulation's time: the Tick, the command Sequence, and the fixed
+  schedule the server's Simulation loop and the client's Prediction loop both
+  keep (ADR-0005)
+- limits — the bounds the rules and the protocol share: the players a Lobby or a
+  Match holds, the kicks a recoil pattern holds
+- failure — the failure model every Layer reports in (ADR-0033)
+- version — the build's version
+- logging — the console sink and its macros (ADR-0027)
+
+**L1 Engine** (wraps the external engines the Domain builds on; knows no game
+rule and no Pack)
+
+- physics (shared) — PhysX wrapper: collision, movement, rigid-body dynamics
+  (ADR-0002)
+- scripting (server) — the sandboxed Lua embedding (ADR-0022), knowing nothing
+  of Game policy
+
+**L2 Domain** (the game's vocabulary, and the formats and transports that carry
+no game state)
+
+- gameplay (shared) — the rules both Worlds apply identically, a header and
+  namespace per concept, and the only way to physics for them (bodies, queries,
+  the Map's collision). Its concepts:
     - Command — one tick's player intent (augusta/command.h): what the client's
-      Input handling samples and the server screens and simulates, so the server
-      links no client input code
-    - Tick schedule — the fixed schedule the server's Simulation loop and the
-      client's Prediction loop both keep (augusta/tick.h, ADR-0005)
+      input handling samples and the server screens and simulates
     - Parameters — the simulation's data-driven configuration
       (augusta/parameters.h, ADR-0039): the server decides the values, and every
       client ticks and predicts with the same ones
     - WeaponHandling — aim/ADS, fire, reload, recoil, ammo rules
-      (augusta/weapon.h); one interface used identically by both Worlds. The
-      client/server difference isn't in its logic, it's in what each World does
-      with the result: the server treats it as authoritative and feeds
-      Ballistics, the client uses it only for local predicted feedback pending
-      reconciliation - same split as Physics.
-    - Ballistics — custom bullet trajectory simulation (gravity, travel time),
-      hand-rolled instead of PhysX's generic projectile handling (ADR-0002). Its
-      trajectory math is shared: the server advances every bullet with it, and
-      each client's PresentationWorld draws every announced Shot's tracer and
-      Map impact with it, a visual only. Deciding a bullet's outcome (hit
-      detection, damage) stays server-side (ADR-0024, ADR-0044).
-- Networking Protocol — message definitions + custom binary serialization
-- Primitives — the Tick and command sequence widths and the player, command and
-  recoil-kick bounds for the engine and the protocol to share
-  (augusta_primitives), depending on no other module, so neither side needs the
-  other's for them
-- Level Data — lightweight custom runtime format, baked offline from OpenUSD
-  source. Its collision geometry is built into a physics::World's static meshes
-  by the shared Physics module (augusta_physics), so PredictionWorld and
-  SimulationWorld collide against the same map
-- Lifecycle — how an executable starts, runs its worker threads, stops and ends
-  (augusta_lifecycle): the runtime supervisor both runtimes and the Harness run
-  their threads under (ADR-0005) and the application boundary each executable's
-  `main` runs behind (ADR-0033), each with its own header and namespace. The
-  failure model they report in is a module of its own (augusta_failure), so low
-  layers name a failure without linking thread supervision
+      (augusta/weapon.h), used identically by both Worlds: the server treats its
+      result as authoritative and feeds Ballistics, the client uses it only for
+      local predicted feedback pending reconciliation
+    - Ballistics — custom bullet trajectory simulation (gravity, travel time,
+      ADR-0002). The server advances every bullet with it, and each client's
+      PresentationWorld draws every announced Shot's tracer and Map impact with
+      it, a visual only; a bullet's outcome stays server-side (ADR-0024,
+      ADR-0044)
+    - Prediction State — the type PredictionWorld hands PresentationWorld each
+      tick
+- dynamics (client) — the dynamic bodies that are not gameplay: Cosmetic bodies
+  (ragdolls, debris) and Props' kinematic poses (ADR-0045). Particles are the
+  renderer's, not physics'
+- policy (server) — Game policy's hooks, the views built for them and the typed
+  Policy actions read from their answers, over scripting (ADR-0022)
+- protocol (shared) — message definitions and their binary codec (ADR-0038), on
+  the Foundation alone
+- assets (shared) — the signed, verified Pack format
+- networking (shared) — the GameNetworkingSockets transport (ADR-0003)
+- window (client) — the OS window (GLFW) and its device events (ADR-0059)
 
-**Client-only** (Windows and Linux)
+**L3 Services** (one piece of one concern each, for the Cores and Runtimes to
+compose)
 
-- Input handling — turns keyboard/mouse events pushed by Renderer into commands
-  for PredictionWorld. There is no separate Window module: Renderer owns the OS
-  window (GLFW) with its GPU device and swapchain (ADR-0059), and pushes device
-  events to Input rather than a third module managing the window handle
-  independently
-- Networking — sends commands, receives authoritative server state
-- ClientRuntime
-    - PredictionWorld (ECS) — consumes commands + authoritative server state;
-      runs client-side prediction and reconciliation (ADR-0004); emits an
-      immutable prediction state each simulation tick
-    - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-      smooths for display; emits presentation state each render frame. One
-      module (augusta_presentation) holds it and its phases, including the
-      animation engine behind its Animation phase
-- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; owns the
-  client's single OS window (see Input handling, above) and consumes
-  presentation state. Exposes pumping window/device events and rendering a frame
-  as two separate operations rather than one combined loop, so the Main/Render
-  thread can drain events at a different cadence than it presents frames
-- Audio — Steam Audio; consumes presentation state
-- HUD/UI
+- prediction (client) — PredictionWorld (ECS): consumes commands and
+  authoritative server state, runs client-side prediction and reconciliation
+  (ADR-0004), emits an immutable Prediction State each tick
+- presentation (client) — PresentationWorld (ECS) and its phases, the animation
+  engine behind its Animation phase included: consumes the Prediction State,
+  interpolates and smooths it for display, emits presentation state each render
+  frame and audio cues as data
+- simulation (server) — SimulationWorld (ECS), the single authoritative world:
+  mechanism systems in C++ (movement, ballistics, hit detection, damage) and
+  Game policy through policy in its Scripts/Behaviours phase; built together
+  with Replication, which decides what each client is sent of its state
+  (ADR-0044)
+- scenario (server) — what the server loads from its verified Pack at startup:
+  the scenario it serves, its Parameters (ADR-0039) and its Rules (ADR-0022),
+  before any socket or thread opens, so a Pack without usable content exits as a
+  bad Pack does
+- input (client) — turns the window's keyboard and mouse events into Commands
+- renderer (client) — NVRHI on Vulkan, shaders in Slang (ADR-0059): creates and
+  owns the client's window, consumes presentation state, draws text lines.
+  Pumping window events and rendering a frame are separate operations, so the
+  Main/Render thread can drain events at a different cadence than it presents
+- hud (client) — what the DebugHud shows (system metrics only), as text lines
+- audio (client) — Steam Audio: plays the sounds and cues the Runtime hands it
+- link (shared) — the channel of one Session: every conversion between the
+  game's state and messages, carried over networking (ADR-0038)
+- capture (shared) — writes and reads a Match capture's records (ADR-0050)
+- content (shared) — reads out of a Pack what the services need: the Map's
+  collision (built through gameplay, so PredictionWorld and SimulationWorld
+  collide against the same Map), sounds and meshes
+- supervisor (shared) — the threads of a Core or Runtime, their one stop request
+  and their first cause (ADR-0005)
+- config (shared) — the generic reader of config files and the command line
+  (ADR-0034), over which each Runtime defines its own schema
+- metrics (server) — the lock-free counter, gauge and histogram the server's
+  threads write in place, and their Prometheus form (ADR-0049); it knows nothing
+  of what is counted
+
+**L4 Cores** (client and server without threads or a clock, which a test drives
+by hand)
+
+- harness (client) — the Harness: the client's network connection and
+  PredictionWorld without a window or GPU, with the Runner whose Prediction and
+  Network I/O threads anything that plays live runs it on (ADR-0005)
+- host (server) — the Host: the server's socket and SimulationWorld, one network
+  round and one tick at a time. It holds the Lobby and each Match's lifecycle
+  (Join checks, Ready, Match start, Match end; ADR-0043), the Command intake and
+  its sanity gate (Input validation, US-15; inbound only), each peer's
+  misbehaviour count, the counts behind the heartbeat line and the metrics
+  endpoint, the Match capture it writes (ADR-0050) and the replay server
+  (ADR-0051)
+
+**L5 Runtimes** (each runs a Core live for one executable)
+
+- client — augustac's Runtime: its config, keybindings included; its Main/Render
+  thread; and the wiring of the Harness to the renderer, the HUD, input,
+  PresentationWorld, audio and content
+- server — augustad's Runtime: its config, the Network I/O and Simulation
+  threads around the Host, its clock and the metrics endpoint (ADR-0049)
+- agent — the Agent's Runtime (ADR-0052), kept under `tools/agent/native`
+- application (shared) — the application boundary each executable's `main` runs
+  (ADR-0033)
 
 ```text
-+-------+     +------------+
-| Input |     | Networking |
-+-------+     +------------+
-    |               |  ^
-    | Commands      |  | Authoritative State
-    v               v  |
++-------+     +------+
+| input |     | link |
++-------+     +------+
+    |           |  ^
+    | Commands  |  | Authoritative State
+    v           v  |
   +-------------------------------+
-  |         ClientRuntime          |
+  |  Harness + client Runtime      |
   |                                |
   |   +-------------------+        |
   |   |  PredictionWorld  |        |
@@ -233,7 +295,7 @@ them together, and hold neither Mechanism nor Game policy (ADR-0060).
          +------+------+
          v             v
     +----------+   +-------+
-    | Renderer |   | Audio |
+    | renderer |   | audio |
     +----------+   +-------+
 ```
 
@@ -266,68 +328,23 @@ the other five run — ADR-0024)
 Neither client world contains a Scripts/Behaviours phase — game policy is
 exclusively server-authoritative.
 
-**Server-only** (Linux in production, Windows for development; headless)
-
-- Networking — receives client commands, sends authoritative state; the only
-  server component that touches the network
-- Input Validation — anti-cheat baseline (US-15); rejects/filters invalid
-  commands before they reach the world (does not apply to outbound authoritative
-  state)
-- Match State — the Lobby, who is in each Match and its lifecycle (Join checks,
-  Ready, Match start, Match end; ADR-0043); when a Match is won and over is game
-  policy
-- Scripting (Lua) — sandboxed script hooks for game policy (Match lifecycle, win
-  conditions, spawn rules); small interface (load the scenario's scripts, call a
-  hook by name with a read-only view, get back plain data C++ validates) hiding
-  the Lua embedding and the restricted-environment sandbox (§8) that upholds "no
-  I/O inside ECS worlds" structurally (ADR-0022). Server-only - game policy is
-  exclusively server-authoritative, never run by either client world.
-- Scenario — what the server loads from its verified pack at startup: the
-  scenario it serves, the Parameters its simulation and every client run on
-  (ADR-0039) and its Game policy (ADR-0022), with the two loaders that read them
-  through Lua, in one server-only module (augusta_scenario). It is loaded before
-  any socket or thread opens, so a pack without usable content exits like a bad
-  pack does, and the Host is handed it already loaded
-- Metrics — the lock-free counter, gauge and histogram the server's threads
-  write in place where an event happens, and their Prometheus form (ADR-0049),
-  in one server-only module (augusta_metrics). It knows nothing of what is
-  counted: whoever counts — the Host, the Connection health collector — builds
-  on it, and augustad's metrics endpoint only collects what they hold
-- Host — the server's socket and SimulationWorld without threads or a clock, so
-  a test can drive a Match by hand, one network round and one tick at a time:
-  who is in the Match and whether a join is admitted, the Command intake and its
-  sanity gate, each peer's misbehaviour count, when an unadmitted peer is past
-  its deadline, the counts behind the once-a-second heartbeat line, the
-  conversions at its seam, what it counts for the metrics endpoint and the Match
-  capture it writes (ADR-0050). One server-only module (augusta_host), the
-  counterpart of the client's Harness; augustad's runtime adds its threads, its
-  clock, the metrics endpoint and its lifecycle (ADR-0060)
-- ServerRuntime
-    - SimulationWorld (ECS) — the single authoritative world (no prediction, no
-      presentation needed). Runs mechanism systems in C++ (movement via PhysX,
-      ballistics, hit detection, damage) and policy via a Scripts/Behaviours
-      phase (Lua, sandboxed — Match lifecycle, win conditions, spawn rules);
-      emits authoritative state each tick. Built as one server-only module,
-      augusta_simulation, together with Replication, which decides what each
-      client is sent of that state (ADR-0044)
+**Server data flow** (Linux in production, Windows for development; headless)
 
 ```text
-+------------+
-| Networking |
-+------------+
++------+
+| link |
++------+
     |     ^
 Raw |     | Authoritative
 Cmds|     | State
     v     |
-+-------------------+
-| Input Validation  |
-+-------------------+
-    |
-    | Validated Commands
-    v
 +---------------------------+
-|       ServerRuntime        |
+|           Host             |
 |                            |
+|   Input validation         |
+|          |                 |
+|          | Validated Cmds  |
+|          v                 |
 |   +---------------------+  |
 |   |   SimulationWorld   |  |
 |   +---------------------+  |
@@ -335,9 +352,8 @@ Cmds|     | State
 +----------------------------+
 ```
 
-_(the Authoritative State emitted by `SimulationWorld` goes directly to
-`Networking`, bypassing `Input Validation` — validation only applies to inbound
-commands)_
+_(the Authoritative State emitted by `SimulationWorld` goes back to the `link`,
+bypassing Input validation — validation only applies to inbound commands)_
 
 **SimulationWorld phases** (executed in order, once per tick: Command Ingestion
 → Movement → Dynamics → WeaponHandling → Ballistics → HitDetection → Damage →
@@ -622,6 +638,8 @@ not affect numbering.
   Mechanism in modules, Game policy in Lua, the executables only wire them
 - [ADR-0061](./adr/0061-skeletal-hitboxes.md) — Skeletal hitboxes: a shared
   Hitbox pose, evaluated alike by client and server
+- [ADR-0062](./adr/0062-strict-module-layers.md) — Strict module layers: each
+  module uses only the Layer below and the Foundation; Runtimes may use any
 
 ### Tooling & Build
 

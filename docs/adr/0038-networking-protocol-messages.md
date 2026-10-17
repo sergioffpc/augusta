@@ -8,32 +8,33 @@ clock or state, used by both client and server (ADR-0006).
 **Its own types.** A message holds only types the protocol defines itself (its
 body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
-nothing but `augusta_math`, which also holds the grids its numbers travel on,
-and `augusta_primitives`, whose Tick and sequence widths and player, command and
-recoil bounds it encodes without owning or re-exporting them; a module changing
-its own structs never changes what travels. `tests/protocol_boundary.cmake`
+nothing but the Foundation's `augusta_math`, which also holds the grids its
+numbers travel on, `augusta_tick`, whose Tick and Sequence widths it encodes,
+and `augusta_limits`, whose player and recoil bounds it encodes, without owning
+or re-exporting them (ADR-0062); a module changing its own structs never changes
+what travels. How many commands a Commands message carries is the protocol's own
+bound (`protocol::kMaxCommandsPerMessage`). `tests/protocol_boundary.cmake`
 fails if the protocol includes or links anything else. A protocol type that
 mirrors one of the engine's carries the suffix `Wire`: `BodyStateWire` for
 `physics::BodyState`, and the Authoritative State message is
 `AuthoritativeStateWire`, for the client's `harness::AuthoritativeState`. Every
-protocol type carries the suffix, so none reads like an engine type. Each peer
-converts between the protocol's types and its own at its edge and nowhere else:
-the server in `augusta/host_wire.h` (used by `server::Host` right after Decode
-and right before Encode) and the client in `augusta/harness_wire.h` (used the
-same way by `harness::Session`). A Match capture's records are converted by a
-third adapter, the capture module (`augusta/capture.h`), shared by both peers:
-its interface speaks the engine's types and it links the protocol privately.
-Inside each peer, modules pass the engine's types, never a `Wire` one: each peer
-names a player by its own Session ID type (`harness::SessionId` for the
-harness's API and ClientRuntime; `server::SessionId` for `server::Match` and
-`server::Host`), a body by its own Entity ID type (`harness::EntityId`, which
-ClientRuntime converts at its own edge into `presentation::EntityId`, so
-`presentation` does not depend on the harness; `server::EntityId`, which
-`server::Host` hands SimulationWorld and `replication` as the
-`simulation::EntityId` of the same number), a pack by `assets::PackHash`, and a
-refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the
-build's tests if one of their headers names the protocol, or a `presentation`
-header the harness.
+protocol type carries the suffix, so none reads like an engine type. Every
+conversion between the protocol's types and the engine's is the Link's
+(`augusta_link`, ADR-0062) and nowhere else: `server::Host` and
+`harness::Session` hand it the engine's types right before Encode and take them
+back right after Decode. The capture module (`augusta/capture.h`), shared by
+both peers, writes and reads a Match capture's records in the protocol's types;
+turning a record into the engine's is the Link's too. Inside each peer, modules
+pass the engine's types, never a `Wire` one: each peer names a player by its own
+Session ID type (`harness::SessionId` for the harness's API and ClientRuntime;
+`server::SessionId` for `server::Match` and `server::Host`), a body by its own
+Entity ID type (`harness::EntityId`, which ClientRuntime converts at its own
+edge into `presentation::EntityId`, so `presentation` does not depend on the
+harness; `server::EntityId`, which `server::Host` hands SimulationWorld and
+`replication` as the `simulation::EntityId` of the same number), a pack by
+`assets::PackHash`, and a refusal by its own `JoinRefusal`;
+`tests/protocol_boundary.cmake` fails the build's tests if one of their headers
+names the protocol, or a `presentation` header the harness.
 
 **Extended by ADR-0042**: Join request also carries the chosen character's name,
 Join refused gains the _unknown character_ reason, and Join accepted names the
@@ -70,10 +71,9 @@ State's tick, a Shot's, a Commands message's Seen tick): 4 would wrap after
 about 828 days at 60 Hz. A command sequence, and the acknowledged sequence that
 answers it, counts one connection's commands and starts over at 1 on the next;
 it travels in 8 bytes too, so no session, however long, can wrap it, at the cost
-of 4 bytes per sequenced command over 4. Both widths are `augusta_primitives`'
-(`primitives::Tick`, `primitives::Sequence`), which the codec and the engine's
-`tick::Tick` and `command::Sequence` take alike. Neither ever wraps, so every
-receiver orders them as plain numbers.
+of 4 bytes per sequenced command over 4. Both widths are `augusta_tick`'s
+(`tick::Tick`, `tick::Sequence`), which the codec and the engine take alike.
+Neither ever wraps, so every receiver orders them as plain numbers.
 
 **Quantized numbers.** A body's and a command's numbers travel as a whole count
 of a grid's step, not as floats. The step is a power of two, so a count times
@@ -165,10 +165,10 @@ as strictly, in every build: they return `std::expected<BytesWire, EncodeError>`
 (ADR-0033), where the error is `kFieldTooLong`, `kReservedBits` or
 `kInvalidEnum`, and give no payload at all for a message or record a field of
 which the protocol cannot carry, so nothing cut off or misframed is ever sent or
-captured. Such a field is the sender's bug, never a peer's input: each peer's
-edge (`augusta/host_wire.h`, `augusta/harness_wire.h`, and the capture module
-for a record) turns the error into a `kInvariantViolated` failure naming the
-message or record type, and the runtime that sent it stops (ADR-0033).
+captured. Such a field is the sender's bug, never a peer's input: the Link, and
+the capture module for a record, turns the error into a `kInvariantViolated`
+failure naming the message or record type, and the runtime that sent it stops
+(ADR-0033).
 
 **Reliability split.** The sender names a `networking::Reliability` for every
 send (ADR-0003's transport offers both). A message that must arrive, and whose
