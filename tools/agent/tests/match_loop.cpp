@@ -16,13 +16,13 @@
 #include <variant>
 #include <vector>
 
-#include "agent.h"
+#include "augusta/agent.h"
+#include "augusta/agent_report.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "report.h"
 
 namespace augusta::agent::testing {
 

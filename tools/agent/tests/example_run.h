@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-#include "agent.h"
+#include "augusta/agent.h"
 #include "augusta/networking.h"
 #include "match_loop.h"
 
