@@ -2,7 +2,7 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
-## 3.3.0 - 2026-10-16
+## 3.3.0 - 2026-10-17
 
 ### Features
 
@@ -18,6 +18,7 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **chart:** record packFormat without acting on it
 - **scripts:** hold the alert notifications wizard to the shell style
 - **harness:** send a Command late into the Leave's tick before leaving
+- **tests:** keep the allocation count out of ThreadSanitizer builds
 
 ### Refactoring
 
