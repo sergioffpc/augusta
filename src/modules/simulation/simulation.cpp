@@ -10,8 +10,6 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <string>
-#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -585,21 +583,27 @@ struct World::Impl {
     }
     const auto action = policy.OnTick(TickView(), tick);
     if (!action) {
-      if (action.error().code == policy::UndecidedCode::kHookFailed) {
-        LOG_WARNING_LIMITED(policy_warnings,
-                            "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                            policy::kRulesScriptPath, policy::kOnTick, tick, action.error().description);
-      } else {
-        LOG_WARNING_LIMITED(
-            policy_warnings,
-            "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-            policy::kRulesScriptPath, policy::kOnTick, tick, action.error().description);
-      }
+      WarnUndecidedOnTick(action.error());
       return;
     }
     if (action->has_value()) {
       match_ended_by_policy = std::holds_alternative<policy::MatchEnd>(**action);
       actions.push_back(**action);
+    }
+  }
+
+  // Logs an on_tick call that decided nothing, at most once a
+  // kPolicyWarningInterval, as policy may fail every tick.
+  void WarnUndecidedOnTick(const policy::Undecided& undecided) {
+    if (undecided.code == policy::UndecidedCode::kHookFailed) {
+      LOG_WARNING_LIMITED(policy_warnings,
+                          "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
+                          policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
+    } else {
+      LOG_WARNING_LIMITED(
+          policy_warnings,
+          "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
+          policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
     }
   }
 
