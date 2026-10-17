@@ -3,13 +3,16 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/window_events.h"
 
 // Pure: device events in, one tick's Command out, with no window or GPU.
 namespace {
@@ -20,12 +23,14 @@ using augusta::input::Aim;
 using augusta::input::Config;
 using augusta::input::Control;
 using augusta::input::Input;
-using augusta::input::Key;
 using augusta::input::Keymap;
-using augusta::input::KeyState;
-using augusta::input::MouseMoveEvent;
 using augusta::math::Vec3;
 using augusta::physics::Stance;
+using augusta::window::Event;
+using augusta::window::Key;
+using augusta::window::KeyEvent;
+using augusta::window::KeyState;
+using augusta::window::MouseMoveEvent;
 
 constexpr float kSensitivity = 0.01F;
 constexpr float kTolerance = 1e-5F;
@@ -36,10 +41,13 @@ void ExpectNear(const Vec3& actual, const Vec3& expected) {
   EXPECT_NEAR(actual.z, expected.z, kTolerance);
 }
 
+// One event, handed to input as the client Runtime hands it a Poll's worth.
+void Handle(Input& input, const Event& event) { input.Handle(std::span(&event, 1)); }
+
 class InputTest : public ::testing::Test {
  protected:
-  void Press(Key key) { input_.OnKeyEvent({.key = key, .state = KeyState::kPressed}); }
-  void Release(Key key) { input_.OnKeyEvent({.key = key, .state = KeyState::kReleased}); }
+  void Press(Key key) { Handle(input_, KeyEvent{.key = key, .state = KeyState::kPressed}); }
+  void Release(Key key) { Handle(input_, KeyEvent{.key = key, .state = KeyState::kReleased}); }
   void Click() {
     Press(Key::kMouseLeft);
     Release(Key::kMouseLeft);
@@ -48,7 +56,7 @@ class InputTest : public ::testing::Test {
   void MoveMouse(float dx, float dy) {
     cursor_x_ += dx;
     cursor_y_ += dy;
-    input_.OnMouseMoveEvent(MouseMoveEvent{.x = cursor_x_, .y = cursor_y_});
+    Handle(input_, MouseMoveEvent{.x = cursor_x_, .y = cursor_y_});
   }
   // Turns the view by yaw_radians (positive: left), from a cursor already seen once.
   void Turn(float yaw_radians) { MoveMouse(-yaw_radians / kSensitivity, 0.0F); }
@@ -152,8 +160,18 @@ TEST_F(InputTest, CtrlHeldCrouchesAndZHeldGoesProneWinningOverCtrl) {
   EXPECT_EQ(input_.Sample().movement.desired_stance, Stance::kStanding);
 }
 
+TEST_F(InputTest, HandlesAPollsEventsInTheOrderTheyHappened) {
+  const std::vector<Event> events{KeyEvent{.key = Key::kW, .state = KeyState::kPressed},
+                                  KeyEvent{.key = Key::kW, .state = KeyState::kReleased},
+                                  KeyEvent{.key = Key::kS, .state = KeyState::kPressed}};
+
+  input_.Handle(events);
+
+  ExpectNear(input_.Sample().movement.direction, Vec3(0.0F, 0.0F, 1.0F));
+}
+
 TEST_F(InputTest, TheFirstCursorPositionTurnsNothing) {
-  input_.OnMouseMoveEvent(MouseMoveEvent{.x = 640.0F, .y = 360.0F});
+  Handle(input_, MouseMoveEvent{.x = 640.0F, .y = 360.0F});
   const Command command = input_.Sample();
   EXPECT_FLOAT_EQ(command.yaw, 0.0F);
   EXPECT_FLOAT_EQ(command.pitch, 0.0F);
@@ -417,7 +435,7 @@ TEST_F(InputTest, AReloadPressedWhileTheCursorIsReleasedIsIgnored) {
 TEST(KeymapTest, ReboundCombatControlsMoveToTheirNewKeys) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kMouseMiddle, Key::kF, Key::kE}) {
-    input.OnKeyEvent({.key = key, .state = KeyState::kPressed});
+    Handle(input, KeyEvent{.key = key, .state = KeyState::kPressed});
   }
   const Command command = input.Sample();
   EXPECT_TRUE(command.fire);
@@ -428,7 +446,7 @@ TEST(KeymapTest, ReboundCombatControlsMoveToTheirNewKeys) {
 // Requirements: US-20
 TEST(KeymapTest, ReboundControlsMoveToTheirNewKeys) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
-  const auto press = [&](Key key) { input.OnKeyEvent({.key = key, .state = KeyState::kPressed}); };
+  const auto press = [&](Key key) { Handle(input, KeyEvent{.key = key, .state = KeyState::kPressed}); };
   press(Key::kUp);
   press(Key::kRight);
   press(Key::kSpace);
@@ -444,7 +462,7 @@ TEST(KeymapTest, ReboundControlsMoveToTheirNewKeys) {
 TEST(KeymapTest, TheOldKeysOfReboundControlsDoNothing) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kW, Key::kD, Key::kLeftShift, Key::kLeftControl, Key::kZ, Key::kMouseLeft, Key::kR}) {
-    input.OnKeyEvent({.key = key, .state = KeyState::kPressed});
+    Handle(input, KeyEvent{.key = key, .state = KeyState::kPressed});
   }
   const Command command = input.Sample();
   ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
@@ -457,9 +475,9 @@ TEST(KeymapTest, TheOldKeysOfReboundControlsDoNothing) {
 // Requirements: US-20
 TEST(KeymapTest, AControlOnAMouseButtonIsHeldUntilTheButtonIsReleased) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
-  input.OnKeyEvent({.key = Key::kMouseRight, .state = KeyState::kPressed});
+  Handle(input, KeyEvent{.key = Key::kMouseRight, .state = KeyState::kPressed});
   EXPECT_EQ(input.Sample().movement.desired_stance, Stance::kProne);
-  input.OnKeyEvent({.key = Key::kMouseRight, .state = KeyState::kReleased});
+  Handle(input, KeyEvent{.key = Key::kMouseRight, .state = KeyState::kReleased});
   EXPECT_EQ(input.Sample().movement.desired_stance, Stance::kStanding);
 }
 
@@ -467,7 +485,7 @@ TEST(KeymapTest, AControlOnAMouseButtonIsHeldUntilTheButtonIsReleased) {
 TEST(KeymapTest, ReboundOppositeControlsStillCancelAndProneStillWins) {
   Input input(Config{.mouse_sensitivity = kSensitivity, .keymap = Rebound()});
   for (const Key key : {Key::kUp, Key::kDown, Key::kLeft, Key::kRight, Key::kC, Key::kMouseRight}) {
-    input.OnKeyEvent({.key = key, .state = KeyState::kPressed});
+    Handle(input, KeyEvent{.key = key, .state = KeyState::kPressed});
   }
   const Command command = input.Sample();
   ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
@@ -475,7 +493,7 @@ TEST(KeymapTest, ReboundOppositeControlsStillCancelAndProneStillWins) {
 }
 
 TEST(KeyNameTest, EveryKeyHasANameThatNamesItBack) {
-  for (std::size_t i = 0; i < augusta::input::kKeyCount; ++i) {
+  for (std::size_t i = 0; i < augusta::window::kKeyCount; ++i) {
     const auto key = static_cast<Key>(i);
     const std::string_view name = augusta::input::NameOf(key);
     EXPECT_FALSE(name.empty()) << i;

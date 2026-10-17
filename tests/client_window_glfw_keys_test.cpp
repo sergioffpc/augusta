@@ -7,14 +7,11 @@
 #include <GLFW/glfw3.h>
 #include <gtest/gtest.h>
 
-#include "augusta/input.h"
+#include "augusta/window_events.h"
 #include "glfw_keys.h"
 
-namespace augusta::renderer {
+namespace augusta::window {
 namespace {
-
-using input::Key;
-using input::KeyState;
 
 constexpr int kLetterCount = 26;
 constexpr int kDigitCount = 10;
@@ -59,7 +56,7 @@ TEST(GlfwKeysTest, MapsTheNamedKeys) {
       {GLFW_KEY_RIGHT, Key::kRight},
   }};
   for (const auto& [glfw_key, key] : named) {
-    EXPECT_EQ(KeyFromGlfw(glfw_key), key) << input::NameOf(key);
+    EXPECT_EQ(KeyFromGlfw(glfw_key), key) << "key " << static_cast<int>(key);
   }
 }
 
@@ -75,8 +72,8 @@ TEST(GlfwKeysTest, MapsNothingElse) {
 
 std::size_t KeyboardKeyCount() {
   std::size_t count = 0;
-  for (std::size_t i = 0; i < input::kKeyCount; ++i) {
-    count += input::IsMouseButton(static_cast<Key>(i)) ? 0 : 1;
+  for (std::size_t i = 0; i < kKeyCount; ++i) {
+    count += IsMouseButton(static_cast<Key>(i)) ? 0 : 1;
   }
   return count;
 }
@@ -85,8 +82,8 @@ TEST(GlfwKeysTest, ReachesEveryKeyButTheMouseButtons) {
   std::set<Key> reached;
   for (int glfw_key = GLFW_KEY_UNKNOWN; glfw_key <= GLFW_KEY_LAST; ++glfw_key) {
     if (const std::optional<Key> key = KeyFromGlfw(glfw_key)) {
-      EXPECT_FALSE(input::IsMouseButton(*key)) << input::NameOf(*key);
-      EXPECT_TRUE(reached.insert(*key).second) << input::NameOf(*key) << " from two GLFW keys";
+      EXPECT_FALSE(IsMouseButton(*key)) << "key " << static_cast<int>(*key);
+      EXPECT_TRUE(reached.insert(*key).second) << "key " << static_cast<int>(*key) << " from two GLFW keys";
     }
   }
 
@@ -107,4 +104,4 @@ TEST(GlfwKeysTest, TakesPressAndReleaseButNotRepeat) {
 }
 
 }  // namespace
-}  // namespace augusta::renderer
+}  // namespace augusta::window

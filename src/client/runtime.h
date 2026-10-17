@@ -16,7 +16,9 @@
 /// \file
 /// The augustac executable's orchestrator (ARCHITECTURE.md §5): it owns one of
 /// every client module - Input, Audio, the harness::Session, PresentationWorld
-/// and Renderer - and runs the Main/Render loop. It belongs to src/client, not
+/// and Renderer, with the Renderer's window - and runs the Main/Render loop:
+/// it hands the window's events to Input and the HUD's lines (augusta::hud) to
+/// the Renderer (ADR-0059). It belongs to src/client, not
 /// to the engine's modules: nothing else links against it.
 ///
 /// It plays nothing itself. Sending commands, receiving the server's state and
@@ -55,8 +57,8 @@ class ClientRuntime {
  public:
   /// Constructs every owned module - Input, the one audio::Engine, the
   /// harness::Session with its PredictionWorld, PresentationWorld and
-  /// Renderer, in that dependency order (Renderer needs Input as its
-  /// EventSink; PresentationWorld needs the audio::Engine reference) -
+  /// Renderer, with its window, in that dependency order (PresentationWorld
+  /// needs the audio::Engine reference) -
   /// but does not yet connect to the server or start any thread; see
   /// Run(). Throws whatever the underlying module constructors throw
   /// (Renderer throws std::runtime_error on device/window failure - see its
@@ -95,10 +97,11 @@ class ClientRuntime {
 
   /// Starts the Prediction and Network I/O threads (ADR-0005) under a
   /// harness::Runner, waits for the server to admit this client, then runs
-  /// the Main/Render loop on the calling thread - PumpEvents, in the Lobby load
-  /// every other player's character and report Ready, read the latest
-  /// committed Prediction State, PresentationWorld::RunFrame,
-  /// Renderer::RenderFrame - until Renderer::ShouldClose() returns true, the
+  /// the Main/Render loop on the calling thread - the window's events into
+  /// Input, in the Lobby load every other player's character and report
+  /// Ready, read the latest committed Prediction State,
+  /// PresentationWorld::RunFrame, the HUD's lines and Renderer::RenderFrame -
+  /// until the window should close, the
   /// session fails (refused, server unreachable, connection lost), a
   /// character cannot be loaded or the Prediction or Network I/O thread
   /// fails (which stops the others), which is what it returns, classified
@@ -112,7 +115,7 @@ class ClientRuntime {
   /// Always stops and joins both spawned threads before returning or
   /// propagating an exception (see ~ClientRuntime). Must be called from
   /// the same thread that constructed this ClientRuntime (GLFW's
-  /// window-thread-affinity requirement, inherited from Renderer) and
+  /// window-thread-affinity requirement, inherited from the window) and
   /// must not be called more than once.
   [[nodiscard]] std::optional<failure::Failure> Run();
 

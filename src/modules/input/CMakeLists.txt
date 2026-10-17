@@ -1,6 +1,6 @@
 add_library(augusta_input STATIC input.cpp)
 target_include_directories(augusta_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_input PUBLIC augusta_gameplay augusta_math PRIVATE augusta_physics)
+target_link_libraries(augusta_input PUBLIC augusta_gameplay augusta_math augusta_window_events PRIVATE augusta_physics)
 # Client-only (ARCHITECTURE.md §5's "Input handling"): the headless server never
 # samples a device, and the Command it receives is augusta_gameplay's (shared).
 # The client's config file names its keys and controls through

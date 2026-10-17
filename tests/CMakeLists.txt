@@ -350,6 +350,11 @@ target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTes
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
 
+# What the DebugHud shows (augusta_hud), free of any GPU API.
+add_executable(augusta_hud_tests hud_test.cpp)
+target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_hud_tests)
+
 add_executable(augusta_input_tests input_test.cpp)
 target_link_libraries(augusta_input_tests PRIVATE augusta_input GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
@@ -727,15 +732,6 @@ target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURC
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_renderer_vertices_tests)
 
-# And the debug HUD's text (debug_hud_text.h), which both Renderers draw.
-add_executable(augusta_renderer_debug_hud_text_tests renderer_debug_hud_text_test.cpp)
-target_include_directories(augusta_renderer_debug_hud_text_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
-target_link_libraries(
-  augusta_renderer_debug_hud_text_tests
-  PRIVATE augusta_renderer_debug_hud_text GTest::gtest GTest::gtest_main
-)
-gtest_discover_tests(augusta_renderer_debug_hud_text_tests)
-
 # And which Vulkan device it draws with (device_choice.h).
 add_executable(augusta_renderer_device_choice_tests renderer_device_choice_test.cpp)
 target_include_directories(augusta_renderer_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
@@ -877,16 +873,23 @@ if(AUGUSTA_CLIENT)
     message(STATUS "Renderer smoke test not built: ${no_smoke_test_reason}")
   endif()
 
-  # The Renderer's GLFW key mapping (glfw_keys.h), private to the module.
-  # The test names keys by GLFW's own constants.
+  # The window's GLFW key mapping (glfw_keys.h), private to the module. The
+  # test names keys by GLFW's own constants.
   find_package(glfw3 CONFIG REQUIRED)
-  add_executable(augusta_client_renderer_glfw_keys_tests client_renderer_glfw_keys_test.cpp)
-  target_include_directories(augusta_client_renderer_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+  add_executable(augusta_client_window_glfw_keys_tests client_window_glfw_keys_test.cpp)
+  target_include_directories(augusta_client_window_glfw_keys_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/window)
   target_link_libraries(
-    augusta_client_renderer_glfw_keys_tests
-    PRIVATE augusta_renderer_glfw_keys glfw GTest::gtest GTest::gtest_main
+    augusta_client_window_glfw_keys_tests
+    PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main
   )
-  gtest_discover_tests(augusta_client_renderer_glfw_keys_tests)
+  gtest_discover_tests(augusta_client_window_glfw_keys_tests)
+
+  # The window itself, hidden, which needs a display: on Linux CI's runner gives
+  # it a virtual X server, as the renderer smoke test's (nightly-jobs.yml). It
+  # calls the window's GLFW callbacks as the OS's events would.
+  add_executable(augusta_client_window_tests client_window_test.cpp)
+  target_link_libraries(augusta_client_window_tests PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_window_tests)
 endif()
 
 add_subdirectory(fuzz)

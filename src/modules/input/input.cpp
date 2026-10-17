@@ -7,13 +7,19 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <variant>
 
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/window_events.h"
 
 namespace augusta::input {
+
+using window::Key;
+using window::KeyState;
 
 namespace {
 
@@ -36,7 +42,7 @@ math::Vec3 MovementDirection(float forward, float right, float yaw) {
 }
 
 // Every key's name, in Key's order.
-constexpr std::array<std::string_view, kKeyCount> kKeyNames = {
+constexpr std::array<std::string_view, window::kKeyCount> kKeyNames = {
     "A",           "B",         "C",          "D",           "E",
     "F",           "G",         "H",          "I",           "J",
     "K",           "L",         "M",          "N",           "O",
@@ -83,8 +89,6 @@ physics::Stance DesiredStance(bool crouch, bool prone) {
 
 }  // namespace
 
-bool IsMouseButton(Key key) { return key == Key::kMouseLeft || key == Key::kMouseRight || key == Key::kMouseMiddle; }
-
 std::string_view NameOf(Key key) { return kKeyNames.at(static_cast<std::size_t>(key)); }
 
 std::optional<Key> KeyNamed(std::string_view name) { return Named<Key>(kKeyNames, name); }
@@ -127,12 +131,18 @@ bool Input::CursorCaptured() const {
   return cursor_captured_;
 }
 
-void Input::OnKeyEvent(const KeyEvent& event) {
+void Input::Handle(std::span<const window::Event> events) {
   const std::lock_guard<std::mutex> lock(mutex_);
+  for (const window::Event& event : events) {
+    std::visit([this](const auto& device_event) { Apply(device_event); }, event);
+  }
+}
+
+void Input::Apply(const window::KeyEvent& event) {
   const bool pressed = event.state == KeyState::kPressed;
   if (!cursor_captured_) {
     // Released, the game has no keyboard; a mouse click only takes the cursor back.
-    if (pressed && IsMouseButton(event.key)) {
+    if (pressed && window::IsMouseButton(event.key)) {
       SetCursorCaptured(true);
     }
     return;
@@ -146,8 +156,7 @@ void Input::OnKeyEvent(const KeyEvent& event) {
   }
 }
 
-void Input::OnMouseMoveEvent(const MouseMoveEvent& event) {
-  const std::lock_guard<std::mutex> lock(mutex_);
+void Input::Apply(const window::MouseMoveEvent& event) {
   if (!cursor_captured_) {
     return;
   }

@@ -3,21 +3,14 @@
 # is reached through this directory, as frame_regions.h is.
 add_library(augusta_renderer_vertices STATIC vertices.cpp)
 target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer_vertices PUBLIC augusta_input)
+target_link_libraries(augusta_renderer_vertices PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vertices CLIENT_ONLY)
-
-# The debug HUD's text (debug_hud_text.h), which the Renderer draws. Free of
-# any GPU API, like the geometry above, and private to the module the same way.
-add_library(augusta_renderer_debug_hud_text STATIC debug_hud_text.cpp)
-target_include_directories(augusta_renderer_debug_hud_text PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer_debug_hud_text PUBLIC augusta_input)
-augusta_set_module_scope(augusta_renderer_debug_hud_text CLIENT_ONLY)
 
 # Which Vulkan device the Renderer draws with (device_choice.h), decided apart
 # from the GPU API, and private to the module the same way.
 add_library(augusta_renderer_device_choice STATIC device_choice.cpp)
 target_include_directories(augusta_renderer_device_choice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer_device_choice PUBLIC augusta_input)
+target_link_libraries(augusta_renderer_device_choice PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_device_choice CLIENT_ONLY)
 
 if(AUGUSTA_CLIENT)
@@ -29,12 +22,6 @@ if(AUGUSTA_CLIENT)
   find_package(glfw3 CONFIG REQUIRED)
   find_package(imgui CONFIG REQUIRED)
   find_package(VulkanHeaders CONFIG REQUIRED)
-
-  # Which input::Key a GLFW key is (glfw_keys.h), apart from the window so it is
-  # tested without one. Private to the module, as vertices.h is.
-  add_library(augusta_renderer_glfw_keys STATIC glfw_keys.cpp)
-  target_link_libraries(augusta_renderer_glfw_keys PUBLIC augusta_input PRIVATE glfw)
-  augusta_set_module_scope(augusta_renderer_glfw_keys CLIENT_ONLY)
 
   # Its shaders, compiled to SPIR-V at build time and embedded in the renderer
   # as arrays of 32-bit words: it compiles nothing at runtime and ships no
@@ -98,12 +85,10 @@ if(AUGUSTA_CLIENT)
   # GLFW finds at runtime, so the client ships none (ADR-0059).
   target_link_libraries(
     augusta_renderer
-    PUBLIC augusta_input
+    PUBLIC augusta_math augusta_window
     PRIVATE
       augusta_logging
       augusta_renderer_device_choice
-      augusta_renderer_glfw_keys
-      augusta_renderer_debug_hud_text
       augusta_renderer_vertices
       nvrhi
       nvrhi_vk
