@@ -6,7 +6,7 @@
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
-# into it (pulling in usd-optimize/usd-validation-nvidia/pynacl/blake3 as its
+# into it (pulling in usd-optimize/usd-validation-nvidia/pynacl as its
 # own dependencies), the project's native _native extension module, built by
 # the repository's own CMake project into that same project (ADR-0030),
 # develop's signing keypair, and the authoring/packs/keys content

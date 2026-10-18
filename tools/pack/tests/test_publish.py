@@ -7,7 +7,6 @@ key's forced command (clusters/onprem/node/augusta-publish-receive.sh), run
 locally by an ssh that stands in for sshd; ssh itself is not run.
 """
 
-import dataclasses
 import hashlib
 import os
 from pathlib import Path
@@ -15,10 +14,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import types
 
 from augusta_pack import _native
 from augusta_pack import keys
-from augusta_pack import pack
 from augusta_pack import publish
 from augusta_pack.publish import PublishError
 import pytest
@@ -88,7 +87,7 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
 
     assert copied
     assert release.version == server_hash.hex()[:12]
-    assert release.pack_format == pack.FORMAT_VERSION
+    assert release.pack_format == _native.read_pack_layout(server_pack).version
     assert (
         release.directory
         == f"/srv/augusta/asset-packs/develop/firebase/{release.version}"
@@ -128,12 +127,13 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
     tmp_path, monkeypatch, capsys, cook
 ):
     server_hash = cook[3]
+    pack_format = _native.read_pack_layout(cook[1]).version
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
     assert (
         f"  serve it with servers.firebase.packVersion: "
-        f'"{server_hash.hex()[:12]}" and packFormat: {pack.FORMAT_VERSION} in '
+        f'"{server_hash.hex()[:12]}" and packFormat: {pack_format} in '
         f"clusters/onprem/apps/develop.yaml"
     ) in capsys.readouterr().out.splitlines()
 
@@ -141,14 +141,13 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
 def test_the_printed_pack_format_is_the_server_packs_header(
     tmp_path, monkeypatch, capsys, cook
 ):
-    # The header's version as the reader parsed it, made one no constant
-    # holds: the printed format can only be that header's.
-    verify_pack = publish.verify_pack
-
-    def verify_pack_of_format_7(path, public_key):
-        return dataclasses.replace(verify_pack(path, public_key), version=7)
-
-    monkeypatch.setattr(publish, "verify_pack", verify_pack_of_format_7)
+    # The header's version as the layout read parsed it, made one no
+    # constant holds: the printed format can only be that header's.
+    monkeypatch.setattr(
+        _native,
+        "read_pack_layout",
+        lambda _path: types.SimpleNamespace(version=7),
+    )
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
@@ -287,7 +286,7 @@ def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
     other_key = tmp_path / "other.pub"
     other_key.write_bytes(keys.generate_keypair()[0])
 
-    with pytest.raises(PublishError, match="signature is not valid"):
+    with pytest.raises(PublishError, match="failed signature verification"):
         publish.prepare(
             "develop", "firebase", client_pack, server_pack, other_key
         )

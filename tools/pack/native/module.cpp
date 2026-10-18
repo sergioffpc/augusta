@@ -1,6 +1,8 @@
 // augusta_pack._native: the pybind11 bindings of the cooker's native steps,
 // called from augusta_pack.cook: the mesh pass (mesh.h), the texture
-// compression (texture.h) and augusta_assets' pack encoder (pack_encoder.h).
+// compression (texture.h) and augusta_assets' pack encoder (pack_encoder.h);
+// and from augusta-inspect, augusta-verify and augusta-publish:
+// augusta_assets' pack reading (pack_reader.h).
 
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +19,7 @@
 
 #include "mesh.h"
 #include "pack_encoder.h"
+#include "pack_reader.h"
 #include "texture.h"
 
 namespace py = pybind11;
@@ -25,8 +28,8 @@ PYBIND11_MODULE(_native, module) {
   module.doc() =
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
       "(ADR-0016), and stb_image + stb_image_resize2 + libktx's PNG/JPEG load, mip chain, BC7/BC5/BC4 encode and KTX2 "
-      "write (ADR-0017), and augusta_assets' pack encoder: the blobs and the signed pack the client and server load "
-      "(ADR-0031).";
+      "write (ADR-0017), augusta_assets' pack encoder: the blobs and the signed pack the client and server load "
+      "(ADR-0031), and its pack reader: a pack's layout, and the pack the client and server would load.";
   module.def(
       "optimize_mesh",
       [](std::vector<float> points, std::vector<std::uint32_t> indices) {
@@ -70,4 +73,5 @@ PYBIND11_MODULE(_native, module) {
       "encodes for `format`, as [(width, height, rgba)], level 0 (the image itself) first. Exposed so the filtering "
       "can be checked before BC encoding.");
   augusta::pack::BindPackEncoder(module);
+  augusta::pack::BindPackReader(module);
 }

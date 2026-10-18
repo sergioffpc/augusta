@@ -12,8 +12,8 @@ import subprocess
 import wave
 import zlib
 
+from augusta_pack import _native
 from augusta_pack import keys
-from augusta_pack import reader
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -43,9 +43,9 @@ class PackContents:
     hash: bytes
     client_pack_hash: bytes | None
     # pack-relative path -> (asset type, blob)
-    entries: dict[str, tuple[int, bytes]]
+    entries: dict[str, tuple[_native.AssetType, bytes]]
 
-    def paths_of_type(self, asset_type: int) -> set[str]:
+    def paths_of_type(self, asset_type: _native.AssetType) -> set[str]:
         return {
             path
             for path, (entry_type, _) in self.entries.items()
@@ -63,15 +63,20 @@ def key_pair() -> KeyPair:
 
 
 def read_pack_contents(path: Path, public_key: bytes) -> PackContents:
-    """Verifies the pack at path against public_key, then reads every blob."""
-    info = reader.verify_pack(path, public_key)
+    """Loads the pack at path against public_key, then reads every blob.
+
+    Each blob is the bytes the loaded pack's index places it at.
+    """
+    loaded = _native.load_pack(path, public_key)
     data = path.read_bytes()
     entries = {
         entry.path: (entry.type, data[entry.offset : entry.offset + entry.size])
-        for entry in info.entries
+        for entry in loaded.entries
     }
     return PackContents(
-        hash=info.hash, client_pack_hash=info.client_pack_hash, entries=entries
+        hash=loaded.hash,
+        client_pack_hash=loaded.client_pack_hash,
+        entries=entries,
     )
 
 

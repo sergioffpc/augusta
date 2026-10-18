@@ -29,11 +29,9 @@ required check, fails a pull request after which any `packFormat` there differs
 from `kFormatVersion`, or a `packVersion` has none
 ([`scripts/check-pack-formats.py`](../../scripts/check-pack-formats.py)).
 
-A change to `kFormatVersion` (with the cooker's `FORMAT_VERSION`,
-[`tools/pack/src/augusta_pack/pack.py`](../../tools/pack/src/augusta_pack/pack.py))
-therefore needs every scenario re-cooked in the new format, for every
-environment, before it merges. A change that leaves the format version alone
-needs no re-cook. In order:
+A change to `kFormatVersion` therefore needs every scenario re-cooked in the new
+format, for every environment, before it merges. A change that leaves the format
+version alone needs no re-cook. In order:
 
 1. On the `feature/*` branch that changes the format, cook each scenario
    `clusters/` names (`git grep -n packVersion -- clusters/`) with that branch's

@@ -1,9 +1,7 @@
 #include "pack_encoder.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <format>
@@ -22,6 +20,7 @@
 #include "augusta/assets.h"
 #include "augusta/math.h"
 #include "augusta/pack_encoder.h"
+#include "bytes.h"
 #include "math_caster.h"  // IWYU pragma: keep - the Vec3/Quat conversions
 
 namespace augusta::pack {
@@ -60,25 +59,6 @@ std::string DescribeWriteError(assets::WriteError error, const std::filesystem::
       return "its entries exceed the pack's size limits";
   }
   return "could not be written";
-}
-
-std::vector<std::byte> BytesOf(std::string_view bytes) {
-  const auto* first = reinterpret_cast<const std::byte*>(bytes.data());
-  return {first, first + bytes.size()};
-}
-
-py::bytes ToBytes(std::span<const std::byte> bytes) {
-  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
-}
-
-template <std::size_t Size>
-std::array<std::byte, Size> FixedBytesOf(std::string_view bytes, std::string_view name) {
-  if (bytes.size() != Size) {
-    throw py::value_error(std::format("{} must be {} bytes, got {}", name, Size, bytes.size()));
-  }
-  std::array<std::byte, Size> fixed{};
-  std::memcpy(fixed.data(), bytes.data(), Size);
-  return fixed;
 }
 
 // what names the blob, e.g. "mesh", in the EncodeError a refusal raises.
