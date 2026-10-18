@@ -1,77 +1,72 @@
 #ifndef AUGUSTA_CLIENT_APPLICATION_H_
 #define AUGUSTA_CLIENT_APPLICATION_H_
 
-#include <expected>
 #include <memory>
 #include <optional>
+#include <string>
 
-#include "augusta/assets.h"
-#include "augusta/client_character_loader.h"
+#include "augusta/application.h"
 #include "augusta/client_config.h"
-#include "augusta/client_content.h"
-#include "augusta/config.h"
-#include "augusta/failure.h"
-#include "augusta/harness.h"
 #include "augusta/reenactment.h"
 
 /// \file
-/// How augustac's phases classify their failures behind the application
-/// boundary (augusta/application.h, ADR-0033): an unusable config or capture to
-/// reenact, a transport that does not start, a pack or content that does not
-/// load, a Session that ends on its own, a character that cannot be loaded.
-/// augustac's main.cpp runs these as its Lifecycle around ClientRuntime
-/// (client.h), which classifies its run's
-/// failures with the functions below and passes its workers' first cause on as
-/// the supervisor recorded it. Nothing here needs a window or a GPU, so it is
-/// tested without the renderer.
+/// augustac's runs behind the application boundary (application.h, ADR-0033),
+/// once its config file and command line are read (client_phases.h): listing a
+/// replay server's Replays, or the Lifecycle that initializes the transport,
+/// loads the client pack's content, constructs the ClientRuntime (client.h)
+/// from it and runs it. Each classifies its own failure, so main() only
+/// concludes the one Outcome. On Windows each raises the system timer
+/// resolution to 1 ms for as long as it runs: Windows otherwise wakes a
+/// sleeping thread only every 15.6 ms, so the Prediction thread could not keep
+/// a 60 Hz schedule (16.7 ms a tick) and would run well below the server's
+/// rate.
 namespace augusta::client {
 
-/// The config file command_line names, read, or the
-/// failure::Code::kInvalidConfiguration failure saying why command_line or the
-/// file is unusable. A command line asking for help or the version is main's
-/// to answer before this.
-[[nodiscard]] std::expected<config::ClientConfig, failure::Failure> ReadClientConfig(
-    const std::expected<config::CommandLine, config::ConfigError>& command_line);
+/// One augustac run's runtime: the verified pack, the ClientRuntime that reads
+/// from it (it loads the characters other players bring from it, so the pack
+/// outlives it), and the timer resolution it runs at.
+class ClientProcess {
+ public:
+  /// What it holds, made by ClientLifecycle's construct phase.
+  struct Parts;
 
-/// The Script of the player command_line asks to reenact (`--reenact <capture>
-/// --player <n>`, ADR-0050), or nullopt if it asks for none; or the
-/// failure::Code::kInvalidConfiguration failure saying why the arguments, the
-/// capture or its player are unusable, its context naming the capture's path.
-[[nodiscard]] std::expected<std::optional<harness::Script>, failure::Failure> ReadReenactment(
-    const config::CommandLine& command_line);
+  explicit ClientProcess(std::unique_ptr<Parts> parts);
+  ~ClientProcess();
 
-/// Whether script's capture may be reenacted with the client pack of hash
-/// loaded: the failure::Code::kInvalidConfiguration failure if it names
-/// another, whose Commands and spawns this pack's Map and Characters need not
-/// fit.
-[[nodiscard]] std::expected<void, failure::Failure> CheckReenactmentPack(const harness::Script& script,
-                                                                         const assets::PackHash& loaded);
+  ClientProcess(const ClientProcess&) = delete;
+  ClientProcess& operator=(const ClientProcess&) = delete;
+  ClientProcess(ClientProcess&&) = delete;
+  ClientProcess& operator=(ClientProcess&&) = delete;
 
-/// The verified pack and what a ClientRuntime is made from. The runtime holds
-/// on to the pack (it loads the characters other players bring from it), so
-/// the pack keeps its address.
-struct LoadedClient {
-  std::unique_ptr<const assets::Pack> pack;
-  Content content;
+  /// ClientRuntime::Run(), on the thread that constructed it.
+  [[nodiscard]] application::Outcome Run();
+
+ private:
+  std::unique_ptr<Parts> parts_;
 };
 
-/// Verifies the pack file_config names and loads the content of the character
-/// it asks to play, or returns the failure::Code::kInvalidContent failure, its
-/// context naming the pack's path. Verified before anything else starts (no
-/// renderer/audio device, network socket, or thread is spun up yet) - a bad
-/// pack or key means this process exits here, never partially running against
-/// untrusted content (ADR-0018, ARCHITECTURE.md §8).
-[[nodiscard]] std::expected<LoadedClient, failure::Failure> LoadClient(const config::ClientConfig& file_config);
+/// augustac --replays (ADR-0051): asks the replay server file_config names for
+/// the captures it replays and prints them, or says why it could not: the
+/// transport that does not start, the server that does not answer within 10
+/// seconds or refuses, as the Session's failures are classified
+/// (client_phases.h). A server address that does not parse is classified where
+/// it is refused; anything else escaping is failure::Code::kWorkerFailed, with
+/// `phase=list_replays`.
+[[nodiscard]] application::Outcome ListReplays(const config::ClientConfig& file_config);
 
-/// A Session that ended on its own, classified: a refused join is
-/// failure::Code::kJoinRefused, a server that never admitted this client
-/// kServerUnreachable, and a connection lost after admission
-/// kPeerConnectionLost. The detail is the sentence the player is told.
-[[nodiscard]] failure::Failure ClassifySessionFailure(const harness::Failure& ended);
-
-/// A character that could not be loaded in the Lobby, as the
-/// failure::Code::kInvalidContent failure naming it under `character=`.
-[[nodiscard]] failure::Failure ClassifyCharacterError(const CharacterError& error);
+/// augustac's Lifecycle for file_config: initialize starts the transport
+/// (link::Init); construct verifies the pack and loads the content of the
+/// character to play, then constructs the ClientRuntime - as reenactment's
+/// Captured player if it has one (ADR-0050), playing its capture's Character
+/// rather than the config's, or as the Replay viewer of the capture replay
+/// names (ADR-0051) - whose own exception the application boundary classifies:
+/// a dependency's (no window or GPU device), or one already classified (a
+/// rejected collision mesh); run runs it until the window closes, its
+/// reenactment or Replay ends or it fails. With no reconnecting and no
+/// connection screen, it says what happened and exits.
+[[nodiscard]] application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
+                                                                    std::optional<harness::Script> reenactment,
+                                                                    std::optional<std::string> replay);
 
 }  // namespace augusta::client
 

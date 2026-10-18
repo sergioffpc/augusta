@@ -18,9 +18,9 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/audio.h"
-#include "augusta/client_application.h"
 #include "augusta/client_character_loader.h"
 #include "augusta/client_content.h"
+#include "augusta/client_phases.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -48,6 +48,18 @@
 namespace augusta::client {
 
 namespace {
+
+// The window the client opens, titled as the game; a Debug build runs under
+// Vulkan's validation layer (ADR-0059) wherever the loader finds it through
+// VK_ADD_LAYER_PATH.
+renderer::Config RendererConfig() {
+  renderer::Config config;
+  config.window.title = "augusta";
+#ifndef NDEBUG
+  config.validation = renderer::Validation::kIfAvailable;
+#endif
+  return config;
+}
 
 // Stops the Runner's threads and joins both, on scope exit - including
 // when unwinding past Run() due to an exception from the Main/Render loop
@@ -160,7 +172,7 @@ struct ClientRuntime::Impl {
         load_character(std::move(loader)),
         input(cfg.input),
         presentation(audio, cue_sounds, eye),
-        renderer(cfg.renderer) {
+        renderer(RendererConfig()) {
     if (cfg.reenactment.has_value()) {
       reenactment.emplace(*cfg.reenactment);
     }
@@ -181,7 +193,7 @@ struct ClientRuntime::Impl {
           .detail = std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error()))});
     }
     // A Captured player asks to join at its captured spawn (ADR-0050).
-    session.emplace(harness::SessionConfig{.server = cfg.server,
+    session.emplace(harness::SessionConfig{.server = link::Endpoint{.address = cfg.server_address},
                                            .client_pack = cfg.client_pack,
                                            .character = cfg.character,
                                            .replay = cfg.replay,

@@ -813,11 +813,11 @@ if(AUGUSTA_CLIENT)
   target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
 
-  add_executable(augusta_client_application_tests client_application_test.cpp)
+  add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(
-    augusta_client_application_tests
+    augusta_client_phases_tests
     PRIVATE
-      augusta_client_application
+      augusta_client_phases
       augusta_client_config
       augusta_config
       augusta_failure
@@ -826,10 +826,10 @@ if(AUGUSTA_CLIENT)
       GTest::gtest_main
   )
   target_compile_definitions(
-    augusta_client_application_tests
+    augusta_client_phases_tests
     PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
   )
-  gtest_discover_tests(augusta_client_application_tests DISCOVERY_TIMEOUT 30)
+  gtest_discover_tests(augusta_client_phases_tests DISCOVERY_TIMEOUT 30)
 
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)

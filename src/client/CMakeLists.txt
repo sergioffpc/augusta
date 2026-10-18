@@ -3,25 +3,19 @@
 add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
-  PRIVATE augusta_application augusta_failure augusta_version augusta_logging augusta_client_application augusta_client
+  PRIVATE augusta_application augusta_failure augusta_version augusta_logging augusta_client_application
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
 # augustac is Glue: its directory holds it alone, and it links only the
 # application, the client Runtime, failure, logging and version - anything else
 # fails the configure (ADR-0060, cmake/AugustaModule.cmake).
-augusta_set_executable_glue(augustac augusta_client)
+augusta_set_executable_glue(augustac augusta_client_application)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
-# runtime folder, which a release archives (ADR-0055, ADR-0058); and on Windows
-# its timer resolution, which Linux's main.cpp has no need to raise.
+# runtime folder, which a release archives (ADR-0055, ADR-0058).
 if(WIN32)
-  # winmm: main.cpp raises the system timer resolution (timeBeginPeriod) for the
-  # life of the process, so the Prediction thread's sleeps keep its tick schedule.
-  # NOMINMAX: the <windows.h> it includes for that would otherwise define min/max.
-  target_link_libraries(augustac PRIVATE winmm)
-  target_compile_definitions(augustac PRIVATE NOMINMAX)
   # Release writes augustac.pdb beside augustac.exe, what a released client's
   # crash or GPU crash dump is read with (ADR-0055). /DEBUG turns /OPT:REF and
   # /OPT:ICF off unless they are named, so they are: the code is Release's own.

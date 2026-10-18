@@ -9,9 +9,7 @@
 #include "augusta/client_content.h"
 #include "augusta/failure.h"
 #include "augusta/input.h"
-#include "augusta/link.h"
 #include "augusta/reenactment.h"
-#include "augusta/renderer.h"
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
@@ -31,11 +29,13 @@
 /// Where its content comes from is its caller's business (client_content.h).
 namespace augusta::client {
 
+/// What one run varies by. The window it opens is the game's own, titled
+/// "augusta", under Vulkan's validation layer in a Debug build (ADR-0059).
 struct RuntimeConfig {
-  renderer::Config renderer;
   input::Config input;
-  /// The dedicated server to connect to (US-01).
-  link::Endpoint server;
+  /// The dedicated server to connect to (US-01), "host:port" with a numeric
+  /// IP: direct IP:port only, no server discovery (ARCHITECTURE.md §3).
+  std::string server_address;
   /// The character to ask to play, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   /// The hash of the client pack loaded, which the server checks is the one
@@ -66,9 +66,9 @@ class ClientRuntime {
   /// device).
   ///
   /// augusta::link::Init() must already have been called once,
-  /// process-wide, before this constructor runs (see link.h) -
-  /// ClientRuntime doesn't call it itself since Init() is a one-time
-  /// process concern, not a per-instance one.
+  /// process-wide, before this constructor runs (see link.h), as augustac's
+  /// Lifecycle does (client_application.h) - ClientRuntime doesn't call it
+  /// itself since Init() is a one-time process concern, not a per-instance one.
   ///
   /// Content is loaded from the client pack by the caller (see
   /// client_content.h), since where content comes from is the executable's
@@ -105,7 +105,7 @@ class ClientRuntime {
   /// session fails (refused, server unreachable, connection lost), a
   /// character cannot be loaded or the Prediction or Network I/O thread
   /// fails (which stops the others), which is what it returns, classified
-  /// (client_application.h) - a thread's first cause as its supervisor recorded it:
+  /// (client_phases.h) - a thread's first cause as its supervisor recorded it:
   /// the caller reports it and exits, since there is no reconnecting. nullopt
   /// if the player closed the window, a Captured player's run left at its
   /// captured Leave or reached the capture's Match end or the server's, which

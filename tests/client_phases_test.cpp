@@ -1,4 +1,4 @@
-#include "augusta/client_application.h"
+#include "augusta/client_phases.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -53,7 +53,7 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
   return {};
 }
 
-TEST(ClientApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
+TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
   const auto config = ReadClientConfig(CommandLine{
       .config_file = "no/such/augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
 
@@ -62,7 +62,7 @@ TEST(ClientApplicationTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) 
   EXPECT_FALSE(config.error().detail.empty());
 }
 
-TEST(ClientApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
+TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
   ClientConfig config;
   config.pack_path = kPacks / "missing.pack";
   config.public_key_path = kPacks / "test.pub";
@@ -75,7 +75,7 @@ TEST(ClientApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   EXPECT_EQ(ContextOf(loaded.error(), "path"), config.pack_path.string());
 }
 
-TEST(ClientApplicationTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
+TEST(ClientPhasesTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
   ClientConfig config;
   config.pack_path = kPacks / "client.pack";
   config.public_key_path = kPacks / "test.pub";
@@ -91,7 +91,7 @@ TEST(ClientApplicationTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) 
 }
 
 // A pack that verifies but holds the server's content, not a client's.
-TEST(ClientApplicationTest, APackWithoutClientContentIsAContentFailure) {
+TEST(ClientPhasesTest, APackWithoutClientContentIsAContentFailure) {
   ClientConfig config;
   config.pack_path = kPacks / "server.pack";
   config.public_key_path = kPacks / "test.pub";
@@ -105,26 +105,26 @@ TEST(ClientApplicationTest, APackWithoutClientContentIsAContentFailure) {
   EXPECT_FALSE(loaded.error().detail.empty());
 }
 
-TEST(ClientApplicationTest, ARefusedJoinEndsTheClientsSession) {
+TEST(ClientPhasesTest, ARefusedJoinEndsTheClientsSession) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kRefused, .refusal = JoinRefusal::kLobbyFull});
 
   EXPECT_EQ(failure.code, Code::kJoinRefused);
   EXPECT_FALSE(failure.detail.empty());
 }
 
-TEST(ClientApplicationTest, AServerThatNeverAnsweredIsUnreachable) {
+TEST(ClientPhasesTest, AServerThatNeverAnsweredIsUnreachable) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kServerUnreachable, .refusal = {}});
 
   EXPECT_EQ(failure.code, Code::kServerUnreachable);
 }
 
-TEST(ClientApplicationTest, AConnectionLostAfterAdmissionIsALostPeerConnection) {
+TEST(ClientPhasesTest, AConnectionLostAfterAdmissionIsALostPeerConnection) {
   const Failure failure = ClassifySessionFailure({.kind = FailureKind::kConnectionLost, .refusal = {}});
 
   EXPECT_EQ(failure.code, Code::kPeerConnectionLost);
 }
 
-TEST(ClientApplicationTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
+TEST(ClientPhasesTest, ACharacterThatCannotBeLoadedIsAContentFailure) {
   const Failure failure = ClassifyCharacterError(CharacterError{
       .code = CharacterErrorCode::kUnknownCharacter, .character = "ghost", .subject = {}, .resolve_error = {}});
 
@@ -155,7 +155,7 @@ std::filesystem::path WriteCapture(const std::string& name) {
   return path;
 }
 
-TEST(ClientApplicationTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
+TEST(ClientPhasesTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
   const auto reenactment = ReadReenactment(
       CommandLine{.config_file = "augustac.yaml", .message = {}, .options = {}, .action = CommandLineAction::kRun});
 
@@ -164,7 +164,7 @@ TEST(ClientApplicationTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
 }
 
 // Requirements: US-21
-TEST(ClientApplicationTest, ARunReenactsThePlayerOfTheCaptureItNames) {
+TEST(ClientPhasesTest, ARunReenactsThePlayerOfTheCaptureItNames) {
   const std::filesystem::path capture = WriteCapture("augusta_client_reenact_one.capture");
 
   const auto reenactment = ReadReenactment(ReenactCommandLine(capture, "1"));
@@ -177,7 +177,7 @@ TEST(ClientApplicationTest, ARunReenactsThePlayerOfTheCaptureItNames) {
 }
 
 // Requirements: US-21
-TEST(ClientApplicationTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
+TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
   const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two.capture");
   const std::filesystem::path missing = std::filesystem::temp_directory_path() / "augusta_no_such.capture";
 
@@ -191,7 +191,7 @@ TEST(ClientApplicationTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurat
   std::filesystem::remove(capture);
 }
 
-TEST(ClientApplicationTest, ReenactWithoutPlayerIsAConfigurationFailure) {
+TEST(ClientPhasesTest, ReenactWithoutPlayerIsAConfigurationFailure) {
   CommandLine command_line = ReenactCommandLine("a.capture", "1");
   command_line.options.erase("player");
 
@@ -202,7 +202,7 @@ TEST(ClientApplicationTest, ReenactWithoutPlayerIsAConfigurationFailure) {
 }
 
 // Requirements: US-21
-TEST(ClientApplicationTest, ACaptureOfAnotherClientPackIsAConfigurationFailure) {
+TEST(ClientPhasesTest, ACaptureOfAnotherClientPackIsAConfigurationFailure) {
   augusta::harness::Script script;
   script.client_pack.fill(std::byte{9});
   augusta::assets::PackHash loaded{};
