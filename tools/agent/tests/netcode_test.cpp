@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/agent.h"
+#include "augusta/assets.h"
 #include "augusta/link.h"
 #include "augusta/netcode_stats.h"
 #include "example_run.h"
@@ -103,7 +104,8 @@ class ImpairedLinkTest : public ::testing::TestWithParam<Profile> {
 
 // Requirements: NFR-02, NFR-06
 TEST_P(ImpairedLinkTest, AgentsPlayThroughWithBoundedCorrectionsAndConfirmedHits) {
-  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", kPlayers);
+  const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),
+                      ExamplePacks() / "test.pub", kPlayers);
   const LoadedPack pack = ExampleClientPack();
   augusta::link::SimulateNetworkConditions(GetParam().conditions);
 

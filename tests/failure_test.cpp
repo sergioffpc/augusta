@@ -76,11 +76,11 @@ TEST(FailureTest, TheDescriptionLeavesOutAnEmptyDetail) {
 TEST(FailureTest, TheDescriptionQuotesWhatWouldBreakTheLine) {
   const Failure failure{
       .code = Code::kInvalidContent,
-      .context = {{.key = "file", .value = "maps/old town.pack"}},
+      .context = {{.key = "file", .value = "maps/old town.apak"}},
       .detail = "bad \"key\"\nCRIT forged=1 \\",
   };
 
-  EXPECT_EQ(DescribeFailure(failure), R"(code=invalid_content disposition=process file="maps/old town.pack" )"
+  EXPECT_EQ(DescribeFailure(failure), R"(code=invalid_content disposition=process file="maps/old town.apak" )"
                                       R"(detail="bad \"key\"\nCRIT forged=1 \\")");
 }
 

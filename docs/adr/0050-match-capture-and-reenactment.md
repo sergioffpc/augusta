@@ -100,7 +100,9 @@ degraded run's loss stays in its `capture_disabled` line as `lost=true`.
 **augustad captures only when asked.** `simulation.capture` in `augustad.yaml`
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
 file of its own, named by when it started and its number in the server's run, so
-a server that runs many Matches keeps every one.
+a server that runs many Matches keeps every one. A capture's file name ends in
+`.acap`, the format's own extension, as a pack's ends in `.apak` (ADR-0030); the
+server lists and retains no other file.
 
 **A server keeps its capture directory within a count and a size, oldest Match
 first (#461).** `simulation.capture_retention` sets `max_files`, `max_mib` or

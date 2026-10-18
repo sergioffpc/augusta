@@ -28,7 +28,7 @@ ENTRIES = [
 
 
 def test_a_written_pack_loads_back_every_entry(tmp_path, key_pair):
-    path = tmp_path / "test.pack"
+    path = tmp_path / "test.apak"
     pack_hash = _native.write_pack(path, ENTRIES, key_pair.private_key)
 
     contents = read_pack_contents(path, key_pair.public_key)
@@ -42,21 +42,21 @@ def test_a_pack_names_the_client_pack_it_was_written_with_and_none_otherwise(
     tmp_path, key_pair
 ):
     client_hash = _native.write_pack(
-        tmp_path / "client.pack", ENTRIES, key_pair.private_key
+        tmp_path / "client.apak", ENTRIES, key_pair.private_key
     )
     _native.write_pack(
-        tmp_path / "server.pack", ENTRIES, key_pair.private_key, client_hash
+        tmp_path / "server.apak", ENTRIES, key_pair.private_key, client_hash
     )
 
-    server = read_pack_contents(tmp_path / "server.pack", key_pair.public_key)
-    client = read_pack_contents(tmp_path / "client.pack", key_pair.public_key)
+    server = read_pack_contents(tmp_path / "server.apak", key_pair.public_key)
+    client = read_pack_contents(tmp_path / "client.apak", key_pair.public_key)
     assert server.client_pack_hash == client_hash
     assert client.client_pack_hash is None
 
 
 def test_a_generated_keypair_signs_a_pack_its_public_key_loads(tmp_path):
     public_key, private_key = _native.generate_ed25519_keypair()
-    path = tmp_path / "test.pack"
+    path = tmp_path / "test.apak"
     pack_hash = _native.write_pack(path, ENTRIES, private_key)
 
     assert len(public_key) == keys.PUBLIC_KEY_SIZE
@@ -65,7 +65,7 @@ def test_a_generated_keypair_signs_a_pack_its_public_key_loads(tmp_path):
 
 
 def test_a_refused_pack_raises_load_error_with_its_reason(tmp_path, key_pair):
-    path = tmp_path / "test.pack"
+    path = tmp_path / "test.apak"
     _native.write_pack(path, ENTRIES, key_pair.private_key)
     other_public_key, _ = keys.generate_keypair()
 
@@ -79,7 +79,7 @@ def test_two_entries_with_the_same_path_are_refused(tmp_path, key_pair):
 
     with pytest.raises(_native.WriteError, match="share a path") as refused:
         _native.write_pack(
-            tmp_path / "test.pack", duplicate, key_pair.private_key
+            tmp_path / "test.apak", duplicate, key_pair.private_key
         )
     assert refused.value.reason == _native.WriteErrorReason.DUPLICATE_PATH
     assert list(tmp_path.iterdir()) == []

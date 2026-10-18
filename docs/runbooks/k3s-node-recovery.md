@@ -47,7 +47,7 @@ public repository over HTTPS with no credentials, so a rebuilt cluster needs no
 deploy key.
 
 The only state not in Git is the asset packs in the node's pack folder:
-`/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/server.pack`
+`/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/server.apak`
 and `signing.pub` for each server the `HelmRelease` values in
 `clusters/onprem/apps/` list
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). Without
@@ -88,7 +88,7 @@ restores them.
   has.
 - For a rebuild, a copy of every environment's pack folder: either taken from
   the node in step B1, or re-made from the pack environment that cooked them
-  (`<AssetsRoot>\packs\<scenario>\server.pack` and the public key it was signed
+  (`<AssetsRoot>\packs\<scenario>\server.apak` and the public key it was signed
   with, see [Rotate the Pack Signing Key](pack-key-rotation.md)). The repository
   defines no backup of the volume.
 - The server image, `ghcr.io/sergioffpc/augustad`, pullable without credentials:
@@ -1438,7 +1438,7 @@ kubectl get namespaces -L pod-security.kubernetes.io/enforce
   ([Verify the confinement](#verify-the-confinement)).
 - Every `develop` server logged `event=capture_enabled` with its own
   `/srv/augusta/captures/develop/<scenario>` directory; the capture filesystem
-  is mounted, and a Match played to its end leaves a `.capture` file there.
+  is mounted, and a Match played to its end leaves a `.acap` file there.
 - Each server's Service is on the node port its `HelmRelease` pins, in its
   environment's range: `develop`'s 30700-30799 (`firebase` on 30700),
   `staging`'s 30800-30899 (`firebase` on 30800).

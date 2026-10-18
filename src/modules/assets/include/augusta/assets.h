@@ -38,6 +38,10 @@
 /// before decoding.
 namespace augusta::assets {
 
+/// What a pack's file name ends in, by convention only: Load() knows a pack by
+/// its magic, never its name, so it loads whatever file it is given.
+inline constexpr std::string_view kPackExtension = ".apak";
+
 /// The kind of a pack's index entry (ADR-0031's per-blob type tag).
 enum class AssetType : std::uint8_t {
   kMesh,

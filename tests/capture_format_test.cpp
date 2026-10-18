@@ -317,6 +317,6 @@ TEST(CaptureFormatTest, TheMagicCheckAcceptsACaptureAndRefusesAnythingElse) {
   EXPECT_FALSE(StartsWithMagic(failing));
 }
 
-TEST(CaptureFormatTest, EveryCaptureFileEndsInItsExtension) { EXPECT_EQ(augusta::capture::kExtension, ".capture"); }
+TEST(CaptureFormatTest, EveryCaptureFileEndsInItsExtension) { EXPECT_EQ(augusta::capture::kExtension, ".acap"); }
 
 }  // namespace

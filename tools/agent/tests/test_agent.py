@@ -93,14 +93,14 @@ async def shoot_until_the_match_ends(agent: augusta_agent.Agent) -> list:
 def test_a_bad_key_raises_with_the_reason():
     with pytest.raises(augusta_agent.PackError, match="test.key"):
         augusta_agent.load_pack(
-            EXAMPLE_PACKS / "client.pack", EXAMPLE_PACKS / "test.key"
+            EXAMPLE_PACKS / "client.apak", EXAMPLE_PACKS / "test.key"
         )
 
 
 def test_a_missing_pack_raises_with_the_reason():
-    with pytest.raises(augusta_agent.PackError, match="missing.pack"):
+    with pytest.raises(augusta_agent.PackError, match="missing.apak"):
         augusta_agent.load_pack(
-            EXAMPLE_PACKS / "missing.pack", EXAMPLE_PACKS / "test.pub"
+            EXAMPLE_PACKS / "missing.apak", EXAMPLE_PACKS / "test.pub"
         )
 
 

@@ -75,7 +75,7 @@ augusta::policy::Policy ExamplePolicy() {
   const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
   std::string name = std::string("augusta_example_rules_test_") + test.test_suite_name() + "_" + test.name();
   std::ranges::replace(name, '/', '_');
-  const auto pack_path = std::filesystem::temp_directory_path() / (name + ".pack");
+  const auto pack_path = std::filesystem::temp_directory_path() / (name + std::string(augusta::assets::kPackExtension));
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
   EXPECT_TRUE(augusta::assets::WritePack(
                   pack_path,

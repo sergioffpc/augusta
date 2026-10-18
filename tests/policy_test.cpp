@@ -567,7 +567,8 @@ Policy ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
   EXPECT_TRUE(public_key.has_value());
-  auto pack = augusta::assets::Pack::Load(packs / "server.pack", public_key.value());
+  auto pack = augusta::assets::Pack::Load((packs / "server").replace_extension(augusta::assets::kPackExtension),
+                                          public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
   auto policy = augusta::scenario::LoadPolicy(pack.value());
   EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());

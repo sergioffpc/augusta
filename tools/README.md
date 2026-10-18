@@ -51,8 +51,8 @@ tooling-time project only - nothing here is linked into the shipped client or
 server.
 
 ```text
-scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize -> usd-validation-nvidia -> cook -> packs/<scenario>/client.pack
-                          -> the cue sounds and the scripts                                             -> packs/<scenario>/server.pack
+scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize -> usd-validation-nvidia -> cook -> packs/<scenario>/client.apak
+                          -> the cue sounds and the scripts                                             -> packs/<scenario>/server.apak
 ```
 
 1. **usd-optimize** cleans the stage (triangulate, dedupe, flatten, drop small
@@ -176,7 +176,7 @@ scripts:
 ```
 
 ```powershell
-augusta-pack <name>                    # -> <assets-root>\packs\<name>\{client,server}.pack
+augusta-pack <name>                    # -> <assets-root>\packs\<name>\{client,server}.apak
 augusta-pack <name> --skip-validation  # skip usd-validation-nvidia only
 ```
 
@@ -209,7 +209,7 @@ on the pack.
 
 By default, packs are written under `<assets-root>/packs`, keyed by the
 scenario's name alone, not its `authoring/scenarios/` position (`firebase` ->
-`packs/firebase/client.pack`, `packs/firebase/server.pack`). Pass
+`packs/firebase/client.apak`, `packs/firebase/server.apak`). Pass
 `--client-output-pack`/`--server-output-pack` to put them somewhere else.
 Scripts are part of the signed pack: to change a value, edit the file and cook
 again.
@@ -234,8 +234,8 @@ augusta-pack [-h] [--assets-root ASSETS_ROOT]
 | `scenario` (required)                     |                                                                         | Scenario folder - relative to the current directory or absolute, but must be under `<assets-root>/authoring` (see above).                       |
 | `-h`, `--help`                            |                                                                         | Print the usage and option list, then exit.                                                                                                     |
 | `--assets-root ASSETS_ROOT`               | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`: `scenario` must sit under its `authoring/`, and it's used for the three defaults below. |
-| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.pack`     | Where to write the client pack. Missing parent directories are created.                                                                         |
-| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.pack`     | Where to write the server pack. Missing parent directories are created.                                                                         |
+| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.apak`     | Where to write the client pack. Missing parent directories are created.                                                                         |
+| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.apak`     | Where to write the server pack. Missing parent directories are created.                                                                         |
 | `--signing-key SIGNING_KEY`               | `<assets-root>/keys/develop.key`                                        | Ed25519 private key (64 bytes) the packs are signed with: `develop`'s by default, `keys/staging.key` for a release.                             |
 | `--skip-validation`                       | off                                                                     | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run.                                       |
 
@@ -283,8 +283,8 @@ augusta-verify <pack>    # is it intact, and signed by the key I expect?
 ```
 
 `<pack>` is an ordinary path - relative to the current directory or absolute,
-never resolved against an assets root. The `.pack` extension is optional, so
-`<stage>.client` finds `<stage>.client.pack`.
+never resolved against an assets root. The `.apak` extension is optional, so
+`<stage>.client` finds `<stage>.client.apak`.
 
 #### `augusta-inspect` reference
 
@@ -369,7 +369,7 @@ publishes; it does not deploy: a server serves the pack once its environment's
 Before copying anything it verifies both packs of the scenario's cook against
 the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
-`server.pack` and `signing.pub`, into
+`server.apak` and `signing.pub`, into
 `/srv/augusta/asset-packs/<environment>/<scenario>/<version>/`, `<version>`
 being the first 12 hex characters of the server pack's BLAKE3 hash, which does
 not cover the signature: one cook signed with `develop`'s key and with
@@ -403,8 +403,8 @@ augusta-publish [-h] --environment {develop,staging} --host HOST
 | `--host HOST` (required)                     |                                              | The k3s node as its `augusta-publish` user, as `ssh` names it (`augusta-publish@<node>`, or an alias in `~/.ssh/config`).       |
 | `-h`, `--help`                               |                                              | Print the usage and option list, then exit.                                                                                     |
 | `--assets-root ASSETS_ROOT`                  | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
-| `--client-pack CLIENT_PACK`                  | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |
-| `--server-pack SERVER_PACK`                  | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish.                                                                                                     |
+| `--client-pack CLIENT_PACK`                  | `<assets-root>/packs/<scenario>/client.apak` | The client pack of the cook. Verified, never copied.                                                                            |
+| `--server-pack SERVER_PACK`                  | `<assets-root>/packs/<scenario>/server.apak` | The server pack to publish.                                                                                                     |
 | `--public-key PUBLIC_KEY`                    | `<assets-root>/keys/<environment>.pub`       | The key both packs are signed with, published as `signing.pub`.                                                                 |
 
 On success it prints the folder on the node and the line to put under the
@@ -487,7 +487,7 @@ regenerate them from `tools/pack` and commit the result:
 ```powershell
 $golden = "..\..\tests\fixtures\example-packs"
 uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $golden\test.key `
-  --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
+  --client-output-pack $golden\client.apak --server-output-pack $golden\server.apak
 ```
 
 ## Agent
@@ -532,7 +532,7 @@ script: one Agent holding one Raw Command.
 
 ```sh
 uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
-  --pack <client.pack> --public-key <pack.pub>
+  --pack <client.apak> --public-key <pack.pub>
 ```
 
 [`agent/examples/load_test.py`](agent/examples/load_test.py) is the load test
@@ -546,7 +546,7 @@ The example scenario's is 1, so a single player can run it alone.
 
 ```sh
 uv run python agent/examples/load_test.py --server 127.0.0.1:27015 \
-  --pack <client.pack> --public-key <pack.pub> --matches 3
+  --pack <client.apak> --public-key <pack.pub> --matches 3
 ```
 
 Its link fault options (`--latency-ms`, `--jitter-mean-ms`, `--jitter-max-ms`,

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/agent.h"
+#include "augusta/assets.h"
 #include "augusta/link.h"
 #include "example_run.h"
 #include "match_loop.h"
@@ -27,7 +28,8 @@ using augusta::agent::testing::Verdict;
 
 // Requirements: US-23
 TEST(PlayMatchesTest, ThePlayerCountOfAgentsPlaysTheExampleForTwoThroughTwoMatchEnds) {
-  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
+  const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),
+                      ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
 
   const MatchLoopResult result = PlayMatches(RunAgainst(server.Address(), pack, 2, std::chrono::seconds(90)));
@@ -52,7 +54,8 @@ TEST(PlayMatchesTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
 
 // Requirements: US-23
 TEST(PlayMatchesTest, ARefusedAgentFailsTheRunWithTheRefusal) {
-  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
+  const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),
+                      ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
   auto config = RunAgainst(server.Address(), pack, 1, std::chrono::seconds(30));
   config.character = "nobody";

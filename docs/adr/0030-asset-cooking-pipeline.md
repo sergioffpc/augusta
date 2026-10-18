@@ -15,11 +15,13 @@ a Parameters script, since the server reads its Parameters out of its pack at
 startup.
 
 By default, packs are written to
-`<assets-root>/packs/<name>/{client,server}.pack`, keyed by the scenario's name
+`<assets-root>/packs/<name>/{client,server}.apak`, keyed by the scenario's name
 alone (not its `authoring/scenarios/` position) - so a config file naming a pack
 (ADR-0034) can mirror the scenario's own name without the cooker needing to be
 told explicitly where to write it. `--client-output-pack`/`--server-output-pack`
-override this per run.
+override this per run. `.apak` is the pack format's own extension, as `.acap` is
+a Match capture's (ADR-0050), but a pack is known by its `AUGP` magic, never its
+name: the runtime loads whatever file a config names.
 
 The full pipeline runs as a single ordered sequence: **usd-optimize →
 usd-validation-nvidia → USD stage walk → meshoptimizer/libktx → pack → hash →

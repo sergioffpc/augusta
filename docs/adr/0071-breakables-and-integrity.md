@@ -36,17 +36,23 @@ carry none. Baked reverb never changes: a closed Breakable only drops the probes
 beyond it from the listener's mix, and the reverb of the room beyond it leaks
 whole, an accepted cost. Steam Audio takes a change at its next scene commit,
 which waits for its simulation thread, so a broken wall leaves the direct sound
-up to one of that thread's periods late. Which scene layout keeps those commits
-cheap is measured before the first Breakable lands.
+up to one of that thread's periods late. The scene keeps those commits cheap by
+its layout: the Map's static Acoustic geometry is an Embree scene of its own,
+placed in the top-level scene by one identity-transform instance, beside the
+instances of Breakables and Props. A commit then rebuilds only the top-level
+tree over instances, about 1 ms whatever the Map's size.
 
 ## Consequences
 
 - **Blowing open a wall spawns many Props at once**, against ADR-0045's cap on
   awake Props; a Breakable's piece count is bounded by the cooker.
 - **The Map stays a fixed thing**: its collision, the renderer's acceleration
-  structures and its Probe volumes are never rebuilt during a Match. Steam
-  Audio's own structure over the Map's Acoustic geometry may be, depending on
-  the scene's layout.
+  structures and its Probe volumes are never rebuilt during a Match, nor is
+  Steam Audio's own structure over the Map's Acoustic geometry.
+- **Each ray costs a little more**: the identity instance adds one level to
+  every traversal, about 15% on an occlusion ray.
+- **Steam Audio needs Embree at runtime**, which the vcpkg port leaves out: the
+  overlay port that enables it is a prerequisite of the first Breakable.
 - **Pathing costs more**: validation and alternate paths run every period.
 
 ## Considered Options
@@ -56,5 +62,11 @@ cheap is measured before the first Breakable lands.
   on both sides, and makes the Map a replicated thing.
 - **Health on every Prop**: rejected. A crate that cannot break has nothing to
   wear down.
+- **The Map's Acoustic geometry straight in Embree's top-level scene**:
+  rejected. Once any instance is in the scene, every commit rebuilds the whole
+  tree over the Map, 35 to 90 ms, even when nothing moved.
+- **Steam Audio's built-in ray tracer**: rejected. Its commits cost nothing, but
+  every ray tests every instance in turn, so its cost grows with each Breakable
+  and Prop: 60 times Embree's on a reflection ray with 256 of them.
 - **Integrity authored in the Prop kind**: rejected. It is a number tuned for
   play, like damage, and the Parameters are where those are tuned.

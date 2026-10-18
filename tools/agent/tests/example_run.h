@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/agent.h"
+#include "augusta/assets.h"
 #include "augusta/link.h"
 #include "match_loop.h"
 
@@ -33,9 +34,12 @@ inline std::filesystem::path ExamplePacks() { return AUGUSTA_EXAMPLE_PACKS; }
 
 // The example's client pack, verified with the test key, as an Agent loads it.
 inline LoadedPack ExampleClientPack() {
-  auto pack = LoadPack(ExamplePacks() / "client.pack", ExamplePacks() / "test.pub");
+  auto pack = LoadPack((ExamplePacks() / "client").replace_extension(augusta::assets::kPackExtension),
+                       ExamplePacks() / "test.pub");
   if (!pack.has_value()) {
-    ADD_FAILURE() << DescribeLoadPackError(pack.error(), ExamplePacks() / "client.pack", ExamplePacks() / "test.pub");
+    ADD_FAILURE() << DescribeLoadPackError(
+        pack.error(), (ExamplePacks() / "client").replace_extension(augusta::assets::kPackExtension),
+        ExamplePacks() / "test.pub");
     return {};
   }
   return *std::move(pack);

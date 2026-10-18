@@ -27,11 +27,13 @@ class CookedPackTest : public ::testing::Test {
     const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(kExamplePacks / "test.pub");
     ASSERT_TRUE(public_key.has_value());
 
-    auto client = Pack::Load(kExamplePacks / "client.pack", *public_key);
+    auto client =
+        Pack::Load((kExamplePacks / "client").replace_extension(augusta::assets::kPackExtension), *public_key);
     ASSERT_TRUE(client.has_value()) << augusta::assets::DescribeLoadError(client.error());
     client_.emplace(std::move(*client));
 
-    auto server = Pack::Load(kExamplePacks / "server.pack", *public_key);
+    auto server =
+        Pack::Load((kExamplePacks / "server").replace_extension(augusta::assets::kPackExtension), *public_key);
     ASSERT_TRUE(server.has_value()) << augusta::assets::DescribeLoadError(server.error());
     server_.emplace(std::move(*server));
   }

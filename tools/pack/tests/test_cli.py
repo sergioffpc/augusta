@@ -13,8 +13,8 @@ from conftest import read_pack_contents
 
 def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     pub_path, key_path = keys.write_keypair(tmp_path / "test")
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
 
     status = cli.main(
         [
@@ -84,10 +84,10 @@ def test_a_missing_scenario_fails_without_writing_a_pack(tmp_path, capsys):
             "--signing-key",
             str(key_path),
             "--client-output-pack",
-            str(tmp_path / "client.pack"),
+            str(tmp_path / "client.apak"),
         ]
     )
 
     assert status == 1
     assert "Scenario not found" in capsys.readouterr().err
-    assert not (tmp_path / "client.pack").exists()
+    assert not (tmp_path / "client.apak").exists()

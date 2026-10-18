@@ -52,7 +52,8 @@ class CueSoundsTest : public ::testing::Test {
   // own, possibly in parallel, so no other test removes it while in use.
   static std::filesystem::path TestPackPath() {
     const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
-    std::string name = std::string("augusta_cues_test_") + test.test_suite_name() + "_" + test.name() + ".pack";
+    std::string name = std::string("augusta_cues_test_") + test.test_suite_name() + "_" + test.name() +
+                       std::string(augusta::assets::kPackExtension);
     std::ranges::replace(name, '/', '_');
     return std::filesystem::temp_directory_path() / name;
   }

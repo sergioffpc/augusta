@@ -76,7 +76,8 @@ FrameInput FrameInputFor(const WorldSnapshot& snapshot, const std::vector<Player
 
 void BM_RenderFrame(benchmark::State& state, bool new_state) {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
-  const auto pack = augusta::assets::LoadVerifiedPack(packs / "client.pack", packs / "test.pub");
+  const auto pack = augusta::assets::LoadVerifiedPack(
+      (packs / "client").replace_extension(augusta::assets::kPackExtension), packs / "test.pub");
   if (!pack.has_value()) {
     state.SkipWithError("the example client pack does not load");
     return;

@@ -24,7 +24,7 @@ ENTRIES = [
 @pytest.fixture
 def signed_pack(tmp_path, key_pair):
     """A pack of ENTRIES signed by key_pair, its public key file and hash."""
-    path = tmp_path / "test.pack"
+    path = tmp_path / "test.apak"
     pack_hash = _native.write_pack(path, ENTRIES, key_pair.private_key)
     public_key = tmp_path / "test.pub"
     public_key.write_bytes(key_pair.public_key)
@@ -67,9 +67,9 @@ def test_inspect_shows_the_client_pack_a_server_pack_names(
     capsys, tmp_path, key_pair
 ):
     client_hash = _native.write_pack(
-        tmp_path / "client.pack", [], key_pair.private_key
+        tmp_path / "client.apak", [], key_pair.private_key
     )
-    server = tmp_path / "server.pack"
+    server = tmp_path / "server.apak"
     _native.write_pack(server, [], key_pair.private_key, client_hash)
 
     assert pack_cli.inspect_main([str(server)]) == 0
@@ -81,7 +81,7 @@ def test_inspect_shows_the_client_pack_a_server_pack_names(
 
 
 def test_inspect_refuses_a_file_that_is_not_a_pack(capsys, tmp_path):
-    path = tmp_path / "test.pack"
+    path = tmp_path / "test.apak"
     path.write_bytes(b"NOPE" + bytes(200))
 
     assert pack_cli.inspect_main([str(path)]) == 1
@@ -136,7 +136,7 @@ def test_verify_refuses_a_file_that_is_not_a_pack(
     capsys, tmp_path, signed_pack
 ):
     _, public_key, _ = signed_pack
-    path = tmp_path / "not.pack"
+    path = tmp_path / "not.apak"
     path.write_bytes(b"NOPE" + bytes(200))
 
     status = pack_cli.verify_main([str(path), "--public-key", str(public_key)])
@@ -145,3 +145,22 @@ def test_verify_refuses_a_file_that_is_not_a_pack(
     assert capsys.readouterr().err == (
         f"{path} is not an augusta pack file (bad magic)\n"
     )
+
+
+def _verify_without_extension(tmp_path, file_name: str) -> int:
+    """Writes a pack as tmp_path/file_name, then verifies tmp_path/game."""
+    public_key_path, private_key_path = keys.write_keypair(tmp_path / "test")
+    _native.write_pack(
+        tmp_path / file_name, ENTRIES, keys.read_private_key(private_key_path)
+    )
+    return pack_cli.verify_main(
+        [str(tmp_path / "game"), "--public-key", str(public_key_path)]
+    )
+
+
+def test_a_pack_named_without_its_extension_is_found_as_apak(tmp_path):
+    assert _verify_without_extension(tmp_path, "game.apak") == 0
+
+
+def test_the_retired_pack_extension_is_not_tried(tmp_path):
+    assert _verify_without_extension(tmp_path, "game.pack") == 1

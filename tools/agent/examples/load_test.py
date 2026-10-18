@@ -13,7 +13,7 @@ choice comes from the seed, the next Agent's from the next number.
 
 Usage (from tools/, after `uv sync` and a build with AUGUSTA_TOOLS):
     uv run python agent/examples/load_test.py --server 127.0.0.1:27015 \
-        --pack <client.pack> --public-key <pack.pub> --matches 3
+        --pack <client.apak> --public-key <pack.pub> --matches 3
 """
 
 import argparse

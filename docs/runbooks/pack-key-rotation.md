@@ -25,7 +25,7 @@ client pack not cooked with the server pack (ADR-0019, ADR-0038). Each server
 reads its pack from its own folder of its environment's tree of the node's
 shared volume,
 `/srv/augusta/asset-packs/<environment>/<scenario>/<packVersion>/`, holding
-`server.pack` and the `signing.pub` it is signed with
+`server.apak` and the `signing.pub` it is signed with
 ([`charts/augustad/values.yaml`](../../charts/augustad/values.yaml)). A new cook
 has a new `packVersion`, so `augusta-publish` puts it in a new folder, and the
 server is pointed at it through Git, which keeps the old folder in place as the
@@ -41,7 +41,7 @@ packs in the pull request that makes it
 
 ## Where packs go on the node
 
-Each server mounts its own version's folder read-only and reads `server.pack`
+Each server mounts its own version's folder read-only and reads `server.apak`
 and `signing.pub` from it
 ([`deployment.yaml`](../../charts/augustad/templates/deployment.yaml)). Every
 `packVersion` an environment's `servers` name
@@ -53,7 +53,7 @@ and `signing.pub` from it
     └── <scenario>/
         └── <packVersion>/    # the server pack's BLAKE3 hash, first 12 hex
             │                 # characters
-            ├── server.pack   # the server pack of one cook run
+            ├── server.apak   # the server pack of one cook run
             └── signing.pub   # the 32-byte public key that cook was signed
                               # with, renamed to signing.pub whatever its name
                               # was locally
@@ -120,8 +120,8 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     ```powershell
     & "$AssetsRoot\bin\augusta-pack.exe" firebase `
       --signing-key "$AssetsRoot\keys\$Id.key" `
-      --client-output-pack "$AssetsRoot\packs\$Id\client.pack" `
-      --server-output-pack "$AssetsRoot\packs\$Id\server.pack"
+      --client-output-pack "$AssetsRoot\packs\$Id\client.apak" `
+      --server-output-pack "$AssetsRoot\packs\$Id\server.apak"
     ```
 
     Replace `firebase` with the scenario the environment runs.
@@ -130,9 +130,9 @@ startup, and the pod crash-loops. The client pack never goes on the node.
    verifies them:
 
     ```powershell
-    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\$Id.pub"
-    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\client.pack" --public-key "$AssetsRoot\keys\$Id.pub"
-    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.pack" --public-key "$AssetsRoot\keys\develop.pub"
+    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.apak" --public-key "$AssetsRoot\keys\$Id.pub"
+    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\client.apak" --public-key "$AssetsRoot\keys\$Id.pub"
+    & "$AssetsRoot\bin\augusta-verify.exe" "$AssetsRoot\packs\$Id\server.apak" --public-key "$AssetsRoot\keys\develop.pub"
     ```
 
     The first two print `OK:`; the third must exit 1 (substitute the old key's
@@ -153,8 +153,8 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     & "$AssetsRoot\bin\augusta-publish.exe" firebase --environment develop `
       --host augusta-publish `
       --public-key "$AssetsRoot\keys\$Id.pub" `
-      --client-pack "$AssetsRoot\packs\$Id\client.pack" `
-      --server-pack "$AssetsRoot\packs\$Id\server.pack"
+      --client-pack "$AssetsRoot\packs\$Id\client.apak" `
+      --server-pack "$AssetsRoot\packs\$Id\server.apak"
     ```
 
     Replace `firebase` with the scenario, and `develop` with the environment
@@ -177,7 +177,7 @@ startup, and the pod crash-loops. The client pack never goes on the node.
     flux reconcile kustomization apps -n flux-system --with-source
     ```
 
-9. Give the client pack (`packs\<Id>\client.pack`) and `keys\<Id>.pub` to every
+9. Give the client pack (`packs\<Id>\client.apak`) and `keys\<Id>.pub` to every
    client that joins this environment: a client with the old pack is refused at
    Join. The repository defines no distribution channel for client packs.
 
@@ -202,7 +202,7 @@ kubectl -n develop logs deploy/augustad-<scenario> | grep 'event=pack_verified'
 The pod mounts the new version's folder
 (`kubectl -n develop get deploy augustad-<scenario> -o yaml | grep asset-packs`),
 and keeps running: the server exits at startup on a pack that does not verify
-against `signing.pub`. A client with the new `client.pack` and `<Id>.pub` logs
+against `signing.pub`. A client with the new `client.apak` and `<Id>.pub` logs
 `event=pack_verified` and joins.
 
 ## Rollback / abort

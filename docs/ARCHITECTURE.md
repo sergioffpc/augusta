@@ -457,7 +457,7 @@ What runs on the node, and who reaches it:
 | Windows PC        |     | ns develop      (tracks develop)                |
 |                   | UDP |   augustad-<scenario>   :7777 <- NodePort 307xx |
 |  augustac.exe     |---->|   metrics + /livez      :9464                   |
-|  client.pack      |     | ns staging      (latest v* tag)                 |
+|  client.apak      |     | ns staging      (latest v* tag)                 |
 |  signing.pub      |     |   augustad-<scenario>   :7777 <- NodePort 308xx |
 |                   |     |   metrics + /livez      :9464                   |
 |  browser          |     | ns monitoring                                   |
@@ -469,7 +469,7 @@ What runs on the node, and who reaches it:
                           |                                                 |
                           | hostPath                                        |
                           |   /srv/augusta/asset-packs/<env>/<scenario>/    |
-                          |     <ver>/server.pack + signing.pub, mounted ro |
+                          |     <ver>/server.apak + signing.pub, mounted ro |
                           |   /srv/augusta/captures/<ns>/<scenario>/        |
                           |     Match captures, develop only                |
                           | systemd-coredump        keeps server core dumps |
@@ -512,8 +512,8 @@ How each piece reaches the node or the player:
 | cook + sign      |      +--------------------------+      |                |
 | (env's key)      |                  |                     |                |
 |                  | augusta-publish (ssh + scp)            |                |
-|  server.pack ----+--------------------------------------->| asset-packs/   |
-|  client.pack ... |                  |                     +----------------+
+|  server.apak ----+--------------------------------------->| asset-packs/   |
+|  client.apak ... |                  |                     +----------------+
 +-----------.------+                  | augustac.exe + .pdb
             .                         v
             .  by hand, no      +-----------------+

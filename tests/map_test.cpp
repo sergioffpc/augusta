@@ -68,7 +68,8 @@ class MapTest : public ::testing::Test {
 
   // Writes entries into a signed pack and loads it.
   Pack MakePack(const std::string& name, const std::vector<AssetEntry>& entries) {
-    const auto path = std::filesystem::temp_directory_path() / ("augusta_map_test_" + name + ".pack");
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("augusta_map_test_" + name + std::string(augusta::assets::kPackExtension));
     cleanup_.push_back(path);
     const auto keys = augusta::assets::GenerateEd25519KeyPair();
     EXPECT_TRUE(augusta::assets::WritePack(path, entries, keys.private_key).has_value());
