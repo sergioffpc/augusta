@@ -1,6 +1,7 @@
 # One executable's own directory: the executable alone, linking the application,
-# its Runtime, failure, logging and version, and a system library that is no
-# target. CASE adds a second target beside it, or a link it may not have.
+# its Runtime, failure, logging and version, the build infrastructure every
+# binary links, and a system library that is no target. CASE adds a second
+# target beside it, or a link it may not have.
 add_library(fixture_exe INTERFACE)
 target_link_libraries(
   fixture_exe
@@ -9,6 +10,7 @@ target_link_libraries(
     augusta_failure
     augusta_logging
     augusta_version
+    fixture_every_binary
     fixture_runtime
     fixture_runtime_application
     winmm

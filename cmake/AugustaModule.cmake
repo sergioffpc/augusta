@@ -123,6 +123,17 @@ endfunction()
 # Runtime it binds and is tested through its package (ADR-0060, Python tools).
 
 set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES "")
+set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EVERY_BINARY "")
+
+# Links target into every binary defined after the call - an executable, a
+# module, a test alike - and lets an executable link it past the Glue check: it
+# is the build's own infrastructure, such as a sanitizer's default options
+# (ADR-0008, ADR-0013), which no Runtime could wire for it. A module is never
+# linked this way: what every binary links is no reason to be Glue.
+macro(augusta_link_every_binary target)
+  link_libraries(${target})
+  set_property(GLOBAL APPEND PROPERTY AUGUSTA_GLUE_EVERY_BINARY ${target})
+endmacro()
 
 function(augusta_set_executable_glue executable runtime)
   set_property(GLOBAL APPEND PROPERTY AUGUSTA_GLUE_EXECUTABLES ${executable})
@@ -145,8 +156,17 @@ function(augusta_check_executable_glue)
   get_property(executables GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES)
   list(REMOVE_DUPLICATES executables)
 
-  # What every executable may link besides its Runtime's module.
-  set(allowed augusta_application augusta_failure augusta_logging augusta_version)
+  # What every executable may link besides its Runtime's module, and what every
+  # binary links (augusta_link_every_binary).
+  get_property(every_binary GLOBAL PROPERTY AUGUSTA_GLUE_EVERY_BINARY)
+  set(
+    allowed
+    augusta_application
+    augusta_failure
+    augusta_logging
+    augusta_version
+    ${every_binary}
+  )
   set(violations "")
   set(links "")
   set(linkages "")

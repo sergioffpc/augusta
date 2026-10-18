@@ -46,7 +46,8 @@ PredictionWorld are a module, tested by hand-driven ticks.
   under `src/server/` or `src/client/` other than the executable, a target that
   links an executable, and an executable that links more than the application,
   its Runtime (any target of the Runtime's module), failure, logging and
-  version.
+  version. The build's own infrastructure that every binary links, such as a
+  sanitizer's default options, is no module and passes.
 - **Existing code.** Migrated gradually, one cohesive cluster at a time, never
   in one change.
 - **Python tools** keep their own project layout (`tools/<tool>/`) and are not

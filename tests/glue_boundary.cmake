@@ -42,8 +42,9 @@ function(configure_fixture case out_failed out_output)
 endfunction()
 
 # An executable linking all it may - the application, every target of its
-# Runtime's module, failure, logging, version and a system library - and a test
-# linking that Runtime configure.
+# Runtime's module, failure, logging, version, the build infrastructure every
+# binary links and a system library - and a test linking that Runtime
+# configure.
 configure_fixture(GLUE failed output)
 if(failed)
   string(APPEND report "the Glue check refuses an executable linking only what it may:\n${output}\n")

@@ -105,19 +105,21 @@ if(AUGUSTA_TOOLS AND NOT WIN32)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
+include(cmake/AugustaModule.cmake)
+
 # Every binary of an ASan build (linux-san, linux-fuzz) starts with the options
 # cmake/asan_default_options.cpp gives it (ADR-0008): when ctest runs it, when
 # the build lists its tests, and when it is run by hand.
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*address")
   add_library(augusta_asan_default_options OBJECT cmake/asan_default_options.cpp)
-  link_libraries(augusta_asan_default_options)
+  augusta_link_every_binary(augusta_asan_default_options)
 endif()
 # Every binary of a UBSan build (linux-san) starts with the options
 # cmake/ubsan_default_options.cpp gives it, so a UBSan report fails it however
 # it is run (ADR-0013).
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
   add_library(augusta_ubsan_default_options OBJECT cmake/ubsan_default_options.cpp)
-  link_libraries(augusta_ubsan_default_options)
+  augusta_link_every_binary(augusta_ubsan_default_options)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -137,7 +139,6 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
-include(cmake/AugustaModule.cmake)
 include(cmake/AugustaDebugInfo.cmake)
 
 enable_testing()
