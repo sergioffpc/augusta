@@ -45,11 +45,17 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   client-pack-only, the client needs this data too (e.g. client-side prediction
   of movement against the same geometry the server uses, and drawing where a
   Shot lands, ADR-0044; hit detection itself runs only on the server, ADR-0024).
-- Props placed in the Map (ADR-0045): a prim with PhysX's rigid-body, mass and
-  physics-material schemas, read into its collider, mass and material and
-  serialized in the same custom binary format. Written to both the client and
-  server pack: the server simulates them and the client moves them to the poses
-  it is sent and predicts against them.
+- Prop kinds and the Props placed in the Map (ADR-0045): each Prop kind's stage,
+  with PhysX's rigid-body and mass schemas, read into its colliders, mass and
+  Surface material and serialized in the same custom binary format, and each
+  placed Prop as its Prop kind and pose. Written to both the client and server
+  pack: the server simulates them and the client moves them to the poses it is
+  sent and predicts against them. The Prop kind's mesh is client-pack-only, like
+  any mesh.
+- The Surface material catalogue (ADR-0065): its ballistic and contact facets to
+  both packs, its acoustic and impact facets to the client pack only. A physics
+  material bound to a prim is refused: a surface's friction and restitution come
+  from its Surface material alone.
 - Ragdolls (ADR-0045): a Character's ragdoll bodies and joints, authored in
   Composer, serialized in the same format. Written to the client pack only:
   ragdolls are Cosmetic bodies the server never simulates.
