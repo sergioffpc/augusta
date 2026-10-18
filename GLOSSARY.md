@@ -115,6 +115,46 @@ affects gameplay, such as a ragdoll or debris. It is never sent and may differ
 between clients (ADR-0045). _Avoid_: Prop (a Prop is gameplay), effect, particle
 (particles are the renderer's, not physics)
 
+**Breakable Prop kind**: A Prop kind authored already broken into pieces, so
+that when one of its Props breaks during a Match it is replaced by those pieces:
+the large ones Props, the small ones Cosmetic bodies. A wall that can be blown
+open is a Breakable Prop placed in the Map; the Map itself never breaks.
+_Avoid_: Destructible scenery, destructible Map, fracture
+
+**Integrity**: How much more a Prop can take before it breaks or explodes, worn
+down by the rounds that strike it, by Explosions and by hard knocks. Only Props
+of a Breakable or explosive Prop kind have one. _Avoid_: Health (a player's),
+hit points, durability
+
+**Explosion**: A blast at one place and Tick, decided by the Authoritative
+server, that throws and hurts what it reaches unsheltered by the Map, and that
+every client sees and hears. Set off by a grenade, a launched round or an
+explosive Prop. _Avoid_: Detonation, blast
+
+**Fragment**: One of the pieces a fragmentation grenade's Explosion throws out,
+flown like a round, which hurts the player it strikes in the Body part it
+enters. _Avoid_: Shrapnel, frag (a Kill), splinter
+
+**Dazzle**: How strongly a flashbang's Explosion blinds and deafens one player,
+decided by the Authoritative server from where that player is and where it
+looks, and felt as a white-out, muffled sound and ringing that fade. Never shown
+on the HUD. _Avoid_: Blind, stun, flash
+
+**Smoke screen**: A cloud from a smoke grenade that hides players, the same on
+every client in where it is and how thick, growing and clearing over time.
+Rounds pass through it. _Avoid_: Smoke alone (the smoke of an Explosion or an
+impact is an Effect and may differ between clients), fog
+
+**Loadout**: What one player carries in a Match - its weapons and how many
+grenades and launched rounds of each kind - given by the Rules at Match start
+and never refilled. _Avoid_: Inventory, kit, equipment
+
+**Effect**: What a client draws for a moment of the game that affects nothing:
+particles such as sparks, dust, fire or smoke, and optionally a decal and a
+brief light, authored by name in one catalogue and drawn by each client on its
+own, so it may differ between clients. _Avoid_: VFX, FX, particle system,
+Cosmetic body (a Cosmetic body is physics)
+
 **Client-side prediction**: The client simulating its own actions locally,
 immediately, before the server confirms them — used purely for responsiveness.
 _Avoid_: Client simulation

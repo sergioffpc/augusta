@@ -645,6 +645,15 @@ not affect numbering.
 - [ADR-0067](./adr/0067-rendering-pipeline.md) — Rendering pipeline: deferred,
   one `UsdPreviewSurface` Look model, all light ray traced by ray queries with
   NRD, DLSS or FSR as the anti-aliasing, on GPUs with hardware ray tracing
+- [ADR-0070](./adr/0070-explosions.md) — Explosions: a short blast and seeded
+  Fragments on the ballistics, launched rounds as rounds, kills to the thrower,
+  a Dazzle the server decides
+- [ADR-0071](./adr/0071-breakables-and-integrity.md) — Breakables and Integrity:
+  the Map never breaks; Breakable Prop kinds break into Props
+- [ADR-0072](./adr/0072-smoke-screens.md) — Smoke screens: a deterministic flood
+  fill of the Map's free space, drawn as a volume alike on every client
+- [ADR-0073](./adr/0073-effects.md) — Effects: one catalogue of particles,
+  decals and brief lights, with fixed bounds and no setting
 
 ### Tooling & Build
 
