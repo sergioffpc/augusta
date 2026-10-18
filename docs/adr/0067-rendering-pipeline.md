@@ -20,7 +20,7 @@ graph:
 
 ```text
 skinning (ADR-0066) -> G-buffer -> decals -> lighting (ray queries)
-  -> translucent forward -> bloom, exposure, tonemap -> upscaler -> HUD
+  -> translucent forward -> exposure -> upscaler -> bloom, tonemap -> HUD
 ```
 
 The G-buffer holds the opaque and alpha-tested surfaces, with a motion vector
@@ -88,10 +88,12 @@ reflection; only primary visibility skips it.
 lighting, changing its colour, roughness and normal.
 
 **The image.** Rendered in linear HDR, exposed automatically from a histogram so
-going from indoors to outdoors adapts, tonemapped with AgX to SDR. Bloom is the
-only other effect: no motion blur, depth of field (ADS included), chromatic
-aberration, film grain or lens flare, for realism, VR comfort and so no target
-is hidden by an effect.
+going from indoors to outdoors adapts, tonemapped with AgX to SDR. The upscaler
+takes the linear HDR image with the exposure measured before it, and bloom and
+tonemapping follow it at the output resolution, as DLSS and FSR both require.
+Bloom is the only other effect: no motion blur, depth of field (ADS included),
+chromatic aberration, film grain or lens flare, for realism, VR comfort and so
+no target is hidden by an effect.
 
 **Upscaling is the anti-aliasing.** One `Upscaler` interface: DLSS Super
 Resolution, or DLAA at native resolution, on NVIDIA GPUs; FSR 3.1 on every
