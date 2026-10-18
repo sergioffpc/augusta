@@ -15,7 +15,7 @@ ADR-0026 ([CD strategy](../adr/0026-cd-strategy.md)), ADR-0056
   change.
 
 Not for a pod that crash-loops because its pack or public key is missing or does
-not verify (the server's last log line names `server.pack` or `signing.pub`): no
+not verify (the server's last log line names `server.apak` or `signing.pub`): no
 rollback fixes that, the files must be put in place
 ([Where packs go on the node](pack-key-rotation.md#where-packs-go-on-the-node)).
 Moving an environment back to its previous pack folder is the rollback step of

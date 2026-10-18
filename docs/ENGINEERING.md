@@ -361,7 +361,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   environment's are stored in its own folder of the k3s node,
   `/srv/augusta/asset-packs/<environment>`, its `assetPacks.hostPath`, which
   `augusta-publish --environment <environment>` fills after signing (ADR-0026):
-  `<scenario>/<packVersion>/` in it holds a scenario's `server.pack` and the
+  `<scenario>/<packVersion>/` in it holds a scenario's `server.apak` and the
   `signing.pub` key it is signed with, `<packVersion>` being the first 12 hex
   characters of the server pack's BLAKE3 hash. Each environment signs with its
   own key, `develop`'s or `staging`'s (Release signing above). The hash does not

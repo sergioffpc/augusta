@@ -12,7 +12,7 @@ tells what its prediction, fire and link came to, and impair_links gives
 every link of the process simulated latency, jitter, loss and reordering.
 
     async def main():
-        pack = augusta_agent.load_pack("client.pack", "pack.pub")
+        pack = augusta_agent.load_pack("client.apak", "pack.pub")
         with augusta_agent.Agent("127.0.0.1:27015", pack, "soldier") as agent:
             agent.set_movement(augusta_agent.Move((0.0, 0.0, -1.0)))
             while True:

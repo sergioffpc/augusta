@@ -31,7 +31,7 @@ const std::filesystem::path kRoot = kFileDir / "content";
 
 TEST(ParseServerConfigTest, InputIsNotAServerSection) {
   const auto config = ParseServerConfig(
-      "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\ninput:\n  "
+      "base_dir: content\ncontent:\n  pack: a.apak\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\ninput:\n  "
       "keys:\n    sprint: Space\n",
       kFileDir);
 
@@ -49,12 +49,12 @@ TEST(ExampleConfigTest, TheExampleServerConfigLoads) {
 
 TEST(ParseServerConfigTest, ReadsEveryKey) {
   const auto config = ParseServerConfig(
-      "base_dir: content\ncontent:\n  pack: packs/level.server.pack\n  public_key: keys/signing.pub\nsimulation:\n  "
+      "base_dir: content\ncontent:\n  pack: packs/level.server.apak\n  public_key: keys/signing.pub\nsimulation:\n  "
       "tick_rate_hz: 30\nnetwork:\n  listen_address: 0.0.0.0:27016\nmetrics:\n  port: 9100\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.pack");
+  EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.server.apak");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "signing.pub");
   EXPECT_EQ(config->tick_rate_hz, 30);
   EXPECT_EQ(config->listen_address, "0.0.0.0:27016");
@@ -63,10 +63,10 @@ TEST(ParseServerConfigTest, ReadsEveryKey) {
 
 // Everything a server config needs but the tick rate, so a test can set that itself.
 constexpr std::string_view kServerConfigWithoutTickRate =
-    "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
+    "base_dir: content\ncontent:\n  pack: a.apak\n  public_key: k.pub\n";
 
 constexpr std::string_view kMinimalServerConfig =
-    "base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n";
+    "base_dir: content\ncontent:\n  pack: a.apak\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n";
 
 std::string ServerConfigWith(std::string_view extra) { return std::string(kMinimalServerConfig) + std::string(extra); }
 
@@ -400,7 +400,7 @@ TEST(ParseServerConfigTest, AParametersKeyLeftInTheFileIsUnknown) {
 
 TEST(ParseServerConfigTest, RejectsAMissingBaseDir) {
   const auto config =
-      ParseServerConfig("content:\n  pack: a.pack\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n", kFileDir);
+      ParseServerConfig("content:\n  pack: a.apak\n  public_key: k.pub\nsimulation:\n  tick_rate_hz: 60\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -462,13 +462,13 @@ class LoadServerConfigTest : public ::testing::Test {
 
 TEST_F(LoadServerConfigTest, ReadsTheFileAndResolvesBaseDirAgainstItsDirectory) {
   const auto file = Write("augustad.yaml",
-                          "base_dir: .\ncontent:\n  pack: level.pack\n  public_key: k.pub\nsimulation:\n  "
+                          "base_dir: .\ncontent:\n  pack: level.apak\n  public_key: k.pub\nsimulation:\n  "
                           "tick_rate_hz: 60\nnetwork:\n  listen_address: 0.0.0.0:1\n");
 
   const auto config = LoadServerConfig(file);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, directory_ / "level.pack");
+  EXPECT_EQ(config->pack_path, directory_ / "level.apak");
   EXPECT_EQ(config->listen_address, "0.0.0.0:1");
 }
 

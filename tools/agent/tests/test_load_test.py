@@ -20,7 +20,7 @@ def run(server: Server, *options: str) -> int:
             "--server",
             server.address,
             "--pack",
-            str(EXAMPLE_PACKS / "client.pack"),
+            str(EXAMPLE_PACKS / "client.apak"),
             "--public-key",
             str(EXAMPLE_PACKS / "test.pub"),
             *options,

@@ -31,6 +31,7 @@
 namespace {
 
 using augusta::capture::Capture;
+using augusta::capture::kExtension;
 using augusta::capture::ReadCapture;
 using augusta::command::Command;
 using augusta::failure::Faults;
@@ -62,7 +63,7 @@ std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
 }
 
 TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
-  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003.capture");
+  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003" + std::string(kExtension));
 }
 
 TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
@@ -77,10 +78,13 @@ TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
 }
 
 TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
-  for (const std::string_view name :
-       {"notes.txt", "20261009T101500123Z-003.capture", "20261009T101500123Z-0003.capture.tmp",
-        "20261009T101500123-0003.capture", "2026100XT101500123Z-0003.capture", "20261009T101500123Z-0003.CAPTURE",
-        ".20261009T101500123Z-0003.capture", "20261009T101500123Z-0003", ""}) {
+  const std::string extension(kExtension);
+  for (const std::string& name :
+       {std::string("notes.txt"), "20261009T101500123Z-003" + extension,
+        "20261009T101500123Z-0003" + extension + ".tmp", "20261009T101500123-0003" + extension,
+        "2026100XT101500123Z-0003" + extension, std::string("20261009T101500123Z-0003.ACAP"),
+        ".20261009T101500123Z-0003" + extension, std::string("20261009T101500123Z-0003"),
+        std::string("20261009T101500123Z-0003.capture"), std::string()}) {
     EXPECT_FALSE(IsCaptureFileName(name)) << name;
   }
 }

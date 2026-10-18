@@ -15,8 +15,8 @@ GOLDEN_DIR = (
 
 
 def test_the_example_scenario_cooks_into_the_golden_packs(tmp_path):
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
 
     status = cli.main(
         [
@@ -33,5 +33,5 @@ def test_the_example_scenario_cooks_into_the_golden_packs(tmp_path):
     )
 
     assert status == 0
-    assert client_path.read_bytes() == (GOLDEN_DIR / "client.pack").read_bytes()
-    assert server_path.read_bytes() == (GOLDEN_DIR / "server.pack").read_bytes()
+    assert client_path.read_bytes() == (GOLDEN_DIR / "client.apak").read_bytes()
+    assert server_path.read_bytes() == (GOLDEN_DIR / "server.apak").read_bytes()

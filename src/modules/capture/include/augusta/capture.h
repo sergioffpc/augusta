@@ -36,7 +36,7 @@
 namespace augusta::capture {
 
 /// What every capture's file name ends in.
-inline constexpr std::string_view kExtension = ".capture";
+inline constexpr std::string_view kExtension = ".acap";
 
 /// Why a capture does not read, wherever it is read: Replay and the Replay
 /// catalog, and a Captured player's harness::ReadScript, report the same errors.

@@ -103,7 +103,7 @@ scenario: {{ .scenario }}
 {{- define "augustad.config" -}}
 base_dir: /srv/augusta/pack
 content:
-  pack: server.pack
+  pack: server.apak
   public_key: signing.pub
 simulation:
   tick_rate_hz: {{ .root.Values.server.tickRateHz }}

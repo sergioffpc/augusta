@@ -23,7 +23,7 @@ root of the venv this interpreter is already running from, and is used for:
 resolving authoring/scenarios/<name>.yaml and everything it names; the
 signing key, --assets-root/keys/develop.key, develop's (a release signs with
 staging's, --signing-key); and packs, which default to
---assets-root/packs/<name>/{client,server}.pack - keyed by the scenario's
+--assets-root/packs/<name>/{client,server}.apak - keyed by the scenario's
 name alone, not its authoring/scenarios/ position.
 """
 
@@ -74,13 +74,13 @@ def main(argv: list[str] | None = None) -> int:
         "--client-output-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<name>/client.pack",
+        help="Default: <assets-root>/packs/<name>/client.apak",
     )
     parser.add_argument(
         "--server-output-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<name>/server.pack",
+        help="Default: <assets-root>/packs/<name>/server.apak",
     )
     parser.add_argument(
         "--signing-key",
@@ -109,10 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     pack_subdir = Path(scenario.name)
     signing_key_path = args.signing_key or assets_root / "keys" / "develop.key"
     client_output_pack = (
-        args.client_output_pack or packs_dir / pack_subdir / "client.pack"
+        args.client_output_pack or packs_dir / pack_subdir / "client.apak"
     )
     server_output_pack = (
-        args.server_output_pack or packs_dir / pack_subdir / "server.pack"
+        args.server_output_pack or packs_dir / pack_subdir / "server.apak"
     )
 
     # The map/characters were already confirmed by resolve_scenario; only the

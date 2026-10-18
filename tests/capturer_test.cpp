@@ -667,15 +667,18 @@ TEST_F(CapturerTest, TheObserverIsToldOfACaptureFromItsStartToItsEnd) {
 
 // Requirements: NFR-07
 TEST_F(CapturerTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
-  // Captures are the files named as captures that start with a capture's magic.
+  // Captures are the files named as captures that start with a capture's magic;
+  // one under the retired .capture extension is not.
+  const std::string extension(capture::kExtension);
   const capture::Capture earlier{.header = Header(), .joins = {}, .events = {}, .torn = false};
-  for (const char* name : {"20260101T000000000Z-0001.capture", "20260101T000000000Z-0002.capture"}) {
+  for (const std::string& name : {"20260101T000000000Z-0001" + extension, "20260101T000000000Z-0002" + extension,
+                                  std::string("20260101T000000000Z-0004.capture")}) {
     std::ofstream out(directory_ / name, std::ios::binary);
     ASSERT_TRUE(augusta::capture::WriteCapture(out, earlier).has_value());
   }
-  std::ofstream(directory_ / "20260101T000000000Z-0003.capture", std::ios::binary) << "no magic";
+  std::ofstream(directory_ / ("20260101T000000000Z-0003" + extension), std::ios::binary) << "no magic";
   std::ofstream(directory_ / "notes.txt", std::ios::binary) << "not a capture";
-  std::filesystem::create_directory(directory_ / "nested.capture");
+  std::filesystem::create_directory(directory_ / ("nested" + extension));
   Told told;
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.observer = &told});
@@ -683,7 +686,7 @@ TEST_F(CapturerTest, TheDirectoryIsScannedForCapturesAtEachMatchStart) {
     capturer.EndMatch(kFirstTick, std::nullopt);
   }
 
-  const std::uintmax_t earlier_size = std::filesystem::file_size(directory_ / "20260101T000000000Z-0001.capture");
+  const std::uintmax_t earlier_size = std::filesystem::file_size(directory_ / ("20260101T000000000Z-0001" + extension));
   const std::uintmax_t size = std::filesystem::file_size(directory_ / CaptureFileName(kStarted, 1));
   EXPECT_EQ(told.Get().directory, (CaptureDirectoryUsage{.files = 3, .bytes = (2 * earlier_size) + size}));
 }
