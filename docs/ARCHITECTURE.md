@@ -642,6 +642,9 @@ not affect numbering.
 - [ADR-0066](./adr/0066-character-animation.md) — Character animation: Clips in
   ozz-animation, a blend space per stance driven by replicated state, Cosmetic
   layers, GPU skinning and ragdolls from the drawn pose
+- [ADR-0067](./adr/0067-rendering-pipeline.md) — Rendering pipeline: deferred,
+  one `UsdPreviewSurface` Look model, all light ray traced by ray queries with
+  NRD, DLSS or FSR as the anti-aliasing, on GPUs with hardware ray tracing
 
 ### Tooling & Build
 

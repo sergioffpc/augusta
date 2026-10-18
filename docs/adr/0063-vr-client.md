@@ -74,8 +74,11 @@ local feedback that nothing on the server sees.
 **Rendering.** In VR, OpenXR picks the GPU and creates the Vulkan device
 (`XR_KHR_vulkan_enable2`), which NVRHI then wraps (ADR-0059); both eyes are
 drawn in one pass with multiview (`VK_KHR_multiview`), at the headset's own
-refresh rate. The view's field of view is never changed in VR, and a death fades
-to the Spectator's view instead of tying the view to the player's ragdoll.
+refresh rate: the deferred targets are arrays of two layers, which raster passes
+draw with multiview and compute passes, ray-traced lighting among them, run once
+per layer (ADR-0067). The view's field of view is never changed in VR, and a
+death fades to the Spectator's view instead of tying the view to the player's
+ragdoll.
 
 **Tested without a headset.** A Tracked pose source that plays back a recording
 stands behind the same interface as the cameras and OpenXR, so the server's

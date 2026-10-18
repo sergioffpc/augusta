@@ -781,7 +781,7 @@ Version: later (planned, no version yet)
 
 ```text
 Source:      A VR player
-Stimulus:    Playing a full Match on the reference hardware
+Stimulus:    Playing a full Match on the reference hardware (NFR-17's GPU)
 Environment: A Match of 8 players, Desktop and VR mixed
 Artifact:    The client's VR rendering
 Response:    The client renders both eyes at the headset's native refresh
@@ -793,3 +793,22 @@ Measure:     No dropped frames at the headset's refresh rate (90 Hz on the
 A frame the headset waits for is reprojected by its runtime, which makes it
 uncomfortable to play, not slower: a dropped frame counts as a failure, whatever
 the runtime makes of it (ADR-0063).
+
+### NFR-17: Desktop Frame Rate
+
+Version: later (planned, no version yet)
+
+```text
+Source:      A Desktop player
+Stimulus:    Playing a full Match on the reference hardware, an NVIDIA
+             GeForce RTX 5070 Ti with 16 GB
+Environment: A Match of 8 players at 1440p, the upscaler on its default
+             preset
+Artifact:    The client's Desktop rendering
+Response:    The client renders every frame with all of its lighting
+Measure:     144 frames a second or more for the whole Match
+```
+
+Lighting has no quality setting to trade for frame rate (ADR-0067): the frame
+rate is met with every player's shadows, reflections and indirect light as
+everyone else sees them.

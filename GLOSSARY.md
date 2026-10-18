@@ -103,7 +103,12 @@ named from the authored catalogue of them, which says what that surface does to
 sound, to rounds that strike it, to bodies that touch it and how a strike on it
 looks. One name for all of it, so concrete is concrete to every one of them.
 _Avoid_: Physics material, ballistic material, surface type, material alone (a
-render material is unrelated)
+surface's Look is unrelated)
+
+**Look**: How a surface appears when drawn - its colour, how rough or metallic
+it is, its bumps and its glow - authored apart from its Surface material:
+neither decides the other, so a concrete-looking wall can stop rounds like wood.
+_Avoid_: Material, render material, shader
 
 **Cosmetic body**: A dynamic body that exists on one client only and never
 affects gameplay, such as a ragdoll or debris. It is never sent and may differ
