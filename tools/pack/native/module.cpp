@@ -1,6 +1,7 @@
 // augusta_pack._native: the pybind11 bindings of the cooker's native steps,
 // called from augusta_pack.cook: the mesh pass (mesh.h), the texture
 // compression (texture.h) and augusta_assets' pack encoder (pack_encoder.h);
+// from augusta-keygen: augusta_assets' key generation (pack_encoder.h);
 // and from augusta-inspect, augusta-verify and augusta-publish:
 // augusta_assets' pack reading (pack_reader.h).
 
@@ -29,7 +30,8 @@ PYBIND11_MODULE(_native, module) {
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
       "(ADR-0016), and stb_image + stb_image_resize2 + libktx's PNG/JPEG load, mip chain, BC7/BC5/BC4 encode and KTX2 "
       "write (ADR-0017), augusta_assets' pack encoder: the blobs and the signed pack the client and server load "
-      "(ADR-0031), and its pack reader: a pack's layout, and the pack the client and server would load.";
+      "(ADR-0031) and the Ed25519 keys it signs them with (ADR-0018), and its pack reader: a pack's layout, and the "
+      "pack the client and server would load.";
   module.def(
       "optimize_mesh",
       [](std::vector<float> points, std::vector<std::uint32_t> indices) {

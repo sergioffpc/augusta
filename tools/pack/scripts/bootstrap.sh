@@ -6,7 +6,7 @@
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
-# into it (pulling in usd-optimize/usd-validation-nvidia/pynacl as its
+# into it (pulling in usd-optimize/usd-validation-nvidia as its
 # own dependencies), the project's native _native extension module, built by
 # the repository's own CMake project into that same project (ADR-0030),
 # develop's signing keypair, and the authoring/packs/keys content
@@ -209,10 +209,10 @@ main() {
   # every pack already signed with the old key and the public key already
   # deployed for verification (main.cpp's <public_key_path> argument,
   # ADR-0018). Goes through the augusta-keygen entry point (pack/keys.py,
-  # pynacl - pure Python, no native module or CLI binary involved). One key
-  # per Environment (docs/ENGINEERING.md, Release signing): develop's, made
-  # here; staging's is the release key, made offline with augusta-keygen, as
-  # <keys>/staging.key/.pub.
+  # augusta_assets' key generation, through the native module built above).
+  # One key per Environment (docs/ENGINEERING.md, Release signing): develop's,
+  # made here; staging's is the release key, made offline with augusta-keygen,
+  # as <keys>/staging.key/.pub.
   local develop_key_prefix="${keys_dir}/develop"
   if [[ -f "${develop_key_prefix}.key" ]]; then
     echo "develop's signing keypair already exists at" \

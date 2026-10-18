@@ -253,9 +253,9 @@ struct Ed25519KeyPair {
   Ed25519PrivateKey private_key;
 };
 
-/// Generates a new Ed25519 keypair (libsodium's CSPRNG), for tests that
-/// need a throwaway keypair for a single run (ENGINEERING.md's
-/// asset-pipeline CI check) without shelling out to a CLI.
+/// Generates a new Ed25519 keypair (libsodium's CSPRNG): the keys
+/// augusta-keygen writes, through the cooker's binding (tools/pack's
+/// keys.py), and the throwaway keypair a test signs its packs with.
 Ed25519KeyPair GenerateEd25519KeyPair();
 
 /// Why ReadEd25519PublicKeyFile could not read a key.

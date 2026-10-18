@@ -54,6 +54,16 @@ def test_a_pack_names_the_client_pack_it_was_written_with_and_none_otherwise(
     assert client.client_pack_hash is None
 
 
+def test_a_generated_keypair_signs_a_pack_its_public_key_loads(tmp_path):
+    public_key, private_key = _native.generate_ed25519_keypair()
+    path = tmp_path / "test.pack"
+    pack_hash = _native.write_pack(path, ENTRIES, private_key)
+
+    assert len(public_key) == keys.PUBLIC_KEY_SIZE
+    assert len(private_key) == keys.PRIVATE_KEY_SIZE
+    assert _native.load_pack(path, public_key).hash == pack_hash
+
+
 def test_a_refused_pack_raises_load_error_with_its_reason(tmp_path, key_pair):
     path = tmp_path / "test.pack"
     _native.write_pack(path, ENTRIES, key_pair.private_key)
