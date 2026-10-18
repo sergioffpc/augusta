@@ -27,7 +27,7 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_agent_testing_server SERVER_ONLY)
 
-if(NOT AUGUSTA_AGENT_PYTHON)
+if(NOT AUGUSTA_TOOLS_PYTHON)
   return()
 endif()
 

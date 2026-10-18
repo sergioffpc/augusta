@@ -18,9 +18,9 @@ import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXAMPLES_ROOT = Path(__file__).parents[2] / "composer" / "examples"
-# Where the native module's build installs its vcpkg dependencies, ktx[tools]
-# among them (tools/pack/native/vcpkg.json).
-NATIVE_BUILD_DIR = Path(__file__).parents[1] / "native" / "build"
+# Where the root build, which builds the native module, installs its vcpkg
+# dependencies, ktx[tools] among them (the manifest's pack feature).
+BUILD_DIR = Path(__file__).parents[3] / "build"
 
 # The twelve bytes every KTX2 file starts with.
 KTX2_IDENTIFIER = b"\xabKTX 20\xbb\r\n\x1a\n"
@@ -244,16 +244,15 @@ def alternating_texels(
 def _find_ktx() -> str:
     """Khronos' ktx tool, from the same vcpkg ktx port as the encoder."""
     for name in ("ktx.exe", "ktx"):
-        found = sorted(
-            NATIVE_BUILD_DIR.glob(f"*/vcpkg_installed/*/tools/ktx/{name}")
-        )
+        found = sorted(BUILD_DIR.glob(f"*/vcpkg_installed/*/tools/ktx/{name}"))
         if found:
             return str(found[0])
     on_path = shutil.which("ktx")
     if on_path is None:
         pytest.fail(
-            "ktx not found: build tools/pack/native, whose vcpkg manifest "
-            "installs it (ktx[tools])"
+            "ktx not found: build the root project with the tools' Python "
+            "(tools/README.md), whose vcpkg pack feature installs it "
+            "(ktx[tools])"
         )
     return on_path
 

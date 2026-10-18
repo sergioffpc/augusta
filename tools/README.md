@@ -65,8 +65,9 @@ scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize ->
 
 The whole pipeline is pure Python except for one small pybind11 module in
 [pack/native/](pack/native/), `_native`: the mesh pass (ADR-0016) and the
-texture compression (ADR-0017). It has no USD dependency on purpose; see
-ADR-0030 for why.
+texture compression (ADR-0017). The repository's root CMake project builds it,
+as it builds the Agents' module, with `AUGUSTA_TOOLS` and the tools
+environment's Python. It has no USD dependency on purpose; see ADR-0030 for why.
 
 ### Setup
 
@@ -420,7 +421,7 @@ it prints the reason to stderr and exits `1`.
 | `pack/src/augusta_pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
 | `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/modules/capture`)                                                                                                                                                                                                                                             |
 | `pack/src/augusta_pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
-| `pack/native/`                             | Standalone CMake/vcpkg project for the native module. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                          |
+| `pack/native/`                             | The native module's sources, built by the root CMake project straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                             |
 | `composer/`                                | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
 | `pack/tests/`                              | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
 | `composer/examples/authoring/`             | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
@@ -428,48 +429,36 @@ it prints the reason to stderr and exits `1`.
 
 ### Rebuilding the native module
 
-The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
-`.so` (Linux) files exist. To rebuild after changing `native/`, delete them from
-`src/augusta_pack/` and re-run the bootstrap, or build directly:
-
-```powershell
-cmake --preset windows -S tools\pack\native "-DPYTHON_EXECUTABLE=<assets-root>\python\augusta-pack\Scripts\python.exe"
-cmake --build tools\pack\native\build\x64-windows
-```
-
-On Linux, with the `linux` preset (clang):
+The bootstrap builds it once and skips the step if the `.pyd` (Windows) or `.so`
+(Linux) file exists. To rebuild after changing `native/`, delete it from
+`src/augusta_pack/` and re-run the bootstrap, or build it directly from the
+repository's root, as the bootstrap does:
 
 ```bash
-cmake --preset linux -S tools/pack/native "-DPYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python"
-cmake --build tools/pack/native/build/x64-linux
+make pack-native PYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python
 ```
 
+On Windows the interpreter is
+`<assets-root>/python/augusta-pack/Scripts/python.exe`. `make pack-native`
+configures the platform's preset without the client, in a build directory of its
+own (`build/x64-<preset>-pack`), and builds the module's target alone.
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
-interpreter that imports it.
+interpreter that imports it; without it, the module is built against
+`tools/.venv`'s.
 
 ### Running the tests
 
 The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
 shared environment, `tools/.venv` (see Python environment above), not the assets
-root's venv. They need the native module built into `src/augusta_pack/` (above)
-against that environment's interpreter:
-
-```powershell
-cd tools
-uv sync
-cmake --preset windows -S pack\native "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
-cmake --build pack\native\build\x64-windows
-uv run pytest pack
-```
-
-On Linux:
+root's venv. They need the native module built into `src/augusta_pack/` against
+that environment's interpreter, which the root build does once `uv sync` has
+made it (`make build` and `make test` build it with the rest, `make pack-native`
+alone):
 
 ```bash
-cd tools
-uv sync
-cmake --preset linux -S pack/native "-DPYTHON_EXECUTABLE=$PWD/.venv/bin/python"
-cmake --build pack/native/build/x64-linux
-uv run pytest pack
+(cd tools && uv sync)
+make build
+(cd tools && uv run pytest pack)
 ```
 
 The USD stages the cook tests read, including the malformed ones, are in

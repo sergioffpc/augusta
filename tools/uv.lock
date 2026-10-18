@@ -55,6 +55,10 @@ docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
 ]
+pack = [
+    { name = "augusta-pack" },
+    { name = "pytest" },
+]
 
 [package.metadata]
 
@@ -71,6 +75,10 @@ dev = [
 docs = [
     { name = "mkdocs", specifier = "==1.6.1" },
     { name = "mkdocs-material", specifier = "==9.7.7" },
+]
+pack = [
+    { name = "augusta-pack", editable = "pack" },
+    { name = "pytest", specifier = ">=8" },
 ]
 
 [[package]]

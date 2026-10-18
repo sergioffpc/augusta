@@ -7,10 +7,9 @@
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
 # into it (pulling in usd-optimize/usd-validation-nvidia/pynacl/blake3 as its
-# own dependencies, plus the small native _native extension module built
-# and placed into that same project - ADR-0030's cooker is pure Python
-# otherwise, including the pack format and key
-# generation), develop's signing keypair, and the authoring/packs/keys content
+# own dependencies), the project's native _native extension module, built by
+# the repository's own CMake project into that same project (ADR-0030),
+# develop's signing keypair, and the authoring/packs/keys content
 # dirs (the cooker reads stages from authoring/, relative to it). Everything the
 # installed `augusta-pack` command needs to run lives under this one root, so
 # it never depends on what's on PATH in whatever shell it's invoked from.
@@ -47,13 +46,25 @@ on_windows() {
   esac
 }
 
-# Prints a path as this platform's native programs (uv, cmake) take it: in
+# Prints a path as this platform's native programs (uv, make) take it: in
 # Windows form under Git Bash, as is on Linux.
 # Arguments:
 #   The path.
 native_path() {
   if on_windows; then
     cygpath -w "$1"
+  else
+    echo "$1"
+  fi
+}
+
+# Prints a path as CMake takes it in a cache variable: with forward slashes
+# under Git Bash, where a backslash would be read as an escape; as is on Linux.
+# Arguments:
+#   The path.
+cmake_path() {
+  if on_windows; then
+    cygpath -m "$1"
   else
     echo "$1"
   fi
@@ -78,26 +89,21 @@ main() {
   pack_project="$(cd "$(dirname "$0")/.." && pwd)"
   repo_root="$(cd "${pack_project}/../.." && pwd)"
 
-  # What differs between the two platforms: the assets root's form, the CMake
-  # preset and the build directory it names, the venv's interpreter, the
-  # extension module's suffix, an executable's, the compiler the preset needs
-  # beyond the common commands below, and what cmake runs through -
-  # scripts/vcenv.cmd on Windows, where Ninja finds cl.exe only in the Visual
-  # Studio Build Tools environment, as the Makefile builds.
-  local assets_root preset build_dir venv_python module_suffix exe_suffix
-  local -a compiler=() build_env=()
+  # What differs between the two platforms: the assets root's form, the venv's
+  # interpreter, the extension module's suffix, an executable's, and the
+  # compiler and linker the platform's preset builds with, beyond the common
+  # commands below (on Windows, the Makefile runs them in the Visual Studio
+  # Build Tools environment, scripts/vcenv.cmd).
+  local assets_root venv_python module_suffix exe_suffix
+  local -a compiler=()
   if on_windows; then
     assets_root="$(cygpath -u "$1")"
-    preset=windows
-    build_dir=x64-windows
     venv_python=Scripts/python.exe
     module_suffix=pyd
     exe_suffix=.exe
-    build_env=("${repo_root}/scripts/vcenv.cmd")
+    compiler=(clang-cl lld-link)
   elif [[ "$(uname -s)" = Linux ]]; then
     assets_root="$1"
-    preset=linux
-    build_dir=x64-linux
     venv_python=bin/python
     module_suffix=so
     exe_suffix=
@@ -111,10 +117,10 @@ main() {
 
   # uv manages its own Python interpreters - no system-wide Python install
   # needed. The VC++ runtime usd-optimize's USD DLLs import on Windows, and
-  # the LLVM toolchain the Linux preset builds with, come from
+  # the LLVM toolchain the presets build with, come from
   # scripts/bootstrap.sh too.
   local missing=() command
-  for command in git uv cmake ninja "${compiler[@]}"; do
+  for command in git uv make cmake ninja "${compiler[@]}"; do
     command -v "${command}" >/dev/null 2>&1 || missing+=("${command}")
   done
   if ((${#missing[@]} > 0)); then
@@ -176,26 +182,25 @@ main() {
     "$(native_path "${pack_project}")"
 
   # --- Native module build (ADR-0030) ---
-  # tools/pack/native is its own standalone CMake project (own
-  # vcpkg.json/CMakePresets.json, independent of the client/server build)
-  # that builds the pybind11 module straight into ../src/augusta_pack, so
-  # `import augusta_pack._native` just works with no separate copy step.
-  # PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
-  # FindPythonInterp reads) points cmake at this venv, so the built
-  # extension's ABI matches the interpreter that imports it.
-  local native_source_dir="${pack_project}/native"
+  # tools/pack/native is built by the repository's own CMake project, as the
+  # Agents' module is: `make pack-native` configures the platform's preset
+  # without the client, in a build directory of its own, and builds the
+  # module's target alone, straight into src/augusta_pack, so `import
+  # augusta_pack._native` just works with no separate copy step. Its first
+  # configure installs the project's vcpkg dependencies, the runtime's among
+  # them. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
+  # FindPythonInterp reads) points it at this venv, so the built extension's
+  # ABI matches the interpreter that imports it.
   local pack_package_dir="${pack_project}/src/augusta_pack"
   if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
-    echo "Building the native module (${native_source_dir})..."
-    "${build_env[@]}" cmake --preset "${preset}" \
-      -S "$(native_path "${native_source_dir}")" \
-      "-DPYTHON_EXECUTABLE=$(native_path \
+    echo "Building the native module (${pack_project}/native, make" \
+      "pack-native)..."
+    make -C "$(native_path "${repo_root}")" pack-native \
+      "PYTHON_EXECUTABLE=$(cmake_path \
         "${python_dir}/augusta-pack/${venv_python}")"
-    "${build_env[@]}" cmake --build \
-      "$(native_path "${native_source_dir}/build/${build_dir}")"
     if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
       echo "bootstrap: the native module build did not produce _native" \
-        "in ${pack_package_dir} - see the cmake output above." >&2
+        "in ${pack_package_dir} - see the make output above." >&2
       exit 1
     fi
   fi
