@@ -72,6 +72,9 @@ When I input a movement or stance command
 Then my position and stance update accordingly on both client and server
 ```
 
+In VR (US-25), walking in place moves me and my tracked body's posture sets my
+stance: I crouch by crouching and go prone by lying down.
+
 ### US-05: Manage Stamina
 
 Version: v1
@@ -98,6 +101,9 @@ When I toggle aim down sights (ADS)
 Then my view zooms and the weapon's accuracy/recoil model changes accordingly
 ```
 
+In VR (US-25), I aim by bringing the rifle's sight to my eye: there is no ADS
+button and no zoom, and the recoil model changes once the sight is on my eye.
+
 ### US-07: Fire Rifle
 
 Version: v1
@@ -109,6 +115,10 @@ Given I have ammo loaded and am not reloading
 When I trigger fire
 Then a bullet is spawned server-side with the correct origin, direction, and initial velocity
 ```
+
+The origin is the rifle's Muzzle, never my eye, in both Play modes (ADR-0064):
+on a desktop the round crosses my sight at the rifle's zero range, and in VR it
+leaves the barrel I hold, along it.
 
 ### US-08: Reload Rifle
 
@@ -123,6 +133,8 @@ When I trigger reload and the reload completes
 Then my ammo count is restored to the rifle's magazine capacity
 ```
 
+In VR (US-25), I trigger reload with a button, with the same rules and timing.
+
 ### US-09: Apply Weapon Recoil
 
 Version: v1
@@ -135,6 +147,9 @@ Given I fire multiple rounds in succession
 When each round is fired
 Then my aim point shifts according to the weapon's recoil pattern, cumulative per burst
 ```
+
+In VR (US-25), the rifle kicks in my hands with the same pattern and I bring it
+back myself.
 
 ### US-10: Simulate Bullet Ballistics (Server-Authoritative)
 
@@ -188,6 +203,9 @@ Given my health reaches zero
 When death is processed
 Then I enter spectator mode for the remainder of the match with no respawn
 ```
+
+In VR (US-25), my view fades out and reopens as a Spectator's; it never follows
+my own body down.
 
 ### US-14: Determine Match End / Win Condition
 
@@ -418,6 +436,24 @@ Agents find a server the same way. Any other refusal - version, pack, Character
 
 - stops at the server that gave it, since every server of the scenario would
   give it too (NFR-13).
+
+### US-25: Play in VR
+
+Version: later (planned, no version yet)
+
+As a player, I want to play a Match on a PC VR headset, with my head, hands and
+body tracked, so that I hold and aim my rifle and take cover with my own body,
+in the same Matches as players on a desktop.
+
+```text
+Given a PC VR headset with an OpenXR runtime and cameras that see my body
+When I join a Match in the VR Play mode
+Then I see from my tracked head, my rifle is where my hands hold it, I am hit
+     on my tracked body bounded to my Character's, and the other players see it
+```
+
+My camera images never leave my PC, and the Roster shows each player's Play mode
+(ADR-0063).
 
 ---
 
@@ -728,3 +764,22 @@ Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no
 admission policy, signature check or NetworkPolicy (ADR-0057, ADR-0056). The
 Node stays LAN-only; exposing a game port range to the internet is outside this
 requirement, but it is one firewall rule once this one is met.
+
+### NFR-16: VR Frame Rate
+
+Version: later (planned, no version yet)
+
+```text
+Source:      A VR player
+Stimulus:    Playing a full Match on the reference hardware
+Environment: A Match of 8 players, Desktop and VR mixed
+Artifact:    The client's VR rendering
+Response:    The client renders both eyes at the headset's native refresh
+             rate
+Measure:     No dropped frames at the headset's refresh rate (90 Hz on the
+             reference headset) for the whole Match
+```
+
+A frame the headset waits for is reprojected by its runtime, which makes it
+uncomfortable to play, not slower: a dropped frame counts as a failure, whatever
+the runtime makes of it (ADR-0063).

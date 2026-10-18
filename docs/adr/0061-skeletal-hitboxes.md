@@ -25,7 +25,10 @@ and ADR-0044 to match.
   its state in the Authoritative State and the tick, with no animation state of
   its own. What the pose needs to remember, such as how far a change of stance
   has gone or where a stride is, is gameplay state, replicated like any other,
-  so neither side rebuilds history to agree and a Replay reproduces the pose.
+  so neither side rebuilds history to agree and a Replay reproduces the pose. A
+  VR player's state includes its bounded Tracked pose, which is replicated and
+  captured; a Desktop player's Tracked pose is synthesized from its view and
+  stance (ADR-0063), so both Play modes are posed by one path.
 - **Hitboxes belong to joints.** Each Hitbox is authored under a joint of the
   character's UsdSkel skeleton and moves rigidly with it. The cooker refuses a
   Hitbox under no joint. ADR-0040's lowering by stance and turning by yaw give
@@ -42,7 +45,8 @@ and ADR-0044 to match.
 - **No pose in PredictionWorld.** It predicts the local player, whom no one
   shoots locally. SimulationWorld evaluates poses for Hit detection, and
   PresentationWorld's Animation phase for every visible player, first-person
-  arms included.
+  arms included. A VR client draws its own body from each frame's Tracked pose
+  instead (ADR-0063).
 - **No bit-exact agreement across platforms.** The Windows client and the Linux
   server may differ in the last bits of a pose. The server's is authoritative,
   the client's only draws, and tests comparing them use a tolerance.
@@ -59,4 +63,6 @@ and ADR-0044 to match.
   joints costs a few kilobytes per player.
 - **Replicating the pose**: rejected. Joint transforms for every player every
   tick cost bandwidth that the pose's inputs, already replicated, make
-  unnecessary.
+  unnecessary. A VR player's Tracked pose is one of those inputs, not the pose:
+  joint rotations alone, bounded by the server, from which the Hitboxes are
+  still posed.
