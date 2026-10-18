@@ -1,8 +1,8 @@
 # Requirements — FPS Simulator Engine
 
 Scope: the engine described in [VISION.md](./VISION.md) — multiplayer-only,
-server-authoritative, physics-based ballistics, 2–8 players per Match, played
-with one rifle on one test map.
+server-authoritative, physics-based ballistics, 2–8 players per Match in two
+Teams, played with one rifle on one test map.
 
 Each requirement names the release that first met it (v1.0.0, v2.0.0), or the
 one it is planned for ("later" when that release has no version yet).
@@ -225,11 +225,14 @@ As the system, I want to detect when a match's win condition is met, so that the
 match can conclude and a new one can begin.
 
 ```text
-Given all players on one side are eliminated (or another defined win condition is met)
+Given every player of one Team is dead (or another defined win condition is met)
 When the condition is evaluated server-side
-Then the match ends, a winner is declared, everyone returns to the Lobby, and a new match
-     starts after a defined delay
+Then the match ends, the winning Team is declared, everyone returns to the Lobby, and a
+     new match starts after a defined delay
 ```
+
+v1 met it with every player its own side, last player standing; Teams make the
+sides two (ADR-0068).
 
 ### US-15: Server-Side Validation of Client Input (Anti-Cheat Baseline)
 
@@ -464,6 +467,43 @@ Then I see from my tracked head, my rifle is where my hands hold it, I am hit
 
 My camera images never leave my PC, and the Roster shows each player's Play mode
 (ADR-0063).
+
+### US-26: Play on a Team
+
+Version: later (planned, no version yet)
+
+As a player, I want to fight on one of two Teams, each in its own Uniform, so
+that I fight beside teammates I can tell from the enemy.
+
+```text
+Given a Match starts
+When Game policy puts each player on a Team
+Then I spawn at my Team's Spawn points wearing my Team's Uniform on the Character I
+     chose, my rounds hurt teammates as they hurt enemies, once dead I watch only my
+     living teammates, and my Team wins when the other has no one left alive
+```
+
+The free-for-all is gone: every Match is a team match (ADR-0068).
+
+### US-27: Talk to my Team
+
+Version: later (planned, no version yet)
+
+As a player, I want to talk to my Team by radio and to anyone near me aloud, so
+that we coordinate, at the risk of being overheard.
+
+```text
+Given I am alive in a Match with a microphone
+When I hold the radio push-to-talk and speak
+Then my living teammates hear me by radio wherever they are, and anyone within range
+     hears me aloud from where I stand, enemies included
+
+Given I am dead
+When I speak
+Then only my dead teammates hear me, and I still hear my Team's radio
+```
+
+Speech is never captured, and there is none in the Lobby (ADR-0069).
 
 ---
 
