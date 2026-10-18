@@ -79,6 +79,30 @@ struct PackHeader {
   std::optional<PackHash> client_pack;
 };
 
+// The header's flags byte and the client pack hash after it: the hash, if the
+// flags name one.
+std::expected<std::optional<PackHash>, LoadError> ParseClientPack(ByteReader& header_reader) {
+  const auto flags = header_reader.ReadU8();
+  const auto client_pack_bytes = header_reader.ReadBytes(kPackHashSize);
+  if (!flags || !client_pack_bytes) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  // No flag but kHeaderHasClientPack, and no hash without it: either would be
+  // a header WritePack never writes.
+  const bool has_client_pack = (*flags & kHeaderHasClientPack) != 0;
+  const bool stray_hash =
+      !has_client_pack && std::ranges::any_of(*client_pack_bytes, [](std::byte b) { return b != std::byte{0}; });
+  if ((*flags & ~kHeaderHasClientPack) != 0 || stray_hash) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  std::optional<PackHash> client_pack;
+  if (has_client_pack) {
+    client_pack.emplace();
+    std::ranges::copy(*client_pack_bytes, client_pack->begin());
+  }
+  return client_pack;
+}
+
 // hashed_length is the file's length minus the trailer (kTrailerSize) -
 // everything the trailer's hash/signature actually covers, and therefore
 // the upper bound both the index and every blob it points into must fit
@@ -121,30 +145,16 @@ std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> 
     return std::unexpected(LoadError::kTruncated);
   }
 
-  const auto flags = header_reader.ReadU8();
-  const auto client_pack_bytes = header_reader.ReadBytes(kPackHashSize);
-  if (!flags || !client_pack_bytes) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  // No flag but kHeaderHasClientPack, and no hash without it: either would be
-  // a header WritePack never writes.
-  const bool has_client_pack = (*flags & kHeaderHasClientPack) != 0;
-  const bool stray_hash =
-      !has_client_pack && std::ranges::any_of(*client_pack_bytes, [](std::byte b) { return b != std::byte{0}; });
-  if ((*flags & ~kHeaderHasClientPack) != 0 || stray_hash) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  std::optional<PackHash> client_pack;
-  if (has_client_pack) {
-    client_pack.emplace();
-    std::ranges::copy(*client_pack_bytes, client_pack->begin());
+  auto client_pack = ParseClientPack(header_reader);
+  if (!client_pack) {
+    return std::unexpected(client_pack.error());
   }
 
   return PackHeader{.version = *version,
                     .data_offset = *data_offset,
                     .index_offset = *index_offset,
                     .index_count = *index_count,
-                    .client_pack = client_pack};
+                    .client_pack = *client_pack};
 }
 
 // index_bytes is exactly the file's [index_offset, hashed_length) range.
