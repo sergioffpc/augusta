@@ -56,8 +56,12 @@ class TimerResolution {
   TimerResolution(TimerResolution&&) = delete;
   TimerResolution& operator=(TimerResolution&&) = delete;
 
+#ifdef _WIN32
  private:
+  // Whether Windows took the raise, so the destructor restores only what it
+  // raised.
   bool raised_ = false;
+#endif
 };
 
 /// An executable's phases after its config is read, each run once, in order,
