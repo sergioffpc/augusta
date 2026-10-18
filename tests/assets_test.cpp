@@ -391,6 +391,30 @@ TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
   EXPECT_TRUE(pack->ResolveAudio("whole24").has_value());
 }
 
+// The encoder refuses the sounds the decoder would find corrupt, so no cook
+// writes one.
+TEST(EncodeAudioBlobTest, RefusesASampleWidthPcmDoesNotHave) {
+  const std::vector<std::byte> samples(6);
+
+  const auto blob = augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 12, .samples = samples});
+
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kUnsupportedSampleWidth);
+}
+
+TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
+  const std::vector<std::byte> samples(3);
+
+  const auto partial =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 16, .samples = samples});
+  const auto whole =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 24, .samples = samples});
+
+  ASSERT_FALSE(partial.has_value());
+  EXPECT_EQ(partial.error(), augusta::assets::EncodeError::kPartialSample);
+  EXPECT_TRUE(whole.has_value());
+}
+
 // A client pack names the folder its cue sounds are addressed under (ADR-0031).
 TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
@@ -797,6 +821,20 @@ TEST_F(PackTest, APackListsTheEntriesItWasWrittenWith) {
   EXPECT_EQ(entries[1].type, augusta::assets::AssetType::kCollision);
   EXPECT_EQ(entries[1].path, "Collider");
   EXPECT_EQ(entries[1].offset, entries[0].offset + mesh.size());
+}
+
+// augusta-publish names the format a verified server pack was cooked in, and
+// augusta-verify the size it verified.
+TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_version.pack");
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, {}, keys.private_key).has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(pack->Version(), 3U);
+  EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,

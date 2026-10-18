@@ -448,6 +448,13 @@ class Pack {
   /// Every entry of this pack's index, in index order.
   [[nodiscard]] std::span<const PackEntry> Entries() const;
 
+  /// The pack format version its header names (ADR-0031): the one this build
+  /// reads, since Load refuses any other.
+  [[nodiscard]] std::uint32_t Version() const;
+
+  /// The size of the file Load mapped, in bytes.
+  [[nodiscard]] std::uint64_t FileSize() const;
+
  private:
   Pack();
 

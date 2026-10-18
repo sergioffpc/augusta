@@ -9,10 +9,12 @@
 #include "augusta/assets.h"
 
 /// \file
-/// augusta_assets' pack decoder: the Decode* blob functions (ADR-0031/
-/// ADR-0032/ADR-0007), implemented in decoder.cpp. The read half of the pack's
-/// wire format, mirroring augusta/pack_encoder.h's Encode*; Pack::Resolve*
-/// (augusta/assets.h) decodes through them.
+/// The read half of the pack's wire format (ADR-0031/ADR-0032/ADR-0007): it
+/// turns a blob's bytes back into the content augusta/pack_encoder.h encoded,
+/// and refuses any that are not a valid blob of their type, since a blob is
+/// untrusted until it decodes. Pack's Resolve* (augusta/assets.h) decode
+/// through it, for the client and server; finding a blob in its pack, and
+/// verifying the pack, are Pack's.
 namespace augusta::assets {
 
 /// Each decodes one blob type's byte layout, the inverse of

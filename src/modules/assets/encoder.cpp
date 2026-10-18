@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -63,6 +64,18 @@ std::expected<void, EncodeError> EncodeSceneNode(ByteWriter& writer, const Scene
 }
 
 }  // namespace
+
+std::string_view DescribeEncodeError(EncodeError error) {
+  switch (error) {
+    case EncodeError::kTooLarge:
+      return "exceeds the pack's size limits";
+    case EncodeError::kUnsupportedSampleWidth:
+      return "has a sample width a PCM WAV file does not hold (8, 16, 24 or 32 bits)";
+    case EncodeError::kPartialSample:
+      return "is not a whole number of samples";
+  }
+  return "could not be encoded";
+}
 
 std::expected<std::vector<std::byte>, EncodeError> EncodeMeshBlob(const MeshData& mesh) {
   if (mesh.points.size() > kMaxMeshPoints || mesh.indices.size() > kMaxMeshIndices) {
@@ -172,6 +185,12 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::spa
 std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound) {
   if (sound.samples.size() > kMaxAudioBytes) {
     return std::unexpected(EncodeError::kTooLarge);
+  }
+  if (std::ranges::find(kPcmBitsPerSample, sound.bits_per_sample) == kPcmBitsPerSample.end()) {
+    return std::unexpected(EncodeError::kUnsupportedSampleWidth);
+  }
+  if (sound.samples.size() % (sound.bits_per_sample / kBitsPerByte) != 0) {
+    return std::unexpected(EncodeError::kPartialSample);
   }
   std::vector<std::byte> blob;
   ByteWriter writer(blob);

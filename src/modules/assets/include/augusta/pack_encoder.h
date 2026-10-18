@@ -25,7 +25,16 @@ enum class EncodeError {
   /// this module's own pragmatic sanity limits (kMaxPathLength,
   /// kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
   kTooLarge,
+  /// A sound's bits per sample is not one a PCM WAV file holds (8, 16, 24 or
+  /// 32).
+  kUnsupportedSampleWidth,
+  /// A sound's samples are not a whole number of samples of its width.
+  kPartialSample,
 };
+
+/// A phrase for error that follows the name of what was encoded, e.g. "exceeds
+/// the pack's size limits": what the cooker tells whoever runs it.
+std::string_view DescribeEncodeError(EncodeError error);
 
 /// Encodes mesh into the pack's mesh-blob byte layout (ADR-0031). The exact
 /// on-disk layout is otherwise an implementation detail, shared only with
@@ -61,7 +70,8 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_
 std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters);
 
 /// Encodes sound into the pack's audio-blob byte layout (ADR-0020, ADR-0031):
-/// kTooLarge past kMaxAudioBytes.
+/// kTooLarge past kMaxAudioBytes, and refused as the decoder would refuse it
+/// otherwise.
 std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound);
 
 /// Encodes sounds_path, the prefix the cue sounds are addressed under, into
@@ -80,6 +90,10 @@ enum class WriteError {
   /// pragmatic size limits (kMaxEntries, kMaxPathLength, kMaxPackSize).
   kTooLarge,
 };
+
+/// A phrase for error that follows the pack's path, e.g. "has two entries that
+/// share a path".
+std::string_view DescribeWriteError(WriteError error);
 
 /// Writes entries into a new pack file at output_path, in ADR-0031's
 /// header/data/index/trailer write order, signing the trailer with
