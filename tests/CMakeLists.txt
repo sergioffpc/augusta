@@ -433,6 +433,7 @@ target_link_libraries(
     augusta_server_connection_health
     augusta_host
     augusta_link
+    augusta_link_raw
     augusta_link_messages
     augusta_protocol
     augusta_scenario_parameters_loader
@@ -514,6 +515,7 @@ target_link_libraries(
     augusta_host_replay
     augusta_harness
     augusta_link
+    augusta_link_raw
     augusta_link_messages
     augusta_logging
     augusta_protocol
@@ -591,7 +593,15 @@ gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
-  PRIVATE augusta_harness augusta_host augusta_link augusta_supervisor augusta_server GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_harness
+    augusta_host
+    augusta_link
+    augusta_link_raw
+    augusta_supervisor
+    augusta_server
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_transport_failure_tests DISCOVERY_TIMEOUT 30)
@@ -641,7 +651,7 @@ add_test(
 # core modules of their own. Nor do tick and limits depend on any other module,
 # nor does anything else give the Tick or the Sequence a type of its own or
 # declare a bound again, even as an alias. Nor do the harness and the host reach
-# beneath the Link, nor does any target but augusta_link (and the transport's
+# beneath the Link, nor does any target but the Link's own (and the transport's
 # own tests) link networking, which it first proves on a planted violation. A
 # source scan, so it builds nothing.
 add_test(

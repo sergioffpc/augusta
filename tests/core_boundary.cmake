@@ -20,11 +20,12 @@
 # link any of their targets, so every message each exchanges goes through
 # augusta/link.h, the replay server's among them (ADR-0051).
 #
-# Keeps networking beneath the Link alone (ADR-0038): no target but augusta_link
-# links augusta_networking, bar networking's own tests and the Link's test of
-# what it decides about the transport (augusta_link_transport_tests), which
-# reach the private headers each tests. Every other end of the transport, a
-# test's raw one too, is the Link's (augusta/link.h, augusta/raw_link.h). The
+# Keeps networking beneath the Link alone (ADR-0038): no target but the Link's
+# own (augusta_link, and augusta_link_raw, its raw ends for tests) links
+# augusta_networking, bar networking's own tests and the Link's test of what it
+# decides about the transport (augusta_link_transport_tests), which reach the
+# private headers each tests. Every other end of the transport, a test's raw
+# one too, is the Link's (augusta/link.h, augusta/raw_link.h). The
 # check proves itself first on a planted violation, so it cannot pass by
 # matching nothing.
 #
@@ -184,6 +185,7 @@ set(networking_target "(^|[^A-Za-z0-9_])augusta_networking([^A-Za-z0-9_]|$)")
 set(
   networking_linkers
   augusta_link
+  augusta_link_raw
   augusta_networking_tests
   augusta_send_flags_tests
   augusta_transport_events_tests
@@ -206,8 +208,8 @@ function(check_networking_links listfile where out_violations)
 endfunction()
 
 # First a planted target that links networking, which the check must refuse,
-# and augusta_link and networking itself, which it must let through: so it
-# cannot pass by matching nothing.
+# and the Link's own targets and networking itself, which it must let through:
+# so it cannot pass by matching nothing.
 set(networking_self_test "")
 check_networking_links(
   "target_link_libraries(\n  augusta_planted\n  # a comment (with parentheses)\n  PRIVATE augusta_logging augusta_networking\n)"
@@ -218,7 +220,7 @@ if(NOT planted_violations MATCHES "augusta_planted")
   string(APPEND networking_self_test "  it lets a planted target link augusta_networking\n")
 endif()
 check_networking_links(
-  "target_link_libraries(augusta_link PRIVATE augusta_networking)\ntarget_link_libraries(augusta_networking PUBLIC augusta_failure)"
+  "target_link_libraries(augusta_link PRIVATE augusta_networking)\ntarget_link_libraries(augusta_link_raw PRIVATE augusta_networking)\ntarget_link_libraries(augusta_networking PUBLIC augusta_failure)"
   "allowed"
   allowed_violations
 )
@@ -287,7 +289,7 @@ if(networking_violations)
   list(JOIN networking_violations "\n" networking_report)
   string(
     APPEND report
-    "A target other than augusta_link links augusta_networking - speak through augusta/link.h (in a test, augusta/raw_link.h) instead:\n${networking_report}\n"
+    "A target other than the Link's own links augusta_networking - speak through augusta/link.h (in a test, augusta/raw_link.h) instead:\n${networking_report}\n"
   )
 endif()
 if(report)
@@ -297,5 +299,5 @@ endif()
 list(LENGTH headers count)
 message(
   STATUS
-  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone, and ${listfile_count} listfiles linking networking only for augusta_link and the transport's own tests"
+  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone, and ${listfile_count} listfiles linking networking only for the Link's own targets and the transport's own tests"
 )
