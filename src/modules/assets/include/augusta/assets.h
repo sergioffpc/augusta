@@ -22,12 +22,15 @@
 /// their content by pack-relative path. Linked by both the client and
 /// server (ADR-0006), and by the offline cooker (tools/pack, ADR-0030)
 /// through its native module, which writes every pack with this module's
-/// encoder (augusta/pack_encoder.h): the wire format has no other
+/// encoder (augusta/pack_encoder.h) and reads and verifies them with
+/// ReadPackLayout() and Pack::Load(): the wire format has no other
 /// implementation.
 ///
 /// Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 /// trailer step): Load() verifies the signature before trusting anything
-/// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
+/// else in the file. ReadPackLayout() parses the same header and index with
+/// the same code, but takes no key and verifies nothing, for a tool to show
+/// what a pack holds (augusta-inspect). Load() memory-maps the pack file once (Boost.Interprocess) rather
 /// than copying it into a buffer; the BLAKE3 hash is computed directly off
 /// that mapping, and every Resolve* call decodes straight out of it too -
 /// the file's bytes are never read from disk more than once for a Pack's
@@ -270,7 +273,7 @@ enum class ReadKeyFileError {
 /// lives here rather than being duplicated per executable.
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path);
 
-/// Why Pack::Load refused a pack.
+/// Why Pack::Load or ReadPackLayout refused a pack.
 enum class LoadError {
   /// path could not be opened or read.
   kIoError,
@@ -300,6 +303,50 @@ enum class LoadError {
 /// client/server executables, ADR-0019), so it lives here rather than
 /// being duplicated per executable.
 std::string_view DescribeLoadError(LoadError error);
+
+/// The size of an Ed25519 signature, in bytes.
+inline constexpr std::size_t kEd25519SignatureSize = 64;
+
+/// An Ed25519 signature, as a pack's trailer holds it (ADR-0031).
+using Ed25519Signature = std::array<std::byte, kEd25519SignatureSize>;
+
+/// The four bytes every pack file starts with.
+inline constexpr std::string_view kPackMagic = "AUGP";
+
+/// One entry of a pack's index (ADR-0031): where its blob lies in the file.
+struct PackEntry {
+  AssetType type{};
+  /// From the start of the file, in bytes.
+  std::uint64_t offset = 0;
+  /// The blob's, in bytes.
+  std::uint64_t size = 0;
+  std::string path;
+};
+
+/// A pack's header, index and trailer, as ReadPackLayout read them off its file.
+struct PackLayout {
+  std::uint32_t version = 0;
+  /// In bytes.
+  std::uint64_t file_size = 0;
+  /// Where the data section starts, which is where the header ends.
+  std::uint64_t data_offset = 0;
+  /// Where the index starts, which is where the data section ends.
+  std::uint64_t index_offset = 0;
+  /// The hash of the client pack the header names; nullopt if it names none.
+  std::optional<PackHash> client_pack;
+  /// In index order.
+  std::vector<PackEntry> entries;
+  /// The hash the trailer holds, not checked against the file's.
+  PackHash hash{};
+  /// The trailer's signature of hash, not checked against any key.
+  Ed25519Signature signature{};
+};
+
+/// Reads the header, index and trailer of the pack at path without a key, for a
+/// tool to show what a pack holds (augusta-inspect): neither its hash nor its
+/// signature is verified, so nothing in it is to be trusted. Refuses a malformed
+/// layout with the LoadError Pack::Load gives it, through the same parser.
+std::expected<PackLayout, LoadError> ReadPackLayout(const std::filesystem::path& path);
 
 /// Why a Pack::Resolve* call found no usable asset at a path.
 enum class ResolveError {
@@ -397,6 +444,9 @@ class Pack {
 
   /// The file this pack was loaded from, as Load was given it.
   [[nodiscard]] const std::filesystem::path& Path() const;
+
+  /// Every entry of this pack's index, in index order.
+  [[nodiscard]] std::span<const PackEntry> Entries() const;
 
  private:
   Pack();
