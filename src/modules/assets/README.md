@@ -7,12 +7,14 @@
 Loads the runtime packs the cooker produces and resolves their content by
 pack-relative path. It verifies each pack's BLAKE3 hash and Ed25519 signature
 before trusting anything in it, memory-maps the file once and decodes its
-content straight out of it. It owns the pack's wire format.
+content straight out of it, and reads a pack's layout without a key for the
+tools that show one. It owns the pack's wire format.
 
 ## Not its responsibility
 
-- Cooking and signing packs: `tools/pack`, which reimplements the wire format in
-  Python rather than linking this module.
+- Cooking, inspecting and verifying packs: `tools/pack`, which walks the
+  authored stages and links this module, through its native module, to write,
+  hash and sign packs, and to read and verify them.
 - Building a map's collision from a pack: physics (`augusta/map.h`).
 - Playing the sounds a pack holds: audio.
 

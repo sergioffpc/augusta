@@ -7,7 +7,6 @@ key's forced command (clusters/onprem/node/augusta-publish-receive.sh), run
 locally by an ssh that stands in for sshd; ssh itself is not run.
 """
 
-import dataclasses
 import hashlib
 import os
 from pathlib import Path
@@ -15,16 +14,17 @@ import shutil
 import subprocess
 import sys
 import threading
+import types
 
+from augusta_pack import _native
 from augusta_pack import keys
-from augusta_pack import pack
 from augusta_pack import publish
 from augusta_pack.publish import PublishError
 import pytest
 
 ENTRIES = [
-    pack.AssetEntry(
-        type=pack.ASSET_TYPE_SCRIPT, path="parameters.lua", data=b"return {}"
+    _native.AssetEntry(
+        type=_native.AssetType.SCRIPT, path="parameters.lua", data=b"return {}"
     ),
 ]
 
@@ -58,10 +58,10 @@ class LocalNode:
 @pytest.fixture
 def cook(tmp_path, key_pair):
     """A cook's pack pair, signed by key_pair, and its public key file."""
-    client_hash = pack.write_pack(
+    client_hash = _native.write_pack(
         tmp_path / "client.apak", ENTRIES, key_pair.private_key
     )
-    server_hash = pack.write_pack(
+    server_hash = _native.write_pack(
         tmp_path / "server.apak", ENTRIES, key_pair.private_key, client_hash
     )
     public_key = tmp_path / "local-name.pub"
@@ -87,7 +87,10 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
 
     assert copied
     assert release.version == server_hash.hex()[:12]
-    assert release.pack_format == pack.FORMAT_VERSION
+    assert (
+        release.pack_format
+        == _native.load_pack(server_pack, public_key.read_bytes()).version
+    )
     assert (
         release.directory
         == f"/srv/augusta/asset-packs/develop/firebase/{release.version}"
@@ -127,12 +130,13 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
     tmp_path, monkeypatch, capsys, cook
 ):
     server_hash = cook[3]
+    pack_format = _native.load_pack(cook[1], cook[2].read_bytes()).version
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
     assert (
         f"  serve it with servers.firebase.packVersion: "
-        f'"{server_hash.hex()[:12]}" and packFormat: {pack.FORMAT_VERSION} in '
+        f'"{server_hash.hex()[:12]}" and packFormat: {pack_format} in '
         f"clusters/onprem/apps/develop.yaml"
     ) in capsys.readouterr().out.splitlines()
 
@@ -140,53 +144,46 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
 def test_the_printed_pack_format_is_the_server_packs_header(
     tmp_path, monkeypatch, capsys, cook
 ):
-    # The header's version as the reader parsed it, made one no constant
-    # holds: the printed format can only be that header's.
-    verify_pack = publish.verify_pack
+    # The header's version as the verified load parsed it, made one no
+    # constant holds: the printed format can only be that header's.
+    load_pack = _native.load_pack
 
-    def verify_pack_of_format_7(path, public_key):
-        return dataclasses.replace(verify_pack(path, public_key), version=7)
+    def load_pack_of_format_7(path, public_key):
+        pack = load_pack(path, public_key)
+        return types.SimpleNamespace(
+            hash=pack.hash, client_pack_hash=pack.client_pack_hash, version=7
+        )
 
-    monkeypatch.setattr(publish, "verify_pack", verify_pack_of_format_7)
+    monkeypatch.setattr(_native, "load_pack", load_pack_of_format_7)
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
     assert " and packFormat: 7 in " in capsys.readouterr().out
 
 
-def test_the_pack_format_is_read_from_the_server_packs_header(
-    tmp_path, monkeypatch, key_pair
-):
-    # A cook in another format, read back by a reader of that format.
-    monkeypatch.setattr(pack, "FORMAT_VERSION", 2)
-    client_hash = pack.write_pack(
-        tmp_path / "client.apak", ENTRIES, key_pair.private_key
-    )
-    pack.write_pack(
-        tmp_path / "server.apak", ENTRIES, key_pair.private_key, client_hash
-    )
-    public_key = tmp_path / "local-name.pub"
-    public_key.write_bytes(key_pair.public_key)
+def test_the_pack_format_is_read_from_the_server_packs_header(cook):
+    # The encoder writes only the format it is built with, so the header's
+    # version is read here as the bytes the pack holds it in.
+    client_pack, server_pack, public_key, _ = cook
 
     release = publish.prepare(
-        "develop",
-        "firebase",
-        tmp_path / "client.apak",
-        tmp_path / "server.apak",
-        public_key,
+        "develop", "firebase", client_pack, server_pack, public_key
     )
 
-    assert (tmp_path / "server.apak").read_bytes()[4:8] == (2).to_bytes(
-        4, "little"
+    assert release.pack_format == int.from_bytes(
+        server_pack.read_bytes()[4:8], "little"
     )
-    assert release.pack_format == 2
 
 
 def cook_signed_by(folder: Path, private_key: bytes) -> tuple[Path, Path]:
     """The client and server packs of ENTRIES, signed by private_key."""
     folder.mkdir()
-    client_hash = pack.write_pack(folder / "client.apak", ENTRIES, private_key)
-    pack.write_pack(folder / "server.apak", ENTRIES, private_key, client_hash)
+    client_hash = _native.write_pack(
+        folder / "client.apak", ENTRIES, private_key
+    )
+    _native.write_pack(
+        folder / "server.apak", ENTRIES, private_key, client_hash
+    )
     return folder / "client.apak", folder / "server.apak"
 
 
@@ -262,17 +259,17 @@ def test_a_version_folder_holding_other_files_is_never_overwritten(
 def test_a_server_pack_from_another_cook_is_refused(tmp_path, cook, key_pair):
     client_pack, _, public_key, _ = cook
     other_entries = [
-        pack.AssetEntry(
-            type=pack.ASSET_TYPE_SCRIPT,
+        _native.AssetEntry(
+            type=_native.AssetType.SCRIPT,
             path="parameters.lua",
             data=b"return { x = 1 }",
         )
     ]
-    other_client_hash = pack.write_pack(
+    other_client_hash = _native.write_pack(
         tmp_path / "other-client.apak", other_entries, key_pair.private_key
     )
     other_server = tmp_path / "other-server.apak"
-    pack.write_pack(
+    _native.write_pack(
         other_server, ENTRIES, key_pair.private_key, other_client_hash
     )
 
@@ -296,7 +293,7 @@ def test_packs_signed_by_another_key_are_refused(tmp_path, cook):
     other_key = tmp_path / "other.pub"
     other_key.write_bytes(keys.generate_keypair()[0])
 
-    with pytest.raises(PublishError, match="signature is not valid"):
+    with pytest.raises(PublishError, match="failed signature verification"):
         publish.prepare(
             "develop", "firebase", client_pack, server_pack, other_key
         )

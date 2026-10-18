@@ -14,7 +14,7 @@ one blank line, each block sorted alphabetically:
 3. **Third-party and system** — everything else in angle brackets: `<boost/…>`,
    `<steam/…>`, `<nvrhi/nvrhi.h>`, `<nvtx3/…>`, `<gtest/gtest.h>`, `<flecs.h>`.
 4. **Project** — everything in this repo, in quotes: `"augusta/<module>.h"` for
-   a module's public header, `"decoder.h"` for one private to the module or
+   a module's public header, `"wire_format.h"` for one private to the module or
    executable.
 
 Rules `clang-format` can't check:

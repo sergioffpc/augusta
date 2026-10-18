@@ -26,24 +26,22 @@
 #include <sodium.h>
 
 #include "augusta/math.h"
-#include "decoder.h"
-#include "encoder.h"
+#include "augusta/pack_decoder.h"
+#include "augusta/pack_encoder.h"
 #include "wire_format.h"
 
 namespace augusta::assets {
 
 namespace {
 
-constexpr std::array<char, 4> kMagic = {'A', 'U', 'G', 'P'};
 constexpr std::uint32_t kFormatVersion = 3;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
 // + flags(u8) + client pack hash, per ADR-0031's header field list.
-constexpr std::uint64_t kHeaderSize = kMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) +
+constexpr std::uint64_t kHeaderSize = kPackMagic.size() + sizeof(std::uint32_t) + sizeof(std::uint64_t) +
                                       sizeof(std::uint64_t) + sizeof(std::uint32_t) + sizeof(std::uint8_t) +
                                       kPackHashSize;
-constexpr std::size_t kEd25519SignatureSize = 64;
 // BLAKE3 hash + Ed25519 signature of that hash, ADR-0031's trailer.
 constexpr std::uint64_t kTrailerSize = kPackHashSize + kEd25519SignatureSize;
 
@@ -73,18 +71,37 @@ void EnsureSodiumInitialized() {
   (void)kInitialized;
 }
 
-struct IndexEntry {
-  AssetType type;
-  std::string path;
-  std::uint64_t offset;
-  std::uint64_t size;
-};
-
 struct PackHeader {
+  std::uint32_t version;
+  std::uint64_t data_offset;
   std::uint64_t index_offset;
   std::uint32_t index_count;
   std::optional<PackHash> client_pack;
 };
+
+// The header's flags byte and the client pack hash after it: the hash, if the
+// flags name one.
+std::expected<std::optional<PackHash>, LoadError> ParseClientPack(ByteReader& header_reader) {
+  const auto flags = header_reader.ReadU8();
+  const auto client_pack_bytes = header_reader.ReadBytes(kPackHashSize);
+  if (!flags || !client_pack_bytes) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  // No flag but kHeaderHasClientPack, and no hash without it: either would be
+  // a header WritePack never writes.
+  const bool has_client_pack = (*flags & kHeaderHasClientPack) != 0;
+  const bool stray_hash =
+      !has_client_pack && std::ranges::any_of(*client_pack_bytes, [](std::byte b) { return b != std::byte{0}; });
+  if ((*flags & ~kHeaderHasClientPack) != 0 || stray_hash) {
+    return std::unexpected(LoadError::kTruncated);
+  }
+  std::optional<PackHash> client_pack;
+  if (has_client_pack) {
+    client_pack.emplace();
+    std::ranges::copy(*client_pack_bytes, client_pack->begin());
+  }
+  return client_pack;
+}
 
 // hashed_length is the file's length minus the trailer (kTrailerSize) -
 // everything the trailer's hash/signature actually covers, and therefore
@@ -93,8 +110,8 @@ struct PackHeader {
 std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> header_bytes,
                                                      std::uint64_t hashed_length) {
   ByteReader header_reader(header_bytes);
-  const auto magic = header_reader.ReadBytes(kMagic.size());
-  if (!magic || std::memcmp(magic->data(), kMagic.data(), kMagic.size()) != 0) {
+  const auto magic = header_reader.ReadBytes(kPackMagic.size());
+  if (!magic || std::memcmp(magic->data(), kPackMagic.data(), kPackMagic.size()) != 0) {
     return std::unexpected(LoadError::kBadMagic);
   }
 
@@ -128,26 +145,16 @@ std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> 
     return std::unexpected(LoadError::kTruncated);
   }
 
-  const auto flags = header_reader.ReadU8();
-  const auto client_pack_bytes = header_reader.ReadBytes(kPackHashSize);
-  if (!flags || !client_pack_bytes) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  // No flag but kHeaderHasClientPack, and no hash without it: either would be
-  // a header WritePack never writes.
-  const bool has_client_pack = (*flags & kHeaderHasClientPack) != 0;
-  const bool stray_hash =
-      !has_client_pack && std::ranges::any_of(*client_pack_bytes, [](std::byte b) { return b != std::byte{0}; });
-  if ((*flags & ~kHeaderHasClientPack) != 0 || stray_hash) {
-    return std::unexpected(LoadError::kTruncated);
-  }
-  std::optional<PackHash> client_pack;
-  if (has_client_pack) {
-    client_pack.emplace();
-    std::ranges::copy(*client_pack_bytes, client_pack->begin());
+  auto client_pack = ParseClientPack(header_reader);
+  if (!client_pack) {
+    return std::unexpected(client_pack.error());
   }
 
-  return PackHeader{.index_offset = *index_offset, .index_count = *index_count, .client_pack = client_pack};
+  return PackHeader{.version = *version,
+                    .data_offset = *data_offset,
+                    .index_offset = *index_offset,
+                    .index_count = *index_count,
+                    .client_pack = *client_pack};
 }
 
 // index_bytes is exactly the file's [index_offset, hashed_length) range.
@@ -155,11 +162,11 @@ std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> 
 // blob's own [offset, offset+size) must fall within - a blob can
 // therefore never alias into the header, the index itself, or the
 // trailer, only into the data section that precedes the index.
-std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const std::byte> index_bytes,
-                                                                 std::uint64_t data_section_end,
-                                                                 std::uint32_t index_count) {
+std::expected<std::vector<PackEntry>, LoadError> ParsePackIndex(std::span<const std::byte> index_bytes,
+                                                                std::uint64_t data_section_end,
+                                                                std::uint32_t index_count) {
   ByteReader index_reader(index_bytes);
-  std::vector<IndexEntry> index;
+  std::vector<PackEntry> index;
   index.reserve(index_count);
   for (std::uint32_t i = 0; i < index_count; ++i) {
     const auto type = index_reader.ReadU8();
@@ -179,12 +186,12 @@ std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const
       return std::unexpected(LoadError::kTruncated);
     }
 
-    if (std::ranges::any_of(index, [&](const IndexEntry& existing) { return existing.path == *path; })) {
+    if (std::ranges::any_of(index, [&](const PackEntry& existing) { return existing.path == *path; })) {
       return std::unexpected(LoadError::kInvalidIndex);
     }
 
     index.push_back(
-        IndexEntry{.type = static_cast<AssetType>(*type), .path = std::move(*path), .offset = *offset, .size = *size});
+        PackEntry{.type = static_cast<AssetType>(*type), .offset = *offset, .size = *size, .path = std::move(*path)});
   }
   return index;
 }
@@ -193,7 +200,7 @@ std::expected<std::vector<IndexEntry>, LoadError> ParsePackIndex(std::span<const
 // construction: ParsePackIndex already validated entry's own
 // [offset, offset+size) falls entirely within the pack's data section
 // (see its own comment), so this can never read outside mapping.
-std::span<const std::byte> BlobBytes(const Mapping& mapping, const IndexEntry& entry) {
+std::span<const std::byte> BlobBytes(const Mapping& mapping, const PackEntry& entry) {
   return MappedBytes(mapping).subspan(entry.offset, entry.size);
 }
 
@@ -201,9 +208,9 @@ std::span<const std::byte> BlobBytes(const Mapping& mapping, const IndexEntry& e
 // with: no entry at path is kNotFound, an entry of a different AssetType
 // is kTypeMismatch - decoding the matched entry's blob bytes is each
 // caller's own next step.
-std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<IndexEntry>& index,
-                                                              std::string_view path, AssetType expected_type) {
-  const auto match = std::ranges::find_if(index, [&](const IndexEntry& entry) { return entry.path == path; });
+std::expected<const PackEntry*, ResolveError> FindIndexEntry(const std::vector<PackEntry>& index, std::string_view path,
+                                                             AssetType expected_type) {
+  const auto match = std::ranges::find_if(index, [&](const PackEntry& entry) { return entry.path == path; });
   if (match == index.end()) {
     return std::unexpected(ResolveError::kNotFound);
   }
@@ -219,7 +226,7 @@ std::expected<const IndexEntry*, ResolveError> FindIndexEntry(const std::vector<
 // Resolve* methods turned out to be this same sequence with nothing but
 // the target type/AssetType/decoder differing.
 template <typename T>
-std::expected<T, ResolveError> ResolveAsset(const std::vector<IndexEntry>& index, const Mapping& mapping,
+std::expected<T, ResolveError> ResolveAsset(const std::vector<PackEntry>& index, const Mapping& mapping,
                                             std::string_view path, AssetType expected_type,
                                             std::optional<T> (*decode)(std::span<const std::byte>)) {
   const auto match = FindIndexEntry(index, path, expected_type);
@@ -293,7 +300,7 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
   }
   const std::uint64_t index_offset = cursor;
 
-  header_writer.WriteChars(std::string_view(kMagic.data(), kMagic.size()));
+  header_writer.WriteChars(kPackMagic);
   header_writer.WriteU32(kFormatVersion);
   header_writer.WriteU64(kHeaderSize);
   header_writer.WriteU64(index_offset);
@@ -315,7 +322,7 @@ std::expected<PackSections, WriteError> BuildPackSections(const std::vector<Asse
 // (ReadTrailer, read back off disk to verify against).
 struct PackTrailer {
   PackHash hash;
-  std::array<std::byte, kEd25519SignatureSize> signature;
+  Ed25519Signature signature;
 };
 
 // ADR-0030's pack -> hash -> sign order: BLAKE3 over everything through
@@ -412,28 +419,56 @@ std::expected<Mapping, LoadError> OpenValidatedMapping(const std::filesystem::pa
   }
 }
 
-// The BLAKE3 hash of mapped's [0, hashed_length) range, and the trailer
-// (also BLAKE3 hash + Ed25519 signature, see PackTrailer) immediately
-// following it. Unlike the old chunked-ifstream-read version this
-// replaced, this can't fail: mapped is already the whole file resident
-// (memory-mapped, backed by the OS page cache) and hashed_length/kTrailerSize are
-// already validated to fit within it (see Pack::Load), so there's no I/O
-// left to go wrong here - just pointer arithmetic and a hash.
-struct PackVerificationData {
+// The BLAKE3 hash of mapped's [0, hashed_length) range, and the trailer that
+// follows it. Neither can fail: mapped is already the whole file resident
+// (memory-mapped, backed by the OS page cache) and hashed_length/kTrailerSize
+// are already validated to fit within it (OpenValidatedMapping), so there's no
+// I/O left to go wrong here - just pointer arithmetic and a hash.
+PackHash HashContent(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
   PackHash hash;
-  PackTrailer trailer;
-};
-
-PackVerificationData ComputePackHashAndReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
-  PackVerificationData result;
   blake3_hasher hasher;
   blake3_hasher_init(&hasher);
   blake3_hasher_update(&hasher, mapped.data(), hashed_length);
-  blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(result.hash.data()), result.hash.size());
+  blake3_hasher_finalize(&hasher, reinterpret_cast<std::uint8_t*>(hash.data()), hash.size());
+  return hash;
+}
 
-  std::memcpy(result.trailer.hash.data(), mapped.data() + hashed_length, kPackHashSize);
-  std::memcpy(result.trailer.signature.data(), mapped.data() + hashed_length + kPackHashSize, kEd25519SignatureSize);
-  return result;
+PackTrailer ReadTrailer(std::span<const std::byte> mapped, std::uint64_t hashed_length) {
+  PackTrailer trailer;
+  std::memcpy(trailer.hash.data(), mapped.data() + hashed_length, kPackHashSize);
+  std::memcpy(trailer.signature.data(), mapped.data() + hashed_length + kPackHashSize, kEd25519SignatureSize);
+  return trailer;
+}
+
+// A pack file mapped, its size checked and its header parsed, none of it
+// verified: where Pack::Load and ReadPackLayout both start.
+struct OpenedPack {
+  Mapping mapping;
+  PackHeader header;
+  // The file's length minus the trailer: what the trailer's hash covers.
+  std::uint64_t hashed_length = 0;
+};
+
+std::expected<OpenedPack, LoadError> OpenPack(const std::filesystem::path& path) {
+  auto mapping = OpenValidatedMapping(path);
+  if (!mapping) {
+    return std::unexpected(mapping.error());
+  }
+  const std::span<const std::byte> mapped = MappedBytes(*mapping);
+  const std::uint64_t hashed_length = mapped.size() - kTrailerSize;
+  auto header = ParsePackHeader(mapped.first(kHeaderSize), hashed_length);
+  if (!header) {
+    return std::unexpected(header.error());
+  }
+  return OpenedPack{.mapping = std::move(*mapping), .header = *header, .hashed_length = hashed_length};
+}
+
+// The index of pack: the one index parse both Pack::Load and ReadPackLayout go
+// through.
+std::expected<std::vector<PackEntry>, LoadError> ParsePackIndexOf(const OpenedPack& pack) {
+  const std::span<const std::byte> mapped = MappedBytes(pack.mapping);
+  return ParsePackIndex(mapped.subspan(pack.header.index_offset, pack.hashed_length - pack.header.index_offset),
+                        pack.header.index_offset, pack.header.index_count);
 }
 
 }  // namespace
@@ -537,9 +572,10 @@ std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const
   return key;
 }
 
-std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
-                                          const std::optional<PackHash>& client_pack) {
+std::expected<PackHash, WriteError> WritePack(const std::filesystem::path& output_path,
+                                              const std::vector<AssetEntry>& entries,
+                                              const Ed25519PrivateKey& signing_key,
+                                              const std::optional<PackHash>& client_pack) {
   EnsureSodiumInitialized();
 
   if (auto validated = ValidateEntries(entries); !validated) {
@@ -552,14 +588,18 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
   }
 
   const PackTrailer trailer = SignPack(*sections, signing_key);
-  return WritePackFile(output_path, *sections, trailer);
+  if (auto written = WritePackFile(output_path, *sections, trailer); !written) {
+    return std::unexpected(written.error());
+  }
+  return trailer.hash;
 }
 
 struct Pack::Impl {
   Mapping mapping;
-  std::vector<IndexEntry> index;
+  std::vector<PackEntry> index;
   PackHash hash;
   std::optional<PackHash> client_pack;
+  std::uint32_t version;
   std::filesystem::path path;
 };
 
@@ -583,6 +623,18 @@ std::string_view DescribeLoadError(LoadError error) {
   return "failed to load for an unknown reason";
 }
 
+std::string_view DescribeWriteError(WriteError error) {
+  switch (error) {
+    case WriteError::kIoError:
+      return "could not be written";
+    case WriteError::kDuplicatePath:
+      return "has two entries that share a path";
+    case WriteError::kTooLarge:
+      return "has entries that exceed the pack's size limits";
+  }
+  return "could not be written for an unknown reason";
+}
+
 Pack::Pack() = default;
 Pack::Pack(Pack&&) noexcept = default;
 Pack& Pack::operator=(Pack&&) noexcept = default;
@@ -591,44 +643,36 @@ Pack::~Pack() = default;
 std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key) {
   EnsureSodiumInitialized();
 
-  auto mapping = OpenValidatedMapping(path);
-  if (!mapping) {
-    return std::unexpected(mapping.error());
+  auto opened = OpenPack(path);
+  if (!opened) {
+    return std::unexpected(opened.error());
   }
-  const std::span<const std::byte> mapped = MappedBytes(*mapping);
-  const std::uint64_t hashed_length = mapped.size() - kTrailerSize;
-
-  auto header = ParsePackHeader(mapped.first(kHeaderSize), hashed_length);
-  if (!header) {
-    return std::unexpected(header.error());
-  }
-
-  const PackVerificationData hashed = ComputePackHashAndReadTrailer(mapped, hashed_length);
+  const std::span<const std::byte> mapped = MappedBytes(opened->mapping);
+  const PackTrailer trailer = ReadTrailer(mapped, opened->hashed_length);
 
   // Verified in this order (integrity, then authenticity) purely for a
   // clearer error to the caller - both checks are on untrusted data
   // either way, and neither is trusted until both pass.
-  if (hashed.hash != hashed.trailer.hash) {
+  if (HashContent(mapped, opened->hashed_length) != trailer.hash) {
     return std::unexpected(LoadError::kHashMismatch);
   }
-  if (crypto_sign_verify_detached(reinterpret_cast<const unsigned char*>(hashed.trailer.signature.data()),
-                                  reinterpret_cast<const unsigned char*>(hashed.trailer.hash.data()),
-                                  hashed.trailer.hash.size(),
+  if (crypto_sign_verify_detached(reinterpret_cast<const unsigned char*>(trailer.signature.data()),
+                                  reinterpret_cast<const unsigned char*>(trailer.hash.data()), trailer.hash.size(),
                                   reinterpret_cast<const unsigned char*>(public_key.data())) != 0) {
     return std::unexpected(LoadError::kSignatureInvalid);
   }
 
-  auto index = ParsePackIndex(mapped.subspan(header->index_offset, hashed_length - header->index_offset),
-                              header->index_offset, header->index_count);
+  auto index = ParsePackIndexOf(*opened);
   if (!index) {
     return std::unexpected(index.error());
   }
 
   Pack pack;
-  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(*mapping),
+  pack.impl_ = std::make_unique<Impl>(Impl{.mapping = std::move(opened->mapping),
                                            .index = std::move(*index),
-                                           .hash = hashed.trailer.hash,
-                                           .client_pack = header->client_pack,
+                                           .hash = trailer.hash,
+                                           .client_pack = opened->header.client_pack,
+                                           .version = opened->header.version,
                                            .path = path});
   return pack;
 }
@@ -655,16 +699,16 @@ std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view pat
 
 std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character) const {
   const std::string prefix = std::string(character) + "/";
-  std::vector<const IndexEntry*> entries;
-  for (const IndexEntry& entry : impl_->index) {
+  std::vector<const PackEntry*> entries;
+  for (const PackEntry& entry : impl_->index) {
     if (entry.type == AssetType::kHitbox && entry.path.starts_with(prefix)) {
       entries.push_back(&entry);
     }
   }
-  std::ranges::sort(entries, {}, &IndexEntry::path);
+  std::ranges::sort(entries, {}, &PackEntry::path);
   std::vector<HitboxData> hitboxes;
   hitboxes.reserve(entries.size());
-  for (const IndexEntry* entry : entries) {
+  for (const PackEntry* entry : entries) {
     auto hitbox = DecodeHitboxBlob(BlobBytes(impl_->mapping, *entry));
     if (!hitbox) {
       return std::unexpected(ResolveError::kCorruptBlob);
@@ -704,6 +748,34 @@ const std::optional<PackHash>& Pack::ClientPackHash() const { return impl_->clie
 const PackHash& Pack::Hash() const { return impl_->hash; }
 
 const std::filesystem::path& Pack::Path() const { return impl_->path; }
+
+std::span<const PackEntry> Pack::Entries() const { return impl_->index; }
+
+std::uint32_t Pack::Version() const { return impl_->version; }
+
+std::uint64_t Pack::FileSize() const { return impl_->mapping.get_size(); }
+
+std::expected<PackLayout, LoadError> ReadPackLayout(const std::filesystem::path& path) {
+  auto opened = OpenPack(path);
+  if (!opened) {
+    return std::unexpected(opened.error());
+  }
+  auto index = ParsePackIndexOf(*opened);
+  if (!index) {
+    return std::unexpected(index.error());
+  }
+  const std::span<const std::byte> mapped = MappedBytes(opened->mapping);
+  const PackTrailer trailer = ReadTrailer(mapped, opened->hashed_length);
+  const PackHeader& header = opened->header;
+  return PackLayout{.version = header.version,
+                    .file_size = mapped.size(),
+                    .data_offset = header.data_offset,
+                    .index_offset = header.index_offset,
+                    .client_pack = header.client_pack,
+                    .entries = std::move(*index),
+                    .hash = trailer.hash,
+                    .signature = trailer.signature};
+}
 
 std::expected<Pack, VerifiedPackError> LoadVerifiedPack(const std::filesystem::path& pack_path,
                                                         const std::filesystem::path& public_key_path) {

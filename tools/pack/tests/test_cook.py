@@ -8,7 +8,7 @@ import math
 import shutil
 import struct
 
-from augusta_pack import pack
+from augusta_pack import _native
 from augusta_pack.cook import cook_scenario
 from augusta_pack.cook import CookError
 from augusta_pack.sounds import CueSounds
@@ -77,11 +77,11 @@ def test_malformed_geometry_is_refused_and_no_pack_is_written(
 def test_a_visual_mesh_goes_into_the_client_pack_only(tmp_path, key_pair):
     client, server = cook_stage("mesh_fixture.usda", tmp_path, key_pair)
 
-    assert client.paths_of_type(pack.ASSET_TYPE_MESH) == {"TestMesh"}
+    assert client.paths_of_type(_native.AssetType.MESH) == {"TestMesh"}
     points, indices = decode_mesh(client.blob("TestMesh"))
     assert len(points) == 4
     assert len(indices) == 6
-    assert server.paths_of_type(pack.ASSET_TYPE_MESH) == set()
+    assert server.paths_of_type(_native.AssetType.MESH) == set()
 
 
 def test_duplicate_vertices_are_welded(tmp_path, key_pair):
@@ -98,20 +98,22 @@ def test_each_prim_kind_goes_to_the_packs_that_need_it(tmp_path, key_pair):
         "client_server_split_fixture.usda", tmp_path, key_pair
     )
 
-    assert client.paths_of_type(pack.ASSET_TYPE_MESH) == {"Root/Visual"}
-    assert client.paths_of_type(pack.ASSET_TYPE_TEXTURE) == {
+    assert client.paths_of_type(_native.AssetType.MESH) == {"Root/Visual"}
+    assert client.paths_of_type(_native.AssetType.TEXTURE) == {
         "Root/Visual/Mat/DiffuseTexture"
     }
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_COLLISION) == {
+        assert contents.paths_of_type(_native.AssetType.COLLISION) == {
             "Root/Collider"
         }
-        assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == {"Root/Hitbox"}
-        assert contents.paths_of_type(pack.ASSET_TYPE_SPAWN_POINT) == {
+        assert contents.paths_of_type(_native.AssetType.HITBOX) == {
+            "Root/Hitbox"
+        }
+        assert contents.paths_of_type(_native.AssetType.SPAWN_POINT) == {
             "Root/Spawn"
         }
-    assert server.paths_of_type(pack.ASSET_TYPE_MESH) == set()
-    assert server.paths_of_type(pack.ASSET_TYPE_TEXTURE) == set()
+    assert server.paths_of_type(_native.AssetType.MESH) == set()
+    assert server.paths_of_type(_native.AssetType.TEXTURE) == set()
 
 
 def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
@@ -121,7 +123,7 @@ def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
 
     for contents in (client, server):
         body_part, points, _ = decode_hitbox(contents.blob("Root/Hitbox"))
-        assert body_part == pack.BODY_PART_TORSO
+        assert body_part == int(_native.BodyPart.TORSO)
         assert len(points) == 4
 
 
@@ -326,7 +328,7 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
 
     client = read_pack_contents(client_path, key_pair.public_key)
     server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
+    assert client.paths_of_type(_native.AssetType.SCRIPT) == set()
     assert server.blob("parameters.lua") == b"return {}"
 
 
@@ -350,7 +352,7 @@ def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
 
     client = read_pack_contents(client_path, key_pair.public_key)
     server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {
+    assert client.paths_of_type(_native.AssetType.AUDIO) == {
         "sounds/gunshot",
         "sounds/death",
     }
@@ -364,16 +366,16 @@ def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
         8,
         b"\x80\x90\xa0",
     )
-    assert decode_string(client.blob(pack.SOUNDS_PATH)) == "sounds"
-    assert client.entries[pack.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
-    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
-    assert pack.SOUNDS_PATH not in server.entries
+    assert decode_string(client.blob(_native.SOUNDS_PATH)) == "sounds"
+    assert client.entries[_native.SOUNDS_PATH][0] == _native.AssetType.SOUNDS
+    assert server.paths_of_type(_native.AssetType.AUDIO) == set()
+    assert _native.SOUNDS_PATH not in server.entries
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
     characters = [
         (f"c{i}", FIXTURES_DIR / "mesh_fixture.usda")
-        for i in range(pack.MAX_CHARACTERS + 1)
+        for i in range(_native.MAX_CHARACTERS + 1)
     ]
 
     with pytest.raises(CookError) as raised:
@@ -484,13 +486,13 @@ def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
-        "test/Character/Head": pack.BODY_PART_HEAD,
-        "test/Character/Torso": pack.BODY_PART_TORSO,
-        "test/Character/LeftLeg": pack.BODY_PART_LIMB,
-        "test/Character/RightLeg": pack.BODY_PART_LIMB,
+        "test/Character/Head": int(_native.BodyPart.HEAD),
+        "test/Character/Torso": int(_native.BodyPart.TORSO),
+        "test/Character/LeftLeg": int(_native.BodyPart.LIMB),
+        "test/Character/RightLeg": int(_native.BodyPart.LIMB),
     }
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == set(expected)
+        assert contents.paths_of_type(_native.AssetType.HITBOX) == set(expected)
         for path, body_part in expected.items():
             assert decode_hitbox(contents.blob(path))[0] == body_part
 
@@ -499,7 +501,7 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {
+        assert contents.paths_of_type(_native.AssetType.EYE) == {
             "test/Character/Eye"
         }
         assert struct.unpack(

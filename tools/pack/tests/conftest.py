@@ -12,15 +12,15 @@ import subprocess
 import wave
 import zlib
 
+from augusta_pack import _native
 from augusta_pack import keys
-from augusta_pack import reader
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EXAMPLES_ROOT = Path(__file__).parents[2] / "composer" / "examples"
-# Where the native module's build installs its vcpkg dependencies, ktx[tools]
-# among them (tools/pack/native/vcpkg.json).
-NATIVE_BUILD_DIR = Path(__file__).parents[1] / "native" / "build"
+# Where the root build, which builds the native module, installs its vcpkg
+# dependencies, ktx[tools] among them (the manifest's pack feature).
+BUILD_DIR = Path(__file__).parents[3] / "build"
 
 # The twelve bytes every KTX2 file starts with.
 KTX2_IDENTIFIER = b"\xabKTX 20\xbb\r\n\x1a\n"
@@ -43,9 +43,9 @@ class PackContents:
     hash: bytes
     client_pack_hash: bytes | None
     # pack-relative path -> (asset type, blob)
-    entries: dict[str, tuple[int, bytes]]
+    entries: dict[str, tuple[_native.AssetType, bytes]]
 
-    def paths_of_type(self, asset_type: int) -> set[str]:
+    def paths_of_type(self, asset_type: _native.AssetType) -> set[str]:
         return {
             path
             for path, (entry_type, _) in self.entries.items()
@@ -63,15 +63,20 @@ def key_pair() -> KeyPair:
 
 
 def read_pack_contents(path: Path, public_key: bytes) -> PackContents:
-    """Verifies the pack at path against public_key, then reads every blob."""
-    info = reader.verify_pack(path, public_key)
+    """Loads the pack at path against public_key, then reads every blob.
+
+    Each blob is the bytes the loaded pack's index places it at.
+    """
+    loaded = _native.load_pack(path, public_key)
     data = path.read_bytes()
     entries = {
         entry.path: (entry.type, data[entry.offset : entry.offset + entry.size])
-        for entry in info.entries
+        for entry in loaded.entries
     }
     return PackContents(
-        hash=info.hash, client_pack_hash=info.client_pack_hash, entries=entries
+        hash=loaded.hash,
+        client_pack_hash=loaded.client_pack_hash,
+        entries=entries,
     )
 
 
@@ -244,16 +249,15 @@ def alternating_texels(
 def _find_ktx() -> str:
     """Khronos' ktx tool, from the same vcpkg ktx port as the encoder."""
     for name in ("ktx.exe", "ktx"):
-        found = sorted(
-            NATIVE_BUILD_DIR.glob(f"*/vcpkg_installed/*/tools/ktx/{name}")
-        )
+        found = sorted(BUILD_DIR.glob(f"*/vcpkg_installed/*/tools/ktx/{name}"))
         if found:
             return str(found[0])
     on_path = shutil.which("ktx")
     if on_path is None:
         pytest.fail(
-            "ktx not found: build tools/pack/native, whose vcpkg manifest "
-            "installs it (ktx[tools])"
+            "ktx not found: build the root project with the tools' Python "
+            "(tools/README.md), whose vcpkg pack feature installs it "
+            "(ktx[tools])"
         )
     return on_path
 

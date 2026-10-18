@@ -1,13 +1,11 @@
 [project]
 name = "augusta-pack"
 version = "0.1.0"
-description = "Augusta asset-cooking pipeline (ADR-0030): usd-optimize -> usd-validation-nvidia -> pure-Python cook/pack."
+description = "Augusta asset-cooking pipeline (ADR-0030): usd-optimize -> usd-validation-nvidia -> cook -> augusta_assets' pack encoder."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "usd-optimize>=1.2.1",
   "usd-validation-nvidia>=1.21.0",
-  "pynacl>=1.5.0",
-  "blake3>=0.4.1",
   "pyyaml>=6.0",
 ]
 

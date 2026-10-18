@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_ASSETS_ENCODER_H_
-#define AUGUSTA_ASSETS_ENCODER_H_
+#ifndef AUGUSTA_PACK_ENCODER_H_
+#define AUGUSTA_PACK_ENCODER_H_
 
 #include <cstddef>
 #include <expected>
@@ -12,15 +12,11 @@
 #include "augusta/assets.h"
 
 /// \file
-/// Private (not under include/augusta/, never installed) declarations of
-/// augusta_assets' Encode* blob functions and WritePack (ADR-0031/ADR-0032/
-/// ADR-0007), implemented in encoder.cpp/assets.cpp. No production code
-/// calls these - the pack-cooking pipeline (tools/pack, ADR-0030)
-/// is pure Python and reimplements this same wire format independently.
-/// They serve as that format's canonical reference and as augusta_assets'
-/// own round-trip test fixture (tests/assets_test.cpp, which gets a private
-/// include path to this directory for exactly that reason) - same
-/// non-public status as decoder.h.
+/// augusta_assets' pack encoder: the Encode* blob functions and WritePack
+/// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/assets.cpp. The
+/// write half of the pack's wire format, for the cooker, which links it
+/// through its native module (tools/pack, ADR-0030), and for tests that build
+/// packs; augusta/pack_decoder.h is its read half.
 namespace augusta::assets {
 
 /// Why an Encode* function refused its input.
@@ -29,7 +25,16 @@ enum class EncodeError {
   /// this module's own pragmatic sanity limits (kMaxPathLength,
   /// kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
   kTooLarge,
+  /// A sound's bits per sample is not one a PCM WAV file holds (8, 16, 24 or
+  /// 32).
+  kUnsupportedSampleWidth,
+  /// A sound's samples are not a whole number of samples of its width.
+  kPartialSample,
 };
+
+/// A phrase for error that follows the name of what was encoded, e.g. "exceeds
+/// the pack's size limits": what the cooker tells whoever runs it.
+std::string_view DescribeEncodeError(EncodeError error);
 
 /// Encodes mesh into the pack's mesh-blob byte layout (ADR-0031). The exact
 /// on-disk layout is otherwise an implementation detail, shared only with
@@ -65,7 +70,8 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_
 std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::span<const std::string> characters);
 
 /// Encodes sound into the pack's audio-blob byte layout (ADR-0020, ADR-0031):
-/// kTooLarge past kMaxAudioBytes.
+/// kTooLarge past kMaxAudioBytes, and refused as the decoder would refuse it
+/// otherwise.
 std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound);
 
 /// Encodes sounds_path, the prefix the cue sounds are addressed under, into
@@ -85,16 +91,22 @@ enum class WriteError {
   kTooLarge,
 };
 
+/// A phrase for error that follows the pack's path, e.g. "has two entries that
+/// share a path".
+std::string_view DescribeWriteError(WriteError error);
+
 /// Writes entries into a new pack file at output_path, in ADR-0031's
 /// header/data/index/trailer write order, signing the trailer with
 /// signing_key. Its header names client_pack, the hash of the client pack
 /// cooked with it, when given (a server pack's). The write is atomic: entries
 /// are assembled into a temporary file first, which is only renamed into place
-/// at output_path once fully written.
-std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
-                                          const std::optional<PackHash>& client_pack = std::nullopt);
+/// at output_path once fully written. Returns the pack's hash, the one its
+/// trailer signs, which a server pack's cook names as its client_pack.
+std::expected<PackHash, WriteError> WritePack(const std::filesystem::path& output_path,
+                                              const std::vector<AssetEntry>& entries,
+                                              const Ed25519PrivateKey& signing_key,
+                                              const std::optional<PackHash>& client_pack = std::nullopt);
 
 }  // namespace augusta::assets
 
-#endif  // AUGUSTA_ASSETS_ENCODER_H_
+#endif  // AUGUSTA_PACK_ENCODER_H_

@@ -131,9 +131,10 @@ touches a hardcoded placeholder.
 
 - Level baking tool: usd-optimize (stage cleanup) + usd-validation-nvidia
   (validation) on the OpenUSD-authored test map, baked to runtime format
-- Asset cooker (`tools/pack`, pure Python): meshoptimizer (meshes, read directly
-  from the cleaned USD stage) and DirectXTex (textures) via two small native
-  bindings (`tools/pack/native/`, no OpenUSD - see ADR-0030)
+- Asset cooker (`tools/pack`, Python over one native module,
+  `tools/pack/native/`, no OpenUSD - see ADR-0030): meshoptimizer (meshes, read
+  directly from the cleaned USD stage), libktx (textures), and `augusta_assets`,
+  linked through its binding, which writes and verifies the packs
 - Signed, verified packs (client + server split)
 - CI addition: asset-pipeline check — generate a fresh throwaway Ed25519 keypair
   for the run, cook the test assets, sign with the ephemeral key, verify the
