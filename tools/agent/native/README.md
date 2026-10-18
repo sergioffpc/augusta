@@ -9,7 +9,7 @@ Intents. Each Agent is one Harness Session under a Runner of its own, with no
 window or GPU, its Commands made from the Intents it was set. It reports the
 events it is told of, how each Intent ended and its failure to one queue that
 nothing on the Runner's threads waits on. It speaks to the server through the
-Harness alone, so it links no physics, protocol or networking of its own.
+Harness alone, so it links no protocol or networking of its own.
 
 ## Not its responsibility
 
