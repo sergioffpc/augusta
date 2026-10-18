@@ -94,6 +94,17 @@ only by the Authoritative server and named by an Entity ID. Placed in the Map or
 created during a Match, like a thrown grenade (ADR-0045). _Avoid_: Object,
 physics object, dynamic object, item
 
+**Prop kind**: The authored definition a Prop is an instance of - its shape,
+mass and Surface material - placed many times in a Map or created during a
+Match. _Avoid_: Prefab, archetype, template, Prop (a Prop is one instance)
+
+**Surface material**: What a surface is made of (concrete, wood, metal...),
+named from the authored catalogue of them, which says what that surface does to
+sound, to rounds that strike it, to bodies that touch it and how a strike on it
+looks. One name for all of it, so concrete is concrete to every one of them.
+_Avoid_: Physics material, ballistic material, surface type, material alone (a
+render material is unrelated)
+
 **Cosmetic body**: A dynamic body that exists on one client only and never
 affects gameplay, such as a ragdoll or debris. It is never sent and may differ
 between clients (ADR-0045). _Avoid_: Prop (a Prop is gameplay), effect, particle
@@ -421,12 +432,13 @@ observer, dead cam
 
 **Acoustic geometry**: The surfaces sound bounces off, is blocked by and passes
 through: shapes authored for that alone in a Map or a Prop, never drawn and
-never collided with, each with one Acoustic material. _Avoid_: Audio mesh, sound
+never collided with, each with one Surface material. _Avoid_: Audio mesh, sound
 collision (the Map's collision is not what sound sees)
 
-**Acoustic material**: What a surface of Acoustic geometry does to sound - how
-much it absorbs, scatters and lets through - named from the authored catalogue
-of them. _Avoid_: Audio material, surface type (a render material is unrelated)
+**Acoustic material**: What a Surface material does to sound - how much it
+absorbs, scatters and lets through. Not named on its own: a surface names its
+Surface material. _Avoid_: Audio material, surface type (a render material is
+unrelated)
 
 **Probe volume**: A region of a Map where sound is heard, filled with points
 whose reflections and paths are baked ahead of play. _Avoid_: Reverb zone, audio

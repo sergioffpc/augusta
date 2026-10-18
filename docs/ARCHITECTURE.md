@@ -637,6 +637,9 @@ not affect numbering.
   Mechanism in modules, Game policy in Lua, the executables only wire them
 - [ADR-0061](./adr/0061-skeletal-hitboxes.md) — Skeletal hitboxes: a shared
   Hitbox pose, evaluated alike by client and server
+- [ADR-0065](./adr/0065-surface-materials-penetration-ricochet.md) — Surface
+  materials, penetration and ricochet: one catalogue for sound, rounds, contact
+  and impacts; rounds go through surfaces and players by energy and thickness
 
 ### Tooling & Build
 
@@ -684,7 +687,7 @@ not affect numbering.
 - [ADR-0028](./adr/0028-audio-output.md) — Audio output: miniaudio
 - [ADR-0059](./adr/0059-renderer-nvrhi.md) — Renderer: NVRHI
 - [ADR-0062](./adr/0062-footsteps.md) — Footsteps: heard at a clip's Foot
-  contacts, on the collider's Acoustic material
+  contacts, on the collider's Surface material
 
 ### Asset Pipeline
 

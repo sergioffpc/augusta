@@ -165,6 +165,10 @@ Then the server computes its trajectory, including gravity-induced drop and trav
 and replicates the relevant result to clients
 ```
 
+A bullet goes through what it strikes, or ricochets off it at a grazing angle,
+by the struck surface's material and thickness and the bullet's remaining energy
+(ADR-0065): glass and thin wood let it through, a concrete wall stops it.
+
 ### US-11: Detect Hit by Impact Location
 
 Version: v1
@@ -178,6 +182,9 @@ When the intersection is resolved server-side
 Then the specific body part hit (e.g., head, torso, limb) is recorded
 ```
 
+A bullet goes on through a player it hits, with the energy that player's body
+leaves it, and can hit the player behind (ADR-0065).
+
 ### US-12: Apply Damage by Hit Location
 
 Version: v1
@@ -190,6 +197,9 @@ Given a hit is detected at a given body part
 When damage is applied
 Then the resulting damage matches the configured lethality for that body part and ammo type
 ```
+
+A bullet that went through something first does less damage, in proportion to
+the energy it has left (ADR-0065).
 
 ### US-13: Player Death (No Respawn)
 
