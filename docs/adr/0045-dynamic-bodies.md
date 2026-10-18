@@ -94,8 +94,12 @@ cooked into the client pack only (ADR-0031). A player's death is told reliably
 to every client (the Death message, ADR-0038), with the body, the direction of
 the killing blow and the Body part it struck, so each client throws its ragdoll
 the right way; the Hit confirmation, which only the shooter receives (ADR-0044),
-cannot. The Body part's Hitbox names the Joint the blow lands on. Ragdolls exist
-only after death: hit reactions while alive are animation.
+cannot. The Body part's Hitbox names the Joint the blow lands on. Each client
+builds its ragdoll in the pose it draws on that frame, with each body's velocity
+from its last two frames' poses (ADR-0066). A body stays until the Match ends;
+past a cap of ragdolls in the client's config (ADR-0034), the oldest freezes
+into a static mesh. Ragdolls exist only after death: hit reactions while alive
+are animation.
 
 **Replication.** Props travel in the Authoritative State as a list apart from
 the players' bodies, which carry stance and stamina that Props lack but no

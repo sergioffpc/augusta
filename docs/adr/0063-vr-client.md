@@ -41,8 +41,9 @@ for a short window, then brings it to the Rest pose, so a covered camera never
 yields a missing or impossible limb. The bounded pose is what the Posing phase
 poses the Hitboxes from (ADR-0061).
 
-**Desktop players are posed the same way.** The server synthesizes a Desktop
-player's Tracked pose from its view and stance, so Hitboxes, the weapon and its
+**Desktop players are posed by their Clips.** A Desktop player's pose is
+evaluated from its Character's Clips by its replicated state (ADR-0066), and a
+VR player's is its bounded Tracked pose; from there Hitboxes, the weapon and its
 Muzzle (ADR-0064) are placed by one path whatever the Play mode, and a Desktop
 Command still carries only its view.
 
@@ -84,7 +85,7 @@ including poses that try to cheat.
 ## Consequences
 
 - **ADR-0061 changes**: a VR player's Hitbox pose follows from its replicated
-  Tracked pose, and a Desktop player's from a pose synthesized from its view.
+  Tracked pose, and a Desktop player's from its Clips (ADR-0066).
 - **The Authoritative State update grows** by about 100 to 150 bytes per VR
   player.
 - **The client gains a dependency on the player's hardware**: a headset, its

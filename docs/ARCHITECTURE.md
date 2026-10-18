@@ -640,6 +640,9 @@ not affect numbering.
 - [ADR-0065](./adr/0065-surface-materials-penetration-ricochet.md) — Surface
   materials, penetration and ricochet: one catalogue for sound, rounds, contact
   and impacts; rounds go through surfaces and players by energy and thickness
+- [ADR-0066](./adr/0066-character-animation.md) — Character animation: Clips in
+  ozz-animation, a blend space per stance driven by replicated state, Cosmetic
+  layers, GPU skinning and ragdolls from the drawn pose
 
 ### Tooling & Build
 

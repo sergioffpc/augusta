@@ -2,9 +2,8 @@
 
 A player's footsteps are heard when its stride passes a Foot contact of its
 locomotion clip, on the surface the foot lands on. This decision takes effect
-with the clip format, which ADR-0061 and the Skeleton's spec leave open: the
-change that brings locomotion clips also brings footsteps, and amends ADR-0031,
-ADR-0032, ADR-0038 and ADR-0041 to match.
+with the Clips (ADR-0066): the change that brings locomotion Clips also brings
+footsteps, and amends ADR-0031, ADR-0032, ADR-0038 and ADR-0041 to match.
 
 ## Decisions
 
