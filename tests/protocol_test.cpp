@@ -1097,6 +1097,25 @@ TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
   EXPECT_EQ(payload, Encode(second).value());
 }
 
+// Only the payload of an Authoritative State, as long as Encode made it, has a
+// recipient's own fields where Readdress writes them: any other is the
+// caller's broken invariant (ADR-0033), refused with the payload left as it was.
+TEST(ProtocolTest, AReaddressOfAnythingButAnUpdateIsRefused) {
+  const AuthoritativeStateWire recipient{.tick = 9, .bodies = {}, .health = 1.0F, .acknowledged_sequence = 3};
+  const BytesWire update = Encode(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}}).value();
+  const BytesWire shorter(update.begin(), update.end() - 1);
+  BytesWire longer = update;
+  longer.push_back(std::byte{0});
+  BytesWire other_type = update;
+  other_type.front() = static_cast<std::byte>(MessageTypeWire::kShot);
+
+  for (BytesWire payload : {BytesWire{}, BytesWire{update.front()}, shorter, longer, other_type}) {
+    const BytesWire before = payload;
+    EXPECT_EQ(Readdress(payload, recipient).error(), EncodeError::kNotAnAuthoritativeState) << payload.size();
+    EXPECT_EQ(payload, before);
+  }
+}
+
 // A 32-bit float's bits, after the rifle: the last four bytes of an update.
 TEST(ProtocolTest, ARecipientsHealthTravelsInFourBytesAfterItsRifle) {
   const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {}, .health = 1.0F}).value();

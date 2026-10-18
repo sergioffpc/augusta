@@ -195,6 +195,9 @@ void WriteRecipientTail(Writer& out, const AuthoritativeStateWire& state) {
 
 // Where an Authoritative State's acknowledged sequence lies: after its type and its tick.
 constexpr std::size_t kAcknowledgedSequenceOffset = 1 + (std::numeric_limits<tick::Tick>::digits / kBitsPerByte);
+// Where its count of bodies lies: after its acknowledged sequence.
+constexpr std::size_t kBodyCountOffset =
+    kAcknowledgedSequenceOffset + (std::numeric_limits<tick::Sequence>::digits / kBitsPerByte);
 
 // Walks a payload front to back. The first problem it meets is remembered and
 // every read after it returns a zero value, so a decoder can read all of a
@@ -987,6 +990,24 @@ std::expected<BytesWire, EncodeError> Encode(const MessageWire& message) {
   return std::move(out).Finish();
 }
 
+namespace {
+
+// Whether payload is an Authoritative State as Encode makes one: its type, and
+// as long as its count of bodies, each of a fixed size, and tail_size make it.
+bool IsAuthoritativeState(const BytesWire& payload, std::size_t tail_size) {
+  if (payload.size() <= kBodyCountOffset ||
+      payload.front() != static_cast<std::byte>(MessageTypeWire::kAuthoritativeState)) {
+    return false;
+  }
+  Writer body_out;
+  WriteEntityState(body_out, EntityStateWire{});
+  const std::size_t body_size = std::move(body_out).Finish().value().size();
+  const auto bodies = std::to_integer<std::size_t>(payload[kBodyCountOffset]);
+  return payload.size() == kBodyCountOffset + 1 + (bodies * body_size) + tail_size;
+}
+
+}  // namespace
+
 std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient) {
   Writer sequence_out;
   WriteSequence(sequence_out, recipient.acknowledged_sequence);
@@ -999,6 +1020,9 @@ std::expected<void, EncodeError> Readdress(BytesWire& payload, const Authoritati
   auto tail = std::move(tail_out).Finish();
   if (!tail.has_value()) {
     return std::unexpected(tail.error());
+  }
+  if (!IsAuthoritativeState(payload, tail->size())) {
+    return std::unexpected(EncodeError::kNotAnAuthoritativeState);
   }
   std::ranges::copy(*sequence, payload.begin() + static_cast<std::ptrdiff_t>(kAcknowledgedSequenceOffset));
   std::ranges::copy(*tail, payload.end() - static_cast<std::ptrdiff_t>(tail->size()));
@@ -1066,6 +1090,8 @@ std::string_view DescribeEncodeError(EncodeError error) {
       return "flags field has a bit that is none of its flags";
     case EncodeError::kInvalidEnum:
       return "field holds a value its enumeration lacks";
+    case EncodeError::kNotAnAuthoritativeState:
+      return "payload to readdress is not an authoritative state's";
   }
   return "unknown encode error";
 }

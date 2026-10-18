@@ -611,6 +611,10 @@ enum class EncodeError : std::uint8_t {
   kReservedBits = 2,
   /// An enumerated field holds a value the enumeration does not have.
   kInvalidEnum = 3,
+  /// The payload Readdress was handed is not an Authoritative State's as
+  /// Encode made it: of another type, or of another length than its bodies
+  /// give it. The caller's broken invariant (ADR-0033).
+  kNotAnAuthoritativeState = 4,
 };
 
 /// Encodes message as one payload, or reports the first field beyond its
@@ -625,7 +629,8 @@ enum class EncodeError : std::uint8_t {
 /// and bodies left as they were: the bytes Encode makes of that state addressed
 /// to recipient, without encoding its bodies again, so a tick's bodies are
 /// encoded once for every recipient. Reports the first of recipient's fields
-/// beyond its limit, as Encode does, and leaves payload as it was.
+/// beyond its limit, as Encode does, or kNotAnAuthoritativeState if payload is
+/// not such a state, and leaves payload as it was.
 [[nodiscard]] std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient);
 
 /// The type message's payload starts with.
