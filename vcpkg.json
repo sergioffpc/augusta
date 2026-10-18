@@ -33,7 +33,7 @@
       ]
     },
     "client": {
-      "description": "The client and its Renderer (src/client, src/modules/client, src/modules/renderer), which the root CMakeLists.txt turns on with AUGUSTA_CLIENT: GLFW (with Wayland beside X11 on Linux), ImGui, NVRHI on Vulkan, the Vulkan headers and validation layers, Slang's shader compiler as a host tool, and miniaudio and Steam Audio for the audio output",
+      "description": "The client and its Renderer (src/client, src/modules/renderer), which the root CMakeLists.txt turns on with AUGUSTA_CLIENT: GLFW (with Wayland beside X11 on Linux), ImGui, NVRHI on Vulkan, the Vulkan headers and validation layers, Slang's shader compiler as a host tool, and miniaudio and Steam Audio for the audio output",
       "dependencies": [
         {
           "name": "glfw3",

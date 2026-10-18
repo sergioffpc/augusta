@@ -29,10 +29,10 @@ file(
   "${SOURCE_DIR}/src/modules/link/include/augusta/link_types.h"
   "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/host/*.h"
-  "${SOURCE_DIR}/src/modules/server/include/augusta/*.h"
-  "${SOURCE_DIR}/src/modules/server/*.h"
-  "${SOURCE_DIR}/src/modules/client/include/augusta/*.h"
-  "${SOURCE_DIR}/src/modules/client/*.h"
+  "${SOURCE_DIR}/src/server/include/augusta/*.h"
+  "${SOURCE_DIR}/src/server/*.h"
+  "${SOURCE_DIR}/src/client/include/augusta/*.h"
+  "${SOURCE_DIR}/src/client/*.h"
 )
 if(NOT headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no headers found under ${SOURCE_DIR}")
@@ -108,7 +108,7 @@ if(harness_violations)
   list(JOIN harness_violations "\n" harness_report)
   string(
     APPEND report
-    "The harness leaks into presentation - convert to presentation's own types in src/modules/client/frame_mapping.h instead:\n${harness_report}\n"
+    "The harness leaks into presentation - convert to presentation's own types in src/client/frame_mapping.h instead:\n${harness_report}\n"
   )
 endif()
 if(dependency_violations)

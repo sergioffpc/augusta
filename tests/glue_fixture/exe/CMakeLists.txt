@@ -1,7 +1,11 @@
-# One executable's own directory: the executable alone, linking the application,
-# its Runtime, failure, logging and version, the build infrastructure every
-# binary links, and a system library that is no target. CASE adds a second
-# target beside it, or a link it may not have.
+# One executable's own directory: its Runtime, every target in it, its
+# application among them, as src/client and src/server hold augustac's and
+# augustad's; then the executable, linking the application, its Runtime,
+# failure, logging and version, the build infrastructure every binary links,
+# and a system library that is no target. CASE adds a link it may not have.
+add_library(fixture_runtime INTERFACE)
+add_library(fixture_runtime_application INTERFACE)
+
 add_library(fixture_exe INTERFACE)
 target_link_libraries(
   fixture_exe
@@ -16,10 +20,8 @@ target_link_libraries(
     winmm
 )
 
-if(CASE STREQUAL "EXTRA_TARGET")
-  add_library(fixture_exe_runtime INTERFACE)
-elseif(CASE STREQUAL "LINK_REFUSED")
+if(CASE STREQUAL "LINK_REFUSED")
   target_link_libraries(fixture_exe INTERFACE fixture_exe_module)
 endif()
 
-augusta_set_executable_glue(fixture_exe fixture_runtime)
+augusta_set_executable_glue(fixture_exe)

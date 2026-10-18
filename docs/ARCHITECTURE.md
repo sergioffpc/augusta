@@ -128,9 +128,11 @@ IP:port.
 ```
 
 Each block below is a module under `src/modules/`, scoped to the side or sides
-it is compiled into. The executables themselves - augustad, augustac and the C++
-tools - are Glue: each entry point runs one Runtime module behind the
-application, and holds neither Mechanism nor Game policy (ADR-0060).
+it is compiled into, but for the Runtimes, each kept beside the executable it
+runs (`src/client`, `src/server`, `tools/agent/native`). The executables
+themselves - augustad, augustac and the C++ tools - are Glue: each entry point
+runs one Runtime behind the application, and holds neither Mechanism nor Game
+policy (ADR-0060).
 
 **Shared Core** (compiled into both client and server)
 
@@ -194,11 +196,11 @@ application, and holds neither Mechanism nor Game policy (ADR-0060).
 - Input handling — turns the Window's keyboard/mouse events, which the client
   Runtime hands it, into commands for PredictionWorld
 - Networking — sends commands, receives authoritative server state
-- Client Runtime — augustac's Runtime (augusta_client): its config, its
-  Main/Render thread and the wiring of the Harness to the Renderer, the HUD,
-  Input, PresentationWorld and Audio (ADR-0060). The Agent's Runtime (agent,
-  ADR-0052) runs a Harness the same way, without a window or GPU, and is kept
-  under `tools/agent/native`. What the client runs:
+- Client Runtime — augustac's Runtime (augusta_client, in `src/client`): its
+  config, its Main/Render thread and the wiring of the Harness to the Renderer,
+  the HUD, Input, PresentationWorld and Audio (ADR-0060). The Agent's Runtime
+  (agent, ADR-0052) runs a Harness the same way, without a window or GPU, and is
+  kept under `tools/agent/native`. What the client runs:
     - PredictionWorld (ECS) — consumes commands + authoritative server state;
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
@@ -313,10 +315,10 @@ exclusively server-authoritative.
   counts for the metrics endpoint and the Match capture it writes (ADR-0050).
   One server-only module (augusta_host), the counterpart of the client's
   Harness; its messages go through the Link
-- Server Runtime — augustad's Runtime (augusta_server): its config, the Network
-  I/O and Simulation threads around the Host, its clock, the metrics endpoint
-  with its liveness and every client's Connection health, and crash handling
-  (ADR-0047, ADR-0049, ADR-0060). What the server runs:
+- Server Runtime — augustad's Runtime (augusta_server, in `src/server`): its
+  config, the Network I/O and Simulation threads around the Host, its clock, the
+  metrics endpoint with its liveness and every client's Connection health, and
+  crash handling (ADR-0047, ADR-0049, ADR-0060). What the server runs:
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours

@@ -186,7 +186,7 @@ gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_liveness_tests liveness_test.cpp)
 target_link_libraries(augusta_liveness_tests PRIVATE augusta_server_liveness GTest::gtest GTest::gtest_main)
-target_include_directories(augusta_liveness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/server)
+target_include_directories(augusta_liveness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 gtest_discover_tests(augusta_liveness_tests DISCOVERY_TIMEOUT 30)
 
 # Over real HTTP on the loopback, on a port the test finds free, with the
@@ -205,7 +205,7 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
-target_include_directories(augusta_metrics_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/server)
+target_include_directories(augusta_metrics_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 gtest_discover_tests(augusta_metrics_tests DISCOVERY_TIMEOUT 30)
 
 # What the Host counts, collected as the endpoint collects it, without HTTP.
@@ -220,7 +220,7 @@ target_link_libraries(
   augusta_connection_health_tests
   PRIVATE augusta_server_connection_health GTest::gtest GTest::gtest_main
 )
-target_include_directories(augusta_connection_health_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/server)
+target_include_directories(augusta_connection_health_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 # Links networking (for ConnectionStats), so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_connection_health_tests DISCOVERY_TIMEOUT 30)
 
@@ -442,9 +442,9 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
-# connection_health.h is private to the server module, reached through its
+# connection_health.h is private to the server Runtime, reached through its
 # directory.
-target_include_directories(augusta_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/server)
+target_include_directories(augusta_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 # The server runs the example scenario's Game policy, as it loads it from its
 # golden server pack: the Spawn points and the win condition (US-03, US-14).
 target_compile_definitions(
@@ -638,7 +638,7 @@ gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 
 # No header past the protocol's edge names a protocol type (ADR-0038): only
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
-# name the harness: the client converts (src/modules/client/frame_mapping.h).
+# name the harness: the client converts (src/client/frame_mapping.h).
 # Nor does the protocol itself include or link anything but augusta_math,
 # augusta_tick and augusta_limits. A source scan, so it builds nothing.
 add_test(
@@ -784,7 +784,7 @@ target_link_libraries(
 gtest_discover_tests(augusta_renderer_device_choice_tests)
 
 if(AUGUSTA_CLIENT)
-  # The client module's internal targets build with the client, on Windows
+  # The client Runtime's internal targets build with the client, on Windows
   # and Linux - though only the smoke test below links the Renderer. Its
   # private headers are reached through its directory, as the renderer's are.
   add_executable(augusta_client_scene_tests client_scene_test.cpp)
@@ -800,7 +800,7 @@ if(AUGUSTA_CLIENT)
     augusta_client_frame_mapping_tests
     PRIVATE augusta_client_frame_mapping GTest::gtest GTest::gtest_main
   )
-  target_include_directories(augusta_client_frame_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
+  target_include_directories(augusta_client_frame_mapping_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   # Links networking and PhysX through the harness, so the same first-launch
   # cost applies as above.
   gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
@@ -810,7 +810,7 @@ if(AUGUSTA_CLIENT)
     augusta_client_lobby_readiness_tests
     PRIVATE augusta_client_lobby_readiness GTest::gtest GTest::gtest_main
   )
-  target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
+  target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
 
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
@@ -833,7 +833,7 @@ if(AUGUSTA_CLIENT)
 
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)
-  target_include_directories(augusta_client_net_stats_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/client)
+  target_include_directories(augusta_client_net_stats_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,

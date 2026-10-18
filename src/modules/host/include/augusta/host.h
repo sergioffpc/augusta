@@ -31,7 +31,7 @@
 /// \file
 /// augusta::host::Host is the server's network boundary and the
 /// authoritative SimulationWorld (ADR-0023) without the threads and the clock:
-/// ServerRuntime (the server module) runs PumpNetwork on the Network I/O thread and
+/// ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
 /// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
 /// Tick kept to its schedule to RecordTiming, while a test calls PumpNetwork and
 /// Tick by hand, so a match can be driven tick by tick with no sleeping.

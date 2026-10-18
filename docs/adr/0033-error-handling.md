@@ -49,9 +49,9 @@ Each executable's `main` runs behind one application boundary
 of ADR-0005, which the Harness takes without it): reading its config file, then
 a `Lifecycle` of process-wide initialization (the transport), constructing its
 runtime (verifying its pack, loading its content) and running it. Each
-executable's phases and `Lifecycle` are its Runtime module's (ADR-0060), so
-`main` only concludes the outcome. Each phase classifies its own failures with
-their `Code`; a dependency's exception escaping a phase is classified there too
+executable's phases and `Lifecycle` are its Runtime's (ADR-0060), so `main` only
+concludes the outcome. Each phase classifies its own failures with their `Code`;
+a dependency's exception escaping a phase is classified there too
 (`dependency_init_failed` while initializing or constructing, `worker_failed`
 while running, with `phase=` naming which), so no unclassified exception leaves
 `main`. Startup code that may throw throws any failure it can name already

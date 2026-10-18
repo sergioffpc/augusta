@@ -152,7 +152,7 @@ EOF
   workflows_changed=$(printf '%s\n' "${files}" \
     | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
 
-  # src/client, src/modules/client, src/modules/renderer and the window module's
+  # src/client, src/modules/renderer and the window module's
   # GLFW half build only with the client, which CI's Linux run leaves off, so
   # they and the client's and the Renderer's tests are held to the full profile
   # on Windows alone, as CI's client job lints them. The audio module's output
@@ -165,7 +165,7 @@ EOF
     other_platform='src/modules/audio/output_none\.cpp'
     tidied='^(src/.*|tests/(client|renderer)_[^/]*)\.cpp$'
   else
-    other_platform='src/(client|modules/client|modules/renderer)/.*|src/modules/audio/'
+    other_platform='src/(client|modules/renderer)/.*|src/modules/audio/'
     other_platform+='(output_none|output_miniaudio|miniaudio)\.cpp'
     other_platform+='|src/modules/window/(window|glfw_keys)\.cpp'
     tidied='^src/.*\.cpp$'

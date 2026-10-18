@@ -24,7 +24,7 @@
 // buffered for interpolation. Without a GPU or a window: the renderer draws
 // what this returns, and is judged by eye (ADR-0013). ClientRuntime converts
 // the Server view only when a newer Authoritative State arrives
-// (ConvertedServerView, src/modules/client/frame_mapping.h), which builds on Windows
+// (ConvertedServerView, src/client/frame_mapping.h), which builds on Windows
 // only, and the nightly benchmarks on Linux, so building the newer State here
 // stands in for that conversion.
 namespace {
