@@ -26,8 +26,8 @@
 #include <sodium.h>
 
 #include "augusta/math.h"
-#include "decoder.h"
-#include "encoder.h"
+#include "augusta/pack_decoder.h"
+#include "augusta/pack_encoder.h"
 #include "wire_format.h"
 
 namespace augusta::assets {

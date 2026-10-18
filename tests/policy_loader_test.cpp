@@ -9,8 +9,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/pack_encoder.h"
 #include "augusta/policy.h"
-#include "encoder.h"
 
 // The server's startup read of a scenario's Game policy out of its pack: a real
 // signed pack in a temp file, loaded back the way the server loads it.

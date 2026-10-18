@@ -23,8 +23,8 @@
 /// server (ADR-0006). The offline cooker (tools/pack, ADR-0030)
 /// is pure Python and does not link this module - it reimplements the same
 /// wire format independently (validated against this module's WritePack,
-/// kept private for exactly that reason - see encoder.h) rather than
-/// sharing code across the language boundary.
+/// augusta/pack_encoder.h) rather than sharing code across the language
+/// boundary.
 ///
 /// Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 /// trailer step): Load() verifies the signature before trusting anything
@@ -224,14 +224,9 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 
 }  // namespace augusta::assets
 
-// The Encode*/WritePack functions (and matching Decode* half) live in
-// their own, private header/source pairs (encoder.h/encoder.cpp,
-// decoder.h/decoder.cpp - not under include/augusta/, not installed):
-// the pack-cooking pipeline (tools/pack, ADR-0030) is pure
-// Python and reimplements this wire format independently rather than
-// linking against it, so nothing outside this module calls Encode*/
-// WritePack. They remain as the wire format's canonical reference and as
-// tests/assets_test.cpp's round-trip fixture.
+// The Encode*/WritePack functions and the matching Decode* half live in
+// their own headers, augusta/pack_encoder.h and augusta/pack_decoder.h; the
+// types they share are declared here.
 namespace augusta::assets {
 
 /// One raw blob to be written into a pack, already encoded (e.g. by

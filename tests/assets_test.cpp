@@ -18,11 +18,11 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
-#include "encoder.h"
+#include "augusta/pack_encoder.h"
 
-// Unit tests for augusta_assets, including its own private pack-format
-// internals (encoder.h/WritePack). Links only augusta_assets - no USD/
-// libktx/meshoptimizer - so it builds and runs under the plain
+// Unit tests for augusta_assets, including its pack encoder
+// (augusta/pack_encoder.h's Encode*/WritePack). Links only augusta_assets - no
+// USD/libktx/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
 // augusta_assets' wire format, which tools/pack's Python
 // WritePack reimplementation (ADR-0030) is validated against.

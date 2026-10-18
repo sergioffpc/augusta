@@ -64,11 +64,11 @@ not anything about pybind11 or subprocess boundaries.
 
 Packing, hashing, and signing (`augusta_pack.pack`) also moved to pure Python
 rather than reusing `augusta_assets`' C++ implementation over a binding — that
-C++ code (encoder.h/decoder.h, now private to that module, not under its public
-`include/`) remains as the format's canonical reference and round-trip test
-fixture (`tests/assets_test.cpp`), but `augusta_pack.pack` reimplements the same
-wire format independently: BLAKE3 via the `blake3` package, Ed25519 via
-`pynacl`'s libsodium bindings (`crypto_sign_keypair`/`crypto_sign`, the same raw
+C++ code (`augusta/pack_encoder.h`/`augusta/pack_decoder.h`) remains as the
+format's canonical reference and round-trip test fixture
+(`tests/assets_test.cpp`), but `augusta_pack.pack` reimplements the same wire
+format independently: BLAKE3 via the `blake3` package, Ed25519 via `pynacl`'s
+libsodium bindings (`crypto_sign_keypair`/`crypto_sign`, the same raw
 seed+pubkey key layout `augusta::assets::GenerateEd25519KeyPair` produces). Both
 were cross-checked byte-for-byte against the real C/C++ libraries before relying
 on them, and a pack this project writes is verified to load and resolve
