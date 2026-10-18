@@ -170,6 +170,10 @@ TEST(ReaddressedTest, AnyOtherMessageIsABrokenInvariant) {
   const auto readdressed = augusta::link::Readdressed(*shot, augusta::link::AuthoritativeState{});
   ASSERT_FALSE(readdressed.has_value());
   EXPECT_EQ(readdressed.error().code, augusta::failure::Code::kInvariantViolated);
+  // Named by its message type's name, as a log reader knows it.
+  ASSERT_EQ(readdressed.error().context.size(), 1U);
+  EXPECT_EQ(readdressed.error().context[0].key, "message_type");
+  EXPECT_EQ(readdressed.error().context[0].value, "shot");
 }
 
 }  // namespace

@@ -65,10 +65,10 @@ std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State
   // recipient in turn: only the recipient's own fields are encoded for each.
   if (!updates.recipients.empty()) {
     link::AuthoritativeState own = ToLink(updates);
-    Address(own, updates.recipients.front());
+    FillRecipientFields(own, updates.recipients.front());
     const std::expected<link::Outgoing, failure::Failure> shared = link::Encode(own);
     for (const replication::RecipientUpdate& recipient : updates.recipients) {
-      Address(own, recipient);
+      FillRecipientFields(own, recipient);
       add(shared.and_then([&own](const link::Outgoing& encoded) { return link::Readdressed(encoded, own); }),
           {to.peers.at(FromSimulation(recipient.entity))});
     }

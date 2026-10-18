@@ -370,11 +370,11 @@ protocol::AuthoritativeStateWire ToWire(const AuthoritativeState& state) {
   for (const EntityBody& body : state.bodies) {
     result.bodies.push_back(ToWire(body));
   }
-  Address(result, state);
+  FillRecipientFields(result, state);
   return result;
 }
 
-void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient) {
+void FillRecipientFields(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient) {
   state.rifle = {.cooldown = recipient.rifle.cooldown,
                  .reload_remaining = recipient.rifle.reload_remaining,
                  .recoil_pitch = recipient.rifle.recoil.pitch,

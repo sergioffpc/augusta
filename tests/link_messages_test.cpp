@@ -327,7 +327,7 @@ TEST(LinkMessagesTest, AnAddressedStateCarriesItsRecipientsOwnFieldsAndEveryBody
                                                  .queued_commands = 5};
   augusta::protocol::AuthoritativeStateWire message = ToWire(first);
 
-  augusta::link::Address(message, second);
+  augusta::link::FillRecipientFields(message, second);
   const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(message));
 
   EXPECT_EQ(received.tick, first.tick);

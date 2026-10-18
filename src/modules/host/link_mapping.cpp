@@ -91,7 +91,7 @@ link::AuthoritativeState ToLink(const replication::Updates& updates) {
   return state;
 }
 
-void Address(link::AuthoritativeState& state, const replication::RecipientUpdate& recipient) {
+void FillRecipientFields(link::AuthoritativeState& state, const replication::RecipientUpdate& recipient) {
   state.acknowledged_sequence = recipient.acknowledged_sequence;
   state.rifle = recipient.rifle;
   state.health = recipient.health;

@@ -24,6 +24,7 @@
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
 #include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -110,46 +111,6 @@ constexpr std::string_view MisbehaviourLabel(PeerRejection kind) {
   return {};
 }
 
-constexpr std::string_view MessageTypeLabel(MessageType type) {
-  switch (type) {
-    case MessageType::kJoinRequest:
-      return "join_request";
-    case MessageType::kJoinAccepted:
-      return "join_accepted";
-    case MessageType::kJoinRefused:
-      return "join_refused";
-    case MessageType::kCommands:
-      return "commands";
-    case MessageType::kAuthoritativeState:
-      return "authoritative_state";
-    case MessageType::kLobby:
-      return "lobby";
-    case MessageType::kReady:
-      return "ready";
-    case MessageType::kMatchStart:
-      return "match_start";
-    case MessageType::kMatchEnd:
-      return "match_end";
-    case MessageType::kShot:
-      return "shot";
-    case MessageType::kHitConfirmation:
-      return "hit_confirmation";
-    case MessageType::kDeath:
-      return "death";
-    case MessageType::kReplayListRequest:
-      return "replay_list_request";
-    case MessageType::kReplayList:
-      return "replay_list";
-    case MessageType::kReplayRequest:
-      return "replay_request";
-    case MessageType::kReplayView:
-      return "replay_view";
-    case MessageType::kReenactRequest:
-      return "reenact_request";
-  }
-  return {};
-}
-
 constexpr std::string_view RejectionLabel(Rejection rejection) {
   switch (rejection) {
     case Rejection::kStale:
@@ -207,7 +168,7 @@ constexpr std::string_view CaptureStateLabel(CaptureState state) {
 static_assert(metrics::LabelledExactly<JoinRefusalCounters>(JoinRefusalLabel));
 static_assert(metrics::LabelledExactly<LeavingCounters>(LeavingLabel));
 static_assert(metrics::LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
-static_assert(metrics::LabelledExactly<MessageCounters>(MessageTypeLabel));
+static_assert(metrics::LabelledExactly<MessageCounters>(link::NameOf));
 static_assert(metrics::LabelledExactly<RejectionCounters>(RejectionLabel));
 static_assert(metrics::LabelledExactly<BodyPartCounters>(BodyPartLabel));
 static_assert(metrics::LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
@@ -317,9 +278,9 @@ void AppendNetwork(std::vector<MetricFamily>& families, const HostMetrics& metri
   families.push_back(CounterFamily("augustad_network_received_bytes_total", "Bytes of the payloads received.",
                                    metrics.received_bytes));
   families.push_back(LabelledFamily("augustad_messages_sent_total", "Messages sent, by type.", metrics.messages_sent,
-                                    "type", MessageTypeLabel));
+                                    "type", link::NameOf));
   families.push_back(LabelledFamily("augustad_messages_received_total", "Messages received that decoded, by type.",
-                                    metrics.messages_received, "type", MessageTypeLabel));
+                                    metrics.messages_received, "type", link::NameOf));
   families.push_back(HistogramFamily("augustad_authoritative_state_update_bytes",
                                      "The size of each Authoritative State update sent.",
                                      metrics.authoritative_state_update_bytes));

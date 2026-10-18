@@ -69,7 +69,7 @@ namespace augusta::link {
 /// (its acknowledged sequence, rifle, health and queued commands), its tick and
 /// bodies left as they were: so one message, its bodies converted once, is
 /// addressed to each recipient in turn.
-void Address(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient);
+void FillRecipientFields(protocol::AuthoritativeStateWire& state, const AuthoritativeState& recipient);
 [[nodiscard]] AuthoritativeState FromWire(const protocol::AuthoritativeStateWire& state);
 
 [[nodiscard]] protocol::ShotWire ToWire(const Shot& shot);

@@ -36,10 +36,10 @@ void BM_Replication(benchmark::State& state) {
   for (auto _ : state) {
     const auto updates = augusta::replication::PlanUpdates(resolved, resolved.tick, recipients);
     augusta::link::AuthoritativeState own = augusta::host::ToLink(updates);
-    augusta::host::Address(own, updates.recipients.front());
+    augusta::host::FillRecipientFields(own, updates.recipients.front());
     const augusta::link::Outgoing shared = augusta::link::Encode(own).value();
     for (const RecipientUpdate& recipient : updates.recipients) {
-      augusta::host::Address(own, recipient);
+      augusta::host::FillRecipientFields(own, recipient);
       benchmark::DoNotOptimize(augusta::link::Readdressed(shared, own).value());
     }
   }

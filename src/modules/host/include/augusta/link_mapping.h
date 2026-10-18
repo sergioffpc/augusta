@@ -45,14 +45,14 @@ namespace augusta::host {
 
 [[nodiscard]] link::MatchEnd ToLink(const MatchEnd& end);
 
-/// What replication planned for every recipient of a tick, before Address
-/// fills in a recipient's own fields: the tick and every body.
+/// What replication planned for every recipient of a tick, before
+/// FillRecipientFields fills in a recipient's own fields: the tick and every body.
 [[nodiscard]] link::AuthoritativeState ToLink(const replication::Updates& updates);
 
 /// Fills in state, as ToLink(Updates) made it, with what replication planned
 /// for recipient alone, replacing any other recipient's: so one state is
 /// addressed to each recipient in turn, its bodies mapped once.
-void Address(link::AuthoritativeState& state, const replication::RecipientUpdate& recipient);
+void FillRecipientFields(link::AuthoritativeState& state, const replication::RecipientUpdate& recipient);
 
 [[nodiscard]] link::Shot ToLink(const replication::Shot& shot);
 

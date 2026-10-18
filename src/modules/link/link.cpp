@@ -137,18 +137,16 @@ struct OutgoingAccess {
   static std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state,
                                                                const AuthoritativeState& recipient) {
     const auto broken = [&state](std::string detail) {
-      return failure::Failure{
-          .code = failure::Code::kInvariantViolated,
-          .context = {{.key = "message_type",
-                       .value = std::to_string(std::to_integer<std::uint8_t>(state.payload_.front()))}},
-          .detail = std::move(detail)};
+      return failure::Failure{.code = failure::Code::kInvariantViolated,
+                              .context = {{.key = "message_type", .value = std::string(NameOf(state.type_))}},
+                              .detail = std::move(detail)};
     };
     if (state.type_ != MessageType::kAuthoritativeState) {
       return std::unexpected(broken("only an authoritative state is readdressed"));
     }
     // The recipient's own fields alone are converted: the bodies stay the bytes they are.
     protocol::AuthoritativeStateWire own;
-    Address(own, recipient);
+    FillRecipientFields(own, recipient);
     std::vector<std::byte> payload = state.payload_;
     if (const std::expected<void, protocol::EncodeError> readdressed = protocol::Readdress(payload, own);
         !readdressed.has_value()) {
