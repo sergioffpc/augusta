@@ -45,9 +45,6 @@ _BODY_PARTS = {
     "torso": _native.BodyPart.TORSO,
     "limb": _native.BodyPart.LIMB,
 }
-# A prim's triangle geometry as read: its points, kept in double precision until
-# the encoder narrows them to the pack's floats, and three indices per triangle.
-_Geometry = tuple[list[tuple[float, float, float]], list[int]]
 # Node property (ADR-0032) carrying a visual mesh's constant displayColor as
 # "r g b" linear floats; the client reads it as the mesh's base color.
 BASE_COLOR_PROPERTY = "base_color"
@@ -284,10 +281,20 @@ def _read_indices(
     return indices
 
 
+@dataclass(frozen=True)
+class _Geometry:
+    """A prim's triangle geometry as read."""
+
+    # Kept in double precision until the encoder narrows them to the pack's
+    # floats.
+    points: list[tuple[float, float, float]]
+    # Three per triangle.
+    indices: list[int]
+
+
 def _mesh_of(geometry: _Geometry) -> _native.MeshData:
     """The pack's mesh for geometry, as read."""
-    points, indices = geometry
-    return _native.MeshData(points=points, indices=indices)
+    return _native.MeshData(points=geometry.points, indices=geometry.indices)
 
 
 def _optimize_mesh(geometry: _Geometry) -> _native.MeshData:
@@ -297,12 +304,13 @@ def _optimize_mesh(geometry: _Geometry) -> _native.MeshData:
     as-authored read into GPU-ready data rather than a passthrough of the source
     mesh.
     """
-    points, indices = geometry
-    if not points or not indices:
+    if not geometry.points or not geometry.indices:
         return _mesh_of(geometry)
-    flat_points = [component for point in points for component in point]
+    flat_points = [
+        component for point in geometry.points for component in point
+    ]
     optimized_points, optimized_indices = _native.optimize_mesh(
-        flat_points, indices
+        flat_points, geometry.indices
     )
     return _native.MeshData(
         points=[
@@ -341,7 +349,7 @@ def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> _Geometry:
 
     points = [(point[0], point[1], point[2]) for point in usd_points]
     indices = _read_indices(face_vertex_indices, len(points), prim_path)
-    return points, indices
+    return _Geometry(points, indices)
 
 
 # A UsdGeomCube's 8 corners, ordered (-,-,-) (+,-,-) (+,+,-) (-,+,-)
@@ -411,7 +419,7 @@ def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> _Geometry:
     points = [
         (sx * half, sy * half, sz * half) for sx, sy, sz in _CUBE_CORNER_SIGNS
     ]
-    return points, list(_CUBE_INDICES)
+    return _Geometry(points, list(_CUBE_INDICES))
 
 
 # Longitude segments and latitude rings-per-hemisphere for
@@ -535,7 +543,7 @@ def _read_capsule_geometry(
         add_band(lower, upper)
     add_fan(top_pole_index, top_ring_starts[-1], flip=True)
 
-    return points, indices
+    return _Geometry(points, indices)
 
 
 def _read_raw_geometry(prim: Usd.Prim, prim_path: str) -> _Geometry | None:
@@ -679,8 +687,7 @@ def _build_node(
             node.mesh_path = prim_path
             base_color = _read_base_color(prim)
             if base_color is not None:
-                # Assigned, not appended to: the node hands out a copy of its
-                # properties.
+                # Assigned, not appended to: see SceneNode's docstring.
                 node.properties = [
                     *node.properties,
                     (BASE_COLOR_PROPERTY, base_color),
@@ -741,10 +748,13 @@ def _transform_geometry(geometry: _Geometry, matrix: Gf.Matrix4d) -> _Geometry:
     instead, the same two corrections a map's top-level nodes carry in their own
     SceneNode transform (_build_node) rather than in their points.
     """
-    points, indices = geometry
-    return [
-        tuple(matrix.Transform(Gf.Vec3d(*point))) for point in points
-    ], indices
+    return _Geometry(
+        [
+            tuple(matrix.Transform(Gf.Vec3d(*point)))
+            for point in geometry.points
+        ],
+        geometry.indices,
+    )
 
 
 def _cook_character_prim(

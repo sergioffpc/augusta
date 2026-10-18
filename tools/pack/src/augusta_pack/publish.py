@@ -133,7 +133,6 @@ def prepare(
         public_key = read_public_key(public_key_path)
         client = _native.load_pack(client_pack, public_key)
         server = _native.load_pack(server_pack, public_key)
-        pack_format = _native.read_pack_layout(server_pack).version
     except (OSError, ValueError) as error:
         # LoadError and read_public_key's size error are both ValueErrors.
         raise PublishError(str(error)) from error
@@ -152,7 +151,7 @@ def prepare(
         environment=environment,
         scenario=scenario,
         version=server.hash.hex()[:VERSION_LENGTH],
-        pack_format=pack_format,
+        pack_format=server.version,
         files={SERVER_PACK_NAME: server_pack, PUBLIC_KEY_NAME: public_key_path},
     )
 

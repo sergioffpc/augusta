@@ -196,7 +196,7 @@ def verify_main(argv: list[str] | None = None) -> int:
     print(f"OK: {pack_path}")
     print(
         f"  {_format_entry_count(len(loaded.entries))}, "
-        f"{_format_size(pack_path.stat().st_size)} bytes"
+        f"{_format_size(loaded.file_size)} bytes"
     )
     print(f"  BLAKE3 {loaded.hash.hex()}")
     print(f"  signed by {public_key_path}")

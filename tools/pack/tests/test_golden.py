@@ -3,9 +3,8 @@
 Cooking the example scenario with the committed test key gives, byte for byte,
 the golden packs the C++ runtime's tests load (tests/cooked_pack_test.cpp): it
 pins everything from the USD stage walk to the signed pack. A cook is
-deterministic, so any difference is a change to the cook, to the format or to
-the example, and the golden packs are regenerated with the command in
-README.md.
+deterministic, so a difference is a bug in the cook unless the change that
+caused it meant to change the format or the example.
 """
 
 from augusta_pack import cli

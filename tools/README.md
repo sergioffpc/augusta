@@ -480,7 +480,7 @@ key.
 scenario's client and server packs, cooked with the test key next to them (never
 the release key). The C++ runtime's tests load them, and
 `pack/tests/test_golden.py` requires the cooker to still write them byte for
-byte: that is the contract between the two implementations of the pack format
+byte: that pins the cook end to end, from the USD stage walk to the signed pack
 (ADR-0013). After a deliberate change to the format or to the example,
 regenerate them from `tools/pack` and commit the result:
 

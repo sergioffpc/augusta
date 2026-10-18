@@ -87,7 +87,10 @@ def test_a_cook_is_published_under_its_scenario_and_server_pack_hash(
 
     assert copied
     assert release.version == server_hash.hex()[:12]
-    assert release.pack_format == _native.read_pack_layout(server_pack).version
+    assert (
+        release.pack_format
+        == _native.load_pack(server_pack, public_key.read_bytes()).version
+    )
     assert (
         release.directory
         == f"/srv/augusta/asset-packs/develop/firebase/{release.version}"
@@ -127,7 +130,7 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
     tmp_path, monkeypatch, capsys, cook
 ):
     server_hash = cook[3]
-    pack_format = _native.read_pack_layout(cook[1]).version
+    pack_format = _native.load_pack(cook[1], cook[2].read_bytes()).version
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
@@ -141,13 +144,17 @@ def test_publishing_prints_the_pack_version_and_format_to_serve_it_with(
 def test_the_printed_pack_format_is_the_server_packs_header(
     tmp_path, monkeypatch, capsys, cook
 ):
-    # The header's version as the layout read parsed it, made one no
+    # The header's version as the verified load parsed it, made one no
     # constant holds: the printed format can only be that header's.
-    monkeypatch.setattr(
-        _native,
-        "read_pack_layout",
-        lambda _path: types.SimpleNamespace(version=7),
-    )
+    load_pack = _native.load_pack
+
+    def load_pack_of_format_7(path, public_key):
+        pack = load_pack(path, public_key)
+        return types.SimpleNamespace(
+            hash=pack.hash, client_pack_hash=pack.client_pack_hash, version=7
+        )
+
+    monkeypatch.setattr(_native, "load_pack", load_pack_of_format_7)
 
     assert _publish_main(tmp_path, monkeypatch, cook) == 0
 
