@@ -46,17 +46,27 @@ placed at Match start, but "spawn" names the placement, not the start of the
 match)
 
 **Match end**: The moment Game policy decides a Match is over (when at most one
-player is left alive: last player standing), or its last player leaves. The
-server takes every body and bullet out of the simulation and tells every client
-still in the Match, with the Winner or a Draw; everyone returns to the Lobby
-(ADR-0043). _Avoid_: Game over, round end
+Team has a player left alive: last Team standing), or its last player leaves.
+The server takes every body and bullet out of the simulation and tells every
+client still in the Match, with the Winner or a Draw; everyone returns to the
+Lobby (ADR-0043). _Avoid_: Game over, round end
 
-**Winner**: The player Game policy declares has won a Match, alive in it when
-declared, named by its Session ID in Match end. _Avoid_: Victor, champion
+**Team**: One of the two sides every Match is played between, each named by its
+scenario with its Uniform. Game policy puts each player on one at Match start
+and it holds until Match end. _Avoid_: Side, squad, faction (a Team's name and
+Uniform are its scenario's, not a fixed side)
 
-**Draw**: A Match end with no Winner: its last players died on the same tick, a
-Match of one ended with its player's death, or its last player left. _Avoid_:
-Tie, stalemate
+**Uniform**: The Looks a Character wears for a Team, so a friend is told from an
+enemy by what it wears, whichever Character either chose. _Avoid_: Skin, outfit,
+team colour
+
+**Winner**: The Team Game policy declares has won a Match, named in Match end.
+Every player on it wins, alive or dead. _Avoid_: Victor, champion, winning
+player
+
+**Draw**: A Match end with no Winner: both Teams' last players died on the same
+tick, a Match of one ended with its player's death, or its last player left.
+_Avoid_: Tie, stalemate
 
 **Session**: One player's presence on the server, from being admitted to the
 Lobby until it disconnects, named by its Session ID. It spans the Lobby and
@@ -483,9 +493,9 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 (those describe an effect of ADS, not the action itself)
 
 **Spectator**: A dead player still in the Match: until the Match ends it watches
-from a living player's eye, chosen in Session order and moved on with fire, and
-its input moves, turns and fires nothing. It never respawns. _Avoid_: Ghost,
-observer, dead cam
+from a living teammate's eye (any living player's once its Team has none),
+chosen in Session order and moved on with fire, and its input moves, turns and
+fires nothing. It never respawns. _Avoid_: Ghost, observer, dead cam
 
 ### Audio
 
@@ -506,6 +516,14 @@ volume
 **Foot contact**: A moment authored in a locomotion Clip when one foot lands,
 heard as a footstep whenever a player's Stride passes it. _Avoid_: Footstep
 event, foot plant (foot placement is a cosmetic layer, ADR-0061)
+
+**Voice chat**: What the players of a team match say to each other through their
+microphones: by radio to their whole Team wherever they are, or aloud to anyone
+near enough to hear, enemies included. _Avoid_: Voice alone (a sound the mixer
+plays), VoIP, comms
+
+**Speech**: One player's Voice chat from pressing a push-to-talk to releasing
+it. _Avoid_: Voice packet, transmission
 
 ### Deployment
 

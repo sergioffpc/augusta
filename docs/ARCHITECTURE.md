@@ -645,6 +645,11 @@ not affect numbering.
 - [ADR-0067](./adr/0067-rendering-pipeline.md) — Rendering pipeline: deferred,
   one `UsdPreviewSurface` Look model, all light ray traced by ray queries with
   NRD, DLSS or FSR as the anti-aliasing, on GPUs with hardware ray tracing
+- [ADR-0068](./adr/0068-team-match.md) — Team match: every Match between two
+  Teams the rules assign, a Team as Winner, Uniforms, Spawn points per Team and
+  full friendly fire; the free-for-all is gone
+- [ADR-0069](./adr/0069-voice-chat.md) — Voice chat: radio to the Team and aloud
+  to anyone near, push-to-talk, Opus relayed by the server, never captured
 - [ADR-0070](./adr/0070-explosions.md) — Explosions: a short blast and seeded
   Fragments on the ballistics, launched rounds as rounds, kills to the thrower,
   a Dazzle the server decides
