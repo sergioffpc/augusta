@@ -43,9 +43,9 @@ import sys
 import tempfile
 from typing import IO, Protocol
 
+from augusta_pack import _native
 from augusta_pack.assets_root import default_assets_root
 from augusta_pack.keys import read_public_key
-from augusta_pack.reader import verify_pack
 
 VOLUME_ROOT = "/srv/augusta/asset-packs"
 SERVER_PACK_NAME = "server.apak"
@@ -131,10 +131,10 @@ def prepare(
         )
     try:
         public_key = read_public_key(public_key_path)
-        client = verify_pack(client_pack, public_key)
-        server = verify_pack(server_pack, public_key)
+        client = _native.load_pack(client_pack, public_key)
+        server = _native.load_pack(server_pack, public_key)
     except (OSError, ValueError) as error:
-        # PackError and read_public_key's size error are both ValueErrors.
+        # LoadError and read_public_key's size error are both ValueErrors.
         raise PublishError(str(error)) from error
     if server.client_pack_hash is None:
         raise PublishError(

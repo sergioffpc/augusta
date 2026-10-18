@@ -4,7 +4,7 @@ A scenario name resolves to the map, characters, cue sounds and scripts its
 manifest names by file, or is refused before anything is cooked.
 """
 
-from augusta_pack.pack import MAX_CHARACTERS
+from augusta_pack._native import MAX_CHARACTERS
 from augusta_pack.scenario import resolve_scenario
 from augusta_pack.scenario import ScenarioError
 from conftest import EXAMPLES_ROOT

@@ -275,13 +275,12 @@ target_link_libraries(
 gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 
 # The example scenario's shipped rules, loaded out of a pack built with
-# augusta_assets' private encoder and run through SimulationWorld (ADR-0013).
+# augusta_assets' pack encoder and run through SimulationWorld (ADR-0013).
 add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
   augusta_example_rules_tests
   PRIVATE augusta_simulation augusta_scenario_policy_loader augusta_logging GTest::gtest GTest::gtest_main
 )
-target_include_directories(augusta_example_rules_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 target_compile_definitions(
   augusta_example_rules_tests
   PRIVATE
@@ -414,15 +413,11 @@ gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_map_tests map_test.cpp)
 target_link_libraries(augusta_map_tests PRIVATE augusta_physics GTest::gtest GTest::gtest_main)
-# Builds real packs with augusta_assets' private encoder (see augusta_assets_tests below).
-target_include_directories(augusta_map_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
 target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_scenario_policy_loader GTest::gtest GTest::gtest_main)
-# Builds real packs with augusta_assets' private encoder (see augusta_assets_tests below).
-target_include_directories(augusta_policy_loader_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
@@ -709,20 +704,14 @@ endif()
 
 add_executable(augusta_assets_tests assets_test.cpp)
 target_link_libraries(augusta_assets_tests PRIVATE augusta_assets GTest::gtest GTest::gtest_main)
-# WritePack/Encode*/Pack::Load round-trip coverage (below) exercises
-# augusta_assets' own private pack-format internals directly (encoder.h/
-# decoder.h, not under include/augusta/ - see that header's own comment
-# on why: the pack-cooking pipeline, tools/pack, reimplements
-# this wire format in pure Python instead of linking against it). This
-# target gets a private include path to see them; nothing else needs to.
-target_include_directories(augusta_assets_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
+# WritePack/Encode*/Pack::Load round-trip coverage, through augusta_assets'
+# public pack encoder (augusta/pack_encoder.h).
 gtest_discover_tests(augusta_assets_tests)
 
-# The client's cue sounds; builds real packs with augusta_assets' private
+# The client's cue sounds; builds real packs with augusta_assets' pack
 # encoder, as augusta_assets_tests does.
 add_executable(augusta_cues_tests cues_test.cpp)
 target_link_libraries(augusta_cues_tests PRIVATE augusta_assets augusta_cues GTest::gtest GTest::gtest_main)
-target_include_directories(augusta_cues_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/assets)
 gtest_discover_tests(augusta_cues_tests)
 
 # Loads the golden packs the Python cooker wrote from its example scenario

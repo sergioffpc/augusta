@@ -19,6 +19,7 @@
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/pack_encoder.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
@@ -26,7 +27,6 @@
 #include "augusta/policy_loader.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "encoder.h"
 
 // The example scenario's shipped rules (last_man_standing.lua), run inside the real engine
 // through SimulationWorld (ADR-0013's decision for Lua gameplay scripts): loaded

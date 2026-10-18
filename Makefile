@@ -82,7 +82,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint prepush docs
+.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check tidy lint prepush docs
 
 all: build
 
@@ -96,6 +96,7 @@ help:
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         the same as test)
 	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
+	$(info $()  pack-native   the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
@@ -128,6 +129,16 @@ coverage:
 	cmake -E rm -rf build/x64-linux-coverage/profiles
 	$(MAKE) --no-print-directory test PRESET=linux-coverage
 	bash scripts/coverage-report.sh
+
+# The asset cooker's native module alone (tools/pack/native, ADR-0030), which
+# its bootstrap builds (tools/pack/scripts/bootstrap.sh): the preset's build
+# without the client, in a build directory of its own, so the preset's own
+# keeps its configuration. PYTHON_EXECUTABLE names the Python 3.12 it is built
+# against, the tools environment's by default (cmake/AugustaToolsPython.cmake).
+PACK_BUILD_DIR := $(BUILD_DIR)-pack
+pack-native:
+	$(RUN) cmake --preset $(PRESET) -B $(PACK_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
+	$(RUN) cmake --build $(PACK_BUILD_DIR) --target augusta_pack_py
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.

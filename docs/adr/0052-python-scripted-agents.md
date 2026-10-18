@@ -143,8 +143,8 @@ and a smoke test plays one Match of two Agents against an in-process
   and `ScriptedPlayer` - is removed, and its tests move to `tools/agent/tests/`.
 - **The C++ jobs of CI need Python.** The Windows and Linux builds set up uv and
   run `uv sync` before configuring, since `AUGUSTA_TOOLS` is on by default. The
-  `tools` job keeps building `tools/pack/native`, which stays a separate
-  project.
+  cooker's native module (`tools/pack/native`) is built by the same build,
+  against the same interpreter, and its pytest runs beside the Agents'.
 - **The Linux build with tools is position-independent.** Code that will be
   linked into a shared object can be slightly slower; augustad from the server
   image is not affected, since it builds with `AUGUSTA_TOOLS` off.
@@ -173,9 +173,9 @@ and a smoke test plays one Match of two Agents against an in-process
   already depends on.
 - **The bindings in `src/modules/harness`**: rejected - augustac links the
   Harness, and the client must not need Python to build.
-- **The bindings as a separate CMake project, as `tools/pack/native` is**:
-  rejected - `_native` links the engine's own static libraries, which must be
-  built with the same flags and dependencies, by the same build.
+- **The bindings as a separate CMake project**: rejected - `_native` links the
+  engine's own static libraries, which must be built with the same flags and
+  dependencies, by the same build.
 - **Keeping augusta-swarm's YAML for the load test**: rejected - a script
   already is its configuration, and its arguments are the script's to choose.
 - **Python tests launching an augustad subprocess**: rejected - the test would

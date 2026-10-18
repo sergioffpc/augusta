@@ -1,11 +1,15 @@
-// augusta_pack._native: the pybind11 bindings of the two cooking steps with no
-// Python equivalent, the mesh pass (mesh.h) and the texture compression
-// (texture.h), called from augusta_pack.cook.
+// augusta_pack._native: the pybind11 bindings of the cooker's native steps,
+// called from augusta_pack.cook: the mesh pass (mesh.h), the texture
+// compression (texture.h) and augusta_assets' pack encoder
+// (encoder_binding.h); from augusta-keygen: augusta_assets' key generation
+// (keys_binding.h); and from augusta-inspect, augusta-verify and
+// augusta-publish: augusta_assets' pack reading (reader_binding.h).
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -15,7 +19,11 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
+#include "bytes.h"
+#include "encoder_binding.h"
+#include "keys_binding.h"
 #include "mesh.h"
+#include "reader_binding.h"
 #include "texture.h"
 
 namespace py = pybind11;
@@ -24,7 +32,9 @@ PYBIND11_MODULE(_native, module) {
   module.doc() =
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
       "(ADR-0016), and stb_image + stb_image_resize2 + libktx's PNG/JPEG load, mip chain, BC7/BC5/BC4 encode and KTX2 "
-      "write (ADR-0017).";
+      "write (ADR-0017), augusta_assets' pack encoder: the blobs and the signed pack the client and server load "
+      "(ADR-0031) and the Ed25519 keys it signs them with (ADR-0018), and its pack reader: a pack's layout, and the "
+      "pack the client and server would load.";
   module.def(
       "optimize_mesh",
       [](std::vector<float> points, std::vector<std::uint32_t> indices) {
@@ -39,7 +49,7 @@ PYBIND11_MODULE(_native, module) {
       "compress_texture",
       [](const std::filesystem::path& image_path, const std::string& format) {
         const std::vector<std::uint8_t> ktx2 = augusta::pack::CompressTexture(image_path, format);
-        return py::bytes(reinterpret_cast<const char*>(ktx2.data()), ktx2.size());
+        return augusta::pack::ToBytes(std::as_bytes(std::span(ktx2)));
       },
       py::arg("image_path"), py::arg("format") = "bc7",
       "Loads image_path (PNG/JPEG), encodes it to a KTX2 in `format` (bc7/bc5/bc4) with its full mip chain, returns "
@@ -58,8 +68,8 @@ PYBIND11_MODULE(_native, module) {
                                             augusta::pack::ContentOf(format));
         py::list chain;
         for (const augusta::pack::Image& level : levels) {
-          chain.append(py::make_tuple(level.width, level.height,
-                                      py::bytes(reinterpret_cast<const char*>(level.rgba.data()), level.rgba.size())));
+          chain.append(
+              py::make_tuple(level.width, level.height, augusta::pack::ToBytes(std::as_bytes(std::span(level.rgba)))));
         }
         return chain;
       },
@@ -67,4 +77,7 @@ PYBIND11_MODULE(_native, module) {
       "rgba: a width x height 8-bit RGBA image, row by row from the top. Returns the mip chain compress_texture "
       "encodes for `format`, as [(width, height, rgba)], level 0 (the image itself) first. Exposed so the filtering "
       "can be checked before BC encoding.");
+  augusta::pack::BindPackEncoder(module);
+  augusta::pack::BindPackReader(module);
+  augusta::pack::BindKeys(module);
 }

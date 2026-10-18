@@ -26,16 +26,17 @@ endif()
 include(cmake/AugustaPlatform.cmake)
 augusta_require_server_host()
 
-# The tools (tools/agent) and their tests. On by default, so every
+# The tools (tools/agent, tools/pack) and their tests. On by default, so every
 # build compiles them and their C++ tests join augusta_tests; the server image,
 # which builds augustad alone, turns them off. Before project(): with them,
-# vcpkg installs what the Agents' Python module needs.
-option(AUGUSTA_TOOLS "Build the tools (tools/agent) and their tests" ON)
+# vcpkg installs what the tools' Python modules need, the Agents' (the agent
+# feature) and the cooker's (the pack feature).
+option(AUGUSTA_TOOLS "Build the tools (tools/agent, tools/pack) and their tests" ON)
 if(AUGUSTA_TOOLS)
-  include(cmake/AugustaAgentPython.cmake)
-  augusta_find_agent_python(AUGUSTA_AGENT_PYTHON)
-  if(AUGUSTA_AGENT_PYTHON)
-    list(APPEND VCPKG_MANIFEST_FEATURES agent)
+  include(cmake/AugustaToolsPython.cmake)
+  augusta_find_tools_python(AUGUSTA_TOOLS_PYTHON)
+  if(AUGUSTA_TOOLS_PYTHON)
+    list(APPEND VCPKG_MANIFEST_FEATURES agent pack)
   endif()
 endif()
 
@@ -98,9 +99,10 @@ else()
   add_compile_options($<$<CONFIG:Release>:-g>)
 endif()
 
-# The Agents' Python module (tools/agent) is a shared library that links the
-# engine's static ones, which on Linux must then be position-independent: the
-# whole build, so the tools link what augustad does. Windows needs nothing.
+# The tools' Python modules (tools/agent, tools/pack) are shared libraries that
+# link the engine's static ones, which on Linux must then be
+# position-independent: the whole build, so the tools link what augustad does.
+# Windows needs nothing.
 if(AUGUSTA_TOOLS AND NOT WIN32)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -177,12 +179,12 @@ add_subdirectory(src/modules/scenario)
 add_subdirectory(src/modules/host)
 add_subdirectory(src/server)
 # The tools, built with the runtime they link on every platform: the Agents
-# (ADR-0052), whose Python module is built against the interpreter
-# augusta_find_agent_python found - pybind11 in its classic mode reads it from
-# PYTHON_EXECUTABLE - and left out without one.
+# (ADR-0052) and the asset cooker (ADR-0030), whose Python modules are built
+# against the interpreter augusta_find_tools_python found - pybind11 in its
+# classic mode reads it from PYTHON_EXECUTABLE - and left out without one.
 if(AUGUSTA_TOOLS)
-  if(AUGUSTA_AGENT_PYTHON)
-    set(PYTHON_EXECUTABLE "${AUGUSTA_AGENT_PYTHON}")
+  if(AUGUSTA_TOOLS_PYTHON)
+    set(PYTHON_EXECUTABLE "${AUGUSTA_TOOLS_PYTHON}")
     # Classic mode, not FindPython: vcpkg's python3 port, which pybind11's
     # depends on, wraps FindPython to give a module its own Python's headers
     # and libraries, a 3.14 where the tools environment's is the 3.12 its USD
@@ -192,6 +194,7 @@ if(AUGUSTA_TOOLS)
     find_package(pybind11 CONFIG REQUIRED)
   endif()
   add_subdirectory(tools/agent)
+  add_subdirectory(tools/pack)
 endif()
 # The linux-coverage preset's report as build targets, for an editor that runs
 # one before and one after its tests (VS Code's CMake Tools, "Run Tests with

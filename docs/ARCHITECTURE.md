@@ -381,14 +381,13 @@ after the tick.
   usd-optimize (dedup instances, flatten hierarchy, remove degenerate geometry),
   validates it with usd-validation-nvidia, then converts it into the engine's
   runtime level format, including Steam Audio baked reflection/occlusion data
-- Asset cooker (`tools/pack`, a pure-Python project - `augusta-pack`
-  console-script entry point) — walks the cleaned OpenUSD stage via
-  usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
-  compresses textures via libktx (BC7/BC5/BC4, KTX2) through two small native
-  pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
-  links OpenUSD, see ADR-0030), and packages everything into signed, verified
-  pack files (separate client and server packs) via a pure-Python
-  reimplementation of augusta_assets' wire format. Full ordered pipeline:
+- Asset cooker (`tools/pack`, a Python project - `augusta-pack` console-script
+  entry point) — walks the cleaned OpenUSD stage via usd-optimize's own `pxr`
+  build, then, through one native pybind11 module (`tools/pack/native/`, per
+  ADR-0025's vcpkg ports - it links no OpenUSD, see ADR-0030), optimizes meshes
+  via meshoptimizer, compresses textures via libktx (BC7/BC5/BC4, KTX2) and
+  packages everything into signed, verified pack files (separate client and
+  server packs) with augusta_assets' own encoder. Full ordered pipeline:
   ADR-0030.
 
 ## 6. Runtime View

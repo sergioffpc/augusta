@@ -18,14 +18,14 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
-#include "encoder.h"
+#include "augusta/pack_encoder.h"
 
-// Unit tests for augusta_assets, including its own private pack-format
-// internals (encoder.h/WritePack). Links only augusta_assets - no USD/
-// libktx/meshoptimizer - so it builds and runs under the plain
+// Unit tests for augusta_assets, including its pack encoder
+// (augusta/pack_encoder.h's Encode*/WritePack). Links only augusta_assets - no
+// USD/libktx/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
-// augusta_assets' wire format, which tools/pack's Python
-// WritePack reimplementation (ADR-0030) is validated against.
+// augusta_assets' wire format, the one the cooker (tools/pack, ADR-0030)
+// writes through its binding of this module.
 namespace {
 
 using augusta::assets::Ed25519PublicKey;
@@ -393,6 +393,30 @@ TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
   EXPECT_TRUE(pack->ResolveAudio("whole24").has_value());
 }
 
+// The encoder refuses the sounds the decoder would find corrupt, so no cook
+// writes one.
+TEST(EncodeAudioBlobTest, RefusesASampleWidthPcmDoesNotHave) {
+  const std::vector<std::byte> samples(6);
+
+  const auto blob = augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 12, .samples = samples});
+
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kUnsupportedSampleWidth);
+}
+
+TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
+  const std::vector<std::byte> samples(3);
+
+  const auto partial =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 16, .samples = samples});
+  const auto whole =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 24, .samples = samples});
+
+  ASSERT_FALSE(partial.has_value());
+  EXPECT_EQ(partial.error(), augusta::assets::EncodeError::kPartialSample);
+  EXPECT_TRUE(whole.has_value());
+}
+
 // A client pack names the folder its cue sounds are addressed under (ADR-0031).
 TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
   const auto pack_path = MakePackPath("augusta_assets_test_sounds");
@@ -702,6 +726,119 @@ TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   EXPECT_EQ(client->ClientPackHash(), std::nullopt);
 }
 
+// The cooker names a client pack in its server pack by the hash WritePack
+// returns, so it must be the one Load verifies.
+TEST_F(PackTest, WritePackReturnsTheHashLoadVerifies) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_returned_hash");
+  const auto written = augusta::assets::WritePack(
+      pack_path,
+      {augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+      keys.private_key);
+  ASSERT_TRUE(written.has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(*written, pack->Hash());
+}
+
+// A pack's own bytes, as the layout read must find them: assets.cpp's
+// kHeaderSize, and the 64-byte Ed25519 signature that ends the file.
+constexpr std::uint64_t kWrittenHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
+constexpr std::size_t kWrittenSignatureSize = 64;
+
+// What a tool shows of a pack without a key (augusta-inspect): every field of
+// its header, index and trailer, as WritePack wrote them.
+TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWrote) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_layout");
+  const auto mesh = MakeTriangleMeshBlob();
+  const std::vector<std::byte> script = {std::byte{'x'}};
+  const auto written = augusta::assets::WritePack(
+      pack_path,
+      {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = mesh},
+       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "rules.lua", .data = script}},
+      keys.private_key);
+  ASSERT_TRUE(written.has_value());
+  const auto bytes = ReadFileBytes(pack_path);
+
+  const auto layout = augusta::assets::ReadPackLayout(pack_path);
+
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(layout->version, 3U);
+  EXPECT_EQ(layout->file_size, bytes.size());
+  EXPECT_EQ(layout->data_offset, kWrittenHeaderSize);
+  EXPECT_EQ(layout->index_offset, kWrittenHeaderSize + mesh.size() + script.size());
+  EXPECT_EQ(layout->client_pack, std::nullopt);
+  ASSERT_EQ(layout->entries.size(), 2U);
+  EXPECT_EQ(layout->entries[0].type, augusta::assets::AssetType::kMesh);
+  EXPECT_EQ(layout->entries[0].path, "Mesh");
+  EXPECT_EQ(layout->entries[0].offset, kWrittenHeaderSize);
+  EXPECT_EQ(layout->entries[0].size, mesh.size());
+  EXPECT_EQ(layout->entries[1].type, augusta::assets::AssetType::kScript);
+  EXPECT_EQ(layout->entries[1].path, "rules.lua");
+  EXPECT_EQ(layout->entries[1].offset, kWrittenHeaderSize + mesh.size());
+  EXPECT_EQ(layout->entries[1].size, script.size());
+  EXPECT_EQ(layout->hash, *written);
+  EXPECT_TRUE(std::ranges::equal(layout->signature, std::span(bytes).last(kWrittenSignatureSize)));
+}
+
+TEST_F(PackTest, TheLayoutReadReturnsTheClientPackAServerPackNames) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto client_path = MakePackPath("augusta_assets_test_layout_client");
+  const auto client_hash = augusta::assets::WritePack(client_path, {}, keys.private_key);
+  ASSERT_TRUE(client_hash.has_value());
+  const auto server_path = MakePackPath("augusta_assets_test_layout_server");
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, {}, keys.private_key, *client_hash).has_value());
+
+  const auto layout = augusta::assets::ReadPackLayout(server_path);
+
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(layout->client_pack, *client_hash);
+  EXPECT_TRUE(layout->entries.empty());
+}
+
+// augusta-verify reports what it verified.
+TEST_F(PackTest, APackListsTheEntriesItWasWrittenWith) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_entries");
+  const auto mesh = MakeTriangleMeshBlob();
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  pack_path,
+                  {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = mesh},
+                   augusta::assets::AssetEntry{
+                       .type = augusta::assets::AssetType::kCollision, .path = "Collider", .data = mesh}},
+                  keys.private_key)
+                  .has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  const auto entries = pack->Entries();
+  ASSERT_EQ(entries.size(), 2U);
+  EXPECT_EQ(entries[0].type, augusta::assets::AssetType::kMesh);
+  EXPECT_EQ(entries[0].path, "Mesh");
+  EXPECT_EQ(entries[0].size, mesh.size());
+  EXPECT_EQ(entries[1].type, augusta::assets::AssetType::kCollision);
+  EXPECT_EQ(entries[1].path, "Collider");
+  EXPECT_EQ(entries[1].offset, entries[0].offset + mesh.size());
+}
+
+// augusta-publish names the format a verified server pack was cooked in, and
+// augusta-verify the size it verified.
+TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_version");
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, {}, keys.private_key).has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(pack->Version(), 3U);
+  EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
+}
+
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
 // by mutating the bytes of an otherwise validly written and signed pack -
 // every case here is one ParsePackHeader (or the top-level size check)
@@ -842,6 +979,74 @@ TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
   const auto pack = augusta::assets::Pack::Load(path, other_keys.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kSignatureInvalid);
+}
+
+// The layout read refuses what Pack::Load refuses, with the same LoadError.
+class PackLayoutNegativeTest : public PackLoadNegativeTest {
+ protected:
+  std::expected<augusta::assets::PackLayout, augusta::assets::LoadError> ReadLayoutOf(
+      std::span<const std::byte> bytes) {
+    const auto path = MakePackPath("augusta_assets_test_layout_negative");
+    WriteFileBytes(path, bytes);
+    return augusta::assets::ReadPackLayout(path);
+  }
+};
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsBadMagic) {
+  auto bytes = valid_bytes_;
+  bytes[0] = std::byte{'X'};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kBadMagic);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsUnsupportedVersion) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{99};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kUnsupportedVersion);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsATruncatedFile) {
+  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + kHeaderSize + kTrailerSize + 1);
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kTruncated);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsAnIndexEntryOfAnUnknownType) {
+  auto bytes = valid_bytes_;
+  // The only entry's type byte opens the index, after its one mesh blob.
+  bytes[kHeaderSize + MakeTriangleMeshBlob().size()] = std::byte{0xFF};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kInvalidIndex);
+}
+
+// No key, no verification: a pack modified after signing still shows its
+// layout, which is how augusta-inspect looks inside a pack that fails to verify.
+TEST_F(PackLayoutNegativeTest, ReadsAPackWhoseContentNoLongerMatchesItsHash) {
+  auto bytes = valid_bytes_;
+  bytes[kHeaderSize + 2] ^= std::byte{0xFF};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_TRUE(layout.has_value());
+  ASSERT_EQ(layout->entries.size(), 1U);
+  EXPECT_EQ(layout->entries[0].path, "TestMesh");
 }
 
 TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {

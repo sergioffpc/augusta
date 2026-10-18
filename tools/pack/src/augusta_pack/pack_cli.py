@@ -2,24 +2,22 @@
 
 `augusta-inspect` (header, index and trailer) and `augusta-verify` (hash +
 signature check), both ADR-0031 container-level and independent of the USD
-stack. `augusta-inspect` reads a Match capture (ADR-0050) too, told from a
-pack by its magic. A pack argument is an ordinary path - relative to the
-current directory or absolute, like any file argument, never resolved against
-an assets root; the `.apak` extension is optional.
+stack. Both read the pack through augusta_assets, the native module's
+(ADR-0030): inspect with its unverified layout read, verify with the Pack::Load
+the client and server load packs with. `augusta-inspect` reads a Match capture
+(ADR-0050) too, told from a pack by its magic. A pack argument is an ordinary
+path - relative to the current directory or absolute, like any file argument,
+never resolved against an assets root; the `.apak` extension is optional.
 """
 
 import argparse
 from pathlib import Path
 import sys
 
+from augusta_pack import _native
 from augusta_pack import capture
-from augusta_pack import pack
 from augusta_pack.assets_root import default_assets_root
 from augusta_pack.keys import read_public_key
-from augusta_pack.reader import PackError
-from augusta_pack.reader import read_pack
-from augusta_pack.reader import TRAILER_SIZE
-from augusta_pack.reader import verify_pack
 
 _PACK_EXTENSION = ".apak"
 
@@ -58,6 +56,11 @@ def _format_entry_count(count: int) -> str:
     return f"{count} {'entry' if count == 1 else 'entries'}"
 
 
+def _type_name(asset_type: _native.AssetType) -> str:
+    """The asset type's name as inspect shows it, e.g. spawn-point."""
+    return asset_type.name.lower().replace("_", "-")
+
+
 def _inspect_capture(path: Path) -> int:
     """Prints the Match capture at path; returns the exit code."""
     try:
@@ -91,18 +94,20 @@ def inspect_main(argv: list[str] | None = None) -> int:
             is_capture = capture.is_capture(file.read(len(capture.MAGIC)))
         if is_capture:
             return _inspect_capture(pack_path)
-        info = read_pack(pack_path)
-    except (FileNotFoundError, PackError) as error:
+        info = _native.read_pack_layout(pack_path)
+    except (FileNotFoundError, _native.LoadError) as error:
         print(error, file=sys.stderr)
         return 1
 
-    trailer_offset = info.file_size - TRAILER_SIZE
+    trailer_size = len(info.hash) + len(info.signature)
+    trailer_offset = info.file_size - trailer_size
     index_size = trailer_offset - info.index_offset
     print(f"{pack_path}: {_format_size(info.file_size)} bytes")
 
     print()
-    print(f"Header (offset 0, {_format_size(pack.HEADER_SIZE)} bytes)")
-    print(f"  magic         {pack.MAGIC.decode('ascii')}")
+    # The data section starts where the header ends.
+    print(f"Header (offset 0, {_format_size(info.data_offset)} bytes)")
+    print(f"  magic         {_native.PACK_MAGIC}")
     print(f"  version       {info.version}")
     print(f"  data offset   {_format_size(info.data_offset)}")
     print(f"  index offset  {_format_size(info.index_offset)}")
@@ -127,7 +132,7 @@ def inspect_main(argv: list[str] | None = None) -> int:
         f"{_format_entry_count(len(info.entries))})"
     )
     type_width = max(
-        (len(entry.type_name) for entry in info.entries), default=0
+        (len(_type_name(entry.type)) for entry in info.entries), default=0
     )
     offset_width = max(
         (len(_format_size(entry.offset)) for entry in info.entries), default=0
@@ -137,14 +142,14 @@ def inspect_main(argv: list[str] | None = None) -> int:
     )
     for entry in info.entries:
         print(
-            f"  {entry.type_name:<{type_width}}  "
+            f"  {_type_name(entry.type):<{type_width}}  "
             f"{_format_size(entry.offset):>{offset_width}}  "
             f"{_format_size(entry.size):>{size_width}}  {entry.path}"
         )
 
     print()
     print(
-        f"Trailer (offset {_format_size(trailer_offset)}, {TRAILER_SIZE} "
+        f"Trailer (offset {_format_size(trailer_offset)}, {trailer_size} "
         f"bytes) - not verified, see augusta-verify"
     )
     print(f"  BLAKE3 hash   {info.hash.hex()}")
@@ -155,10 +160,10 @@ def inspect_main(argv: list[str] | None = None) -> int:
 def verify_main(argv: list[str] | None = None) -> int:
     """`augusta-verify`; returns the process's exit code."""
     parser = argparse.ArgumentParser(
-        description="Verifies a pack: recomputes its BLAKE3 hash and checks "
-        "the trailer's Ed25519 signature against a public key, then checks the "
-        "header and index are well-formed. Exit status is 0 if the pack "
-        "verifies, 1 otherwise."
+        description="Verifies a pack as the client and server load it: "
+        "recomputes its BLAKE3 hash and checks the trailer's Ed25519 signature "
+        "against a public key, then checks the header and index are "
+        "well-formed. Exit status is 0 if the pack verifies, 1 otherwise."
     )
     _add_pack_argument(parser)
     parser.add_argument(
@@ -182,17 +187,17 @@ def verify_main(argv: list[str] | None = None) -> int:
     try:
         pack_path = _resolve_pack(args.pack)
         public_key = read_public_key(public_key_path)
-        info = verify_pack(pack_path, public_key)
+        loaded = _native.load_pack(pack_path, public_key)
     except (FileNotFoundError, ValueError) as error:
-        # PackError and read_public_key's size error are both ValueErrors.
+        # LoadError and read_public_key's size error are both ValueErrors.
         print(error, file=sys.stderr)
         return 1
 
     print(f"OK: {pack_path}")
     print(
-        f"  {_format_entry_count(len(info.entries))}, "
-        f"{_format_size(info.file_size)} bytes"
+        f"  {_format_entry_count(len(loaded.entries))}, "
+        f"{_format_size(loaded.file_size)} bytes"
     )
-    print(f"  BLAKE3 {info.hash.hex()}")
+    print(f"  BLAKE3 {loaded.hash.hex()}")
     print(f"  signed by {public_key_path}")
     return 0

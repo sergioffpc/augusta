@@ -5,8 +5,10 @@ or more characters (ADR-0041) - and bakes them into one signed client/server
 pack pair (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
 pip-installed usd-optimize build optimize.py already uses, rather than linking a
 second, independently-built OpenUSD - see ADR-0030 for why those can't coexist
-in one process), and calls the small native module, _native, only for the two
-pieces with no Python equivalent (mesh optimization, texture compression).
+in one process), and calls the native module, _native, for the two pieces with
+no Python equivalent (mesh optimization, texture compression) and for
+augusta_assets' pack encoder, which encodes every blob and writes, hashes and
+signs both packs.
 """
 
 from __future__ import annotations
@@ -25,37 +27,6 @@ from pxr import UsdPhysics
 from pxr import UsdShade
 
 from augusta_pack import _native
-from augusta_pack.pack import ASSET_TYPE_AUDIO as _TYPE_AUDIO
-from augusta_pack.pack import ASSET_TYPE_CHARACTERS as _TYPE_CHARACTERS
-from augusta_pack.pack import ASSET_TYPE_COLLISION as _TYPE_COLLISION
-from augusta_pack.pack import ASSET_TYPE_EYE as _TYPE_EYE
-from augusta_pack.pack import ASSET_TYPE_HITBOX as _TYPE_HITBOX
-from augusta_pack.pack import ASSET_TYPE_MESH as _TYPE_MESH
-from augusta_pack.pack import ASSET_TYPE_SCENE as _TYPE_SCENE
-from augusta_pack.pack import ASSET_TYPE_SCRIPT as _TYPE_SCRIPT
-from augusta_pack.pack import ASSET_TYPE_SOUNDS as _TYPE_SOUNDS
-from augusta_pack.pack import ASSET_TYPE_SPAWN_POINT as _TYPE_SPAWN_POINT
-from augusta_pack.pack import ASSET_TYPE_TEXTURE as _TYPE_TEXTURE
-from augusta_pack.pack import AssetEntry
-from augusta_pack.pack import BODY_PART_HEAD
-from augusta_pack.pack import BODY_PART_LIMB
-from augusta_pack.pack import BODY_PART_TORSO
-from augusta_pack.pack import CHARACTERS_PATH
-from augusta_pack.pack import encode_audio_blob
-from augusta_pack.pack import encode_characters_blob
-from augusta_pack.pack import encode_eye_blob
-from augusta_pack.pack import encode_hitbox_blob
-from augusta_pack.pack import encode_mesh_blob
-from augusta_pack.pack import encode_scene_blob
-from augusta_pack.pack import encode_script_blob
-from augusta_pack.pack import encode_sounds_blob
-from augusta_pack.pack import encode_spawn_point_blob
-from augusta_pack.pack import encode_texture_blob
-from augusta_pack.pack import MeshData
-from augusta_pack.pack import NO_PARENT
-from augusta_pack.pack import SceneNode
-from augusta_pack.pack import SOUNDS_PATH
-from augusta_pack.pack import write_pack
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import SOUNDS_PREFIX
 
@@ -70,9 +41,9 @@ _HITBOX_ATTR = "augusta:hitbox"
 # carries next to augusta:hitbox, one of _BODY_PARTS' names (ADR-0040).
 _BODY_PART_ATTR = "augusta:bodyPart"
 _BODY_PARTS = {
-    "head": BODY_PART_HEAD,
-    "torso": BODY_PART_TORSO,
-    "limb": BODY_PART_LIMB,
+    "head": _native.BodyPart.HEAD,
+    "torso": _native.BodyPart.TORSO,
+    "limb": _native.BodyPart.LIMB,
 }
 # Node property (ADR-0032) carrying a visual mesh's constant displayColor as
 # "r g b" linear floats; the client reads it as the mesh's base color.
@@ -183,8 +154,8 @@ def _read_bool_attr(prim: Usd.Prim, attr_name: str) -> bool:
     return bool(value)
 
 
-def _read_body_part(prim: Usd.Prim, prim_path: str) -> int:
-    """The body part (BODY_PART_*) a hitbox prim's augusta:bodyPart names.
+def _read_body_part(prim: Usd.Prim, prim_path: str) -> _native.BodyPart:
+    """The body part a hitbox prim's augusta:bodyPart names.
 
     Every hitbox names one, since a hit resolves to it (US-11).
     """
@@ -310,27 +281,47 @@ def _read_indices(
     return indices
 
 
-def _optimize_mesh(mesh: MeshData) -> MeshData:
+@dataclass(frozen=True)
+class _Geometry:
+    """A prim's triangle geometry as read."""
+
+    # Kept in double precision until the encoder narrows them to the pack's
+    # floats.
+    points: list[tuple[float, float, float]]
+    # Three per triangle.
+    indices: list[int]
+
+
+def _mesh_of(geometry: _Geometry) -> _native.MeshData:
+    """The pack's mesh for geometry, as read."""
+    return _native.MeshData(points=geometry.points, indices=geometry.indices)
+
+
+def _optimize_mesh(geometry: _Geometry) -> _native.MeshData:
     """Meshoptimizer pass (ADR-0016).
 
     Vertex cache optimization, simplification, quantization - turns the
     as-authored read into GPU-ready data rather than a passthrough of the source
     mesh.
     """
-    if not mesh.points or not mesh.indices:
-        return mesh
-    flat_points = [component for point in mesh.points for component in point]
-    optimized_points, optimized_indices = _native.optimize_mesh(
-        flat_points, mesh.indices
-    )
-    points = [
-        tuple(optimized_points[i : i + 3])
-        for i in range(0, len(optimized_points), 3)
+    if not geometry.points or not geometry.indices:
+        return _mesh_of(geometry)
+    flat_points = [
+        component for point in geometry.points for component in point
     ]
-    return MeshData(points=points, indices=list(optimized_indices))
+    optimized_points, optimized_indices = _native.optimize_mesh(
+        flat_points, geometry.indices
+    )
+    return _native.MeshData(
+        points=[
+            tuple(optimized_points[i : i + 3])
+            for i in range(0, len(optimized_points), 3)
+        ],
+        indices=optimized_indices,
+    )
 
 
-def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
+def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> _Geometry:
     """Reads a UsdGeomMesh's points/triangle-index buffer as authored.
 
     No meshoptimizer pass is applied: the read is shared by the visual path
@@ -358,7 +349,7 @@ def _read_raw_mesh_geometry(mesh: UsdGeom.Mesh, prim_path: str) -> MeshData:
 
     points = [(point[0], point[1], point[2]) for point in usd_points]
     indices = _read_indices(face_vertex_indices, len(points), prim_path)
-    return MeshData(points=points, indices=indices)
+    return _Geometry(points, indices)
 
 
 # A UsdGeomCube's 8 corners, ordered (-,-,-) (+,-,-) (+,+,-) (-,+,-)
@@ -413,7 +404,7 @@ _CUBE_INDICES = [
 ]
 
 
-def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> MeshData:
+def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> _Geometry:
     """Expands a UsdGeomCube into the triangle buffer a mesh box would give.
 
     The cube is an edge-length box centered on its own origin; expanded, it is
@@ -428,7 +419,7 @@ def _read_cube_geometry(cube: UsdGeom.Cube, prim_path: str) -> MeshData:
     points = [
         (sx * half, sy * half, sz * half) for sx, sy, sz in _CUBE_CORNER_SIGNS
     ]
-    return MeshData(points=points, indices=list(_CUBE_INDICES))
+    return _Geometry(points, list(_CUBE_INDICES))
 
 
 # Longitude segments and latitude rings-per-hemisphere for
@@ -450,7 +441,7 @@ _CAPSULE_BASIS = {
 
 def _read_capsule_geometry(
     capsule: UsdGeom.Capsule, prim_path: str
-) -> MeshData:
+) -> _Geometry:
     """Tessellates a UsdGeomCapsule into a triangle buffer.
 
     The capsule is a cylinder of `height` (excluding caps) and `radius`, capped
@@ -552,10 +543,10 @@ def _read_capsule_geometry(
         add_band(lower, upper)
     add_fan(top_pole_index, top_ring_starts[-1], flip=True)
 
-    return MeshData(points=points, indices=indices)
+    return _Geometry(points, indices)
 
 
-def _read_raw_geometry(prim: Usd.Prim, prim_path: str) -> MeshData | None:
+def _read_raw_geometry(prim: Usd.Prim, prim_path: str) -> _Geometry | None:
     """Reads prim's triangle geometry as authored, if it has any.
 
     Only a UsdGeomMesh, UsdGeomCube or UsdGeomCapsule does; any other prim type
@@ -598,8 +589,8 @@ def _build_node(
     prim: Usd.Prim,
     correction: Gf.Matrix4d,
     node_index_of: dict[str, int],
-    entries: list[AssetEntry],
-) -> SceneNode:
+    entries: list[_native.AssetEntry],
+) -> _native.SceneNode:
     """Builds prim's own SceneNode and the asset entries it carries.
 
     Appends a spawn-point AssetEntry if augusta:spawnPoint is set, and - if prim
@@ -610,18 +601,18 @@ def _build_node(
     Traverse() call).
     """
     prim_path = _sanitize_prim_path(str(prim.GetPath()))
-    node = SceneNode(name=prim_path)
+    node = _native.SceneNode(name=prim_path)
 
     parent = prim.GetParent()
     if not parent.IsValid() or parent.IsPseudoRoot():
-        node.parent_index = NO_PARENT
+        node.parent_index = _native.SCENE_NODE_NO_PARENT
     else:
         # Always succeeds under pre-order traversal - see this function's
         # own comment.
         node.parent_index = node_index_of[str(parent.GetPath())]
 
     translation, rotation, scale = _local_transform_of(prim)
-    if node.parent_index == NO_PARENT:
+    if node.parent_index == _native.SCENE_NODE_NO_PARENT:
         # Only the stage's own top-level (parentless) nodes get the
         # up-axis/unit correction prepended.
         xformable = UsdGeom.Xformable(prim)
@@ -641,10 +632,14 @@ def _build_node(
     node.is_spawn_point = _read_bool_attr(prim, _SPAWN_POINT_ATTR)
     if node.is_spawn_point:
         entries.append(
-            AssetEntry(
-                type=_TYPE_SPAWN_POINT,
+            _native.AssetEntry(
+                type=_native.AssetType.SPAWN_POINT,
                 path=prim_path,
-                data=encode_spawn_point_blob(node.translation, node.rotation),
+                data=_native.encode_spawn_point_blob(
+                    _native.SpawnPointData(
+                        translation=node.translation, rotation=node.rotation
+                    )
+                ),
             )
         )
 
@@ -661,40 +656,51 @@ def _build_node(
         # kMesh. A guide-purpose prim that is neither is a DCC-only helper
         # and contributes nothing.
         if is_hitbox:
-            blob = encode_hitbox_blob(
-                _read_body_part(prim, prim_path), geometry
+            blob = _native.encode_hitbox_blob(
+                _native.HitboxData(
+                    part=_read_body_part(prim, prim_path),
+                    mesh=_mesh_of(geometry),
+                )
             )
             entries.append(
-                AssetEntry(type=_TYPE_HITBOX, path=prim_path, data=blob)
+                _native.AssetEntry(
+                    type=_native.AssetType.HITBOX, path=prim_path, data=blob
+                )
             )
         elif _has_collision_enabled(prim):
             entries.append(
-                AssetEntry(
-                    type=_TYPE_COLLISION,
+                _native.AssetEntry(
+                    type=_native.AssetType.COLLISION,
                     path=prim_path,
-                    data=encode_mesh_blob(geometry),
+                    data=_native.encode_mesh_blob(_mesh_of(geometry)),
                 )
             )
             node.collider_path = prim_path
         elif not _is_guide(prim):
-            mesh_data = _optimize_mesh(geometry)
             entries.append(
-                AssetEntry(
-                    type=_TYPE_MESH,
+                _native.AssetEntry(
+                    type=_native.AssetType.MESH,
                     path=prim_path,
-                    data=encode_mesh_blob(mesh_data),
+                    data=_native.encode_mesh_blob(_optimize_mesh(geometry)),
                 )
             )
             node.mesh_path = prim_path
             base_color = _read_base_color(prim)
             if base_color is not None:
-                node.properties.append((BASE_COLOR_PROPERTY, base_color))
+                # Assigned, not appended to: see SceneNode's docstring.
+                node.properties = [
+                    *node.properties,
+                    (BASE_COLOR_PROPERTY, base_color),
+                ]
 
     return node
 
 
 def _maybe_cook_texture_prim(
-    prim: Usd.Prim, prim_path: str, stage_path: Path, entries: list[AssetEntry]
+    prim: Usd.Prim,
+    prim_path: str,
+    stage_path: Path,
+    entries: list[_native.AssetEntry],
 ) -> None:
     """Cooks a UsdUVTexture shader prim into its own texture blob.
 
@@ -709,10 +715,10 @@ def _maybe_cook_texture_prim(
 
     ktx2_bytes = _cook_texture(prim, prim_path, stage_path)
     entries.append(
-        AssetEntry(
-            type=_TYPE_TEXTURE,
+        _native.AssetEntry(
+            type=_native.AssetType.TEXTURE,
             path=prim_path,
-            data=encode_texture_blob(ktx2_bytes),
+            data=_native.encode_texture_blob(ktx2_bytes),
         )
     )
 
@@ -723,12 +729,17 @@ def _maybe_cook_texture_prim(
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
-    {_TYPE_COLLISION, _TYPE_HITBOX, _TYPE_SPAWN_POINT, _TYPE_EYE}
+    {
+        _native.AssetType.COLLISION,
+        _native.AssetType.HITBOX,
+        _native.AssetType.SPAWN_POINT,
+        _native.AssetType.EYE,
+    }
 )
 
 
-def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
-    """Applies matrix to mesh's points, leaving indices untouched.
+def _transform_geometry(geometry: _Geometry, matrix: Gf.Matrix4d) -> _Geometry:
+    """Applies matrix to geometry's points, leaving indices untouched.
 
     Used for character geometry (_cook_character_prim), which carries no
     SceneNode transform of its own to place it at runtime (cook_scenario's Scene
@@ -737,11 +748,12 @@ def _transform_mesh(mesh: MeshData, matrix: Gf.Matrix4d) -> MeshData:
     instead, the same two corrections a map's top-level nodes carry in their own
     SceneNode transform (_build_node) rather than in their points.
     """
-    return MeshData(
-        points=[
-            tuple(matrix.Transform(Gf.Vec3d(*point))) for point in mesh.points
+    return _Geometry(
+        [
+            tuple(matrix.Transform(Gf.Vec3d(*point)))
+            for point in geometry.points
         ],
-        indices=mesh.indices,
+        geometry.indices,
     )
 
 
@@ -749,65 +761,73 @@ def _cook_character_prim(
     prim: Usd.Prim,
     prim_path: str,
     matrix: Gf.Matrix4d,
-    entries: list[AssetEntry],
-) -> int | None:
+    entries: list[_native.AssetEntry],
+) -> _native.BodyPart | None:
     """The geometry half of _build_node's classification (mesh vs.
 
     Collision vs. hitbox - ADR-0040/ADR-0041), for one prim of a character
     stage: appends at most one AssetEntry, its points already transformed into
     the character's own root space by matrix. Builds no SceneNode - see
-    _transform_mesh. Returns the body part if the prim is a hitbox.
+    _transform_geometry. Returns the body part if the prim is a hitbox.
     """
     geometry = _read_raw_geometry(prim, prim_path)
     if geometry is None:
         return None
-    transformed = _transform_mesh(geometry, matrix)
+    transformed = _transform_geometry(geometry, matrix)
     if _read_bool_attr(prim, _HITBOX_ATTR):
         body_part = _read_body_part(prim, prim_path)
         entries.append(
-            AssetEntry(
-                type=_TYPE_HITBOX,
+            _native.AssetEntry(
+                type=_native.AssetType.HITBOX,
                 path=prim_path,
-                data=encode_hitbox_blob(body_part, transformed),
+                data=_native.encode_hitbox_blob(
+                    _native.HitboxData(
+                        part=body_part, mesh=_mesh_of(transformed)
+                    )
+                ),
             )
         )
         return body_part
     if _has_collision_enabled(prim):
         entries.append(
-            AssetEntry(
-                type=_TYPE_COLLISION,
+            _native.AssetEntry(
+                type=_native.AssetType.COLLISION,
                 path=prim_path,
-                data=encode_mesh_blob(transformed),
+                data=_native.encode_mesh_blob(_mesh_of(transformed)),
             )
         )
     elif not _is_guide(prim):
         entries.append(
-            AssetEntry(
-                type=_TYPE_MESH,
+            _native.AssetEntry(
+                type=_native.AssetType.MESH,
                 path=prim_path,
-                data=encode_mesh_blob(_optimize_mesh(transformed)),
+                data=_native.encode_mesh_blob(_optimize_mesh(transformed)),
             )
         )
     return None
 
 
-def _sound_entries(sounds: CueSounds) -> list[AssetEntry]:
+def _sound_entries(sounds: CueSounds) -> list[_native.AssetEntry]:
     """The client pack's audio entries for sounds, and their prefix's entry."""
     entries = [
-        AssetEntry(
-            type=_TYPE_AUDIO,
+        _native.AssetEntry(
+            type=_native.AssetType.AUDIO,
             path=f"{SOUNDS_PREFIX}/{cue}",
-            data=encode_audio_blob(
-                sound.sample_rate, sound.bits_per_sample, sound.samples
+            data=_native.encode_audio_blob(
+                _native.AudioData(
+                    sample_rate=sound.sample_rate,
+                    bits_per_sample=sound.bits_per_sample,
+                    samples=sound.samples,
+                )
             ),
         )
         for cue, sound in sounds.cues
     ]
     entries.append(
-        AssetEntry(
-            type=_TYPE_SOUNDS,
-            path=SOUNDS_PATH,
-            data=encode_sounds_blob(SOUNDS_PREFIX),
+        _native.AssetEntry(
+            type=_native.AssetType.SOUNDS,
+            path=_native.SOUNDS_PATH,
+            data=_native.encode_sounds_blob(SOUNDS_PREFIX),
         )
     )
     return entries
@@ -836,7 +856,7 @@ def cook_scenario(
 
     sounds, if given, are the client's cue sounds: they go into the client pack
     only, each as an audio asset addressed <SOUNDS_PREFIX>/<cue>, with the
-    prefix itself at SOUNDS_PATH so the client can find them (ADR-0020,
+    prefix itself at _native.SOUNDS_PATH so the client can find them (ADR-0020,
     ADR-0031). The headless server plays nothing (ADR-0019).
 
     The character names, in character_stages' order, are also recorded as the
@@ -851,14 +871,14 @@ def cook_scenario(
     # Encoded first so a list the wire can't carry fails before any stage is
     # walked.
     try:
-        characters_entry = AssetEntry(
-            type=_TYPE_CHARACTERS,
-            path=CHARACTERS_PATH,
-            data=encode_characters_blob(
+        characters_entry = _native.AssetEntry(
+            type=_native.AssetType.CHARACTERS,
+            path=_native.CHARACTERS_PATH,
+            data=_native.encode_characters_blob(
                 [character_name for character_name, _ in character_stages]
             ),
         )
-    except ValueError as error:
+    except _native.EncodeError as error:
         raise CookError("characters_encode_failed", "", str(error)) from error
 
     map_stage = Usd.Stage.Open(str(map_stage_path))
@@ -936,8 +956,8 @@ def cook_scenario(
     done = 0
 
     correction = _stage_correction_matrix(map_stage)
-    entries: list[AssetEntry] = []
-    nodes: list[SceneNode] = []
+    entries: list[_native.AssetEntry] = []
+    nodes: list[_native.SceneNode] = []
     node_index_of: dict[str, int] = {}
 
     for prim in map_prims:
@@ -959,7 +979,7 @@ def cook_scenario(
         eye_path,
     ) in opened_characters:
         character_correction = _stage_correction_matrix(character_stage)
-        body_parts: set[int] = set()
+        body_parts: set[_native.BodyPart] = set()
         for prim in character_prims:
             prim_path = (
                 f"{character_name}/{_sanitize_prim_path(str(prim.GetPath()))}"
@@ -975,10 +995,12 @@ def cook_scenario(
                     Gf.Vec3d(0.0, 0.0, 0.0)
                 )
                 entries.append(
-                    AssetEntry(
-                        type=_TYPE_EYE,
+                    _native.AssetEntry(
+                        type=_native.AssetType.EYE,
                         path=prim_path,
-                        data=encode_eye_blob(tuple(eye)),
+                        data=_native.encode_eye_blob(
+                            _native.EyeData(position=tuple(eye))
+                        ),
                     )
                 )
             body_part = _cook_character_prim(
@@ -1005,19 +1027,23 @@ def cook_scenario(
                 f"and has none for {', '.join(missing)}",
             )
 
-    mesh_count = sum(1 for entry in entries if entry.type == _TYPE_MESH)
-    texture_count = sum(1 for entry in entries if entry.type == _TYPE_TEXTURE)
+    mesh_count = sum(
+        1 for entry in entries if entry.type == _native.AssetType.MESH
+    )
+    texture_count = sum(
+        1 for entry in entries if entry.type == _native.AssetType.TEXTURE
+    )
     node_count = len(nodes)
 
     # Client scene: full node data, mesh/material references intact.
-    client_scene_blob = encode_scene_blob(nodes)
+    client_scene_blob = _native.encode_scene_blob(nodes)
 
     # Server scene: same nodes/hierarchy/collision-spawn-hitbox
     # references, but mesh/material path stripped (ADR-0019) - the server
     # never receives visual content, even as a dangling path it can't
     # resolve.
     server_nodes = [
-        SceneNode(
+        _native.SceneNode(
             name=node.name,
             parent_index=node.parent_index,
             translation=node.translation,
@@ -1038,16 +1064,16 @@ def cook_scenario(
         )
         for node in nodes
     ]
-    server_scene_blob = encode_scene_blob(server_nodes)
+    server_scene_blob = _native.encode_scene_blob(server_nodes)
 
     # Encoded before either pack is written, so a script the wire can't carry
     # leaves neither behind.
     try:
         script_entries = [
-            AssetEntry(
-                type=_TYPE_SCRIPT,
+            _native.AssetEntry(
+                type=_native.AssetType.SCRIPT,
                 path=script_path,
-                data=encode_script_blob(script),
+                data=_native.encode_script_blob(script),
             )
             for script_path, script in scripts
         ]
@@ -1062,12 +1088,16 @@ def cook_scenario(
     # the cue sounds.
     client_entries = [
         *entries,
-        AssetEntry(type=_TYPE_SCENE, path="Scene", data=client_scene_blob),
+        _native.AssetEntry(
+            type=_native.AssetType.SCENE,
+            path=_native.SCENE_PATH,
+            data=client_scene_blob,
+        ),
         characters_entry,
         *sound_entries,
     ]
     try:
-        client_pack_hash = write_pack(
+        client_pack_hash = _native.write_pack(
             client_output_path, client_entries, signing_key
         )
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
@@ -1081,12 +1111,16 @@ def cook_scenario(
         entry for entry in entries if entry.type in _SERVER_PACK_ASSET_TYPES
     ]
     server_entries.append(
-        AssetEntry(type=_TYPE_SCENE, path="Scene", data=server_scene_blob)
+        _native.AssetEntry(
+            type=_native.AssetType.SCENE,
+            path=_native.SCENE_PATH,
+            data=server_scene_blob,
+        )
     )
     server_entries.append(characters_entry)
     server_entries.extend(script_entries)
     try:
-        write_pack(
+        _native.write_pack(
             server_output_path, server_entries, signing_key, client_pack_hash
         )
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below

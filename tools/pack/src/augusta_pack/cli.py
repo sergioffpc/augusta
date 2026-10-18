@@ -4,9 +4,10 @@ Run on a scenario name (ADR-0041): usd-optimize (ADR-0015, Python API - see
 optimize.py) -> usd-validation-nvidia (ADR-0015, also called via its own Python
 API - see validate.py) -> cook_scenario (bake to one signed client/server pack
 pair, ADR-0031/ADR-0032/ADR-0041 - see cook.py), run once per stage the scenario
-composes. cook_scenario is pure Python too: it walks each USD stage via pxr
-directly and calls the small native module, _native, only for the two pieces
-with no Python equivalent - no subprocess/CLI binary anywhere in this pipeline.
+composes. cook_scenario walks each USD stage via pxr directly and calls the
+native module, _native, for the mesh pass, the texture compression and
+augusta_assets' pack encoder - no subprocess/CLI binary anywhere in this
+pipeline.
 A validation failure aborts before cooking, so no pack is written if any
 composed stage didn't pass cleanup/validation, unless --skip-validation is
 given. Every script the manifest names goes into the server pack (ADR-0031,

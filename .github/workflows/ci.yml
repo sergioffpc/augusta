@@ -24,7 +24,6 @@ jobs:
       run_build: ${{ steps.filter.outputs.run_build }}
       run_container: ${{ steps.filter.outputs.run_container }}
       run_manifests: ${{ steps.filter.outputs.run_manifests }}
-      run_tools: ${{ steps.filter.outputs.run_tools }}
       run_yaml: ${{ steps.filter.outputs.run_yaml }}
       run_lua: ${{ steps.filter.outputs.run_lua }}
       run_toml: ${{ steps.filter.outputs.run_toml }}
@@ -46,7 +45,6 @@ jobs:
               echo "run_build=true"
               echo "run_container=true"
               echo "run_manifests=true"
-              echo "run_tools=true"
               echo "run_yaml=true"
               echo "run_lua=true"
               echo "run_toml=true"
@@ -71,13 +69,17 @@ jobs:
 
           # The paths more than one output matches, each written only here.
           ci_workflow='\.github/workflows/ci\.yml$'
-          tools_project='tools/(pyproject\.toml|uv\.lock)$'
           charts='charts/'
           # The server and what builds its image.
           server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
+          # The build jobs also build and test the tools (tools/agent,
+          # tools/pack): their native and Python sources, the tools
+          # environment, the example scenario and golden packs the tests load,
+          # and the node's end of augusta-publish, which the cooker's tests run.
+          # tools/docs is the docs workflow's, not theirs.
           set_output run_build \
-            "^(${server}|tests/|tools/agent/|tools/composer/examples/|tools/pack/native/|${tools_project}|config/|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
+            "^(${server}|tests/|tools/agent/|tools/pack/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
 
           set_output run_container \
             "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
@@ -88,13 +90,6 @@ jobs:
           # and the k3s release they run on.
           set_output run_manifests \
             "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow})"
-
-          # The offline tools (tools/pack, tools/composer), and the golden
-          # output of theirs the runtime's tests load, which the tools job checks
-          # they still write; and the node's end of augusta-publish, which its
-          # tests run. tools/docs is the docs workflow's, not theirs.
-          set_output run_tools \
-            "^(tools/(pack|composer)/|${tools_project}|tests/fixtures/example-packs/|clusters/onprem/node/augusta-publish-receive\.sh$|${ci_workflow})"
 
           set_output run_yaml \
             '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|(^|/)[^/]+\.ya?ml$)'
@@ -240,6 +235,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The cooker's test fixtures and the example scenario's sounds, which
+          # its pytest cooks.
+          lfs: true
       - name: Fetch the submodules
         # vcpkg and NVTX, the only submodules.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
@@ -256,14 +255,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
       - uses: ./.github/actions/restore-ctcache-cache
-      - name: Install the Agents' package
-        # The interpreter the Agents' module is built against, and pytest: the
-        # agent group alone, not the cooker's USD tooling.
+      - name: Install the tools' packages
+        # The interpreter the tools' modules are built against, the Agents'
+        # and the cooker's, and pytest: their groups alone, not the docs'.
         working-directory: tools
-        run: uv sync --locked --no-default-groups --group agent
+        run: uv sync --locked --no-default-groups --group agent --group pack
       - name: Configure
         # PYTHON_EXECUTABLE named, so a sync that left no interpreter stops the
-        # configure instead of leaving the module out (cmake/AugustaAgentPython.cmake).
+        # configure instead of leaving the modules out (cmake/AugustaToolsPython.cmake).
         # AUGUSTA_LAVAPIPE: the renderer smoke test's software Vulkan, which a
         # release's build leaves out (CMakeLists.txt).
         run: cmake --preset windows -DAUGUSTA_LAVAPIPE=ON "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
@@ -340,7 +339,12 @@ jobs:
         run: ctest --preset windows --parallel "$NUMBER_OF_PROCESSORS"
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
-        run: uv run --locked --no-default-groups --group agent pytest
+        run: uv run --locked --no-default-groups --group agent --group pack pytest
+      - name: Test the cooker's package (pytest)
+        # Golden packs included: cooking the example scenario still gives the
+        # packs ctest loads, byte for byte, on either platform.
+        working-directory: tools/pack
+        run: uv run --locked --no-default-groups --group agent --group pack pytest
   server-x64-linux:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'
@@ -364,23 +368,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+          # As the client-x64-windows job does, for the cooker's pytest.
+          lfs: true
       - uses: ./.github/actions/setup-linux-build
         with:
           # The same distro version as the clang the presets compile with.
           extra-packages: clang-tidy
-          # It installs the Agents' ports (the manifest's agent feature:
-          # pybind11 and Python), which no other Linux job does and whose saves
-          # would drop: a cache of its own.
-          vcpkg-cache-prefix: vcpkg-bincache-agent-linux-
+          # It installs the tools' ports (the manifest's agent and pack
+          # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
+          # other Linux job does and whose saves would drop: a cache of its own.
+          vcpkg-cache-prefix: vcpkg-bincache-tools-linux-
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
       - uses: ./.github/actions/restore-ctcache-cache
-      - name: Install the Agents' package
+      - name: Install the tools' packages
         # As the client-x64-windows job does.
         working-directory: tools
-        run: uv sync --locked --no-default-groups --group agent
+        run: uv sync --locked --no-default-groups --group agent --group pack
       - name: Configure
         # Without the client: pull requests build and test it on Windows alone,
         # and the Linux client is the nightly's (nightly-jobs.yml,
@@ -428,7 +434,12 @@ jobs:
         run: ctest --preset linux --parallel "$(nproc)"
       - name: Test the Agents' package (pytest)
         working-directory: tools/agent
-        run: uv run --locked --no-default-groups --group agent pytest
+        run: uv run --locked --no-default-groups --group agent --group pack pytest
+      - name: Test the cooker's package (pytest)
+        # Golden packs included: cooking the example scenario still gives the
+        # packs ctest loads, byte for byte, on either platform.
+        working-directory: tools/pack
+        run: uv run --locked --no-default-groups --group agent --group pack pytest
       - name: Upload the Agents' native module
         # For the confinement job's Agents, built here with the rest.
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -436,94 +447,6 @@ jobs:
           name: agents-native
           path: tools/agent/src/augusta_agent/_native*.so
           retention-days: 1
-  tools:
-    needs: changes
-    if: needs.changes.outputs.run_tools == 'true'
-    # Builds and tests the offline tools (tools/), including that each still
-    # writes the golden output the runtime's tests load (ADR-0013). A new
-    # tool adds steps here, not a job. Windows, where the content authors cook,
-    # and Linux, the asset cooker's other platform (tools/README.md): the same
-    # pytest suite, golden packs included - a cook gives the same bytes on
-    # either platform.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-2025
-            preset: windows
-            python: tools/.venv/Scripts/python.exe
-          - os: ubuntu-26.04
-            preset: linux
-            python: tools/.venv/bin/python
-    runs-on: ${{ matrix.os }}
-    # Git Bash on Windows, as everywhere else: no PowerShell in the repository.
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
-      - name: Fetch vcpkg
-        # Only vcpkg: the native module builds against no other submodule.
-        run: git submodule update --init --depth 1 third_party/vcpkg
-      - uses: ./.github/actions/setup-windows-msvc
-        if: runner.os == 'Windows'
-      - name: Install build tools
-        if: runner.os == 'Linux'
-        # The LLVM toolchain the linux preset and triplets build with, as
-        # setup-linux-build installs it. autoconf/autoconf-archive/
-        # automake/libtool: vcpkg's python3 port (pybind11's dependency) builds
-        # via autotools on Linux.
-        run: sudo apt-get update && sudo apt-get install -y clang-21 clang lld llvm libc++-dev libc++abi-dev libunwind-21-dev libclang-rt-dev ninja-build autoconf autoconf-archive automake libtool
-      - uses: ./.github/actions/restore-sccache-cache
-      - uses: ./.github/actions/setup-windows-vcpkg
-        if: runner.os == 'Windows'
-        with:
-          feed-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Use a local vcpkg binary cache
-        if: runner.os == 'Linux'
-        # The local files provider, as the server-x64-linux job does (see there
-        # why not the NuGet feed) - but a cache of its own, not
-        # setup-linux-build's: tools/pack/native's manifest isn't the root one
-        # every job sharing that cache installs, and save-vcpkg-cache drops
-        # whatever the root build didn't install. vcpkg's tools pinned as
-        # setup-linux-build pins them, for the same reason.
-        run: |
-          {
-            echo "VCPKG_BINARY_SOURCES=clear;files,$GITHUB_WORKSPACE/.vcpkg-bincache,readwrite"
-            echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1"
-            echo "VCPKG_CACHE_KEY=vcpkg-bincache-pack-linux-clang-$(git rev-parse HEAD:third_party/vcpkg)-${{ hashFiles('tools/pack/native/vcpkg.json') }}"
-          } >> "$GITHUB_ENV"
-      - name: Restore and save vcpkg binaries
-        if: runner.os == 'Linux'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .vcpkg-bincache
-          key: ${{ env.VCPKG_CACHE_KEY }}
-      - name: Bootstrap vcpkg (Linux)
-        if: runner.os == 'Linux'
-        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: tools/uv.lock
-      - name: Install the cooker
-        working-directory: tools
-        run: uv sync --locked
-      - name: Build the native module
-        # Into tools/pack/src/augusta_pack, against the venv's own interpreter,
-        # as tools/pack/scripts/bootstrap.sh does - a mixed-slash path from
-        # cygpath on Windows, as is on Linux.
-        run: |
-          python="$PWD/${{ matrix.python }}"
-          [[ "$RUNNER_OS" == Windows ]] && python="$(cygpath -m "$python")"
-          cmake --preset ${{ matrix.preset }} -S tools/pack/native "-DPYTHON_EXECUTABLE=$python"
-          cmake --build tools/pack/native/build/x64-${{ matrix.preset }}
-      - uses: ./.github/actions/save-sccache-cache
-      - name: Test (pytest)
-        working-directory: tools/pack
-        run: uv run pytest
   sanitizers:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true' && github.event_name == 'pull_request'
@@ -1289,7 +1212,7 @@ jobs:
   # the image's. main's charts are never published: staging runs its release
   # tag's from Git.
   chart-publish:
-    needs: [format, client-x64-windows, tools, manifests, container-publish-x64-linux]
+    needs: [format, client-x64-windows, manifests, container-publish-x64-linux]
     if: |
       !cancelled() && github.ref == 'refs/heads/develop' &&
       needs.container-publish-x64-linux.result == 'success' &&

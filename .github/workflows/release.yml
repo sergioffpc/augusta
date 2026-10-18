@@ -20,10 +20,11 @@ env:
 # other ref (save-sccache-cache).
 #
 # What is published is tested first (ADR-0013): each build job runs ctest on
-# the Release binaries it stages, which includes the C++ half of the pack
-# contract (the golden packs), the tools job runs the cooker's half, and the
-# nightly job runs every nightly check on the same commit. publish needs them
-# all, so a failing test publishes nothing.
+# the Release binaries it stages, which includes loading the golden packs, and
+# the nightly job runs every nightly check on the same commit. publish needs
+# them all, so a failing test publishes nothing. The tools, which a release
+# publishes none of, are tested by ci.yml's build jobs, the cooker's cook of the
+# golden packs among them, on every commit the release branch merged.
 #
 # The jobs restore the vcpkg and uv caches but save neither, nor do the nightly
 # jobs (their release input): an entry saved here is scoped to the tag, which
@@ -257,41 +258,6 @@ jobs:
         with:
           name: sbom-${{ env.BINARY }}
           path: dist/${{ env.BINARY }}.spdx.json
-  tools:
-    # The cooker's half of the pack contract: its pytest suite, which requires
-    # that cooking the example scenario still gives the golden packs the
-    # build jobs' ctest loads. The same steps as ci.yml's tools job.
-    runs-on: windows-2025
-    # Git Bash, as everywhere else: no PowerShell in the repository.
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
-      - name: Fetch vcpkg
-        run: git submodule update --init --depth 1 third_party/vcpkg
-      - uses: ./.github/actions/setup-windows-msvc
-      - uses: ./.github/actions/restore-sccache-cache
-      - uses: ./.github/actions/setup-windows-vcpkg
-        with:
-          feed-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
-          save-cache: false
-          cache-dependency-glob: tools/uv.lock
-      - name: Install the cooker
-        working-directory: tools
-        run: uv sync --locked
-      - name: Build the native module
-        run: |
-          cmake --preset windows -S tools/pack/native "-DPYTHON_EXECUTABLE=$(cygpath -m "$PWD/tools/.venv/Scripts/python.exe")"
-          cmake --build tools/pack/native/build/x64-windows
-      - name: Test (pytest)
-        working-directory: tools/pack
-        run: uv run pytest
   nightly:
     # Every nightly job on this run's commit, gating publish (ADR-0013), so a
     # job added to the nightly gates releases with nothing changed here. By SHA,
@@ -319,7 +285,7 @@ jobs:
   publish:
     # Not on a dry run, which publishes nothing.
     if: github.event_name == 'push'
-    needs: [client-x64-windows, client-x64-linux, server, tools, nightly]
+    needs: [client-x64-windows, client-x64-linux, server, nightly]
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -11,11 +11,10 @@
 #include "augusta/policy.h"
 #include "augusta/policy_loader.h"
 
-// The C++ half of the contract between the pack's two implementations: the
-// Python cooker (tools/pack, ADR-0030) writes it, augusta_assets reads it.
-// These load golden packs the cooker wrote from its example scenario with a
-// committed test key; the cooker's own tests check it still writes them byte
-// for byte (ADR-0013).
+// The runtime's end of the cook (tools/pack, ADR-0030), which writes packs with
+// augusta_assets' own encoder: these load the golden packs the cooker wrote
+// from its example scenario with a committed test key, and what they hold; the
+// cooker's own tests check it still writes them byte for byte (ADR-0013).
 namespace {
 
 using augusta::assets::Pack;

@@ -4,9 +4,9 @@ Runs usd-optimize, validation and the cook into a signed client/server pack
 pair.
 """
 
+from augusta_pack import _native
 from augusta_pack import cli
 from augusta_pack import keys
-from augusta_pack import pack
 from conftest import EXAMPLES_ROOT
 from conftest import read_pack_contents
 
@@ -34,10 +34,10 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     public_key = keys.read_public_key(pub_path)
     client = read_pack_contents(client_path, public_key)
     server = read_pack_contents(server_path, public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_EYE) == {
+    assert client.paths_of_type(_native.AssetType.EYE) == {
         "soldier/Character/Eye"
     }
-    assert server.paths_of_type(pack.ASSET_TYPE_EYE) == {
+    assert server.paths_of_type(_native.AssetType.EYE) == {
         "soldier/Character/Eye"
     }
     hitboxes = {
@@ -51,14 +51,14 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
             "RightLeg",
         )
     }
-    assert client.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
-    assert server.paths_of_type(pack.ASSET_TYPE_HITBOX) == hitboxes
+    assert client.paths_of_type(_native.AssetType.HITBOX) == hitboxes
+    assert server.paths_of_type(_native.AssetType.HITBOX) == hitboxes
     assert server.client_pack_hash == client.hash
-    assert server.paths_of_type(pack.ASSET_TYPE_SCRIPT) == {
+    assert server.paths_of_type(_native.AssetType.SCRIPT) == {
         "parameters.lua",
         "rules.lua",
     }
-    assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
+    assert client.paths_of_type(_native.AssetType.SCRIPT) == set()
     cues = (
         "gunshot",
         "hit_marker",
@@ -67,10 +67,10 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
         "match_won",
         "match_lost",
     )
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {
+    assert client.paths_of_type(_native.AssetType.AUDIO) == {
         f"sounds/{cue}" for cue in cues
     }
-    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
+    assert server.paths_of_type(_native.AssetType.AUDIO) == set()
 
 
 def test_a_missing_scenario_fails_without_writing_a_pack(tmp_path, capsys):
