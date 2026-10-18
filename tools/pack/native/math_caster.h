@@ -46,7 +46,8 @@ struct type_caster<augusta::math::Vec3> {
  public:
   PYBIND11_TYPE_CASTER(augusta::math::Vec3, const_name("tuple[float, float, float]"));
 
-  bool load(handle source, bool convert) {
+  // load and cast: the names pybind11 calls a caster by.
+  bool load(handle source, bool convert) {  // NOLINT(readability-identifier-naming)
     std::array<float, 3> components{};
     if (!augusta::pack::LoadFloats(source, convert, components)) {
       return false;
@@ -55,7 +56,8 @@ struct type_caster<augusta::math::Vec3> {
     return true;
   }
 
-  static handle cast(const augusta::math::Vec3& vec, return_value_policy /*policy*/, handle /*parent*/) {
+  static handle cast(  // NOLINT(readability-identifier-naming)
+      const augusta::math::Vec3& vec, return_value_policy /*policy*/, handle /*parent*/) {
     return pybind11::make_tuple(vec.x, vec.y, vec.z).release();
   }
 };
@@ -65,7 +67,8 @@ struct type_caster<augusta::math::Quat> {
  public:
   PYBIND11_TYPE_CASTER(augusta::math::Quat, const_name("tuple[float, float, float, float]"));
 
-  bool load(handle source, bool convert) {
+  // load and cast: the names pybind11 calls a caster by.
+  bool load(handle source, bool convert) {  // NOLINT(readability-identifier-naming)
     std::array<float, 4> components{};
     if (!augusta::pack::LoadFloats(source, convert, components)) {
       return false;
@@ -77,7 +80,8 @@ struct type_caster<augusta::math::Quat> {
     return true;
   }
 
-  static handle cast(const augusta::math::Quat& quat, return_value_policy /*policy*/, handle /*parent*/) {
+  static handle cast(  // NOLINT(readability-identifier-naming)
+      const augusta::math::Quat& quat, return_value_policy /*policy*/, handle /*parent*/) {
     return pybind11::make_tuple(quat.x, quat.y, quat.z, quat.w).release();
   }
 };

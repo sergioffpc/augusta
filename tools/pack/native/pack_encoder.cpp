@@ -22,7 +22,7 @@
 #include "augusta/assets.h"
 #include "augusta/math.h"
 #include "augusta/pack_encoder.h"
-#include "math_caster.h"
+#include "math_caster.h"  // IWYU pragma: keep - the Vec3/Quat conversions
 
 namespace augusta::pack {
 
@@ -71,13 +71,13 @@ py::bytes ToBytes(std::span<const std::byte> bytes) {
   return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-template <std::size_t kSize>
-std::array<std::byte, kSize> FixedBytesOf(std::string_view bytes, std::string_view name) {
-  if (bytes.size() != kSize) {
-    throw py::value_error(std::format("{} must be {} bytes, got {}", name, kSize, bytes.size()));
+template <std::size_t Size>
+std::array<std::byte, Size> FixedBytesOf(std::string_view bytes, std::string_view name) {
+  if (bytes.size() != Size) {
+    throw py::value_error(std::format("{} must be {} bytes, got {}", name, Size, bytes.size()));
   }
-  std::array<std::byte, kSize> fixed{};
-  std::memcpy(fixed.data(), bytes.data(), kSize);
+  std::array<std::byte, Size> fixed{};
+  std::memcpy(fixed.data(), bytes.data(), Size);
   return fixed;
 }
 
@@ -271,8 +271,9 @@ void BindEncodeFunctions(py::module_& module) {
 }  // namespace
 
 void BindPackEncoder(py::module_& module) {
-  py::register_exception<EncodeFailure>(module, "EncodeError", PyExc_ValueError);
-  py::register_exception<WriteFailure>(module, "WriteError", PyExc_RuntimeError);
+  // PyExc_*: Python.h's, which pybind11.h includes for its users.
+  py::register_exception<EncodeFailure>(module, "EncodeError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
+  py::register_exception<WriteFailure>(module, "WriteError", PyExc_RuntimeError);  // NOLINT(misc-include-cleaner)
   BindEnums(module);
   BindConstants(module);
   BindGeometryTypes(module);
