@@ -39,7 +39,7 @@ import re
 
 import yaml
 
-from augusta_pack.pack import MAX_CHARACTERS
+from augusta_pack._native import MAX_CHARACTERS
 from augusta_pack.sounds import CUES
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import read_sound

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 
+from augusta_pack import _native
 from augusta_pack import keys
 from augusta_pack import pack
 from augusta_pack import publish
@@ -23,8 +24,8 @@ from augusta_pack.publish import PublishError
 import pytest
 
 ENTRIES = [
-    pack.AssetEntry(
-        type=pack.ASSET_TYPE_SCRIPT, path="parameters.lua", data=b"return {}"
+    _native.AssetEntry(
+        type=_native.AssetType.SCRIPT, path="parameters.lua", data=b"return {}"
     ),
 ]
 
@@ -58,10 +59,10 @@ class LocalNode:
 @pytest.fixture
 def cook(tmp_path, key_pair):
     """A cook's pack pair, signed by key_pair, and its public key file."""
-    client_hash = pack.write_pack(
+    client_hash = _native.write_pack(
         tmp_path / "client.pack", ENTRIES, key_pair.private_key
     )
-    server_hash = pack.write_pack(
+    server_hash = _native.write_pack(
         tmp_path / "server.pack", ENTRIES, key_pair.private_key, client_hash
     )
     public_key = tmp_path / "local-name.pub"
@@ -154,39 +155,29 @@ def test_the_printed_pack_format_is_the_server_packs_header(
     assert " and packFormat: 7 in " in capsys.readouterr().out
 
 
-def test_the_pack_format_is_read_from_the_server_packs_header(
-    tmp_path, monkeypatch, key_pair
-):
-    # A cook in another format, read back by a reader of that format.
-    monkeypatch.setattr(pack, "FORMAT_VERSION", 2)
-    client_hash = pack.write_pack(
-        tmp_path / "client.pack", ENTRIES, key_pair.private_key
-    )
-    pack.write_pack(
-        tmp_path / "server.pack", ENTRIES, key_pair.private_key, client_hash
-    )
-    public_key = tmp_path / "local-name.pub"
-    public_key.write_bytes(key_pair.public_key)
+def test_the_pack_format_is_read_from_the_server_packs_header(cook):
+    # The encoder writes only the format it is built with, so the header's
+    # version is read here as the bytes the pack holds it in.
+    client_pack, server_pack, public_key, _ = cook
 
     release = publish.prepare(
-        "develop",
-        "firebase",
-        tmp_path / "client.pack",
-        tmp_path / "server.pack",
-        public_key,
+        "develop", "firebase", client_pack, server_pack, public_key
     )
 
-    assert (tmp_path / "server.pack").read_bytes()[4:8] == (2).to_bytes(
-        4, "little"
+    assert release.pack_format == int.from_bytes(
+        server_pack.read_bytes()[4:8], "little"
     )
-    assert release.pack_format == 2
 
 
 def cook_signed_by(folder: Path, private_key: bytes) -> tuple[Path, Path]:
     """The client and server packs of ENTRIES, signed by private_key."""
     folder.mkdir()
-    client_hash = pack.write_pack(folder / "client.pack", ENTRIES, private_key)
-    pack.write_pack(folder / "server.pack", ENTRIES, private_key, client_hash)
+    client_hash = _native.write_pack(
+        folder / "client.pack", ENTRIES, private_key
+    )
+    _native.write_pack(
+        folder / "server.pack", ENTRIES, private_key, client_hash
+    )
     return folder / "client.pack", folder / "server.pack"
 
 
@@ -262,17 +253,17 @@ def test_a_version_folder_holding_other_files_is_never_overwritten(
 def test_a_server_pack_from_another_cook_is_refused(tmp_path, cook, key_pair):
     client_pack, _, public_key, _ = cook
     other_entries = [
-        pack.AssetEntry(
-            type=pack.ASSET_TYPE_SCRIPT,
+        _native.AssetEntry(
+            type=_native.AssetType.SCRIPT,
             path="parameters.lua",
             data=b"return { x = 1 }",
         )
     ]
-    other_client_hash = pack.write_pack(
+    other_client_hash = _native.write_pack(
         tmp_path / "other-client.pack", other_entries, key_pair.private_key
     )
     other_server = tmp_path / "other-server.pack"
-    pack.write_pack(
+    _native.write_pack(
         other_server, ENTRIES, key_pair.private_key, other_client_hash
     )
 

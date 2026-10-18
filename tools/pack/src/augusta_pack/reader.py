@@ -1,8 +1,8 @@
 """Pack container reading and verification (ADR-0031).
 
-The read-side counterpart of pack.write_pack, for inspecting and verifying a
-pack without the C++ runtime. Only the container is parsed (header, index,
-trailer) - blob contents are never decoded here.
+The read-side counterpart of the native module's write_pack, for inspecting
+and verifying a pack without the C++ runtime. Only the container is parsed
+(header, index, trailer) - blob contents are never decoded here.
 
 Mirrors the bounds checks of assets.cpp's ParsePackHeader/ParsePackIndex, and
 ADR-0031's order for verification: the content hash and signature are checked
@@ -205,7 +205,7 @@ def verify_pack(path: Path, public_key: bytes) -> PackInfo:
         )
     try:
         # crypto_sign_open takes the signature prepended to the signed
-        # message - the counterpart of how pack.write_pack detaches it.
+        # message, where a pack's trailer holds it detached.
         nacl.bindings.crypto_sign_open(signature + stored_hash, public_key)
     except nacl.exceptions.BadSignatureError as error:
         raise PackError("signature is not valid for this public key") from error

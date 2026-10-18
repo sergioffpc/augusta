@@ -8,6 +8,7 @@ import math
 import shutil
 import struct
 
+from augusta_pack import _native
 from augusta_pack import pack
 from augusta_pack.cook import cook_scenario
 from augusta_pack.cook import CookError
@@ -121,7 +122,7 @@ def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
 
     for contents in (client, server):
         body_part, points, _ = decode_hitbox(contents.blob("Root/Hitbox"))
-        assert body_part == pack.BODY_PART_TORSO
+        assert body_part == int(_native.BodyPart.TORSO)
         assert len(points) == 4
 
 
@@ -364,16 +365,16 @@ def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
         8,
         b"\x80\x90\xa0",
     )
-    assert decode_string(client.blob(pack.SOUNDS_PATH)) == "sounds"
-    assert client.entries[pack.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
+    assert decode_string(client.blob(_native.SOUNDS_PATH)) == "sounds"
+    assert client.entries[_native.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
     assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
-    assert pack.SOUNDS_PATH not in server.entries
+    assert _native.SOUNDS_PATH not in server.entries
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
     characters = [
         (f"c{i}", FIXTURES_DIR / "mesh_fixture.usda")
-        for i in range(pack.MAX_CHARACTERS + 1)
+        for i in range(_native.MAX_CHARACTERS + 1)
     ]
 
     with pytest.raises(CookError) as raised:
@@ -484,10 +485,10 @@ def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
-        "test/Character/Head": pack.BODY_PART_HEAD,
-        "test/Character/Torso": pack.BODY_PART_TORSO,
-        "test/Character/LeftLeg": pack.BODY_PART_LIMB,
-        "test/Character/RightLeg": pack.BODY_PART_LIMB,
+        "test/Character/Head": int(_native.BodyPart.HEAD),
+        "test/Character/Torso": int(_native.BodyPart.TORSO),
+        "test/Character/LeftLeg": int(_native.BodyPart.LIMB),
+        "test/Character/RightLeg": int(_native.BodyPart.LIMB),
     }
     for contents in (client, server):
         assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == set(expected)

@@ -1,9 +1,11 @@
-"""The Python half of the pack format's contract (ADR-0013).
+"""The cook's determinism, end to end (ADR-0013, ADR-0030).
 
 Cooking the example scenario with the committed test key gives, byte for byte,
-the golden packs the C++ runtime's tests load (tests/cooked_pack_test.cpp). A
-cook is deterministic, so any difference is a change to the format or to the
-example, and the golden packs are regenerated with the command in README.md.
+the golden packs the C++ runtime's tests load (tests/cooked_pack_test.cpp): it
+pins everything from the USD stage walk to the signed pack. A cook is
+deterministic, so any difference is a change to the cook, to the format or to
+the example, and the golden packs are regenerated with the command in
+README.md.
 """
 
 from augusta_pack import cli

@@ -537,9 +537,10 @@ std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const
   return key;
 }
 
-std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
-                                          const std::optional<PackHash>& client_pack) {
+std::expected<PackHash, WriteError> WritePack(const std::filesystem::path& output_path,
+                                              const std::vector<AssetEntry>& entries,
+                                              const Ed25519PrivateKey& signing_key,
+                                              const std::optional<PackHash>& client_pack) {
   EnsureSodiumInitialized();
 
   if (auto validated = ValidateEntries(entries); !validated) {
@@ -552,7 +553,10 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
   }
 
   const PackTrailer trailer = SignPack(*sections, signing_key);
-  return WritePackFile(output_path, *sections, trailer);
+  if (auto written = WritePackFile(output_path, *sections, trailer); !written) {
+    return std::unexpected(written.error());
+  }
+  return trailer.hash;
 }
 
 struct Pack::Impl {

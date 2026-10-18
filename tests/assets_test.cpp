@@ -24,8 +24,8 @@
 // (augusta/pack_encoder.h's Encode*/WritePack). Links only augusta_assets - no
 // USD/libktx/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
-// augusta_assets' wire format, which tools/pack's Python
-// WritePack reimplementation (ADR-0030) is validated against.
+// augusta_assets' wire format, the one the cooker (tools/pack, ADR-0030)
+// writes through its binding of this module.
 namespace {
 
 using augusta::assets::Ed25519PublicKey;
@@ -698,6 +698,23 @@ TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
 
   EXPECT_EQ(server->ClientPackHash(), client->Hash());
   EXPECT_EQ(client->ClientPackHash(), std::nullopt);
+}
+
+// The cooker names a client pack in its server pack by the hash WritePack
+// returns, so it must be the one Load verifies.
+TEST_F(PackTest, WritePackReturnsTheHashLoadVerifies) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_returned_hash.pack");
+  const auto written = augusta::assets::WritePack(
+      pack_path,
+      {augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+      keys.private_key);
+  ASSERT_TRUE(written.has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(*written, pack->Hash());
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,

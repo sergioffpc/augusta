@@ -101,10 +101,10 @@ decisions already made in ARCHITECTURE.md:
        Agents' and the asset cooker's native modules with the rest. The cooker's
        also requires that cooking the example scenario still gives the golden
        packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests in
-       2 and 3 load those same packs — the contract between the Python writer
-       and the C++ reader of the pack format (ADR-0013). The golden packs are
-       signed with a committed test key; the real release private key never
-       touches CI
+       2 and 3 load those same packs, so the cook's determinism and what the
+       runtime reads from its output are pinned end to end (ADR-0013). The
+       golden packs are signed with a committed test key; the real release
+       private key never touches CI
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on

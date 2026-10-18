@@ -14,8 +14,9 @@
 /// \file
 /// augusta_assets' pack encoder: the Encode* blob functions and WritePack
 /// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/assets.cpp. The
-/// write half of the pack's wire format, for the cooker and for tests that
-/// build packs; augusta/pack_decoder.h is its read half.
+/// write half of the pack's wire format, for the cooker, which links it
+/// through its native module (tools/pack, ADR-0030), and for tests that build
+/// packs; augusta/pack_decoder.h is its read half.
 namespace augusta::assets {
 
 /// Why an Encode* function refused its input.
@@ -85,10 +86,12 @@ enum class WriteError {
 /// signing_key. Its header names client_pack, the hash of the client pack
 /// cooked with it, when given (a server pack's). The write is atomic: entries
 /// are assembled into a temporary file first, which is only renamed into place
-/// at output_path once fully written.
-std::expected<void, WriteError> WritePack(const std::filesystem::path& output_path,
-                                          const std::vector<AssetEntry>& entries, const Ed25519PrivateKey& signing_key,
-                                          const std::optional<PackHash>& client_pack = std::nullopt);
+/// at output_path once fully written. Returns the pack's hash, the one its
+/// trailer signs, which a server pack's cook names as its client_pack.
+std::expected<PackHash, WriteError> WritePack(const std::filesystem::path& output_path,
+                                              const std::vector<AssetEntry>& entries,
+                                              const Ed25519PrivateKey& signing_key,
+                                              const std::optional<PackHash>& client_pack = std::nullopt);
 
 }  // namespace augusta::assets
 

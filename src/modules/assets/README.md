@@ -11,8 +11,8 @@ content straight out of it. It owns the pack's wire format.
 
 ## Not its responsibility
 
-- Cooking and signing packs: `tools/pack`, which reimplements the wire format in
-  Python rather than linking this module.
+- Cooking packs: `tools/pack`, which walks the authored stages and links this
+  module, through its native module, to write, hash and sign them.
 - Building a map's collision from a pack: physics (`augusta/map.h`).
 - Playing the sounds a pack holds: audio.
 

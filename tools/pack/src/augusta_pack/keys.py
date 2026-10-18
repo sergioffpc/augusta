@@ -3,10 +3,8 @@
 The keys are raw fixed-size binary files, matching
 augusta::assets::Ed25519PublicKey/Ed25519PrivateKey's on-disk layout (32 and 64
 bytes respectively, no framing). Keys are generated via pynacl's libsodium
-bindings (nacl.bindings.crypto_sign_keypair) rather than augusta_assets' own
-GenerateEd25519KeyPair - see pack.py's own comment on why this project doesn't
-link that module. Cross-checked to produce byte-identical, cross-verifiable
-keys/signatures against the real libsodium C library.
+bindings (nacl.bindings.crypto_sign_keypair), the libsodium call augusta_assets'
+GenerateEd25519KeyPair makes, so a key signs packs the native module writes.
 """
 
 import argparse

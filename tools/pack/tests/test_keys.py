@@ -3,8 +3,8 @@
 Raw, fixed-size, and usable to sign and verify a pack.
 """
 
+from augusta_pack import _native
 from augusta_pack import keys
-from augusta_pack import pack
 from augusta_pack.reader import verify_pack
 import pytest
 
@@ -15,7 +15,7 @@ def test_keygen_writes_a_keypair_that_signs_and_verifies_a_pack(tmp_path):
     assert pub_path.stat().st_size == keys.PUBLIC_KEY_SIZE
     assert key_path.stat().st_size == keys.PRIVATE_KEY_SIZE
     pack_path = tmp_path / "test.pack"
-    pack.write_pack(pack_path, [], keys.read_private_key(key_path))
+    _native.write_pack(pack_path, [], keys.read_private_key(key_path))
     verify_pack(pack_path, keys.read_public_key(pub_path))
 
 
