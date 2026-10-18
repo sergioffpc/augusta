@@ -6,15 +6,15 @@
 
 #include <gtest/gtest.h>
 
-#include "agent.h"
+#include "augusta/agent.h"
+#include "augusta/link.h"
 #include "augusta/netcode_stats.h"
-#include "augusta/networking.h"
 #include "example_run.h"
 #include "match_loop.h"
 #include "testing_server.h"
 
 // The netcode under an impaired link (ADR-0013): whole runs of Agents,
-// composing Intents as load_test.py does, against a server::Host in the same
+// composing Intents as load_test.py does, against a host::Host in the same
 // process, with the transport's simulated latency, jitter, loss and reordering
 // on every packet either side sends, held
 // to bounds on what reconciliation (ADR-0004) and lag compensation (ADR-0044)
@@ -31,7 +31,7 @@ using augusta::agent::testing::RunAgainst;
 using augusta::agent::testing::Server;
 using augusta::agent::testing::Verdict;
 using augusta::harness::NetcodeStats;
-using augusta::networking::SimulatedConditions;
+using augusta::link::SimulatedConditions;
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =
     ::testing::AddGlobalTestEnvironment(new augusta::agent::testing::NetworkingEnvironment);
@@ -98,14 +98,14 @@ constexpr float kMinHitRate = 0.4F;
 
 class ImpairedLinkTest : public ::testing::TestWithParam<Profile> {
  protected:
-  void TearDown() override { augusta::networking::SimulateNetworkConditions({}); }
+  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
 };
 
 // Requirements: NFR-02, NFR-06
 TEST_P(ImpairedLinkTest, AgentsPlayThroughWithBoundedCorrectionsAndConfirmedHits) {
   const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", kPlayers);
   const LoadedPack pack = ExampleClientPack();
-  augusta::networking::SimulateNetworkConditions(GetParam().conditions);
+  augusta::link::SimulateNetworkConditions(GetParam().conditions);
 
   const MatchLoopResult result = PlayMatches(RunAgainst(server.Address(), pack, kMatches, kTimeout));
 

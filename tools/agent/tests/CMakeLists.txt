@@ -7,16 +7,16 @@ add_library(augusta_agent_match_loop STATIC match_loop.cpp)
 target_include_directories(augusta_agent_match_loop PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent_match_loop
-  PUBLIC augusta_agent_core augusta_harness
+  PUBLIC augusta_agent augusta_harness
   PRIVATE augusta_gameplay augusta_math augusta_physics
 )
 
-# Whole runs of Agents against a server::Host in the same process, through the
+# Whole runs of Agents against a host::Host in the same process, through the
 # example scenario's packs and Game policy.
 add_executable(augusta_agent_run_tests run_test.cpp)
 target_link_libraries(
   augusta_agent_run_tests
-  PRIVATE augusta_agent_match_loop augusta_agent_testing_server augusta_networking GTest::gtest GTest::gtest_main
+  PRIVATE augusta_agent_match_loop augusta_agent_testing_server augusta_link GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_agent_run_tests
@@ -37,7 +37,7 @@ target_link_libraries(
     augusta_agent_match_loop
     augusta_agent_testing_server
     augusta_harness
-    augusta_networking
+    augusta_link
     GTest::gtest
     GTest::gtest_main
 )

@@ -90,14 +90,14 @@ struct ScriptError {
 /// reach it, round_trip_ticks plus one after that State.
 [[nodiscard]] tick::Tick DueTick(tick::Tick newest_tick, std::uint64_t ahead, tick::Tick round_trip_ticks);
 
-/// A round trip of ping_ms (networking::ConnectionStats) in whole ticks at
+/// A round trip of ping_ms (link::ConnectionStats) in whole ticks at
 /// tick_rate_hz, rounded up; 0 for none measured yet.
 [[nodiscard]] tick::Tick RoundTripTicks(int ping_ms, std::uint8_t tick_rate_hz);
 
 /// How many Commands a Captured player keeps waiting in the server's queue at
 /// most, beyond those a round trip holds in flight: about what the client's
 /// pacing aims for (tick::kTargetQueuedCommands), far below the server's own
-/// bound (server::kMaxQueuedCommands), so a client that ticks faster than the
+/// bound (host::kMaxQueuedCommands), so a client that ticks faster than the
 /// server never overruns the queue and has a Command dropped.
 inline constexpr std::uint64_t kMaxCommandsQueued = 2;
 
@@ -203,7 +203,7 @@ class Reenactment {
   /// pacing has none to send. Outside it, an idle Command, which a Session
   /// outside a match does not send. Only the first Match is reenacted: the
   /// run ends with it.
-  [[nodiscard]] std::optional<command::Command> NextCommand(const ServerView& view, command::Sequence next_sequence,
+  [[nodiscard]] std::optional<command::Command> NextCommand(const ServerView& view, tick::Sequence next_sequence,
                                                             tick::Tick round_trip_ticks);
 
   /// Whether, as of view, the run plays on, leaves at its captured Leave, or
@@ -230,7 +230,7 @@ class Reenactment {
   std::uint64_t sent_in_match_ = 0;
   // Written on the Prediction thread, read by Check: the sequence of the last
   // Command sent, 0 for none, and whether the pacing is done before the Leave.
-  std::atomic<command::Sequence> last_sent_{0};
+  std::atomic<tick::Sequence> last_sent_{0};
   std::atomic<bool> done_before_leave_{false};
 };
 

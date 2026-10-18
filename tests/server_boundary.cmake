@@ -64,8 +64,10 @@ endforeach()
 
 file(
   GLOB sources
-  "${SOURCE_DIR}/src/server/*.h"
   "${SOURCE_DIR}/src/server/*.cpp"
+  "${SOURCE_DIR}/src/modules/server/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/server/*.h"
+  "${SOURCE_DIR}/src/modules/server/*.cpp"
   "${SOURCE_DIR}/src/modules/config/include/augusta/config.h"
   "${SOURCE_DIR}/src/modules/config/include/augusta/server_config.h"
 )

@@ -8,10 +8,10 @@
 #include "augusta/audio.h"
 #include "augusta/cues.h"
 #include "augusta/interpolation.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/presentation.h"
-#include "augusta/primitives.h"
 #include "augusta/tick.h"
 #include "benchmark_scene.h"
 
@@ -24,7 +24,7 @@
 // buffered for interpolation. Without a GPU or a window: the renderer draws
 // what this returns, and is judged by eye (ADR-0013). ClientRuntime converts
 // the Server view only when a newer Authoritative State arrives
-// (ConvertedServerView, src/client/frame_mapping.h), which builds on Windows
+// (ConvertedServerView, src/modules/client/frame_mapping.h), which builds on Windows
 // only, and the nightly benchmarks on Linux, so building the newer State here
 // stands in for that conversion.
 namespace {
@@ -37,7 +37,7 @@ using augusta::presentation::PlayerCharacter;
 using augusta::presentation::WorldSnapshot;
 
 constexpr double kTickDuration = 1.0 / 60.0;
-constexpr std::size_t kPlayers = augusta::primitives::kMaxPlayers;
+constexpr std::size_t kPlayers = augusta::limits::kMaxPlayers;
 constexpr EntityId kLocal{1};
 // Each body's walking speed along -Z, in meters per second.
 constexpr float kWalkSpeed = 4.5F;

@@ -21,11 +21,11 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
+#include "augusta/server.h"
 #include "augusta/supervisor.h"
-#include "runtime.h"
 
 // A Match capture that cannot be written (ADR-0050), seen from the Host and the
 // ServerRuntime that runs it: an optional one degrades while the server goes
@@ -40,10 +40,10 @@ using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::CaptureMode;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::Scenario;
+using augusta::host::CaptureMode;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::scenario::Scenario;
 using augusta::server::ServerRuntime;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -53,8 +53,8 @@ constexpr auto kPatience = std::chrono::seconds(10);
 // Init and Shutdown once for the whole process, as in networking_test.cpp.
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kNetworkingEnvironment =

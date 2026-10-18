@@ -9,6 +9,8 @@
 #include <string_view>
 
 #include "augusta/command.h"
+#include "augusta/link_types.h"
+#include "augusta/tick.h"
 
 /// \file
 /// The server's boundary for what a client sends to move its player: a
@@ -16,15 +18,12 @@
 /// exactly one command per tick. Pure (no I/O, no clock), so both are tested
 /// without a network. The gate is the seam the anti-cheat baseline (US-15) grows
 /// into: it checks that a command is well formed, not that it is fair play.
-namespace augusta::server {
+namespace augusta::host {
 
-/// One tick's command and the number its client gave it. Numbers start at 1 and
-/// grow by one per command, so the queue can tell what it has already seen.
-/// They start over with every connection, in command::Sequence's width (ADR-0038).
-struct SequencedCommand {
-  command::Sequence sequence = 0;
-  command::Command command{};
-};
+/// One tick's command and the number its client gave it, as the Link takes it
+/// in: numbers grow by one per command, so the queue can tell what it has
+/// already seen.
+using SequencedCommand = link::SequencedCommand;
 
 /// Why a command was not taken in.
 enum class Rejection : std::uint8_t {
@@ -53,7 +52,7 @@ inline constexpr float kMaxYaw = 3.2F;
 
 /// Whether command is well formed and newer than last_sequence, the newest
 /// sequence already taken in from this client.
-[[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, command::Sequence last_sequence);
+[[nodiscard]] std::expected<void, Rejection> Validate(const SequencedCommand& command, tick::Sequence last_sequence);
 
 /// The most commands a queue holds; when a client runs ahead of the server, the
 /// oldest go. The last resort only: a client paces its ticks to keep far fewer
@@ -71,7 +70,7 @@ enum class Enqueued : std::uint8_t {
 struct TickCommand {
   command::Command command;
   /// The highest sequence the queue has handed out so far, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
+  tick::Sequence acknowledged_sequence = 0;
   /// Whether command is one its client sent, taken off the queue for this
   /// tick, rather than the queue's own held or idle movement: what a Match
   /// capture keeps (ADR-0050). A command the client repeated was taken in once.
@@ -101,10 +100,10 @@ class CommandQueue {
   std::optional<command::Command> last_;
   int max_held_ticks_;
   int held_ticks_ = 0;
-  command::Sequence last_offered_ = 0;
-  command::Sequence acknowledged_ = 0;
+  tick::Sequence last_offered_ = 0;
+  tick::Sequence acknowledged_ = 0;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_COMMAND_QUEUE_H_

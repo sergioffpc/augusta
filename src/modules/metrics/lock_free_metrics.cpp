@@ -12,7 +12,7 @@
 
 #include <prometheus/client_metric.h>
 
-namespace augusta::server {
+namespace augusta::metrics {
 
 Histogram::Histogram(std::initializer_list<double> bounds) : Histogram(std::span<const double>(bounds)) {}
 
@@ -69,4 +69,4 @@ prometheus::ClientMetric HistogramSeries(const Histogram& histogram,
   return series;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::metrics

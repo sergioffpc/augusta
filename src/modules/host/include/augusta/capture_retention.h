@@ -24,7 +24,7 @@
 /// starting with a capture's magic; oldest is by the Match start in its name.
 /// Nothing else is ever touched. PlanRetention decides; CaptureDirectory scans
 /// and deletes.
-namespace augusta::server {
+namespace augusta::host {
 
 /// The limits of one server's capture directory, each off when nullopt.
 struct CaptureRetention {
@@ -135,6 +135,6 @@ class CaptureDirectory {
   bool failure_logged_ = false;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_CAPTURE_RETENTION_H_

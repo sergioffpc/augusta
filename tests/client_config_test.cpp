@@ -19,6 +19,7 @@
 
 #include "augusta/config.h"
 #include "augusta/input.h"
+#include "augusta/window_events.h"
 
 // Unit tests for augusta_client_config: augustac.yaml's schema, its key
 // bindings, and loading it from a file (ADR-0034).
@@ -321,7 +322,7 @@ std::expected<augusta::config::ClientConfig, ConfigError> ParseClient(std::strin
   return ParseClientConfig(std::string(kClientBase) + std::string(extra), kFileDir);
 }
 
-augusta::input::Key BoundTo(const augusta::config::ClientConfig& config, augusta::input::Control control) {
+augusta::window::Key BoundTo(const augusta::config::ClientConfig& config, augusta::input::Control control) {
   return config.input.keymap.at(static_cast<std::size_t>(control));
 }
 
@@ -356,10 +357,10 @@ TEST(ParseClientConfigTest, AKeysSectionRebindsOnlyTheControlsItNames) {
   const auto config = ParseClient("input:\n  keys:\n    move_forward: Up\n    prone: MouseMiddle\n");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::input::Key::kUp);
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kProne), augusta::input::Key::kMouseMiddle);
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::input::Key::kS);
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kSprint), augusta::input::Key::kLeftShift);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::window::Key::kUp);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kProne), augusta::window::Key::kMouseMiddle);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::window::Key::kS);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kSprint), augusta::window::Key::kLeftShift);
 }
 
 // Requirements: US-20
@@ -368,8 +369,8 @@ TEST(ParseClientConfigTest, AControlMayMoveToAKeyItsOwnDefaultFreesUp) {
   const auto config = ParseClient("input:\n  keys:\n    move_forward: S\n    move_back: W\n");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::input::Key::kS);
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::input::Key::kW);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveForward), augusta::window::Key::kS);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kMoveBack), augusta::window::Key::kW);
 }
 
 // Requirements: US-20
@@ -439,8 +440,8 @@ TEST(ParseClientConfigTest, FireMayMoveToAnotherMouseButton) {
   const auto config = ParseClient("input:\n  keys:\n    fire: MouseMiddle\n");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kFire), augusta::input::Key::kMouseMiddle);
-  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kAds), augusta::input::Key::kMouseRight);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kFire), augusta::window::Key::kMouseMiddle);
+  EXPECT_EQ(BoundTo(*config, augusta::input::Control::kAds), augusta::window::Key::kMouseRight);
 }
 
 // Requirements: US-20

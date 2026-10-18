@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/faults.h"
@@ -34,17 +35,17 @@ using augusta::capture::ReadCapture;
 using augusta::command::Command;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::CaptureEntrant;
-using augusta::server::CaptureFileName;
-using augusta::server::CaptureOptions;
-using augusta::server::Capturer;
-using augusta::server::CaptureRetention;
-using augusta::server::CompletedCapture;
-using augusta::server::EntityId;
-using augusta::server::IsCaptureFileName;
-using augusta::server::PlanRetention;
-using augusta::server::RetentionPlan;
-using augusta::server::SessionId;
+using augusta::host::CaptureEntrant;
+using augusta::host::CaptureFileName;
+using augusta::host::CaptureOptions;
+using augusta::host::Capturer;
+using augusta::host::CaptureRetention;
+using augusta::host::CompletedCapture;
+using augusta::host::EntityId;
+using augusta::host::IsCaptureFileName;
+using augusta::host::PlanRetention;
+using augusta::host::RetentionPlan;
+using augusta::host::SessionId;
 
 using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
@@ -387,11 +388,11 @@ TEST_F(CaptureRetentionTest, DeletionsRunOffTheCallersThreadAndAreObserved) {
     Seed(hours_ago, 100);
   }
   // What the Capturer tells its observer of retention, and on which thread.
-  struct Told final : augusta::server::CaptureObserver {
+  struct Told final : augusta::host::CaptureObserver {
     std::vector<std::thread::id> deleters;
-    augusta::server::CaptureDirectoryUsage usage;
+    augusta::host::CaptureDirectoryUsage usage;
     void OnRetentionDeleted() override { deleters.push_back(std::this_thread::get_id()); }
-    void OnDirectory(augusta::server::CaptureDirectoryUsage directory) override { usage = directory; }
+    void OnDirectory(augusta::host::CaptureDirectoryUsage directory) override { usage = directory; }
   } told;
   {
     Capturer capturer(directory_, Header(),

@@ -511,11 +511,12 @@ reconnecting. Each Agent reports Ready for every Roster unless made with
 
 The package's native part, `augusta_agent._native`, is C++ built with the
 engine, on Windows and Linux, against the interpreter of `tools/.venv`, into
-[`agent/src/augusta_agent/`](agent/src/augusta_agent/). The CMake option
-`AUGUSTA_TOOLS`, on by default, builds the C++ tools all together or none (the
-server image turns it off). Run `uv sync` here first, or the configure leaves
-the module out with a warning; `-DPYTHON_EXECUTABLE=<python>` names another
-Python 3.12:
+[`agent/src/augusta_agent/`](agent/src/augusta_agent/). It wraps the Agent's
+Runtime, the agent module in [`agent/native/`](agent/native/), which the C++
+tests link too. The CMake option `AUGUSTA_TOOLS`, on by default, builds the C++
+tools all together or none (the server image turns it off). Run `uv sync` here
+first, or the configure leaves the module out with a warning;
+`-DPYTHON_EXECUTABLE=<python>` names another Python 3.12:
 
 ```sh
 uv sync

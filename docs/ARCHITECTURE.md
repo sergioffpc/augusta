@@ -140,10 +140,9 @@ application, and holds neither Mechanism nor Game policy (ADR-0060).
 - Physics — PhysX wrapper (collision, movement, rigid-body dynamics); one
   interface used identically by PredictionWorld and SimulationWorld. Props are
   simulated only by the server and moved kinematically on the client; Cosmetic
-  bodies (ragdolls, debris) only on the client, by Dynamics (ADR-0045).
-  Particles are the renderer's, not physics'. It also builds a map's static
-  collision from a verified Pack (augusta/map.h), so it depends on
-  augusta_assets
+  bodies (ragdolls, debris) only on the client (ADR-0045). Particles are the
+  renderer's, not physics'. It also builds a map's static collision from a
+  verified Pack (augusta/map.h), so it depends on augusta_assets
 - Gameplay — the gameplay rules both Worlds apply identically, in one module
   (augusta_gameplay) with a header and namespace per concept. It builds on
   Physics, Tick and Limits and stays below the Networking Protocol and the
@@ -206,15 +205,14 @@ application, and holds neither Mechanism nor Game policy (ADR-0060).
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
       smooths for display; emits presentation state each render frame. One
       module (augusta_presentation) holds it and its phases, including the
-      animation engine behind its Animation phase
-- Dynamics — the dynamic bodies that are not gameplay: Cosmetic bodies and
-  Props' kinematic poses (augusta_dynamics, ADR-0045)
+      animation engine behind its Animation phase. Cosmetic bodies and Props'
+      kinematic poses, which are not gameplay, get a client-only dynamics module
+      with the first of them (ADR-0045)
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; creates and
   owns the client's single Window with its GPU device and swapchain, consumes
-  presentation state and draws text lines. Exposes pumping window/device events
-  and rendering a frame as two separate operations rather than one combined
-  loop, so the Main/Render thread can drain events at a different cadence than
-  it presents frames
+  presentation state and draws text lines. It pumps no window events: the client
+  Runtime drains the Window's `Poll()` itself, so the Main/Render thread can
+  drain events at a different cadence than it presents frames
 - Audio — Steam Audio; consumes presentation state
 - HUD — what the DebugHud shows, system metrics only, as text lines the client
   Runtime hands the Renderer (augusta_hud, ADR-0059)
@@ -316,8 +314,9 @@ exclusively server-authoritative.
   One server-only module (augusta_host), the counterpart of the client's
   Harness; its messages go through the Link
 - Server Runtime — augustad's Runtime (augusta_server): its config, the Network
-  I/O and Simulation threads around the Host, its clock and the metrics endpoint
-  (ADR-0049, ADR-0060). What the server runs:
+  I/O and Simulation threads around the Host, its clock, the metrics endpoint
+  with its liveness and every client's Connection health, and crash handling
+  (ADR-0047, ADR-0049, ADR-0060). What the server runs:
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours

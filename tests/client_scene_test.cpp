@@ -8,8 +8,8 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
+#include "augusta/client_scene_loader.h"
 #include "augusta/math.h"
-#include "scene_loader.h"
 
 // Unit tests for the cooked-scene -> renderer::Scene conversion. Links no
 // GPU or window: the loader only uses renderer.h's plain scene types.

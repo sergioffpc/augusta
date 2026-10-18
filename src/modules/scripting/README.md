@@ -4,18 +4,17 @@
 
 ## Responsibility
 
-Runs a scenario's Game policy: one Lua script whose hooks are called by name,
-each handed a read-only plain table and answering with plain data, under an
-instruction limit, so a failing hook fails its call and never the engine.
-`augusta_lua_sandbox` is the restricted environment it and the Parameters script
-run in.
+The sandboxed Lua embedding: loads a script into a Lua state of its own and
+calls its hooks by name, each handed a read-only plain table and answering with
+plain data, under an instruction limit, so a failing hook fails its call and
+never the engine. `augusta_lua_sandbox` is the restricted environment every
+script, the Parameters script included, runs in.
 
 ## Not its responsibility
 
-- Validating what a hook returns into typed actions: simulation
-  (`augusta/policy_actions.h`).
-- Loading the script from the pack: the server.
-- Any client-side policy: game policy is server-authoritative.
+- Game policy (which hooks there are, the views they are handed and what their
+  answers may decide): policy.
+- Loading a script from the pack: scenario.
 
 ## Decisions
 

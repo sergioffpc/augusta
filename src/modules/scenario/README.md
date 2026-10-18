@@ -1,7 +1,8 @@
 # scenario
 
 `augusta_scenario`, `augusta_scenario_parameters_loader`,
-`augusta_scenario_policy_loader`. Server-only: the client never links them.
+`augusta_scenario_policy_loader`, all in `augusta::scenario`. Server-only: the
+client never links them.
 
 ## Responsibility
 
@@ -14,7 +15,7 @@ handed it already loaded.
 ## Not its responsibility
 
 - Verifying and reading the pack itself: assets.
-- Running the Game policy each tick: scripting and simulation.
+- Running the Game policy each tick: policy and simulation.
 - Sending the Parameters to clients: host.
 
 ## Decisions

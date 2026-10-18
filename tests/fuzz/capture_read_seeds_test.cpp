@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/match.h"
@@ -23,11 +23,11 @@
 // the format fails here until the seed is regenerated.
 namespace {
 
-using augusta::server::CaptureEntrant;
+using augusta::host::CaptureEntrant;
 
-using augusta::server::Capturer;
-using augusta::server::EntityId;
-using augusta::server::SessionId;
+using augusta::host::Capturer;
+using augusta::host::EntityId;
+using augusta::host::SessionId;
 
 const std::string kSeedPath = std::string(AUGUSTA_CAPTURE_READ_CORPUS) + "/match";
 

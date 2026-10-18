@@ -11,7 +11,7 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 
 /// \file
 /// What the server loads from its verified pack at startup (ADR-0018): the
@@ -20,7 +20,7 @@
 /// usable content exits like a bad pack does. Where content comes from is the
 /// executable's business, not the config file's: Host (host.h) is handed it
 /// already loaded.
-namespace augusta::server {
+namespace augusta::scenario {
 
 /// A character a player may join as (ADR-0042), with the hitboxes a bullet
 /// that reaches a body of that character is judged against (US-11, ADR-0040)
@@ -55,7 +55,7 @@ struct Content {
   /// The same for the whole run, and told to every client when it joins.
   parameters::Parameters parameters{};
   /// The scenario's Game policy (ADR-0022); a scenario may lack either script.
-  scripting::Engine policy;
+  policy::Policy policy;
 };
 
 /// Loads startup content from the verified pack for a server ticking at
@@ -70,6 +70,6 @@ struct Content {
 [[nodiscard]] std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& pack,
                                                                          std::uint8_t tick_rate_hz);
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario
 
 #endif  // AUGUSTA_CONTENT_H_

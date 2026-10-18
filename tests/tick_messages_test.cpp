@@ -9,46 +9,51 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/failure.h"
+#include "augusta/limits.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
-#include "augusta/primitives.h"
 #include "augusta/protocol.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
-// What the Host hands its connections after a tick, message by message: which
-// peer is sent which bytes, how reliably, and in what order (ADR-0044).
+// What the Host hands its channels after a tick, message by message: which
+// peer is sent which message, as which bytes, and in what order (ADR-0044);
+// how reliably each travels is the Link's, by its type (link_transport_test).
 namespace {
 
-using augusta::networking::Payload;
-using augusta::networking::PeerId;
-using augusta::networking::Reliability;
+using augusta::host::ForEachTickMessage;
+using augusta::host::TickRecipients;
+using augusta::link::MessageType;
+using augusta::link::Outgoing;
+using augusta::link::PeerId;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
 using augusta::protocol::StanceWire;
-using augusta::server::ForEachTickMessage;
-using augusta::server::TickRecipients;
 using augusta::simulation::EntityId;
 using augusta::simulation::EntityState;
 using augusta::simulation::State;
 
+using Payload = std::vector<std::byte>;
+
+Payload BytesOf(const Outgoing& message) { return {message.Payload().begin(), message.Payload().end()}; }
+
 struct Sent {
   PeerId peer{};
   Payload payload;
-  Reliability reliability{};
+  MessageType type{};
 };
 
 std::vector<Sent> SendAll(const State& state, augusta::tick::Tick tick, const TickRecipients& to) {
   std::vector<Sent> sent;
-  const auto handed =
-      ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
-        sent.push_back(Sent{.peer = peer, .payload = payload, .reliability = reliability});
-        return true;
-      });
+  const auto handed = ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Outgoing& message) {
+    sent.push_back(Sent{.peer = peer, .payload = BytesOf(message), .type = message.Type()});
+    return true;
+  });
   EXPECT_TRUE(handed.has_value());
   return sent;
 }
@@ -66,9 +71,8 @@ TickRecipients ThreePlayers() {
       {.entity = EntityId{1}, .acknowledged_sequence = 900, .queued_commands = 3},
       {.entity = EntityId{3}, .acknowledged_sequence = 5, .queued_commands = 0},
   };
-  to.peers = {{augusta::server::EntityId{1}, kPeer1},
-              {augusta::server::EntityId{2}, kPeer2},
-              {augusta::server::EntityId{3}, kPeer3}};
+  to.peers = {
+      {augusta::host::EntityId{1}, kPeer1}, {augusta::host::EntityId{2}, kPeer2}, {augusta::host::EntityId{3}, kPeer3}};
   return to;
 }
 
@@ -121,7 +125,7 @@ std::vector<PeerId> PeersOf(const std::vector<Sent>& sent, std::size_t first, st
   return peers;
 }
 
-TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsUnreliablyInRecipientOrder) {
+TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsInRecipientOrder) {
   const std::vector<Sent> sent = SendAll(TwoBodies(), 42, ThreePlayers());
 
   ASSERT_EQ(sent.size(), 3U);
@@ -156,7 +160,7 @@ TEST(TickMessagesTest, EachRecipientIsSentEveryBodyAndItsOwnFieldsUnreliablyInRe
   EXPECT_EQ(sent[2].peer, kPeer3);
   EXPECT_EQ(sent[2].payload, Encoded(to_dead_third));
   for (const Sent& message : sent) {
-    EXPECT_EQ(message.reliability, Reliability::kUnreliable);
+    EXPECT_EQ(message.type, MessageType::kAuthoritativeState);
   }
 }
 
@@ -175,7 +179,7 @@ TEST(TickMessagesTest, ALiveTickSendsItsPlayersNoReplayView) {
   }
 }
 
-TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmationsThenDeaths) {
+TEST(TickMessagesTest, CombatEventsFollowTheUpdatesShotsThenHitConfirmationsThenDeaths) {
   State state = TwoBodies();
   state.shots = {{.shooter = EntityId{1}, .origin = augusta::math::Vec3(1.0F, 1.5F, -2.0F), .yaw = 0.5F}};
   state.hits = {{.shooter = EntityId{1},
@@ -215,7 +219,10 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesReliablyShotsThenHitConfirmat
   EXPECT_EQ(sent[6].peer, kPeer1);
   EXPECT_EQ(PeersOf(sent, 7, 3), everyone);
   for (std::size_t i = 3; i < sent.size(); ++i) {
-    EXPECT_EQ(sent[i].reliability, Reliability::kReliable) << i;
+    EXPECT_EQ(sent[i].type, i < 6    ? MessageType::kShot
+                            : i == 6 ? MessageType::kHitConfirmation
+                                     : MessageType::kDeath)
+        << i;
     EXPECT_EQ(sent[i].payload, i < 6 ? shot : i == 6 ? hit : death) << i;
   }
 }
@@ -229,18 +236,17 @@ TEST(TickMessagesTest, NoOneInTheMatchMeansNothingIsSent) {
 // failure stops the runtime (ADR-0033).
 TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFailure) {
   State state = TwoBodies();
-  while (state.bodies.size() <= augusta::primitives::kMaxPlayers) {
+  while (state.bodies.size() <= augusta::limits::kMaxPlayers) {
     EntityState body = state.bodies.front();
     body.entity = EntityId{static_cast<std::uint32_t>(state.bodies.size() + 1)};
     state.bodies.push_back(body);
   }
   std::vector<Sent> sent;
 
-  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
-                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
-                                           sent.push_back({peer, payload, reliability});
-                                           return true;
-                                         });
+  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+    sent.push_back({peer, BytesOf(message), message.Type()});
+    return true;
+  });
 
   ASSERT_FALSE(handed.has_value());
   EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
@@ -260,11 +266,10 @@ TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
                    .part = static_cast<augusta::ballistics::BodyPart>(99)}};
   std::vector<Sent> sent;
 
-  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(),
-                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
-                                           sent.push_back({peer, payload, reliability});
-                                           return true;
-                                         });
+  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+    sent.push_back({peer, BytesOf(message), message.Type()});
+    return true;
+  });
 
   ASSERT_FALSE(handed.has_value());
   EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
@@ -277,11 +282,11 @@ TEST(TickMessagesTest, NothingMoreIsHandedOnOnceTheSinkDeclines) {
   ASSERT_GT(SendAll(TwoBodies(), 42, ThreePlayers()).size(), 1U);
   std::vector<Sent> sent;
 
-  const auto handed = ForEachTickMessage(TwoBodies(), 42, ThreePlayers(),
-                                         [&sent](PeerId peer, const Payload& payload, Reliability reliability) {
-                                           sent.push_back({peer, payload, reliability});
-                                           return false;
-                                         });
+  const auto handed =
+      ForEachTickMessage(TwoBodies(), 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+        sent.push_back({peer, BytesOf(message), message.Type()});
+        return false;
+      });
 
   EXPECT_TRUE(handed.has_value());
   EXPECT_EQ(sent.size(), 1U);

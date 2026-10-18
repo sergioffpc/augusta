@@ -21,28 +21,28 @@ namespace {
 
 constexpr std::uint8_t kTickRate = 60;
 
-server::Content LoadContent(const std::filesystem::path& pack_path, const std::filesystem::path& public_key_path) {
+scenario::Content LoadContent(const std::filesystem::path& pack_path, const std::filesystem::path& public_key_path) {
   auto pack = assets::LoadVerifiedPack(pack_path, public_key_path);
   if (!pack) {
     throw std::runtime_error(assets::DescribeVerifiedPackError(pack.error(), pack_path, public_key_path));
   }
-  auto content = server::LoadServerContent(*pack, kTickRate);
+  auto content = scenario::LoadServerContent(*pack, kTickRate);
   if (!content) {
     throw std::runtime_error(failure::DescribeFailure(content.error()));
   }
   return *std::move(content);
 }
 
-server::HostConfig ConfigFor(const server::Content& content, std::uint8_t player_count) {
+host::HostConfig ConfigFor(const scenario::Content& content, std::uint8_t player_count) {
   parameters::Parameters parameters = content.parameters;
   parameters.player_count = player_count;
-  return server::HostConfig{.tick_rate_hz = kTickRate,
-                            .parameters = parameters,
-                            .listen = {.address = "127.0.0.1:0"},
-                            .server_pack = {},
-                            .capture_directory = {},
-                            .capture_mode = {},
-                            .faults = nullptr};
+  return host::HostConfig{.tick_rate_hz = kTickRate,
+                          .parameters = parameters,
+                          .listen = {.address = "127.0.0.1:0"},
+                          .server_pack = {},
+                          .capture_directory = {},
+                          .capture_mode = {},
+                          .faults = nullptr};
 }
 
 }  // namespace
@@ -51,7 +51,7 @@ Server::Server(const std::filesystem::path& pack_path, const std::filesystem::pa
                std::uint8_t player_count)
     : Server(LoadContent(pack_path, public_key_path), player_count) {}
 
-Server::Server(server::Content content, std::uint8_t player_count)
+Server::Server(scenario::Content content, std::uint8_t player_count)
     : host_(ConfigFor(content, player_count), std::move(content.scenario), std::move(content.policy)),
       thread_([this](const std::stop_token& stop) { Serve(stop); }) {}
 

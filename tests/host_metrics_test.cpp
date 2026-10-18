@@ -31,19 +31,19 @@
 // same counters. Counting through the Host is session_test.cpp's.
 namespace {
 
-using augusta::server::Activity;
-using augusta::server::CaptureHealth;
-using augusta::server::CaptureMetrics;
-using augusta::server::CaptureRetention;
-using augusta::server::CaptureState;
-using augusta::server::CaptureStop;
-using augusta::server::Histogram;
-using augusta::server::HostMetrics;
-using augusta::server::JoinRefusal;
-using augusta::server::Leaving;
-using augusta::server::PeerRejection;
-using augusta::server::Rejection;
-using augusta::server::Totals;
+using augusta::host::Activity;
+using augusta::host::CaptureHealth;
+using augusta::host::CaptureMetrics;
+using augusta::host::CaptureRetention;
+using augusta::host::CaptureState;
+using augusta::host::CaptureStop;
+using augusta::host::HostMetrics;
+using augusta::host::JoinRefusal;
+using augusta::host::Leaving;
+using augusta::host::PeerRejection;
+using augusta::host::Rejection;
+using augusta::host::Totals;
+using augusta::metrics::Histogram;
 using prometheus::ClientMetric;
 using prometheus::MetricFamily;
 using prometheus::MetricType;
@@ -372,7 +372,7 @@ TEST(HostMetricsTest, DiscardedCommandsAreLabelledByWhyTheyWereTurnedAway) {
 // Requirements: NFR-07
 TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
   HostMetrics metrics(kTickRate);
-  metrics.messages_sent[augusta::server::MessageType::kAuthoritativeState].Increment();
+  metrics.messages_sent[augusta::host::MessageType::kAuthoritativeState].Increment();
 
   const std::vector<MetricFamily> families = metrics.Collect();
 
@@ -430,8 +430,8 @@ TEST(HostMetricsTest, TheHeartbeatsTotalsAreReadFromTheSameCounters) {
   metrics.ticks.Increment(5);
   metrics.ticks_late.Increment(2);
   metrics.tick_overruns.Increment(1);
-  metrics.messages_received[augusta::server::MessageType::kCommands].Increment(3);
-  metrics.messages_received[augusta::server::MessageType::kReady].Increment(1);
+  metrics.messages_received[augusta::host::MessageType::kCommands].Increment(3);
+  metrics.messages_received[augusta::host::MessageType::kReady].Increment(1);
   metrics.commands_rejected[Rejection::kStale].Increment(4);
   metrics.commands_outside_match.Increment(2);
   metrics.commands_rejected[Rejection::kNonFinite].Increment(1);

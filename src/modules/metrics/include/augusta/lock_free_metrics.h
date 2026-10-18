@@ -22,7 +22,7 @@
 /// is turned into prometheus-cpp's form only when collected, by the series
 /// functions here. Knows nothing of what is counted: HostMetrics
 /// (host_metrics.h) and whoever else counts build on it.
-namespace augusta::server {
+namespace augusta::metrics {
 
 // What lets no writer ever wait on a reader.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free && std::atomic<double>::is_always_lock_free);
@@ -151,6 +151,6 @@ consteval bool LabelledExactly(LabelOf label) {
 [[nodiscard]] prometheus::ClientMetric HistogramSeries(const Histogram& histogram,
                                                        std::vector<prometheus::ClientMetric::Label> labels = {});
 
-}  // namespace augusta::server
+}  // namespace augusta::metrics
 
 #endif  // AUGUSTA_LOCK_FREE_METRICS_H_

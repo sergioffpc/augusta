@@ -1,22 +1,19 @@
 # Keeps the Networking Protocol at the edge (ADR-0038): no header of the
 # modules past it - the harness's API, the server's Match, Host and command
 # queue, simulation's Replication, presentation, ClientRuntime, the capture
-# module's interface - may name a protocol type or include the protocol's
-# header. Only three adapters convert: harness_wire.h on the client and
-# augusta/host_wire.h on the server, which both call augusta/wire.h for the
-# shared core's own types (a Command, a stance, a pack's hash), and the
-# capture module, which converts a Match capture's records for either inside
-# its implementation and links the protocol privately.
+# module's interface, the Link's own types - may name a protocol type or include
+# the protocol's header. Only the Link converts (augusta/link_messages.h), for
+# the client, the server and a Match capture's records alike.
 #
 # Keeps the harness at ClientRuntime's edge the same way: no presentation
 # header may name a harness type or include a harness header, so presentation
 # does not depend on the network session. ClientRuntime converts.
 #
 # Keeps the protocol itself a pure codec below the engine: its sources include
-# no augusta header but its own, the math's (augusta/math.h, augusta/grid.h)
-# and the neutral primitives' (augusta/primitives.h), and its target links
-# nothing else, so a gameplay module (the Command, the tick schedule, the
-# Parameters) never becomes what the wire depends on.
+# no augusta header but its own, the math's (augusta/math.h, augusta/grid.h),
+# the tick's (augusta/tick.h) and the limits' (augusta/limits.h), and its target
+# links nothing else, so a gameplay module (the Command, the Parameters) never
+# becomes what the wire depends on.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P protocol_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -29,15 +26,13 @@ file(
   "${SOURCE_DIR}/src/modules/simulation/include/augusta/replication*.h"
   "${SOURCE_DIR}/src/modules/presentation/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/capture/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/link/include/augusta/link_types.h"
   "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/host/*.h"
-  "${SOURCE_DIR}/src/server/*.h"
-  "${SOURCE_DIR}/src/client/*.h"
-)
-list(
-  REMOVE_ITEM headers
-  "${SOURCE_DIR}/src/modules/harness/include/augusta/harness_wire.h"
-  "${SOURCE_DIR}/src/modules/host/include/augusta/host_wire.h"
+  "${SOURCE_DIR}/src/modules/server/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/server/*.h"
+  "${SOURCE_DIR}/src/modules/client/include/augusta/*.h"
+  "${SOURCE_DIR}/src/modules/client/*.h"
 )
 if(NOT headers)
   message(FATAL_ERROR "protocol_boundary.cmake: no headers found under ${SOURCE_DIR}")
@@ -73,8 +68,8 @@ if(NOT protocol_sources)
   message(FATAL_ERROR "protocol_boundary.cmake: no protocol sources found under ${SOURCE_DIR}")
 endif()
 
-set(allowed_include "augusta/(protocol|math|grid|primitives)\\.h")
-set(allowed_link "augusta_(math|primitives)")
+set(allowed_include "augusta/(protocol|math|grid|tick|limits)\\.h")
+set(allowed_link "augusta_(math|tick|limits)")
 set(dependency_violations "")
 foreach(source ${protocol_sources})
   file(STRINGS "${source}" lines REGEX "#[ \t]*include[ \t]*[\"<]augusta/")
@@ -88,7 +83,7 @@ foreach(source ${protocol_sources})
   endforeach()
 endforeach()
 # The protocol's own target_link_libraries call, whatever its scope keywords;
-# every augusta target it names must be one of the allowed two.
+# every augusta target it names must be one of the allowed three.
 file(READ "${SOURCE_DIR}/src/modules/protocol/CMakeLists.txt" protocol_cmake)
 string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" link_calls "${protocol_cmake}")
 foreach(call ${link_calls})
@@ -106,21 +101,21 @@ if(violations)
   list(JOIN violations "\n" protocol_report)
   string(
     APPEND report
-    "The protocol leaks past its edge (ADR-0038) - convert in harness_wire.h or host_wire.h instead:\n${protocol_report}\n"
+    "The protocol leaks past its edge (ADR-0038) - convert in augusta/link_messages.h instead:\n${protocol_report}\n"
   )
 endif()
 if(harness_violations)
   list(JOIN harness_violations "\n" harness_report)
   string(
     APPEND report
-    "The harness leaks into presentation - convert to presentation's own types in src/client/frame_mapping.h instead:\n${harness_report}\n"
+    "The harness leaks into presentation - convert to presentation's own types in src/modules/client/frame_mapping.h instead:\n${harness_report}\n"
   )
 endif()
 if(dependency_violations)
   list(JOIN dependency_violations "\n" dependency_report)
   string(
     APPEND report
-    "The protocol depends on a module above it - take the shared counter or bound from augusta/primitives.h instead:\n${dependency_report}\n"
+    "The protocol depends on a module above it - take the shared counter or bound from augusta/tick.h or augusta/limits.h instead:\n${dependency_report}\n"
   )
 endif()
 if(report)
@@ -131,5 +126,5 @@ list(LENGTH headers count)
 list(LENGTH presentation_headers presentation_count)
 message(
   STATUS
-  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math and primitives only"
+  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick and limits only"
 )

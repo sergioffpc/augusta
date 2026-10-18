@@ -17,6 +17,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/physics.h"
@@ -292,14 +293,13 @@ TEST(CaptureFormatTest, AFieldTheCodecCannotCarryIsACodecFailure) {
 // No record the codec accepts passes a frame's limit (#463), so the limit is
 // reached under the module's interface, at its framing.
 TEST(CaptureFormatTest, APayloadLongerThanAFrameHoldsIsARecordTooLong) {
-  const auto type = augusta::protocol::CaptureRecordTypeWire::kLeave;
-  const augusta::protocol::BytesWire longest(augusta::capture::kMaxFramePayload, std::byte{0xAB});
-  const auto framed = augusta::capture::Framed(longest, type);
+  const std::vector<std::byte> longest(augusta::capture::kMaxFramePayload, std::byte{0xAB});
+  const auto framed = augusta::capture::Framed(longest);
   ASSERT_TRUE(framed.has_value());
   EXPECT_EQ(framed->size(), longest.size() + 1);
 
-  const augusta::protocol::BytesWire too_long(augusta::capture::kMaxFramePayload + 1, std::byte{0xAB});
-  const auto refused = augusta::capture::Framed(too_long, type);
+  const std::vector<std::byte> too_long(augusta::capture::kMaxFramePayload + 1, std::byte{0xAB});
+  const auto refused = augusta::capture::Framed(too_long);
   ASSERT_FALSE(refused.has_value());
   EXPECT_TRUE(std::holds_alternative<RecordTooLong>(refused.error()));
 }

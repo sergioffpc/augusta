@@ -3,21 +3,19 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <memory>
 #include <mutex>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "augusta/ballistics.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/protocol.h"
 #include "match_players.h"
 
 namespace augusta::harness {
@@ -38,17 +36,36 @@ std::string_view BodyPartName(ballistics::BodyPart part) {
 
 }  // namespace
 
-void Inbox::Receive(const networking::Payload& payload) {
-  const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
-  if (!decoded.has_value()) {
-    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"{}\"", payload.size(),
-                     protocol::DescribeDecodeError(decoded.error()));
-    return;
-  }
-  if (!TakeIn(*decoded)) {
-    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
-                     payload.size());
-  }
+void Inbox::Receive(link::ServerMessage message) {
+  std::visit(
+      [this]<typename Message>(Message&& said) {
+        using Said = std::remove_cvref_t<Message>;
+        if constexpr (std::is_same_v<Said, Admission>) {
+          OnJoinAccepted(said);
+        } else if constexpr (std::is_same_v<Said, JoinRefusal>) {
+          OnJoinRefused(said);
+        } else if constexpr (std::is_same_v<Said, AuthoritativeState>) {
+          OnAuthoritativeState(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, Shot>) {
+          OnShot(said);
+        } else if constexpr (std::is_same_v<Said, HitConfirmation>) {
+          OnHitConfirmation(said);
+        } else if constexpr (std::is_same_v<Said, Death>) {
+          OnDeath(said);
+        } else if constexpr (std::is_same_v<Said, Lobby>) {
+          OnLobby(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, MatchStart>) {
+          OnMatchStart(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, MatchEnd>) {
+          OnMatchEnd(said);
+        } else if constexpr (std::is_same_v<Said, ReplayView>) {
+          OnReplayView(std::forward<Message>(said));
+        } else {
+          // A Replay list, which a replay server sends only a client that asked for it.
+          LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"replay list unasked for\"");
+        }
+      },
+      std::move(message));
 }
 
 std::shared_ptr<const ServerView> Inbox::View() const {
@@ -63,33 +80,6 @@ std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t matches_s
 }
 
 std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return deaths_.Take(matches_started); }
-
-bool Inbox::TakeIn(const protocol::MessageWire& message) {
-  if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
-    OnJoinAccepted(FromWire(*accepted));
-  } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
-    OnJoinRefused(FromWire(refused->reason));
-  } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
-    OnAuthoritativeState(FromWire(*state));
-  } else if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
-    OnShot(FromWire(*shot));
-  } else if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
-    OnHitConfirmation(FromWire(*hit));
-  } else if (const auto* death = std::get_if<protocol::DeathWire>(&message)) {
-    OnDeath(FromWire(*death));
-  } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
-    OnLobby(FromWire(*lobby));
-  } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
-    OnMatchStart(FromWire(*start));
-  } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
-    OnMatchEnd(FromWire(*end));
-  } else if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
-    OnReplayView(FromWire(*view));
-  } else {
-    return false;
-  }
-  return true;
-}
 
 // A server whose tick rate or parameters the simulation cannot run on (a rate
 // of zero would be divided by) is not a usable one: the message is dropped, as

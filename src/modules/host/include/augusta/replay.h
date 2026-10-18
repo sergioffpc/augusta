@@ -21,12 +21,12 @@
 /// and checked against the capture's markers. Replay re-runs one capture and
 /// ReplayCheck compares each Death and the Match end the World resolves with
 /// the capture's (NFR-09). Neither touches a socket, a file or a clock:
-/// server::ReplayServer reads the capture, builds the World, ticks each Replay
+/// host::ReplayServer reads the capture, builds the World, ticks each Replay
 /// on the Simulation thread and sends what it resolves to the Replay's viewer.
 /// A player is named by its number in the capture (capture::Player), and its
 /// body in the World by the same number, so a Replay names no tick and no
 /// entity of the server that made the capture.
-namespace augusta::server {
+namespace augusta::host {
 
 /// A marker of a Replay that is not the capture's: on the build that made
 /// the capture, a non-determinism to chase; on another, possibly floats
@@ -140,7 +140,7 @@ class Replay {
   struct Player {
     capture::Player number = 0;
     CommandQueue commands;
-    command::Sequence sequence = 0;
+    tick::Sequence sequence = 0;
     bool left = false;
   };
 
@@ -165,6 +165,6 @@ class Replay {
   bool ended_ = false;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_REPLAY_H_

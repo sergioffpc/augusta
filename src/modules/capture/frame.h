@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "augusta/capture.h"
-#include "augusta/protocol.h"
+#include "augusta/failure.h"
 
 /// \file
 /// How the capture module frames a record it encoded, internal to it and apart
@@ -21,12 +21,12 @@ inline constexpr std::size_t kFrameLengthSize = 1;
 /// header included, passes it, so kFrameLengthSize of length is enough (#463).
 inline constexpr std::size_t kMaxFramePayload = 255;
 
-/// The frame of payload, the codec's encoding of a record of type: its length
-/// in one byte, then it. A codec error is the writer's broken invariant
-/// (failure::Code::kInvariantViolated, named by type); a payload longer than
-/// kMaxFramePayload is RecordTooLong.
+/// The frame of payload, a record's encoding by the Link
+/// (augusta/link_messages.h): its length in one byte, then it. A record that
+/// did not encode is its failure, the writer's broken invariant, as it is; a
+/// payload longer than kMaxFramePayload is RecordTooLong.
 [[nodiscard]] std::expected<std::vector<std::byte>, EncodeError> Framed(
-    const std::expected<protocol::BytesWire, protocol::EncodeError>& payload, protocol::CaptureRecordTypeWire type);
+    const std::expected<std::vector<std::byte>, failure::Failure>& payload);
 
 }  // namespace augusta::capture
 

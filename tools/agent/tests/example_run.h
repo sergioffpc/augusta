@@ -9,8 +9,8 @@
 
 #include <gtest/gtest.h>
 
-#include "agent.h"
-#include "augusta/networking.h"
+#include "augusta/agent.h"
+#include "augusta/link.h"
 #include "match_loop.h"
 
 /// \file
@@ -22,11 +22,11 @@ namespace augusta::agent::testing {
 inline constexpr const char* kCharacter = "soldier";
 
 // The transport set up once for the whole test process, and torn down after:
-// see networking::Shutdown. Each test file registers one.
+// see link::Shutdown. Each test file registers one.
 class NetworkingEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(networking::Init().has_value()); }
-  void TearDown() override { networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(link::Init().has_value()); }
+  void TearDown() override { link::Shutdown(); }
 };
 
 inline std::filesystem::path ExamplePacks() { return AUGUSTA_EXAMPLE_PACKS; }

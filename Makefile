@@ -49,14 +49,16 @@ PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 # output, which CI's Linux build compiles without the client: either platform's
 # default build has the client, so compiles the output device instead. On
 # Windows, the client's and the Renderer's tests too, as CI's client job lints
-# them; elsewhere, not the client's trees or the output device, which CI's Linux
-# build (without the client, AUGUSTA_CLIENT) has no compile commands for.
+# them; elsewhere, not the client's trees, the window module's GLFW half or the
+# output device, which CI's Linux build (without the client, AUGUSTA_CLIENT) has
+# no compile commands for.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
 else
-TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
+TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
+TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" $(TIDY_CLIENT_TESTS) ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
 

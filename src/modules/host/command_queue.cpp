@@ -6,8 +6,9 @@
 
 #include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -37,7 +38,7 @@ std::string_view DescribeRejection(Rejection rejection) {
   return "unknown rejection";
 }
 
-std::expected<void, Rejection> Validate(const SequencedCommand& command, command::Sequence last_sequence) {
+std::expected<void, Rejection> Validate(const SequencedCommand& command, tick::Sequence last_sequence) {
   if (command.sequence <= last_sequence) {
     return std::unexpected(Rejection::kStale);
   }
@@ -90,4 +91,4 @@ TickCommand CommandQueue::Next() {
   return TickCommand{.command = command, .acknowledged_sequence = acknowledged_};
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

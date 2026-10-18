@@ -17,7 +17,8 @@
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link.h"
+#include "augusta/link_mapping.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -29,7 +30,7 @@
 #include "augusta/tick_messages.h"
 #include "host_impl.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 // Every queue length fits the byte an Authoritative State update tells it in.
 static_assert(kMaxQueuedCommands <= std::numeric_limits<std::uint8_t>::max());
@@ -56,7 +57,7 @@ void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
 // One line for every match that ends (ADR-0029): why, who won, how many
 // ticks it lasted, counting the one it ended on, and how many were in it.
 void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
-  server::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
+  host::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
 }
 
 // Counts a match that ended for reason, with winner or as a draw: how, and how
@@ -80,7 +81,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
   if (!ended.has_value()) {
     return;
   }
-  SendTo(ended->players, EncodeToSend(ToWire(*ended)));
+  SendTo(ended->players, link::Encode(ToLink(*ended)));
   match_winner = ended->winner;
   CountMatchEnded(reason, ended->winner);
   LogMatchEnded(reason, ended->winner, ended->players.size());
@@ -89,9 +90,9 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
 }
 
 // Acts on Game policy's Match end, after the tick it was decided on.
-void Host::Impl::Act(const simulation::MatchEnd& end) {
+void Host::Impl::Act(const policy::MatchEnd& end) {
   const std::lock_guard<std::mutex> lock(mutex);
-  EndMatch(end.winner.transform([](simulation::SessionId winner) { return FromSimulation(winner); }),
+  EndMatch(end.winner.transform([](policy::SessionId winner) { return FromSimulation(winner); }),
            EndReason::kWinCondition);
 }
 
@@ -133,7 +134,7 @@ void Host::Impl::StartMatchIfReady() {
   }
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, EncodeToSend(ToWire(*start, spawns, match_start_tick)));
+  SendTo(sessions, link::Encode(ToLink(*start, spawns, match_start_tick)));
   LOG_INFO("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
 }
 
@@ -234,7 +235,7 @@ simulation::TickResult Host::Tick(float delta_time) {
   LogCombat(result.state);
   // After the tick's own messages, so a client hears the deaths that ended the
   // match before it hears that it has.
-  for (const simulation::PolicyAction& action : result.actions) {
+  for (const policy::PolicyAction& action : result.actions) {
     std::visit([&impl](const auto& typed) { impl.Act(typed); }, action);
   }
   return result;
@@ -245,4 +246,4 @@ void Host::EndMatch() {
   impl_->EndMatch(std::nullopt, EndReason::kEndedByTheHost);
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

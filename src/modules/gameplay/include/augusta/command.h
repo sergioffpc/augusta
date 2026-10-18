@@ -8,7 +8,6 @@
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "augusta/primitives.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -69,14 +68,9 @@ struct Command {
   return glm::angleAxis(yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * glm::angleAxis(pitch, math::Vec3(1.0F, 0.0F, 0.0F));
 }
 
-/// The number a client gives each Command it sends, and the acknowledged
-/// sequence that answers it (ADR-0038); its width is the primitives', which the
-/// wire takes too.
-using Sequence = primitives::Sequence;
-
 /// How long the server's command queue repeats a player's last movement on
 /// the ticks no new Command arrived for, before it idles
-/// (server::CommandQueue); a Captured player fills a capture's gaps the same
+/// (host::CommandQueue); a Captured player fills a capture's gaps the same
 /// way (ADR-0050).
 inline constexpr std::chrono::milliseconds kMaxHeldTime{100};
 

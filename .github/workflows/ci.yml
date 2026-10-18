@@ -299,17 +299,18 @@ jobs:
       - name: Lint
         id: lint
         # What the server-x64-linux job's Linux build can't lint, as it builds
-        # without the client. The client, the Renderer and their tests get
-        # .clang-tidy's full profile, from clang-cl's compile commands
-        # (tests/.clang-tidy leaves the tests' literals alone); the audio
-        # module's output device gets misc-include-cleaner alone (the
-        # Makefile's tidy target says why -w). Both run, and the step fails if
-        # either does. One file per clang-tidy, as server-x64-linux runs it,
-        # through ctcache (restore-ctcache-cache). After Build, which generates
-        # the headers the renderer embeds its shaders and font from.
+        # without the client. The client, the Renderer, the window module's
+        # GLFW half and their tests get .clang-tidy's full profile, from
+        # clang-cl's compile commands (tests/.clang-tidy leaves the tests'
+        # literals alone); the audio module's output device gets
+        # misc-include-cleaner alone (the Makefile's tidy target says why -w).
+        # Both run, and the step fails if either does. One file per
+        # clang-tidy, as server-x64-linux runs it, through ctcache
+        # (restore-ctcache-cache). After Build, which generates the headers the
+        # renderer embeds its shaders and font from.
         run: |
           status=0
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
+          git ls-files 'src/client/*.cpp' 'src/modules/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/window/window.cpp' 'src/modules/window/glfw_keys.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
           git ls-files 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
@@ -390,8 +391,9 @@ jobs:
         id: lint
         # Both checks run, and the step fails if either does, so one run shows
         # every finding. clang-tidy with .clang-tidy's full profile on src:
-        # src/client and the renderer's GPU half build only with the client
-        # (AUGUSTA_CLIENT), which this job leaves off, as does the audio
+        # src/client, the client module, the renderer's GPU half and the window
+        # module's GLFW half (its GLFW-free events are linted here) build only
+        # with the client (AUGUSTA_CLIENT), which this job leaves off, as does the audio
         # module's output device (miniaudio and Steam Audio, built only with
         # AUGUSTA_AUDIO_OUTPUT, which follows it -
         # src/modules/audio/CMakeLists.txt), and aren't part of this configure's build graph
@@ -412,7 +414,7 @@ jobs:
         # are the client-x64-windows job's.
         run: |
           status=0
-          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
+          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache

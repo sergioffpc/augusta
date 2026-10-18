@@ -5,8 +5,8 @@ crashing thread's symbolized stack, a kernel core dump, and, kept for every
 published build, the debug info that reads that dump.
 
 **The log.** `augustad` installs a handler for the fatal signals (`SIGSEGV`,
-`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main`
-(`src/server/crash.h`). It writes one
+`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main` (the server
+module's `augusta/crash.h`). It writes one
 `CRITICAL subsystem=server event=crash signal=<name>` line, then one
 `event=crash_frame index=<n> pc=0x<address> symbol="<function>"` line per frame,
 in the console pattern of ADR-0029, to stdout. It runs in a signal handler, so

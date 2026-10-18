@@ -18,6 +18,8 @@
 #include "augusta/command_queue.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
 #include "augusta/misbehaviour.h"
@@ -38,41 +40,26 @@
 /// where it has one, never from text a peer sent; each range of counters is
 /// checked against its enum at compile time. The Process family is the
 /// endpoint's; Connection health is not counted here.
-namespace augusta::server {
+namespace augusta::host {
 
 /// The Networking Protocol's message types (ADR-0038), as the metrics label
-/// them: the server's own, since the protocol's stay at its edge (augusta/host_wire.h).
-enum class MessageType : std::uint8_t {
-  kJoinRequest,
-  kJoinAccepted,
-  kJoinRefused,
-  kCommands,
-  kAuthoritativeState,
-  kLobby,
-  kReady,
-  kMatchStart,
-  kMatchEnd,
-  kShot,
-  kHitConfirmation,
-  kDeath,
-  kReplayListRequest,
-  kReplayList,
-  kReplayRequest,
-  kReplayView,
-  kReenactRequest,
-};
+/// them: the Link's (augusta/link_types.h), since the protocol's stay
+/// beneath it.
+using MessageType = link::MessageType;
 
 using JoinRefusalCounters =
-    EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;
-using LeavingCounters = EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
+    metrics::EnumCounters<JoinRefusal, JoinRefusal::kVersionMismatch, JoinRefusal::kReenactmentsNotAccepted>;
+using LeavingCounters = metrics::EnumCounters<Leaving, Leaving::kLeft, Leaving::kMisbehaving>;
 /// The misbehaviours only: the first of PeerRejection's values (augusta/misbehaviour.h),
 /// which host_metrics.cpp checks.
 using MisbehaviourCounters =
-    EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
-using MessageCounters = EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReenactRequest>;
-using RejectionCounters = EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
-using BodyPartCounters = EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
-using CaptureStopCounters = EnumCounters<CaptureStop, CaptureStop::kRecordTooLong, CaptureStop::kRetentionBudget>;
+    metrics::EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
+using MessageCounters = metrics::EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReenactRequest>;
+using RejectionCounters = metrics::EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
+using BodyPartCounters =
+    metrics::EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
+using CaptureStopCounters =
+    metrics::EnumCounters<CaptureStop, CaptureStop::kRecordTooLong, CaptureStop::kRetentionBudget>;
 
 /// Everything ADR-0049's catalogue has the server count but its Process family
 /// and Connection health, written in place by the Host's threads, and collected
@@ -87,26 +74,26 @@ struct HostMetrics final : prometheus::Collectable {
 
   // Tick, written by the Simulation thread.
   const std::uint8_t tick_rate_hz;
-  Histogram tick_duration;
-  Counter ticks;
-  Counter ticks_late;
-  Counter tick_overruns;
-  Counter tick_resyncs;
+  metrics::Histogram tick_duration;
+  metrics::Counter ticks;
+  metrics::Counter ticks_late;
+  metrics::Counter tick_overruns;
+  metrics::Counter tick_resyncs;
 
   // Lobby and Match.
-  Gauge lobby_players;
-  Gauge match_in_progress;
-  Gauge match_players_alive;
-  Counter matches_started;
-  Counter matches_ended_with_winner;
-  Counter matches_ended_drawn;
+  metrics::Gauge lobby_players;
+  metrics::Gauge match_in_progress;
+  metrics::Gauge match_players_alive;
+  metrics::Counter matches_started;
+  metrics::Counter matches_ended_with_winner;
+  metrics::Counter matches_ended_drawn;
   /// Ended because its last player left.
-  Counter matches_ended_abandoned;
-  Histogram match_duration;
+  metrics::Counter matches_ended_abandoned;
+  metrics::Histogram match_duration;
 
   // Sessions.
-  Gauge sessions;
-  Counter joins_admitted;
+  metrics::Gauge sessions;
+  metrics::Counter joins_admitted;
   JoinRefusalCounters joins_refused;
   /// Peers whose connection ended before they were admitted to the Lobby,
   /// players who left the Lobby, and who left a match in progress, by how.
@@ -118,46 +105,46 @@ struct HostMetrics final : prometheus::Collectable {
   MisbehaviourCounters misbehaviour;
 
   // Network: what the server sends and receives, as payloads.
-  Counter sent_bytes;
-  Counter received_bytes;
+  metrics::Counter sent_bytes;
+  metrics::Counter received_bytes;
   MessageCounters messages_sent;
   /// Messages that decoded, by type.
   MessageCounters messages_received;
-  Histogram authoritative_state_update_bytes;
+  metrics::Histogram authoritative_state_update_bytes;
   /// Every command of every Commands message.
-  Counter commands_received;
+  metrics::Counter commands_received;
   /// Commands the command queue turned away, by why; those it took in but
   /// dropped as the oldest of a full queue; those of a player not in a match;
   /// and those of a peer that has not joined. Every command counted received
   /// is either taken in or one of these; one a peer sent after the command
   /// that got it disconnected is neither received nor discarded.
   RejectionCounters commands_rejected;
-  Counter commands_overflowed;
-  Counter commands_outside_match;
-  Counter commands_before_joining;
+  metrics::Counter commands_overflowed;
+  metrics::Counter commands_outside_match;
+  metrics::Counter commands_before_joining;
 
   // Combat, written by the Simulation thread.
-  Counter shots;
+  metrics::Counter shots;
   BodyPartCounters hit_confirmations;
-  Histogram shooters_delay;
+  metrics::Histogram shooters_delay;
   /// Rounds whose Shooter's delay the cap held (simulation::kMaxShootersDelay).
-  Counter shooters_delay_capped;
+  metrics::Counter shooters_delay_capped;
   /// Bullets still flying after the last tick (simulation::State's bullets_in_flight).
-  Gauge bullets_in_flight;
+  metrics::Gauge bullets_in_flight;
 
   // Capture, written by the Simulation thread and the Capturer's writer
   // through CaptureMetrics.
   std::atomic<CaptureState> capture_state{CaptureState::kOff};
   static_assert(std::atomic<CaptureState>::is_always_lock_free);
-  Counter captures_started;
-  Counter captures_completed;
+  metrics::Counter captures_started;
+  metrics::Counter captures_completed;
   CaptureStopCounters capture_stops;
-  Counter capture_written_bytes;
-  Gauge capture_queue_records;
-  Gauge capture_directory_files;
-  Gauge capture_directory_bytes;
-  Counter capture_retention_deleted;
-  Counter capture_retention_failures;
+  metrics::Counter capture_written_bytes;
+  metrics::Gauge capture_queue_records;
+  metrics::Gauge capture_directory_files;
+  metrics::Gauge capture_directory_bytes;
+  metrics::Counter capture_retention_deleted;
+  metrics::Counter capture_retention_failures;
   /// The capture directory's retention limits (#461), each absent while unset.
   /// Written once, as the Host is built, before the metrics endpoint serves.
   std::optional<std::size_t> capture_retention_max_files;
@@ -167,8 +154,8 @@ struct HostMetrics final : prometheus::Collectable {
   // thread: how many Replays run, and how long one Replay's tick takes - its
   // SimulationWorld's tick and what it sends its viewer - of the tick the
   // Simulation thread runs every Replay in.
-  Gauge replays;
-  Histogram replay_tick_duration;
+  metrics::Gauge replays;
+  metrics::Histogram replay_tick_duration;
   /// The Match captures' health, written by whichever thread it changes on
   /// (CaptureMetrics::OnHealth) and published whole, so a scrape never sees
   /// two states or none; nullopt while nothing is captured.
@@ -211,9 +198,9 @@ class CaptureMetrics final : public CaptureObserver {
 /// the heartbeat line counts nothing of its own.
 [[nodiscard]] Activity Totals(const HostMetrics& metrics);
 
-/// Counts payload, an encoded message the server is sending, by its type and size.
-void CountSent(HostMetrics& metrics, std::span<const std::byte> payload);
+/// Counts message, which the server is sending, by its type and size.
+void CountSent(HostMetrics& metrics, const link::Outgoing& message);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_METRICS_H_

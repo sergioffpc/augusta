@@ -9,12 +9,12 @@
 // The tracker is pure: time is handed to it, and no peer is ever really disconnected here.
 namespace {
 
-using augusta::server::IsMisbehaviour;
-using augusta::server::kMisbehaviourThreshold;
-using augusta::server::kMisbehaviourWindow;
-using augusta::server::MisbehaviourTracker;
-using augusta::server::PeerRejection;
-using augusta::server::Verdict;
+using augusta::host::IsMisbehaviour;
+using augusta::host::kMisbehaviourThreshold;
+using augusta::host::kMisbehaviourWindow;
+using augusta::host::MisbehaviourTracker;
+using augusta::host::PeerRejection;
+using augusta::host::Verdict;
 using Clock = std::chrono::steady_clock;
 
 const Clock::time_point kStart{};

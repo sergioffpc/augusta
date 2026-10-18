@@ -18,10 +18,10 @@
 // is a script in, Parameters or an error out.
 namespace {
 
-using augusta::server::DescribeParametersLoadError;
-using augusta::server::LoadParameters;
-using augusta::server::ParametersLoadErrorCode;
-using augusta::server::ParametersWarningSink;
+using augusta::scenario::DescribeParametersLoadError;
+using augusta::scenario::LoadParameters;
+using augusta::scenario::ParametersLoadErrorCode;
+using augusta::scenario::ParametersWarningSink;
 
 // The tick rate every script below is loaded for, unless a test says otherwise.
 constexpr std::uint8_t kTickRate = 60;

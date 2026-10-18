@@ -7,15 +7,18 @@
 Where anything that plays talks to the server: a Session is the client's network
 connection and PredictionWorld without a window or a GPU, so the client, a
 scripted Agent and an automated test play the same way. It holds the Runner that
-runs a Session in real time, the client's edge with the Networking Protocol
-(`augusta/harness_wire.h`), the Intents an Agent acts through, the Captured
+runs a Session in real time, the Intents an Agent acts through, the Captured
 player's reenactment and the netcode statistics a run leaves.
 
 ## Not its responsibility
 
-- The window, input devices, rendering, audio and PresentationWorld:
-  `src/client` wires those around a Session.
+- The window, input devices, rendering, audio and PresentationWorld: the client
+  Runtime (client) wires those around a Session.
 - Predicting a tick: prediction.
+- The connection, and what it sends and receives as the Networking Protocol's
+  messages, with each one's reliability and the newest of a tick's Commands its
+  one message carries: link, which the harness speaks to alone, never the
+  protocol or networking (`tests/core_boundary.cmake`).
 - Reading a capture file: capture.
 - Python bindings for Agents: `tools/agent`.
 

@@ -8,8 +8,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/cues.h"
+#include "augusta/policy.h"
 #include "augusta/policy_loader.h"
-#include "augusta/scripting.h"
 
 // The C++ half of the contract between the pack's two implementations: the
 // Python cooker (tools/pack, ADR-0030) writes it, augusta_assets reads it.
@@ -71,11 +71,11 @@ TEST_F(CookedPackTest, TheServerPackHoldsNoVisualContentAndNamesItsClientPack) {
 // policy did not load would stop every server run on it.
 // Requirements: US-22
 TEST_F(CookedPackTest, TheServerPackHoldsTheExamplesRulesAndTheyLoad) {
-  EXPECT_TRUE(server_->ResolveScript(augusta::scripting::kRulesScriptPath).has_value());
+  EXPECT_TRUE(server_->ResolveScript(augusta::policy::kRulesScriptPath).has_value());
 
-  const auto policy = augusta::server::LoadPolicy(*server_);
+  const auto policy = augusta::scenario::LoadPolicy(*server_);
 
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
 }
 
 // The client puts the camera at it and the server fires Shots from it, so both

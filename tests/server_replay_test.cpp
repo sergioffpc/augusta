@@ -9,12 +9,13 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/policy.h"
 #include "augusta/replay.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 
 // A Replay (ADR-0051) re-run on a SimulationWorld with no Map, from captures
@@ -24,13 +25,13 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::host::Divergence;
+using augusta::host::EntityId;
+using augusta::host::Replay;
+using augusta::host::ReplayCheck;
+using augusta::host::ReplayTick;
+using augusta::host::SessionId;
 using augusta::math::Vec3;
-using augusta::server::Divergence;
-using augusta::server::EntityId;
-using augusta::server::Replay;
-using augusta::server::ReplayCheck;
-using augusta::server::ReplayTick;
-using augusta::server::SessionId;
 using augusta::simulation::Character;
 
 namespace capture = augusta::capture;
@@ -66,13 +67,13 @@ const std::unordered_map<std::string, Character>& Characters() {
   return characters;
 }
 
-augusta::scripting::Engine Rules(const char* rules) {
-  auto policy = augusta::scripting::Engine::Load(rules);
+augusta::policy::Policy Rules(const char* rules) {
+  auto policy = augusta::policy::Policy::Load(rules);
   EXPECT_TRUE(policy.has_value());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
-Replay ReplayOf(capture::Capture capture, augusta::scripting::Engine policy = {}) {
+Replay ReplayOf(capture::Capture capture, augusta::policy::Policy policy = {}) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   return Replay(std::move(capture), augusta::simulation::World(parameters, kTickRate, std::move(policy)), Characters());
@@ -353,8 +354,8 @@ TEST(ReplayCheckTest, ADivergenceIsDescribedWithBothSides) {
                        .captured_end = capture::MatchEnd{.winner = 1},
                        .resolved_end = capture::MatchEnd{}};
 
-  EXPECT_EQ(augusta::server::DescribeDivergence(death), "marker=death offset=4 captured=[2<-1] resolved=[]");
-  EXPECT_EQ(augusta::server::DescribeDivergence(end), "marker=match_end offset=9 captured=winner:1 resolved=draw");
+  EXPECT_EQ(augusta::host::DescribeDivergence(death), "marker=death offset=4 captured=[2<-1] resolved=[]");
+  EXPECT_EQ(augusta::host::DescribeDivergence(end), "marker=match_end offset=9 captured=winner:1 resolved=draw");
 }
 
 }  // namespace

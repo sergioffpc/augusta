@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capture_retention.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
@@ -34,7 +35,7 @@
 #include "augusta/match.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -649,4 +650,4 @@ void Capturer::Queue(std::expected<capture::Encoded, capture::EncodeError> encod
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

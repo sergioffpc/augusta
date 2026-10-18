@@ -1,19 +1,17 @@
-# Tags each augusta_* module target (and the runtime targets and executables,
-# augustac_runtime/augustad_runtime and augustac/augustad) with which side
-# of the client/server split it belongs to, and checks that no tagged
-# target's declared dependencies cross a boundary it isn't allowed to
-# cross - turning
-# docs/ARCHITECTURE.md §5's Shared Core/Client-only/Server-only split
-# into a configure-time check instead of relying on code review to catch
-# a client-only module linked into augustad_runtime (or vice versa).
-# Tagging a module under src/modules also checks it has the README.md
-# stating its responsibility (docs/agents/coding-standards.md).
+# Tags each augusta_* module target (and the executables, augustac and
+# augustad) with which side of the client/server split it belongs to, and
+# checks that no tagged target's declared dependencies cross a boundary it
+# isn't allowed to cross - turning docs/ARCHITECTURE.md §5's Shared
+# Core/Client-only/Server-only split into a configure-time check instead of
+# relying on code review to catch a client-only module linked into the server
+# Runtime (or vice versa). Tagging a module under src/modules also checks it
+# has the README.md stating its responsibility (docs/agents/coding-standards.md).
 #
 # Usage: call augusta_set_module_scope(<target> <SHARED|CLIENT_ONLY|
-# SERVER_ONLY>) right after a module's own add_library() (or after a
-# runtime target's or executable's own target_link_libraries() call),
-# then call augusta_check_module_scopes() exactly once, after every
-# tagged target has been defined.
+# SERVER_ONLY>) right after a module's own add_library() (or after an
+# executable's own target_link_libraries() call), then call
+# augusta_check_module_scopes() exactly once, after every tagged target has
+# been defined.
 include_guard(GLOBAL)
 
 set_property(GLOBAL PROPERTY AUGUSTA_MODULE_SCOPE_TARGETS "")
@@ -26,8 +24,8 @@ function(augusta_set_module_scope target scope)
     )
   endif()
   # Every module states its responsibility in a README.md beside its
-  # CMakeLists.txt (docs/agents/coding-standards.md, Module README). Runtime
-  # targets and executables, tagged from outside src/modules, are not modules.
+  # CMakeLists.txt (docs/agents/coding-standards.md, Module README).
+  # Executables, tagged from outside src/modules, are not modules.
   if(CMAKE_CURRENT_SOURCE_DIR MATCHES "/src/modules/[^/]+$" AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
     message(
       FATAL_ERROR
@@ -64,7 +62,7 @@ function(augusta_check_module_scopes)
 
   foreach(target ${modules})
     # Not every tagged target exists on every platform (augusta_renderer
-    # and augustac_runtime are only added with AUGUSTA_CLIENT - see the root
+    # and augusta_client are only added with AUGUSTA_CLIENT - see the root
     # CMakeLists.txt).
     if(NOT TARGET ${target})
       continue()
@@ -106,55 +104,41 @@ function(augusta_check_module_scopes)
   endforeach()
 endfunction()
 
-# Executables are Glue (ADR-0060): an executable's own directory holds its
-# entry point, its application and its runtime, and nothing else, and Glue is
-# tested only end to end. Mechanism that is worth a test of its own belongs to
-# a module under src/modules/, where a test can link it without linking an
-# executable. The same kind of check as the client/server split above -
-# ARCHITECTURE.md §5 turned into a configure-time error rather than something a
-# review has to catch.
+# Executables are Glue (ADR-0060): an executable's only target is the
+# executable itself; it links only the application, its Runtime, failure,
+# logging and version; and no target links it, so Glue is tested only end to
+# end, through the Runtime it runs. Mechanism that is worth a test of its own
+# belongs to a module under src/modules/, where a test can link it without
+# linking an executable. The same kind of check as the client/server split
+# above - ARCHITECTURE.md §5 turned into a configure-time error rather than
+# something a review has to catch.
 #
-# Usage: call augusta_set_executable_glue(<executable>) at the end of that
-# executable's own CMakeLists.txt, augusta_set_end_to_end_test(<target>
-# <executable>) beside each end-to-end test, then
-# augusta_check_executable_glue() exactly once, after every target - every test
-# target included - has been defined.
+# Usage: call augusta_set_executable_glue(<executable> <runtime>) at the end of
+# that executable's own CMakeLists.txt, runtime naming a target of its Runtime's
+# module, then augusta_check_executable_glue() exactly once, after every
+# target - every test target included - has been defined.
 #
-# AUGUSTA_GLUE_EXCEPTIONS_<executable> is the migration's ledger: the library
-# targets that sit inside that executable today, in the order its
-# CMakeLists.txt defines them, and the test targets that link its Glue without
-# being end-to-end tests of it. It is only ever edited by removal - each
-# migration takes its own entries out, an entry naming a target that no longer
-# breaks the rule it excuses fails the configure, and the lists and this check
-# go away together once both are empty.
-
-set(AUGUSTA_GLUE_EXCEPTIONS_augustad augustad_liveness augustad_metrics augustad_connection_health augustad_crash)
-
-set(
-  AUGUSTA_GLUE_EXCEPTIONS_augustac
-  augustac_content
-  augustac_frame_mapping
-  augustac_net_stats
-  augustac_lobby_readiness
-)
+# The Agent's Python module (tools/agent/native) is not registered: it is a
+# Python tool's native part, which keeps the tools layout beside the agent
+# Runtime it binds and is tested through its package (ADR-0060, Python tools).
 
 set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES "")
+set_property(GLOBAL PROPERTY AUGUSTA_GLUE_EVERY_BINARY "")
 
-function(augusta_set_executable_glue executable)
+# Links target into every binary defined after the call - an executable, a
+# module, a test alike - and lets an executable link it past the Glue check: it
+# is the build's own infrastructure, such as a sanitizer's default options
+# (ADR-0008, ADR-0013), which no Runtime could wire for it. A module is never
+# linked this way: what every binary links is no reason to be Glue.
+macro(augusta_link_every_binary target)
+  link_libraries(${target})
+  set_property(GLOBAL APPEND PROPERTY AUGUSTA_GLUE_EVERY_BINARY ${target})
+endmacro()
+
+function(augusta_set_executable_glue executable runtime)
   set_property(GLOBAL APPEND PROPERTY AUGUSTA_GLUE_EXECUTABLES ${executable})
   set_property(GLOBAL PROPERTY AUGUSTA_GLUE_DIRECTORY_${executable} "${CMAKE_CURRENT_SOURCE_DIR}")
-endfunction()
-
-# A test's kind: every test target is a unit test unless it says otherwise, so
-# the rule bites on every test that exists without tagging any of them, and the
-# tag is written exactly where someone is linking Glue on purpose.
-#
-# Usage: call augusta_set_end_to_end_test(<target> <executable>) beside that
-# test target's own target_link_libraries() call. It may then link that
-# executable's application or runtime - never the executable itself, and never
-# another executable's Glue.
-function(augusta_set_end_to_end_test target executable)
-  set_target_properties(${target} PROPERTIES AUGUSTA_END_TO_END_EXECUTABLE ${executable})
+  set_property(GLOBAL PROPERTY AUGUSTA_GLUE_RUNTIME_${executable} ${runtime})
 endfunction()
 
 # Every target defined in dir or in a directory dir adds; sets out.
@@ -172,111 +156,62 @@ function(augusta_check_executable_glue)
   get_property(executables GLOBAL PROPERTY AUGUSTA_GLUE_EXECUTABLES)
   list(REMOVE_DUPLICATES executables)
 
+  # What every executable may link besides its Runtime's module, and what every
+  # binary links (augusta_link_every_binary).
+  get_property(every_binary GLOBAL PROPERTY AUGUSTA_GLUE_EVERY_BINARY)
+  set(
+    allowed
+    augusta_application
+    augusta_failure
+    augusta_logging
+    augusta_version
+    ${every_binary}
+  )
   set(violations "")
+  set(links "")
   set(linkages "")
-  set(stale "")
-  set(remaining 0)
-  # Every target defined inside some executable's directory, so the linkage
-  # pass below can tell an executable's own wiring from everybody else's.
-  set(inside "")
-  # The Glue targets of every executable this build defines, and the executable
-  # each one belongs to, as two lists read by index.
-  set(glue_targets "")
-  set(glue_owners "")
 
   foreach(executable ${executables})
     get_property(directory GLOBAL PROPERTY AUGUSTA_GLUE_DIRECTORY_${executable})
-    # The three Glue targets an executable's directory is allowed: itself, its
-    # application and its runtime.
-    set(glue ${executable} ${executable}_application ${executable}_runtime)
-    set(exceptions ${AUGUSTA_GLUE_EXCEPTIONS_${executable}})
-    list(LENGTH exceptions count)
-    math(EXPR remaining "${remaining} + ${count}")
-    foreach(target ${glue})
-      list(APPEND glue_targets ${target})
-      list(APPEND glue_owners ${executable})
-    endforeach()
+    get_property(runtime GLOBAL PROPERTY AUGUSTA_GLUE_RUNTIME_${executable})
+    if(NOT TARGET ${runtime})
+      message(FATAL_ERROR "augusta_set_executable_glue(${executable}): its Runtime ${runtime} is not a target")
+    endif()
 
     # A target's location is its own source directory, never its name, so a
-    # library cannot dodge the rule by what it is called. Only library targets
-    # are judged: the custom targets a directory adds for staging, debug info
-    # or installation are not Mechanism.
+    # target cannot dodge the rule by what it is called.
     _augusta_directory_targets("${directory}" targets)
-    list(APPEND inside ${targets})
-    set(libraries "")
     foreach(target ${targets})
-      get_target_property(type ${target} TYPE)
-      if(type MATCHES "_LIBRARY$")
-        list(APPEND libraries ${target})
+      if(NOT "${target}" STREQUAL "${executable}")
+        get_target_property(source_dir ${target} SOURCE_DIR)
+        file(RELATIVE_PATH relative "${CMAKE_SOURCE_DIR}" "${source_dir}")
+        list(APPEND violations "  ${target} (${relative})")
       endif()
     endforeach()
-    # Read again by the stale pass, once the linkage pass has said which
-    # exceptions it excused.
-    set(libraries_${executable} "${libraries}")
 
-    foreach(target ${libraries})
-      if("${target}" IN_LIST glue)
+    # Its Runtime is every target of the Runtime's module, its application
+    # among them. Only targets are judged: a system library such as winmm, a
+    # link flag or a generator expression is not a module.
+    get_target_property(runtime_dir ${runtime} SOURCE_DIR)
+    _augusta_target_dependencies(${executable} deps)
+    foreach(dep ${deps})
+      if(NOT TARGET ${dep} OR "${dep}" IN_LIST allowed)
         continue()
       endif()
-      if("${target}" IN_LIST exceptions)
-        continue()
+      get_target_property(dep_dir ${dep} SOURCE_DIR)
+      if(NOT "${dep_dir}" STREQUAL "${runtime_dir}")
+        list(APPEND links "  ${executable} -> ${dep}")
       endif()
-      get_target_property(source_dir ${target} SOURCE_DIR)
-      file(RELATIVE_PATH relative "${CMAKE_SOURCE_DIR}" "${source_dir}")
-      list(APPEND violations "  ${target} (${relative})")
     endforeach()
   endforeach()
 
-  # Glue is tested only end to end, so nothing outside an executable's own
-  # directory may link its Glue: a unit test not at all, and an end-to-end test
-  # only its own executable's application or runtime. A test's kind defaults to
-  # the unit kind, so the rule bites without tagging anything.
-  _augusta_directory_targets("${CMAKE_SOURCE_DIR}" outsiders)
-  if(inside)
-    list(REMOVE_ITEM outsiders ${inside})
-  endif()
-  foreach(target ${outsiders})
-    get_target_property(end_to_end ${target} AUGUSTA_END_TO_END_EXECUTABLE)
-    if(NOT end_to_end)
-      set(end_to_end "")
-    endif()
+  # No target links an executable: an end-to-end test links its Runtime.
+  _augusta_directory_targets("${CMAKE_SOURCE_DIR}" everyone)
+  foreach(target ${everyone})
     _augusta_target_dependencies(${target} deps)
     foreach(dep ${deps})
-      # Most entries here are generator expressions or third-party targets and
-      # link flags - only an executable's own Glue is checked.
-      list(FIND glue_targets "${dep}" index)
-      if(index EQUAL -1)
-        continue()
-      endif()
-      list(GET glue_owners ${index} owner)
-
-      if("${end_to_end}" STREQUAL "${owner}" AND NOT "${dep}" STREQUAL "${owner}")
-        continue()
-      endif()
-      if("${target}" IN_LIST AUGUSTA_GLUE_EXCEPTIONS_${owner})
-        # The ledger excuses it; the stale pass below needs to know it did.
-        list(APPEND excused_${owner} ${target})
-        continue()
-      endif()
-
-      if("${dep}" STREQUAL "${owner}")
-        set(because "${dep} is an executable, which no target links")
-      elseif(end_to_end)
-        set(because "${target} is an end-to-end test of ${end_to_end}, not of ${owner}")
-      else()
-        set(because "${target} is not an end-to-end test of ${owner}")
-      endif()
-      list(APPEND linkages "  ${target} -> ${dep}: ${because}")
-    endforeach()
-  endforeach()
-
-  # An entry naming a library that is no longer inside the executable, or a
-  # test that no longer needs excusing, has been migrated: the ledger says
-  # otherwise, so the configure fails until the entry goes too.
-  foreach(executable ${executables})
-    foreach(exception ${AUGUSTA_GLUE_EXCEPTIONS_${executable}})
-      if(NOT "${exception}" IN_LIST libraries_${executable} AND NOT "${exception}" IN_LIST excused_${executable})
-        list(APPEND stale "  ${exception} (${executable})")
+      if("${dep}" IN_LIST executables)
+        list(APPEND linkages "  ${target} -> ${dep}")
       endif()
     endforeach()
   endforeach()
@@ -286,33 +221,28 @@ function(augusta_check_executable_glue)
     list(JOIN violations "\n" joined)
     string(
       APPEND report
-      "An executable's directory holds only its entry point, its application and its runtime. "
-      "These library targets sit inside one - give each a module under src/modules/:\n${joined}\n"
+      "An executable's only target is the executable. These targets sit inside an executable's directory - "
+      "give each a module under src/modules/:\n${joined}\n"
+    )
+  endif()
+  if(links)
+    list(JOIN links "\n" joined)
+    string(
+      APPEND report
+      "An executable links only the application, its Runtime, failure, logging and version. These links reach "
+      "past them - let its Runtime wire the module instead:\n${joined}\n"
     )
   endif()
   if(linkages)
     list(JOIN linkages "\n" joined)
     string(
       APPEND report
-      "Glue is tested only end to end: a unit test links no Glue at all, and an end-to-end test "
-      "links its own executable's application or runtime and nothing else. These link Glue they "
-      "may not - test a module instead, or declare the test end to end with "
-      "augusta_set_end_to_end_test():\n${joined}\n"
-    )
-  endif()
-  if(stale)
-    list(JOIN stale "\n" joined)
-    string(
-      APPEND report
-      "These exceptions name targets that no longer break the rule they excuse - take each entry "
-      "out of AUGUSTA_GLUE_EXCEPTIONS_<executable> in cmake/AugustaModule.cmake:\n${joined}\n"
+      "Glue is tested only end to end, through the Runtime it runs: no target links an executable. These do - "
+      "link the executable's Runtime instead:\n${joined}\n"
     )
   endif()
   if(report)
     string(STRIP "${report}" report)
     message(FATAL_ERROR "Executables are Glue (ADR-0060, docs/adr/0060-executables-are-glue.md):\n${report}")
   endif()
-
-  # The migration's progress, so it reads off a build log.
-  message(STATUS "Executables are Glue (ADR-0060): ${remaining} exception(s) left inside an executable")
 endfunction()

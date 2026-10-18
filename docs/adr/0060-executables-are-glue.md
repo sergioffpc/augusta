@@ -43,11 +43,11 @@ PredictionWorld are a module, tested by hand-driven ticks.
   `include/augusta/`, its namespace `augusta::<module>` or one per concept, as
   in the gameplay module. An executable's only target is the executable itself.
 - **Checked at configure time.** `cmake/AugustaModule.cmake` refuses a target
-  under `src/server/` or `src/client/` other than the executable, a test that
-  links an executable's target, and an executable that links more than the
-  application, its Runtime, failure, logging and version. Code that predates
-  this decision is a named exception in the check; the list only shrinks, each
-  migration removing its entries, and the check drops it once it is empty.
+  under `src/server/` or `src/client/` other than the executable, a target that
+  links an executable, and an executable that links more than the application,
+  its Runtime (any target of the Runtime's module), failure, logging and
+  version. The build's own infrastructure that every binary links, such as a
+  sanitizer's default options, is no module and passes.
 - **Existing code.** Migrated gradually, one cohesive cluster at a time, never
   in one change.
 - **Python tools** keep their own project layout (`tools/<tool>/`) and are not

@@ -8,7 +8,7 @@
 #include "augusta/failure.h"
 
 /// \file
-/// Where a runtime's shared component (server::Host, harness::Session) keeps
+/// Where a runtime's shared component (host::Host, harness::Session) keeps
 /// the first failure any of its threads met inside a call that cannot return
 /// it - a send in the middle of a tick, say - until one of the runtime's
 /// workers takes it and escalates it to the supervisor (supervisor.h,

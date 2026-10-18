@@ -9,8 +9,8 @@
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
 
+#include "augusta/crash.h"
 #include "augusta/logging.h"
-#include "crash.h"
 
 namespace {
 

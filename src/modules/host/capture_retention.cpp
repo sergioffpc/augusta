@@ -20,7 +20,7 @@
 #include "augusta/faults.h"
 #include "augusta/logging.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -185,4 +185,4 @@ void CaptureDirectory::Report() const {
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

@@ -8,13 +8,13 @@
 #include <utility>
 
 #include "augusta/ballistics.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -48,7 +48,7 @@ std::string_view BodyPartName(ballistics::BodyPart part) {
 
 }  // namespace
 
-std::uint32_t PeerNumber(networking::PeerId peer) { return static_cast<std::uint32_t>(peer); }
+std::uint32_t PeerNumber(link::PeerId peer) { return static_cast<std::uint32_t>(peer); }
 
 std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
 
@@ -82,4 +82,4 @@ void LogCombat(const simulation::State& state) {
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

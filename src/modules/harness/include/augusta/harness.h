@@ -11,25 +11,23 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
-#include "augusta/weapon.h"
 
 /// \file
 /// augusta::harness is where anything that plays talks to the server: the
 /// client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
 /// the parts that need a window or a GPU (Input, Renderer, Audio,
 /// PresentationWorld). Whatever supplies the input for a tick plugs in here:
-/// anything that plays live - ClientRuntime (src/client), a future autonomous
+/// anything that plays live - ClientRuntime (the client module), a future autonomous
 /// agent - runs one in real time under a Runner (runner.h), and an automated
 /// test drives one by hand so client/server behavior can be checked in CI with
 /// no display and no clock.
@@ -39,113 +37,39 @@
 /// (Tick), and hands in the input for that tick. The two are meant for two
 /// different threads, as in Runner: Connect, Disconnect, PumpEvents,
 /// ExchangeMessages, GetConnectionState and GetConnectionStats from the Network
-/// I/O thread, and Tick from the Prediction thread (the transport is safe to
-/// send from both). A failure of the local transport inside any of them is kept
+/// I/O thread, and Tick from the Prediction thread (the Link is safe to send
+/// from both). A failure of the local transport inside any of them is kept
 /// for the caller to take (Session::TakeTransportFailure) and stop on, and the
 /// Session sends nothing more after it, or after a broken invariant; the
 /// server ending the connection is the Session's own Failure instead.
 namespace augusta::harness {
 
-/// The server's name for one connected player (CONTEXT.md, "Session ID"), as
-/// this client knows it: assigned when the server admits the join. Distinct
-/// from the transport's handle for the connection, and not a credential.
-enum class SessionId : std::uint32_t {};
-
-/// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as this
-/// client knows it: a player's is given in Match start. It names the body, not
-/// who moves it, so it is never a session.
-enum class EntityId : std::uint32_t {};
-
-/// One dynamic body, under the entity the server names it by.
-struct EntityBody {
-  EntityId entity{};
-  physics::BodyState body{};
-  /// Where the body faces: the yaw of its player's view (command::Command), in radians.
-  float yaw = 0.0F;
-};
-
-/// What the server said about every body as of one of its ticks: its
-/// Authoritative State, as this client receives it.
-struct AuthoritativeState {
-  /// The server tick this state is from; a client keeps only the newest it has seen.
-  tick::Tick tick = 0;
-  /// The highest command sequence of this client that the server has processed, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
-  /// Every dynamic body in the match.
-  std::vector<EntityBody> bodies;
-  /// This client's own player's rifle as of that tick: what its predicted rifle
-  /// is reconciled against.
-  weapon::State rifle{};
-  /// This client's own player's health as of that tick, 0 once it has died. No
-  /// other player's is told.
-  float health = 0.0F;
-  /// How many of this client's commands the server still held queued after
-  /// that tick: what the client paces its own ticks by (tick::PacedTickDuration).
-  std::uint8_t queued_commands = 0;
-};
-
-/// One round a player fired, as the server announced it (CONTEXT.md's Shot,
-/// ADR-0044).
-struct Shot {
-  /// The body of the player who fired it.
-  EntityId shooter{};
-  /// The server tick it was fired on.
-  tick::Tick tick = 0;
-  /// Where the round left from.
-  math::Vec3 origin{};
-  /// Where it left for, as a view's yaw and pitch in radians (command::Command;
-  /// command::ViewDirection gives the direction).
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-};
+// What the server tells this client, and what it asks, are the Link's own
+// messages in the engine's terms (augusta/link_types.h), named here as the
+// harness's: each Session ID and Entity ID is this client's knowledge of the
+// server's name for a player or a body (GLOSSARY.md).
+using SessionId = link::SessionId;
+using EntityId = link::EntityId;
+using EntityBody = link::EntityBody;
+using AuthoritativeState = link::AuthoritativeState;
+using Shot = link::Shot;
+using HitConfirmation = link::HitConfirmation;
+using PlayerView = link::PlayerView;
+using ReplayView = link::ReplayView;
+using Death = link::Death;
+using RosterEntry = link::RosterEntry;
+using Lobby = link::Lobby;
+using MatchPlayer = link::MatchPlayer;
+using MatchStart = link::MatchStart;
+using MatchEnd = link::MatchEnd;
+using JoinRefusal = link::JoinRefusal;
+using Admission = link::Admission;
+using ReplayListing = link::ReplayListing;
 
 /// The most Shots a Session keeps for TakeShots: a few seconds of a full match
 /// firing, so a caller that asks every frame loses none and one that never
 /// asks holds no more than this.
 inline constexpr std::size_t kMaxPendingShots = 256;
-
-/// A round this client's player fired hit a player, as the server confirmed it
-/// (CONTEXT.md's Hit confirmation, ADR-0044).
-struct HitConfirmation {
-  /// The body that was hit.
-  EntityId target{};
-  /// The damage the hit did.
-  float damage = 0.0F;
-  /// Where on the body it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
-};
-
-/// Where one player of a Replay looked on one tick, from the Command the
-/// replay server's World ran (ADR-0051): what its Replay viewer is shown, which
-/// no Authoritative State carries.
-struct PlayerView {
-  EntityId entity{};
-  /// The view's pitch, in radians (command::Command).
-  float pitch = 0.0F;
-  bool ads = false;
-};
-
-/// Every player's view on one tick of a Replay, as its replay server sent it.
-struct ReplayView {
-  /// The tick, as the Authoritative State of the same tick names it.
-  tick::Tick tick = 0;
-  std::vector<PlayerView> players;
-};
-
-/// A player in the match died (US-13), as the server told every client in it:
-/// for the rest of the match. Carries what a ragdoll would start from (ADR-0045).
-struct Death {
-  /// The body of the player who died.
-  EntityId victim{};
-  /// The body of the player who fired the killing round.
-  EntityId killer{};
-  /// Where the killing round was fired for, as a view's yaw and pitch in
-  /// radians (command::ViewDirection gives the direction).
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  /// Where on the victim it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
-};
 
 /// The most Deaths a Session keeps for TakeDeaths: a match's players die once each.
 inline constexpr std::size_t kMaxPendingDeaths = 16;
@@ -153,44 +77,6 @@ inline constexpr std::size_t kMaxPendingDeaths = 16;
 /// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
 /// than one rifle lands between two frames, by far.
 inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
-
-/// One player in the Lobby.
-struct RosterEntry {
-  SessionId session{};
-  /// Its character, by its name in the scenario's manifest (ADR-0042).
-  std::string character;
-};
-
-/// Who is in the Lobby, as the server last said (ADR-0043).
-struct Lobby {
-  /// Numbers this Roster; what ReportReady names.
-  std::uint32_t version = 0;
-  /// Every player in the Lobby, this client's own included.
-  std::vector<RosterEntry> roster;
-};
-
-/// One player in a match, the body it controls, and where the server spawned it.
-struct MatchPlayer {
-  SessionId session{};
-  /// The body this player's commands move for the whole match.
-  EntityId entity{};
-  /// Its character (see RosterEntry::character).
-  std::string character;
-  math::Vec3 spawn{};
-};
-
-/// What the server said when a match started: everyone in it, this client's own player included.
-struct MatchStart {
-  std::vector<MatchPlayer> players;
-  /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
-  tick::Tick first_tick = 0;
-};
-
-/// What the server said when a match ended (US-14).
-struct MatchEnd {
-  /// The session of the player Game policy declared the winner; nullopt for a draw.
-  std::optional<SessionId> winner;
-};
 
 /// Where a Session is in the lifecycle of ADR-0043.
 enum class Phase : std::uint8_t {
@@ -200,28 +86,6 @@ enum class Phase : std::uint8_t {
   kLobby,
   /// Playing in a match.
   kMatch,
-};
-
-/// Why the server refused this client's join.
-enum class JoinRefusal : std::uint8_t {
-  /// This client's engine version is not the server's.
-  kVersionMismatch,
-  /// The Lobby already holds the scenario's Player count.
-  kLobbyFull,
-  /// The character this client asked to play is not one of the scenario's (ADR-0042).
-  kUnknownCharacter,
-  /// A match is under way, and no one joins one in progress (ADR-0043).
-  kMatchInProgress,
-  /// This client's pack is not the one cooked with the server's.
-  kPackMismatch,
-  /// The server is a replay server, which only replays Match captures (ADR-0051).
-  kReplayServer,
-  /// The capture this client asked to watch is none the replay server replays (ADR-0051).
-  kUnknownCapture,
-  /// This client asked a live server for Replays, which only a replay server serves (ADR-0051).
-  kNotAReplayServer,
-  /// This client asked to join as a Captured player, and the server takes none (ADR-0050).
-  kReenactmentsNotAccepted,
 };
 
 /// A short lowercase description of reason, for logs and for the player.
@@ -249,18 +113,6 @@ struct Failure {
 /// A sentence for the player saying what happened and, where the client can
 /// tell, what to fix; the same wording wherever it is shown.
 [[nodiscard]] std::string DescribeFailure(const Failure& failure);
-
-/// What the server said when it admitted this client, in the engine's terms.
-struct Admission {
-  /// The session the server assigned to this client.
-  SessionId session{};
-  /// The rate, in Hz, at which the server ticks and this client must.
-  std::uint8_t tick_rate_hz = 0;
-  /// The parameters this client must predict with.
-  parameters::Parameters parameters{};
-  /// This client's own character (see RosterEntry::character).
-  std::string character;
-};
 
 /// What the server has told this client, as of one moment (ADR-0005): the
 /// Network I/O thread publishes a new one, whole, for every message that changes
@@ -303,7 +155,7 @@ struct ServerView {
 /// What a Session needs to connect.
 struct SessionConfig {
   /// The dedicated server to connect to (US-01).
-  networking::Endpoint server{};
+  link::Endpoint server{};
   /// The engine version to present when joining; the server admits only its own.
   std::string engine_version = std::string(EngineVersion());
   /// The hash of the client pack loaded (assets::Pack::Hash); the server admits
@@ -312,7 +164,7 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
-  /// For a test: asked at every send and receive (networking.h), so the
+  /// For a test: asked at every send and receive (link.h), so the
   /// transport fails there; null otherwise. Must outlive the Session.
   failure::Faults* faults = nullptr;
   /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
@@ -361,7 +213,7 @@ class Session {
   [[nodiscard]] std::shared_ptr<const ServerView> GetServerView() const;
 
   /// Whether the connection is still connecting, connected or disconnected.
-  [[nodiscard]] networking::ConnectionState GetConnectionState() const;
+  [[nodiscard]] link::ConnectionState GetConnectionState() const;
 
   /// Why this session has ended on its own, or nullopt while it has not: before
   /// Connect, while connecting or connected, and after Disconnect (which the
@@ -389,7 +241,7 @@ class Session {
   [[nodiscard]] std::optional<failure::Failure> TakeInvariantFailure();
 
   /// The connection's quality numbers, or nullopt if not connected.
-  [[nodiscard]] std::optional<networking::ConnectionStats> GetConnectionStats() const;
+  [[nodiscard]] std::optional<link::ConnectionStats> GetConnectionStats() const;
 
   /// The session the server assigned once it admitted this client, or nullopt
   /// until then. Set by ExchangeMessages; safe to read from any thread.
@@ -489,7 +341,7 @@ class Session {
   /// caller that paces its commands to the server's ticks counts from (the
   /// Authoritative State's acknowledged sequence is the last handed to the
   /// World). Prediction thread, as Tick.
-  [[nodiscard]] command::Sequence NextSequence() const;
+  [[nodiscard]] tick::Sequence NextSequence() const;
 
   /// Runs one fixed tick of PredictionWorld for command and returns its state.
   /// The Seen time command reports (command::Command) is the caller's to fill, from
@@ -514,19 +366,6 @@ class Session {
   std::unique_ptr<Impl> impl_;
 };
 
-/// One capture a replay server replays, as its Replay list names it (ADR-0051).
-struct ReplayListing {
-  /// What a Replay request names it by (SessionConfig::replay).
-  std::string name;
-  /// When its Match started, in UTC.
-  std::chrono::sys_time<std::chrono::milliseconds> started;
-  /// How long its Match lasted, in ticks at tick_rate_hz.
-  std::uint32_t ticks = 0;
-  std::uint8_t tick_rate_hz = 0;
-  /// Its players' Characters, in its first player's order.
-  std::vector<std::string> characters;
-};
-
 /// Asks a replay server which captures it replays (ADR-0051): connects, sends
 /// a Replay list request once connected, and keeps the list it answers with,
 /// after which the server closes the connection. Like a Session it owns no
@@ -534,7 +373,7 @@ struct ReplayListing {
 class ReplayListQuery {
  public:
   /// Begins connecting to server; returns immediately. faults, for a test, as SessionConfig::faults.
-  explicit ReplayListQuery(const networking::Endpoint& server, failure::Faults* faults = nullptr);
+  explicit ReplayListQuery(const link::Endpoint& server, failure::Faults* faults = nullptr);
   ~ReplayListQuery();
 
   ReplayListQuery(const ReplayListQuery&) = delete;

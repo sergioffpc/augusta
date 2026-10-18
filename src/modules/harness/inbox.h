@@ -8,18 +8,17 @@
 #include <vector>
 
 #include "augusta/harness.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
-#include "augusta/protocol.h"
 #include "pending.h"
 
 /// \file
-/// What a Session makes of the messages its server sends: each decoded,
-/// checked against what the client already knows (a Match start that leaves it
+/// What a Session makes of the messages its server sends: each, as the Link
+/// hands it over in the engine's types, checked against what the client already knows (a Match start that leaves it
 /// out, or a state of a body not in the match, is dropped as a malformed message
 /// is), and kept, either in the ServerView it publishes or, for what is handed
 /// out once, until it is taken. No connection of its own: Session hands it each
-/// payload the transport received. Private to the harness module.
+/// message the Link received. Private to the harness module.
 namespace augusta::harness {
 
 /// The server's messages, as a Session reads them.
@@ -39,7 +38,7 @@ class Inbox {
 
   /// Takes in one message the server sent. Network I/O thread only: it alone
   /// publishes the view.
-  void Receive(const networking::Payload& payload);
+  void Receive(link::ServerMessage message);
 
   /// What the server has said so far. Safe to call from any thread.
   [[nodiscard]] std::shared_ptr<const ServerView> View() const;
@@ -52,8 +51,6 @@ class Inbox {
   [[nodiscard]] std::vector<Death> TakeDeaths(std::uint32_t matches_started);
 
  private:
-  // Hands message to what takes in its kind; false if it is not one a server sends.
-  bool TakeIn(const protocol::MessageWire& message);
   void OnJoinAccepted(const Admission& accepted);
   void OnJoinRefused(JoinRefusal reason);
   void OnLobby(Lobby lobby);

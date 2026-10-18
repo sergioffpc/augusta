@@ -8,8 +8,8 @@
 
 #include "augusta/failure.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
@@ -19,29 +19,29 @@
 /// unreliably, since a newer one supersedes it; then, reliably, what must
 /// arrive: every Shot and every Death of the tick to all of them, and each Hit
 /// confirmation to its shooter alone, if it is still in the match. replication
-/// decides what each message holds; this encodes them, in that order and with
-/// that reliability (ForEachTickMessage, tested without a network), and sends
-/// them on the Host's connections, counting each into the Host's metrics
-/// (host_metrics.h).
-namespace augusta::server {
+/// decides what each message holds; this has the Link encode them, in that
+/// order, the Authoritative State's bodies once for every player (link::Readdressed)
+/// (ForEachTickMessage, tested without a network), and sends them on the
+/// Host's channels, each with the reliability the Link gives its type,
+/// counting each into the Host's metrics (host_metrics.h).
+namespace augusta::host {
 
 /// Who a tick's messages go to: each player in the match.
 struct TickRecipients {
   std::vector<replication::Recipient> recipients;
   /// The connection of each recipient, by the entity its player controls.
-  std::unordered_map<EntityId, networking::PeerId> peers;
+  std::unordered_map<EntityId, link::PeerId> peers;
 };
 
-/// Sends payload, an encoded message, to peer as reliability says, counting it
-/// into metrics only if the transport accepted it: how the Host sends
-/// everything it sends. Returns what the transport did with it.
-[[nodiscard]] networking::SendResult SendCounted(networking::Server& network, HostMetrics& metrics,
-                                                 networking::PeerId peer, const networking::Payload& payload,
-                                                 networking::Reliability reliability);
+/// Sends message to peer, counting it into metrics only if the Link accepted
+/// it: how the Host sends everything it sends. Returns what the Link did with
+/// it.
+[[nodiscard]] link::SendResult SendCounted(link::Server& network, HostMetrics& metrics, link::PeerId peer,
+                                           const link::Outgoing& message);
 
-/// Takes one message a tick sends: payload, an encoded message, to peer as
-/// reliability says. Returns whether to go on: false hands on nothing more.
-using TickMessageSink = std::function<bool(networking::PeerId, const networking::Payload&, networking::Reliability)>;
+/// Takes one message a tick sends, encoded, to peer. Returns whether to go on:
+/// false hands on nothing more.
+using TickMessageSink = std::function<bool(link::PeerId, const link::Outgoing&)>;
 
 /// Hands send every message tick's state holds for the recipients, in the
 /// order the Host sends them: each recipient's Authoritative State update, in
@@ -50,22 +50,22 @@ using TickMessageSink = std::function<bool(networking::PeerId, const networking:
 /// The decision SendTickMessages puts on the wire, apart so it is tested
 /// without a network. Every message is encoded before any is handed on, so if
 /// the protocol cannot carry one, none of the tick's is: the broken invariant
-/// is returned instead (EncodeToSend in wire.h), for the runtime to stop on.
+/// is returned instead (link::Encode, augusta/link.h), for the runtime to stop on.
 [[nodiscard]] std::expected<void, failure::Failure> ForEachTickMessage(const simulation::State& state, tick::Tick tick,
                                                                        const TickRecipients& to,
                                                                        const TickMessageSink& send);
 
 /// Sends to the recipients what tick's state holds for them, counting into
-/// metrics what the transport accepted. Stops at, and returns, the broken
+/// metrics what the Link accepted. Stops at, and returns, the broken
 /// invariant (failure::Code::kInvariantViolated) before sending anything, as
 /// ForEachTickMessage does, or the local transport's first failure; a
 /// recipient that drops a message is its own outcome. Asks halted before each
 /// message, and sends nothing more once it says the runtime has failed.
-[[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(networking::Server& network, HostMetrics& metrics,
+[[nodiscard]] std::expected<void, failure::Failure> SendTickMessages(link::Server& network, HostMetrics& metrics,
                                                                      const simulation::State& state, tick::Tick tick,
                                                                      const TickRecipients& to,
                                                                      const std::function<bool()>& halted);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_TICK_MESSAGES_H_

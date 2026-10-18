@@ -8,6 +8,7 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 
 // The history of commands and predicted states is pure: no physics is stepped
 // here, the replay is handed a step of its own.
@@ -63,7 +64,7 @@ TEST(HistoryTest, AcknowledgeReturnsTheRiflePredictedAfterThatCommand) {
 // Requirements: NFR-02
 TEST(HistoryTest, AcknowledgingDiscardsWhatIsOlderAndTheStateItself) {
   History history;
-  for (augusta::command::Sequence sequence = 1; sequence <= 5; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= 5; ++sequence) {
     history.Record(sequence, Command(1.0F), At(static_cast<float>(sequence)));
   }
 
@@ -158,7 +159,7 @@ TEST(HistoryTest, ReplayOfAnEmptyHistoryNeverRunsTheStep) {
 TEST(HistoryTest, OnlyTheMostRecentStatesAreKept) {
   History history;
   const auto total = static_cast<std::uint32_t>(kMaxHistory + 10);
-  for (augusta::command::Sequence sequence = 1; sequence <= total; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= total; ++sequence) {
     history.Record(sequence, Command(1.0F), At(0.0F));
   }
 

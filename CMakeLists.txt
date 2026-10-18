@@ -39,7 +39,8 @@ if(AUGUSTA_TOOLS)
   endif()
 endif()
 
-# The client (src/client) and its Renderer (src/modules/renderer), on Windows
+# The client (src/client, src/modules/client) and its Renderer
+# (src/modules/renderer), on Windows
 # and Linux (ADR-0006): on by default, so `cmake --preset linux` builds augustac
 # and its tests too. With it, vcpkg installs the manifest's client feature,
 # whose GLFW needs the system's X11, Wayland and xkbcommon development files on
@@ -104,19 +105,21 @@ if(AUGUSTA_TOOLS AND NOT WIN32)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
+include(cmake/AugustaModule.cmake)
+
 # Every binary of an ASan build (linux-san, linux-fuzz) starts with the options
 # cmake/asan_default_options.cpp gives it (ADR-0008): when ctest runs it, when
 # the build lists its tests, and when it is run by hand.
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*address")
   add_library(augusta_asan_default_options OBJECT cmake/asan_default_options.cpp)
-  link_libraries(augusta_asan_default_options)
+  augusta_link_every_binary(augusta_asan_default_options)
 endif()
 # Every binary of a UBSan build (linux-san) starts with the options
 # cmake/ubsan_default_options.cpp gives it, so a UBSan report fails it however
 # it is run (ADR-0013).
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*undefined")
   add_library(augusta_ubsan_default_options OBJECT cmake/ubsan_default_options.cpp)
-  link_libraries(augusta_ubsan_default_options)
+  augusta_link_every_binary(augusta_ubsan_default_options)
 endif()
 
 # flecs/GameNetworkingSockets/PhysX back the client/server shared runtime
@@ -136,7 +139,6 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 add_library(nvtx3-cpp INTERFACE)
 target_include_directories(nvtx3-cpp SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nvtx/c/include")
 
-include(cmake/AugustaModule.cmake)
 include(cmake/AugustaDebugInfo.cmake)
 
 enable_testing()
@@ -148,18 +150,23 @@ add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
 add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
-add_subdirectory(src/modules/primitives)
+add_subdirectory(src/modules/tick)
+add_subdirectory(src/modules/limits)
 add_subdirectory(src/modules/failure)
-add_subdirectory(src/modules/lifecycle)
+add_subdirectory(src/modules/supervisor)
+add_subdirectory(src/modules/application)
 add_subdirectory(src/modules/assets)
 add_subdirectory(src/modules/physics)
 add_subdirectory(src/modules/gameplay)
 add_subdirectory(src/modules/protocol)
-add_subdirectory(src/modules/wire)
+add_subdirectory(src/modules/link)
 add_subdirectory(src/modules/capture)
 add_subdirectory(src/modules/networking)
 add_subdirectory(src/modules/scripting)
+add_subdirectory(src/modules/policy)
 add_subdirectory(src/modules/audio)
+add_subdirectory(src/modules/window)
+add_subdirectory(src/modules/hud)
 add_subdirectory(src/modules/input)
 add_subdirectory(src/modules/simulation)
 add_subdirectory(src/modules/prediction)
@@ -168,6 +175,7 @@ add_subdirectory(src/modules/presentation)
 add_subdirectory(src/modules/metrics)
 add_subdirectory(src/modules/scenario)
 add_subdirectory(src/modules/host)
+add_subdirectory(src/modules/server)
 add_subdirectory(src/server)
 # The tools, built with the runtime they link on every platform: the Agents
 # (ADR-0052), whose Python module is built against the interpreter
@@ -205,9 +213,11 @@ if(AUGUSTA_COVERAGE)
 endif()
 # The client renders through NVRHI on Vulkan, on Windows and Linux (ADR-0059).
 # What its Renderer decides apart from the GPU builds and is tested in every
-# build; the Renderer itself and the client that links it, with AUGUSTA_CLIENT.
+# build; the Renderer itself, the client Runtime that links it and augustac,
+# with AUGUSTA_CLIENT.
 add_subdirectory(src/modules/renderer)
 if(AUGUSTA_CLIENT)
+  add_subdirectory(src/modules/client)
   add_subdirectory(src/client)
 endif()
 
@@ -222,7 +232,7 @@ augusta_check_module_scopes()
 add_subdirectory(tests EXCLUDE_FROM_ALL)
 
 # Every target is now defined, so what sits inside src/client and src/server is
-# settled - only their Glue may be there - and so is what each test links: the
-# check reads the tests too, so it runs after them (ADR-0060 - see
+# settled - only the executables may be there - and so is what each target
+# links: the check reads the tests too, so it runs after them (ADR-0060 - see
 # cmake/AugustaModule.cmake).
 augusta_check_executable_glue()
