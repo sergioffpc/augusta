@@ -17,28 +17,32 @@ a Commands message carries is the protocol's own bound
 the protocol includes or links anything else. A protocol type that mirrors one
 of the engine's carries the suffix `Wire`: `BodyStateWire` for
 `physics::BodyState`, and the Authoritative State message is
-`AuthoritativeStateWire`, for the client's `harness::AuthoritativeState`. Every
+`AuthoritativeStateWire`, for the Link's `link::AuthoritativeState`. Every
 protocol type carries the suffix, so none reads like an engine type. Every
 conversion between the protocol's types and the engine's is the Link's
-(`augusta_link`) and nowhere else: `host::Host` and `harness::Session` hand it
-the engine's types right before Encode and take them back right after Decode.
-The Link owns the transport end to end, too: the client's connection, the
-server's listening socket and one channel per peer, and the replay server's
-endpoint of its own (ADR-0051), so the Host and the Harness never link
-`augusta_networking`. Admission works on the peer identity the Link hands the
-Host, and the Connection health collector and the client's netcode stats read
-each peer's round trip, loss and queue from the Link, in its own types. Its
-conversions are stateless functions in an internal target of their own
-(`augusta_link_messages`), with no transport beneath, which also keeps only the
-newest of a tick's unacknowledged Commands within
-`protocol::kMaxCommandsPerMessage` in the tick's one Commands message, so the
-Harness never sees the bound. The capture module (`augusta/capture.h`), shared
-by both peers, writes and reads a Match capture's records: its interface speaks
-the engine's types, and it converts them with `augusta_link_messages` alone.
-Inside each peer, modules pass the engine's types, never a `Wire` one: each peer
-names a player by its own Session ID type (`harness::SessionId` for the
-harness's API and ClientRuntime; `host::SessionId` for `host::Match` and
-`host::Host`), a body by its own Entity ID type (`harness::EntityId`, which
+(`augusta_link`) and nowhere else. The Link has its own message vocabulary in
+the engine's terms (`augusta/link_types.h`: a join, an Authoritative State, a
+Shot, a tick's Commands, ...): `host::Host` and `harness::Session` hand it those
+right before Encode and take them back right after Decode. The Harness's message
+types are the Link's; the Host maps its own types and Replication's into them at
+its edge (`augusta/link_mapping.h`), naming no protocol type. The Link owns the
+transport end to end, too: the client's connection, the server's listening
+socket and one channel per peer, and the replay server's endpoint of its own
+(ADR-0051), so the Host and the Harness never link `augusta_networking`.
+Admission works on the peer identity the Link hands the Host, and the Connection
+health collector and the client's netcode stats read each peer's round trip,
+loss and queue from the Link, in its own types. Its conversions are stateless
+functions in an internal target of their own (`augusta_link_messages`), with no
+transport beneath, which also keeps only the newest of a tick's unacknowledged
+Commands within `protocol::kMaxCommandsPerMessage` in the tick's one Commands
+message, so the Harness never sees the bound. The capture module
+(`augusta/capture.h`), shared by both peers, writes and reads a Match capture's
+records: its interface speaks the engine's types, and it converts them with
+`augusta_link_messages` alone. Inside each peer, modules pass the engine's
+types, never a `Wire` one: each peer names a player by its own Session ID type
+(`harness::SessionId`, the Link's `link::SessionId`, for the harness's API and
+ClientRuntime; `host::SessionId` for `host::Match` and `host::Host`), a body by
+its own Entity ID type (`harness::EntityId`, the Link's `link::EntityId`, which
 ClientRuntime converts at its own edge into `presentation::EntityId`, so
 `presentation` does not depend on the harness; `host::EntityId`, which
 `host::Host` hands SimulationWorld and `replication` as the

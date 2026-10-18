@@ -9,19 +9,17 @@ links it.
 
 The server Runtime, augustad's: it runs a Host, or in replay mode a Replay
 server, on the Network I/O and Simulation threads at the fixed tick rate, with
-its config and its clock. With it, what the Runtime is made from and decides at
-its edges:
-
-- How augustad's phases classify their failures behind the application boundary.
-- The metrics endpoint serving `/metrics` and `/livez`, and whether the tick
-  loop is still running, which `/livez` answers.
-- Each client's Connection health as metrics.
-- What a crash leaves in the log: the fatal signal and a symbolized stack.
+its config and its clock, and runs it behind the application boundary in
+augustad's Lifecycle, each phase classifying its own failure. Beside it, it
+serves `/metrics` and `/livez` from a metrics endpoint, answering the latter by
+whether the tick loop is still running, reports each client's Connection health
+as metrics, and leaves the fatal signal and a symbolized stack in the log when
+it crashes.
 
 ## Not its responsibility
 
-- The entry point, the command line, the signal handlers and the Lifecycle it
-  runs the Runtime in: augustad (`src/server`).
+- The entry point, the command line and the signal handlers: augustad
+  (`src/server`).
 - Admitting clients, screening their commands, ticking and replicating a Match:
   host, which the Runtime only runs.
 - The lock-free counters it counts with: metrics.
