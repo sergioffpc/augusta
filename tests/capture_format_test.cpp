@@ -17,6 +17,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/physics.h"
