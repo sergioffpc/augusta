@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/application.h"
+#include "augusta/assets.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -53,7 +54,7 @@ class ServerApplicationEnvironment : public ::testing::Environment {
 // ephemeral ports so tests run side by side.
 ServerConfig ExampleConfig() {
   ServerConfig config;
-  config.pack_path = kPacks / "server.pack";
+  config.pack_path = (kPacks / "server").replace_extension(augusta::assets::kPackExtension);
   config.public_key_path = kPacks / "test.pub";
   config.tick_rate_hz = 60;
   config.listen_address = "127.0.0.1:0";
@@ -122,7 +123,7 @@ TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure
 TEST(ServerApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
-  config.pack_path = kPacks / "missing.pack";
+  config.pack_path = (kPacks / "missing").replace_extension(augusta::assets::kPackExtension);
 
   const Outcome outcome = Served(config, faults);
 
@@ -135,7 +136,7 @@ TEST(ServerApplicationTest, APackThatDoesNotVerifyIsAContentFailure) {
 TEST(ServerApplicationTest, APackWithoutServerContentIsAContentFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
-  config.pack_path = kPacks / "client.pack";
+  config.pack_path = (kPacks / "client").replace_extension(augusta::assets::kPackExtension);
 
   const Outcome outcome = Served(config, faults);
 
@@ -174,7 +175,7 @@ TEST(ServerApplicationTest, AListenerThatCannotBeSetUpIsAListenerFailure) {
 TEST(ServerApplicationTest, ACaptureDirectoryThatCannotBeMadeIsAConfigurationFailure) {
   Faults faults;
   ServerConfig config = ExampleConfig();
-  config.capture_directory = kPacks / "server.pack" / "captures";
+  config.capture_directory = (kPacks / "server").replace_extension(augusta::assets::kPackExtension) / "captures";
 
   const Outcome outcome = Served(config, faults);
 
@@ -260,7 +261,7 @@ TEST(ServerApplicationTest, AStartupFailureIsLoggedOnceByTheBoundaryThatDecidesI
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
   Faults faults;
   ServerConfig config = ExampleConfig();
-  config.pack_path = kPacks / "client.pack";
+  config.pack_path = (kPacks / "client").replace_extension(augusta::assets::kPackExtension);
 
   testing::internal::CaptureStdout();
   const int status = Conclude("server", Served(config, faults));

@@ -20,7 +20,7 @@ void BM_PackLoad(benchmark::State& state, const std::string& pack) {
     state.SkipWithError("the test public key does not read");
     return;
   }
-  const std::filesystem::path path = kExamplePacks / pack;
+  const std::filesystem::path path = (kExamplePacks / pack).replace_extension(augusta::assets::kPackExtension);
   for (auto _ : state) {
     auto loaded = Pack::Load(path, *public_key);
     if (!loaded.has_value()) {
@@ -30,7 +30,7 @@ void BM_PackLoad(benchmark::State& state, const std::string& pack) {
     benchmark::DoNotOptimize(loaded);
   }
 }
-BENCHMARK_CAPTURE(BM_PackLoad, client, std::string("client.pack"));
-BENCHMARK_CAPTURE(BM_PackLoad, server, std::string("server.pack"));
+BENCHMARK_CAPTURE(BM_PackLoad, client, std::string("client"));
+BENCHMARK_CAPTURE(BM_PackLoad, server, std::string("server"));
 
 }  // namespace

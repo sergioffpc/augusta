@@ -12,6 +12,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -71,6 +72,11 @@ constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
 constexpr const char* kCharacter = "soldier";
 constexpr float kEyeHeight = 1.6F;
 constexpr float kSpacing = 10.0F;
+
+// stem as a capture's file is named.
+std::string CaptureNamed(std::string_view stem) {
+  return std::string(stem) + std::string(augusta::capture::kExtension);
+}
 
 // Last man standing, as the example scenario's rules decide it.
 constexpr const char* kLastManStanding = R"(
@@ -451,7 +457,7 @@ TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
   std::filesystem::copy_file(directory_.Path() / name, directory_.Path() / "inner" / name);
   const std::unique_ptr<ReplayServer> server = Serve();
 
-  for (const std::string& unknown : {std::string("missing.capture"), "../" + name, "inner/" + name, "./" + name,
+  for (const std::string& unknown : {CaptureNamed("missing"), "../" + name, "inner/" + name, "./" + name,
                                      "/tmp/" + name, std::string("/etc/passwd"), std::string("..")}) {
     RawClient viewer(server->ListenEndpoint());
     viewer.Send(RequestFor(unknown));
@@ -699,7 +705,7 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
 // Requirements: US-21
 TEST_F(ReplayViewerTest, AViewerOfACaptureTheServerDoesNotReplayIsRefusedForIt) {
   const std::unique_ptr<ReplayServer> server = Serve();
-  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, "../elsewhere.capture");
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, "../" + CaptureNamed("elsewhere"));
 
   ASSERT_TRUE(RunUntil(*server, *viewer, [&] { return viewer->GetFailure().has_value(); }));
 
@@ -782,20 +788,21 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
 
 TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) {
   const std::vector<augusta::harness::ReplayListing> listings = {
-      {.name = "20261009T101500123Z-0001.capture",
+      {.name = CaptureNamed("20261009T101500123Z-0001"),
        .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'900'123}),
        .ticks = 7500,
        .tick_rate_hz = 60,
        .characters = {"soldier", "sniper"}},
-      {.name = "b.capture",
+      {.name = CaptureNamed("b"),
        .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'960'000}),
        .ticks = 30,
        .tick_rate_hz = 60,
        .characters = {"soldier"}}};
 
   EXPECT_EQ(augusta::harness::DescribeReplayList(listings),
-            "20261009T101500123Z-0001.capture  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n"
-            "b.capture  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
+            CaptureNamed("20261009T101500123Z-0001") +
+                "  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n" + CaptureNamed("b") +
+                "  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
   EXPECT_EQ(augusta::harness::DescribeReplayList({}), "the server replays no capture");
 }
 
@@ -865,7 +872,7 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
             TwoInALine());
   augusta::harness::ReplayListQuery query({.address = host.ListenEndpoint().address});
   RawClient viewer(host.ListenEndpoint());
-  viewer.Send(RequestFor("a.capture"));
+  viewer.Send(RequestFor(CaptureNamed("a")));
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while ((!query.GetFailure().has_value() || !viewer.Refused()) && std::chrono::steady_clock::now() < deadline) {

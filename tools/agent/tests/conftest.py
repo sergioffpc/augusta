@@ -15,7 +15,7 @@ CHARACTER = "soldier"
 def serving(player_count: int) -> Server:
     """The example scenario served in-process for player_count players."""
     return Server(
-        EXAMPLE_PACKS / "server.pack",
+        EXAMPLE_PACKS / "server.apak",
         EXAMPLE_PACKS / "test.pub",
         player_count=player_count,
     )
@@ -24,5 +24,5 @@ def serving(player_count: int) -> Server:
 @pytest.fixture(scope="session")
 def client_pack() -> augusta_agent.Pack:
     return augusta_agent.load_pack(
-        EXAMPLE_PACKS / "client.pack", EXAMPLE_PACKS / "test.pub"
+        EXAMPLE_PACKS / "client.apak", EXAMPLE_PACKS / "test.pub"
     )

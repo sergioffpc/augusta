@@ -64,7 +64,7 @@ TEST(ClientPhasesTest, AConfigFileThatCannotBeReadIsAConfigurationFailure) {
 
 TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
   ClientConfig config;
-  config.pack_path = kPacks / "missing.pack";
+  config.pack_path = (kPacks / "missing").replace_extension(augusta::assets::kPackExtension);
   config.public_key_path = kPacks / "test.pub";
   config.character = "soldier";
 
@@ -77,7 +77,7 @@ TEST(ClientPhasesTest, APackThatDoesNotVerifyIsAContentFailure) {
 
 TEST(ClientPhasesTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
   ClientConfig config;
-  config.pack_path = kPacks / "client.pack";
+  config.pack_path = (kPacks / "client").replace_extension(augusta::assets::kPackExtension);
   config.public_key_path = kPacks / "test.pub";
   config.character = "ghost";
 
@@ -93,7 +93,7 @@ TEST(ClientPhasesTest, AnUnknownCharacterInAVerifiedPackIsAContentFailure) {
 // A pack that verifies but holds the server's content, not a client's.
 TEST(ClientPhasesTest, APackWithoutClientContentIsAContentFailure) {
   ClientConfig config;
-  config.pack_path = kPacks / "server.pack";
+  config.pack_path = (kPacks / "server").replace_extension(augusta::assets::kPackExtension);
   config.public_key_path = kPacks / "test.pub";
   config.character = "soldier";
 
@@ -143,8 +143,9 @@ CommandLine ReenactCommandLine(const std::filesystem::path& capture, const std::
 }
 
 // A capture of one player, the soldier, at (4, 0, -2), made with a client pack of 9s.
-std::filesystem::path WriteCapture(const std::string& name) {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / name;
+std::filesystem::path WriteCapture(const std::string& stem) {
+  const std::filesystem::path path =
+      (std::filesystem::temp_directory_path() / stem).replace_extension(augusta::capture::kExtension);
   augusta::capture::Capture capture{.header = {.engine_version = "1.0.0", .tick_rate_hz = 60, .started = {}},
                                     .joins = {{.session = 1, .character = "soldier", .spawn = {4, 0, -2}}},
                                     .events = {},
@@ -165,7 +166,7 @@ TEST(ClientPhasesTest, ARunThatAsksToReenactNothingPlaysAsAPerson) {
 
 // Requirements: US-21
 TEST(ClientPhasesTest, ARunReenactsThePlayerOfTheCaptureItNames) {
-  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_one.capture");
+  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_one");
 
   const auto reenactment = ReadReenactment(ReenactCommandLine(capture, "1"));
 
@@ -178,8 +179,9 @@ TEST(ClientPhasesTest, ARunReenactsThePlayerOfTheCaptureItNames) {
 
 // Requirements: US-21
 TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFailure) {
-  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two.capture");
-  const std::filesystem::path missing = std::filesystem::temp_directory_path() / "augusta_no_such.capture";
+  const std::filesystem::path capture = WriteCapture("augusta_client_reenact_two");
+  const std::filesystem::path missing =
+      (std::filesystem::temp_directory_path() / "augusta_no_such").replace_extension(augusta::capture::kExtension);
 
   for (const CommandLine& command_line : {ReenactCommandLine(capture, "2"), ReenactCommandLine(missing, "1")}) {
     const auto reenactment = ReadReenactment(command_line);
@@ -192,7 +194,8 @@ TEST(ClientPhasesTest, ACaptureThatDoesNotLoadOrLacksThePlayerIsAConfigurationFa
 }
 
 TEST(ClientPhasesTest, ReenactWithoutPlayerIsAConfigurationFailure) {
-  CommandLine command_line = ReenactCommandLine("a.capture", "1");
+  CommandLine command_line =
+      ReenactCommandLine(std::filesystem::path("a").replace_extension(augusta::capture::kExtension), "1");
   command_line.options.erase("player");
 
   const auto reenactment = ReadReenactment(command_line);

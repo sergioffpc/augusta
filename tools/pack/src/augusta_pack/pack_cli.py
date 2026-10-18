@@ -5,7 +5,7 @@ signature check), both ADR-0031 container-level and independent of the USD
 stack. `augusta-inspect` reads a Match capture (ADR-0050) too, told from a
 pack by its magic. A pack argument is an ordinary path - relative to the
 current directory or absolute, like any file argument, never resolved against
-an assets root; the `.pack` extension is optional.
+an assets root; the `.apak` extension is optional.
 """
 
 import argparse
@@ -21,11 +21,11 @@ from augusta_pack.reader import read_pack
 from augusta_pack.reader import TRAILER_SIZE
 from augusta_pack.reader import verify_pack
 
-_PACK_EXTENSION = ".pack"
+_PACK_EXTENSION = ".apak"
 
 
 def _resolve_pack(pack_arg: Path) -> Path:
-    """Returns pack_arg as given, or with .pack appended if that exists.
+    """Returns pack_arg as given, or with .apak appended if that exists.
 
     Raises:
         FileNotFoundError: neither exists.
@@ -46,7 +46,7 @@ def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
         "pack",
         type=Path,
         help="Pack file - relative to the current directory or absolute. The "
-        ".pack extension is optional.",
+        ".apak extension is optional.",
     )
 
 

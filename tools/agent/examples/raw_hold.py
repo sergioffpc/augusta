@@ -5,7 +5,7 @@ prints every event it is told of, with where it is, until Ctrl+C or a failure.
 
 Usage (from tools/, after `uv sync` and a build with AUGUSTA_TOOLS):
     uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
-        --pack <client.pack> --public-key <pack.pub>
+        --pack <client.apak> --public-key <pack.pub>
 """
 
 import argparse

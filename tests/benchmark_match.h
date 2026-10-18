@@ -75,7 +75,7 @@ inline std::optional<policy::Policy> ExamplePolicy() {
   if (!public_key.has_value()) {
     return std::nullopt;
   }
-  const auto pack = assets::Pack::Load(packs / "server.pack", *public_key);
+  const auto pack = assets::Pack::Load((packs / "server").replace_extension(assets::kPackExtension), *public_key);
   if (!pack.has_value()) {
     return std::nullopt;
   }

@@ -70,7 +70,7 @@ dashboards:
 # its own tree of it, /srv/augusta/asset-packs/<environment>, its packs signed
 # with its own key (clusters/onprem/apps/): in it, a folder per scenario, and
 # in that one per published pack, named by its version (the first 12 hex
-# characters of the server pack's BLAKE3 hash) and holding server.pack and the
+# characters of the server pack's BLAKE3 hash) and holding server.apak and the
 # signing.pub it is signed with. Each server mounts its own version's folder
 # read-only, as a local PersistentVolume of its own, named by its namespace,
 # scenario and version (templates/volumes.yaml). A PersistentVolume's path

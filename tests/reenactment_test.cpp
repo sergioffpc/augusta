@@ -159,7 +159,8 @@ TEST(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
 
 TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
   EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(), ScriptError{.capture = ReadError::kNotACapture});
-  std::ifstream missing(std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing.capture",
+  std::ifstream missing((std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing")
+                            .replace_extension(augusta::capture::kExtension),
                         std::ios::binary);
   EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError::kUnreadable});
 }

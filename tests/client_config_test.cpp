@@ -62,17 +62,17 @@ TEST(ReadClientRunTest, WithoutAReplayOptionTheClientPlays) {
 // Requirements: US-21
 TEST(ReadClientRunTest, ReplaysListsTheServersCapturesAndReplayWatchesOne) {
   const auto listing = ReadClientRun(WithOptions({{"replays", ""}}));
-  const auto watching = ReadClientRun(WithOptions({{"replay", "20261009T101500123Z-0001.capture"}}));
+  const auto watching = ReadClientRun(WithOptions({{"replay", "20261009T101500123Z-0001.acap"}}));
 
   ASSERT_TRUE(listing.has_value());
   EXPECT_EQ(listing->mode, augusta::config::ClientMode::kListReplays);
   ASSERT_TRUE(watching.has_value());
   EXPECT_EQ(watching->mode, augusta::config::ClientMode::kWatchReplay);
-  EXPECT_EQ(watching->capture, "20261009T101500123Z-0001.capture");
+  EXPECT_EQ(watching->capture, "20261009T101500123Z-0001.acap");
 }
 
 TEST(ReadClientRunTest, ListingAndWatchingAtOnceOrWatchingNothingIsRejected) {
-  const auto both = ReadClientRun(WithOptions({{"replays", ""}, {"replay", "a.capture"}}));
+  const auto both = ReadClientRun(WithOptions({{"replays", ""}, {"replay", "a.acap"}}));
   const auto nothing = ReadClientRun(WithOptions({{"replay", ""}}));
 
   ASSERT_FALSE(both.has_value());
@@ -82,38 +82,38 @@ TEST(ReadClientRunTest, ListingAndWatchingAtOnceOrWatchingNothingIsRejected) {
 }
 
 TEST(ReadClientRunTest, AReenactmentAloneIsPlayed) {
-  const auto run = ReadClientRun(WithOptions({{"reenact", "a.capture"}, {"player", "1"}}));
+  const auto run = ReadClientRun(WithOptions({{"reenact", "a.acap"}, {"player", "1"}}));
 
   ASSERT_TRUE(run.has_value());
   EXPECT_EQ(run->mode, augusta::config::ClientMode::kPlay);
 }
 
 TEST(ReadClientRunTest, TheClientsOptionsAreItsReplayOnes) {
-  const std::array<const char*, 3> args = {"augustac", "--replay", "a.capture"};
+  const std::array<const char*, 3> args = {"augustac", "--replay", "a.acap"};
   const auto command_line =
       augusta::config::ParseCommandLine(static_cast<int>(args.size()), args.data(), "augustac", "augustac.yaml",
                                         "1.2.3", augusta::config::kClientOptions);
 
   ASSERT_TRUE(command_line.has_value());
-  EXPECT_EQ(ReadClientRun(*command_line)->capture, "a.capture");
+  EXPECT_EQ(ReadClientRun(*command_line)->capture, "a.acap");
 }
 
 TEST(ParseClientConfigTest, ReadsEveryKey) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: packs/level.client.pack\n  "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: packs/level.client.apak\n  "
       "public_key: keys/signing.pub\nnetwork:\n  "
       "server_address: 10.0.0.5:27016\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.client.pack");
+  EXPECT_EQ(config->pack_path, kRoot / "packs" / "level.client.apak");
   EXPECT_EQ(config->public_key_path, kRoot / "keys" / "signing.pub");
   EXPECT_EQ(config->server_address, "10.0.0.5:27016");
 }
 
 TEST(ParseClientConfigTest, DefaultsTheServerAddress) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->server_address, augusta::config::kDefaultServerAddress);
@@ -121,7 +121,7 @@ TEST(ParseClientConfigTest, DefaultsTheServerAddress) {
 
 TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->log_level, augusta::config::kDefaultLogLevel);
@@ -129,7 +129,7 @@ TEST(ParseClientConfigTest, DefaultsTheLogLevel) {
 
 TEST(ParseClientConfigTest, ReadsALogLevel) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
       "k.pub\nlogging:\n  level: trace\n",
       kFileDir);
 
@@ -139,7 +139,7 @@ TEST(ParseClientConfigTest, ReadsALogLevel) {
 
 TEST(ParseClientConfigTest, RejectsAnInvalidLogLevel) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
       "k.pub\nlogging:\n  level: verbose\n",
       kFileDir);
 
@@ -151,20 +151,20 @@ TEST(ParseClientConfigTest, RejectsAnInvalidLogLevel) {
 TEST(ParseClientConfigTest, ResolvesRelativePathsAgainstAnAbsoluteBaseDir) {
   const auto config =
       ParseClientConfig("base_dir: '" + Absolute("content") +
-                            "'\nplayer:\n  character: soldier\ncontent:\n  pack: packs/a.pack\n  public_key: k.pub\n",
+                            "'\nplayer:\n  character: soldier\ncontent:\n  pack: packs/a.apak\n  public_key: k.pub\n",
                         kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, std::filesystem::absolute("content").lexically_normal() / "packs" / "a.pack");
+  EXPECT_EQ(config->pack_path, std::filesystem::absolute("content").lexically_normal() / "packs" / "a.apak");
   EXPECT_EQ(config->public_key_path, std::filesystem::absolute("content").lexically_normal() / "k.pub");
 }
 
 TEST(ParseClientConfigTest, ResolvesARelativeBaseDirAgainstTheFilesDirectory) {
   const auto config = ParseClientConfig(
-      "base_dir: ../content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: ../content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, std::filesystem::path("file") / "content" / "a.pack");
+  EXPECT_EQ(config->pack_path, std::filesystem::path("file") / "content" / "a.apak");
   EXPECT_EQ(config->public_key_path, std::filesystem::path("file") / "content" / "k.pub");
 }
 
@@ -173,44 +173,44 @@ TEST(ParseClientConfigTest, ReadsNonAsciiPathsAsUtf8) {
   // them. Escapes rather than the letters themselves: without /utf-8, MSVC
   // reads this file's literals in the system codepage.
   const auto config = ParseClientConfig(
-      "base_dir: pacotes_\xC3\xA7\xC3\xA3o\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  "
+      "base_dir: pacotes_\xC3\xA7\xC3\xA3o\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  "
       "public_key: k.pub\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, kFileDir / std::filesystem::path(u8"pacotes_\u00e7\u00e3o") / "a.pack");
+  EXPECT_EQ(config->pack_path, kFileDir / std::filesystem::path(u8"pacotes_\u00e7\u00e3o") / "a.apak");
 }
 
 TEST(ParseClientConfigTest, ADotBaseDirMeansTheFilesDirectory) {
   const auto config = ParseClientConfig(
-      "base_dir: .\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: .\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, kFileDir / "a.pack");
+  EXPECT_EQ(config->pack_path, kFileDir / "a.apak");
 }
 
 TEST(ParseClientConfigTest, KeepsAnAbsolutePathAsIs) {
   const auto config = ParseClientConfig("base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: '" +
-                                            Absolute("elsewhere/a.pack") + "'\n  public_key: k.pub\n",
+                                            Absolute("elsewhere/a.apak") + "'\n  public_key: k.pub\n",
                                         kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, std::filesystem::absolute("elsewhere/a.pack").lexically_normal());
+  EXPECT_EQ(config->pack_path, std::filesystem::absolute("elsewhere/a.apak").lexically_normal());
   EXPECT_EQ(config->public_key_path, kRoot / "k.pub");
 }
 
 TEST(ParseClientConfigTest, NormalizesDotSegments) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: ./a/../b.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: ./a/../b.apak\n  public_key: "
       "k.pub\n",
       kFileDir);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, kRoot / "b.pack");
+  EXPECT_EQ(config->pack_path, kRoot / "b.apak");
 }
 
 TEST(ParseClientConfigTest, RejectsAMissingBaseDir) {
-  const auto config = ParseClientConfig("content:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("content:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -219,7 +219,7 @@ TEST(ParseClientConfigTest, RejectsAMissingBaseDir) {
 
 TEST(ParseClientConfigTest, RejectsAnEmptyBaseDir) {
   const auto config = ParseClientConfig(
-      "base_dir: ''\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: ''\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
@@ -247,7 +247,7 @@ TEST(ParseClientConfigTest, RejectsAnEmptyRequiredValue) {
 TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
   // A typo must not silently fall back to the default it was meant to set.
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
       "k.pub\nserver_adress: x\n",
       kFileDir);
 
@@ -258,7 +258,7 @@ TEST(ParseClientConfigTest, RejectsAnUnknownKey) {
 
 TEST(ParseClientConfigTest, RejectsAKeyThatBelongsToTheServer) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
       "k.pub\nnetwork:\n  listen_address: x\n",
       kFileDir);
 
@@ -269,7 +269,7 @@ TEST(ParseClientConfigTest, RejectsAKeyThatBelongsToTheServer) {
 
 TEST(ParseClientConfigTest, RejectsADuplicateKey) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  pack: b.pack\n  "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  pack: b.apak\n  "
       "public_key: k.pub\n",
       kFileDir);
 
@@ -280,7 +280,7 @@ TEST(ParseClientConfigTest, RejectsADuplicateKey) {
 
 TEST(ParseClientConfigTest, RejectsANonScalarValue) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: [a.pack, b.pack]\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: [a.apak, b.apak]\n  public_key: "
       "k.pub\n",
       kFileDir);
 
@@ -316,7 +316,7 @@ TEST(ParseClientConfigTest, RejectsInvalidYaml) {
 
 // The keys every client config needs, to append a keymap test's lines to.
 constexpr std::string_view kClientBase =
-    "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: k.pub\n";
+    "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n";
 
 std::expected<augusta::config::ClientConfig, ConfigError> ParseClient(std::string_view extra) {
   return ParseClientConfig(std::string(kClientBase) + std::string(extra), kFileDir);
@@ -511,7 +511,7 @@ TEST(ParseClientConfigTest, RejectsASectionWrittenTwice) {
 TEST(ParseClientConfigTest, AKeyMovedOutOfItsSectionIsUnknown) {
   // The flat layout from before sections: every key now lives in one.
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\npack: a.pack\npublic_key: k.pub\n", kFileDir);
+      "base_dir: content\nplayer:\n  character: soldier\npack: a.apak\npublic_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
@@ -530,7 +530,7 @@ TEST(ExampleConfigTest, TheExampleClientConfigLoadsWithTheDefaultControls) {
 // Requirements: US-16
 TEST(ParseClientConfigTest, ReadsTheChosenCharacter) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: sniper\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: content\nplayer:\n  character: sniper\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_TRUE(config.has_value());
   EXPECT_EQ(config->character, "sniper");
@@ -539,7 +539,7 @@ TEST(ParseClientConfigTest, ReadsTheChosenCharacter) {
 // Requirements: US-16
 TEST(ParseClientConfigTest, RejectsAMissingCharacter) {
   // No default: a player never silently plays a character they did not pick (ADR-0042).
-  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+  const auto config = ParseClientConfig("base_dir: content\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kMissingKey);
@@ -549,7 +549,7 @@ TEST(ParseClientConfigTest, RejectsAMissingCharacter) {
 // Requirements: US-16
 TEST(ParseClientConfigTest, RejectsAnEmptyCharacter) {
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: ''\ncontent:\n  pack: a.pack\n  public_key: k.pub\n", kFileDir);
+      "base_dir: content\nplayer:\n  character: ''\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kEmptyValue);
@@ -560,7 +560,7 @@ TEST(ParseClientConfigTest, TheTickRateIsNotAClientKey) {
   // The server decides it and tells each client when it joins (ADR-0039), so
   // the client has no simulation section at all.
   const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.pack\n  public_key: "
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
       "k.pub\nsimulation:\n  tick_rate_hz: 60\n",
       kFileDir);
 
@@ -595,13 +595,13 @@ class LoadConfigTest : public ::testing::Test {
 
 TEST_F(LoadConfigTest, ResolvesBaseDirAgainstTheFilesDirectory) {
   const auto file = Write("augustac.yaml",
-                          "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: level.pack\n  "
+                          "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: level.apak\n  "
                           "public_key: keys/k.pub\n");
 
   const auto config = LoadClientConfig(file);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->pack_path, directory_ / "content" / "level.pack");
+  EXPECT_EQ(config->pack_path, directory_ / "content" / "level.apak");
   EXPECT_EQ(config->public_key_path, directory_ / "content" / "keys" / "k.pub");
 }
 
@@ -649,18 +649,18 @@ TEST(ReadReenactArgumentsTest, WithoutReenactTheClientPlaysAsAPerson) {
 
 // Requirements: US-21
 TEST(ReadReenactArgumentsTest, ReenactAndPlayerNameTheCaptureAsGivenAndThePlayersNumber) {
-  const auto reenact = Reenact({"--reenact", "captures/playtest.capture", "--player", "3"});
+  const auto reenact = Reenact({"--reenact", "captures/playtest.acap", "--player", "3"});
 
   ASSERT_TRUE(reenact.has_value());
   ASSERT_TRUE(reenact->has_value());
-  EXPECT_EQ((*reenact)->capture, std::filesystem::path("captures") / "playtest.capture");
+  EXPECT_EQ((*reenact)->capture, std::filesystem::path("captures") / "playtest.acap");
   EXPECT_EQ((*reenact)->player, 3);
 }
 
 // Requirements: US-21
 TEST(ReadReenactArgumentsTest, OneWithoutTheOtherIsRefused) {
   for (const auto& args :
-       {std::vector<const char*>{"--reenact", "a.capture"}, std::vector<const char*>{"--player", "1"}}) {
+       {std::vector<const char*>{"--reenact", "a.acap"}, std::vector<const char*>{"--player", "1"}}) {
     const auto reenact = Reenact(args);
 
     ASSERT_FALSE(reenact.has_value());
@@ -672,7 +672,7 @@ TEST(ReadReenactArgumentsTest, OneWithoutTheOtherIsRefused) {
 // Requirements: US-21
 TEST(ReadReenactArgumentsTest, APlayerThatIsNotANumberFromOneTo255IsRefused) {
   for (const char* player : {"0", "256", "-1", "one", "1.5", ""}) {
-    const auto reenact = Reenact({"--reenact", "a.capture", "--player", player});
+    const auto reenact = Reenact({"--reenact", "a.acap", "--player", player});
 
     ASSERT_FALSE(reenact.has_value()) << player;
     EXPECT_EQ(reenact.error().code, ConfigErrorCode::kInvalidArguments) << player;
@@ -681,8 +681,8 @@ TEST(ReadReenactArgumentsTest, APlayerThatIsNotANumberFromOneTo255IsRefused) {
 
 // Requirements: US-21
 TEST(ReadReenactArgumentsTest, AReenactmentIsNeitherAReplayNorTheReplayList) {
-  for (const auto& args : {std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replays"},
-                           std::vector<const char*>{"--reenact", "a.capture", "--player", "1", "--replay", "b"}}) {
+  for (const auto& args : {std::vector<const char*>{"--reenact", "a.acap", "--player", "1", "--replays"},
+                           std::vector<const char*>{"--reenact", "a.acap", "--player", "1", "--replay", "b"}}) {
     const auto reenact = Reenact(args);
 
     ASSERT_FALSE(reenact.has_value());

@@ -38,8 +38,8 @@ def cook_stage(stage_name, tmp_path, key_pair):
     Returns:
         (client, server) contents.
     """
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / stage_name,
         [],
@@ -70,8 +70,8 @@ def test_malformed_geometry_is_refused_and_no_pack_is_written(
 
     assert raised.value.code == code
     assert raised.value.prim_path == "TestMesh"
-    assert not (tmp_path / "client.pack").exists()
-    assert not (tmp_path / "server.pack").exists()
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_a_visual_mesh_goes_into_the_client_pack_only(tmp_path, key_pair):
@@ -176,12 +176,12 @@ def cook_texture(texture_format, tmp_path, key_pair, png=None):
             "            asset inputs:file",
         )
     (stage_dir / "texture_fixture.usda").write_text(stage)
-    client_path = tmp_path / "client.pack"
+    client_path = tmp_path / "client.apak"
     cook_scenario(
         stage_dir / "texture_fixture.usda",
         [],
         client_path,
-        tmp_path / "server.pack",
+        tmp_path / "server.apak",
         key_pair.private_key,
     )
     client = read_pack_contents(client_path, key_pair.public_key)
@@ -282,8 +282,8 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -303,8 +303,8 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -313,8 +313,8 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
 
 
 def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
@@ -337,8 +337,8 @@ def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
         sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
     )
     death = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
@@ -380,8 +380,8 @@ def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             characters,
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -395,8 +395,8 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             [("TestMesh", FIXTURES_DIR / "mesh_fixture.usda")],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -463,8 +463,8 @@ def cook_character(hitboxes, tmp_path, key_pair):
         ),
         encoding="utf-8",
     )
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [("test", stage_path)],
@@ -526,8 +526,8 @@ def test_a_character_without_a_hitbox_for_a_body_part_is_refused(
 
     assert raised.value.code == "character_hitbox_missing"
     assert missing in raised.value.message
-    assert not (tmp_path / "client.pack").exists()
-    assert not (tmp_path / "server.pack").exists()
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_a_hitbox_that_names_no_body_part_is_refused(tmp_path, key_pair):

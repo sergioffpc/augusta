@@ -9,6 +9,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -37,6 +38,9 @@ using augusta::host::ReplayTerms;
 using augusta::host::SessionId;
 
 constexpr std::uint8_t kTickRate = 60;
+
+// stem as a capture's file is named.
+std::string CaptureNamed(std::string_view stem) { return std::string(stem) + std::string(capture::kExtension); }
 
 augusta::assets::PackHash PackOf(std::uint8_t byte) {
   augusta::assets::PackHash pack{};
@@ -154,9 +158,11 @@ TEST_F(ReplayCatalogTest, ListingAgainReadsOnlyTheCapturesThatChanged) {
 
 TEST_F(ReplayCatalogTest, LeavesOutWhatIsNoCapture) {
   const std::string replayable = Write();
-  std::ofstream(directory_ / "notes.capture") << "not a capture";
+  std::ofstream(directory_ / CaptureNamed("notes")) << "not a capture";
   std::ofstream(directory_ / "readme.txt") << "hello";
-  std::filesystem::create_directories(directory_ / "nested.capture");
+  std::filesystem::create_directories(directory_ / CaptureNamed("nested"));
+  // A capture under the retired .capture extension is no capture either.
+  std::filesystem::copy_file(directory_ / replayable, directory_ / "20261009T101500123Z-0002.capture");
 
   ReplayCatalog catalog(directory_, Terms());
   const std::vector<ReplayListing> listed = catalog.List();
@@ -187,16 +193,16 @@ TEST_F(ReplayCatalogTest, FindsACaptureByItsListedName) {
 // Requirements: US-21
 TEST_F(ReplayCatalogTest, ANameNotInTheListingIsUnknownAPathAmongThem) {
   const std::string name = Write();
-  std::filesystem::copy_file(directory_ / name, root_ / "outside.capture");
+  std::filesystem::copy_file(directory_ / name, root_ / CaptureNamed("outside"));
   std::filesystem::create_directories(directory_ / "sub");
-  std::filesystem::copy_file(directory_ / name, directory_ / "sub" / "inner.capture");
+  std::filesystem::copy_file(directory_ / name, directory_ / "sub" / CaptureNamed("inner"));
   const std::string other_pack = Write(3);
   const ReplayCatalog catalog(directory_, Terms());
 
   for (const std::string& unknown :
-       {std::string("../outside.capture"), (root_ / "outside.capture").string(), std::string("sub/inner.capture"),
+       {"../" + CaptureNamed("outside"), (root_ / CaptureNamed("outside")).string(), "sub/" + CaptureNamed("inner"),
         "./" + name, std::string(""), std::string("."), std::string(".."), std::string("captures/") + name,
-        "../captures/" + name, name + "/", other_pack, std::string("missing.capture")}) {
+        "../captures/" + name, name + "/", other_pack, CaptureNamed("missing")}) {
     EXPECT_FALSE(catalog.Find(unknown).has_value()) << unknown;
   }
   EXPECT_TRUE(catalog.Find(name).has_value());
@@ -210,11 +216,11 @@ TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
   capture.joins = {{.session = 4, .character = "soldier", .spawn = {}}};
   capture.events = {{.offset = 59, .event = capture::MatchEnd{}}};
 
-  const std::optional<ReplayListing> listing = ListingOf("a.capture", capture, Terms());
+  const std::optional<ReplayListing> listing = ListingOf(CaptureNamed("a"), capture, Terms());
 
   ASSERT_TRUE(listing.has_value());
   EXPECT_EQ(listing->ticks, 60U);
-  EXPECT_EQ(listing->name, "a.capture");
+  EXPECT_EQ(listing->name, CaptureNamed("a"));
 }
 
 TEST(ReplayListingTest, ACaptureWithNoPlayerIsNotReplayed) {
@@ -223,7 +229,7 @@ TEST(ReplayListingTest, ACaptureWithNoPlayerIsNotReplayed) {
   capture.header.tick_rate_hz = kTickRate;
   capture.torn = true;
 
-  EXPECT_FALSE(ListingOf("a.capture", capture, Terms()).has_value());
+  EXPECT_FALSE(ListingOf(CaptureNamed("a"), capture, Terms()).has_value());
 }
 
 }  // namespace

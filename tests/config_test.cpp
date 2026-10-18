@@ -100,7 +100,7 @@ TEST(ParseCommandLineTest, RejectsAnEmptyFileName) { ASSERT_FALSE(Parse({"--conf
 
 TEST(ParseCommandLineTest, RejectsAPositionalArgument) {
   // The old `augustac <pack> <key>` invocation must fail, not be half-honored.
-  ASSERT_FALSE(Parse({"level.pack", "k.pub"}).has_value());
+  ASSERT_FALSE(Parse({"level.apak", "k.pub"}).has_value());
   ASSERT_FALSE(Parse({"my.yaml"}).has_value());
 }
 
@@ -124,14 +124,14 @@ std::expected<CommandLine, ConfigError> ParseWithOptions(std::vector<const char*
 }
 
 TEST(ParseCommandLineTest, AnOptionTheExecutableTakesIsReadWithItsValue) {
-  const auto watching = ParseWithOptions({"--config", "my.yaml", "--watch", "a.capture"});
+  const auto watching = ParseWithOptions({"--config", "my.yaml", "--watch", "a.acap"});
   const auto listing = ParseWithOptions({"--listen"});
   const auto neither = ParseWithOptions({});
 
   ASSERT_TRUE(watching.has_value()) << DescribeConfigError(watching.error());
   EXPECT_EQ(watching->action, CommandLineAction::kRun);
   EXPECT_EQ(watching->config_file, "my.yaml");
-  EXPECT_EQ(watching->options, (std::map<std::string, std::string, std::less<>>{{"watch", "a.capture"}}));
+  EXPECT_EQ(watching->options, (std::map<std::string, std::string, std::less<>>{{"watch", "a.acap"}}));
   ASSERT_TRUE(listing.has_value());
   EXPECT_EQ(listing->options, (std::map<std::string, std::string, std::less<>>{{"listen", ""}}));
   ASSERT_TRUE(neither.has_value());
@@ -141,7 +141,7 @@ TEST(ParseCommandLineTest, AnOptionTheExecutableTakesIsReadWithItsValue) {
 TEST(ParseCommandLineTest, AnOptionWithoutItsValueOrOneTheExecutableLacksIsRejected) {
   EXPECT_FALSE(ParseWithOptions({"--watch"}).has_value());
   EXPECT_FALSE(ParseWithOptions({"--listen", "extra"}).has_value());
-  EXPECT_FALSE(Parse({"--watch", "a.capture"}).has_value());
+  EXPECT_FALSE(Parse({"--watch", "a.acap"}).has_value());
 }
 
 TEST(ParseCommandLineTest, UsageNamesEachOptionTheExecutableTakes) {
@@ -179,13 +179,13 @@ std::expected<CommandLine, ConfigError> ParseWithOwnOptions(std::vector<const ch
 }
 
 TEST(ParseCommandLineTest, AnExecutablesOwnOptionsAreReadByNameBesideTheConfig) {
-  const auto command_line = ParseWithOwnOptions({"--config", "my.yaml", "--reenact", "a.capture", "--player", "2"});
+  const auto command_line = ParseWithOwnOptions({"--config", "my.yaml", "--reenact", "a.acap", "--player", "2"});
 
   ASSERT_TRUE(command_line.has_value()) << DescribeConfigError(command_line.error());
   EXPECT_EQ(command_line->action, CommandLineAction::kRun);
   EXPECT_EQ(command_line->config_file, std::filesystem::path("my.yaml"));
   EXPECT_EQ(command_line->options,
-            (std::map<std::string, std::string, std::less<>>{{"player", "2"}, {"reenact", "a.capture"}}));
+            (std::map<std::string, std::string, std::less<>>{{"player", "2"}, {"reenact", "a.acap"}}));
 }
 
 TEST(ParseCommandLineTest, AnOwnOptionLeftOutIsNotRead) {
@@ -205,7 +205,7 @@ TEST(ParseCommandLineTest, TheUsageListsAnExecutablesOwnOptions) {
 }
 
 TEST(ParseCommandLineTest, AnotherExecutablesOptionIsUnknown) {
-  ASSERT_FALSE(Parse({"--reenact", "a.capture"}).has_value());
+  ASSERT_FALSE(Parse({"--reenact", "a.acap"}).has_value());
   ASSERT_FALSE(ParseWithOwnOptions({"--reenact"}).has_value());
 }
 

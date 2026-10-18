@@ -71,14 +71,14 @@ prepare() {
   trap "docker rm -f '${CONTAINER}' >/dev/null 2>&1 || true
     sudo rm -rf -- '${WORK}'" EXIT
   mkdir "${WORK}/config" "${WORK}/pack"
-  cp "${PACKS}/server.pack" "${WORK}/pack/server.pack"
+  cp "${PACKS}/server.apak" "${WORK}/pack/server.apak"
   cp "${PACKS}/test.pub" "${WORK}/pack/signing.pub"
   sudo install -d -o "${SERVER_ID}" -g "${SERVER_ID}" "${WORK}/captures"
   # As the chart renders it (charts/augustad/templates/_helpers.tpl).
   cat >"${WORK}/config/augustad.yaml" <<EOF
 base_dir: /srv/augusta/pack
 content:
-  pack: server.pack
+  pack: server.apak
   public_key: signing.pub
 simulation:
   tick_rate_hz: 60
@@ -129,7 +129,7 @@ play() {
     status=1
   elif ! (cd "${TOP}/tools" && uv run --no-sync python \
     ../scripts/augustad-seccomp-matches.py --server "127.0.0.1:${GAME_PORT}" \
-    --pack "${PACKS}/client.pack" --public-key "${PACKS}/test.pub" \
+    --pack "${PACKS}/client.apak" --public-key "${PACKS}/test.pub" \
     --matches "${MATCHES}" >/dev/null); then
     log "the Agents did not finish ${MATCHES} Matches"
     status=1
@@ -146,7 +146,7 @@ play() {
     log "the server exited ${exit_code}"
     status=1
   elif [[ "${status}" = 0 && -z "$(sudo find "${WORK}/captures" \
-    -type f -name '*.capture' -print -quit)" ]]; then
+    -type f -name '*.acap' -print -quit)" ]]; then
     log "the server wrote no capture"
     status=1
   fi

@@ -31,7 +31,7 @@ std::vector<char> ReadFile(const std::filesystem::path& path) {
 }
 
 std::vector<char> WithoutTrailer(const std::string& pack) {
-  std::vector<char> bytes = ReadFile(kExamplePacks / (pack + ".pack"));
+  std::vector<char> bytes = ReadFile(kExamplePacks / (pack + std::string(augusta::assets::kPackExtension)));
   bytes.resize(bytes.size() > kTrailerSize ? bytes.size() - kTrailerSize : 0);
   return bytes;
 }

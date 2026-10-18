@@ -442,7 +442,7 @@ TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.back() = std::byte{0x7F};
   const augusta::link::ReplayRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.capture"};
+      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.acap"};
 
   const augusta::link::ReplayRequest received = FromWire(ThroughTheWire(ToWire(sent)));
 
@@ -561,7 +561,7 @@ TEST(LinkMessagesTest, AReplayViewTheReplayServerSendsReachesTheViewerUnchanged)
 
 TEST(LinkMessagesTest, AReplayListTheReplayServerSendsReachesTheClientUnchanged) {
   const std::vector<augusta::link::ReplayListing> sent{
-      {.name = "first.capture",
+      {.name = "first.acap",
        .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(1'700'000'000'123)),
        .ticks = 3600,
        .tick_rate_hz = 60,

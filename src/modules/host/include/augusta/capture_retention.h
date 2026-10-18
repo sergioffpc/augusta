@@ -55,7 +55,7 @@ struct CaptureRetentionObserver {
 [[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
                                           std::uint64_t match_number);
 
-/// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.capture,
+/// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.acap,
 /// the number of 4 digits or more.
 [[nodiscard]] bool IsCaptureFileName(std::string_view name);
 

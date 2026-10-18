@@ -66,7 +66,8 @@ struct TestKey {
 struct ScratchFile {
   ScratchFile() {
     std::random_device random;
-    path = std::filesystem::temp_directory_path() / ("augusta_pack_load_fuzz_" + std::to_string(random()) + ".pack");
+    path = std::filesystem::temp_directory_path() /
+           ("augusta_pack_load_fuzz_" + std::to_string(random()) + std::string(augusta::assets::kPackExtension));
   }
   ScratchFile(const ScratchFile&) = delete;
   ScratchFile& operator=(const ScratchFile&) = delete;

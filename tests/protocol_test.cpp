@@ -636,8 +636,8 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
       MatchEndWire{.winner = static_cast<SessionIdWire>(3)},
-      ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.capture", .ticks = 9}}},
-      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.capture"},
+      ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.acap", .ticks = 9}}},
+      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.acap"},
       ReplayViewWire{.tick = 4, .players = {PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(1)}}}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message).value();
@@ -716,11 +716,11 @@ TEST(ProtocolTest, AReplayListRoundTripsEachCapturesNameStartLengthAndCharacters
   const ReplayListWire list{
       .replays = {ReplayListingWire{.started_unix_ms = 1'791'000'000'123,
                                     .characters = {"soldier", "sniper"},
-                                    .name = "20261009T120000123Z-0001.capture",
+                                    .name = "20261009T120000123Z-0001.acap",
                                     .ticks = 7200,
                                     .tick_rate_hz = 60},
                   ReplayListingWire{
-                      .started_unix_ms = -5, .characters = {}, .name = "b.capture", .ticks = 0, .tick_rate_hz = 30}}};
+                      .started_unix_ms = -5, .characters = {}, .name = "b.acap", .ticks = 0, .tick_rate_hz = 30}}};
 
   EXPECT_EQ(RoundTrip(list), MessageWire{list});
 }
@@ -767,7 +767,7 @@ TEST(ProtocolTest, AListCountingPastTheEndOfThePayloadIsTruncatedWithoutAllocati
 
 TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackAndCapture) {
   const ReplayRequestWire request{
-      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.capture"};
+      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.acap"};
 
   EXPECT_EQ(RoundTrip(request), MessageWire{request});
 }
