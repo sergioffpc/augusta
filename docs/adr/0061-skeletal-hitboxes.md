@@ -17,18 +17,19 @@ and ADR-0044 to match.
   module scoped `SHARED`, below Presentation, depending on Physics and Gameplay
   only. Skinning is the Renderer's, on the GPU, from the pose's joint matrices;
   the server links no rendering code.
-- **Hitbox pose and cosmetic layers.** The Hitbox pose is locomotion, stance,
-  aim and how the weapon is held. Foot placement, a flinch, breathing and the
-  face are cosmetic layers the client draws on top of it. Anything that moves a
-  Hitbox is Hitbox pose, never a cosmetic layer.
+- **Hitbox pose and Cosmetic layers.** The Hitbox pose is locomotion, stance,
+  aim and how the weapon is held: its grip and ADS. Foot placement, a flinch,
+  the landing, the reload, the recoil, breathing and the face are Cosmetic
+  layers the client draws on top of it (ADR-0066). A Cosmetic layer never moves
+  a Hitbox, so whatever does is Hitbox pose.
 - **A pure function of replicated state.** A player's Hitbox pose follows from
   its state in the Authoritative State and the tick, with no animation state of
   its own. What the pose needs to remember, such as how far a change of stance
   has gone or where a stride is, is gameplay state, replicated like any other,
   so neither side rebuilds history to agree and a Replay reproduces the pose. A
   VR player's state includes its bounded Tracked pose, which is replicated and
-  captured; a Desktop player's Tracked pose is synthesized from its view and
-  stance (ADR-0063), so both Play modes are posed by one path.
+  captured; a Desktop player is posed from its Clips (ADR-0066), and from there
+  both Play modes take one path (ADR-0063).
 - **Hitboxes belong to joints.** Each Hitbox is authored under a joint of the
   character's UsdSkel skeleton and moves rigidly with it. The cooker refuses a
   Hitbox under no joint. ADR-0040's lowering by stance and turning by yaw give
@@ -40,13 +41,15 @@ and ADR-0044 to match.
   carry a Hitbox. Lag compensation interpolates them joint by joint between the
   two ticks the Seen time falls between: position linearly, rotation along the
   shorter arc.
-- **Packs.** The skeleton and the clips the Hitbox pose uses ship in both packs;
-  cosmetic clips and skinning data in the client's alone (ADR-0019).
+- **Packs.** The skeleton and the Clips the Hitbox pose uses ship in both packs;
+  Cosmetic layers' Clips and skinning data in the client's alone (ADR-0019). A
+  Skeleton has at most 128 Joints, enough for skinning hands; the history below
+  keeps only those a Shot needs.
 - **No pose in PredictionWorld.** It predicts the local player, whom no one
   shoots locally. SimulationWorld evaluates poses for Hit detection, and
-  PresentationWorld's Animation phase for every visible player, first-person
-  arms included. A VR client draws its own body from each frame's Tracked pose
-  instead (ADR-0063).
+  PresentationWorld's Animation phase for every visible player and the local
+  player's own whole body (ADR-0066). A VR client draws its own body from each
+  frame's Tracked pose instead (ADR-0063).
 - **No bit-exact agreement across platforms.** The Windows client and the Linux
   server may differ in the last bits of a pose. The server's is authoritative,
   the client's only draws, and tests comparing them use a tolerance.

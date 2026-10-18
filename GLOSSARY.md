@@ -363,8 +363,22 @@ confirmation names. _Avoid_: Hit zone, hit location, hit region, body zone
 **Hitbox pose**: The part of a player's skeletal pose that moves its Hitboxes:
 locomotion, stance, aim and how the weapon is held. Client and server arrive at
 the same one from the same state, so a shooter hits where it sees a body; what
-the client draws on top of it (cosmetic layers such as foot placement or a
-flinch) never moves a Hitbox. _Avoid_: Server pose, physics pose, hit pose
+the client draws on top of it (Cosmetic layers) never moves a Hitbox. _Avoid_:
+Server pose, physics pose, hit pose
+
+**Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
+without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:
+Client-side animation, visual pose
+
+**Clip**: An authored animation of a Skeleton, used by a Character for one role,
+such as walking forward crouched. _Avoid_: Animation (the module), sequence,
+take
+
+**Stride**: Where a player is in its cycle of two steps, advanced by the
+distance its body moves and never by time. _Avoid_: Gait phase, cycle time
+
+**Aim offset**: The poses that bend a player's body by the pitch of its view.
+_Avoid_: Aim layer, look pose
 
 **Shot**: One bullet fired, as the Authoritative server announces it to every
 client: who fired it, at which tick, from where and in which direction. Clients
@@ -444,8 +458,8 @@ unrelated)
 whose reflections and paths are baked ahead of play. _Avoid_: Reverb zone, audio
 volume
 
-**Foot contact**: A moment authored in a locomotion clip when one foot lands,
-heard as a footstep whenever a player's stride passes it. _Avoid_: Footstep
+**Foot contact**: A moment authored in a locomotion Clip when one foot lands,
+heard as a footstep whenever a player's Stride passes it. _Avoid_: Footstep
 event, foot plant (foot placement is a cosmetic layer, ADR-0061)
 
 ### Deployment
