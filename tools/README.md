@@ -281,7 +281,7 @@ augusta-verify <pack>    # is it intact, and signed by the key I expect?
 
 `<pack>` is an ordinary path - relative to the current directory or absolute,
 never resolved against an assets root. The `.apak` extension is optional, so
-`<stage>.client` finds `<stage>.client.pack`.
+`<stage>.client` finds `<stage>.client.apak`.
 
 #### `augusta-inspect` reference
 

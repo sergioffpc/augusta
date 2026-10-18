@@ -14,13 +14,13 @@ using augusta::assets::Pack;
 
 const std::filesystem::path kExamplePacks{AUGUSTA_EXAMPLE_PACKS};
 
-void BM_PackLoad(benchmark::State& state, const std::string& pack) {
+void BM_PackLoad(benchmark::State& state, const std::string& stem) {
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(kExamplePacks / "test.pub");
   if (!public_key.has_value()) {
     state.SkipWithError("the test public key does not read");
     return;
   }
-  const std::filesystem::path path = (kExamplePacks / pack).replace_extension(augusta::assets::kPackExtension);
+  const std::filesystem::path path = (kExamplePacks / stem).replace_extension(augusta::assets::kPackExtension);
   for (auto _ : state) {
     auto loaded = Pack::Load(path, *public_key);
     if (!loaded.has_value()) {

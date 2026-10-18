@@ -1,7 +1,6 @@
 #include "augusta/capture_retention.h"
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -80,13 +79,10 @@ TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
 
 TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
   const std::string extension(kExtension);
-  std::string upper_case = extension;
-  std::ranges::transform(upper_case, upper_case.begin(),
-                         [](unsigned char letter) { return static_cast<char>(std::toupper(letter)); });
   for (const std::string& name :
        {std::string("notes.txt"), "20261009T101500123Z-003" + extension,
         "20261009T101500123Z-0003" + extension + ".tmp", "20261009T101500123-0003" + extension,
-        "2026100XT101500123Z-0003" + extension, "20261009T101500123Z-0003" + upper_case,
+        "2026100XT101500123Z-0003" + extension, std::string("20261009T101500123Z-0003.ACAP"),
         ".20261009T101500123Z-0003" + extension, std::string("20261009T101500123Z-0003"),
         std::string("20261009T101500123Z-0003.capture"), std::string()}) {
     EXPECT_FALSE(IsCaptureFileName(name)) << name;
