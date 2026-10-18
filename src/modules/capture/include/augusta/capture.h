@@ -26,9 +26,9 @@
 ///
 /// A file is the capture's magic, then each record's payload after its length
 /// in one byte, the header first, in the Networking Protocol's encoding: the
-/// Link (augusta/link_messages.h) converts between its records and the
-/// engine's types (augusta/capture_records.h), so its interface names no
-/// protocol type (ADR-0038). Reading checks the magic, the
+/// Link (augusta/link_messages.h) turns each record of the engine's types
+/// (augusta/capture_records.h) into its payload and back, so this module
+/// names no protocol type (ADR-0038). Reading checks the magic, the
 /// header's format version and the records' order (every Join first, numbered
 /// from 1, then the events in offset order, each naming a player a Join did,
 /// nothing after the Match end). Pure stream I/O, on whichever thread holds the

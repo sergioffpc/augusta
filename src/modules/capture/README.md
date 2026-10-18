@@ -7,15 +7,16 @@ and the server.
 
 Owns the Match capture file: what its records say in the engine's types, and
 reading one, held to the format's rules (magic, format version, record order),
-and writing one, in the Networking Protocol's encoding, so its interface names
-no protocol type. Pure stream I/O.
+and writing one, each record framed by its length, its bytes the Link's to make
+and read, so it names no protocol type. Pure stream I/O.
 
 ## Not its responsibility
 
 - Deciding what is captured, when, and how long a capture is kept: host
   (Capturer, capture retention, Replay).
 - Playing a captured player again: harness (`augusta/reenactment.h`).
-- Converting its records to and from the protocol's: link.
+- Each record's bytes, the magic and the header's format version: link
+  (`augusta_link_messages`), the only target capture converts through.
 
 ## Decisions
 

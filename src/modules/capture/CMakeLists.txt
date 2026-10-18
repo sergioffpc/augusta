@@ -8,15 +8,12 @@ augusta_set_module_scope(augusta_capture_records SHARED)
 
 # A Match capture's file (ADR-0050): its engine-typed capture, read from and
 # written to a stream by the server's Capturer, Replay and a Captured player
-# (see capture.h). The format's framing, magic, header version and record
-# order, and the Networking Protocol's records it is made of, stay inside: the
-# protocol and the Link's conversions are linked privately, so no reader
-# reaches them through this module (ADR-0038).
+# (see capture.h). The format's framing and record order stay inside; each
+# record's bytes, the magic and the header's format version are the Link's
+# conversions (augusta_link_messages), linked privately, so no reader reaches
+# them through this module and capture names no protocol type (ADR-0038,
+# tests/core_boundary.cmake).
 add_library(augusta_capture STATIC capture.cpp)
 target_include_directories(augusta_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(
-  augusta_capture
-  PUBLIC augusta_capture_records augusta_failure
-  PRIVATE augusta_link_messages augusta_protocol
-)
+target_link_libraries(augusta_capture PUBLIC augusta_capture_records augusta_failure PRIVATE augusta_link_messages)
 augusta_set_module_scope(augusta_capture SHARED)

@@ -20,6 +20,12 @@
 # link any of their targets, so every message each exchanges goes through
 # augusta/link.h, the replay server's among them (ADR-0051).
 #
+# Keeps capture on the Link's conversions alone (ADR-0038): its CMakeLists.txt
+# links augusta_link_messages and never augusta_link or augusta_protocol, and
+# no source of it names the protocol or includes its header, so each record's
+# bytes are the Link's to make. The check proves itself first on a planted
+# violation.
+#
 # Keeps networking beneath the Link alone (ADR-0038): no target but the Link's
 # own (augusta_link, and augusta_link_raw, its raw ends for tests) links
 # augusta_networking, bar networking's own tests and the Link's test of what it
@@ -178,6 +184,73 @@ endfunction()
 check_on_the_link(harness harness_violations harness_count)
 check_on_the_link(host host_violations host_count)
 
+# What of listfile, capture's CMakeLists.txt text, links past the Link's
+# conversions: each target_link_libraries call that links augusta_link or
+# augusta_protocol, or a line saying none links augusta_link_messages, in
+# out_violations, the calls named by where.
+set(past_the_conversions "(^|[^A-Za-z0-9_])augusta_(link|protocol)([^A-Za-z0-9_]|$)")
+set(the_conversions "(^|[^A-Za-z0-9_])augusta_link_messages([^A-Za-z0-9_]|$)")
+function(check_capture_links listfile where out_violations)
+  string(REGEX REPLACE "#[^\n]*" "" listfile "${listfile}")
+  string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" calls "${listfile}")
+  set(violations "")
+  set(converts FALSE)
+  foreach(call ${calls})
+    string(REGEX REPLACE "[ \t\r\n]+" " " call "${call}")
+    if(call MATCHES "${past_the_conversions}")
+      list(APPEND violations "  ${where}: ${call}")
+    endif()
+    if(call MATCHES "${the_conversions}")
+      set(converts TRUE)
+    endif()
+  endforeach()
+  if(NOT converts)
+    list(APPEND violations "  ${where}: links no augusta_link_messages")
+  endif()
+  set(${out_violations} "${violations}" PARENT_SCOPE)
+endfunction()
+
+# First a planted capture that links the protocol and the Link, which the
+# check must refuse, and one linking the conversions alone, which it must let
+# through: so it cannot pass by matching nothing.
+set(capture_self_test "")
+check_capture_links(
+  "target_link_libraries(\n  augusta_capture\n  # a comment (with parentheses)\n  PRIVATE augusta_link_messages augusta_protocol\n)\ntarget_link_libraries(augusta_capture PRIVATE augusta_link)"
+  "planted"
+  planted_capture_violations
+)
+list(LENGTH planted_capture_violations planted_capture_count)
+if(NOT planted_capture_count EQUAL 2)
+  string(APPEND capture_self_test "  it lets a planted capture link augusta_protocol or augusta_link\n")
+endif()
+check_capture_links(
+  "target_link_libraries(augusta_capture PUBLIC augusta_failure PRIVATE augusta_link_messages)"
+  "allowed"
+  allowed_capture_violations
+)
+if(allowed_capture_violations)
+  string(APPEND capture_self_test "  it refuses what it allows:\n${allowed_capture_violations}\n")
+endif()
+
+file(READ "${SOURCE_DIR}/src/modules/capture/CMakeLists.txt" capture_listfile)
+check_capture_links("${capture_listfile}" "src/modules/capture/CMakeLists.txt" capture_violations)
+file(GLOB_RECURSE capture_sources "${SOURCE_DIR}/src/modules/capture/*.h" "${SOURCE_DIR}/src/modules/capture/*.cpp")
+if(NOT capture_sources)
+  message(FATAL_ERROR "core_boundary.cmake: no capture sources found under ${SOURCE_DIR}")
+endif()
+list(LENGTH capture_sources capture_count)
+foreach(source ${capture_sources})
+  file(STRINGS "${source}" lines REGEX "(^|[^A-Za-z0-9_])protocol::|augusta/protocol\\.h")
+  foreach(line ${lines})
+    string(STRIP "${line}" line)
+    # A comment may name the protocol; only code depends on it.
+    if(NOT line MATCHES "^//")
+      file(RELATIVE_PATH relative "${SOURCE_DIR}" "${source}")
+      list(APPEND capture_violations "  ${relative}: ${line}")
+    endif()
+  endforeach()
+endforeach()
+
 # Each target_link_libraries call of listfile, a CMake listfile's text, that
 # links augusta_networking for a target allowed none: each a line of
 # out_violations, the call named by where.
@@ -282,6 +355,16 @@ if(host_violations)
     "The host reaches beneath the Link - send and receive through augusta/link.h instead:\n${host_report}\n"
   )
 endif()
+if(capture_self_test)
+  string(APPEND report "The capture check does not fire as it must:\n${capture_self_test}")
+endif()
+if(capture_violations)
+  list(JOIN capture_violations "\n" capture_report)
+  string(
+    APPEND report
+    "capture reaches past the Link's conversions - link augusta_link_messages alone and convert through augusta/link_messages.h:\n${capture_report}\n"
+  )
+endif()
 if(networking_self_test)
   string(APPEND report "The networking check does not fire as it must:\n${networking_self_test}")
 endif()
@@ -299,5 +382,5 @@ endif()
 list(LENGTH headers count)
 message(
   STATUS
-  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone, and ${listfile_count} listfiles linking networking only for the Link's own targets and the transport's own tests"
+  "core_boundary: ${count} headers free of protocol and input types, ${base_count} tick and limits sources free of other modules and defined nowhere else, ${harness_count} harness and ${host_count} host sources on the Link alone, ${capture_count} capture sources on the Link's conversions alone, and ${listfile_count} listfiles linking networking only for the Link's own targets and the transport's own tests"
 )

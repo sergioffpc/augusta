@@ -651,9 +651,10 @@ add_test(
 # core modules of their own. Nor do tick and limits depend on any other module,
 # nor does anything else give the Tick or the Sequence a type of its own or
 # declare a bound again, even as an alias. Nor do the harness and the host reach
-# beneath the Link, nor does any target but the Link's own (and the transport's
-# own tests) link networking, which it first proves on a planted violation. A
-# source scan, so it builds nothing.
+# beneath the Link, nor does capture link more of it than its conversions, nor
+# does any target but the Link's own (and the transport's own tests) link
+# networking, the last two first proved on a planted violation. A source scan,
+# so it builds nothing.
 add_test(
   NAME augusta_core_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/core_boundary.cmake

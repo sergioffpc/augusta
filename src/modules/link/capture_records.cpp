@@ -1,11 +1,17 @@
 #include "augusta/capture_records.h"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
+#include "augusta/failure.h"
 #include "augusta/link_messages.h"
 #include "augusta/protocol.h"
 #include "shared_core.h"
@@ -38,11 +44,10 @@ struct EventToWire {
   }
 };
 
-using Event = std::optional<capture::AtOffset<capture::Event>>;
+using Event = capture::AtOffset<capture::Event>;
 
+// Each event's record in the engine's types.
 struct EventFromRecord {
-  Event operator()(const protocol::CaptureHeaderWire& /*header*/) const { return std::nullopt; }
-  Event operator()(const protocol::CapturedJoinWire& /*join*/) const { return std::nullopt; }
   Event operator()(const protocol::CapturedCommandWire& command) const {
     return capture::AtOffset<capture::Event>{
         .offset = command.offset,
@@ -64,9 +69,7 @@ struct EventFromRecord {
   }
 };
 
-}  // namespace
-
-protocol::CaptureHeaderWire ToWire(const capture::Header& header) {
+protocol::CaptureHeaderWire HeaderToWire(const capture::Header& header) {
   return protocol::CaptureHeaderWire{.server_pack = ToWire(header.server_pack),
                                      .client_pack = ToWire(header.client_pack),
                                      .engine_version = header.engine_version,
@@ -75,7 +78,7 @@ protocol::CaptureHeaderWire ToWire(const capture::Header& header) {
                                      .tick_rate_hz = header.tick_rate_hz};
 }
 
-capture::Header FromWire(const protocol::CaptureHeaderWire& header) {
+capture::Header HeaderFromWire(const protocol::CaptureHeaderWire& header) {
   return capture::Header{
       .engine_version = header.engine_version,
       .server_pack = FromWire(header.server_pack),
@@ -84,24 +87,63 @@ capture::Header FromWire(const protocol::CaptureHeaderWire& header) {
       .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(header.started_unix_ms))};
 }
 
-protocol::CaptureRecordWire ToWire(capture::Player player, const capture::Join& join) {
-  return protocol::CapturedJoinWire{.spawn = join.spawn,
-                                    .offset = 0,
-                                    .session = static_cast<protocol::SessionIdWire>(join.session),
-                                    .character = join.character,
-                                    .player = player};
+// What a record's payload decodes to in the engine's types: nullopt for a
+// header of another format version, which this engine does not read.
+struct RecordFromWire {
+  std::optional<CaptureRecord> operator()(const protocol::CaptureHeaderWire& header) const {
+    if (header.format_version != protocol::kCaptureFormatVersion) {
+      return std::nullopt;
+    }
+    return HeaderFromWire(header);
+  }
+  std::optional<CaptureRecord> operator()(const protocol::CapturedJoinWire& join) const {
+    return CapturedJoin{
+        .offset = join.offset,
+        .player = join.player,
+        .join = {.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn}};
+  }
+  template <typename EventWire>
+  std::optional<CaptureRecord> operator()(const EventWire& event) const {
+    return CaptureRecord{EventFromRecord{}(event)};
+  }
+};
+
+// record's payload, or the writer's broken invariant naming its type.
+std::expected<std::vector<std::byte>, failure::Failure> EncodeRecord(const protocol::CaptureRecordWire& record) {
+  return protocol::EncodeCaptureRecord(record).transform_error([&record](protocol::EncodeError error) {
+    return failure::Failure{.code = failure::Code::kInvariantViolated,
+                            .context = {{.key = "capture_record_type",
+                                         .value = std::to_string(static_cast<std::uint8_t>(protocol::TypeOf(record)))}},
+                            .detail = std::string(protocol::DescribeEncodeError(error))};
+  });
 }
 
-capture::Join FromWire(const protocol::CapturedJoinWire& join) {
-  return capture::Join{.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn};
+}  // namespace
+
+std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureHeader(const capture::Header& header) {
+  return EncodeRecord(HeaderToWire(header));
 }
 
-protocol::CaptureRecordWire ToWire(const capture::AtOffset<capture::Event>& event) {
-  return std::visit(EventToWire{.offset = event.offset}, event.event);
+std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureJoin(capture::Player player,
+                                                                          const capture::Join& join) {
+  return EncodeRecord(protocol::CapturedJoinWire{.spawn = join.spawn,
+                                                 .offset = 0,
+                                                 .session = static_cast<protocol::SessionIdWire>(join.session),
+                                                 .character = join.character,
+                                                 .player = player});
 }
 
-std::optional<capture::AtOffset<capture::Event>> EventFromWire(const protocol::CaptureRecordWire& record) {
-  return std::visit(EventFromRecord{}, record);
+std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureEvent(
+    const capture::AtOffset<capture::Event>& event) {
+  return EncodeRecord(std::visit(EventToWire{.offset = event.offset}, event.event));
+}
+
+std::optional<CaptureRecord> DecodeCaptureRecord(std::span<const std::byte> payload) {
+  const auto record = protocol::DecodeCaptureRecord(payload);
+  if (!record.has_value()) {
+    return std::nullopt;
+  }
+  return std::visit(RecordFromWire{}, *record);
 }
 
 }  // namespace augusta::link

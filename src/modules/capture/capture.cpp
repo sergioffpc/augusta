@@ -21,7 +21,6 @@
 #include "augusta/capture_records.h"
 #include "augusta/failure.h"
 #include "augusta/link_messages.h"
-#include "augusta/protocol.h"
 #include "frame.h"
 
 namespace augusta::capture {
@@ -59,20 +58,20 @@ Frame ReadFrame(std::istream& in, std::vector<std::byte>& payload) {
 }
 
 std::expected<void, ReadError> ReadMagic(std::istream& in) {
-  std::array<char, protocol::kCaptureMagic.size()> magic{};
+  std::array<char, link::kCaptureMagic.size()> magic{};
   in.read(magic.data(), magic.size());
   if (in.bad()) {
     return std::unexpected(ReadError::kUnreadable);
   }
   if (static_cast<std::size_t>(in.gcount()) != magic.size() ||
-      !std::ranges::equal(magic, protocol::kCaptureMagic,
+      !std::ranges::equal(magic, link::kCaptureMagic,
                           [](char read, std::byte expected) { return static_cast<std::byte>(read) == expected; })) {
     return std::unexpected(ReadError::kNotACapture);
   }
   return {};
 }
 
-std::expected<protocol::CaptureHeaderWire, ReadError> ReadHeader(std::istream& in) {
+std::expected<Header, ReadError> ReadHeader(std::istream& in) {
   std::vector<std::byte> payload;
   const Frame frame = ReadFrame(in, payload);
   if (frame == Frame::kUnreadable) {
@@ -81,17 +80,13 @@ std::expected<protocol::CaptureHeaderWire, ReadError> ReadHeader(std::istream& i
   if (frame != Frame::kRead) {
     return std::unexpected(ReadError::kUnsupported);
   }
-  const auto record = protocol::DecodeCaptureRecord(payload);
-  const auto* header = record.has_value() ? std::get_if<protocol::CaptureHeaderWire>(&*record) : nullptr;
-  if (header == nullptr || header->format_version != protocol::kCaptureFormatVersion) {
+  // A header of another format version does not decode.
+  const auto record = link::DecodeCaptureRecord(payload);
+  const auto* header = record.has_value() ? std::get_if<Header>(&*record) : nullptr;
+  if (header == nullptr) {
     return std::unexpected(ReadError::kUnsupported);
   }
   return *header;
-}
-
-// The frame of record, or why it has none (Framed).
-std::expected<std::vector<std::byte>, EncodeError> Encode(const protocol::CaptureRecordWire& record) {
-  return Framed(protocol::EncodeCaptureRecord(record), protocol::TypeOf(record));
 }
 
 // Decision: whether each record may follow those before it (ADR-0050): every
@@ -100,11 +95,11 @@ std::expected<std::vector<std::byte>, EncodeError> Encode(const protocol::Captur
 // end.
 class RecordOrder {
  public:
-  bool Admits(const protocol::CaptureRecordWire& record) { return std::visit(*this, record); }
+  bool Admits(const link::CaptureRecord& record) { return std::visit(*this, record); }
 
-  bool operator()(const protocol::CaptureHeaderWire& /*header*/) const { return false; }
+  bool operator()(const Header& /*header*/) const { return false; }
 
-  bool operator()(const protocol::CapturedJoinWire& join) {
+  bool operator()(const link::CapturedJoin& join) {
     if (events_ || join.offset != 0 || join.player != joins_ + 1U) {
       return false;
     }
@@ -112,28 +107,31 @@ class RecordOrder {
     return true;
   }
 
-  bool operator()(const protocol::CapturedCommandWire& command) { return Follows(command.offset, {command.player}); }
-
-  bool operator()(const protocol::CapturedLeaveWire& leave) { return Follows(leave.offset, {leave.player}); }
-
-  bool operator()(const protocol::CapturedDeathWire& death) {
-    return Follows(death.offset, {death.victim, death.killer});
+  bool operator()(const AtOffset<Event>& event) {
+    return std::visit([this, offset = event.offset](const auto& what) { return AdmitsEvent(offset, what); },
+                      event.event);
   }
 
-  bool operator()(const protocol::CapturedMatchEndWire& end) {
-    if (end.winner != 0 && !Known(end.winner)) {
+ private:
+  bool AdmitsEvent(std::uint32_t offset, const Command& command) { return Follows(offset, {command.player}); }
+
+  bool AdmitsEvent(std::uint32_t offset, const Leave& leave) { return Follows(offset, {leave.player}); }
+
+  bool AdmitsEvent(std::uint32_t offset, const Death& death) { return Follows(offset, {death.victim, death.killer}); }
+
+  bool AdmitsEvent(std::uint32_t offset, const MatchEnd& end) {
+    if (end.winner.has_value() && !Known(*end.winner)) {
       return false;
     }
-    const bool follows = Follows(end.offset, {});
+    const bool follows = Follows(offset, {});
     ended_ = true;
     return follows;
   }
 
- private:
-  [[nodiscard]] bool Known(std::uint8_t player) const { return player >= 1 && player <= joins_; }
+  [[nodiscard]] bool Known(Player player) const { return player >= 1 && player <= joins_; }
 
   // Whether an event at offset naming players may come next.
-  bool Follows(std::uint32_t offset, std::initializer_list<std::uint8_t> players) {
+  bool Follows(std::uint32_t offset, std::initializer_list<Player> players) {
     if (ended_ || offset < last_offset_ || !std::ranges::all_of(players, [this](std::uint8_t p) { return Known(p); })) {
       return false;
     }
@@ -150,16 +148,16 @@ class RecordOrder {
   bool ended_ = false;
 };
 
-// A capture file's records, as the protocol decodes them.
+// A capture file's records, as the Link decodes them.
 struct CaptureFile {
-  protocol::CaptureHeaderWire header;
+  Header header;
   // Every record after the header, in the order written.
-  std::vector<protocol::CaptureRecordWire> records;
+  std::vector<link::CaptureRecord> records;
   // Whether the file ended partway through a record, which was dropped.
   bool torn = false;
 };
 
-// Reads the capture in, held to the format's order, in the protocol's types. A
+// Reads the capture in, held to the format's order, record by record. A
 // last record cut short is dropped and reported in CaptureFile::torn; a stream
 // that fails, wherever it does, is kUnreadable, never a whole or torn capture.
 std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
@@ -184,7 +182,7 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
       file.torn = true;
       break;
     }
-    auto record = protocol::DecodeCaptureRecord(payload);
+    auto record = link::DecodeCaptureRecord(payload);
     if (!record.has_value() || !order.Admits(*record)) {
       return std::unexpected(ReadError::kMalformed);
     }
@@ -210,12 +208,9 @@ std::string_view DescribeReadError(ReadError error) {
 }
 
 std::expected<std::vector<std::byte>, EncodeError> Framed(
-    const std::expected<protocol::BytesWire, protocol::EncodeError>& payload, protocol::CaptureRecordTypeWire type) {
+    const std::expected<std::vector<std::byte>, failure::Failure>& payload) {
   if (!payload.has_value()) {
-    return std::unexpected(failure::Failure{
-        .code = failure::Code::kInvariantViolated,
-        .context = {{.key = "capture_record_type", .value = std::to_string(static_cast<std::uint8_t>(type))}},
-        .detail = std::string(protocol::DescribeEncodeError(payload.error()))});
+    return std::unexpected(payload.error());
   }
   if (payload->size() > kMaxFramePayload) {
     return std::unexpected(RecordTooLong{});
@@ -234,37 +229,40 @@ std::expected<Capture, ReadError> ReadCapture(std::istream& in) {
   if (!file.has_value()) {
     return std::unexpected(file.error());
   }
-  Capture capture{.header = link::FromWire(file->header), .joins = {}, .events = {}, .torn = file->torn};
+  Capture capture{.header = file->header, .joins = {}, .events = {}, .torn = file->torn};
   capture.events.reserve(file->records.size());
-  // The file's order has already put every Join first, numbered from 1.
-  for (const protocol::CaptureRecordWire& record : file->records) {
-    if (const auto* join = std::get_if<protocol::CapturedJoinWire>(&record)) {
-      capture.joins.push_back(link::FromWire(*join));
-    } else if (auto event = link::EventFromWire(record)) {
-      capture.events.push_back(*std::move(event));
+  // The file's order has already put every Join first, numbered from 1, and
+  // left no header after the first.
+  for (link::CaptureRecord& record : file->records) {
+    if (auto* join = std::get_if<link::CapturedJoin>(&record)) {
+      capture.joins.push_back(std::move(join->join));
+    } else if (auto* event = std::get_if<AtOffset<Event>>(&record)) {
+      capture.events.push_back(std::move(*event));
     }
   }
   return capture;
 }
 
 std::expected<Encoded, EncodeError> EncodeHeader(const Header& header) {
-  auto frame = Encode(link::ToWire(header));
+  auto frame = Framed(link::EncodeCaptureHeader(header));
   if (!frame.has_value()) {
     return std::unexpected(std::move(frame.error()));
   }
-  std::vector<std::byte> bytes(protocol::kCaptureMagic.begin(), protocol::kCaptureMagic.end());
+  std::vector<std::byte> bytes(link::kCaptureMagic.begin(), link::kCaptureMagic.end());
   bytes.insert(bytes.end(), frame->begin(), frame->end());
   return Encoded(std::move(bytes));
 }
 
 std::expected<Encoded, EncodeError> EncodeJoin(Player player, const Join& join) {
-  return Encode(link::ToWire(player, join)).transform([](std::vector<std::byte> bytes) {
+  return Framed(link::EncodeCaptureJoin(player, join)).transform([](std::vector<std::byte> bytes) {
     return Encoded(std::move(bytes));
   });
 }
 
 std::expected<Encoded, EncodeError> EncodeEvent(const AtOffset<Event>& event) {
-  return Encode(link::ToWire(event)).transform([](std::vector<std::byte> bytes) { return Encoded(std::move(bytes)); });
+  return Framed(link::EncodeCaptureEvent(event)).transform([](std::vector<std::byte> bytes) {
+    return Encoded(std::move(bytes));
+  });
 }
 
 void Write(std::ostream& out, const Encoded& encoded) {

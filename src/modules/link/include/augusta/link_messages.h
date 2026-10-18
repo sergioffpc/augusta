@@ -2,9 +2,11 @@
 #define AUGUSTA_LINK_MESSAGES_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <span>
+#include <variant>
 #include <vector>
 
 #include "augusta/capture_records.h"
@@ -130,19 +132,41 @@ void FillRecipientFields(protocol::AuthoritativeStateWire& state, const Authorit
 /// server sends.
 [[nodiscard]] std::optional<ClientMessage> ClientMessageFromWire(const protocol::MessageWire& message);
 
-/// A capture's header, in this engine's format version.
-[[nodiscard]] protocol::CaptureHeaderWire ToWire(const capture::Header& header);
-[[nodiscard]] capture::Header FromWire(const protocol::CaptureHeaderWire& header);
+// ---- A Match capture's records, as the bytes its file holds (ADR-0050) ----
 
-/// The Join of player, at offset 0.
-[[nodiscard]] protocol::CaptureRecordWire ToWire(capture::Player player, const capture::Join& join);
-[[nodiscard]] capture::Join FromWire(const protocol::CapturedJoinWire& join);
+/// What every capture's file starts with.
+inline constexpr std::span<const std::byte, protocol::kCaptureMagic.size()> kCaptureMagic{protocol::kCaptureMagic};
 
-/// One event of a capture at its offset. A Command's Seen time travels as its
-/// seen_offset alone.
-[[nodiscard]] protocol::CaptureRecordWire ToWire(const capture::AtOffset<capture::Event>& event);
-/// The event of record at its offset, or nothing for a header or a Join, which are not events.
-[[nodiscard]] std::optional<capture::AtOffset<capture::Event>> EventFromWire(const protocol::CaptureRecordWire& record);
+/// A Join as its record says it: its player's number and its offset, which the
+/// format holds to 1, 2, ... in order and to 0, with the Join itself.
+struct CapturedJoin {
+  std::uint32_t offset = 0;
+  capture::Player player = 0;
+  capture::Join join;
+
+  bool operator==(const CapturedJoin&) const = default;
+};
+
+/// One record of a capture's file, in the engine's types: its header, a Join or
+/// an event at its offset.
+using CaptureRecord = std::variant<capture::Header, CapturedJoin, capture::AtOffset<capture::Event>>;
+
+/// The payload of each record, as a capture's file holds it after its frame's
+/// length: header in this engine's format version, the Join of player at offset
+/// 0, or one event at its offset (a Command's Seen time as its seen_offset
+/// alone). If a field is beyond what the protocol carries, no payload but a
+/// failure::Code::kInvariantViolated naming the record's type
+/// (`capture_record_type=`): the writer's broken invariant.
+[[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureHeader(
+    const capture::Header& header);
+[[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureJoin(capture::Player player,
+                                                                                        const capture::Join& join);
+[[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureEvent(
+    const capture::AtOffset<capture::Event>& event);
+
+/// The record payload holds, or nullopt if it does not decode or is a header of
+/// another format version than this engine's, which it does not read.
+[[nodiscard]] std::optional<CaptureRecord> DecodeCaptureRecord(std::span<const std::byte> payload);
 
 }  // namespace augusta::link
 
