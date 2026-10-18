@@ -464,8 +464,8 @@ and players' feet make noise.
 
 ### M28 — Acoustics (L)
 
-- Steam Audio's overlay port with Embree, first: its fallback to the built-in
-  ray tracer is decided before anything depends on it
+- Steam Audio's overlay port with Embree, first: the built-in ray tracer can
+  stand in for it only until M32's Breakables (ADR-0071)
 - One sound shape for every cue; a player-chosen SOFA HRTF
 - Air absorption, cue directivity, occlusion and transmission from the Map's
   Acoustic geometry and placed Props
