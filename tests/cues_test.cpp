@@ -10,7 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "encoder.h"
+#include "augusta/pack_encoder.h"
 
 // The client's cue sounds (ADR-0020): a sound for every cue in the catalogue,
 // found in the client pack under the sounds prefix it names.

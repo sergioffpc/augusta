@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_ASSETS_ENCODER_H_
-#define AUGUSTA_ASSETS_ENCODER_H_
+#ifndef AUGUSTA_PACK_ENCODER_H_
+#define AUGUSTA_PACK_ENCODER_H_
 
 #include <cstddef>
 #include <expected>
@@ -12,15 +12,10 @@
 #include "augusta/assets.h"
 
 /// \file
-/// Private (not under include/augusta/, never installed) declarations of
-/// augusta_assets' Encode* blob functions and WritePack (ADR-0031/ADR-0032/
-/// ADR-0007), implemented in encoder.cpp/assets.cpp. No production code
-/// calls these - the pack-cooking pipeline (tools/pack, ADR-0030)
-/// is pure Python and reimplements this same wire format independently.
-/// They serve as that format's canonical reference and as augusta_assets'
-/// own round-trip test fixture (tests/assets_test.cpp, which gets a private
-/// include path to this directory for exactly that reason) - same
-/// non-public status as decoder.h.
+/// augusta_assets' pack encoder: the Encode* blob functions and WritePack
+/// (ADR-0031/ADR-0032/ADR-0007), implemented in encoder.cpp/assets.cpp. The
+/// write half of the pack's wire format, for the cooker and for tests that
+/// build packs; augusta/pack_decoder.h is its read half.
 namespace augusta::assets {
 
 /// Why an Encode* function refused its input.
@@ -97,4 +92,4 @@ std::expected<void, WriteError> WritePack(const std::filesystem::path& output_pa
 
 }  // namespace augusta::assets
 
-#endif  // AUGUSTA_ASSETS_ENCODER_H_
+#endif  // AUGUSTA_PACK_ENCODER_H_
