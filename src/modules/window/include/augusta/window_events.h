@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <variant>
 
-/// ile
+/// \file
 /// The window's device events (ADR-0059): the keys and mouse buttons it names,
 /// and what Window::Poll returns of them. Free of GLFW, so a module that only
 /// reads the events - input, which turns them into Commands - links this
