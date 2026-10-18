@@ -111,6 +111,16 @@ Client-side prediction applies locally and Reconciliation replays. _Avoid_:
 Input (Command is the sequenced payload sent to the server each tick;
 augusta::input::Input is the per-frame local sampler that produces one)
 
+**Play mode**: How one player plays a Match, Desktop (a screen, mouse and
+keyboard or a gamepad) or VR (a PC VR headset with its tracked body), declared
+when it joins and fixed for the Match. _Avoid_: Input mode, client mode, VR mode
+(VR is one of the two Play modes)
+
+**Tracked pose**: A VR player's body as its client reports it with each Command:
+its Joints' rotations and its head's offset from its body, never its own limbs'
+lengths, which are its Character's. _Avoid_: Mocap, body tracking data, skeleton
+(a Skeleton is the Character's authored one)
+
 **Reconciliation**: The process of correcting a client's predicted state against
 the server's authoritative state: the client restores the server's state of its
 body and its rifle and replays the commands the server has not yet acknowledged
@@ -356,6 +366,10 @@ round fired with fire held until fire is released, the magazine is empty or a
 reload starts. A round's place in it picks its kick from the Parameters' recoil
 pattern, and the next Burst starts the pattern over. _Avoid_: Spray, volley,
 salvo (a Burst is not a fire mode: the rifle is full-auto)
+
+**Muzzle**: Where a rifle's rounds leave from, and the way its barrel points, as
+its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
+where a round leaves), shot origin
 
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
