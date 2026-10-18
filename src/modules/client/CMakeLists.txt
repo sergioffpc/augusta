@@ -97,8 +97,8 @@ augusta_set_module_scope(augusta_client CLIENT_ONLY)
 # augustac's runs behind the application boundary (see client_application.h,
 # ADR-0033): listing a replay server's Replays, and the Lifecycle that starts
 # the transport and constructs and runs the client Runtime. What augustac's
-# entry point links of the module: the Runtime, the transport and the timer
-# resolution are linked privately, so it reaches none of them.
+# entry point links of the module: the Runtime and the transport are linked
+# privately, so it reaches neither.
 add_library(augusta_client_application STATIC client_application.cpp)
 target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
@@ -106,10 +106,4 @@ target_link_libraries(
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness
   PRIVATE augusta_assets augusta_client augusta_failure augusta_link augusta_logging
 )
-# The system timer resolution it raises on Windows (timeBeginPeriod), and
-# NOMINMAX against the min/max macros of the <windows.h> it includes for it.
-if(WIN32)
-  target_link_libraries(augusta_client_application PRIVATE winmm)
-  target_compile_definitions(augusta_client_application PRIVATE NOMINMAX)
-endif()
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)

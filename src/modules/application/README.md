@@ -6,7 +6,8 @@
 
 The application boundary each executable's `main` runs behind: its phases run in
 order and end in one classified Outcome, the terminal log event and the exit
-status.
+status. On Windows it raises the system timer resolution to 1 ms for as long as
+the phases run, so both executables' threads wake on time.
 
 ## Not its responsibility
 
@@ -18,4 +19,5 @@ status.
 
 ## Decisions
 
+[ADR-0005](../../../docs/adr/0005-threading-model.md),
 [ADR-0033](../../../docs/adr/0033-error-handling.md).
