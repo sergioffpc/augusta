@@ -7,6 +7,7 @@
 #include <format>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -65,8 +66,8 @@ double FrameTimeWindow::Average() const {
   if (frames == 0) {
     return 0.0;
   }
-  const auto last = frame_times_s_.begin() + static_cast<std::ptrdiff_t>(frames);
-  return std::accumulate(frame_times_s_.begin(), last, 0.0) / static_cast<double>(frames);
+  const std::span<const double> recent = std::span(frame_times_s_).first(frames);
+  return std::accumulate(recent.begin(), recent.end(), 0.0) / static_cast<double>(frames);
 }
 
 }  // namespace augusta::hud

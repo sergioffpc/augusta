@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/faults.h"

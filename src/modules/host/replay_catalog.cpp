@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 
 namespace augusta::host {
 

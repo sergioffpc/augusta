@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/match.h"
 #include "augusta/math.h"

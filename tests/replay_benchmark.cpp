@@ -7,6 +7,7 @@
 #include <benchmark/benchmark.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/replay.h"
