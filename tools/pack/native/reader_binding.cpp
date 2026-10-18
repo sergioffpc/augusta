@@ -1,11 +1,9 @@
-#include "pack_reader.h"
+#include "reader_binding.h"
 
-#include <exception>
 #include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,6 +14,7 @@
 
 #include "augusta/assets.h"
 #include "bytes.h"
+#include "failure.h"
 
 namespace augusta::pack {
 
@@ -23,31 +22,8 @@ namespace {
 
 namespace py = pybind11;
 
-// Thrown for a refused ReadPackLayout or Pack::Load, and translated into the
-// module's LoadError with reason set.
-class LoadFailure : public std::runtime_error {
- public:
-  LoadFailure(assets::LoadError reason, const std::filesystem::path& path)
-      : std::runtime_error(std::format("{} {}", path.string(), assets::DescribeLoadError(reason))), reason_(reason) {}
-
-  [[nodiscard]] assets::LoadError Reason() const { return reason_; }
-
- private:
-  assets::LoadError reason_;
-};
-
-void TranslateLoadFailure(std::exception_ptr exception) {
-  try {
-    if (exception) {
-      std::rethrow_exception(exception);
-    }
-  } catch (const LoadFailure& failure) {
-    const py::object type = py::module_::import("augusta_pack._native").attr("LoadError");
-    py::object error = type(failure.what());
-    error.attr("reason") = failure.Reason();
-    // Python.h's, which pybind11.h includes for its users.
-    PyErr_SetObject(type.ptr(), error.ptr());  // NOLINT(misc-include-cleaner)
-  }
+Failure<assets::LoadError> LoadFailureOf(assets::LoadError reason, const std::filesystem::path& path) {
+  return {reason, std::format("{} {}", path.string(), assets::DescribeLoadError(reason))};
 }
 
 std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& client_pack) {
@@ -60,7 +36,7 @@ std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& cli
 assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
   auto layout = assets::ReadPackLayout(path);
   if (!layout) {
-    throw LoadFailure(layout.error(), path);
+    throw LoadFailureOf(layout.error(), path);
   }
   return *std::move(layout);
 }
@@ -68,7 +44,7 @@ assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
 std::unique_ptr<assets::Pack> LoadPack(const std::filesystem::path& path, const py::bytes& public_key) {
   auto pack = assets::Pack::Load(path, FixedBytesOf<assets::kEd25519PublicKeySize>(public_key, "public_key"));
   if (!pack) {
-    throw LoadFailure(pack.error(), path);
+    throw LoadFailureOf(pack.error(), path);
   }
   return std::make_unique<assets::Pack>(*std::move(pack));
 }
@@ -82,9 +58,8 @@ void BindLoadError(py::module_& module) {
       .value("INVALID_INDEX", assets::LoadError::kInvalidIndex)
       .value("HASH_MISMATCH", assets::LoadError::kHashMismatch)
       .value("SIGNATURE_INVALID", assets::LoadError::kSignatureInvalid);
-  // PyExc_ValueError: Python.h's, as above.
-  py::exception<LoadFailure>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
-  py::register_exception_translator(&TranslateLoadFailure);
+  // PyExc_ValueError: Python.h's, which pybind11.h includes for its users.
+  RegisterFailure<assets::LoadError>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
 }
 
 void BindLayout(py::module_& module) {
@@ -125,7 +100,10 @@ void BindPack(py::module_& module) {
       .def_property_readonly(
           "client_pack_hash", [](const assets::Pack& pack) { return ClientPackOf(pack.ClientPackHash()); },
           "The hash of the client pack its header names; None if it names none.")
-      .def_property_readonly("path", &assets::Pack::Path);
+      .def_property_readonly("path", &assets::Pack::Path)
+      .def_property_readonly("version", &assets::Pack::Version,
+                             "The pack format version its header names (ADR-0031), the one this build reads.")
+      .def_property_readonly("file_size", &assets::Pack::FileSize, "In bytes.");
   module.def("load_pack", &LoadPack, py::arg("path"), py::arg("public_key"),
              "Loads the pack at path as the client and server do, verifying its hash and its signature against "
              "public_key (32 raw bytes, ADR-0018).");

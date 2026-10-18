@@ -70,14 +70,14 @@ alike, so the pack's wire format has exactly one implementation. The cook fills
 spawn points, eyes, audio, asset entries), encodes each blob with its
 `Encode*Blob` and writes, hashes and signs each pack with `WritePack`
 (`augusta/pack_encoder.h`), whose returned hash the server pack's header names.
-A refused encode or write reaches Python as `EncodeError` or `WriteError`, and
-no pack is written. Data crosses as STL vectors; a zero-copy path is added only
-if a measurement shows the cook got noticeably slower. A pack the cooker writes
-is one the runtime loads by construction, and the golden packs
-(`tests/fixtures/example-packs`) pin the cook's determinism end to end, from the
-USD stage to the signed pack. `augusta_assets` has no USD dependency (only
-BLAKE3, libsodium and Boost.Interprocess), so linking it keeps one OpenUSD build
-per process.
+A refused encode or write reaches Python as `EncodeError` or `WriteError`, with
+`augusta_assets`' error as its `reason` (ADR-0033), and no pack is written. Data
+crosses as STL vectors; a zero-copy path is added only if a measurement shows
+the cook got noticeably slower. A pack the cooker writes is one the runtime
+loads by construction, and the golden packs (`tests/fixtures/example-packs`) pin
+the cook's determinism end to end, from the USD stage to the signed pack.
+`augusta_assets` has no USD dependency (only BLAKE3, libsodium and
+Boost.Interprocess), so linking it keeps one OpenUSD build per process.
 
 The client and server packs (ADR-0019) are assembled first (contents + internal
 table of contents, ADR-0018), then each assembled pack is content-hashed with

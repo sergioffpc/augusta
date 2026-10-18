@@ -2,10 +2,10 @@
 # augusta_pack._native, bound in module.cpp - the mesh pass over meshoptimizer
 # (ADR-0016, mesh.h), the texture compression over stb_image,
 # stb_image_resize2 and libktx (ADR-0017, texture.h), and augusta_assets' pack
-# encoder, which writes every pack the cook makes (pack_encoder.h), and its
+# encoder, which writes every pack the cook makes (encoder_binding.h), its
 # reader, which the inspect, verify and publish tools read packs with
-# (pack_reader.h). Built by the
-# root build with AUGUSTA_TOOLS, beside the Agents' module, and only with the
+# (reader_binding.h), and its key generation, which augusta-keygen makes the
+# signing keys with (keys_binding.h). Built by the root build with AUGUSTA_TOOLS, beside the Agents' module, and only with the
 # tools environment's Python (the root CMakeLists.txt), which the vcpkg
 # manifest's pack feature installs these dependencies for. The cooker's
 # bootstrap builds this target alone (`make pack-native`).
@@ -28,7 +28,15 @@ find_package(Stb REQUIRED)
 # in tools/, or the cooker's bootstrap), as the Agents' module is
 # (tools/agent/native).
 set(AUGUSTA_PACK_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_pack")
-pybind11_add_module(augusta_pack_py module.cpp mesh.cpp pack_encoder.cpp pack_reader.cpp texture.cpp)
+pybind11_add_module(
+  augusta_pack_py
+  module.cpp
+  encoder_binding.cpp
+  keys_binding.cpp
+  mesh.cpp
+  reader_binding.cpp
+  texture.cpp
+)
 target_link_libraries(augusta_pack_py PRIVATE augusta_assets meshoptimizer::meshoptimizer KTX::ktx)
 target_include_directories(augusta_pack_py SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 set_target_properties(

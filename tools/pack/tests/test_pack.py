@@ -77,15 +77,36 @@ def test_a_refused_pack_raises_load_error_with_its_reason(tmp_path, key_pair):
 def test_two_entries_with_the_same_path_are_refused(tmp_path, key_pair):
     duplicate = [ENTRIES[0], ENTRIES[0]]
 
-    with pytest.raises(_native.WriteError, match="share a path"):
+    with pytest.raises(_native.WriteError, match="share a path") as refused:
         _native.write_pack(
             tmp_path / "test.pack", duplicate, key_pair.private_key
         )
+    assert refused.value.reason == _native.WriteErrorReason.DUPLICATE_PATH
     assert list(tmp_path.iterdir()) == []
 
 
 def test_a_blob_over_its_limit_is_refused():
     characters = [f"c{i}" for i in range(_native.MAX_CHARACTERS + 1)]
 
-    with pytest.raises(_native.EncodeError, match="exceeds"):
+    with pytest.raises(_native.EncodeError, match="exceeds") as refused:
         _native.encode_characters_blob(characters)
+    assert refused.value.reason == _native.EncodeErrorReason.TOO_LARGE
+
+
+@pytest.mark.parametrize(
+    ("bits_per_sample", "samples", "reason"),
+    [
+        (12, bytes(6), _native.EncodeErrorReason.UNSUPPORTED_SAMPLE_WIDTH),
+        (16, bytes(3), _native.EncodeErrorReason.PARTIAL_SAMPLE),
+    ],
+)
+def test_a_sound_the_runtime_could_not_play_is_refused(
+    bits_per_sample, samples, reason
+):
+    sound = _native.AudioData(
+        sample_rate=22050, bits_per_sample=bits_per_sample, samples=samples
+    )
+
+    with pytest.raises(_native.EncodeError, match="^audio ") as refused:
+        _native.encode_audio_blob(sound)
+    assert refused.value.reason == reason

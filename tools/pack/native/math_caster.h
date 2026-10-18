@@ -11,7 +11,7 @@
 
 /// \file
 /// pybind11's conversions of augusta::math's Vec3 and Quat, so the pack types
-/// the cooker fills (pack_encoder.h) take and give plain Python tuples: a Vec3
+/// the cooker fills (encoder_binding.h) take and give plain Python tuples: a Vec3
 /// is (x, y, z), a Quat (x, y, z, w), the order the pack stores a rotation in
 /// (ADR-0032). Any sequence of that many numbers converts in.
 namespace augusta::pack {

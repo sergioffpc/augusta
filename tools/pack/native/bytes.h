@@ -12,8 +12,8 @@
 #include <pybind11/pybind11.h>
 
 /// \file
-/// How the cooker's binding of augusta_assets (pack_encoder.h, pack_reader.h)
-/// passes bytes across: blobs, hashes, keys and signatures are Python bytes on
+/// How the cooker's native module (encoder_binding.h, reader_binding.h,
+/// keys_binding.h, module.cpp) passes bytes across: blobs, hashes, keys and signatures are Python bytes on
 /// one side and std::byte buffers on the other.
 namespace augusta::pack {
 

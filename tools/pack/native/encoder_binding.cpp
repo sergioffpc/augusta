@@ -1,4 +1,4 @@
-#include "pack_encoder.h"
+#include "encoder_binding.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -7,7 +7,6 @@
 #include <format>
 #include <optional>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -21,6 +20,7 @@
 #include "augusta/math.h"
 #include "augusta/pack_encoder.h"
 #include "bytes.h"
+#include "failure.h"
 #include "math_caster.h"  // IWYU pragma: keep - the Vec3/Quat conversions
 
 namespace augusta::pack {
@@ -29,42 +29,10 @@ namespace {
 
 namespace py = pybind11;
 
-// Thrown for a refused Encode*Blob or WritePack, and registered as the
-// module's EncodeError and WriteError.
-class EncodeFailure : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
-};
-
-class WriteFailure : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
-};
-
-std::string_view DescribeEncodeError(assets::EncodeError error) {
-  switch (error) {
-    case assets::EncodeError::kTooLarge:
-      return "exceeds the pack's size limits";
-  }
-  return "could not be encoded";
-}
-
-std::string DescribeWriteError(assets::WriteError error, const std::filesystem::path& output_path) {
-  switch (error) {
-    case assets::WriteError::kIoError:
-      return std::format("could not write {}", output_path.string());
-    case assets::WriteError::kDuplicatePath:
-      return "two entries share a path";
-    case assets::WriteError::kTooLarge:
-      return "its entries exceed the pack's size limits";
-  }
-  return "could not be written";
-}
-
 // what names the blob, e.g. "mesh", in the EncodeError a refusal raises.
 py::bytes BlobOrThrow(const std::expected<std::vector<std::byte>, assets::EncodeError>& blob, std::string_view what) {
   if (!blob) {
-    throw EncodeFailure(std::format("{} {}", what, DescribeEncodeError(blob.error())));
+    throw Failure(blob.error(), std::format("{} {}", what, assets::DescribeEncodeError(blob.error())));
   }
   return ToBytes(*blob);
 }
@@ -78,9 +46,24 @@ py::bytes WritePack(const std::filesystem::path& output_path, const std::vector<
   const auto written = assets::WritePack(
       output_path, entries, FixedBytesOf<assets::kEd25519PrivateKeySize>(signing_key, "signing_key"), client_pack);
   if (!written) {
-    throw WriteFailure(DescribeWriteError(written.error(), output_path));
+    throw Failure(written.error(),
+                  std::format("{} {}", output_path.string(), assets::DescribeWriteError(written.error())));
   }
   return ToBytes(*written);
+}
+
+void BindErrors(py::module_& module) {
+  py::enum_<assets::EncodeError>(module, "EncodeErrorReason", "Why a blob was refused: an EncodeError's reason.")
+      .value("TOO_LARGE", assets::EncodeError::kTooLarge)
+      .value("UNSUPPORTED_SAMPLE_WIDTH", assets::EncodeError::kUnsupportedSampleWidth)
+      .value("PARTIAL_SAMPLE", assets::EncodeError::kPartialSample);
+  py::enum_<assets::WriteError>(module, "WriteErrorReason", "Why a pack was not written: a WriteError's reason.")
+      .value("IO_ERROR", assets::WriteError::kIoError)
+      .value("DUPLICATE_PATH", assets::WriteError::kDuplicatePath)
+      .value("TOO_LARGE", assets::WriteError::kTooLarge);
+  // PyExc_*: Python.h's, which pybind11.h includes for its users.
+  RegisterFailure<assets::EncodeError>(module, "EncodeError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
+  RegisterFailure<assets::WriteError>(module, "WriteError", PyExc_RuntimeError);  // NOLINT(misc-include-cleaner)
 }
 
 void BindEnums(py::module_& module) {
@@ -111,7 +94,10 @@ void BindConstants(py::module_& module) {
 }
 
 void BindGeometryTypes(py::module_& module) {
-  py::class_<assets::MeshData>(module, "MeshData", "A triangle mesh: its points, and three indices per triangle.")
+  py::class_<assets::MeshData>(module, "MeshData",
+                               "A triangle mesh: its points, and three indices per triangle. Reading points or "
+                               "indices gives a copy, so a change to it, such as append, is lost: assign the whole "
+                               "list instead.")
       .def(py::init([](std::vector<math::Vec3> points, std::vector<std::uint32_t> indices) {
              return assets::MeshData{.points = std::move(points), .indices = std::move(indices)};
            }),
@@ -138,7 +124,9 @@ void BindGeometryTypes(py::module_& module) {
 }
 
 void BindSceneNode(py::module_& module) {
-  py::class_<assets::SceneNode>(module, "SceneNode", "One node of a scene blob, its transform local (ADR-0032).")
+  py::class_<assets::SceneNode>(module, "SceneNode",
+                                "One node of a scene blob, its transform local (ADR-0032). Reading properties gives "
+                                "a copy, so a change to it, such as append, is lost: assign the whole list instead.")
       .def(py::init([](std::string name, std::uint32_t parent_index, math::Vec3 translation, math::Quat rotation,
                        math::Vec3 scale, std::optional<std::string> mesh_path, std::optional<std::string> material_path,
                        std::optional<std::string> collider_path, std::optional<std::string> hitbox_path,
@@ -251,9 +239,7 @@ void BindEncodeFunctions(py::module_& module) {
 }  // namespace
 
 void BindPackEncoder(py::module_& module) {
-  // PyExc_*: Python.h's, which pybind11.h includes for its users.
-  py::register_exception<EncodeFailure>(module, "EncodeError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
-  py::register_exception<WriteFailure>(module, "WriteError", PyExc_RuntimeError);  // NOLINT(misc-include-cleaner)
+  BindErrors(module);
   BindEnums(module);
   BindConstants(module);
   BindGeometryTypes(module);
@@ -265,14 +251,6 @@ void BindPackEncoder(py::module_& module) {
              "Writes entries into a new pack at output_path, signed with signing_key (64 raw bytes, ADR-0018), its "
              "header naming client_pack_hash when given (a server pack's). Atomic: no pack is left behind on a "
              "refusal. Returns the pack's BLAKE3 hash, the one its trailer signs.");
-  module.def(
-      "generate_ed25519_keypair",
-      [] {
-        const assets::Ed25519KeyPair pair = assets::GenerateEd25519KeyPair();
-        return py::make_tuple(ToBytes(pair.public_key), ToBytes(pair.private_key));
-      },
-      "Generates a new Ed25519 keypair (ADR-0018). Returns (public_key, private_key): 32 and 64 raw bytes, the "
-      "private key the one write_pack signs with, the public key the one load_pack checks against.");
 }
 
 }  // namespace augusta::pack
