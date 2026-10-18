@@ -452,7 +452,7 @@ Agents find a server the same way. Any other refusal - version, pack, Character
 
 ### US-25: Play in VR
 
-Version: later (planned, no version yet)
+Version: v10 (planned)
 
 As a player, I want to play a Match on a PC VR headset, with my head, hands and
 body tracked, so that I hold and aim my rifle and take cover with my own body,
@@ -470,7 +470,7 @@ My camera images never leave my PC, and the Roster shows each player's Play mode
 
 ### US-26: Play on a Team
 
-Version: later (planned, no version yet)
+Version: v8 (planned)
 
 As a player, I want to fight on one of two Teams, each in its own Uniform, so
 that I fight beside teammates I can tell from the enemy.
@@ -487,7 +487,7 @@ The free-for-all is gone: every Match is a team match (ADR-0068).
 
 ### US-27: Talk to my Team
 
-Version: later (planned, no version yet)
+Version: v8 (planned)
 
 As a player, I want to talk to my Team by radio and to anyone near me aloud, so
 that we coordinate, at the risk of being overheard.
@@ -817,7 +817,7 @@ requirement, but it is one firewall rule once this one is met.
 
 ### NFR-16: VR Frame Rate
 
-Version: later (planned, no version yet)
+Version: v10 (planned)
 
 ```text
 Source:      A VR player
@@ -836,7 +836,7 @@ the runtime makes of it (ADR-0063).
 
 ### NFR-17: Desktop Frame Rate
 
-Version: later (planned, no version yet)
+Version: v5 (planned)
 
 ```text
 Source:      A Desktop player
