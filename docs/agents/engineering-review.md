@@ -96,7 +96,7 @@ The project states these; a review checks them rather than assuming them.
 - A pack is verified before any of it is used, and a failed verification stops
   the load (NFR-08).
 - The shared core does not depend on the protocol or on client input; the
-  boundary tests `tests/*_boundary.cmake` enforce what their comments state.
+  boundary tests `checks/*_boundary.cmake` enforce what their comments state.
 
 Known, accepted risks are listed in ARCHITECTURE §11 (no peer authentication on
 a trusted LAN, cross-platform PhysX divergence). A finding on one of them must

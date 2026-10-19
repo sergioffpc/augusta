@@ -79,7 +79,7 @@ jobs:
           # and the node's end of augusta-publish, which the cooker's tests run.
           # tools/docs is the docs workflow's, not theirs.
           set_output run_build \
-            "^(${server}|tests/|tools/agent/|tools/pack/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
+            "^(${server}|tests/|checks/|tools/agent/|tools/pack/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
 
           set_output run_container \
             "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
@@ -124,7 +124,7 @@ jobs:
         # the check itself runs it.
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         run: |
-          uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest scripts/tests/test_check_pack_formats.py
+          uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks/test_check_pack_formats.py
           uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
       - name: Install yamlfmt
         if: needs.changes.outputs.run_yaml == 'true'

@@ -20,7 +20,7 @@ writes and its retention, and the Replay server, which serves a recorded Match
 to Replay viewers through a Link endpoint of its own and the Host's own pieces.
 
 It speaks to the Link alone (`augusta/link.h`): no target here links the
-protocol or networking, which `tests/core_boundary.cmake` checks. A tick's
+protocol or networking, which `checks/core_boundary.cmake` checks. A tick's
 Authoritative State is encoded once and readdressed to each player, so only each
 one's own fields are encoded per player.
 

@@ -28,8 +28,8 @@
 /// the grids its numbers travel on (augusta/grid.h), augusta_tick, whose Tick
 /// and Sequence widths its counters take, and augusta_limits, whose player and
 /// recoil bounds (limits::kMaxPlayers, limits::kMaxRecoilKicks) bound its
-/// lists; it neither owns nor re-exports them (tests/protocol_boundary.cmake,
-/// tests/core_boundary.cmake). How many commands one Commands message carries
+/// lists; it neither owns nor re-exports them (checks/protocol_boundary.cmake,
+/// checks/core_boundary.cmake). How many commands one Commands message carries
 /// is its own bound (kMaxCommandsPerMessage). A type that mirrors one of the engine's
 /// carries the suffix Wire (BodyStateWire for physics::BodyState,
 /// AuthoritativeStateWire for harness::AuthoritativeState), so the two never

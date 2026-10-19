@@ -7,7 +7,7 @@
 # Usage: augusta_require_server_host() before project() and
 # augusta_require_server_platform() right after it, both in the root
 # CMakeLists.txt. augusta_server_platform_support() is the decision on its own,
-# which tests/server_platform.cmake checks.
+# which checks/server_platform.cmake checks.
 include_guard(GLOBAL)
 
 # Sets <out_var> to production, development or unsupported for a target

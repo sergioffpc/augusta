@@ -22,7 +22,7 @@ records into their bytes and back, are stateless and have no transport beneath,
 so the Host and capture convert without opening a connection. It owns the
 transport's process-wide setup and, for tests only, its simulated network
 conditions and raw ends that carry bytes as they are. Only it links networking
-(`tests/core_boundary.cmake`), and privately, with the protocol, so whatever
+(`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
 speaks to it reaches neither.
 
 ## Not its responsibility

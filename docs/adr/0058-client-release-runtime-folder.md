@@ -58,7 +58,7 @@ no launcher script.
   jobs also run the extracted `augustac --version` in a clean `ubuntu:26.04`
   container, so none of the build runner's libraries can stand in for one the
   folder lacks. ctest checks the check itself, against a stand-in build
-  (`tests/stage_client_linux.cmake`), on every pull request's Linux build.
+  (`checks/stage_client_linux.cmake`), on every pull request's Linux build.
 
 ## Considered Options
 

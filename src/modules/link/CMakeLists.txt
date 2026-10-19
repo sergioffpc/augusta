@@ -25,7 +25,7 @@ augusta_set_module_scope(augusta_link_messages SHARED)
 # receive the engine's types, each message with its reliability, and read their
 # connections' numbers; the transport's process-wide setup and, for tests, its
 # simulated conditions. With augusta_link_raw, the only target that links
-# networking (tests/core_boundary.cmake). The conversions, the protocol and the
+# networking (checks/core_boundary.cmake). The conversions, the protocol and the
 # transport are linked privately, so nothing that speaks to the Link reaches
 # them through it.
 add_library(augusta_link STATIC link.cpp)

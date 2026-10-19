@@ -2,7 +2,7 @@
 
 `augusta_networking`. Shared: linked by both the client and the server, through
 the Link alone: no target but `augusta_link` (and the transport's own tests)
-links it, which `tests/core_boundary.cmake` checks.
+links it, which `checks/core_boundary.cmake` checks.
 
 ## Responsibility
 

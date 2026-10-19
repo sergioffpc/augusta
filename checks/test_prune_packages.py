@@ -4,7 +4,11 @@ import sys
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "prune-packages.py"
+_SCRIPT = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "prune-packages.py"
+)
 _SPEC = importlib.util.spec_from_file_location("prune_packages", _SCRIPT)
 prune = importlib.util.module_from_spec(_SPEC)
 sys.modules["prune_packages"] = prune
