@@ -63,8 +63,10 @@ namespace {
 
 // The amplitude gain_db decibels scales a sound's samples by.
 float AmplitudeOf(float gain_db) {
+  // An amplitude ten times as large is 20 dB louder.
+  constexpr float kDecade = 10.0F;
   constexpr float kDecibelsPerDecade = 20.0F;
-  return std::pow(10.0F, gain_db / kDecibelsPerDecade);
+  return std::pow(kDecade, gain_db / kDecibelsPerDecade);
 }
 
 }  // namespace
