@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
 
@@ -156,12 +156,12 @@ TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
                                              .killer = static_cast<EntityId>(1),
                                              .yaw = 0.5F,
                                              .pitch = -0.25F,
-                                             .part = augusta::ballistics::BodyPart::kHead},
+                                             .part = augusta::body_part::BodyPart::kHead},
                   augusta::simulation::Death{.victim = static_cast<EntityId>(3),
                                              .killer = static_cast<EntityId>(2),
                                              .yaw = 1.0F,
                                              .pitch = 0.0F,
-                                             .part = augusta::ballistics::BodyPart::kLimb}};
+                                             .part = augusta::body_part::BodyPart::kLimb}};
 
   const auto deaths = augusta::replication::PlanDeaths(state);
 
@@ -170,9 +170,9 @@ TEST(ReplicationTest, EveryDeathOfATickIsPlannedOnceForEveryone) {
   EXPECT_EQ(deaths[0].killer, static_cast<EntityId>(1));
   EXPECT_EQ(deaths[0].yaw, 0.5F);
   EXPECT_EQ(deaths[0].pitch, -0.25F);
-  EXPECT_EQ(deaths[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(deaths[0].part, augusta::body_part::BodyPart::kHead);
   EXPECT_EQ(deaths[1].victim, static_cast<EntityId>(3));
-  EXPECT_EQ(deaths[1].part, augusta::ballistics::BodyPart::kLimb);
+  EXPECT_EQ(deaths[1].part, augusta::body_part::BodyPart::kLimb);
 }
 
 TEST(ReplicationTest, NobodyToSendToMeansNothingIsPlanned) {
@@ -225,12 +225,12 @@ TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAn
                  .target = static_cast<EntityId>(2),
                  .damage = 50.0F,
                  .health = 50.0F,
-                 .part = augusta::ballistics::BodyPart::kHead},
+                 .part = augusta::body_part::BodyPart::kHead},
                 {.shooter = static_cast<EntityId>(3),
                  .target = static_cast<EntityId>(1),
                  .damage = 10.0F,
                  .health = 0.0F,
-                 .part = augusta::ballistics::BodyPart::kLimb,
+                 .part = augusta::body_part::BodyPart::kLimb,
                  .reached_zero = true}};
 
   const auto confirmations = PlanHitConfirmations(state);
@@ -238,11 +238,11 @@ TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAn
   ASSERT_EQ(confirmations.size(), 2U);
   EXPECT_EQ(confirmations[0].recipient, static_cast<EntityId>(1));
   EXPECT_EQ(confirmations[0].target, static_cast<EntityId>(2));
-  EXPECT_EQ(confirmations[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(confirmations[0].part, augusta::body_part::BodyPart::kHead);
   EXPECT_EQ(confirmations[0].damage, 50.0F);
   EXPECT_EQ(confirmations[1].recipient, static_cast<EntityId>(3));
   EXPECT_EQ(confirmations[1].target, static_cast<EntityId>(1));
-  EXPECT_EQ(confirmations[1].part, augusta::ballistics::BodyPart::kLimb);
+  EXPECT_EQ(confirmations[1].part, augusta::body_part::BodyPart::kLimb);
   EXPECT_EQ(confirmations[1].damage, 10.0F);
 }
 

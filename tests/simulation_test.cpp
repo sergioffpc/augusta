@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
@@ -27,7 +28,7 @@
 // the commands of each tick.
 namespace {
 
-using augusta::ballistics::BodyPart;
+using augusta::body_part::BodyPart;
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;

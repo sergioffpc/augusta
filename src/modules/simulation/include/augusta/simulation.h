@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -152,7 +153,7 @@ struct PlayerCommand {
 /// stands for and its triangles, in the character's root space.
 struct CharacterHitbox {
   /// What a bullet that crosses it hits.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   /// Its surface: a bullet is tested against each, from either side.
   std::vector<ballistics::Triangle> triangles;
 };
@@ -227,7 +228,7 @@ struct Hit {
   /// The health the target has left after it.
   float health = 0.0F;
   /// Where on the target it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   /// Whether this is the hit that took the target's health to zero: true of at
   /// most one hit on a player in a Match.
   bool reached_zero = false;
@@ -247,7 +248,7 @@ struct Death {
   float yaw = 0.0F;
   float pitch = 0.0F;
   /// Where on the victim it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 
   bool operator==(const Death&) const = default;
 };

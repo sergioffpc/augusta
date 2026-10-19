@@ -17,7 +17,7 @@
 #include <prometheus/metric_family.h>
 #include <prometheus/metric_type.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/capture_retention.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -123,18 +123,6 @@ constexpr std::string_view RejectionLabel(Rejection rejection) {
   return {};
 }
 
-constexpr std::string_view BodyPartLabel(ballistics::BodyPart part) {
-  switch (part) {
-    case ballistics::BodyPart::kHead:
-      return "head";
-    case ballistics::BodyPart::kTorso:
-      return "torso";
-    case ballistics::BodyPart::kLimb:
-      return "limb";
-  }
-  return {};
-}
-
 constexpr std::string_view CaptureStopLabel(CaptureStop stop) {
   switch (stop) {
     case CaptureStop::kRecordTooLong:
@@ -170,7 +158,7 @@ static_assert(metrics::LabelledExactly<LeavingCounters>(LeavingLabel));
 static_assert(metrics::LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
 static_assert(metrics::LabelledExactly<MessageCounters>(link::NameOf));
 static_assert(metrics::LabelledExactly<RejectionCounters>(RejectionLabel));
-static_assert(metrics::LabelledExactly<BodyPartCounters>(BodyPartLabel));
+static_assert(metrics::LabelledExactly<BodyPartCounters>(body_part::NameOf));
 static_assert(metrics::LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
 
 // What Judge counts as misbehaviour is what MisbehaviourCounters has a counter for.
@@ -300,7 +288,7 @@ void AppendNetwork(std::vector<MetricFamily>& families, const HostMetrics& metri
 void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
   families.push_back(CounterFamily("augustad_shots_total", "Rounds fired.", metrics.shots));
   families.push_back(LabelledFamily("augustad_hit_confirmations_total", "Hits on players, by body part.",
-                                    metrics.hit_confirmations, "body_part", BodyPartLabel));
+                                    metrics.hit_confirmations, "body_part", body_part::NameOf));
   families.push_back(HistogramFamily("augustad_shooters_delay_seconds", "The Shooter's delay of each round fired.",
                                      metrics.shooters_delay));
   families.push_back(CounterFamily("augustad_shooters_delay_capped_total",

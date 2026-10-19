@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/content.h"
 #include "augusta/match.h"
 #include "augusta/parameters.h"
@@ -35,7 +35,8 @@ namespace augusta::host {
 /// A Game policy player's session as Match named it; the inverse of ToSimulation.
 [[nodiscard]] SessionId FromSimulation(policy::SessionId session);
 
-[[nodiscard]] ballistics::BodyPart ToBallistics(assets::BodyPart part);
+/// part, in the blob's numbering, as the gameplay Body part SimulationWorld takes.
+[[nodiscard]] body_part::BodyPart ToSimulation(assets::BodyPart part);
 
 /// hitbox, of the character at path, as the triangles a bullet is tested
 /// against. Throws failure::ClassifiedFailure (failure::Code::kInvalidContent),
