@@ -15,6 +15,7 @@
 
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
+#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -74,7 +75,7 @@ std::vector<ReplayListing> ReplayCatalog::List() {
   std::vector<ReplayListing> listings;
   std::unordered_map<std::string, Read> still;
   for (const std::filesystem::directory_entry& entry : Entries()) {
-    std::string name = entry.path().filename().string();
+    std::string name = Utf8(entry.path().filename());
     std::error_code error;
     const std::uintmax_t size = entry.file_size(error);
     const std::filesystem::file_time_type written = entry.last_write_time(error);
@@ -104,7 +105,7 @@ std::optional<capture::Capture> ReplayCatalog::Find(std::string_view name) const
   // name is only ever compared with what the directory lists: a path from the
   // network names no file here, so it reaches none (ADR-0051).
   for (const std::filesystem::directory_entry& entry : Entries()) {
-    const std::string listed = entry.path().filename().string();
+    const std::string listed = Utf8(entry.path().filename());
     if (listed != name) {
       continue;
     }

@@ -19,6 +19,7 @@
 #include "augusta/capture.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
+#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -120,7 +121,7 @@ std::vector<CompletedCapture> CaptureDirectory::Scan(std::string_view file_name)
   std::error_code error;
   for (std::filesystem::directory_iterator entry(directory_, error), end; !error && entry != end;
        entry.increment(error)) {
-    const std::string name = entry->path().filename().string();
+    const std::string name = Utf8(entry->path().filename());
     std::error_code status;
     // A symbolic link is not the directory's own file, even to a capture.
     if (name == file_name || !IsCaptureFileName(name) || !entry->is_regular_file(status) || entry->is_symlink(status)) {
@@ -153,7 +154,7 @@ void CaptureDirectory::DeleteOldest() {
     }
   }
   if (!failure.has_value()) {
-    LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", match_, oldest.path.string());
+    LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", match_, Utf8(oldest.path));
     if (observer_.on_deleted) {
       observer_.on_deleted();
     }
@@ -165,7 +166,7 @@ void CaptureDirectory::DeleteOldest() {
   if (!failure_logged_) {
     failure_logged_ = true;
     LOG_WARN("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_,
-             oldest.path.string(), *failure);
+             Utf8(oldest.path), *failure);
   }
 }
 

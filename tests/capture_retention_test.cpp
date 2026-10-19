@@ -54,6 +54,16 @@ using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 const Milliseconds kStarted{std::chrono::milliseconds{1'791'540'900'123}};
 constexpr std::uint64_t kFirstTick = 1000;
 
+// path in UTF-8: unlike path::string() on Windows, it never throws for a
+// character the ANSI code page lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string utf8 = path.u8string();
+  return {utf8.begin(), utf8.end()};
+}
+
+// A name no ANSI code page holds, so that path::string() throws for it on Windows.
+const std::filesystem::path kOutsideTheCodePage(u8"中文");
+
 std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
   std::vector<CompletedCapture> completed;
   for (const std::uintmax_t size : sizes) {
@@ -209,7 +219,7 @@ class CaptureRetentionTest : public ::testing::Test {
     std::vector<std::string> names;
     for (const auto& entry : std::filesystem::directory_iterator(directory_)) {
       if (entry.is_regular_file()) {
-        names.push_back(entry.path().filename().string());
+        names.push_back(Utf8(entry.path().filename()));
       }
     }
     std::ranges::sort(names);
@@ -358,6 +368,50 @@ TEST_F(CaptureRetentionTest, FilesThatAreNotCapturesAndOtherDirectoriesAreNeverT
 
   EXPECT_EQ(Names(), (std::vector<std::string>{unmarked, CaptureFileName(kStarted, 1), "notes.txt"}));
   EXPECT_EQ(std::distance(std::filesystem::directory_iterator(nested), {}), 1);
+}
+
+// A file whose name the ANSI code page lacks is a file like any other: being no
+// capture's name, it is never touched, and the Match is captured.
+// Requirements: US-21
+TEST_F(CaptureRetentionTest, AFileNamedOutsideTheCodePageIsLeftAloneAndTheMatchIsCaptured) {
+  const std::string seeded = Seed(1, 100);
+  std::filesystem::path outside = kOutsideTheCodePage;
+  outside += kExtension;
+  Write(directory_ / outside, true, 100);
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
+    Play(capturer, kStarted, 1);
+  }
+
+  EXPECT_EQ(Names(), (std::vector<std::string>{CaptureFileName(kStarted, 1), Utf8(outside)}));
+  EXPECT_EQ(Records(CaptureFileName(kStarted, 1)), 2U + 1U + 1U);
+}
+
+// The directory's own path, which every line naming a capture logs as it
+// starts, ends or is deleted, holds what the ANSI code page lacks: the
+// capture is written whole, and the lines name it in UTF-8.
+// Requirements: US-21
+TEST_F(CaptureRetentionTest, ACaptureDirectoryNamedOutsideTheCodePageHoldsWholeCaptures) {
+  const std::filesystem::path directory = directory_ / kOutsideTheCodePage;
+  std::filesystem::create_directories(directory);
+  Write(directory / CaptureFileName(kStarted - std::chrono::hours{1}, 1), true, 100);
+  const std::filesystem::path captured = directory / CaptureFileName(kStarted, 1);
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  testing::internal::CaptureStdout();
+  {
+    Capturer capturer(directory, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
+    Play(capturer, kStarted, 3);
+  }
+  const std::string written = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(std::distance(std::filesystem::directory_iterator(directory), {}), 1);
+  std::ifstream in(captured, std::ios::binary);
+  const auto capture = ReadCapture(in);
+  ASSERT_TRUE(capture.has_value());
+  EXPECT_EQ(capture->joins.size() + capture->events.size(), 2U + 3U + 1U);
+  EXPECT_NE(written.find(Utf8(captured)), std::string::npos) << written;
+  EXPECT_EQ(Occurrences(written, "event=capture_deleted"), 1U) << written;
 }
 
 // Requirements: US-21
