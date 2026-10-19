@@ -21,9 +21,11 @@
 /// Conclude then writes the executable's one terminal log event and picks its
 /// exit status. What each phase does, and how a failure is classified within
 /// it, is the executable's Runtime's (src/client, src/server); the runtime
-/// supervisor (supervisor.h) is what hands a runtime's first cause back to it. Reading the command line and
-/// config file comes first, outside the Lifecycle, since the log level is set
-/// from it; its failure is concluded the same way.
+/// supervisor (supervisor.h) is what hands a runtime's first cause back to it.
+/// Reading the command line and config file comes first, outside the
+/// Lifecycle, since the log level is set from it; its failure is concluded the
+/// same way. On Windows it raises the system timer resolution for as long as
+/// the phases run (TimerResolution, ADR-0005), for both executables.
 namespace augusta::application {
 
 /// How an executable ended: nullopt when it stopped as asked (the window was
@@ -35,6 +37,31 @@ inline constexpr int kStoppedExitStatus = 0;
 /// Whatever the failure's Disposition: the terminal event's code, not the
 /// status, says which failure it was.
 inline constexpr int kFailedExitStatus = 1;
+
+/// Raises the system timer resolution to 1 ms for as long as it lives, and
+/// restores it after: Windows otherwise wakes a sleeping thread only every
+/// 15.6 ms, so a tick loop could not keep a 60 Hz schedule (16.7 ms a tick) and
+/// a Network I/O thread's 1 ms wait would last a whole period (ADR-0005). It
+/// logs a warning if Windows refuses, and does nothing elsewhere, where a
+/// sleeping thread already wakes on time. Execute holds one; a run outside it
+/// (augustac listing Replays) holds its own.
+class TimerResolution {
+ public:
+  TimerResolution();
+  ~TimerResolution();
+
+  TimerResolution(const TimerResolution&) = delete;
+  TimerResolution& operator=(const TimerResolution&) = delete;
+  TimerResolution(TimerResolution&&) = delete;
+  TimerResolution& operator=(TimerResolution&&) = delete;
+
+#ifdef _WIN32
+ private:
+  // Whether Windows took the raise, so the destructor restores only what it
+  // raised.
+  bool raised_ = false;
+#endif
+};
 
 /// An executable's phases after its config is read, each run once, in order,
 /// on the thread that calls Execute.
@@ -73,9 +100,12 @@ auto Phase(std::string_view phase, failure::Code code, const Body& body) -> std:
 /// thread is then the runtime's last worker - kWorkerFailed, each with
 /// `phase=` naming where it escaped. The runtime is released before this
 /// returns, so the outcome is reported after everything it owned has gone.
-/// Never throws.
+/// The timer resolution is raised before initialize and restored only after
+/// the runtime has gone, so it outlasts every thread the runtime ran. Never
+/// throws.
 template <typename Runtime>
 [[nodiscard]] Outcome Execute(const Lifecycle<Runtime>& lifecycle) {
+  const TimerResolution timer_resolution;
   if (auto initialized = detail::Phase("initialize", failure::Code::kDependencyInitFailed, lifecycle.initialize);
       !initialized) {
     return std::move(initialized.error());

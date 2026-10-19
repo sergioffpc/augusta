@@ -12,10 +12,13 @@ thread — keep a fixed schedule (`augusta::tick`, the tick module, which also
 holds the Tick and the command Sequence): each tick is due one tick after the
 previous one was due, not one tick after it ended, so a late tick never delays
 the ones after it. A loop more than a few ticks behind resynchronises to now
-instead of running the missed ticks back to back. On Windows the client raises
-the system timer resolution to 1 ms (`timeBeginPeriod`) for the life of the
-process, since the default 15.6 ms would not let a thread sleep to a 60 Hz
-deadline.
+instead of running the missed ticks back to back. On Windows both executables
+raise the system timer resolution to 1 ms (`timeBeginPeriod`) for as long as
+they run, since the default 15.6 ms would not let a thread sleep to a 60 Hz
+deadline, nor a Network I/O thread wait only 1 ms. The application boundary
+(ADR-0033) raises it, not the tick module, which stays pure and depends on
+nothing but the standard library: the server also runs on Windows, locally and
+in the lab.
 
 Both Network I/O threads — the server's and the client's — do one round of
 transport work (connection events, received messages), then wait about 1 ms
