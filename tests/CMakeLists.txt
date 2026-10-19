@@ -332,6 +332,11 @@ target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
 gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_body_part_tests body_part_test.cpp)
+target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on

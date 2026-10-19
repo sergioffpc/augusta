@@ -6,6 +6,7 @@
 #include <span>
 #include <unordered_map>
 
+#include "augusta/body_part.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -36,14 +37,6 @@
 /// since they are posed anew for every tick; NextSegment tells the caller
 /// which players a bullet passes near, so it poses only those.
 namespace augusta::ballistics {
-
-/// Where on a hit player's body a bullet struck (US-11): the coarse zones
-/// REQUIREMENTS.md's "e.g., head, torso, limb" asks for.
-enum class BodyPart : std::uint8_t {
-  kHead,
-  kTorso,
-  kLimb,
-};
 
 /// Tunable per-shot values (ARCHITECTURE.md §8 mechanism/policy/data
 /// split, same category as physics::StaminaConfig): the gravity
@@ -86,7 +79,7 @@ enum class TargetId : std::uint32_t {};
 /// triangles, which must outlive the Step it is handed to.
 struct Hitbox {
   TargetId target{};
-  BodyPart part = BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   std::span<const Triangle> triangles;
 };
 
@@ -130,7 +123,7 @@ struct StepResult {
   TargetId target{};
   /// Which part of target was hit. Only meaningful if outcome is
   /// kHitPlayer.
-  BodyPart part = BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   /// World-space point of impact. Only meaningful if outcome is kHitMap
   /// or kHitPlayer.
   math::Vec3 impact_point;

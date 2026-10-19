@@ -13,12 +13,12 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/body_part.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
 namespace {
 
-using augusta::ballistics::BodyPart;
 using augusta::ballistics::BulletConfig;
 using augusta::ballistics::Hitbox;
 using augusta::ballistics::Outcome;
@@ -27,6 +27,7 @@ using augusta::ballistics::StepResult;
 using augusta::ballistics::TargetId;
 using augusta::ballistics::Triangle;
 using augusta::ballistics::World;
+using augusta::body_part::BodyPart;
 using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::physics::CollisionMesh;

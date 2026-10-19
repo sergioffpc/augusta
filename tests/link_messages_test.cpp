@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
@@ -497,7 +497,7 @@ TEST(LinkMessagesTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
 }
 
 TEST(LinkMessagesTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
-  using augusta::ballistics::BodyPart;
+  using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
     const augusta::link::HitConfirmation sent{.target = EntityId{5}, .damage = 37.5F, .part = part};
 
@@ -521,7 +521,7 @@ TEST(LinkMessagesTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsA
 }
 
 TEST(LinkMessagesTest, ADeathTheServerTellsReachesTheClientUnchanged) {
-  using augusta::ballistics::BodyPart;
+  using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
     // Its direction on the angle grid, as its Shot's (ADR-0038).
     const augusta::link::Death sent{

@@ -16,6 +16,7 @@
 #include <rapidcheck/gtest.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/input.h"
 #include "augusta/logging.h"
@@ -228,7 +229,7 @@ augusta::simulation::Character WideTarget() {
   }
   return augusta::simulation::Character{
       .eye = Vec3(0.0F, 1.7F, 0.0F),
-      .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
 }
 
 // commands with every view brought to within a fifth of a turn of yaw toward

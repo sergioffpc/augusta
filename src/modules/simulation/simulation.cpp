@@ -18,6 +18,7 @@
 #include <flecs.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
@@ -117,7 +118,7 @@ struct Bullet {
 // triangles are count of the posed triangles, from first.
 struct PosedHitbox {
   EntityId target{};
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   std::size_t first = 0;
   std::size_t count = 0;
 };
@@ -149,7 +150,7 @@ struct PlayerHit {
   EntityId target{};
   float yaw = 0.0F;
   float pitch = 0.0F;
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 // point, of a standing character's root space, where it is on a body in pose:
@@ -213,13 +214,13 @@ float ShootersDelay(tick::Tick tick, const command::Command& command, float max_
 }
 
 // What damage gives for a hit on part.
-float DamageFor(const parameters::Damage& damage, ballistics::BodyPart part) {
+float DamageFor(const parameters::Damage& damage, body_part::BodyPart part) {
   switch (part) {
-    case ballistics::BodyPart::kHead:
+    case body_part::BodyPart::kHead:
       return damage.head;
-    case ballistics::BodyPart::kTorso:
+    case body_part::BodyPart::kTorso:
       return damage.torso;
-    case ballistics::BodyPart::kLimb:
+    case body_part::BodyPart::kLimb:
       return damage.limb;
   }
   std::unreachable();

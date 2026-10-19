@@ -10,6 +10,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/map.h"
@@ -36,14 +37,14 @@ policy::SessionId ToSimulation(SessionId session) {
 
 SessionId FromSimulation(policy::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
 
-ballistics::BodyPart ToBallistics(assets::BodyPart part) {
+body_part::BodyPart ToSimulation(assets::BodyPart part) {
   switch (part) {
     case assets::BodyPart::kHead:
-      return ballistics::BodyPart::kHead;
+      return body_part::BodyPart::kHead;
     case assets::BodyPart::kTorso:
-      return ballistics::BodyPart::kTorso;
+      return body_part::BodyPart::kTorso;
     case assets::BodyPart::kLimb:
-      return ballistics::BodyPart::kLimb;
+      return body_part::BodyPart::kLimb;
   }
   std::unreachable();
 }
@@ -56,7 +57,7 @@ simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const
         .context = {{.key = "character", .value = path}},
         .detail = std::format("hitbox rejected: {}", physics::DescribeCollisionMeshError(valid.error()))});
   }
-  simulation::CharacterHitbox result{.part = ToBallistics(hitbox.part), .triangles = {}};
+  simulation::CharacterHitbox result{.part = ToSimulation(hitbox.part), .triangles = {}};
   result.triangles.reserve(mesh.indices.size() / 3);
   for (std::size_t i = 0; i < mesh.indices.size(); i += 3) {
     result.triangles.push_back(ballistics::Triangle{.a = mesh.points[mesh.indices[i]],
