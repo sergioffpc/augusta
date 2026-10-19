@@ -71,11 +71,13 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   `linux` build (and also after a failing test there), and runs the same whole
   `ctest` suite under it, the smoke test in the same virtual X server: a memory
   or undefined-behaviour bug in that code fails a night, and so a release,
-  rather than waiting for a player's crash. Nothing is suppressed today:
-  lavapipe, the Vulkan loader and the validation layer have so far leaked
-  nothing LeakSanitizer reports. A leak found in third-party code would be
+  rather than waiting for a player's crash. A leak found in third-party code is
   suppressed in `tests/lsan.supp`, each entry with its reason, as
-  `tests/tsan.supp` does for TSan.
+  `tests/tsan.supp` does for TSan; the `linux-san` test preset points
+  `LSAN_OPTIONS` at it. Only GLFW's X11 setup is there: Xlib keeps the tables it
+  builds for the process, and `glfwTerminate` unloads libX11 from under them.
+  Lavapipe, the Vulkan loader and the validation layer have so far leaked
+  nothing LeakSanitizer reports.
 - **No stage runs after a deploy to k3s.** ADR-0026 keeps runners out of the
   cluster, so only something running inside it could test a deployed server.
 

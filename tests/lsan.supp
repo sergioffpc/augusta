@@ -1,0 +1,17 @@
+# LeakSanitizer suppressions for the ctest runs of an ASan build (the linux-san
+# test preset points LSAN_OPTIONS at this file; ADR-0013). Only allocations a
+# third-party library keeps for the life of the process belong here, never a
+# leak in our own code: fix that instead. Every entry says why it is here,
+# above it.
+#
+# Format: https://github.com/google/sanitizers/wiki/AddressSanitizerLeakSanitizer#suppressions
+
+# GLFW's X11 platform, from glfwInit: XrmInitialize (in _glfwConnectX11) builds
+# Xlib's resource-manager tables and XSupportsLocale (in _glfwInitX11) loads its
+# locale database, both kept for the process with no call that frees them.
+# glfwTerminate unloads libX11, which held the only pointers to them, so
+# LeakSanitizer reports them as leaked, from frames it can no longer name. A
+# suppression matches any frame of a leak's stack, and only GLFW's X11 setup has
+# these two.
+leak:_glfwConnectX11
+leak:_glfwInitX11
