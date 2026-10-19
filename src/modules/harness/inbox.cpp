@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
