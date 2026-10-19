@@ -1,8 +1,8 @@
 """The client's cue sounds (ADR-0020, ADR-0031, ADR-0041).
 
 The cue catalogue is fixed in code, here and in the client (augusta/cues.h), and
-a scenario's manifest names each cue's sound: its variants, mono PCM WAV files of
-which one plays at random each time the cue does, and its gain.
+a scenario's manifest names each cue's sound: its variants, mono PCM WAV files
+of which one plays at random each time the cue does, and its gain.
 """
 
 from dataclasses import dataclass
