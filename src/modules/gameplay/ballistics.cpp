@@ -79,7 +79,7 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
 
   // The nearest of the Map and every hitbox along the segment, as a fraction of it.
   std::optional<float> nearest;
-  const physics::RaycastHit map_hit = map.RaycastMap(from, segment, math::Length(segment));
+  const physics::MapRaycastHit map_hit = map.RaycastMap(from, segment, math::Length(segment));
   if (map_hit.has_hit) {
     nearest = map_hit.distance / math::Length(segment);
     result.outcome = Outcome::kHitMap;
