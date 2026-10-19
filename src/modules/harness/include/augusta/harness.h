@@ -119,11 +119,8 @@ struct Failure {
 /// one (Session::GetServerView) and reads everything it needs from it, so what
 /// it reads is one moment, never a mix of two.
 struct ServerView {
-  /// The whole answer to a join request; nullopt until the server admits this
-  /// client. Told once: the session the server assigned, the rate in Hz at
-  /// which it ticks and this client must (the server's startup setting; this
-  /// client has no rate of its own), and the parameters this client predicts
-  /// with for the whole run (it has none of its own).
+  /// The whole answer to a join request, told once; nullopt until the server
+  /// admits this client.
   std::optional<Admission> accepted;
   /// Why the server refused this client, if it did.
   std::optional<JoinRefusal> refusal;
@@ -138,8 +135,8 @@ struct ServerView {
   bool in_match = false;
   /// How the last match ended, until the next starts.
   std::optional<MatchEnd> match_end;
-  /// The newest Authoritative State of the match in progress, with this
-  /// client's own player's health; only while in_match. One that arrives
+  /// The newest Authoritative State of the match in progress; only while
+  /// in_match, and nullopt until the match's first arrives. One that arrives
   /// outside a match (unreliable, it can overtake Match start or Match end) or
   /// that names a body not in the match is dropped.
   std::optional<AuthoritativeState> authoritative;
@@ -151,10 +148,13 @@ struct ServerView {
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
   [[nodiscard]] Phase GetPhase() const;
-  /// The body this client's player controls, as the last Match start named it.
+  /// The body this client's player controls, as the last Match start named it:
+  /// in the match in progress, or the last one if back in the Lobby; nullopt
+  /// before the first.
   [[nodiscard]] std::optional<EntityId> OwnEntity() const;
   /// Whether this client's player is alive in the match in progress: neither
   /// told of its Death nor at zero health in the newest Authoritative State.
+  /// Death is for the rest of the match.
   [[nodiscard]] bool OwnAlive() const;
 };
 
@@ -293,9 +293,10 @@ class Session {
   /// recent commands the server has not yet acknowledged, and the prediction is
   /// reconciled against what the server last said about this client's player:
   /// its body and its rifle, when the server's state still has its body. Once
-  /// this client's player is dead (ServerView::OwnAlive), nothing more is predicted and the
-  /// state is the last one predicted; the command still goes to the server,
-  /// which acknowledges it and does nothing with it, but never with fire held.
+  /// this client's player is dead (ServerView::OwnAlive), nothing more is
+  /// predicted and the state is the last one predicted; the command still goes
+  /// to the server, which acknowledges it and does nothing with it, but never
+  /// with fire held.
   /// A Replay viewer predicts and sends nothing, ever: its state is the one a
   /// PredictionWorld starts with.
   prediction::State Tick(const command::Command& command, float delta_time);
