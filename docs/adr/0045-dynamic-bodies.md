@@ -11,10 +11,17 @@ bodies meet movement, ballistics and damage.
 and bullets, can hurt a player, and is moved by players, bullets and explosions.
 The Authoritative server alone simulates it, gives it an Entity ID like any
 other body, and replicates it; a client never simulates a Prop, it moves it as a
-kinematic body to the pose interpolated from the Authoritative State. A Prop is
-either placed in the Map (authored in Composer, ADR-0015, and cooked into both
-packs, ADR-0031) or created during a Match, such as a thrown grenade. A
-**Cosmetic body** never affects gameplay: ragdolls and debris (spent casings,
+kinematic body to the pose interpolated from the Authoritative State. Every Prop
+is an instance of a **Prop kind**: a stage of its own, authored in Composer
+(ADR-0015) like a Character, with a mesh, colliders, a mass and a Surface
+material (ADR-0065), and optionally Acoustic geometry that moves with it. Its
+colliders are primitives or convex hulls, which PhysX can simulate as a dynamic
+body; the cooker refuses a triangle mesh. Its mass is authored, not derived from
+its material, since a hollow crate and a solid one are the same wood. The
+scenario's manifest lists the Prop kinds it uses (ADR-0041). A Prop is either
+placed in the Map, as a reference to one of those Prop kinds, cooked into both
+packs (ADR-0031), or created during a Match from one, such as a thrown grenade.
+A **Cosmetic body** never affects gameplay: ragdolls and debris (spent casings,
 chips off a wall, bottles off a shelf). It exists only on one client, is never
 sent, and may differ between clients.
 
@@ -27,12 +34,14 @@ and would couple PhysX to the GPU the renderer uses.
 (ADR-0023), after Movement, runs one `simulate()` per Tick with the tick's fixed
 step. Impulses from a tick's shots and explosions are queued and applied in the
 next tick's Dynamics; a tick's delay is not perceptible. On the client, the
-World is simulated only for Cosmetic bodies and Props' kinematic poses, so the
-Dynamics phase is PresentationWorld's (ADR-0024), not PredictionWorld's:
-Reconciliation replays Movement several times per tick, and a simulate inside
-that replay would advance debris more than once. Presentation runs per frame,
-but its Dynamics steps fixed: one `simulate()` of one tick's step for each tick
-the PredictionWorld advanced since the last frame, at most a few per frame, the
+World is simulated only for Cosmetic bodies and Props' kinematic poses, which
+are not gameplay and so are the client-only dynamics module's, beside gameplay;
+the server's Props affect gameplay and stay gameplay's. The client's Dynamics
+phase is PresentationWorld's (ADR-0024), not PredictionWorld's: Reconciliation
+replays Movement several times per tick, and a simulate inside that replay would
+advance debris more than once. Presentation runs per frame, but its Dynamics
+steps fixed: one `simulate()` of one tick's step for each tick the
+PredictionWorld advanced since the last frame, at most a few per frame, the
 excess dropped after a hitch. Cosmetic bodies are drawn interpolated between the
 last two steps with the Interpolation phase's own fraction, so they move in step
 with the players around them. PhysX never sees a variable step on either side.
@@ -64,10 +73,10 @@ also set; past it, the kill is the world's.
 now, through physics, next to the Map (ADR-0044 judges players in the Shooter's
 delay). Props are almost always at rest, and a pose history for them would test
 poses the scene no longer holds and push a Prop where it no longer is. A bullet
-that hits a Prop stops there, and pushes it with an impulse each weapon's data
-sets, with the bullet's real momentum only as a reference, since a few grams at
-800 m/s barely move a crate. Penetration by material and thickness, for Props
-and Map alike, is a separate decision.
+that stops in a Prop pushes it with an impulse each weapon's data sets, with the
+bullet's real momentum only as a reference, since a few grams at 800 m/s barely
+move a crate. Whether a bullet goes through a Prop or ricochets off it is its
+Surface material's, as for the Map (ADR-0065).
 
 **Grenades are Props, bullets are not.** A grenade bounces, rolls and waits for
 its fuse, which is what PhysX's rigid bodies do well: it is a Prop created when
@@ -79,14 +88,18 @@ Props and controllers), so a wall shelters what is behind it. Its damage is the
 weapons' decision, not this one.
 
 **Ragdolls start from a replicated death.** A ragdoll's bodies and joints are
-authored per Character in Composer (ADR-0015) and cooked into the client pack
-only (ADR-0031). A player's death is told reliably to every client (the Death
-message, ADR-0038), with the body, the direction of the killing blow and the
-Body part it struck, so each client throws its ragdoll the right way; the Hit
-confirmation, which only the shooter receives (ADR-0044), cannot. The Body part
-stands in for a bone: a Character's skeleton is not designed, and its bones
-would name no more than the hitboxes the server judges by. Ragdolls exist only
-after death: hit reactions while alive are animation.
+authored per Character in Composer (ADR-0015), each body bound to a Joint of the
+Character's Skeleton (ADR-0061) so the ragdoll moves the skinned body, and
+cooked into the client pack only (ADR-0031). A player's death is told reliably
+to every client (the Death message, ADR-0038), with the body, the direction of
+the killing blow and the Body part it struck, so each client throws its ragdoll
+the right way; the Hit confirmation, which only the shooter receives (ADR-0044),
+cannot. The Body part's Hitbox names the Joint the blow lands on. Each client
+builds its ragdoll in the pose it draws on that frame, with each body's velocity
+from its last two frames' poses (ADR-0066). A body stays until the Match ends;
+past a cap of ragdolls in the client's config (ADR-0034), the oldest freezes
+into a static mesh. Ragdolls exist only after death: hit reactions while alive
+are animation.
 
 **Replication.** Props travel in the Authoritative State as a list apart from
 the players' bodies, which carry stance and stamina that Props lack but no
@@ -98,7 +111,9 @@ would leave the client wrong for good; spawning and removing a Prop during a
 Match are reliable too. The protocol caps how many Props are awake at once,
 beyond which those furthest from every player are put to sleep; the cap's value
 comes from a benchmark (ADR-0013). The exact layouts join ADR-0038's table when
-they land.
+they land. Props, their spawning and removal and their final poses are part of
+the Match capture (ADR-0050), so a Replay (ADR-0051) shows them; a Reenactment
+reproduces conditions, not outcomes, and needs nothing more.
 
 **Threads.** A World simulates on the thread that runs its tick, with a
 `PxDefaultCpuDispatcher` of no worker threads and no GPU dynamics. A server node

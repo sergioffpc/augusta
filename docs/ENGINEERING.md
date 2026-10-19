@@ -63,11 +63,10 @@ decisions already made in ARCHITECTURE.md:
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
-  nothing under `src/`, `tests/`, `tools/agent/` (the C++ tools, built and
-  tested with the runtime), `tools/composer/examples/` (the example scenario a
-  test loads), `tools/pack/native/` (formatted by the `format` job, though CI
-  doesn't build it), `cmake/`, `config/` (the example configs a test loads),
-  `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
+  nothing under `src/`, `tests/`, `tools/agent/` and `tools/pack/` (the tools,
+  built and tested with the runtime), `tools/composer/examples/` (the example
+  scenario a test loads), `cmake/`, `config/` (the example configs a test
+  loads), `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, the `third_party`
   submodule pointer, `.clang-format`/`.clang-tidy`, or the workflow file itself
   or the composite actions it shares (`.github/actions/`) changed (a docs-only
   PR shouldn't pay for a full build). `concurrency` cancels a still-running run
@@ -98,13 +97,14 @@ decisions already made in ARCHITECTURE.md:
        after merge, since the PR already validated it
     5. Compile with a strict warning set, treated as errors: clang's
        `-Wall -Wextra -Werror` on both platforms (`/W4 /WX` to `clang-cl`)
-    6. the `tools` job, when `tools/` changed: on a Windows runner, build the
-       asset cooker's native module and run its pytest suite, which also
-       requires that cooking the example scenario still gives the golden packs
-       in `tests/fixtures/example-packs/` byte for byte; the C++ tests in 2 and
-       3 load those same packs — the contract between the Python writer and the
-       C++ reader of the pack format (ADR-0013). The golden packs are signed
-       with a committed test key; the real release private key never touches CI
+    6. the tools' pytest suites, in the build jobs 2 and 3, which build the
+       Agents' and the asset cooker's native modules with the rest. The cooker's
+       also requires that cooking the example scenario still gives the golden
+       packs in `tests/fixtures/example-packs/` byte for byte; the C++ tests in
+       2 and 3 load those same packs, so the cook's determinism and what the
+       runtime reads from its output are pinned end to end (ADR-0013). The
+       golden packs are signed with a committed test key; the real release
+       private key never touches CI
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
        image built into the runner's Docker and scanned by trivy. It runs on
@@ -130,16 +130,15 @@ decisions already made in ARCHITECTURE.md:
       checks, it is a files cache in the Actions cache, one entry for every
       Linux job, saved only when a job built a package it didn't restore. A save
       keeps only the packages its job installed, so a job installing ports no
-      other does keeps an entry of its own: the `tools` job's Linux leg, for the
-      `tools/pack/native` manifest, and each job turning on a manifest feature
-      the others don't (`client-x64-linux` the `client` feature,
-      `server-x64-linux` the Agents' `agent` feature). vcpkg builds its ports
-      through the overlay `x64-linux` triplet with the project's LLVM toolchain
-      (ADR-0008), which no preset changes. So the entry's packages are the same
-      whatever preset a job configures, and the server image's dependency layer,
-      built on the same Ubuntu, restores them too: the container jobs mount the
-      entry read-only into its `vcpkg install`, and it builds from source only
-      the packages the entry lacks.
+      other does keeps an entry of its own: each job turning on a manifest
+      feature the others don't (`client-x64-linux` the `client` feature,
+      `server-x64-linux` the tools' `agent` and `pack` features). vcpkg builds
+      its ports through the overlay `x64-linux` triplet with the project's LLVM
+      toolchain (ADR-0008), which no preset changes. So the entry's packages are
+      the same whatever preset a job configures, and the server image's
+      dependency layer, built on the same Ubuntu, restores them too: the
+      container jobs mount the entry read-only into its `vcpkg install`, and it
+      builds from source only the packages the entry lacks.
     - Compiler cache: sccache on its local disk backend, never its
       GitHub-Actions-cache one, whose one entry per object exhausts the cache's
       request quota. Each job carries the directory between runs as one entry of
@@ -361,7 +360,7 @@ no self-hosted GitHub Actions runner in this pipeline).
   environment's are stored in its own folder of the k3s node,
   `/srv/augusta/asset-packs/<environment>`, its `assetPacks.hostPath`, which
   `augusta-publish --environment <environment>` fills after signing (ADR-0026):
-  `<scenario>/<packVersion>/` in it holds a scenario's `server.pack` and the
+  `<scenario>/<packVersion>/` in it holds a scenario's `server.apak` and the
   `signing.pub` key it is signed with, `<packVersion>` being the first 12 hex
   characters of the server pack's BLAKE3 hash. Each environment signs with its
   own key, `develop`'s or `staging`'s (Release signing above). The hash does not
@@ -528,18 +527,19 @@ no self-hosted GitHub Actions runner in this pipeline).
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
-  installed editable, its native module (built with MSVC `cl`, under its own
-  presets), signing keys and sample authoring content.
+  installed editable, its native module (built by the root project through
+  `make pack-native`: the platform's preset without the client, in a build
+  directory of its own), signing keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's
   USD-Fileformat-plugins under the same assets root. These heavier,
   GPU-dependent tools are deliberately kept out of `scripts/bootstrap.sh` and
   are never linked into shipped binaries (ARCHITECTURE.md §2); only content
-  authors need them. `meshoptimizer` and libktx are `tools/pack/native`'s own
-  C++ build dependencies (two small pybind11 modules, no OpenUSD - see ADR-0030)
-  — vendored via `vcpkg.json` (ADR-0025) like the rest of the codebase, not
-  fetched by this script.
+  authors need them. `meshoptimizer` and libktx are `tools/pack/native`'s C++
+  build dependencies (a small pybind11 module, no OpenUSD - see ADR-0030) — the
+  root `vcpkg.json`'s `pack` feature (ADR-0025), like the rest of the codebase,
+  not fetched by this script.
 - **Editor experience:** a committed `.vscode/extensions.json` lists recommended
   extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
   YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the

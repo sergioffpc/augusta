@@ -1,8 +1,8 @@
-// augusta_agent._native: the pybind11 bindings of an Agent (agent.h) and of
-// the test-only in-process server (testing_server.h), wrapped by the
+// augusta_agent._native: the pybind11 bindings of an Agent (augusta/agent.h)
+// and of the test-only in-process server (testing_server.h), wrapped by the
 // augusta_agent package, and the dispatch thread that hands Agents' Reports
-// (report.h) to it. Every value a script reads is a copy: nothing it holds
-// changes under it.
+// (augusta/agent_report.h) to it. Every value a script reads is a copy:
+// nothing it holds changes under it.
 
 #include <cstdint>
 #include <exception>
@@ -22,18 +22,18 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
-#include "agent.h"
+#include "augusta/agent.h"
+#include "augusta/agent_report.h"
 #include "augusta/ballistics.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/intent.h"
+#include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/netcode_stats.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
-#include "report.h"
 #include "testing_server.h"
 
 namespace py = pybind11;
@@ -76,9 +76,9 @@ using augusta::harness::Reload;
 using augusta::harness::RosterEntry;
 using augusta::harness::Shot;
 using augusta::harness::TriggerIntent;
+using augusta::link::ConnectionStats;
+using augusta::link::SimulatedConditions;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionStats;
-using augusta::networking::SimulatedConditions;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
 
@@ -207,7 +207,7 @@ class Dispatch {
     } catch (py::error_already_set& error) {
       error.discard_as_unraisable("augusta_agent: delivering a Report");
     } catch (const std::exception& error) {
-      LE("subsystem=agent event=report_dropped reason=\"{}\"", error.what());
+      LOG_ERROR("subsystem=agent event=report_dropped reason=\"{}\"", error.what());
     }
   }
 
@@ -501,7 +501,7 @@ void BindStats(py::module_& module) {
 }
 
 // The faults every link of the process is given: the transport's simulated
-// conditions (networking.h), but for its timeout, which stays the transport's.
+// conditions (link.h), but for its timeout, which stays the transport's.
 void BindLinkFaults(py::module_& module) {
   py::class_<SimulatedConditions>(module, "LinkFaults")
       .def(py::init([](int latency_ms, int jitter_mean_ms, int jitter_max_ms, float loss_percent, float reorder_percent,
@@ -526,7 +526,7 @@ void BindLinkFaults(py::module_& module) {
   module.def(
       "impair_links",
       [](const std::optional<SimulatedConditions>& faults) {
-        augusta::networking::SimulateNetworkConditions(faults.value_or(SimulatedConditions{}));
+        augusta::link::SimulateNetworkConditions(faults.value_or(SimulatedConditions{}));
       },
       py::arg("faults"),
       "Gives every packet the process sends from now on faults, or none if None: every Agent's link, the "
@@ -598,9 +598,9 @@ void BindTesting(py::module_& module) {
 
 PYBIND11_MODULE(_native, module) {
   augusta::logging::Init();
-  // Once, process-wide, before any Session is constructed - see networking.h;
+  // Once, process-wide, before any Session is constructed - see link.h;
   // never shut down, as an Agent may outlive any point the module could.
-  if (const auto initialized = augusta::networking::Init(); !initialized) {
+  if (const auto initialized = augusta::link::Init(); !initialized) {
     throw std::runtime_error(augusta::failure::DescribeFailure(initialized.error()));
   }
   // Stopped before the interpreter finalizes, while the GIL it takes is

@@ -153,7 +153,10 @@
       "name": "linux-san",
       "configurePreset": "linux-san",
       "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "^netcode$" } }
+      "filter": { "exclude": { "label": "^netcode$" } },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tests/lsan.supp"
+      }
     },
     {
       "name": "linux-tsan",

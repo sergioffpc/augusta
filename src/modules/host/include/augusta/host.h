@@ -19,17 +19,17 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/scripting.h"
+#include "augusta/policy.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
 /// \file
-/// augusta::server::Host is the server's network boundary and the
+/// augusta::host::Host is the server's network boundary and the
 /// authoritative SimulationWorld (ADR-0023) without the threads and the clock:
 /// ServerRuntime (src/server) runs PumpNetwork on the Network I/O thread and
 /// Tick on the Simulation thread at a fixed rate (ADR-0005), reporting how each
@@ -50,7 +50,7 @@
 /// (dropped, judged, disconnected); a failure of the local transport is the
 /// runtime's, which Host keeps for a worker to take (TakeTransportFailure) and
 /// escalate (ADR-0033).
-namespace augusta::server {
+namespace augusta::host {
 
 /// Everything a Host needs to construct SimulationWorld and start listening.
 struct HostConfig {
@@ -62,7 +62,7 @@ struct HostConfig {
   /// the Player count a match starts with.
   parameters::Parameters parameters{};
   /// Local address to listen on (US-01).
-  networking::Endpoint listen{};
+  link::Endpoint listen{};
   /// The hash of the server pack the content was loaded from, which a capture names.
   assets::PackHash server_pack{};
   /// The directory to capture every Match into (ADR-0050), created if
@@ -77,7 +77,7 @@ struct HostConfig {
   /// names (ADR-0050); without it each is refused. Never for a server open to players.
   bool reenactments = false;
   /// For a test: asked at listener setup, at every send and receive
-  /// (networking.h) and at the capture's write and flush, so the transport or
+  /// (augusta/link.h) and at the capture's write and flush, so the transport or
   /// the disk fails there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
 };
@@ -90,9 +90,9 @@ class Host {
   /// failure::ClassifiedFailure, its Code saying which: kInvalidContent if a map
   /// mesh, or a character's hitbox, is not a whole triangle list (see
   /// simulation_mapping.h), kInvalidConfiguration if HostConfig::capture_directory
-  /// can't be created, or what networking::Server's constructor throws.
+  /// can't be created, or what link::Server's constructor throws.
   /// Content is loaded from the server pack by the caller (see augusta/content.h).
-  Host(const HostConfig& config, Scenario scenario, scripting::Engine policy = {});
+  Host(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy = {});
   ~Host();
 
   /// Not copyable or movable: owns the listening socket.
@@ -102,7 +102,7 @@ class Host {
   Host& operator=(Host&&) = delete;
 
   /// The address it listens on: HostConfig::listen's, with the port it chose if that named port 0.
-  [[nodiscard]] networking::Endpoint ListenEndpoint() const;
+  [[nodiscard]] link::Endpoint ListenEndpoint() const;
 
   /// The first message or record the Host could not encode, as the broken
   /// invariant it is (failure::Code::kInvariantViolated, ADR-0033): what it was
@@ -121,7 +121,7 @@ class Host {
   /// and leaves as if it had left.
   void PumpNetwork(std::chrono::steady_clock::time_point now);
 
-  /// The transport's measurements of every open connection, each with the
+  /// The Link's numbers for every open connection, each with the
   /// Session it carries if its client has joined: what ConnectionHealth
   /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
   /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O
@@ -134,7 +134,7 @@ class Host {
   /// tick's hits and deaths, and returns what the tick resolved and what Game
   /// policy decided on it. Starts a match first if the
   /// Lobby is full and Ready and the pause after the last one
-  /// (server::kMatchPause, counted in these ticks) has passed. Then takes the
+  /// (host::kMatchPause, counted in these ticks) has passed. Then takes the
   /// actions Game policy took on the tick, typed and validated by
   /// SimulationWorld (simulation::TickResult): a Match end ends the match
   /// after the tick, as EndMatch does, with policy's winner or as a draw.
@@ -191,6 +191,6 @@ class Host {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_H_

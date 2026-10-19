@@ -4,9 +4,10 @@ Run on a scenario name (ADR-0041): usd-optimize (ADR-0015, Python API - see
 optimize.py) -> usd-validation-nvidia (ADR-0015, also called via its own Python
 API - see validate.py) -> cook_scenario (bake to one signed client/server pack
 pair, ADR-0031/ADR-0032/ADR-0041 - see cook.py), run once per stage the scenario
-composes. cook_scenario is pure Python too: it walks each USD stage via pxr
-directly and calls the small native module, _native, only for the two pieces
-with no Python equivalent - no subprocess/CLI binary anywhere in this pipeline.
+composes. cook_scenario walks each USD stage via pxr directly and calls the
+native module, _native, for the mesh pass, the texture compression and
+augusta_assets' pack encoder - no subprocess/CLI binary anywhere in this
+pipeline.
 A validation failure aborts before cooking, so no pack is written if any
 composed stage didn't pass cleanup/validation, unless --skip-validation is
 given. Every script the manifest names goes into the server pack (ADR-0031,
@@ -23,7 +24,7 @@ root of the venv this interpreter is already running from, and is used for:
 resolving authoring/scenarios/<name>.yaml and everything it names; the
 signing key, --assets-root/keys/develop.key, develop's (a release signs with
 staging's, --signing-key); and packs, which default to
---assets-root/packs/<name>/{client,server}.pack - keyed by the scenario's
+--assets-root/packs/<name>/{client,server}.apak - keyed by the scenario's
 name alone, not its authoring/scenarios/ position.
 """
 
@@ -74,13 +75,13 @@ def main(argv: list[str] | None = None) -> int:
         "--client-output-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<name>/client.pack",
+        help="Default: <assets-root>/packs/<name>/client.apak",
     )
     parser.add_argument(
         "--server-output-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<name>/server.pack",
+        help="Default: <assets-root>/packs/<name>/server.apak",
     )
     parser.add_argument(
         "--signing-key",
@@ -109,10 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     pack_subdir = Path(scenario.name)
     signing_key_path = args.signing_key or assets_root / "keys" / "develop.key"
     client_output_pack = (
-        args.client_output_pack or packs_dir / pack_subdir / "client.pack"
+        args.client_output_pack or packs_dir / pack_subdir / "client.apak"
     )
     server_output_pack = (
-        args.server_output_pack or packs_dir / pack_subdir / "server.pack"
+        args.server_output_pack or packs_dir / pack_subdir / "server.apak"
     )
 
     # The map/characters were already confirmed by resolve_scenario; only the

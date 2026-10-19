@@ -15,16 +15,18 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
+#include "augusta/limits.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
-#include "augusta/primitives.h"
+#include "augusta/raw_link.h"
 #include "augusta/runner.h"
+#include "augusta/server.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick_messages.h"
-#include "runtime.h"
 
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
 // the local transport refuses becomes the runtime's typed failure, which its
@@ -47,18 +49,15 @@ using augusta::harness::Runner;
 using augusta::harness::RunnerHooks;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::host::PeerRejection;
+using augusta::link::Endpoint;
+using augusta::link::RawPayload;
+using augusta::link::SendOutcome;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionState;
-using augusta::networking::Endpoint;
-using augusta::networking::Payload;
-using augusta::networking::PeerId;
-using augusta::networking::Reliability;
-using augusta::networking::SendOutcome;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::PeerRejection;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 using augusta::server::ServerRuntime;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -71,8 +70,8 @@ constexpr const char* kCharacter = "soldier";
 
 class TransportFailureEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kTransportFailureEnvironment =
@@ -136,7 +135,9 @@ class TransportFailureTest : public ::testing::Test {
  protected:
   TransportFailureTest()
       : host_(HostConfigWith(&host_faults_), TestScenario()),
-        session_(SessionConfig{.server = host_.ListenEndpoint(), .character = kCharacter, .faults = &session_faults_},
+        session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
+                               .character = kCharacter,
+                               .faults = &session_faults_},
                  WorldWithFloor()) {}
 
   // One round of both sides' network work.
@@ -239,17 +240,17 @@ TEST_F(TransportFailureTest, ATransportFailureIsTakenOnlyOnce) {
 // The other side of the same seam: a peer's malformed input is the peer's,
 // dropped and judged, and the server's transport has not failed.
 TEST_F(TransportFailureTest, MalformedPeerInputIsThePeersOutcomeNotATransportFailure) {
-  augusta::networking::Client intruder;
-  intruder.Connect(host_.ListenEndpoint());
+  augusta::link::RawClient intruder;
+  intruder.Connect({.address = host_.ListenEndpoint().address});
   ASSERT_TRUE(PollUntil(
       [&] {
         host_.PumpNetwork(std::chrono::steady_clock::now());
         intruder.PumpEvents();
       },
-      [&] { return intruder.GetState() == augusta::networking::ConnectionState::kConnected; }));
+      [&] { return intruder.GetState() == augusta::link::ConnectionState::kConnected; }));
 
-  const Payload garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
-  ASSERT_EQ(intruder.Send(garbage, Reliability::kReliable), SendOutcome::kAccepted);
+  const RawPayload garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
+  ASSERT_EQ(intruder.Send(garbage), SendOutcome::kAccepted);
   ASSERT_TRUE(PollUntil([&] { host_.PumpNetwork(std::chrono::steady_clock::now()); },
                         [&] { return host_.Metrics().misbehaviour[PeerRejection::kUndecodable].Value() > 0; }));
 
@@ -310,7 +311,8 @@ TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
 
 TEST_F(TransportFailureTest, AClientReceiveTheLocalTransportFailsIsTheClientsRuntimeFailure) {
   session_.Connect();
-  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetConnectionState() == ConnectionState::kConnected; }));
+  ASSERT_TRUE(
+      ExchangeUntil([&] { return session_.GetConnectionState() == augusta::link::ConnectionState::kConnected; }));
   session_faults_.Arm(Site::kTransportReceive, "connection handle gone");
 
   session_.ExchangeMessages();
@@ -411,9 +413,10 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
 // changed.
 TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantFailureAndNothingIsSent) {
   HostConfig config = HostConfigWith(nullptr);
-  config.parameters.rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
+  config.parameters.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
   Host host(config, TestScenario());
-  Session session(SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, WorldWithFloor());
+  Session session(SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
+                  WorldWithFloor());
   const auto exchange = [&] {
     host.PumpNetwork(std::chrono::steady_clock::now());
     session.PumpEvents();
@@ -441,13 +444,13 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
 // A message the peer's connection dropped was never sent, so the metrics do not
 // count it, as they do not count one the local transport refused.
 TEST(SendCountedTest, AMessageThePeersConnectionDroppedIsNotCounted) {
-  augusta::networking::Server server(Endpoint{.address = "127.0.0.1:0"});
-  augusta::server::HostMetrics metrics(kTickRate);
+  augusta::link::Server server(Endpoint{.address = "127.0.0.1:0"});
+  augusta::host::HostMetrics metrics(kTickRate);
 
-  const auto sent = augusta::server::SendCounted(server, metrics, PeerId{42}, Payload{std::byte{1}, std::byte{2}},
-                                                 Reliability::kReliable);
+  const auto sent = augusta::host::SendCounted(server, metrics, augusta::link::PeerId{42},
+                                               augusta::link::Encode(augusta::link::MatchEnd{}).value());
 
-  EXPECT_EQ(sent, SendOutcome::kDropped);
+  EXPECT_EQ(sent, augusta::link::SendOutcome::kDropped);
   EXPECT_EQ(metrics.messages_sent.Total(), 0U);
   EXPECT_EQ(metrics.sent_bytes.Value(), 0U);
 }

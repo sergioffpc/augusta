@@ -20,6 +20,9 @@ are for that rate. Any other capture is left out of its Replay list, and a
 Replay request naming one is refused as _unknown capture_. A live server and a
 replay server can share a directory, the live one capturing into it: they are
 two processes, so a Replay never shares a Simulation thread with a live Match.
+The replay server serves its Replay viewers through a Link endpoint of its own
+(ADR-0038), which listens and keeps one channel per viewer as a live server's
+does, so all of its traffic goes through the Link and it links no networking.
 
 **A Replay re-runs the capture, it does not play back an outcome.** A capture
 holds what the players did, not what the World resolved, so the replay server
@@ -30,7 +33,7 @@ hands it the capture tick by tick:
    its captured spawn, with Game policy's `assign_spawns` not asked.
 2. Before each tick, the bodies of the players whose Leave falls on it are taken
    out, as the live server took them out.
-3. Each player's Commands go through a `server::CommandQueue` of its own, each
+3. Each player's Commands go through a `host::CommandQueue` of its own, each
    queued just before the tick it was handed to the World on, so the queue holds
    and idles on the ticks with nothing new exactly as the live server's did: the
    capture leaves those out (ADR-0050) because the queue makes them again. Each

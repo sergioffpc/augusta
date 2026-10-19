@@ -65,9 +65,11 @@ bool LoadsValidationLayer(Validation validation, bool layer_found) {
       return false;
     case Validation::kIfAvailable:
       if (!layer_found) {
-        LW("subsystem=renderer event=vulkan_validation_unavailable layer={} hint=\"add the folder of its JSON manifest "
-           "to VK_ADD_LAYER_PATH\"",
-           kValidationLayer);
+        LOG_WARN(
+            "subsystem=renderer event=vulkan_validation_unavailable layer={} hint=\"add the folder of its JSON "
+            "manifest "
+            "to VK_ADD_LAYER_PATH\"",
+            kValidationLayer);
       }
       return layer_found;
     case Validation::kRequired:
@@ -190,16 +192,16 @@ void VulkanDevice::ThrowValidationErrors() {
 void VulkanDevice::NvrhiMessages::message(nvrhi::MessageSeverity severity, const char* text) {
   switch (severity) {
     case nvrhi::MessageSeverity::Info:
-      LD("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+      LOG_DEBUG("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
     case nvrhi::MessageSeverity::Warning:
-      LW("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+      LOG_WARN("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
     case nvrhi::MessageSeverity::Error:
-      LE("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+      LOG_ERROR("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
     case nvrhi::MessageSeverity::Fatal:
-      LC("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
+      LOG_CRITICAL("subsystem=renderer event=nvrhi_message message=\"{}\"", text);
       return;
   }
 }
@@ -209,12 +211,12 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
                                                                    const vk::DebugUtilsMessengerCallbackDataEXT* data,
                                                                    void* user_data) {
   if (severity != vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
-    LW("subsystem=renderer event=vulkan_validation_warning message=\"{}\"", data->pMessage);
+    LOG_WARN("subsystem=renderer event=vulkan_validation_warning message=\"{}\"", data->pMessage);
     return vk::False;
   }
   // Warning, not error: the Renderer throws it, and the boundary that catches
   // it writes the one ERR line (ADR-0033).
-  LW("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
+  LOG_WARN("subsystem=renderer event=vulkan_validation_error message=\"{}\"", data->pMessage);
   auto& device = *static_cast<VulkanDevice*>(user_data);
   const std::lock_guard<std::mutex> lock(device.validation_mutex_);
   if (!device.validation_error_) {
@@ -278,7 +280,7 @@ void VulkanDevice::ChoosePhysicalDevice(Adapter adapter) {
   }
   physical_device_ = devices[*chosen];
   queue_family_ = GraphicsQueueFamily(physical_device_, *surface_).value();
-  LI("subsystem=renderer event=vulkan_device name=\"{}\"", physical_device_.getProperties().deviceName.data());
+  LOG_INFO("subsystem=renderer event=vulkan_device name=\"{}\"", physical_device_.getProperties().deviceName.data());
 }
 
 void VulkanDevice::CreateDevice(bool gpu_crash_dumps) {
@@ -301,7 +303,7 @@ void VulkanDevice::CreateDevice(bool gpu_crash_dumps) {
       vk::PhysicalDeviceDiagnosticsConfigFeaturesNV().setDiagnosticsConfig(vk::True).setPNext(&diagnostics);
   if (HasDiagnosticsConfig(physical_device_, device_extensions_)) {
     features13.setPNext(&diagnostics_feature);
-    LI("subsystem=renderer event=gpu_crash_dumps_attached");
+    LOG_INFO("subsystem=renderer event=gpu_crash_dumps_attached");
   }
   device_ = physical_device_.createDeviceUnique(vk::DeviceCreateInfo()
                                                     .setQueueCreateInfos(queue)

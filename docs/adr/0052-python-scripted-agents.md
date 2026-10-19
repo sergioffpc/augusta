@@ -85,10 +85,10 @@ own decisions, never a tick, and no Python code runs on a native thread.
   calls `agent.ready()`.
 - `impair_links(LinkFaults(...))` simulates latency, jitter, loss and reordering
   on every packet the process sends, as the netcode tests do
-  (`networking::SimulateNetworkConditions`), and `impair_links(None)` restores
-  the real network. It is the process's, not an Agent's: the transport's
-  simulated conditions are global, so a script wanting Agents on different links
-  runs them in different processes.
+  (`link::SimulateNetworkConditions`), and `impair_links(None)` restores the
+  real network. It is the process's, not an Agent's: the transport's simulated
+  conditions are global, so a script wanting Agents on different links runs them
+  in different processes.
 - `agent.stats()` returns the Agent's NetcodeStats - what its prediction and
   fire came to - and its connection's statistics. NetcodeStats moves from
   `tools/swarm` into `augusta_harness`.
@@ -129,11 +129,11 @@ an AI model: the API comes first, and an autonomous agent is a script on top of
 it.
 
 **Tests stay where they are.** The netcode tests and the whole Match loop
-against an in-process `server::Host` stay C++, in `tools/agent/tests/`, over a
+against an in-process `host::Host` stay C++, in `tools/agent/tests/`, over a
 test fixture that composes the C++ Intents the way `load_test.py` does, so ctest
 needs no Python. pytest covers the Python layer with the native module built,
 and a smoke test plays one Match of two Agents against an in-process
-`server::Host` that `augusta_agent._testing` exposes for tests only.
+`host::Host` that `augusta_agent._testing` exposes for tests only.
 
 ## Consequences
 
@@ -143,8 +143,8 @@ and a smoke test plays one Match of two Agents against an in-process
   and `ScriptedPlayer` - is removed, and its tests move to `tools/agent/tests/`.
 - **The C++ jobs of CI need Python.** The Windows and Linux builds set up uv and
   run `uv sync` before configuring, since `AUGUSTA_TOOLS` is on by default. The
-  `tools` job keeps building `tools/pack/native`, which stays a separate
-  project.
+  cooker's native module (`tools/pack/native`) is built by the same build,
+  against the same interpreter, and its pytest runs beside the Agents'.
 - **The Linux build with tools is position-independent.** Code that will be
   linked into a shared object can be slightly slower; augustad from the server
   image is not affected, since it builds with `AUGUSTA_TOOLS` off.
@@ -173,11 +173,11 @@ and a smoke test plays one Match of two Agents against an in-process
   already depends on.
 - **The bindings in `src/modules/harness`**: rejected - augustac links the
   Harness, and the client must not need Python to build.
-- **The bindings as a separate CMake project, as `tools/pack/native` is**:
-  rejected - `_native` links the engine's own static libraries, which must be
-  built with the same flags and dependencies, by the same build.
+- **The bindings as a separate CMake project**: rejected - `_native` links the
+  engine's own static libraries, which must be built with the same flags and
+  dependencies, by the same build.
 - **Keeping augusta-swarm's YAML for the load test**: rejected - a script
   already is its configuration, and its arguments are the script's to choose.
 - **Python tests launching an augustad subprocess**: rejected - the test would
-  need to find the built server and its packs; an in-process `server::Host` is
+  need to find the built server and its packs; an in-process `host::Host` is
   what the C++ Match loop test already uses.

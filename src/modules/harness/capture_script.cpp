@@ -6,6 +6,7 @@
 #include <variant>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/reenactment.h"
 
 // A Captured player's part of a Match capture, out of the capture

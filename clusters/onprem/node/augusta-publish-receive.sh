@@ -9,7 +9,7 @@
 # augusta-publish (tools/pack) is its one client, and a publish is one
 # connection, so one touch of a FIDO2 key:
 #
-#   publish <folder> server.pack=<sha256>:<bytes> signing.pub=<sha256>:<bytes>
+#   publish <folder> server.apak=<sha256>:<bytes> signing.pub=<sha256>:<bytes>
 #
 # A folder is <environment>/<scenario>/<version> under the pack volume, for
 # the Environments below alone: each has its own tree, its packs signed with
@@ -37,7 +37,7 @@ readonly PUBLISHED=3 OTHER_FILES=4
 # one, and a version: the first 12 hex characters of the server pack's BLAKE3
 # hash.
 readonly FOLDER_PATTERN='^(develop|staging)/[a-z0-9]([a-z0-9-]{0,44}[a-z0-9])?/[0-9a-f]{12}$'
-readonly NAMES=(server.pack signing.pub)
+readonly NAMES=(server.apak signing.pub)
 # <sha256>:<bytes>, the size in decimal with no leading zero.
 readonly FILE_PATTERN='^[0-9a-f]{64}:(0|[1-9][0-9]{0,14})$'
 

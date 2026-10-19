@@ -36,22 +36,22 @@ Tiers derive from the requirement or ADR named; re-tier an area when its
 requirement changes. Paths are under `src/modules/` unless they start with
 `src/` or `tools/`.
 
-| Area                    | Code                                                                                                                                 | Tier     | Default depth | Standards                                 | Anchors                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| Inbound wire, admission | `protocol`, `wire`, `networking`, `src/server/{wire,tick_messages,admission,peer_gate,misbehaviour,connection_health,host_network}`  | Critical | L3, L4 (fuzz) | networking, security, cpp                 | NFR-05, ADR-0003, ADR-0038, ADR-0044                       |
-| Authoritative tick      | `simulation`, `gameplay`, `physics`, `primitives`, `src/server/{host,host_impl,host_match,match,simulation_mapping,command_queue}`   | Critical | L3            | simulation, correctness, performance, cpp | NFR-01, NFR-03, NFR-05, NFR-06, ADR-0023                   |
-| Threads and failure     | `lifecycle`, `failure`, `harness`, `src/server/runtime`, `src/client/runtime`                                                        | Critical | L3, L4 (TSan) | concurrency, errors                       | ADR-0005, ADR-0033                                         |
-| Packs and integrity     | `assets`, `scenario`, `src/client/content`                                                                                           | Critical | L3, L4 (fuzz) | assets, security                          | NFR-08, ADR-0030, ADR-0031                                 |
-| Lua sandbox and policy  | `scripting`, `gameplay/parameters`, `scenario/{policy_loader,parameters_loader}`                                                     | Critical | L3            | security, simulation                      | ADR-0022, ADR-0039                                         |
-| Prediction, replication | `prediction`, `simulation/replication`, `presentation`, `src/client/{frame_mapping,net_stats}`                                       | High     | L3            | simulation, networking                    | NFR-02, ADR-0004, ADR-0024                                 |
-| Capture and replay      | `capture`, `src/server/{capturer,capture_retention,replay,replay_catalog,replay_server}`                                             | High     | L2, L4 (fuzz) | simulation, assets, errors                | NFR-09, ADR-0050, ADR-0051                                 |
-| Pack writer             | `tools/pack`                                                                                                                         | High     | L2            | assets, testing                           | ADR-0030, ADR-0031, ADR-0013 (golden packs)                |
-| Configuration           | `config`                                                                                                                             | Medium   | L2            | correctness, build-deploy                 | ADR-0034                                                   |
-| Observability           | `logging`, `modules/metrics`, `src/server/{metrics,host_metrics,liveness,heartbeat,crash,host_log}`                                  | Medium   | L2            | errors, concurrency                       | NFR-07, ADR-0029, ADR-0047, ADR-0049                       |
-| Supporting modules      | `math`, `input`, `version`, `src/client/{lobby_readiness,character_loader,scene_loader}`                                             | Medium   | L2            | correctness                               | per module                                                 |
-| Rendering and audio     | `renderer`, `audio`                                                                                                                  | Low      | L1–L2         | cpp, concurrency, performance             | ADR-0059, ADR-0013 (judged by eye)                         |
-| Agents and tools        | `tools/agent`, `tools/composer`, `tools/docs`                                                                                        | Low      | L1            | testing                                   | ADR-0052                                                   |
-| Build and deployment    | `CMakeLists.txt`, `CMakePresets.json`, `cmake/`, `vcpkg.json`, `.github/workflows/`, `Dockerfile`, `chisel/`, `charts/`, `clusters/` | Medium   | L2            | build-deploy, security                    | ADR-0008, ADR-0025, ADR-0026, ADR-0054, ADR-0056, ADR-0057 |
+| Area                    | Code                                                                                                                                            | Tier     | Default depth | Standards                                 | Anchors                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| Inbound wire, admission | `protocol`, `link`, `networking`, `host/{link_mapping,tick_messages,admission,peer_gate,misbehaviour,host_network}`, `server/connection_health` | Critical | L3, L4 (fuzz) | networking, security, cpp                 | NFR-05, ADR-0003, ADR-0038, ADR-0044                       |
+| Authoritative tick      | `simulation`, `gameplay`, `physics`, `tick`, `limits`, `host/{host,host_impl,host_match,match,simulation_mapping,command_queue}`                | Critical | L3            | simulation, correctness, performance, cpp | NFR-01, NFR-03, NFR-05, NFR-06, ADR-0023                   |
+| Threads and failure     | `supervisor`, `application`, `failure`, `harness`, `server/{server,server_application}`, `client/client`                                        | Critical | L3, L4 (TSan) | concurrency, errors                       | ADR-0005, ADR-0033                                         |
+| Packs and integrity     | `assets`, `scenario`, `client/client_content`                                                                                                   | Critical | L3, L4 (fuzz) | assets, security                          | NFR-08, ADR-0030, ADR-0031                                 |
+| Lua sandbox and policy  | `scripting`, `gameplay/parameters`, `scenario/{policy_loader,parameters_loader}`                                                                | Critical | L3            | security, simulation                      | ADR-0022, ADR-0039                                         |
+| Prediction, replication | `prediction`, `simulation/replication`, `presentation`, `client/{frame_mapping,net_stats}`                                                      | High     | L3            | simulation, networking                    | NFR-02, ADR-0004, ADR-0024                                 |
+| Capture and replay      | `capture`, `host/{capturer,capture_retention,replay,replay_catalog,replay_server}`                                                              | High     | L2, L4 (fuzz) | simulation, assets, errors                | NFR-09, ADR-0050, ADR-0051                                 |
+| Pack writer             | `tools/pack`                                                                                                                                    | High     | L2            | assets, testing                           | ADR-0030, ADR-0031, ADR-0013 (golden packs)                |
+| Configuration           | `config`                                                                                                                                        | Medium   | L2            | correctness, build-deploy                 | ADR-0034                                                   |
+| Observability           | `logging`, `metrics`, `server/{metrics,liveness,crash}`, `host/{host_metrics,heartbeat,host_log}`                                               | Medium   | L2            | errors, concurrency                       | NFR-07, ADR-0029, ADR-0047, ADR-0049                       |
+| Supporting modules      | `math`, `input`, `version`, `client/{lobby_readiness,client_character_loader,client_scene_loader}`                                              | Medium   | L2            | correctness                               | per module                                                 |
+| Rendering and audio     | `renderer`, `audio`                                                                                                                             | Low      | L1–L2         | cpp, concurrency, performance             | ADR-0059, ADR-0013 (judged by eye)                         |
+| Agents and tools        | `tools/agent`, `tools/composer`, `tools/docs`                                                                                                   | Low      | L1            | testing                                   | ADR-0052                                                   |
+| Build and deployment    | `CMakeLists.txt`, `CMakePresets.json`, `cmake/`, `vcpkg.json`, `.github/workflows/`, `Dockerfile`, `chisel/`, `charts/`, `clusters/`            | Medium   | L2            | build-deploy, security                    | ADR-0008, ADR-0025, ADR-0026, ADR-0054, ADR-0056, ADR-0057 |
 
 Rendering and audio output are validated by eye and ear (ADR-0013): review their
 resource lifetimes, threading and decision code, not visual results.
@@ -72,7 +72,7 @@ Trace these end to end at L3 when their area is in scope:
 4. **Pack load:** config path and public key → BLAKE3 and Ed25519 verification →
    parse → content, on client and server.
 5. **Policy hook:** SimulationWorld Scripts/Behaviours phase → Lua hook → typed
-   Policy action → `server::Host` (ADR-0022, ADR-0023).
+   Policy action → `host::Host` (ADR-0022, ADR-0023).
 6. **Failure and shutdown:** a worker failure, an exception, or SIGINT/SIGTERM →
    supervisor → stop → join → exit status (ADR-0005, ADR-0033).
 7. **Capture to replay:** Match capture → capture file → Replay or Reenactment
@@ -96,7 +96,7 @@ The project states these; a review checks them rather than assuming them.
 - A pack is verified before any of it is used, and a failed verification stops
   the load (NFR-08).
 - The shared core does not depend on the protocol or on client input; the
-  boundary tests `tests/*_boundary.cmake` enforce what their comments state.
+  boundary tests `checks/*_boundary.cmake` enforce what their comments state.
 
 Known, accepted risks are listed in ARCHITECTURE §11 (no peer authentication on
 a trusted LAN, cross-platform PhysX divergence). A finding on one of them must

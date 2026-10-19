@@ -1,16 +1,15 @@
 #include "debug_hud.h"
 
-#include <chrono>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <nvrhi/nvrhi.h>
 
-#include "augusta/renderer.h"
 #include "debug_hud_font.h"
-#include "debug_hud_text.h"
 
 namespace augusta::renderer {
 
@@ -46,7 +45,7 @@ ImGuiContext* CreateContext(GLFWwindow& window) {
   ImGui::SetCurrentContext(context);
   ImGuiIO& io = ImGui::GetIO();
   // No imgui.ini beside the executable, and the cursor's shape and lock stay
-  // the Renderer's.
+  // the window's.
   io.IniFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
   AddFont(*io.Fonts);
@@ -66,8 +65,8 @@ DebugHud::~DebugHud() {
   ImGui::DestroyContext(context_);
 }
 
-void DebugHud::Render(nvrhi::ICommandList& commands, nvrhi::IFramebuffer& framebuffer, const DebugHudStats& stats) {
-  frame_times_.Tick(std::chrono::steady_clock::now());
+void DebugHud::Render(nvrhi::ICommandList& commands, nvrhi::IFramebuffer& framebuffer,
+                      const std::vector<std::string>& lines) {
   ImGui::SetCurrentContext(context_);
   ImGui_ImplGlfw_NewFrame();
   ImGui::NewFrame();
@@ -78,7 +77,9 @@ void DebugHud::Render(nvrhi::ICommandList& commands, nvrhi::IFramebuffer& frameb
   ImGui::Begin("Debug", nullptr, kWindowFlags);
   ImGui::PopStyleVar();
   ImGui::PushStyleColor(ImGuiCol_Text, kGreen);
-  ImGui::TextUnformatted(DebugHudText(frame_times_.Average(), stats.net).c_str());
+  for (const std::string& line : lines) {
+    ImGui::TextUnformatted(line.c_str());
+  }
   ImGui::PopStyleColor();
   ImGui::End();
   ImGui::Render();

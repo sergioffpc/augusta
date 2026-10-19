@@ -118,7 +118,17 @@ _NO_CPE = {
     "liblzma": "python3's and libxml2's, linked into no executable shipped",
     "mpdecimal": "python3's, linked into no executable shipped",
     "sqlite3": "python3's, linked into no executable shipped",
-    "zstd": "python3's, linked into no executable shipped",
+    "zstd": "python3's and ktx's, linked into no executable shipped",
+    # The manifest's pack feature, which CI turns on beside the agent feature
+    # for the cooker's Python module (tools/pack) and a release doesn't: its
+    # mesh and texture libraries, with ktx's own dependencies.
+    "meshoptimizer": "the cooker's module's, linked into no executable shipped",
+    "ktx": "the cooker's module's, linked into no executable shipped",
+    "stb": "the cooker's module's, linked into no executable shipped",
+    "opengl-registry": "ktx's, linked into no executable shipped",
+    "egl-registry": "ktx's, linked into no executable shipped",
+    "cxxopts": "ktx's tools', linked into no executable shipped",
+    "fmt": "ktx's tools', linked into no executable shipped",
     # What the client's zip ships beside it (ADR-0058): the MSVC runtime.
     "msvc-runtime": "its CPE, microsoft:visual_c++, names Visual Studio's "
     "releases, not the runtime's file versions",

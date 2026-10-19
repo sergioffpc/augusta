@@ -24,7 +24,7 @@ on:
     branches: [main, develop]
     paths:
       - scripts/prune-packages.py
-      - scripts/tests/test_prune_packages.py
+      - checks/test_prune_packages.py
       - .github/workflows/prune-packages.yml
 permissions: {}
 # One run at a time: an apply must not race a plan, nor another apply.
@@ -45,9 +45,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: Test the script
-        run: uv run --no-project --with pytest==9.1.1 pytest scripts/tests/test_prune_packages.py
+        run: uv run --no-project --with pytest==9.1.1 pytest checks/test_prune_packages.py
       - name: Print the plan
         env:
           GH_TOKEN: ${{ github.token }}

@@ -143,13 +143,12 @@ std::vector<Seed> Seeds() {
       {.name = "replay_list",
        .message = ReplayListWire{.replays = {ReplayListingWire{.started_unix_ms = 1'791'000'000'123,
                                                                .characters = {"soldier", "sniper"},
-                                                               .name = "20261009T120000123Z-0001.capture",
+                                                               .name = "20261009T120000123Z-0001.acap",
                                                                .ticks = 7200,
                                                                .tick_rate_hz = 60}}}},
       {.name = "replay_request",
        .message =
-           ReplayRequestWire{
-               .engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.capture"}},
+           ReplayRequestWire{.engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.acap"}},
       {.name = "replay_view",
        .message = ReplayViewWire{.tick = 1200,
                                  .players = {PlayerViewWire{.pitch = -0.25F,

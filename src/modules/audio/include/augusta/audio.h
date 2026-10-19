@@ -8,8 +8,9 @@
 #include "augusta/math.h"
 
 /// \file
-/// augusta::audio plays spatialized one-shot sound effects on the Windows
-/// client (ARCHITECTURE.md §7's Audio: "consumes presentation state").
+/// augusta::audio plays spatialized one-shot sound effects on the client,
+/// on Windows and Linux (ARCHITECTURE.md §7's Audio: "consumes presentation
+/// state").
 /// Two third-party libraries split the work, neither of which alone does
 /// what a game needs: Steam Audio (ADR-0010) only processes audio buffers
 /// already in memory - it spatializes a voice via HRTF but opens no
@@ -84,12 +85,13 @@ class Engine {
   void SetListener(const Listener& listener);
 
   /// Starts one instance of sound at world_position, spatialized against the
-  /// listener (SetListener). The voice frees itself when playback finishes.
-  VoiceHandle Play(SoundHandle sound, const math::Vec3& world_position);
+  /// listener (SetListener), gain_db decibels louder than the sound as loaded (0
+  /// plays it as it is). The voice frees itself when playback finishes.
+  VoiceHandle Play(SoundHandle sound, const math::Vec3& world_position, float gain_db);
 
   /// Starts one instance of sound heard as the listener's own: unspatialized,
-  /// from no direction.
-  VoiceHandle Play(SoundHandle sound);
+  /// from no direction, at gain_db as above.
+  VoiceHandle Play(SoundHandle sound, float gain_db);
 
   /// Stops a still-playing voice immediately. A no-op if it already finished.
   void Stop(VoiceHandle voice);

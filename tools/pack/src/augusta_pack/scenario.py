@@ -7,7 +7,7 @@ and the scripts that scenario composes:
     authoring/scenarios/test.yaml                  # the manifest below
     authoring/maps/test.usda
     authoring/characters/soldier.usda
-    authoring/sounds/gunshot.wav                   # one mono PCM WAV per cue
+    authoring/sounds/gunshot.wav                   # mono PCM WAVs
     authoring/scripts/parameters/rules_of_engagement.lua
     authoring/scripts/rules/last_man_standing.lua
 
@@ -15,7 +15,10 @@ and the scripts that scenario composes:
     characters:
       soldier: characters/soldier.usda
     sounds:
-      gunshot: sounds/gunshot.wav
+      gunshot:                                     # variants played at random
+        variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
+        gain: -3                                   # decibels, 0 if left out
+      hit_marker: sounds/hit_marker.wav            # one variant at 0 dB
       ...                                          # every cue in sounds.CUES
     scripts:
       parameters: scripts/parameters/rules_of_engagement.lua
@@ -33,14 +36,16 @@ converting a stage never renames the character a client asks for.
 """
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from pathlib import PurePosixPath
 import re
 
 import yaml
 
-from augusta_pack.pack import MAX_CHARACTERS
+from augusta_pack._native import MAX_CHARACTERS
 from augusta_pack.sounds import CUES
+from augusta_pack.sounds import CueSound
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import read_sound
 from augusta_pack.sounds import SoundError
@@ -50,6 +55,9 @@ USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 # The keys a manifest may hold; any other is a typo, refused rather than
 # ignored.
 MANIFEST_KEYS = ("map", "characters", "sounds", "scripts")
+
+# The keys a cue's sound may hold, when it is a mapping rather than one file.
+CUE_SOUND_KEYS = ("variants", "gain")
 
 # A character's name: the prefix of its blobs in the pack, so a single path
 # segment (ADR-0040).
@@ -282,30 +290,78 @@ def _read_sounds(
     A client needs them all, so one missing or unplayable is found here rather
     than in a Match.
     """
-    sounds_rel = _role_files(
-        sounds_rel,
-        "sounds",
-        "gunshot: sounds/gunshot.wav",
-        CUES,
-        manifest_path,
-    )
+    if not isinstance(sounds_rel, dict):
+        raise ScenarioError(
+            f"{manifest_path}: 'sounds' must map each cue to its sound, e.g. "
+            f"gunshot: sounds/gunshot.wav"
+        )
+    unknown = [str(cue) for cue in sounds_rel if cue not in CUES]
+    if unknown:
+        raise ScenarioError(
+            f"{manifest_path}: 'sounds' names unknown {', '.join(unknown)} "
+            f"(known: {', '.join(CUES)})"
+        )
     cues = []
     for cue in CUES:
         if cue not in sounds_rel:
             raise ScenarioError(
                 f"{manifest_path}: 'sounds' has no sound for cue {cue!r}"
             )
-        try:
-            cues.append(
-                (
-                    cue,
-                    read_sound(
-                        _named_file(
-                            authoring_dir, sounds_rel[cue], manifest_path
-                        )
-                    ),
-                )
+        cues.append(
+            (
+                cue,
+                _read_cue_sound(
+                    authoring_dir, cue, sounds_rel[cue], manifest_path
+                ),
             )
-        except SoundError as error:
-            raise ScenarioError(str(error)) from error
+        )
     return CueSounds(cues=cues)
+
+
+def _read_cue_sound(
+    authoring_dir: Path, cue: str, sound_rel: object, manifest_path: Path
+) -> CueSound:
+    """The sound of cue: one WAV file, or a mapping of its variants and gain.
+
+    One file is shorthand for one variant at 0 dB (ADR-0041).
+    """
+    where = f"{manifest_path}: cue {cue!r}"
+    if isinstance(sound_rel, str):
+        sound_rel = {"variants": [sound_rel]}
+    if not isinstance(sound_rel, dict):
+        raise ScenarioError(
+            f"{where}: its sound must be a WAV file, or a mapping with "
+            f"'variants' and an optional 'gain', e.g. variants: "
+            f"[sounds/{cue}.wav]"
+        )
+    unknown = [str(key) for key in sound_rel if key not in CUE_SOUND_KEYS]
+    if unknown:
+        raise ScenarioError(
+            f"{where}: unknown key(s) {', '.join(unknown)} (known: "
+            f"{', '.join(CUE_SOUND_KEYS)})"
+        )
+    variants_rel = sound_rel.get("variants")
+    if not isinstance(variants_rel, list) or not all(
+        isinstance(variant, str) and variant for variant in variants_rel
+    ):
+        raise ScenarioError(f"{where}: 'variants' must list its WAV files")
+    if not variants_rel:
+        raise ScenarioError(f"{where}: has no variant to play")
+    gain = sound_rel.get("gain", 0)
+    # A bool is an int to Python, but no gain an author means.
+    if (
+        isinstance(gain, bool)
+        or not isinstance(gain, (int, float))
+        or not math.isfinite(gain)
+    ):
+        raise ScenarioError(
+            f"{where}: 'gain' must be a finite number of decibels, not {gain!r}"
+        )
+    try:
+        variants = [
+            read_sound(_named_file(authoring_dir, variant, manifest_path))
+            for variant in variants_rel
+        ]
+    except (ScenarioError, SoundError) as error:
+        raise ScenarioError(f"cue {cue!r}: {error}") from error
+    return CueSound(variants=variants, gain_db=float(gain))

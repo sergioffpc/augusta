@@ -16,6 +16,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/reconciliation.h"
+#include "augusta/tick.h"
 #include "augusta/weapon.h"
 
 namespace augusta::prediction {
@@ -70,7 +71,7 @@ struct World::Impl {
   // entity (rather than the systems closing over it directly) is what
   // replaces this.
   command::Command tick_command;
-  command::Sequence tick_sequence = 0;
+  tick::Sequence tick_sequence = 0;
   std::optional<Acknowledgement> tick_acknowledgement;
   State tick_state;
 
@@ -148,9 +149,9 @@ struct World::Impl {
     });
 
     const math::Vec3 jump = replayed.position - tick_state.local_body.position;
-    LD("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f} rifle={}",
-       tick_acknowledgement->sequence, math::Length(authoritative.position - predicted->body.position),
-       math::Length(jump), rifle_differs);
+    LOG_DEBUG("subsystem=predictionworld event=reconcile sequence={} error={:.3f} jump={:.3f} rifle={}",
+              tick_acknowledgement->sequence, math::Length(authoritative.position - predicted->body.position),
+              math::Length(jump), rifle_differs);
     tick_state.total_correction += jump;
     tick_state.local_body = replayed;
     tick_state.rifle_corrections += rifle_differs ? 1U : 0U;
@@ -211,7 +212,7 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
 World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
-State World::Tick(const command::Command& command, command::Sequence sequence,
+State World::Tick(const command::Command& command, tick::Sequence sequence,
                   const std::optional<Acknowledgement>& acknowledgement, float delta_time) {
   impl_->tick_command = command;
   impl_->tick_sequence = sequence;

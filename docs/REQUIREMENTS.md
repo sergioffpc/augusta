@@ -1,8 +1,8 @@
 # Requirements — FPS Simulator Engine
 
 Scope: the engine described in [VISION.md](./VISION.md) — multiplayer-only,
-server-authoritative, physics-based ballistics, 2–8 players per Match, played
-with one rifle on one test map.
+server-authoritative, physics-based ballistics, 2–8 players per Match in two
+Teams, played with one rifle on one test map.
 
 Each requirement names the release that first met it (v1.0.0, v2.0.0), or the
 one it is planned for ("later" when that release has no version yet).
@@ -72,6 +72,9 @@ When I input a movement or stance command
 Then my position and stance update accordingly on both client and server
 ```
 
+In VR (US-25), walking in place moves me and my tracked body's posture sets my
+stance: I crouch by crouching and go prone by lying down.
+
 ### US-05: Manage Stamina
 
 Version: v1
@@ -98,6 +101,9 @@ When I toggle aim down sights (ADS)
 Then my view zooms and the weapon's accuracy/recoil model changes accordingly
 ```
 
+In VR (US-25), I aim by bringing the rifle's sight to my eye: there is no ADS
+button and no zoom, and the recoil model changes once the sight is on my eye.
+
 ### US-07: Fire Rifle
 
 Version: v1
@@ -109,6 +115,10 @@ Given I have ammo loaded and am not reloading
 When I trigger fire
 Then a bullet is spawned server-side with the correct origin, direction, and initial velocity
 ```
+
+The origin is the rifle's Muzzle, never my eye, in both Play modes (ADR-0064):
+on a desktop the round crosses my sight at the rifle's zero range, and in VR it
+leaves the barrel I hold, along it.
 
 ### US-08: Reload Rifle
 
@@ -123,6 +133,8 @@ When I trigger reload and the reload completes
 Then my ammo count is restored to the rifle's magazine capacity
 ```
 
+In VR (US-25), I trigger reload with a button, with the same rules and timing.
+
 ### US-09: Apply Weapon Recoil
 
 Version: v1
@@ -135,6 +147,9 @@ Given I fire multiple rounds in succession
 When each round is fired
 Then my aim point shifts according to the weapon's recoil pattern, cumulative per burst
 ```
+
+In VR (US-25), the rifle kicks in my hands with the same pattern and I bring it
+back myself.
 
 ### US-10: Simulate Bullet Ballistics (Server-Authoritative)
 
@@ -150,6 +165,10 @@ Then the server computes its trajectory, including gravity-induced drop and trav
 and replicates the relevant result to clients
 ```
 
+A bullet goes through what it strikes, or ricochets off it at a grazing angle,
+by the struck surface's material and thickness and the bullet's remaining energy
+(ADR-0065): glass and thin wood let it through, a concrete wall stops it.
+
 ### US-11: Detect Hit by Impact Location
 
 Version: v1
@@ -162,6 +181,9 @@ Given a bullet's simulated trajectory intersects a player's hitbox
 When the intersection is resolved server-side
 Then the specific body part hit (e.g., head, torso, limb) is recorded
 ```
+
+A bullet goes on through a player it hits, with the energy that player's body
+leaves it, and can hit the player behind (ADR-0065).
 
 ### US-12: Apply Damage by Hit Location
 
@@ -176,6 +198,9 @@ When damage is applied
 Then the resulting damage matches the configured lethality for that body part and ammo type
 ```
 
+A bullet that went through something first does less damage, in proportion to
+the energy it has left (ADR-0065).
+
 ### US-13: Player Death (No Respawn)
 
 Version: v1
@@ -189,6 +214,9 @@ When death is processed
 Then I enter spectator mode for the remainder of the match with no respawn
 ```
 
+In VR (US-25), my view fades out and reopens as a Spectator's; it never follows
+my own body down.
+
 ### US-14: Determine Match End / Win Condition
 
 Version: v1
@@ -197,11 +225,14 @@ As the system, I want to detect when a match's win condition is met, so that the
 match can conclude and a new one can begin.
 
 ```text
-Given all players on one side are eliminated (or another defined win condition is met)
+Given every player of one Team is dead (or another defined win condition is met)
 When the condition is evaluated server-side
-Then the match ends, a winner is declared, everyone returns to the Lobby, and a new match
-     starts after a defined delay
+Then the match ends, the winning Team is declared, everyone returns to the Lobby, and a
+     new match starts after a defined delay
 ```
+
+v1 met it with every player its own side, last player standing; Teams make the
+sides two (ADR-0068).
 
 ### US-15: Server-Side Validation of Client Input (Anti-Cheat Baseline)
 
@@ -418,6 +449,61 @@ Agents find a server the same way. Any other refusal - version, pack, Character
 
 - stops at the server that gave it, since every server of the scenario would
   give it too (NFR-13).
+
+### US-25: Play in VR
+
+Version: v11 (planned)
+
+As a player, I want to play a Match on a PC VR headset, with my head, hands and
+body tracked, so that I hold and aim my rifle and take cover with my own body,
+in the same Matches as players on a desktop.
+
+```text
+Given a PC VR headset with an OpenXR runtime and cameras that see my body
+When I join a Match in the VR Play mode
+Then I see from my tracked head, my rifle is where my hands hold it, I am hit
+     on my tracked body bounded to my Character's, and the other players see it
+```
+
+My camera images never leave my PC, and the Roster shows each player's Play mode
+(ADR-0063).
+
+### US-26: Play on a Team
+
+Version: v9 (planned)
+
+As a player, I want to fight on one of two Teams, each in its own Uniform, so
+that I fight beside teammates I can tell from the enemy.
+
+```text
+Given a Match starts
+When Game policy puts each player on a Team
+Then I spawn at my Team's Spawn points wearing my Team's Uniform on the Character I
+     chose, my rounds hurt teammates as they hurt enemies, once dead I watch only my
+     living teammates, and my Team wins when the other has no one left alive
+```
+
+The free-for-all is gone: every Match is a team match (ADR-0068).
+
+### US-27: Talk to my Team
+
+Version: v9 (planned)
+
+As a player, I want to talk to my Team by radio and to anyone near me aloud, so
+that we coordinate, at the risk of being overheard.
+
+```text
+Given I am alive in a Match with a microphone
+When I hold the radio push-to-talk and speak
+Then my living teammates hear me by radio wherever they are, and anyone within range
+     hears me aloud from where I stand, enemies included
+
+Given I am dead
+When I speak
+Then only my dead teammates hear me, and I still hear my Team's radio
+```
+
+Speech is never captured, and there is none in the Lobby (ADR-0069).
 
 ---
 
@@ -728,3 +814,41 @@ Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no
 admission policy, signature check or NetworkPolicy (ADR-0057, ADR-0056). The
 Node stays LAN-only; exposing a game port range to the internet is outside this
 requirement, but it is one firewall rule once this one is met.
+
+### NFR-16: VR Frame Rate
+
+Version: v11 (planned)
+
+```text
+Source:      A VR player
+Stimulus:    Playing a full Match on the reference hardware (NFR-17's GPU)
+Environment: A Match of 8 players, Desktop and VR mixed
+Artifact:    The client's VR rendering
+Response:    The client renders both eyes at the headset's native refresh
+             rate
+Measure:     No dropped frames at the headset's refresh rate (90 Hz on the
+             reference headset) for the whole Match
+```
+
+A frame the headset waits for is reprojected by its runtime, which makes it
+uncomfortable to play, not slower: a dropped frame counts as a failure, whatever
+the runtime makes of it (ADR-0063).
+
+### NFR-17: Desktop Frame Rate
+
+Version: v6 (planned)
+
+```text
+Source:      A Desktop player
+Stimulus:    Playing a full Match on the reference hardware, an NVIDIA
+             GeForce RTX 5070 Ti with 16 GB
+Environment: A Match of 8 players at 1440p, the upscaler on its default
+             preset
+Artifact:    The client's Desktop rendering
+Response:    The client renders every frame with all of its lighting
+Measure:     144 frames a second or more for the whole Match
+```
+
+Lighting has no quality setting to trade for frame rate (ADR-0067): the frame
+rate is met with every player's shadows, reflections and indirect light as
+everyone else sees them.

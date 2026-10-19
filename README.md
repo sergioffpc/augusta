@@ -147,7 +147,7 @@ To bring back a playtest from its Match capture (ADR-0050), start a server with
 captured player, all at once, each the player of the capture `--player` names:
 
 ```powershell
-& "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml --reenact captures/20261009T101500123Z-0001.capture --player 1
+& "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml --reenact captures/20261009T101500123Z-0001.acap --player 1
 ```
 
 `augusta-inspect` lists a capture's players by those numbers.

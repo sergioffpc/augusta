@@ -51,8 +51,8 @@ tooling-time project only - nothing here is linked into the shipped client or
 server.
 
 ```text
-scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize -> usd-validation-nvidia -> cook -> packs/<scenario>/client.pack
-                          -> the cue sounds and the scripts                                             -> packs/<scenario>/server.pack
+scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize -> usd-validation-nvidia -> cook -> packs/<scenario>/client.apak
+                          -> the cue sounds and the scripts                                             -> packs/<scenario>/server.apak
 ```
 
 1. **usd-optimize** cleans the stage (triangulate, dedupe, flatten, drop small
@@ -63,10 +63,13 @@ scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize ->
    spawn points and textures, then packs, BLAKE3-hashes and Ed25519-signs the
    result. ADR-0031, ADR-0032.
 
-The whole pipeline is pure Python except for one small pybind11 module in
-[pack/native/](pack/native/), `_native`: the mesh pass (ADR-0016) and the
-texture compression (ADR-0017). It has no USD dependency on purpose; see
-ADR-0030 for why.
+The pipeline is Python over one pybind11 module in [pack/native/](pack/native/),
+`_native`: the mesh pass (ADR-0016), the texture compression (ADR-0017) and
+`augusta_assets`, which the module links to encode every blob and write, hash
+and sign the packs, so the wire format the client and server read has no Python
+copy. The repository's root CMake project builds it, as it builds the Agents'
+module, with `AUGUSTA_TOOLS` and the tools environment's Python. It has no USD
+dependency on purpose; see ADR-0030 for why.
 
 ### Setup
 
@@ -161,8 +164,10 @@ map: maps/test_map.usda
 characters:
   marine: characters/marine.usda              # by name
 sounds:
-  gunshot: sounds/gunshot.wav
-  hit_marker: sounds/hit_marker.wav
+  gunshot:                                     # one of its variants each time
+    variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
+    gain: -3                                   # decibels; 0 if left out
+  hit_marker: sounds/hit_marker.wav            # one variant at 0 dB
   hit_taken: sounds/hit_taken.wav
   death: sounds/death.wav
   match_won: sounds/match_won.wav
@@ -173,7 +178,7 @@ scripts:
 ```
 
 ```powershell
-augusta-pack <name>                    # -> <assets-root>\packs\<name>\{client,server}.pack
+augusta-pack <name>                    # -> <assets-root>\packs\<name>\{client,server}.apak
 augusta-pack <name> --skip-validation  # skip usd-validation-nvidia only
 ```
 
@@ -190,23 +195,25 @@ decides and never receives the script (ADR-0019). The characters' names, in
 manifest order, go into both packs as the `Characters` entry, the list a joining
 client's character is checked against (ADR-0042); a manifest naming more than
 255 characters fails the cook. Each cue's sound goes into the **client** pack
-only, as an audio asset addressed `sounds/<cue>` (e.g. `sounds/gunshot`), with
-the prefix `sounds` as the `Sounds` entry the client finds them by (ADR-0020,
-ADR-0031); one file may be the sound of several cues. Each character's
+only: its gain and its variants' paths at `sounds/<cue>` (e.g.
+`sounds/gunshot`), and each variant as an audio asset at `sounds/<cue>/<n>`
+(ADR-0020, ADR-0031, ADR-0041). A cue's sound is one WAV file, shorthand for one
+variant at 0 dB, or a mapping of its `variants` and an optional `gain` in
+decibels; one file may be a variant of several cues. Each character's
 `Character/Eye` prim, where its player's camera sits and its Shots leave from,
 goes into both packs as that point alone (ADR-0040). It is an error if the
 manifest is missing, if it holds a key, cue or script role the cooker does not
 know, if a file it names is missing or is not what its key needs (the map and
 characters a USD stage, a sound a mono PCM WAV - the error names the file), if a
 character's name is not one lowercase word or is a root prim of the map, if a
-character has no `Character/Eye`, if a cue has no sound (the error names the
-cue), or if there is no `parameters` script: the server reads its Parameters out
-of its pack at startup, so that is found here rather than when a server starts
-on the pack.
+character has no `Character/Eye`, if a cue has no sound, no variant, a missing
+WAV or a gain that is not a finite number (the error names the cue), or if there
+is no `parameters` script: the server reads its Parameters out of its pack at
+startup, so that is found here rather than when a server starts on the pack.
 
 By default, packs are written under `<assets-root>/packs`, keyed by the
 scenario's name alone, not its `authoring/scenarios/` position (`firebase` ->
-`packs/firebase/client.pack`, `packs/firebase/server.pack`). Pass
+`packs/firebase/client.apak`, `packs/firebase/server.apak`). Pass
 `--client-output-pack`/`--server-output-pack` to put them somewhere else.
 Scripts are part of the signed pack: to change a value, edit the file and cook
 again.
@@ -231,8 +238,8 @@ augusta-pack [-h] [--assets-root ASSETS_ROOT]
 | `scenario` (required)                     |                                                                         | Scenario folder - relative to the current directory or absolute, but must be under `<assets-root>/authoring` (see above).                       |
 | `-h`, `--help`                            |                                                                         | Print the usage and option list, then exit.                                                                                                     |
 | `--assets-root ASSETS_ROOT`               | the root of the venv the command runs from (`<assets-root>/python/...`) | Assets root holding `authoring/`, `packs/` and `keys/`: `scenario` must sit under its `authoring/`, and it's used for the three defaults below. |
-| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.pack`     | Where to write the client pack. Missing parent directories are created.                                                                         |
-| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.pack`     | Where to write the server pack. Missing parent directories are created.                                                                         |
+| `--client-output-pack CLIENT_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/client.apak`     | Where to write the client pack. Missing parent directories are created.                                                                         |
+| `--server-output-pack SERVER_OUTPUT_PACK` | `<assets-root>/packs/<scenario's path under authoring>/server.apak`     | Where to write the server pack. Missing parent directories are created.                                                                         |
 | `--signing-key SIGNING_KEY`               | `<assets-root>/keys/develop.key`                                        | Ed25519 private key (64 bytes) the packs are signed with: `develop`'s by default, `keys/staging.key` for a release.                             |
 | `--skip-validation`                       | off                                                                     | Skip usd-validation-nvidia (step 2) for stages that fail its checks. usd-optimize and the cook still run.                                       |
 
@@ -280,8 +287,8 @@ augusta-verify <pack>    # is it intact, and signed by the key I expect?
 ```
 
 `<pack>` is an ordinary path - relative to the current directory or absolute,
-never resolved against an assets root. The `.pack` extension is optional, so
-`<stage>.client` finds `<stage>.client.pack`.
+never resolved against an assets root. The `.apak` extension is optional, so
+`<stage>.client` finds `<stage>.client.apak`.
 
 #### `augusta-inspect` reference
 
@@ -314,9 +321,12 @@ how many Commands it sent, and when it died and who killed it or when it left),
 then the Match end's winner or a Draw, and whether the file ends partway through
 a record. A Command's contents are counted, not decoded.
 
-Only the header, index and trailer are read, so it is fast on large packs. It
-does **not** check the hash or signature (the trailer is labelled as
-unverified): use `augusta-verify` before trusting the contents.
+It reads the pack through `augusta_assets`, with the same header and index
+parser the client and server load packs with, and refuses a malformed one with
+the same reason (see the table under `augusta-verify`). Only the header, index
+and trailer are read, so it is fast on large packs. It does **not** check the
+hash or signature (the trailer is labelled as unverified): use `augusta-verify`
+before trusting the contents.
 
 #### `augusta-verify` reference
 
@@ -331,17 +341,22 @@ augusta-verify [-h] [--assets-root ASSETS_ROOT] [--public-key PUBLIC_KEY] pack
 | `--assets-root ASSETS_ROOT` | the root of the venv the command runs from | Assets root, for the `--public-key` default only.                |
 | `--public-key PUBLIC_KEY`   | `<assets-root>/keys/develop.pub`           | Ed25519 public key (32 bytes) the signature must verify against. |
 
-It recomputes the BLAKE3 hash of everything but the trailer, compares it with
-the trailer's hash, verifies the trailer's Ed25519 signature over that hash, and
-only then checks that the header and index are well formed (ADR-0031). On
-success it prints the entry count, size, hash and key used and exits `0`. On any
-failure it prints the reason to stderr and exits `1`:
+It loads the pack as the client and server do, through `augusta_assets`, so a
+pack it accepts is one they load: it recomputes the BLAKE3 hash of everything
+but the trailer, compares it with the trailer's hash, verifies the trailer's
+Ed25519 signature over that hash, and checks that the header and index are well
+formed (ADR-0031). On success it prints the entry count, size, hash and key used
+and exits `0`. On any failure it prints the pack's path and the reason to stderr
+and exits `1`:
 
-| Message                                                     | Meaning                                                                     |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `content hash mismatch`                                     | The pack was corrupted or modified after it was signed.                     |
-| `signature is not valid for this public key`                | The pack was signed by a different key, or the signature was tampered with. |
-| `bad magic`, `unsupported format version`, `too small`, ... | The file isn't a (supported) Augusta pack.                                  |
+| Message                                                  | Meaning                                                                     |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `failed its integrity check (content hash mismatch)`     | The pack was corrupted or modified after it was signed.                     |
+| `failed signature verification`                          | The pack was signed by a different key, or the signature was tampered with. |
+| `is not an augusta pack file (bad magic)`                | The file isn't an Augusta pack.                                             |
+| `was written by an incompatible pack format version`     | The pack is of a format version this build doesn't read.                    |
+| `is truncated, or exceeds this build's pack size limits` | The file is shorter than its header and index say, or too large.            |
+| `has a corrupt index`                                    | An index entry has an unknown type, or two entries share a path.            |
 
 ### Publishing a server pack
 
@@ -358,7 +373,7 @@ publishes; it does not deploy: a server serves the pack once its environment's
 Before copying anything it verifies both packs of the scenario's cook against
 the public key, and checks that the server pack names that client pack in its
 header (ADR-0031). It then copies only the server pack and the public key, as
-`server.pack` and `signing.pub`, into
+`server.apak` and `signing.pub`, into
 `/srv/augusta/asset-packs/<environment>/<scenario>/<version>/`, `<version>`
 being the first 12 hex characters of the server pack's BLAKE3 hash, which does
 not cover the signature: one cook signed with `develop`'s key and with
@@ -392,8 +407,8 @@ augusta-publish [-h] --environment {develop,staging} --host HOST
 | `--host HOST` (required)                     |                                              | The k3s node as its `augusta-publish` user, as `ssh` names it (`augusta-publish@<node>`, or an alias in `~/.ssh/config`).       |
 | `-h`, `--help`                               |                                              | Print the usage and option list, then exit.                                                                                     |
 | `--assets-root ASSETS_ROOT`                  | the root of the venv the command runs from   | Assets root, for the defaults below only.                                                                                       |
-| `--client-pack CLIENT_PACK`                  | `<assets-root>/packs/<scenario>/client.pack` | The client pack of the cook. Verified, never copied.                                                                            |
-| `--server-pack SERVER_PACK`                  | `<assets-root>/packs/<scenario>/server.pack` | The server pack to publish.                                                                                                     |
+| `--client-pack CLIENT_PACK`                  | `<assets-root>/packs/<scenario>/client.apak` | The client pack of the cook. Verified, never copied.                                                                            |
+| `--server-pack SERVER_PACK`                  | `<assets-root>/packs/<scenario>/server.apak` | The server pack to publish.                                                                                                     |
 | `--public-key PUBLIC_KEY`                    | `<assets-root>/keys/<environment>.pub`       | The key both packs are signed with, published as `signing.pub`.                                                                 |
 
 On success it prints the folder on the node and the line to put under the
@@ -405,71 +420,57 @@ it prints the reason to stderr and exits `1`.
 
 ### Layout
 
-| Path                                       | Role                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pack/src/augusta_pack/cli.py`             | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                       |
-| `pack/src/augusta_pack/scenario.py`        | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                  |
-| `pack/src/augusta_pack/sounds.py`          | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                    |
-| `pack/src/augusta_pack/optimize.py`        | usd-optimize step                                                                                                                                                                                                                                                                                                                |
-| `pack/src/augusta_pack/validate.py`        | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                       |
-| `pack/src/augusta_pack/cook.py`            | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                  |
-| `pack/src/augusta_pack/pack.py`, `wire.py` | Pack wire format, hashing, signing                                                                                                                                                                                                                                                                                               |
-| `pack/src/augusta_pack/keys.py`            | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                |
-| `pack/src/augusta_pack/pack_cli.py`        | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
-| `pack/src/augusta_pack/publish.py`         | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
-| `pack/src/augusta_pack/reader.py`          | Pack container parsing and verification (the read side of `pack.py`)                                                                                                                                                                                                                                                             |
-| `pack/src/augusta_pack/capture.py`         | Match capture reading for `augusta-inspect` (the read side of `src/modules/capture`)                                                                                                                                                                                                                                             |
-| `pack/src/augusta_pack/assets_root.py`     | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
-| `pack/native/`                             | Standalone CMake/vcpkg project for the native module. It builds straight into `pack/src/augusta_pack/`.                                                                                                                                                                                                                          |
-| `composer/`                                | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
-| `pack/tests/`                              | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
-| `composer/examples/authoring/`             | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
-| `pack/scripts/bootstrap.sh`                | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
+| Path                                   | Role                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pack/src/augusta_pack/cli.py`         | `augusta-pack` entry point                                                                                                                                                                                                                                                                                                       |
+| `pack/src/augusta_pack/scenario.py`    | Scenario folder resolution (stage, `*.lua` scripts, cue sounds)                                                                                                                                                                                                                                                                  |
+| `pack/src/augusta_pack/sounds.py`      | The cue catalogue and the mono PCM WAV reader                                                                                                                                                                                                                                                                                    |
+| `pack/src/augusta_pack/optimize.py`    | usd-optimize step                                                                                                                                                                                                                                                                                                                |
+| `pack/src/augusta_pack/validate.py`    | usd-validation-nvidia step                                                                                                                                                                                                                                                                                                       |
+| `pack/src/augusta_pack/cook.py`        | Stage walk and asset conversion                                                                                                                                                                                                                                                                                                  |
+| `pack/src/augusta_pack/keys.py`        | `augusta-keygen` and key file I/O                                                                                                                                                                                                                                                                                                |
+| `pack/src/augusta_pack/pack_cli.py`    | `augusta-inspect` and `augusta-verify` entry points                                                                                                                                                                                                                                                                              |
+| `pack/src/augusta_pack/publish.py`     | `augusta-publish` entry point                                                                                                                                                                                                                                                                                                    |
+| `pack/src/augusta_pack/capture.py`     | Match capture reading for `augusta-inspect` (the read side of `src/modules/capture`)                                                                                                                                                                                                                                             |
+| `pack/src/augusta_pack/assets_root.py` | Assets-root inference shared by the entry points                                                                                                                                                                                                                                                                                 |
+| `pack/native/`                         | The native module's sources (the mesh pass, the texture compression and the binding of `augusta_assets`' pack encoder and reader), built by the root CMake project straight into `pack/src/augusta_pack/`.                                                                                                                       |
+| `composer/`                            | Composer bootstrap, playback file that scaffolds the app, and `augusta-composer.sh` (launches it)                                                                                                                                                                                                                                |
+| `pack/tests/`                          | pytest suite and the USD fixtures it cooks (see Running the tests)                                                                                                                                                                                                                                                               |
+| `composer/examples/authoring/`         | A committed `<assets-root>/authoring/` sample the pack bootstrap seeds into a fresh assets root: `maps/firebase.usda` (ADR-0015), `characters/soldier.usda` (ADR-0040), `sounds/` (placeholder cue sounds, ADR-0020), `scripts/` (Parameters and rules, ADR-0039, ADR-0022), `scenarios/firebase.yaml` composing them (ADR-0041) |
+| `pack/scripts/bootstrap.sh`            | Builds the pack assets root                                                                                                                                                                                                                                                                                                      |
 
 ### Rebuilding the native module
 
-The bootstrap builds them once and skips the step if the `.pyd` (Windows) or
-`.so` (Linux) files exist. To rebuild after changing `native/`, delete them from
-`src/augusta_pack/` and re-run the bootstrap, or build directly:
-
-```powershell
-cmake --preset windows -S tools\pack\native "-DPYTHON_EXECUTABLE=<assets-root>\python\augusta-pack\Scripts\python.exe"
-cmake --build tools\pack\native\build\x64-windows
-```
-
-On Linux, with the `linux` preset (clang):
+The bootstrap builds it once and skips the step if the `.pyd` (Windows) or `.so`
+(Linux) file exists. To rebuild after changing `native/`, delete it from
+`src/augusta_pack/` and re-run the bootstrap, or build it directly from the
+repository's root, as the bootstrap does:
 
 ```bash
-cmake --preset linux -S tools/pack/native "-DPYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python"
-cmake --build tools/pack/native/build/x64-linux
+make pack-native PYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python
 ```
 
+On Windows the interpreter is
+`<assets-root>/python/augusta-pack/Scripts/python.exe`. `make pack-native`
+configures the platform's preset without the client, in a build directory of its
+own (`build/x64-<preset>-pack`), and builds the module's target alone.
 `PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
-interpreter that imports it.
+interpreter that imports it; without it, the module is built against
+`tools/.venv`'s.
 
 ### Running the tests
 
 The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
 shared environment, `tools/.venv` (see Python environment above), not the assets
-root's venv. They need the native module built into `src/augusta_pack/` (above)
-against that environment's interpreter:
-
-```powershell
-cd tools
-uv sync
-cmake --preset windows -S pack\native "-DPYTHON_EXECUTABLE=$PWD\.venv\Scripts\python.exe"
-cmake --build pack\native\build\x64-windows
-uv run pytest pack
-```
-
-On Linux:
+root's venv. They need the native module built into `src/augusta_pack/` against
+that environment's interpreter, which the root build does once `uv sync` has
+made it (`make build` and `make test` build it with the rest, `make pack-native`
+alone):
 
 ```bash
-cd tools
-uv sync
-cmake --preset linux -S pack/native "-DPYTHON_EXECUTABLE=$PWD/.venv/bin/python"
-cmake --build pack/native/build/x64-linux
-uv run pytest pack
+(cd tools && uv sync)
+make build
+(cd tools && uv run pytest pack)
 ```
 
 The USD stages the cook tests read, including the malformed ones, are in
@@ -483,14 +484,14 @@ key.
 scenario's client and server packs, cooked with the test key next to them (never
 the release key). The C++ runtime's tests load them, and
 `pack/tests/test_golden.py` requires the cooker to still write them byte for
-byte: that is the contract between the two implementations of the pack format
+byte: that pins the cook end to end, from the USD stage walk to the signed pack
 (ADR-0013). After a deliberate change to the format or to the example,
 regenerate them from `tools/pack` and commit the result:
 
 ```powershell
 $golden = "..\..\tests\fixtures\example-packs"
 uv run augusta-pack firebase --assets-root ..\composer\examples --signing-key $golden\test.key `
-  --client-output-pack $golden\client.pack --server-output-pack $golden\server.pack
+  --client-output-pack $golden\client.apak --server-output-pack $golden\server.apak
 ```
 
 ## Agent
@@ -511,11 +512,12 @@ reconnecting. Each Agent reports Ready for every Roster unless made with
 
 The package's native part, `augusta_agent._native`, is C++ built with the
 engine, on Windows and Linux, against the interpreter of `tools/.venv`, into
-[`agent/src/augusta_agent/`](agent/src/augusta_agent/). The CMake option
-`AUGUSTA_TOOLS`, on by default, builds the C++ tools all together or none (the
-server image turns it off). Run `uv sync` here first, or the configure leaves
-the module out with a warning; `-DPYTHON_EXECUTABLE=<python>` names another
-Python 3.12:
+[`agent/src/augusta_agent/`](agent/src/augusta_agent/). It wraps the Agent's
+Runtime, the agent module in [`agent/native/`](agent/native/), which the C++
+tests link too. The CMake option `AUGUSTA_TOOLS`, on by default, builds the C++
+tools all together or none (the server image turns it off). Run `uv sync` here
+first, or the configure leaves the module out with a warning;
+`-DPYTHON_EXECUTABLE=<python>` names another Python 3.12:
 
 ```sh
 uv sync
@@ -534,7 +536,7 @@ script: one Agent holding one Raw Command.
 
 ```sh
 uv run python agent/examples/raw_hold.py --server 127.0.0.1:27015 \
-  --pack <client.pack> --public-key <pack.pub>
+  --pack <client.apak> --public-key <pack.pub>
 ```
 
 [`agent/examples/load_test.py`](agent/examples/load_test.py) is the load test
@@ -548,7 +550,7 @@ The example scenario's is 1, so a single player can run it alone.
 
 ```sh
 uv run python agent/examples/load_test.py --server 127.0.0.1:27015 \
-  --pack <client.pack> --public-key <pack.pub> --matches 3
+  --pack <client.apak> --public-key <pack.pub> --matches 3
 ```
 
 Its link fault options (`--latency-ms`, `--jitter-mean-ms`, `--jitter-max-ms`,

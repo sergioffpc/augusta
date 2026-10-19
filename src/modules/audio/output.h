@@ -57,8 +57,9 @@ class Output {
   [[nodiscard]] virtual SoundHandle LoadSound(const assets::AudioData& sound) = 0;
   virtual void UnloadSound(SoundHandle sound) = 0;
   virtual void SetListener(const Listener& listener) = 0;
-  /// Plays sound at position, or as the listener's own when nullopt.
-  virtual VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position) = 0;
+  /// Plays sound at position, or as the listener's own when nullopt, its
+  /// samples scaled by amplitude (1 plays it as loaded).
+  virtual VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position, float amplitude) = 0;
   virtual void Stop(VoiceHandle voice) = 0;
 };
 

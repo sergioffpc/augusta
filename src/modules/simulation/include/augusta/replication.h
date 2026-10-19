@@ -18,7 +18,7 @@
 /// Authoritative State (augusta::simulation::State, ADR-0023) means for each
 /// connected client: which of them is sent what. It stops at what each is sent, in the
 /// engine's own types; turning that into a message, encoding it and putting it
-/// on the wire is the caller's mechanism (server::Host), so the decision is a
+/// on the wire is the caller's mechanism (host::Host), so the decision is a
 /// pure function tested without a network (docs/agents/coding-standards.md).
 /// It names every body as SimulationWorld does (simulation::EntityId), and each
 /// recipient by the entity its player controls; which session and connection
@@ -29,7 +29,7 @@ namespace augusta::replication {
 struct Recipient {
   simulation::EntityId entity{};
   /// The highest command sequence of this client that the tick processed, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
+  tick::Sequence acknowledged_sequence = 0;
   /// How many of this client's commands the server still holds queued after the tick.
   std::uint8_t queued_commands = 0;
 };
@@ -47,7 +47,7 @@ struct RecipientUpdate {
   /// The entity the recipient's player controls.
   simulation::EntityId entity{};
   /// The highest command sequence of the recipient that the tick processed, 0 if none.
-  command::Sequence acknowledged_sequence = 0;
+  tick::Sequence acknowledged_sequence = 0;
   /// The recipient's own rifle after the tick, for it to reconcile its
   /// predicted one against; no one else's is sent. A rifle with no round if the
   /// recipient has no body in the state.

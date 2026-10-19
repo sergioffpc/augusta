@@ -5,126 +5,39 @@
 #include <cstddef>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/window_events.h"
 
 /// \file
-/// augusta::input owns the client's device-facing vocabulary of player input,
-/// from raw device events up to the keymap, and samples it into one tick's
-/// worth of intent, a command::Command (ARCHITECTURE.md §7's "Input handling -
-/// reads device input, hands commands to PredictionWorld").
+/// augusta::input turns the window's device events into player input: the
+/// controls and the keymap that binds them to the window's keys, and what the
+/// events accumulate into, sampled as one tick's worth of intent, a
+/// command::Command (ARCHITECTURE.md §5's "Input handling").
 ///
-/// The raw device-event shapes (KeyEvent, MouseMoveEvent)
-/// and the EventSink that receives them live here rather than in
-/// augusta::renderer, even though Renderer is the one calling EventSink:
-/// Renderer needs this module (to know what to push and who to push it
-/// to), so this module cannot also need Renderer's header (to implement
-/// something declared there) without a circular module dependency. Since
-/// these shapes are conceptually input's vocabulary anyway (not a
-/// rendering concern - Renderer only sees them because it owns the window
-/// they arrive through, see ADR-0059), the dependency runs one way: Renderer
-/// depends on Input, not the reverse. augusta::input::Input is the sole
-/// implementation of EventSink; Renderer pushes events to it from the
-/// Main/Render thread as they occur, and Input is responsible for the
-/// thread-safe accumulation until the Prediction thread - a different thread,
-/// on the server's fixed tick rate (ADR-0005) - samples it.
+/// It links the window only for its events' type (window_events.h, ADR-0059):
+/// the client Runtime drains the window with Window::Poll on the Main/Render
+/// thread and hands the events to Input::Handle, and neither the window nor the
+/// Renderer knows anything of input. Input is responsible for the thread-safe
+/// accumulation until the Prediction thread - a different thread, on the
+/// server's fixed tick rate (ADR-0005) - samples it.
 ///
 /// The Command it samples lives in the shared core (augusta::command), not
 /// here: the server screens, queues and simulates Commands but never samples
 /// a device, so it does not link this module.
 namespace augusta::input {
 
-/// A physical key or mouse button: what a keymap binds a Control to, named in
-/// augustac.yaml by NameOf/KeyNamed. Mouse buttons are keys here so a control
-/// can be bound to either. The engine's own names, not GLFW's: the Renderer
-/// maps GLFW's keys onto these (ADR-0059).
-enum class Key {
-  kA,
-  kB,
-  kC,
-  kD,
-  kE,
-  kF,
-  kG,
-  kH,
-  kI,
-  kJ,
-  kK,
-  kL,
-  kM,
-  kN,
-  kO,
-  kP,
-  kQ,
-  kR,
-  kS,
-  kT,
-  kU,
-  kV,
-  kW,
-  kX,
-  kY,
-  kZ,
-  k0,
-  k1,
-  k2,
-  k3,
-  k4,
-  k5,
-  k6,
-  k7,
-  k8,
-  k9,
-  kSpace,
-  kTab,
-  kEnter,
-  kBackspace,
-  /// Releases the captured cursor (kReleaseCursorKey); bound to no control.
-  kEscape,
-  kLeftShift,
-  kRightShift,
-  kLeftControl,
-  kRightControl,
-  kLeftAlt,
-  kRightAlt,
-  kUp,
-  kDown,
-  kLeft,
-  kRight,
-  kF1,
-  kF2,
-  kF3,
-  kF4,
-  kF5,
-  kF6,
-  kF7,
-  kF8,
-  kF9,
-  kF10,
-  kF11,
-  kF12,
-  kMouseLeft,
-  kMouseRight,
-  /// Keep last: kKeyCount counts from it.
-  kMouseMiddle,
-};
-
-/// How many keys Key names.
-inline constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::kMouseMiddle) + 1;
-
 /// The key that releases the captured cursor. Reserved: no control may be bound to it.
-inline constexpr Key kReleaseCursorKey = Key::kEscape;
-
-/// Whether key is a mouse button.
-[[nodiscard]] bool IsMouseButton(Key key);
+inline constexpr window::Key kReleaseCursorKey = window::Key::kEscape;
 
 /// key's name as augustac.yaml spells it: "W", "7", "LeftShift", "Space", "F12", "MouseRight".
-[[nodiscard]] std::string_view NameOf(Key key);
+[[nodiscard]] std::string_view NameOf(window::Key key);
 
 /// The key with this name (NameOf), or nullopt if none has it. Case-sensitive.
-[[nodiscard]] std::optional<Key> KeyNamed(std::string_view name);
+[[nodiscard]] std::optional<window::Key> KeyNamed(std::string_view name);
 
 /// What a player does, as opposed to which key does it: Input::Sample reads
 /// controls, and a Keymap says which key triggers each.
@@ -156,50 +69,15 @@ inline constexpr std::size_t kControlCount = static_cast<std::size_t>(Control::k
 
 /// Which key triggers each control, indexed by Control. Each control has its
 /// own key, never kReleaseCursorKey; augusta::config checks both.
-using Keymap = std::array<Key, kControlCount>;
+using Keymap = std::array<window::Key, kControlCount>;
 
 /// The bindings a player gets without a `keys` section: WASD, LeftShift sprints,
 /// LeftControl crouches, Z goes prone, the left mouse button fires, the right
 /// one aims down sights and R reloads.
 inline constexpr Keymap kDefaultKeymap = {
-    Key::kW,           Key::kS, Key::kA,         Key::kD,          Key::kLeftShift,
-    Key::kLeftControl, Key::kZ, Key::kMouseLeft, Key::kMouseRight, Key::kR,
-};
-
-/// Whether a key transitioned to pressed or released this event. Held-down
-/// state is not reported here - Input derives it itself by tracking
-/// Pressed/Released pairs.
-enum class KeyState {
-  kPressed,
-  kReleased,
-};
-
-/// One key's (or mouse button's) press/release transition.
-struct KeyEvent {
-  Key key;
-  KeyState state;
-};
-
-/// The cursor's position within the client area, in pixels, at the time
-/// of one Move event. (0, 0) is the top-left corner. Carries an absolute
-/// position, not a delta - Input computes a delta from consecutive events
-/// itself.
-struct MouseMoveEvent {
-  float x = 0.0F;
-  float y = 0.0F;
-};
-
-/// Receives keyboard/mouse events as Renderer forwards them from its window,
-/// on the Main/Render thread. Input is the only implementation; Renderer
-/// holds a reference to one, supplied at construction, and never queries
-/// it back - purely a push destination. The referenced EventSink must
-/// outlive the Renderer it is given to.
-class EventSink {
- public:
-  virtual ~EventSink() = default;
-
-  virtual void OnKeyEvent(const KeyEvent& event) = 0;
-  virtual void OnMouseMoveEvent(const MouseMoveEvent& event) = 0;
+    window::Key::kW,          window::Key::kS,           window::Key::kA, window::Key::kD,
+    window::Key::kLeftShift,  window::Key::kLeftControl, window::Key::kZ, window::Key::kMouseLeft,
+    window::Key::kMouseRight, window::Key::kR,
 };
 
 /// Default view rotation, in radians, per pixel of mouse movement (see
@@ -227,12 +105,10 @@ struct Aim {
   bool ads = false;
 };
 
-/// Accumulates device state pushed via EventSink and samples it into a
-/// command::Command once per Prediction tick. The client constructs exactly
-/// one, alongside the one Renderer, and wires the two together (Renderer
-/// needs this as its EventSink; this needs nothing from Renderer in
-/// return - the coupling is one-directional).
-class Input : public EventSink {
+/// Accumulates the window's events the client Runtime hands it and samples
+/// them into a command::Command once per Prediction tick. The client
+/// constructs exactly one.
+class Input {
  public:
   explicit Input(const Config& config);
 
@@ -243,8 +119,7 @@ class Input : public EventSink {
   /// prone wins over crouch; reload is true on the one Sample after its key was
   /// pressed, even if it was already released again. Call once per Prediction
   /// tick, from the Prediction thread (ADR-0005) - safe to call
-  /// concurrently with the OnXxx methods below, which arrive from
-  /// Renderer::PumpEvents on the Main/Render thread.
+  /// concurrently with Handle, which the Main/Render thread calls.
   [[nodiscard]] command::Command Sample();
 
   /// Where the player aims now: the yaw and pitch accumulated so far, mouse
@@ -263,17 +138,19 @@ class Input : public EventSink {
   /// While released, the
   /// game has neither mouse nor keyboard: the view does not turn, every held
   /// key is let go, and keys pressed meanwhile are ignored. The caller
-  /// applies it (Renderer::SetCursorLocked), from the Main/Render thread.
+  /// applies it (window::Window::SetCursorLocked), from the Main/Render thread.
   [[nodiscard]] bool CursorCaptured() const;
 
-  /// EventSink - see there for when/why these are called. Not meant to
-  /// be called directly by anything other than Renderer (and tests).
-  void OnKeyEvent(const KeyEvent& event) override;
-  /// Turns the view by how far the cursor moved since the previous event; the
-  /// first event only sets where the cursor starts.
-  void OnMouseMoveEvent(const MouseMoveEvent& event) override;
+  /// Takes the window's events, oldest first, as Window::Poll returns them,
+  /// from the Main/Render thread. A key event presses or lets go of a key; a
+  /// cursor move turns the view by how far the cursor moved since the previous
+  /// one, and the first only sets where the cursor starts.
+  void Handle(std::span<const window::Event> events);
 
  private:
+  // One event of Handle's; callers hold mutex_.
+  void Apply(const window::KeyEvent& event);
+  void Apply(const window::MouseMoveEvent& event);
   // Whether control's key is held down; callers hold mutex_.
   [[nodiscard]] bool Held(Control control) const;
   // Captures or releases the cursor; callers hold mutex_.
@@ -282,8 +159,8 @@ class Input : public EventSink {
   float mouse_sensitivity_;
   Keymap keymap_;
   mutable std::mutex mutex_;
-  std::array<bool, kKeyCount> held_{};
-  std::optional<MouseMoveEvent> last_cursor_;
+  std::array<bool, window::kKeyCount> held_{};
+  std::optional<window::MouseMoveEvent> last_cursor_;
   float yaw_ = 0.0F;
   float pitch_ = 0.0F;
   bool cursor_captured_ = true;

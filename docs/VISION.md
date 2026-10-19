@@ -17,13 +17,16 @@ and systems programming.
 
 ## Product
 
-- Client: Windows and Linux (x64), rendering via NVIDIA NVRHI (Vulkan)
+- Client: Windows and Linux (x64), rendering via NVIDIA NVRHI (Vulkan), played
+  on a desktop or on a PC VR headset (OpenXR) whose tracked head and hands are
+  the player's view and weapon, in the same Matches as desktop players
 - Server: Linux in production (Windows for development only), headless (no
   rendering dependency)
 - Multiplayer only, dedicated authoritative server — no singleplayer, no enemy
   AI
 - Physics-based ballistics (real bullet drop and travel time, not hitscan)
-- Match-based gameplay, no respawn until the match ends (tactical/milsim style)
+- Match-based gameplay between two Teams, no respawn until the match ends
+  (tactical/milsim style)
 - Movement: walk/run/crouch/prone + basic stamina + simple recoil (weapon sway
   and breath control deferred)
 - Realistic, hit-location-based damage — no regenerating health

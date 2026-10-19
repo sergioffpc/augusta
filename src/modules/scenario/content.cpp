@@ -15,10 +15,10 @@
 #include "augusta/map.h"
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
+#include "augusta/policy.h"
 #include "augusta/policy_loader.h"
-#include "augusta/scripting.h"
 
-namespace augusta::server {
+namespace augusta::scenario {
 
 namespace {
 
@@ -67,23 +67,23 @@ std::expected<parameters::Parameters, failure::Failure> ReadParameters(const ass
     return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(script.error(), "script")));
   }
   auto parameters = LoadParameters(*script, tick_rate_hz, [script_path](std::string_view message) {
-    LW("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
+    LOG_WARN("subsystem=server event=parameters_warning script={} message=\"{}\"", script_path, message);
   });
   if (!parameters) {
     return std::unexpected(ContentFailure(pack, context, DescribeParametersLoadError(parameters.error())));
   }
-  LI("subsystem=server event=parameters_loaded script={}", script_path);
+  LOG_INFO("subsystem=server event=parameters_loaded script={}", script_path);
   return *std::move(parameters);
 }
 
 // The scenario's Game policy, its rules (ADR-0022), out of the same pack.
-std::expected<scripting::Engine, failure::Failure> ReadPolicy(const assets::Pack& pack) {
+std::expected<policy::Policy, failure::Failure> ReadPolicy(const assets::Pack& pack) {
   auto policy = LoadPolicy(pack);
   if (!policy) {
-    return std::unexpected(ContentFailure(pack, {{.key = "script", .value = std::string(scripting::kRulesScriptPath)}},
+    return std::unexpected(ContentFailure(pack, {{.key = "script", .value = std::string(policy::kRulesScriptPath)}},
                                           DescribePolicyLoadError(policy.error())));
   }
-  LI("subsystem=server event=policy_loaded");
+  LOG_INFO("subsystem=server event=policy_loaded");
   return *std::move(policy);
 }
 
@@ -115,8 +115,8 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   if (!client_pack) {
     return std::unexpected(ContentFailure(pack, {}, "names no client pack"));
   }
-  LI("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
-     spawn_points->size(), characters->size());
+  LOG_INFO("subsystem=server event=map_loaded colliders={} spawn_points={} characters={}", collision->size(),
+           spawn_points->size(), characters->size());
 
   auto parameters = ReadParameters(pack, tick_rate_hz);
   if (!parameters) {
@@ -141,4 +141,4 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   };
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::scenario

@@ -46,17 +46,27 @@ placed at Match start, but "spawn" names the placement, not the start of the
 match)
 
 **Match end**: The moment Game policy decides a Match is over (when at most one
-player is left alive: last player standing), or its last player leaves. The
-server takes every body and bullet out of the simulation and tells every client
-still in the Match, with the Winner or a Draw; everyone returns to the Lobby
-(ADR-0043). _Avoid_: Game over, round end
+Team has a player left alive: last Team standing), or its last player leaves.
+The server takes every body and bullet out of the simulation and tells every
+client still in the Match, with the Winner or a Draw; everyone returns to the
+Lobby (ADR-0043). _Avoid_: Game over, round end
 
-**Winner**: The player Game policy declares has won a Match, alive in it when
-declared, named by its Session ID in Match end. _Avoid_: Victor, champion
+**Team**: One of the two sides every Match is played between, each named by its
+scenario with its Uniform. Game policy puts each player on one at Match start
+and it holds until Match end. _Avoid_: Side, squad, faction (a Team's name and
+Uniform are its scenario's, not a fixed side)
 
-**Draw**: A Match end with no Winner: its last players died on the same tick, a
-Match of one ended with its player's death, or its last player left. _Avoid_:
-Tie, stalemate
+**Uniform**: The Looks a Character wears for a Team, so a friend is told from an
+enemy by what it wears, whichever Character either chose. _Avoid_: Skin, outfit,
+team colour
+
+**Winner**: The Team Game policy declares has won a Match, named in Match end.
+Every player on it wins, alive or dead. _Avoid_: Victor, champion, winning
+player
+
+**Draw**: A Match end with no Winner: both Teams' last players died on the same
+tick, a Match of one ended with its player's death, or its last player left.
+_Avoid_: Tie, stalemate
 
 **Session**: One player's presence on the server, from being admitted to the
 Lobby until it disconnects, named by its Session ID. It spans the Lobby and
@@ -67,15 +77,20 @@ kept for the life of the player's presence on the server; the transport
 connection beneath it, augusta::networking's own peer handle, can in principle
 outlive or be distinct from it)
 
+**Link**: The channel through which one Session exchanges messages with the
+other side: the game's state turned into messages and back, carried by the
+transport connection beneath, which the Link alone owns. _Avoid_: Session (the
+presence it carries), connection, netcode
+
 **Session ID**: The Authoritative server's name for one connected player
-(harness::SessionId on the client, server::SessionId and simulation::SessionId
-on the server, protocol::SessionIdWire on the wire), assigned when it admits the
-join. Distinct from the transport's own handle for the connection, and not a
-credential — the server tells senders apart by connection, not by this ID.
-_Avoid_: Player ID, connection ID
+(harness::SessionId on the client, host::SessionId and policy::SessionId on the
+server, link::SessionId as the Link's own name for it, protocol::SessionIdWire
+on the wire), assigned when it admits the join. Distinct from the transport's
+own handle for the connection, and not a credential — the server tells senders
+apart by connection, not by this ID. _Avoid_: Player ID, connection ID
 
 **Entity ID**: The Authoritative server's name for one dynamic body
-(server::EntityId and simulation::EntityId on the server, harness::EntityId and
+(host::EntityId and simulation::EntityId on the server, harness::EntityId and
 presentation::EntityId on the client, protocol::EntityIdWire on the wire): a
 player's body today, later anything that moves. It names which body, not who
 moves it: a player's body gets one at Match start, which pairs it with that
@@ -89,10 +104,66 @@ only by the Authoritative server and named by an Entity ID. Placed in the Map or
 created during a Match, like a thrown grenade (ADR-0045). _Avoid_: Object,
 physics object, dynamic object, item
 
+**Prop kind**: The authored definition a Prop is an instance of - its shape,
+mass and Surface material - placed many times in a Map or created during a
+Match. _Avoid_: Prefab, archetype, template, Prop (a Prop is one instance)
+
+**Surface material**: What a surface is made of (concrete, wood, metal...),
+named from the authored catalogue of them, which says what that surface does to
+sound, to rounds that strike it, to bodies that touch it and how a strike on it
+looks. One name for all of it, so concrete is concrete to every one of them.
+_Avoid_: Physics material, ballistic material, surface type, material alone (a
+surface's Look is unrelated)
+
+**Look**: How a surface appears when drawn - its colour, how rough or metallic
+it is, its bumps and its glow - authored apart from its Surface material:
+neither decides the other, so a concrete-looking wall can stop rounds like wood.
+_Avoid_: Material, render material, shader
+
 **Cosmetic body**: A dynamic body that exists on one client only and never
 affects gameplay, such as a ragdoll or debris. It is never sent and may differ
 between clients (ADR-0045). _Avoid_: Prop (a Prop is gameplay), effect, particle
 (particles are the renderer's, not physics)
+
+**Breakable Prop kind**: A Prop kind authored already broken into pieces, so
+that when one of its Props breaks during a Match it is replaced by those pieces:
+the large ones Props, the small ones Cosmetic bodies. A wall that can be blown
+open is a Breakable Prop placed in the Map; the Map itself never breaks.
+_Avoid_: Destructible scenery, destructible Map, fracture
+
+**Integrity**: How much more a Prop can take before it breaks or explodes, worn
+down by the rounds that strike it, by Explosions and by hard knocks. Only Props
+of a Breakable or explosive Prop kind have one. _Avoid_: Health (a player's),
+hit points, durability
+
+**Explosion**: A blast at one place and Tick, decided by the Authoritative
+server, that throws and hurts what it reaches unsheltered by the Map, and that
+every client sees and hears. Set off by a grenade, a launched round or an
+explosive Prop. _Avoid_: Detonation, blast
+
+**Fragment**: One of the pieces a fragmentation grenade's Explosion throws out,
+flown like a round, which hurts the player it strikes in the Body part it
+enters. _Avoid_: Shrapnel, frag (a Kill), splinter
+
+**Dazzle**: How strongly a flashbang's Explosion blinds and deafens one player,
+decided by the Authoritative server from where that player is and where it
+looks, and felt as a white-out, muffled sound and ringing that fade. Never shown
+on the HUD. _Avoid_: Blind, stun, flash
+
+**Smoke screen**: A cloud from a smoke grenade that hides players, the same on
+every client in where it is and how thick, growing and clearing over time.
+Rounds pass through it. _Avoid_: Smoke alone (the smoke of an Explosion or an
+impact is an Effect and may differ between clients), fog
+
+**Loadout**: What one player carries in a Match - its weapons and how many
+grenades and launched rounds of each kind - given by the Rules at Match start
+and never refilled. _Avoid_: Inventory, kit, equipment
+
+**Effect**: What a client draws for a moment of the game that affects nothing:
+particles such as sparks, dust, fire or smoke, and optionally a decal and a
+brief light, authored by name in one catalogue and drawn by each client on its
+own, so it may differ between clients. _Avoid_: VFX, FX, particle system,
+Cosmetic body (a Cosmetic body is physics)
 
 **Client-side prediction**: The client simulating its own actions locally,
 immediately, before the server confirms them — used purely for responsiveness.
@@ -105,6 +176,16 @@ already seen and the client can tell what it has not yet acknowledged. What
 Client-side prediction applies locally and Reconciliation replays. _Avoid_:
 Input (Command is the sequenced payload sent to the server each tick;
 augusta::input::Input is the per-frame local sampler that produces one)
+
+**Play mode**: How one player plays a Match, Desktop (a screen, mouse and
+keyboard or a gamepad) or VR (a PC VR headset with its tracked body), declared
+when it joins and fixed for the Match. _Avoid_: Input mode, client mode, VR mode
+(VR is one of the two Play modes)
+
+**Tracked pose**: A VR player's body as its client reports it with each Command:
+its Joints' rotations and its head's offset from its body, never its own limbs'
+lengths, which are its Character's. _Avoid_: Mocap, body tracking data, skeleton
+(a Skeleton is the Character's authored one)
 
 **Reconciliation**: The process of correcting a client's predicted state against
 the server's authoritative state: the client restores the server's state of its
@@ -200,11 +281,15 @@ without touching mechanism code. _Avoid_: Game logic, gameplay code (too broad �
 conflates policy with mechanism)
 
 **Glue**: What an executable adds to the modules it is built from, and the only
-thing it adds: its entry point, its phases from config to runtime, the threads
-it owns, the modules it builds and the wiring of one's output into another's
-input. It holds neither Mechanism nor Game policy; anything worth a test of its
-own is not Glue and belongs in a module. _Avoid_: Application logic, server
-logic, client logic
+thing it adds: its entry point, which runs one Runtime behind the application
+boundary, and uses only the application, that Runtime, failure, logging and
+version. It holds neither Mechanism nor Game policy; anything worth a test of
+its own is not Glue and belongs to the Runtime or to a module. _Avoid_:
+Application logic, server logic, client logic
+
+**Runtime**: What runs a Harness or a Host live for one executable: the threads
+and clock around it, the executable's own configuration and the wiring of the
+modules it drives into one another. _Avoid_: Main loop, app
 
 **Rules**: A scenario's Game policy as one Lua script: every hook of its game
 mode, such as who spawns where and when the Match is won, chosen together
@@ -278,11 +363,11 @@ server pack, what the server needs to simulate it, which names the client pack
 cooked with it. Nothing in a pack is trusted until its signature verifies
 (ADR-0030, ADR-0031). _Avoid_: Asset bundle, archive, package
 
-**Map**: The static space a match is played in - its collision, spawn points and
-hitboxes - authored in OpenUSD (ADR-0015) and cooked into the signed pack. Its
-collision is built into the physics of both the client's PredictionWorld and the
-server's SimulationWorld. _Avoid_: Level, stage (a _scene graph_ is how the pack
-stores the map, not the map itself)
+**Map**: The static space a match is played in - its collision, spawn points,
+hitboxes and Acoustic geometry - authored in OpenUSD (ADR-0015) and cooked into
+the signed pack. Its collision is built into the physics of both the client's
+PredictionWorld and the server's SimulationWorld. _Avoid_: Level, stage (a
+_scene graph_ is how the pack stores the map, not the map itself)
 
 **Harness**: Where anything that plays connects to the server: the client's
 network connection and PredictionWorld without a window or GPU. The real client,
@@ -293,9 +378,9 @@ _Avoid_: Client session, bot
 
 **Host**: Where every client connects on the server: its socket and
 SimulationWorld without threads or a clock, the server's counterpart of the
-Harness. augustad runs it in real time on its Network I/O and Simulation
-threads, and a test drives it by hand, one network round and one tick at a time.
-_Avoid_: Game server, server session
+Harness. The server's Runtime runs it in real time on its Network I/O and
+Simulation threads, and a test drives it by hand, one network round and one tick
+at a time. _Avoid_: Game server, server session
 
 **Agent**: A player with no one at the keyboard, controlled by a Python script
 through a Harness (ADR-0052): the script observes what the server tells the
@@ -333,8 +418,22 @@ confirmation names. _Avoid_: Hit zone, hit location, hit region, body zone
 **Hitbox pose**: The part of a player's skeletal pose that moves its Hitboxes:
 locomotion, stance, aim and how the weapon is held. Client and server arrive at
 the same one from the same state, so a shooter hits where it sees a body; what
-the client draws on top of it (cosmetic layers such as foot placement or a
-flinch) never moves a Hitbox. _Avoid_: Server pose, physics pose, hit pose
+the client draws on top of it (Cosmetic layers) never moves a Hitbox. _Avoid_:
+Server pose, physics pose, hit pose
+
+**Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
+without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:
+Client-side animation, visual pose
+
+**Clip**: An authored animation of a Skeleton, used by a Character for one role,
+such as walking forward crouched. _Avoid_: Animation (the module), sequence,
+take
+
+**Stride**: Where a player is in its cycle of two steps, advanced by the
+distance its body moves and never by time. _Avoid_: Gait phase, cycle time
+
+**Aim offset**: The poses that bend a player's body by the pitch of its view.
+_Avoid_: Aim layer, look pose
 
 **Shot**: One bullet fired, as the Authoritative server announces it to every
 client: who fired it, at which tick, from where and in which direction. Clients
@@ -347,6 +446,10 @@ round fired with fire held until fire is released, the magazine is empty or a
 reload starts. A round's place in it picks its kick from the Parameters' recoil
 pattern, and the next Burst starts the pattern over. _Avoid_: Spray, volley,
 salvo (a Burst is not a fire mode: the rifle is full-auto)
+
+**Muzzle**: Where a rifle's rounds leave from, and the way its barrel points, as
+its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
+where a round leaves), shot origin
 
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
@@ -390,9 +493,37 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 (those describe an effect of ADS, not the action itself)
 
 **Spectator**: A dead player still in the Match: until the Match ends it watches
-from a living player's eye, chosen in Session order and moved on with fire, and
-its input moves, turns and fires nothing. It never respawns. _Avoid_: Ghost,
-observer, dead cam
+from a living teammate's eye (any living player's once its Team has none),
+chosen in Session order and moved on with fire, and its input moves, turns and
+fires nothing. It never respawns. _Avoid_: Ghost, observer, dead cam
+
+### Audio
+
+**Acoustic geometry**: The surfaces sound bounces off, is blocked by and passes
+through: shapes authored for that alone in a Map or a Prop, never drawn and
+never collided with, each with one Surface material. _Avoid_: Audio mesh, sound
+collision (the Map's collision is not what sound sees)
+
+**Acoustic material**: What a Surface material does to sound - how much it
+absorbs, scatters and lets through. Not named on its own: a surface names its
+Surface material. _Avoid_: Audio material, surface type (a render material is
+unrelated)
+
+**Probe volume**: A region of a Map where sound is heard, filled with points
+whose reflections and paths are baked ahead of play. _Avoid_: Reverb zone, audio
+volume
+
+**Foot contact**: A moment authored in a locomotion Clip when one foot lands,
+heard as a footstep whenever a player's Stride passes it. _Avoid_: Footstep
+event, foot plant (foot placement is a cosmetic layer, ADR-0061)
+
+**Voice chat**: What the players of a team match say to each other through their
+microphones: by radio to their whole Team wherever they are, or aloud to anyone
+near enough to hear, enemies included. _Avoid_: Voice alone (a sound the mixer
+plays), VoIP, comms
+
+**Speech**: One player's Voice chat from pressing a push-to-talk to releasing
+it. _Avoid_: Voice packet, transmission
 
 ### Deployment
 

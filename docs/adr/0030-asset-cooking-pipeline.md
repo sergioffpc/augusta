@@ -15,66 +15,71 @@ a Parameters script, since the server reads its Parameters out of its pack at
 startup.
 
 By default, packs are written to
-`<assets-root>/packs/<name>/{client,server}.pack`, keyed by the scenario's name
+`<assets-root>/packs/<name>/{client,server}.apak`, keyed by the scenario's name
 alone (not its `authoring/scenarios/` position) - so a config file naming a pack
 (ADR-0034) can mirror the scenario's own name without the cooker needing to be
 told explicitly where to write it. `--client-output-pack`/`--server-output-pack`
-override this per run.
+override this per run. `.apak` is the pack format's own extension, as `.acap` is
+a Match capture's (ADR-0050), but a pack is known by its `AUGP` magic, never its
+name: the runtime loads whatever file a config names.
 
 The full pipeline runs as a single ordered sequence: **usd-optimize →
 usd-validation-nvidia → USD stage walk → meshoptimizer/libktx → pack → hash →
 sign**, entirely inside `tools/pack` - the first two steps run once per stage
 the manifest composes (the map, then each character, ADR-0041), each
 independently cleaned/validated, before the walk/pack/hash/sign steps run once
-over all of them together into one pack pair — a pure-Python project
-(`augusta-pack` console-script entry point), not a CLI-shelling shell script and
-not a C++ tool with Python bindings over it. Stage cleanup and validation
-(ADR-0015) happen first, against the raw authored OpenUSD stage, since
-everything downstream reads from the cleaned/validated stage rather than the
-authored one. usd-optimize ships no CLI of its own (a Python library only), so
-`augusta_pack.optimize` drives its Python API in-process; `nvidia_usd_validate`
-does have a CLI, but `augusta_pack.validate` calls the same package's Python
-entry point (`usd_validation_nvidia.cli_main`) in-process too, catching the
-`SystemExit` it raises on failure rather than reading a subprocess exit code -
-no subprocess anywhere in this pipeline. Either stage failing aborts before
-cooking (no pack written).
+over all of them together into one pack pair — a Python project (`augusta-pack`
+console-script entry point) over one native module, not a CLI-shelling shell
+script and not a C++ cooker with Python bindings over it. Stage cleanup and
+validation (ADR-0015) happen first, against the raw authored OpenUSD stage,
+since everything downstream reads from the cleaned/validated stage rather than
+the authored one. usd-optimize ships no CLI of its own (a Python library only),
+so `augusta_pack.optimize` drives its Python API in-process;
+`nvidia_usd_validate` does have a CLI, but `augusta_pack.validate` calls the
+same package's Python entry point (`usd_validation_nvidia.cli_main`) in-process
+too, catching the `SystemExit` it raises on failure rather than reading a
+subprocess exit code - no subprocess anywhere in this pipeline. Either stage
+failing aborts before cooking (no pack written).
 
 The cooker itself (`augusta_pack.cook`) walks the cleaned stage's prims via that
 same pip-installed `pxr` build (`Usd.Stage.Traverse`,
 `UsdGeom`/`UsdPhysics`/`UsdShade`), reading
 mesh/collider/hitbox/spawn-point/texture data exactly as the original C++ walker
-did (ADR-0015/ADR-0032's authoring conventions). Two pieces have no Python
-equivalent and stay native, in one small pybind11 extension module,
+did (ADR-0015/ADR-0032's authoring conventions). What has no Python equivalent,
+or must have none, is native, in one pybind11 extension module,
 `augusta_pack._native`, built from `tools/pack/native/` (`optimize_mesh`,
 wrapping meshoptimizer's vertex weld/simplify/reorder/quantize pass, ADR-0016;
 `compress_texture`, wrapping stb_image's PNG/JPEG load, stb_image_resize2's mip
 chain and libktx's UASTC encode, BC7/BC5/BC4 transcode and KTX2 write, ADR-0017;
 and `generate_mip_chain`, the same mip chain alone, so the cooker's tests check
-its filtering before the levels are BC-encoded) — all stateless,
-taking/returning plain bytes, with **no USD dependency of their own**. That last
-point is load-bearing, not incidental: an earlier version of this cooker was
-itself a C++ program linking vcpkg's own OpenUSD build directly, called from
-Python via a third pybind11 module. It crashed on import with a DLL-name
-collision (`ImportError: DLL load failed... procedure could not be found`) the
-moment a process had already loaded usd-optimize's independently-built `pxr` and
-then tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs,
-only one can resolve per process. Moving the stage walk itself into Python (so
-there is only ever one OpenUSD build in the process) is what actually fixed it,
-not anything about pybind11 or subprocess boundaries.
+its filtering before the levels are BC-encoded; and `augusta_assets`, linked
+through the binding, below) — all stateless, with **no USD dependency of their
+own**. That last point is load-bearing, not incidental: an earlier version of
+this cooker was itself a C++ program linking vcpkg's own OpenUSD build directly,
+called from Python via a third pybind11 module. It crashed on import with a
+DLL-name collision
+(`ImportError: DLL load failed... procedure could not be found`) the moment a
+process had already loaded usd-optimize's independently-built `pxr` and then
+tried to load the vcpkg one too — same-named USD DLLs, incompatible ABIs, only
+one can resolve per process. Moving the stage walk itself into Python (so there
+is only ever one OpenUSD build in the process) is what actually fixed it, not
+anything about pybind11 or subprocess boundaries.
 
-Packing, hashing, and signing (`augusta_pack.pack`) also moved to pure Python
-rather than reusing `augusta_assets`' C++ implementation over a binding — that
-C++ code (encoder.h/decoder.h, now private to that module, not under its public
-`include/`) remains as the format's canonical reference and round-trip test
-fixture (`tests/assets_test.cpp`), but `augusta_pack.pack` reimplements the same
-wire format independently: BLAKE3 via the `blake3` package, Ed25519 via
-`pynacl`'s libsodium bindings (`crypto_sign_keypair`/`crypto_sign`, the same raw
-seed+pubkey key layout `augusta::assets::GenerateEd25519KeyPair` produces). Both
-were cross-checked byte-for-byte against the real C/C++ libraries before relying
-on them, and a pack this project writes is verified to load and resolve
-correctly through the unmodified C++ decoder
-(`Pack::Load`/`ResolveMesh`/`ResolveScene`) — the actual code path the
-client/server runtime uses.
+The cooker links `augusta_assets`, the module the client and server load packs
+with, through that binding, for writing, reading, verifying and key generation
+alike, so the pack's wire format has exactly one implementation. The cook fills
+`augusta_assets`' own data types from Python (meshes, scene nodes, hitboxes,
+spawn points, eyes, audio, asset entries), encodes each blob with its
+`Encode*Blob` and writes, hashes and signs each pack with `WritePack`
+(`augusta/pack_encoder.h`), whose returned hash the server pack's header names.
+A refused encode or write reaches Python as `EncodeError` or `WriteError`, with
+`augusta_assets`' error as its `reason` (ADR-0033), and no pack is written. Data
+crosses as STL vectors; a zero-copy path is added only if a measurement shows
+the cook got noticeably slower. A pack the cooker writes is one the runtime
+loads by construction, and the golden packs (`tests/fixtures/example-packs`) pin
+the cook's determinism end to end, from the USD stage to the signed pack.
+`augusta_assets` has no USD dependency (only BLAKE3, libsodium and
+Boost.Interprocess), so linking it keeps one OpenUSD build per process.
 
 The client and server packs (ADR-0019) are assembled first (contents + internal
 table of contents, ADR-0018), then each assembled pack is content-hashed with
@@ -104,15 +109,14 @@ working around it (e.g. via subprocess isolation, which was considered and would
 have worked, but keeps two OpenUSD toolchains to maintain for no benefit once
 the walk itself is trivially portable to Python).
 
-**Reusing `augusta_assets`' C++ pack-writer via a third pybind11 binding**
-(rather than reimplementing it in Python) was also considered, and was the
-safer-looking option on paper - byte-for-byte fidelity with the decoder "for
-free," no format logic to duplicate. Decided against: that binding would have
-had the same no-USD-dependency property as meshoptimizer/libktx
-(blake3/libsodium don't touch USD), so it wouldn't have caused the collision
-above, but keeping the cooker's write path in Python end to end was judged worth
-the small duplication, validated once by cross-checking the hash/signature
-primitives against the real libraries directly rather than trusted blindly.
+**Reimplementing the wire format in Python** (every blob encoder and the
+container assembly written again beside `augusta_assets`', BLAKE3 through the
+`blake3` package, Ed25519 through `pynacl`), with golden packs and a
+byte-for-byte cross-check keeping the two copies in line, was considered and
+rejected: every change to the format would be made in C++ and Python alike, and
+a drift between them would show only as a golden-pack mismatch or a pack the
+runtime refuses. The binding has the same no-USD-dependency property as
+meshoptimizer and libktx, so it does not bring back the collision above.
 
 Hashing each cooked asset individually (embedding per-asset hashes in the pack's
 index, in addition to the pack-level hash/signature) was considered, for

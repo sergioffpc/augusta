@@ -165,22 +165,24 @@ TransportEvent ToTransportEvent(const SteamNetConnectionStatusChangedCallback_t&
 void LogTransportEvent(std::string_view role, const TransportEvent& event) {
   switch (event.state) {
     case TransportState::kConnecting:
-      LD("subsystem=networking event=state_changed role={} state=connecting peer={} peer_addr={}", role,
-         event.connection, event.remote_address);
+      LOG_DEBUG("subsystem=networking event=state_changed role={} state=connecting peer={} peer_addr={}", role,
+                event.connection, event.remote_address);
       break;
     case TransportState::kConnected:
-      LI("subsystem=networking event=state_changed role={} state=connected peer={} peer_addr={}", role,
-         event.connection, event.remote_address);
+      LOG_INFO("subsystem=networking event=state_changed role={} state=connected peer={} peer_addr={}", role,
+               event.connection, event.remote_address);
       break;
     case TransportState::kClosedByPeer:
-      LI("subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
-         "reason=closed_by_peer",
-         role, event.connection, event.remote_address);
+      LOG_INFO(
+          "subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
+          "reason=closed_by_peer",
+          role, event.connection, event.remote_address);
       break;
     case TransportState::kProblemDetectedLocally:
-      LW("subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
-         "reason=problem_detected_locally",
-         role, event.connection, event.remote_address);
+      LOG_WARN(
+          "subsystem=networking event=state_changed role={} state=disconnected peer={} peer_addr={} "
+          "reason=problem_detected_locally",
+          role, event.connection, event.remote_address);
       break;
     case TransportState::kOther:
       break;
@@ -301,13 +303,13 @@ std::expected<void, failure::Failure> Init(failure::Faults* faults) {
   if (!GameNetworkingSockets_Init(nullptr, err_msg)) {
     return std::unexpected(LocalFailure(failure::Code::kTransportInitFailed, {}, err_msg));
   }
-  LI("subsystem=networking event=init");
+  LOG_INFO("subsystem=networking event=init");
   return {};
 }
 
 void Shutdown() {
   GameNetworkingSockets_Kill();
-  LI("subsystem=networking event=shutdown");
+  LOG_INFO("subsystem=networking event=shutdown");
 }
 
 void SimulateNetworkConditions(const SimulatedConditions& conditions) {
@@ -332,10 +334,11 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
       utils->SetConfigValue(timeout, k_ESteamNetworkingConfig_Global, 0, k_ESteamNetworkingConfig_Int32, nullptr);
     }
   }
-  LI("subsystem=networking event=simulated_conditions latency_ms={} jitter_mean_ms={} jitter_max_ms={} "
-     "loss_percent={} reorder_percent={} reorder_delay_ms={}",
-     conditions.latency_ms, conditions.jitter_mean_ms, conditions.jitter_max_ms, conditions.loss_percent,
-     conditions.reorder_percent, conditions.reorder_delay_ms);
+  LOG_INFO(
+      "subsystem=networking event=simulated_conditions latency_ms={} jitter_mean_ms={} jitter_max_ms={} "
+      "loss_percent={} reorder_percent={} reorder_delay_ms={}",
+      conditions.latency_ms, conditions.jitter_mean_ms, conditions.jitter_max_ms, conditions.loss_percent,
+      conditions.reorder_percent, conditions.reorder_delay_ms);
 }
 
 // ---- Client ----
@@ -392,7 +395,7 @@ void Client::Connect(const Endpoint& server) {
   if (!addr.ParseString(server.address.c_str())) {
     throw UnparsedAddress(server.address);
   }
-  LI("subsystem=networking event=connecting role=client server_addr={}", server.address);
+  LOG_INFO("subsystem=networking event=connecting role=client server_addr={}", server.address);
 
   // Both config values must be supplied here, not via a
   // SetConnectionUserData call after ConnectByIPAddress returns: GNS queues
@@ -418,9 +421,10 @@ void Client::Connect(const Endpoint& server) {
   // so this is the only place that can report it.
   if (impl_->connection == k_HSteamNetConnection_Invalid) {
     impl_->state = ConnectionState::kDisconnected;
-    LW("subsystem=networking event=state_changed role=client state=disconnected reason=connection_not_created "
-       "server_addr={}",
-       server.address);
+    LOG_WARN(
+        "subsystem=networking event=state_changed role=client state=disconnected reason=connection_not_created "
+        "server_addr={}",
+        server.address);
     return;
   }
   impl_->state = ConnectionState::kConnecting;
@@ -466,13 +470,13 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
   const Sent sent = SendToConnection(impl_->faults, impl_->connection, payload, reliability);
   switch (ClassifySend(sent.result, reliability)) {
     case SendVerdict::kAccepted:
-      LT("subsystem=networking event=send role=client bytes={}", payload.size());
+      LOG_TRACE("subsystem=networking event=send role=client bytes={}", payload.size());
       return SendOutcome::kAccepted;
     case SendVerdict::kDropped:
       return SendOutcome::kDropped;
     case SendVerdict::kDroppedEndingConnection:
       // Its status-changed events are dropped with it: the client forgets it here.
-      LW("subsystem=networking event=state_changed role=client state=disconnected reason=send_queue_full");
+      LOG_WARN("subsystem=networking event=state_changed role=client state=disconnected reason=send_queue_full");
       SteamNetworkingSockets()->CloseConnection(impl_->connection, 0, nullptr, false);
       impl_->connection = k_HSteamNetConnection_Invalid;
       impl_->state = ConnectionState::kDisconnected;
@@ -503,7 +507,7 @@ std::expected<std::vector<Payload>, failure::Failure> Client::ReceiveMessages() 
     }
   }
   if (!messages.empty()) {
-    LT("subsystem=networking event=receive role=client count={}", messages.size());
+    LOG_TRACE("subsystem=networking event=receive role=client count={}", messages.size());
   }
   return messages;
 }
@@ -546,9 +550,10 @@ struct Server::Impl {
     if (!joined) {
       // The poll group is valid from construction on, so it is the connection
       // that is gone: the peer's outcome, reported as its departure.
-      LW("subsystem=networking event=state_changed role=server state=disconnected peer={} "
-         "reason=poll_group_join_failed",
-         event.connection);
+      LOG_WARN(
+          "subsystem=networking event=state_changed role=server state=disconnected peer={} "
+          "reason=poll_group_join_failed",
+          event.connection);
       {
         const std::lock_guard<std::mutex> lock(mutex);
         call = peers.Lose(event.connection);
@@ -607,7 +612,7 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
     throw listener_failure("failed to bind");
   }
   impl_->local_endpoint = Endpoint{.address = FormatAddr(addr)};
-  LI("subsystem=networking event=listening address={}", impl_->local_endpoint.address);
+  LOG_INFO("subsystem=networking event=listening address={}", impl_->local_endpoint.address);
 }
 
 Endpoint Server::LocalEndpoint() const { return impl_->local_endpoint; }
@@ -658,13 +663,13 @@ SendResult Server::Impl::SendLocked(HSteamNetConnection connection, const Payloa
   const Sent sent = SendToConnection(faults, connection, payload, reliability);
   switch (ClassifySend(sent.result, reliability)) {
     case SendVerdict::kAccepted:
-      LT("subsystem=networking event=send role=server peer={} bytes={}", connection, payload.size());
+      LOG_TRACE("subsystem=networking event=send role=server peer={} bytes={}", connection, payload.size());
       return SendOutcome::kAccepted;
     case SendVerdict::kDropped:
       return SendOutcome::kDropped;
     case SendVerdict::kDroppedEndingConnection:
-      LW("subsystem=networking event=state_changed role=server state=disconnected peer={} reason=send_queue_full",
-         connection);
+      LOG_WARN("subsystem=networking event=state_changed role=server state=disconnected peer={} reason=send_queue_full",
+               connection);
       call = peers.Lose(connection);
       return SendOutcome::kDropped;
     case SendVerdict::kLocalFailure:
@@ -693,7 +698,7 @@ std::expected<void, failure::Failure> Server::Broadcast(const Payload& payload, 
   {
     const std::lock_guard<std::mutex> lock(impl_->mutex);
     const std::vector<HSteamNetConnection> peers = impl_->peers.Connected();
-    LT("subsystem=networking event=broadcast role=server peers={} bytes={}", peers.size(), payload.size());
+    LOG_TRACE("subsystem=networking event=broadcast role=server peers={} bytes={}", peers.size(), payload.size());
     for (const HSteamNetConnection connection : peers) {
       TransportCall call = TransportCall::kNone;
       const SendResult sent = impl_->SendLocked(connection, payload, reliability, call);
@@ -735,7 +740,7 @@ std::expected<std::vector<PeerMessage>, failure::Failure> Server::ReceiveMessage
     }
   }
   if (!messages.empty()) {
-    LT("subsystem=networking event=receive role=server count={}", messages.size());
+    LOG_TRACE("subsystem=networking event=receive role=server count={}", messages.size());
   }
   return messages;
 }

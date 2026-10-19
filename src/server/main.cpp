@@ -4,14 +4,14 @@
 #include <string_view>
 #include <utility>
 
-#include "application.h"
 #include "augusta/application.h"
 #include "augusta/config.h"
+#include "augusta/crash.h"
 #include "augusta/logging.h"
+#include "augusta/server.h"
+#include "augusta/server_application.h"
 #include "augusta/server_config.h"
 #include "augusta/version.h"
-#include "crash.h"
-#include "runtime.h"
 
 namespace {
 
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
   }
   // ParseServerConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
-  LI("subsystem=server event=starting version={}", augusta::EngineVersion());
+  LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
   auto lifecycle = augusta::server::ServerLifecycle(*file_config);
   lifecycle.run = [run = std::move(lifecycle.run)](augusta::server::ServerRuntime& runtime) {

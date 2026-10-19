@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/faults.h"
@@ -30,21 +31,22 @@
 namespace {
 
 using augusta::capture::Capture;
+using augusta::capture::kExtension;
 using augusta::capture::ReadCapture;
 using augusta::command::Command;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::CaptureEntrant;
-using augusta::server::CaptureFileName;
-using augusta::server::CaptureOptions;
-using augusta::server::Capturer;
-using augusta::server::CaptureRetention;
-using augusta::server::CompletedCapture;
-using augusta::server::EntityId;
-using augusta::server::IsCaptureFileName;
-using augusta::server::PlanRetention;
-using augusta::server::RetentionPlan;
-using augusta::server::SessionId;
+using augusta::host::CaptureEntrant;
+using augusta::host::CaptureFileName;
+using augusta::host::CaptureOptions;
+using augusta::host::Capturer;
+using augusta::host::CaptureRetention;
+using augusta::host::CompletedCapture;
+using augusta::host::EntityId;
+using augusta::host::IsCaptureFileName;
+using augusta::host::PlanRetention;
+using augusta::host::RetentionPlan;
+using augusta::host::SessionId;
 
 using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
@@ -61,7 +63,7 @@ std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
 }
 
 TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
-  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003.capture");
+  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003" + std::string(kExtension));
 }
 
 TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
@@ -76,10 +78,13 @@ TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
 }
 
 TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
-  for (const std::string_view name :
-       {"notes.txt", "20261009T101500123Z-003.capture", "20261009T101500123Z-0003.capture.tmp",
-        "20261009T101500123-0003.capture", "2026100XT101500123Z-0003.capture", "20261009T101500123Z-0003.CAPTURE",
-        ".20261009T101500123Z-0003.capture", "20261009T101500123Z-0003", ""}) {
+  const std::string extension(kExtension);
+  for (const std::string& name :
+       {std::string("notes.txt"), "20261009T101500123Z-003" + extension,
+        "20261009T101500123Z-0003" + extension + ".tmp", "20261009T101500123-0003" + extension,
+        "2026100XT101500123Z-0003" + extension, std::string("20261009T101500123Z-0003.ACAP"),
+        ".20261009T101500123Z-0003" + extension, std::string("20261009T101500123Z-0003"),
+        std::string("20261009T101500123Z-0003.capture"), std::string()}) {
     EXPECT_FALSE(IsCaptureFileName(name)) << name;
   }
 }
@@ -387,11 +392,11 @@ TEST_F(CaptureRetentionTest, DeletionsRunOffTheCallersThreadAndAreObserved) {
     Seed(hours_ago, 100);
   }
   // What the Capturer tells its observer of retention, and on which thread.
-  struct Told final : augusta::server::CaptureObserver {
+  struct Told final : augusta::host::CaptureObserver {
     std::vector<std::thread::id> deleters;
-    augusta::server::CaptureDirectoryUsage usage;
+    augusta::host::CaptureDirectoryUsage usage;
     void OnRetentionDeleted() override { deleters.push_back(std::this_thread::get_id()); }
-    void OnDirectory(augusta::server::CaptureDirectoryUsage directory) override { usage = directory; }
+    void OnDirectory(augusta::host::CaptureDirectoryUsage directory) override { usage = directory; }
   } told;
   {
     Capturer capturer(directory_, Header(),

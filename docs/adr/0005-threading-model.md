@@ -8,13 +8,17 @@ since it's headless. The server's Metrics thread is the HTTP server
 its Matches runs a fourth, which only writes the capture's files (ADR-0050).
 
 Both tick loops — the server's Simulation thread and the client's Prediction
-thread — keep a fixed schedule (`augusta::tick`): each tick is due one tick
-after the previous one was due, not one tick after it ended, so a late tick
-never delays the ones after it. A loop more than a few ticks behind
-resynchronises to now instead of running the missed ticks back to back. On
-Windows the client raises the system timer resolution to 1 ms
-(`timeBeginPeriod`) for the life of the process, since the default 15.6 ms would
-not let a thread sleep to a 60 Hz deadline.
+thread — keep a fixed schedule (`augusta::tick`, the tick module, which also
+holds the Tick and the command Sequence): each tick is due one tick after the
+previous one was due, not one tick after it ended, so a late tick never delays
+the ones after it. A loop more than a few ticks behind resynchronises to now
+instead of running the missed ticks back to back. On Windows both executables
+raise the system timer resolution to 1 ms (`timeBeginPeriod`) for as long as
+they run, since the default 15.6 ms would not let a thread sleep to a 60 Hz
+deadline, nor a Network I/O thread wait only 1 ms. The application boundary
+(ADR-0033) raises it, not the tick module, which stays pure and depends on
+nothing but the standard library: the server also runs on Windows, locally and
+in the lab.
 
 Both Network I/O threads — the server's and the client's — do one round of
 transport work (connection events, received messages), then wait about 1 ms
@@ -24,11 +28,11 @@ the tick rate's messages. That wait bounds both how late a received message is
 handled and how long stopping the thread takes.
 
 The client's Prediction and Network I/O threads belong to the Harness
-(`harness::Runner`), not to the client executable: anything that plays live —
-the real client, an autonomous agent, a load test's clients — runs its
+(`harness::Runner`), not to the client Runtime: anything that plays live — the
+real client, an autonomous agent, a load test's clients — runs its
 `harness::Session` under one and supplies only each tick's command, so all of
 them keep the same schedule and pace their commands the same way. The client
-executable adds only its Main/Render thread. `harness::Session` itself owns no
+Runtime adds only its Main/Render thread. `harness::Session` itself owns no
 thread and reads no clock, so a test drives it by hand instead (ADR-0013).
 
 ## Ownership and thread boundaries
@@ -68,7 +72,7 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 - **SimulationWorld returns a TickResult.** The server's Simulation thread owns
   SimulationWorld; each tick returns the tick's Authoritative State, its combat
   events included, and the Game policy actions taken on it, already typed and
-  validated (ADR-0022, ADR-0023). `server::Host` owns the Lobby, Match lifecycle
+  validated (ADR-0022, ADR-0023). `host::Host` owns the Lobby, Match lifecycle
   and replication: it replicates the state and acts on the typed actions, and
   never interprets a policy hook's answer itself.
 - **Metrics are written in place and only read across.** The Simulation and
@@ -81,8 +85,8 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
 
 A runtime supervisor (`augusta::supervisor`) owns each runtime's worker threads,
 the one stop request every loop watches, and the first terminal failure, the
-runtime's first cause. It shares the `lifecycle` module with the application
-boundary (ADR-0033), each keeping its own header and namespace: the harness
+runtime's first cause. It is a module of its own (`augusta_supervisor`), apart
+from the application boundary (`augusta_application`, ADR-0033): the harness
 supervises its threads without a `main`, and each executable's `main` reports a
 runtime's first cause without owning a thread. A worker body returns a typed
 `failure::Failure` (ADR-0033) when it stops on a failure it can name — a

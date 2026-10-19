@@ -3,14 +3,15 @@
 
 #include <gtest/gtest.h>
 
-#include "agent.h"
-#include "augusta/networking.h"
+#include "augusta/agent.h"
+#include "augusta/assets.h"
+#include "augusta/link.h"
 #include "example_run.h"
 #include "match_loop.h"
 #include "testing_server.h"
 
 // Whole runs of Agents, composing Intents as load_test.py does, against a
-// server::Host over loopback in the same process.
+// host::Host over loopback in the same process.
 namespace {
 
 using augusta::agent::LoadedPack;
@@ -27,7 +28,8 @@ using augusta::agent::testing::Verdict;
 
 // Requirements: US-23
 TEST(PlayMatchesTest, ThePlayerCountOfAgentsPlaysTheExampleForTwoThroughTwoMatchEnds) {
-  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
+  const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),
+                      ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
 
   const MatchLoopResult result = PlayMatches(RunAgainst(server.Address(), pack, 2, std::chrono::seconds(90)));
@@ -41,7 +43,7 @@ TEST(PlayMatchesTest, ThePlayerCountOfAgentsPlaysTheExampleForTwoThroughTwoMatch
 
 TEST(PlayMatchesTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
   // Listening, but never pumped, so no one is ever admitted.
-  const augusta::networking::Server silent(augusta::networking::Endpoint{.address = "127.0.0.1:0"});
+  const augusta::link::Server silent(augusta::link::Endpoint{.address = "127.0.0.1:0"});
   const LoadedPack pack = ExampleClientPack();
 
   const MatchLoopResult result =
@@ -52,7 +54,8 @@ TEST(PlayMatchesTest, AServerThatNeverAdmitsAnyoneTimesTheRunOut) {
 
 // Requirements: US-23
 TEST(PlayMatchesTest, ARefusedAgentFailsTheRunWithTheRefusal) {
-  const Server server(ExamplePacks() / "server.pack", ExamplePacks() / "test.pub", 2);
+  const Server server((ExamplePacks() / "server").replace_extension(augusta::assets::kPackExtension),
+                      ExamplePacks() / "test.pub", 2);
   const LoadedPack pack = ExampleClientPack();
   auto config = RunAgainst(server.Address(), pack, 1, std::chrono::seconds(30));
   config.character = "nobody";

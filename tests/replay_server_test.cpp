@@ -12,6 +12,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -21,24 +22,26 @@
 
 #include "augusta/assets.h"
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/host_metrics.h"
-#include "augusta/host_wire.h"
+#include "augusta/link.h"
+#include "augusta/link_messages.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/misbehaviour.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
+#include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
-#include "augusta/scripting.h"
 #include "augusta/version.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
@@ -49,16 +52,16 @@
 namespace {
 
 using augusta::command::Command;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::host::ReplayServer;
+using augusta::host::ReplayServerConfig;
+using augusta::link::ConnectionState;
+using augusta::link::Endpoint;
 using augusta::math::Vec3;
-using augusta::networking::ConnectionState;
-using augusta::networking::Endpoint;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::ReplayServer;
-using augusta::server::ReplayServerConfig;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 namespace protocol = augusta::protocol;
 
 constexpr std::uint8_t kTickRate = 60;
@@ -69,6 +72,11 @@ constexpr const char* kLoopbackAnyPort = "127.0.0.1:0";
 constexpr const char* kCharacter = "soldier";
 constexpr float kEyeHeight = 1.6F;
 constexpr float kSpacing = 10.0F;
+
+// stem as a capture's file is named.
+std::string CaptureNamed(std::string_view stem) {
+  return std::string(stem) + std::string(augusta::capture::kExtension);
+}
 
 // Last man standing, as the example scenario's rules decide it.
 constexpr const char* kLastManStanding = R"(
@@ -85,8 +93,8 @@ constexpr const char* kLastManStanding = R"(
 
 class NetworkEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kNetworkEnvironment =
@@ -137,10 +145,10 @@ Parameters Rules() {
   return parameters;
 }
 
-augusta::scripting::Engine Policy() {
-  auto policy = augusta::scripting::Engine::Load(kLastManStanding);
+augusta::policy::Policy Policy() {
+  auto policy = augusta::policy::Policy::Load(kLastManStanding);
   EXPECT_TRUE(policy.has_value());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
 // A directory of the test's own, gone with it.
@@ -168,7 +176,7 @@ class TempDirectory {
 // every message it receives.
 class RawClient {
  public:
-  explicit RawClient(const Endpoint& server) { client_.Connect(server); }
+  explicit RawClient(const Endpoint& server) { client_.Connect({.address = server.address}); }
   ~RawClient() { client_.Disconnect(); }
   RawClient(const RawClient&) = delete;
   RawClient& operator=(const RawClient&) = delete;
@@ -179,12 +187,11 @@ class RawClient {
     client_.PumpEvents();
     if (!pending_.empty() && client_.GetState() == ConnectionState::kConnected) {
       for (const protocol::MessageWire& message : pending_) {
-        ASSERT_TRUE(
-            client_.Send(protocol::Encode(message).value(), augusta::networking::Reliability::kReliable).has_value());
+        ASSERT_TRUE(client_.Send(protocol::Encode(message).value()).has_value());
       }
       pending_.clear();
     }
-    for (const auto& payload : client_.ReceiveMessages().value()) {
+    for (const auto& payload : client_.Receive().value()) {
       if (auto message = protocol::Decode(payload); message.has_value()) {
         received_.push_back(*std::move(message));
       }
@@ -214,7 +221,7 @@ class RawClient {
   }
 
  private:
-  augusta::networking::Client client_;
+  augusta::link::RawClient client_;
   std::vector<protocol::MessageWire> pending_;
   std::vector<protocol::MessageWire> received_;
 };
@@ -240,7 +247,8 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
     augusta::prediction::World world;
     EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
     sessions.push_back(std::make_unique<augusta::harness::Session>(
-        augusta::harness::SessionConfig{.server = host.ListenEndpoint(), .character = kCharacter}, std::move(world)));
+        augusta::harness::SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
+        std::move(world)));
     sessions.back()->Connect();
   }
   const auto pump = [&] {
@@ -279,7 +287,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   if (!spawned_first(*sessions[0])) {
     std::swap(sessions[0], sessions[1]);
   }
-  const auto shooter = static_cast<augusta::server::SessionId>(std::to_underlying(*sessions[0]->GetSessionId()));
+  const auto shooter = static_cast<augusta::host::SessionId>(std::to_underlying(*sessions[0]->GetSessionId()));
   Command fire;
   const Vec3 aim = Vec3(0.0F, 1.65F - kEyeHeight, -kSpacing);
   fire.yaw = 0.0F;
@@ -449,7 +457,7 @@ TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
   std::filesystem::copy_file(directory_.Path() / name, directory_.Path() / "inner" / name);
   const std::unique_ptr<ReplayServer> server = Serve();
 
-  for (const std::string& unknown : {std::string("missing.capture"), "../" + name, "inner/" + name, "./" + name,
+  for (const std::string& unknown : {CaptureNamed("missing"), "../" + name, "inner/" + name, "./" + name,
                                      "/tmp/" + name, std::string("/etc/passwd"), std::string("..")}) {
     RawClient viewer(server->ListenEndpoint());
     viewer.Send(RequestFor(unknown));
@@ -619,7 +627,8 @@ class ReplayViewerTest : public ReplayServerTest {
  protected:
   std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture) {
     auto viewer = std::make_unique<augusta::harness::Session>(
-        augusta::harness::SessionConfig{.server = server.ListenEndpoint(), .character = {}, .replay = capture},
+        augusta::harness::SessionConfig{
+            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture},
         augusta::prediction::World());
     viewer->Connect();
     return viewer;
@@ -696,7 +705,7 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
 // Requirements: US-21
 TEST_F(ReplayViewerTest, AViewerOfACaptureTheServerDoesNotReplayIsRefusedForIt) {
   const std::unique_ptr<ReplayServer> server = Serve();
-  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, "../elsewhere.capture");
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, "../" + CaptureNamed("elsewhere"));
 
   ASSERT_TRUE(RunUntil(*server, *viewer, [&] { return viewer->GetFailure().has_value(); }));
 
@@ -710,7 +719,7 @@ TEST_F(ReplayViewerTest, AViewerOfACaptureTheServerDoesNotReplayIsRefusedForIt) 
 TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
-      augusta::harness::SessionConfig{.server = server->ListenEndpoint(), .character = kCharacter},
+      augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address}, .character = kCharacter},
       augusta::prediction::World());
   player.Connect();
 
@@ -724,8 +733,9 @@ TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequest
 TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAnyRequestToPlay) {
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
-      augusta::harness::SessionConfig{
-          .server = server->ListenEndpoint(), .character = kCharacter, .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
+      augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address},
+                                      .character = kCharacter,
+                                      .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
       augusta::prediction::World());
   player.Connect();
 
@@ -740,7 +750,7 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   const std::string name = CaptureAKill(directory_.Path());
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
-  augusta::harness::ReplayListQuery query(server->ListenEndpoint());
+  augusta::harness::ReplayListQuery query({.address = server->ListenEndpoint().address});
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (!query.List().has_value() && !query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -759,18 +769,18 @@ TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
 TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
   Endpoint gone;
   {
-    const augusta::networking::Server server(Endpoint{.address = kLoopbackAnyPort});
+    const augusta::link::Server server(Endpoint{.address = kLoopbackAnyPort});
     gone = server.LocalEndpoint();
   }
-  augusta::networking::SimulateNetworkConditions({.timeout_ms = 500});
-  augusta::harness::ReplayListQuery query(gone);
+  augusta::link::SimulateNetworkConditions({.timeout_ms = 500});
+  augusta::harness::ReplayListQuery query({.address = gone.address});
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (!query.GetFailure().has_value() && std::chrono::steady_clock::now() < deadline) {
     query.Pump();
     std::this_thread::sleep_for(kPollInterval);
   }
-  augusta::networking::SimulateNetworkConditions({});
+  augusta::link::SimulateNetworkConditions({});
 
   ASSERT_TRUE(query.GetFailure().has_value());
   EXPECT_EQ(query.GetFailure()->kind, augusta::harness::FailureKind::kServerUnreachable);
@@ -778,20 +788,21 @@ TEST(ReplayListQueryTest, AServerThatIsNotThereIsUnreachable) {
 
 TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) {
   const std::vector<augusta::harness::ReplayListing> listings = {
-      {.name = "20261009T101500123Z-0001.capture",
+      {.name = CaptureNamed("20261009T101500123Z-0001"),
        .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'900'123}),
        .ticks = 7500,
        .tick_rate_hz = 60,
        .characters = {"soldier", "sniper"}},
-      {.name = "b.capture",
+      {.name = CaptureNamed("b"),
        .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds{1'791'540'960'000}),
        .ticks = 30,
        .tick_rate_hz = 60,
        .characters = {"soldier"}}};
 
   EXPECT_EQ(augusta::harness::DescribeReplayList(listings),
-            "20261009T101500123Z-0001.capture  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n"
-            "b.capture  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
+            CaptureNamed("20261009T101500123Z-0001") +
+                "  started 2026-10-09 10:15:00 UTC  lasted 2:05  soldier, sniper\n" + CaptureNamed("b") +
+                "  started 2026-10-09 10:16:00 UTC  lasted 0:00  soldier");
   EXPECT_EQ(augusta::harness::DescribeReplayList({}), "the server replays no capture");
 }
 
@@ -813,7 +824,7 @@ TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
       .engine_version = std::string(augusta::EngineVersion()), .client_pack = {}, .character = kCharacter});
   viewer.Send(RequestFor(name));
   ASSERT_TRUE(RunUntil(*server, {&viewer}, [&] {
-    return server->Metrics().messages_received[augusta::server::MessageType::kReplayRequest].Value() == 2;
+    return server->Metrics().messages_received[augusta::host::MessageType::kReplayRequest].Value() == 2;
   }));
   EXPECT_EQ(server->Viewers(), 1U);
 
@@ -821,7 +832,7 @@ TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
   EXPECT_TRUE(viewer.ReceivedOf<protocol::ReplayListWire>().empty());
   EXPECT_TRUE(viewer.ReceivedOf<protocol::JoinRefusedWire>().empty());
   EXPECT_EQ(viewer.ReceivedOf<protocol::MatchEndWire>().size(), 1U);
-  EXPECT_EQ(server->Metrics().misbehaviour[augusta::server::PeerRejection::kNotAClientMessage].Value(), 3U);
+  EXPECT_EQ(server->Metrics().misbehaviour[augusta::host::PeerRejection::kNotAClientMessage].Value(), 3U);
 }
 
 // Each Replay's tick is timed into the server's metrics, so what every
@@ -859,9 +870,9 @@ TEST(LiveServerReplayTest, ALiveServerRefusesReplayRequestsAsNoReplayServer) {
                        .capture_directory = {},
                        .faults = nullptr},
             TwoInALine());
-  augusta::harness::ReplayListQuery query(host.ListenEndpoint());
+  augusta::harness::ReplayListQuery query({.address = host.ListenEndpoint().address});
   RawClient viewer(host.ListenEndpoint());
-  viewer.Send(RequestFor("a.capture"));
+  viewer.Send(RequestFor(CaptureNamed("a")));
 
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while ((!query.GetFailure().has_value() || !viewer.Refused()) && std::chrono::steady_clock::now() < deadline) {
@@ -896,24 +907,24 @@ TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
 
 // A list of more captures than a Replay list holds names the newest.
 TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
-  std::vector<augusta::server::ReplayListing> listings;
+  std::vector<augusta::host::ReplayListing> listings;
   for (std::size_t i = 0; i < protocol::kMaxReplayListings + 2; ++i) {
-    listings.push_back(augusta::server::ReplayListing{
+    listings.push_back(augusta::host::ReplayListing{
         .name = std::to_string(1000 + i), .started = {}, .ticks = 1, .tick_rate_hz = kTickRate, .characters = {}});
   }
-  listings.push_back(augusta::server::ReplayListing{.name = std::string(protocol::kMaxCaptureNameLength + 1, 'z'),
-                                                    .started = {},
-                                                    .ticks = 1,
-                                                    .tick_rate_hz = kTickRate,
-                                                    .characters = {}});
+  listings.push_back(augusta::host::ReplayListing{.name = std::string(protocol::kMaxCaptureNameLength + 1, 'z'),
+                                                  .started = {},
+                                                  .ticks = 1,
+                                                  .tick_rate_hz = kTickRate,
+                                                  .characters = {}});
 
-  const std::vector<augusta::server::ReplayListing> listed = augusta::server::ListedOf(listings);
+  const std::vector<augusta::host::ReplayListing> listed = augusta::link::ListedOf(listings);
 
   ASSERT_EQ(listed.size(), protocol::kMaxReplayListings);
   EXPECT_EQ(listed.front().name, "1002");
   EXPECT_EQ(listed.back().name, std::to_string(1000 + protocol::kMaxReplayListings + 1));
   // Whatever it names, the list carries.
-  EXPECT_TRUE(protocol::Encode(augusta::server::ToWire(listed)).has_value());
+  EXPECT_TRUE(protocol::Encode(augusta::link::ToWire(listed)).has_value());
 }
 
 }  // namespace

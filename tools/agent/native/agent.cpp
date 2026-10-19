@@ -1,4 +1,4 @@
-#include "agent.h"
+#include "augusta/agent.h"
 
 #include <cstdint>
 #include <expected>
@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
@@ -23,7 +24,6 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/runner.h"
-#include "report.h"
 
 namespace augusta::agent {
 

@@ -26,9 +26,9 @@ the capture names no tick of the server that made it:
 - **Commands**: each Command a player sent, at the offset of the tick the
   server's command queue handed it to SimulationWorld, its Seen time's tick
   turned into an offset the same way. Only what the client sent: the movement
-  the queue holds or idles on a tick with nothing new (`server::CommandQueue`)
-  is the server's own and is not captured, and a Command a Commands message
-  repeats is captured once.
+  the queue holds or idles on a tick with nothing new (`host::CommandQueue`) is
+  the server's own and is not captured, and a Command a Commands message repeats
+  is captured once.
 - **Leave**: a player whose connection ended mid-Match, at the offset of the
   tick the server took its body out. That is the tick after which the body is
   gone, and the Leave comes before that tick's Commands and Deaths. One
@@ -100,7 +100,9 @@ degraded run's loss stays in its `capture_disabled` line as `lost=true`.
 **augustad captures only when asked.** `simulation.capture` in `augustad.yaml`
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
 file of its own, named by when it started and its number in the server's run, so
-a server that runs many Matches keeps every one.
+a server that runs many Matches keeps every one. A capture's file name ends in
+`.acap`, the format's own extension, as a pack's ends in `.apak` (ADR-0030); the
+server lists and retains no other file.
 
 **A server keeps its capture directory within a count and a size, oldest Match
 first (#461).** `simulation.capture_retention` sets `max_files`, `max_mib` or

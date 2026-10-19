@@ -8,16 +8,17 @@ import math
 import shutil
 import struct
 
-from augusta_pack import pack
+from augusta_pack import _native
 from augusta_pack.cook import cook_scenario
 from augusta_pack.cook import CookError
+from augusta_pack.sounds import CueSound
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import Sound
 from conftest import decode_audio
+from conftest import decode_cue_sound
 from conftest import decode_hitbox
 from conftest import decode_mesh
 from conftest import decode_spawn_point
-from conftest import decode_string
 from conftest import decode_texture
 from conftest import encode_png
 from conftest import FIXTURES_DIR
@@ -38,8 +39,8 @@ def cook_stage(stage_name, tmp_path, key_pair):
     Returns:
         (client, server) contents.
     """
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / stage_name,
         [],
@@ -70,18 +71,18 @@ def test_malformed_geometry_is_refused_and_no_pack_is_written(
 
     assert raised.value.code == code
     assert raised.value.prim_path == "TestMesh"
-    assert not (tmp_path / "client.pack").exists()
-    assert not (tmp_path / "server.pack").exists()
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_a_visual_mesh_goes_into_the_client_pack_only(tmp_path, key_pair):
     client, server = cook_stage("mesh_fixture.usda", tmp_path, key_pair)
 
-    assert client.paths_of_type(pack.ASSET_TYPE_MESH) == {"TestMesh"}
+    assert client.paths_of_type(_native.AssetType.MESH) == {"TestMesh"}
     points, indices = decode_mesh(client.blob("TestMesh"))
     assert len(points) == 4
     assert len(indices) == 6
-    assert server.paths_of_type(pack.ASSET_TYPE_MESH) == set()
+    assert server.paths_of_type(_native.AssetType.MESH) == set()
 
 
 def test_duplicate_vertices_are_welded(tmp_path, key_pair):
@@ -98,20 +99,22 @@ def test_each_prim_kind_goes_to_the_packs_that_need_it(tmp_path, key_pair):
         "client_server_split_fixture.usda", tmp_path, key_pair
     )
 
-    assert client.paths_of_type(pack.ASSET_TYPE_MESH) == {"Root/Visual"}
-    assert client.paths_of_type(pack.ASSET_TYPE_TEXTURE) == {
+    assert client.paths_of_type(_native.AssetType.MESH) == {"Root/Visual"}
+    assert client.paths_of_type(_native.AssetType.TEXTURE) == {
         "Root/Visual/Mat/DiffuseTexture"
     }
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_COLLISION) == {
+        assert contents.paths_of_type(_native.AssetType.COLLISION) == {
             "Root/Collider"
         }
-        assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == {"Root/Hitbox"}
-        assert contents.paths_of_type(pack.ASSET_TYPE_SPAWN_POINT) == {
+        assert contents.paths_of_type(_native.AssetType.HITBOX) == {
+            "Root/Hitbox"
+        }
+        assert contents.paths_of_type(_native.AssetType.SPAWN_POINT) == {
             "Root/Spawn"
         }
-    assert server.paths_of_type(pack.ASSET_TYPE_MESH) == set()
-    assert server.paths_of_type(pack.ASSET_TYPE_TEXTURE) == set()
+    assert server.paths_of_type(_native.AssetType.MESH) == set()
+    assert server.paths_of_type(_native.AssetType.TEXTURE) == set()
 
 
 def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
@@ -121,7 +124,7 @@ def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
 
     for contents in (client, server):
         body_part, points, _ = decode_hitbox(contents.blob("Root/Hitbox"))
-        assert body_part == pack.BODY_PART_TORSO
+        assert body_part == int(_native.BodyPart.TORSO)
         assert len(points) == 4
 
 
@@ -176,12 +179,12 @@ def cook_texture(texture_format, tmp_path, key_pair, png=None):
             "            asset inputs:file",
         )
     (stage_dir / "texture_fixture.usda").write_text(stage)
-    client_path = tmp_path / "client.pack"
+    client_path = tmp_path / "client.apak"
     cook_scenario(
         stage_dir / "texture_fixture.usda",
         [],
         client_path,
-        tmp_path / "server.pack",
+        tmp_path / "server.apak",
         key_pair.private_key,
     )
     client = read_pack_contents(client_path, key_pair.public_key)
@@ -282,8 +285,8 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -303,8 +306,8 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -313,8 +316,8 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
 
 
 def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
@@ -326,62 +329,104 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
 
     client = read_pack_contents(client_path, key_pair.public_key)
     server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_SCRIPT) == set()
+    assert client.paths_of_type(_native.AssetType.SCRIPT) == set()
     assert server.blob("parameters.lua") == b"return {}"
 
 
-def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
-    tmp_path, key_pair
-):
-    gunshot = Sound(
-        sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
-    )
-    death = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+GUNSHOT = Sound(
+    sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
+)
+DEATH = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
+
+
+def cook_sounds(sounds, tmp_path, key_pair):
+    """Cooks the mesh fixture with sounds, into client.apak and server.apak."""
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
-        client_path,
-        server_path,
+        tmp_path / "client.apak",
+        tmp_path / "server.apak",
         key_pair.private_key,
-        sounds=CueSounds(cues=[("gunshot", gunshot), ("death", death)]),
+        sounds=CueSounds(cues=sounds),
     )
 
-    client = read_pack_contents(client_path, key_pair.public_key)
-    server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(pack.ASSET_TYPE_AUDIO) == {
+
+def test_a_cues_variants_and_gain_go_into_the_client_pack_only(
+    tmp_path, key_pair
+):
+    cook_sounds(
+        [
+            ("gunshot", CueSound(variants=[GUNSHOT, DEATH], gain_db=-6.0)),
+            ("death", CueSound(variants=[DEATH])),
+        ],
+        tmp_path,
+        key_pair,
+    )
+
+    client = read_pack_contents(tmp_path / "client.apak", key_pair.public_key)
+    server = read_pack_contents(tmp_path / "server.apak", key_pair.public_key)
+    assert client.paths_of_type(_native.AssetType.CUE_SOUND) == {
         "sounds/gunshot",
         "sounds/death",
     }
-    assert decode_audio(client.blob("sounds/gunshot")) == (
+    assert decode_cue_sound(client.blob("sounds/gunshot")) == (
+        -6.0,
+        ["sounds/gunshot/0", "sounds/gunshot/1"],
+    )
+    assert decode_cue_sound(client.blob("sounds/death")) == (
+        0.0,
+        ["sounds/death/0"],
+    )
+    assert client.paths_of_type(_native.AssetType.AUDIO) == {
+        "sounds/gunshot/0",
+        "sounds/gunshot/1",
+        "sounds/death/0",
+    }
+    assert decode_audio(client.blob("sounds/gunshot/0")) == (
         22050,
         16,
         b"\x01\x00\xff\x7f",
     )
-    assert decode_audio(client.blob("sounds/death")) == (
+    assert decode_audio(client.blob("sounds/gunshot/1")) == (
         44100,
         8,
         b"\x80\x90\xa0",
     )
-    assert decode_string(client.blob(pack.SOUNDS_PATH)) == "sounds"
-    assert client.entries[pack.SOUNDS_PATH][0] == pack.ASSET_TYPE_SOUNDS
-    assert server.paths_of_type(pack.ASSET_TYPE_AUDIO) == set()
-    assert pack.SOUNDS_PATH not in server.entries
+    assert server.paths_of_type(_native.AssetType.AUDIO) == set()
+    assert server.paths_of_type(_native.AssetType.CUE_SOUND) == set()
+
+
+@pytest.mark.parametrize(
+    "sound",
+    [
+        CueSound(variants=[]),
+        CueSound(variants=[GUNSHOT], gain_db=math.inf),
+        CueSound(variants=[GUNSHOT], gain_db=math.nan),
+    ],
+)
+def test_a_cue_sound_the_client_cannot_play_is_refused_naming_the_cue(
+    sound, tmp_path, key_pair
+):
+    with pytest.raises(CookError, match="hit_marker") as refused:
+        cook_sounds([("hit_marker", sound)], tmp_path, key_pair)
+
+    assert refused.value.code == "sound_encode_failed"
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
     characters = [
         (f"c{i}", FIXTURES_DIR / "mesh_fixture.usda")
-        for i in range(pack.MAX_CHARACTERS + 1)
+        for i in range(_native.MAX_CHARACTERS + 1)
     ]
 
     with pytest.raises(CookError) as raised:
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             characters,
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -395,8 +440,8 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             [("TestMesh", FIXTURES_DIR / "mesh_fixture.usda")],
-            tmp_path / "client.pack",
-            tmp_path / "server.pack",
+            tmp_path / "client.apak",
+            tmp_path / "server.apak",
             key_pair.private_key,
         )
 
@@ -463,8 +508,8 @@ def cook_character(hitboxes, tmp_path, key_pair):
         ),
         encoding="utf-8",
     )
-    client_path = tmp_path / "client.pack"
-    server_path = tmp_path / "server.pack"
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [("test", stage_path)],
@@ -484,13 +529,13 @@ def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
-        "test/Character/Head": pack.BODY_PART_HEAD,
-        "test/Character/Torso": pack.BODY_PART_TORSO,
-        "test/Character/LeftLeg": pack.BODY_PART_LIMB,
-        "test/Character/RightLeg": pack.BODY_PART_LIMB,
+        "test/Character/Head": int(_native.BodyPart.HEAD),
+        "test/Character/Torso": int(_native.BodyPart.TORSO),
+        "test/Character/LeftLeg": int(_native.BodyPart.LIMB),
+        "test/Character/RightLeg": int(_native.BodyPart.LIMB),
     }
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_HITBOX) == set(expected)
+        assert contents.paths_of_type(_native.AssetType.HITBOX) == set(expected)
         for path, body_part in expected.items():
             assert decode_hitbox(contents.blob(path))[0] == body_part
 
@@ -499,7 +544,7 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     for contents in (client, server):
-        assert contents.paths_of_type(pack.ASSET_TYPE_EYE) == {
+        assert contents.paths_of_type(_native.AssetType.EYE) == {
             "test/Character/Eye"
         }
         assert struct.unpack(
@@ -526,8 +571,8 @@ def test_a_character_without_a_hitbox_for_a_body_part_is_refused(
 
     assert raised.value.code == "character_hitbox_missing"
     assert missing in raised.value.message
-    assert not (tmp_path / "client.pack").exists()
-    assert not (tmp_path / "server.pack").exists()
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_a_hitbox_that_names_no_body_part_is_refused(tmp_path, key_pair):

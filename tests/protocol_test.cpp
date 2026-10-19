@@ -18,8 +18,9 @@
 #include <gtest/gtest.h>
 
 #include "augusta/grid.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
-#include "augusta/primitives.h"
+#include "augusta/tick.h"
 
 // ThreadSanitizer's runtime defines operator new and delete itself, so a build
 // under it cannot replace them: there the allocation count is not kept and the
@@ -59,6 +60,7 @@ void operator delete(void* block, std::size_t /*size*/) noexcept { std::free(blo
 // The codec is pure: every case here is bytes in, message or error out.
 namespace {
 
+using augusta::limits::kMaxPlayers;
 using augusta::math::SnapAngle;
 using augusta::math::SnapDirection;
 using augusta::math::SnapFraction;
@@ -66,8 +68,6 @@ using augusta::math::SnapPosition;
 using augusta::math::SnapStamina;
 using augusta::math::SnapVelocity;
 using augusta::math::Vec3;
-using augusta::primitives::kMaxCommandsPerMessage;
-using augusta::primitives::kMaxPlayers;
 using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
@@ -86,6 +86,7 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
+using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
@@ -96,6 +97,7 @@ using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
 using augusta::protocol::PlayerViewWire;
+using augusta::protocol::Readdress;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
 using augusta::protocol::ReplayListingWire;
@@ -134,9 +136,9 @@ constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
 constexpr auto kReplayListRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest);
 constexpr auto kReplayListType = static_cast<std::uint8_t>(MessageTypeWire::kReplayList);
 constexpr auto kReenactRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest);
-// How many bytes a tick takes on the wire: as many as primitives::Tick has.
-constexpr int kTickBytes = static_cast<int>(sizeof(augusta::primitives::Tick));
-constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::primitives::Sequence));
+// How many bytes a tick takes on the wire: as many as tick::Tick has.
+constexpr int kTickBytes = static_cast<int>(sizeof(augusta::tick::Tick));
+constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::tick::Sequence));
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 9> kEveryRefusal = {
@@ -634,8 +636,8 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
       MatchEndWire{.winner = static_cast<SessionIdWire>(3)},
-      ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.capture", .ticks = 9}}},
-      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.capture"},
+      ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.acap", .ticks = 9}}},
+      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.acap"},
       ReplayViewWire{.tick = 4, .players = {PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(1)}}}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message).value();
@@ -714,11 +716,11 @@ TEST(ProtocolTest, AReplayListRoundTripsEachCapturesNameStartLengthAndCharacters
   const ReplayListWire list{
       .replays = {ReplayListingWire{.started_unix_ms = 1'791'000'000'123,
                                     .characters = {"soldier", "sniper"},
-                                    .name = "20261009T120000123Z-0001.capture",
+                                    .name = "20261009T120000123Z-0001.acap",
                                     .ticks = 7200,
                                     .tick_rate_hz = 60},
                   ReplayListingWire{
-                      .started_unix_ms = -5, .characters = {}, .name = "b.capture", .ticks = 0, .tick_rate_hz = 30}}};
+                      .started_unix_ms = -5, .characters = {}, .name = "b.acap", .ticks = 0, .tick_rate_hz = 30}}};
 
   EXPECT_EQ(RoundTrip(list), MessageWire{list});
 }
@@ -765,7 +767,7 @@ TEST(ProtocolTest, AListCountingPastTheEndOfThePayloadIsTruncatedWithoutAllocati
 
 TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackAndCapture) {
   const ReplayRequestWire request{
-      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.capture"};
+      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.acap"};
 
   EXPECT_EQ(RoundTrip(request), MessageWire{request});
 }
@@ -818,7 +820,7 @@ TEST(ProtocolTest, AReplayViewsUnusedFlagBitsAndExtraPlayersAreRefused) {
 }
 
 // A command with every field set to something other than its default.
-SequencedCommandWire BusyCommand(augusta::primitives::Sequence sequence) {
+SequencedCommandWire BusyCommand(augusta::tick::Sequence sequence) {
   SequencedCommandWire sequenced{.sequence = sequence};
   sequenced.command.direction = Vec3(0.5F, -0.25F, 1.0F);
   sequenced.command.yaw = 3.5F;
@@ -1038,7 +1040,7 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientHowManyOfItsCommandsTheServerHolds) 
 // The server's tick counts from its start and never starts over (ADR-0038), so
 // one past the last 32 bits hold travels whole in every message that carries one.
 TEST(ProtocolTest, ATickPastThirtyTwoBitsRoundTripsInEveryMessageThatCarriesOne) {
-  constexpr augusta::primitives::Tick kTick = augusta::primitives::Tick{std::numeric_limits<std::uint32_t>::max()} + 1;
+  constexpr augusta::tick::Tick kTick = augusta::tick::Tick{std::numeric_limits<std::uint32_t>::max()} + 1;
 
   EXPECT_EQ(std::get<AuthoritativeStateWire>(RoundTrip(AuthoritativeStateWire{.tick = kTick, .bodies = {}})).tick,
             kTick);
@@ -1070,6 +1072,47 @@ TEST(ProtocolTest, AnUpdateTellsItsRecipientItsOwnHealthExactly) {
         RoundTrip(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}, .health = health}));
 
     EXPECT_EQ(received.health, health);
+  }
+}
+
+// A tick's update encoded once and readdressed to each recipient is, byte for
+// byte, what encoding it addressed to that recipient makes: its tick and bodies
+// kept, only the recipient's own fields its own.
+TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
+  const AuthoritativeStateWire first{.tick = 9,
+                                     .bodies = {BodyAt(1, 1.0F), BodyAt(2, -3.5F)},
+                                     .rifle = {.cooldown = 0.25F, .rounds = 30},
+                                     .health = 100.0F,
+                                     .acknowledged_sequence = 41,
+                                     .queued_commands = 2};
+  AuthoritativeStateWire second = first;
+  second.rifle = {.cooldown = 0.0F, .reload_remaining = 1.5F, .recoil_pitch = 0.046875F, .rounds = 7, .burst_index = 2};
+  second.health = 12.5F;
+  second.acknowledged_sequence = 0x0102030405060708ULL;
+  second.queued_commands = 0;
+
+  BytesWire payload = Encode(first).value();
+  ASSERT_TRUE(Readdress(payload, second).has_value());
+
+  EXPECT_EQ(payload, Encode(second).value());
+}
+
+// Only the payload of an Authoritative State, as long as Encode made it, has a
+// recipient's own fields where Readdress writes them: any other is the
+// caller's broken invariant (ADR-0033), refused with the payload left as it was.
+TEST(ProtocolTest, AReaddressOfAnythingButAnUpdateIsRefused) {
+  const AuthoritativeStateWire recipient{.tick = 9, .bodies = {}, .health = 1.0F, .acknowledged_sequence = 3};
+  const BytesWire update = Encode(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}}).value();
+  const BytesWire shorter(update.begin(), update.end() - 1);
+  BytesWire longer = update;
+  longer.push_back(std::byte{0});
+  BytesWire other_type = update;
+  other_type.front() = static_cast<std::byte>(MessageTypeWire::kShot);
+
+  for (BytesWire payload : {BytesWire{}, BytesWire{update.front()}, shorter, longer, other_type}) {
+    const BytesWire before = payload;
+    EXPECT_EQ(Readdress(payload, recipient).error(), EncodeError::kNotAnAuthoritativeState) << payload.size();
+    EXPECT_EQ(payload, before);
   }
 }
 
@@ -1225,16 +1268,18 @@ TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
   EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
 }
 
-// The codec takes its counters' widths from augusta::primitives, as the
-// engine's tick::Tick and command::Sequence do, so the wire and the engine
-// cannot drift apart.
-TEST(ProtocolPrimitivesTest, TheCodecsCountersAreThePrimitives) {
-  static_assert(std::same_as<decltype(AuthoritativeStateWire::tick), augusta::primitives::Tick>);
-  static_assert(std::same_as<decltype(CommandsWire::seen_tick), augusta::primitives::Tick>);
-  static_assert(std::same_as<decltype(ShotWire::tick), augusta::primitives::Tick>);
-  static_assert(std::same_as<decltype(SequencedCommandWire::sequence), augusta::primitives::Sequence>);
-  static_assert(std::same_as<decltype(AuthoritativeStateWire::acknowledged_sequence), augusta::primitives::Sequence>);
+// The codec takes its counters' widths from augusta::tick, as the engine does,
+// so the wire and the engine cannot drift apart.
+TEST(ProtocolTickTest, TheCodecsCountersAreTheTicks) {
+  static_assert(std::same_as<decltype(AuthoritativeStateWire::tick), augusta::tick::Tick>);
+  static_assert(std::same_as<decltype(CommandsWire::seen_tick), augusta::tick::Tick>);
+  static_assert(std::same_as<decltype(ShotWire::tick), augusta::tick::Tick>);
+  static_assert(std::same_as<decltype(SequencedCommandWire::sequence), augusta::tick::Sequence>);
+  static_assert(std::same_as<decltype(AuthoritativeStateWire::acknowledged_sequence), augusta::tick::Sequence>);
 }
+
+// A client repeats at least one unacknowledged command per message.
+TEST(ProtocolTest, ACommandsMessageCarriesAtLeastOneCommand) { EXPECT_GE(kMaxCommandsPerMessage, 1U); }
 
 TEST(ProtocolTest, EveryErrorHasADescription) {
   for (const DecodeError error : {DecodeError::kEmpty, DecodeError::kUnknownType, DecodeError::kTruncated,
@@ -1273,7 +1318,7 @@ TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThat
 
 TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
   RifleWire rifle;
-  rifle.recoil_pattern.resize(augusta::primitives::kMaxRecoilKicks + 1);
+  rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1);
   ParametersWire parameters;
   parameters.rifle = rifle;
 

@@ -4,7 +4,9 @@ A scenario name resolves to the map, characters, cue sounds and scripts its
 manifest names by file, or is refused before anything is cooked.
 """
 
-from augusta_pack.pack import MAX_CHARACTERS
+import math
+
+from augusta_pack._native import MAX_CHARACTERS
 from augusta_pack.scenario import resolve_scenario
 from augusta_pack.scenario import ScenarioError
 from conftest import EXAMPLES_ROOT
@@ -245,12 +247,80 @@ def test_each_cue_resolves_to_its_sound_in_catalogue_order(tmp_path):
     scenario = resolve_scenario(root, "test")
 
     assert [cue for cue, _ in scenario.sounds.cues] == CUES
+
+
+def test_a_cues_file_alone_is_one_variant_at_0_db(tmp_path):
+    root = make_scenario(tmp_path, manifest())
+
+    scenario = resolve_scenario(root, "test")
+
     sound = dict(scenario.sounds.cues)["gunshot"]
-    assert (sound.sample_rate, sound.bits_per_sample, sound.samples) == (
-        22050,
-        16,
-        MONO_FRAMES,
+    assert sound.gain_db == 0.0
+    assert [
+        (variant.sample_rate, variant.bits_per_sample, variant.samples)
+        for variant in sound.variants
+    ] == [(22050, 16, MONO_FRAMES)]
+
+
+def test_a_cues_mapping_names_its_variants_and_gain(tmp_path):
+    variants = {"variants": ["sounds/gunshot.wav", "sounds/death.wav"]}
+    sounds = {cue: f"sounds/{cue}.wav" for cue in CUES} | {
+        "gunshot": variants | {"gain": -4.5},
+        "death": variants,
+    }
+    root = make_scenario(tmp_path, manifest(sounds=sounds))
+
+    scenario = resolve_scenario(root, "test")
+
+    gunshot = dict(scenario.sounds.cues)["gunshot"]
+    assert gunshot.gain_db == -4.5
+    assert len(gunshot.variants) == 2
+    death = dict(scenario.sounds.cues)["death"]
+    assert death.gain_db == 0.0
+    assert len(death.variants) == 2
+
+
+def sounds_with(cue, sound):
+    """Every cue's own file, but cue's sound, which is sound."""
+    return {name: f"sounds/{name}.wav" for name in CUES} | {cue: sound}
+
+
+def test_a_cue_without_variants_is_refused_naming_the_cue(tmp_path):
+    root = make_scenario(
+        tmp_path, manifest(sounds=sounds_with("hit_marker", {"variants": []}))
     )
+
+    with pytest.raises(ScenarioError, match="hit_marker.*no variant"):
+        resolve_scenario(root, "test")
+
+
+def test_a_cue_whose_variant_is_missing_is_refused_naming_the_cue(tmp_path):
+    sound = {"variants": ["sounds/death.wav", "sounds/missing.wav"]}
+    root = make_scenario(tmp_path, manifest(sounds=sounds_with("death", sound)))
+
+    with pytest.raises(ScenarioError, match=r"death.*missing\.wav"):
+        resolve_scenario(root, "test")
+
+
+@pytest.mark.parametrize("gain", [math.inf, -math.inf, math.nan, "loud", True])
+def test_a_cue_whose_gain_is_not_a_finite_number_is_refused_naming_the_cue(
+    tmp_path, gain
+):
+    sound = {"variants": ["sounds/death.wav"], "gain": gain}
+    root = make_scenario(
+        tmp_path, manifest(sounds=sounds_with("match_lost", sound))
+    )
+
+    with pytest.raises(ScenarioError, match="match_lost.*gain"):
+        resolve_scenario(root, "test")
+
+
+def test_an_unknown_key_in_a_cues_sound_is_refused_naming_it(tmp_path):
+    sound = {"variants": ["sounds/death.wav"], "volume": 3}
+    root = make_scenario(tmp_path, manifest(sounds=sounds_with("death", sound)))
+
+    with pytest.raises(ScenarioError, match="death.*volume"):
+        resolve_scenario(root, "test")
 
 
 def test_one_file_may_be_the_sound_of_several_cues(tmp_path):

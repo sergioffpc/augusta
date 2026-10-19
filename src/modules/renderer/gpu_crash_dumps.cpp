@@ -66,10 +66,10 @@ void WriteDump(const void* dump, std::uint32_t size, void* /*user_data*/) {
   std::ofstream file(path, std::ios::binary);
   file.write(static_cast<const char*>(dump), size);
   if (!file) {
-    LW("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(path));
+    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(path));
     return;
   }
-  LW("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(path));
+  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(path));
 }
 
 void DescribeDump(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add, void* /*user_data*/) {
@@ -82,10 +82,10 @@ bool StartAftermath() {
       GFSDK_Aftermath_Version_API, GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
       GFSDK_Aftermath_GpuCrashDumpFeatureFlags_Default, WriteDump, nullptr, DescribeDump, nullptr, nullptr);
   if (!GFSDK_Aftermath_SUCCEED(result)) {
-    LW("subsystem=renderer event=gpu_crash_dumps_unavailable result={:#x}", static_cast<std::uint32_t>(result));
+    LOG_WARN("subsystem=renderer event=gpu_crash_dumps_unavailable result={:#x}", static_cast<std::uint32_t>(result));
     return false;
   }
-  LI("subsystem=renderer event=gpu_crash_dumps_enabled");
+  LOG_INFO("subsystem=renderer event=gpu_crash_dumps_enabled");
   return true;
 }
 

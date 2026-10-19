@@ -11,7 +11,7 @@
 #include "augusta/host.h"
 
 /// \file
-/// A server::Host in the test's own process, for tests only: the augusta_agent
+/// A host::Host in the test's own process, for tests only: the augusta_agent
 /// package's (augusta_agent._testing) and the C++ tests of whole Matches
 /// (tools/agent/tests), so a test needs no augustad.
 namespace augusta::agent::testing {
@@ -37,10 +37,10 @@ class Server {
   [[nodiscard]] std::string Address() const;
 
  private:
-  Server(server::Content content, std::uint8_t player_count);
+  Server(scenario::Content content, std::uint8_t player_count);
   void Serve(const std::stop_token& stop);
 
-  server::Host host_;
+  host::Host host_;
   // Last, so it is joined before the Host goes.
   std::jthread thread_;
 };

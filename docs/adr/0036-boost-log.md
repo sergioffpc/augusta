@@ -11,16 +11,16 @@ What changes underneath:
 - The module is a small compiled library. Boost.Log stays behind `logging.cpp`,
   so `logging.h` includes only the standard library and no other translation
   unit pays for Boost.Log's headers.
-- The macros (`LT`/`LD`/`LI`/`LW`/`LE`/`LC`) keep their `std::format`-style `{}`
-  call syntax, so no call site changed. Each first checks the runtime floor,
-  then formats with `std::format` and hands the finished line to
-  `augusta::logging::Write`.
+- The macros (`LOG_TRACE`/`LOG_DEBUG`/`LOG_INFO`/`LOG_WARN`/`LOG_ERROR`/
+  `LOG_CRITICAL`) keep their `std::format`-style `{}` call syntax, so no call
+  site changed. Each first checks the runtime floor, then formats with
+  `std::format` and hands the finished line to `augusta::logging::Write`.
 - The runtime floor (`augusta::logging::SetLogLevel`, driven by the config
   file's `logging.level`, ADR-0034) is one atomic inside `logging.cpp`, read
   before formatting rather than kept as a Boost.Log core filter, so a call under
   it never evaluates its arguments. Each level's `_LIMITED` variant
-  (`LT_LIMITED` through `LC_LIMITED`) checks it before its throttle, so a
-  filtered line takes no throttle slot.
+  (`LOG_TRACE_LIMITED` through `LOG_CRITICAL_LIMITED`) checks it before its
+  throttle, so a filtered line takes no throttle slot.
 - Boost.Log has no compile-time level stripping of its own, so
   `AUGUSTA_LOG_ACTIVE_LEVEL` (0 in Debug, 2 otherwise, set publicly by the
   `augusta_logging` target) makes each macro expand to nothing under that level,

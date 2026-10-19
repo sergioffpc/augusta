@@ -10,12 +10,11 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/faults.h"
-#include "augusta/first_failure.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
-#include "augusta/networking.h"
-#include "augusta/protocol.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 
 namespace augusta::harness {
 
@@ -26,61 +25,50 @@ constexpr std::uint32_t kSecondsPerMinute = 60;
 }  // namespace
 
 struct ReplayListQuery::Impl {
-  networking::Endpoint server;
-  networking::Client network;
+  link::Endpoint server;
+  link::Client channel;
   bool requested = false;
   std::optional<std::vector<ReplayListing>> list;
   std::optional<JoinRefusal> refusal;
-  failure::FirstFailure transport_failure;
+  failure::FailureLatch transport_failure;
 
-  Impl(networking::Endpoint endpoint, failure::Faults* faults) : server(std::move(endpoint)), network(faults) {}
+  Impl(link::Endpoint endpoint, failure::Faults* faults) : server(std::move(endpoint)), channel(faults) {}
 
   // Takes in one message the server sent: its list or its refusal; anything
   // else a replay server sends no one who asked for its list.
-  void Receive(const networking::Payload& payload) {
-    const auto decoded = protocol::Decode(payload);
-    if (!decoded.has_value()) {
-      return;
-    }
-    if (const auto* answered = std::get_if<protocol::ReplayListWire>(&*decoded)) {
-      std::vector<ReplayListing> listings;
-      listings.reserve(answered->replays.size());
-      for (const protocol::ReplayListingWire& listing : answered->replays) {
-        listings.push_back(FromWire(listing));
-      }
-      list = std::move(listings);
-    } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&*decoded)) {
-      refusal = FromWire(refused->reason);
+  void Receive(link::ServerMessage& message) {
+    if (auto* answered = std::get_if<std::vector<ReplayListing>>(&message)) {
+      list = std::move(*answered);
+    } else if (const auto* refused = std::get_if<JoinRefusal>(&message)) {
+      refusal = *refused;
     }
   }
 };
 
-ReplayListQuery::ReplayListQuery(const networking::Endpoint& server, failure::Faults* faults)
+ReplayListQuery::ReplayListQuery(const link::Endpoint& server, failure::Faults* faults)
     : impl_(std::make_unique<Impl>(server, faults)) {
-  impl_->network.Connect(impl_->server);
+  impl_->channel.Connect(impl_->server);
 }
 
 ReplayListQuery::~ReplayListQuery() = default;
 
 void ReplayListQuery::Pump() {
   Impl& impl = *impl_;
-  impl.network.PumpEvents();
-  if (!impl.requested && impl.network.GetState() == networking::ConnectionState::kConnected) {
-    auto payload = protocol::Encode(protocol::ReplayListRequestWire{});
-    // A message with no field always encodes.
-    if (networking::SendResult sent = impl.network.Send(*payload, networking::Reliability::kReliable);
-        !sent.has_value()) {
+  impl.channel.PumpEvents();
+  if (!impl.requested && impl.channel.GetState() == link::ConnectionState::kConnected) {
+    // A message with no field always encodes, so only the transport can fail it.
+    if (link::SendResult sent = impl.channel.Send(link::ReplayListRequest{}); !sent.has_value()) {
       impl.transport_failure.Record(std::move(sent.error()));
     }
     impl.requested = true;
   }
-  auto received = impl.network.ReceiveMessages();
+  auto received = impl.channel.Receive();
   if (!received.has_value()) {
     impl.transport_failure.Record(std::move(received.error()));
     return;
   }
-  for (const networking::Payload& payload : *received) {
-    impl.Receive(payload);
+  for (link::ServerMessage& message : *received) {
+    impl.Receive(message);
   }
 }
 
@@ -93,7 +81,7 @@ std::optional<Failure> ReplayListQuery::GetFailure() const {
   if (impl_->refusal.has_value()) {
     return Failure{.kind = FailureKind::kRefused, .refusal = *impl_->refusal};
   }
-  if (impl_->network.GetState() != networking::ConnectionState::kDisconnected) {
+  if (impl_->channel.GetState() != link::ConnectionState::kDisconnected) {
     return std::nullopt;
   }
   return Failure{.kind = FailureKind::kServerUnreachable, .refusal = {}};

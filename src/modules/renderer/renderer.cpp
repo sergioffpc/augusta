@@ -14,16 +14,14 @@
 #include <utility>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <nvrhi/common/resource.h>
 #include <nvrhi/nvrhi.h>
 
-#include "augusta/input.h"
 #include "augusta/math.h"
+#include "augusta/window.h"
 #include "debug_hud.h"
 #include "frame_regions.h"
-#include "glfw_keys.h"
 #include "swapchain.h"
 #include "vertices.h"
 #include "vulkan_device.h"
@@ -34,11 +32,10 @@
 #include "kScenePs.h"
 #include "kSceneVs.h"
 
-// The Renderer on NVRHI's Vulkan backend, in a GLFW window (ADR-0059). It draws
+// The Renderer on NVRHI's Vulkan backend, in its window (ADR-0059). It draws
 // into an offscreen target, then copies that to the swapchain's image and
-// presents it (swapchain.h), and its window pushes the keyboard and mouse to
-// input::EventSink. It draws the scene, the remote players, the fight's effects
-// and the overlay, and the debug HUD over them.
+// presents it (swapchain.h). It draws the scene, the remote players, the
+// fight's effects and the overlay, and the debug HUD's lines over them.
 namespace augusta::renderer {
 
 namespace {
@@ -133,82 +130,9 @@ struct StreamedVertices {
   [[nodiscard]] std::uint32_t FirstVertex() const { return region * region_capacity; }
 };
 
-// GLFW's library, initialized for as long as one is alive.
-struct GlfwLibrary {
-  GlfwLibrary() {
-    if (glfwInit() != GLFW_TRUE) {
-      throw std::runtime_error("GLFW failed to initialize");
-    }
-  }
-  ~GlfwLibrary() { glfwTerminate(); }
-  GlfwLibrary(const GlfwLibrary&) = delete;
-  GlfwLibrary& operator=(const GlfwLibrary&) = delete;
-  GlfwLibrary(GlfwLibrary&&) = delete;
-  GlfwLibrary& operator=(GlfwLibrary&&) = delete;
-};
-
-struct GlfwWindowDeleter {
-  void operator()(GLFWwindow* window) const { glfwDestroyWindow(window); }
-};
-using GlfwWindow = std::unique_ptr<GLFWwindow, GlfwWindowDeleter>;
-
-GlfwWindow OpenWindow(const Config& config) {
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_VISIBLE, config.hidden ? GLFW_FALSE : GLFW_TRUE);
-  GlfwWindow window(glfwCreateWindow(static_cast<int>(config.width), static_cast<int>(config.height),
-                                     config.title.c_str(), nullptr, nullptr));
-  if (window == nullptr) {
-    throw std::runtime_error("GLFW failed to create the window");
-  }
-  return window;
-}
-
-Size FramebufferSize(GLFWwindow& window) {
-  int width = 0;
-  int height = 0;
-  glfwGetFramebufferSize(&window, &width, &height);
-  return {.width = static_cast<std::uint32_t>(width), .height = static_cast<std::uint32_t>(height)};
-}
-
-// The window's user pointer is the EventSink its callbacks push to.
-input::EventSink& SinkOf(GLFWwindow* window) {
-  return *static_cast<input::EventSink*>(glfwGetWindowUserPointer(window));
-}
-
-// A key's or mouse button's GLFW action, pushed if both are ones Input takes.
-void PushKeyEvent(GLFWwindow* window, std::optional<input::Key> key, int action) {
-  const std::optional<input::KeyState> state = KeyStateFromGlfw(action);
-  if (key && state) {
-    SinkOf(window).OnKeyEvent({.key = *key, .state = *state});
-  }
-}
-
-void OnKey(GLFWwindow* window, int glfw_key, int /*scancode*/, int action, int /*mods*/) {
-  PushKeyEvent(window, KeyFromGlfw(glfw_key), action);
-}
-
-void OnMouseButton(GLFWwindow* window, int glfw_button, int action, int /*mods*/) {
-  PushKeyEvent(window, MouseButtonFromGlfw(glfw_button), action);
-}
-
-// In client-area pixels; unbounded while the cursor is locked, when GLFW moves
-// a virtual cursor instead.
-void OnCursorMove(GLFWwindow* window, double x, double y) {
-  SinkOf(window).OnMouseMoveEvent({.x = static_cast<float>(x), .y = static_cast<float>(y)});
-}
-
-// The window's keyboard and mouse, from now on pushed to sink as glfwPollEvents
-// delivers them. Not the wheel: EventSink takes none.
-void ForwardInput(GLFWwindow& window, input::EventSink& sink) {
-  glfwSetWindowUserPointer(&window, &sink);
-  glfwSetKeyCallback(&window, OnKey);
-  glfwSetMouseButtonCallback(&window, OnMouseButton);
-  glfwSetCursorPosCallback(&window, OnCursorMove);
-}
-
 // In the swapchain's format, which is sRGB, so the clear colour and shading stay
 // linear, and which a copy into its images keeps byte for byte.
-nvrhi::TextureDesc TargetDesc(Size size, nvrhi::Format format) {
+nvrhi::TextureDesc TargetDesc(window::Size size, nvrhi::Format format) {
   return nvrhi::TextureDesc()
       .setWidth(size.width)
       .setHeight(size.height)
@@ -220,7 +144,7 @@ nvrhi::TextureDesc TargetDesc(Size size, nvrhi::Format format) {
       .setDebugName("Renderer target");
 }
 
-nvrhi::TextureDesc DepthDesc(Size size) {
+nvrhi::TextureDesc DepthDesc(window::Size size) {
   return nvrhi::TextureDesc()
       .setWidth(size.width)
       .setHeight(size.height)
@@ -278,23 +202,19 @@ void SwapRedAndBlue(CapturedFrame& frame) {
 
 struct Renderer::Impl {
   // Declared in the order they are made, so they are destroyed in reverse.
-  GlfwLibrary glfw;
-  GlfwWindow window;
-  // The client area as of the last PumpEvents, which a minimized window, at
-  // 0 by 0, leaves as it was.
-  Size size;
+  window::Window window;
   VulkanDevice vulkan;
   nvrhi::IDevice* device;
   Swapchain swapchain;
-  // Drawn into at the swapchain's size, or at size while it has none.
+  // Drawn into at the swapchain's size, or at the window's while it has none.
   nvrhi::TextureHandle target;
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
-  // Made once the device is, and after the Renderer's own GLFW callbacks: its
+  // Made once the device is, and after the window's own GLFW callbacks: its
   // ImGui binding chains to them.
   std::unique_ptr<DebugHud> debug_hud;
-  DebugHudStats hud_stats;
+  std::vector<std::string> text_lines;
 
   // The scene and the remote players, lit by Renderer.3d.slang, and the
   // fight's effects, by Effects.3d.slang, all from the camera's
@@ -328,22 +248,18 @@ struct Renderer::Impl {
   std::array<nvrhi::EventQueryHandle, kFramesInFlight> frame_done;
   std::uint64_t frame_index = 0;
 
-  // size starts as the window's own, which Windows may have widened past
-  // config's.
-  Impl(const Config& config, input::EventSink& input_sink)
-      : window(OpenWindow(config)),
-        size(FramebufferSize(*window)),
-        vulkan(*window, config.adapter, config.validation),
+  explicit Impl(const Config& config)
+      : window(config.window),
+        vulkan(window.Glfw(), config.adapter, config.validation),
         device(&vulkan.Nvrhi()),
-        swapchain(vulkan, size) {
-    CreateFramebuffer(swapchain.ImageSize().value_or(size));
+        swapchain(vulkan, window.GetSize()) {
+    CreateFramebuffer(swapchain.ImageSize().value_or(window.GetSize()));
     commands = device->createCommandList();
     CreatePipelines();
-    debug_hud = std::make_unique<DebugHud>(*window, *device);
+    debug_hud = std::make_unique<DebugHud>(window.Glfw(), *device);
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
-    ForwardInput(*window, input_sink);
     vulkan.ThrowValidationErrors();
   }
 
@@ -357,38 +273,22 @@ struct Renderer::Impl {
   // The target and its depth, at frame_size, and the framebuffer drawing into
   // both. Frames in flight keep drawing into the ones they had, which NVRHI
   // keeps alive until they are done.
-  void CreateFramebuffer(Size frame_size) {
+  void CreateFramebuffer(window::Size frame_size) {
     target = device->createTexture(TargetDesc(frame_size, swapchain.Format()));
     depth = device->createTexture(DepthDesc(frame_size));
     framebuffer =
         device->createFramebuffer(nvrhi::FramebufferDesc().addColorAttachment(target).setDepthAttachment(depth));
   }
 
-  void PumpEvents() {
-    glfwPollEvents();
-    const Size client_area = FramebufferSize(*window);
-    if (client_area.width != 0 && client_area.height != 0) {
-      size = client_area;
-    }
-  }
-
   // Makes the swapchain again if the window's size changed, and the framebuffer
   // with it.
   void Resize() {
+    const window::Size size = window.GetSize();
     swapchain.Update(size);
-    const Size frame_size = swapchain.ImageSize().value_or(size);
+    const window::Size frame_size = swapchain.ImageSize().value_or(size);
     const nvrhi::TextureDesc& target_desc = target->getDesc();
     if (target_desc.width != frame_size.width || target_desc.height != frame_size.height) {
       CreateFramebuffer(frame_size);
-    }
-  }
-
-  void SetCursorLocked(bool locked) const {
-    glfwSetInputMode(window.get(), GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    // Without raw motion, GLFW's disabled cursor still moves as the OS's
-    // pointer settings (acceleration) make it.
-    if (glfwRawMouseMotionSupported() == GLFW_TRUE) {
-      glfwSetInputMode(window.get(), GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
     }
   }
 
@@ -489,9 +389,10 @@ struct Renderer::Impl {
   }
 
   // Writes the overlay into this frame's region, sized for the frame's pixels:
-  // size's, which RenderFrame resizes the target to before drawing it.
+  // the window's, which RenderFrame resizes the target to before drawing it.
   void UploadOverlay(const Overlay& overlay) {
     const std::uint32_t region = ReadyRegion();
+    const window::Size size = window.GetSize();
     overlay_vertices.Write(*device, BuildOverlayVertices(overlay, size.width, size.height), region);
   }
 
@@ -558,7 +459,7 @@ struct Renderer::Impl {
     // After everything opaque, so the depth buffer hides the effects behind it.
     Draw(effects_pipeline, bindings, effect_vertices);
     Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
-    debug_hud->Render(*commands, *framebuffer, hud_stats);
+    debug_hud->Render(*commands, *framebuffer, text_lines);
     // None while the window is minimized: the frame is drawn, not shown.
     if (image != nullptr) {
       // The copy overwrites the whole image, so what it held, and the layout it
@@ -608,16 +509,11 @@ struct Renderer::Impl {
   }
 };
 
-Renderer::Renderer(const Config& config, input::EventSink& input_sink)
-    : impl_(std::make_unique<Impl>(config, input_sink)) {}
+Renderer::Renderer(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
 
 Renderer::~Renderer() = default;
 
-void Renderer::PumpEvents() { impl_->PumpEvents(); }
-
-bool Renderer::ShouldClose() const { return glfwWindowShouldClose(impl_->window.get()) == GLFW_TRUE; }
-
-Size Renderer::GetSize() const { return impl_->size; }
+window::Window& Renderer::GetWindow() { return impl_->window; }
 
 void Renderer::RenderFrame() { impl_->RenderFrame(); }
 
@@ -639,8 +535,6 @@ void Renderer::SetCombatEffects(const CombatEffects& effects) { impl_->UploadCom
 
 void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay); }
 
-void Renderer::SetCursorLocked(bool locked) { impl_->SetCursorLocked(locked); }
-
-void Renderer::SetDebugHudStats(const DebugHudStats& stats) { impl_->hud_stats = stats; }
+void Renderer::SetTextLines(std::vector<std::string> lines) { impl_->text_lines = std::move(lines); }
 
 }  // namespace augusta::renderer

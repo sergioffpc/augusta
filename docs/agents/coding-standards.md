@@ -60,7 +60,8 @@ default: `//`, and only for the non-obvious _why_.
 
 ## Module README
 
-Every module under `src/modules/<module>/` has a `README.md` stating its
+Every module under `src/modules/<module>/`, and every Runtime (`src/client/`,
+`src/server/`, `tools/agent/native/`, ADR-0060), has a `README.md` stating its
 responsibility, in this shape:
 
 - `# <module>`, then one line naming its targets and its scope (shared,

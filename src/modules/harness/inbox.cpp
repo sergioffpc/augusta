@@ -3,21 +3,19 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <memory>
 #include <mutex>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "augusta/ballistics.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
-#include "augusta/networking.h"
 #include "augusta/parameters.h"
-#include "augusta/protocol.h"
 #include "match_players.h"
 
 namespace augusta::harness {
@@ -38,17 +36,36 @@ std::string_view BodyPartName(ballistics::BodyPart part) {
 
 }  // namespace
 
-void Inbox::Receive(const networking::Payload& payload) {
-  const std::expected<protocol::MessageWire, protocol::DecodeError> decoded = protocol::Decode(payload);
-  if (!decoded.has_value()) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"{}\"", payload.size(),
-               protocol::DescribeDecodeError(decoded.error()));
-    return;
-  }
-  if (!TakeIn(*decoded)) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped bytes={} reason=\"not a server message\"",
-               payload.size());
-  }
+void Inbox::Receive(link::ServerMessage message) {
+  std::visit(
+      [this]<typename Message>(Message&& said) {
+        using Said = std::remove_cvref_t<Message>;
+        if constexpr (std::is_same_v<Said, Admission>) {
+          OnJoinAccepted(said);
+        } else if constexpr (std::is_same_v<Said, JoinRefusal>) {
+          OnJoinRefused(said);
+        } else if constexpr (std::is_same_v<Said, AuthoritativeState>) {
+          OnAuthoritativeState(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, Shot>) {
+          OnShot(said);
+        } else if constexpr (std::is_same_v<Said, HitConfirmation>) {
+          OnHitConfirmation(said);
+        } else if constexpr (std::is_same_v<Said, Death>) {
+          OnDeath(said);
+        } else if constexpr (std::is_same_v<Said, Lobby>) {
+          OnLobby(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, MatchStart>) {
+          OnMatchStart(std::forward<Message>(said));
+        } else if constexpr (std::is_same_v<Said, MatchEnd>) {
+          OnMatchEnd(said);
+        } else if constexpr (std::is_same_v<Said, ReplayView>) {
+          OnReplayView(std::forward<Message>(said));
+        } else {
+          // A Replay list, which a replay server sends only a client that asked for it.
+          LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"replay list unasked for\"");
+        }
+      },
+      std::move(message));
 }
 
 std::shared_ptr<const ServerView> Inbox::View() const {
@@ -64,59 +81,32 @@ std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t matches_s
 
 std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return deaths_.Take(matches_started); }
 
-bool Inbox::TakeIn(const protocol::MessageWire& message) {
-  if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
-    OnJoinAccepted(FromWire(*accepted));
-  } else if (const auto* refused = std::get_if<protocol::JoinRefusedWire>(&message)) {
-    OnJoinRefused(FromWire(refused->reason));
-  } else if (const auto* state = std::get_if<protocol::AuthoritativeStateWire>(&message)) {
-    OnAuthoritativeState(FromWire(*state));
-  } else if (const auto* shot = std::get_if<protocol::ShotWire>(&message)) {
-    OnShot(FromWire(*shot));
-  } else if (const auto* hit = std::get_if<protocol::HitConfirmationWire>(&message)) {
-    OnHitConfirmation(FromWire(*hit));
-  } else if (const auto* death = std::get_if<protocol::DeathWire>(&message)) {
-    OnDeath(FromWire(*death));
-  } else if (const auto* lobby = std::get_if<protocol::LobbyWire>(&message)) {
-    OnLobby(FromWire(*lobby));
-  } else if (const auto* start = std::get_if<protocol::MatchStartWire>(&message)) {
-    OnMatchStart(FromWire(*start));
-  } else if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
-    OnMatchEnd(FromWire(*end));
-  } else if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
-    OnReplayView(FromWire(*view));
-  } else {
-    return false;
-  }
-  return true;
-}
-
 // A server whose tick rate or parameters the simulation cannot run on (a rate
 // of zero would be divided by) is not a usable one: the message is dropped, as
 // a malformed one is, and the client stays unadmitted.
 void Inbox::OnJoinAccepted(const Admission& accepted) {
   if (!parameters::IsValidTickRate(accepted.tick_rate_hz)) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
-               accepted.tick_rate_hz);
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid tick rate\" tick_rate_hz={}",
+                     accepted.tick_rate_hz);
     return;
   }
   if (const auto valid = parameters::Validate(accepted.parameters); !valid) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid parameters\" parameter={}",
-               valid.error().path);
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"invalid parameters\" parameter={}",
+                     valid.error().path);
     return;
   }
   Publish([&](ServerView& next) { next.accepted = accepted; });
-  LI("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
-     static_cast<std::uint32_t>(accepted.session), accepted.character, accepted.tick_rate_hz);
+  LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
+           static_cast<std::uint32_t>(accepted.session), accepted.character, accepted.tick_rate_hz);
 }
 
 void Inbox::OnJoinRefused(JoinRefusal reason) {
   Publish([&](ServerView& next) { next.refusal = reason; });
-  LI("subsystem=harness event=join_refused reason=\"{}\"", DescribeJoinRefusal(reason));
+  LOG_INFO("subsystem=harness event=join_refused reason=\"{}\"", DescribeJoinRefusal(reason));
 }
 
 void Inbox::OnLobby(Lobby lobby) {
-  LI("subsystem=harness event=lobby version={} players={}", lobby.version, lobby.roster.size());
+  LOG_INFO("subsystem=harness event=lobby version={} players={}", lobby.version, lobby.roster.size());
   Publish([&](ServerView& next) { next.lobby = std::move(lobby); });
 }
 
@@ -125,7 +115,7 @@ void Inbox::OnLobby(Lobby lobby) {
 void Inbox::OnMatchStart(MatchStart start) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->accepted.has_value() || (!viewer_ && !IsInMatch(start, current->accepted->session))) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"match start without this client\"");
     return;
   }
   const std::size_t players = start.players.size();
@@ -138,7 +128,7 @@ void Inbox::OnMatchStart(MatchStart start) {
     next.dead.clear();
     next.replay_view.reset();
   });
-  LI("subsystem=harness event=match_started players={}", players);
+  LOG_INFO("subsystem=harness event=match_started players={}", players);
 }
 
 void Inbox::OnMatchEnd(const MatchEnd& end) {
@@ -152,9 +142,9 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   // still taken: they stay under this match, which a view takes until the next
   // starts.
   if (end.winner.has_value()) {
-    LI("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
+    LOG_INFO("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
   } else {
-    LI("subsystem=harness event=match_ended winner=draw");
+    LOG_INFO("subsystem=harness event=match_ended winner=draw");
   }
 }
 
@@ -164,12 +154,13 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
 void Inbox::OnShot(const Shot& shot) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
-    LT("subsystem=harness event=dropped tick={} reason=\"shot outside a match\"", shot.tick);
+    LOG_TRACE("subsystem=harness event=dropped tick={} reason=\"shot outside a match\"", shot.tick);
     return;
   }
   if (!IsInMatch(*current->match_start, shot.shooter)) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
-               shot.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"shot names a body not in the match\"",
+                     shot.tick);
     return;
   }
   shots_.Add(current->matches_started, shot);
@@ -179,12 +170,12 @@ void Inbox::OnShot(const Shot& shot) {
 void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
-    LT("subsystem=harness event=dropped reason=\"hit confirmation outside a match\"");
+    LOG_TRACE("subsystem=harness event=dropped reason=\"hit confirmation outside a match\"");
     return;
   }
   if (!IsInMatch(*current->match_start, hit.target)) {
-    LW_LIMITED(drop_warnings_,
-               "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped reason=\"hit confirmation names a body not in the match\"");
     return;
   }
   hit_confirmations_.Add(current->matches_started, hit);
@@ -197,17 +188,17 @@ void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
 void Inbox::OnDeath(const Death& death) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
-    LT("subsystem=harness event=dropped reason=\"death outside a match\"");
+    LOG_TRACE("subsystem=harness event=dropped reason=\"death outside a match\"");
     return;
   }
   if (!IsInMatch(*current->match_start, death.victim) || !IsInMatch(*current->match_start, death.killer)) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"death names a body not in the match\"");
+    LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"death names a body not in the match\"");
     return;
   }
   Publish([&](ServerView& next) { next.dead.push_back(death.victim); });
   deaths_.Add(current->matches_started, death);
-  LI("subsystem=harness event=death victim={} killer={} part={}", std::to_underlying(death.victim),
-     std::to_underlying(death.killer), BodyPartName(death.part));
+  LOG_INFO("subsystem=harness event=death victim={} killer={} part={}", std::to_underlying(death.victim),
+           std::to_underlying(death.killer), BodyPartName(death.part));
 }
 
 // Keeps state if it is newer than the one held (unreliable delivery can
@@ -216,13 +207,14 @@ void Inbox::OnDeath(const Death& death) {
 void Inbox::OnAuthoritativeState(AuthoritativeState state) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
-    LT("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
+    LOG_TRACE("subsystem=harness event=dropped tick={} reason=\"state outside a match\"", state.tick);
     return;
   }
   const auto in_match = [&](const EntityBody& body) { return IsInMatch(*current->match_start, body.entity); };
   if (!std::ranges::all_of(state.bodies, in_match)) {
-    LW_LIMITED(drop_warnings_, "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"",
-               state.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"state names a body not in the match\"",
+                     state.tick);
     return;
   }
   if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
@@ -237,14 +229,14 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
 void Inbox::OnReplayView(ReplayView view) {
   const std::shared_ptr<const ServerView> current = View();
   if (!viewer_ || !current->in_match) {
-    LT("subsystem=harness event=dropped tick={} reason=\"replay view outside a replay\"", view.tick);
+    LOG_TRACE("subsystem=harness event=dropped tick={} reason=\"replay view outside a replay\"", view.tick);
     return;
   }
   const auto in_match = [&](const PlayerView& player) { return IsInMatch(*current->match_start, player.entity); };
   if (!std::ranges::all_of(view.players, in_match)) {
-    LW_LIMITED(drop_warnings_,
-               "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
-               view.tick);
+    LOG_WARN_LIMITED(drop_warnings_,
+                     "subsystem=harness event=dropped tick={} reason=\"replay view names a body not in the match\"",
+                     view.tick);
     return;
   }
   if (current->replay_view.has_value() && view.tick <= current->replay_view->tick) {

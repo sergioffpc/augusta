@@ -61,8 +61,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# The native _native extension module (tools/pack/native) and any runtime
-# DLLs it needs alongside it
+# The native _native extension module (tools/pack/native), which the root
+# build writes into its package, and any runtime DLLs it needs alongside it
 # (libktx, zstd, meshoptimizer, ...) - CMake builds these straight into this
 # path (RUNTIME_OUTPUT_DIRECTORY); compiled binaries, not source.
 # pybind11's actual filenames are ABI-tagged (e.g.
@@ -71,6 +71,8 @@ __pycache__/
 tools/pack/src/augusta_pack/*.pyd
 tools/pack/src/augusta_pack/*.so
 tools/pack/src/augusta_pack/*.dll
+tools/pack/src/augusta_pack/*.pdb
+tools/pack/src/augusta_pack/*.ilk
 # Likewise the Agents' _native module (tools/agent/native), which the root
 # build writes into its package with the DLLs it needs on Windows.
 tools/agent/src/augusta_agent/*.pyd

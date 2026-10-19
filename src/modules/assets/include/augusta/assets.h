@@ -20,21 +20,27 @@
 /// \file
 /// augusta::assets loads runtime packs (ADR-0018/ADR-0031) and resolves
 /// their content by pack-relative path. Linked by both the client and
-/// server (ADR-0006). The offline cooker (tools/pack, ADR-0030)
-/// is pure Python and does not link this module - it reimplements the same
-/// wire format independently (validated against this module's WritePack,
-/// kept private for exactly that reason - see encoder.h) rather than
-/// sharing code across the language boundary.
+/// server (ADR-0006), and by the offline cooker (tools/pack, ADR-0030)
+/// through its native module, which writes every pack with this module's
+/// encoder (augusta/pack_encoder.h) and reads and verifies them with
+/// ReadPackLayout() and Pack::Load(): the wire format has no other
+/// implementation.
 ///
 /// Every pack is BLAKE3-hashed and Ed25519-signed (ADR-0030/ADR-0031's
 /// trailer step): Load() verifies the signature before trusting anything
-/// else in the file. Load() memory-maps the pack file once (Boost.Interprocess) rather
+/// else in the file. ReadPackLayout() parses the same header and index with
+/// the same code, but takes no key and verifies nothing, for a tool to show
+/// what a pack holds (augusta-inspect). Load() memory-maps the pack file once (Boost.Interprocess) rather
 /// than copying it into a buffer; the BLAKE3 hash is computed directly off
 /// that mapping, and every Resolve* call decodes straight out of it too -
 /// the file's bytes are never read from disk more than once for a Pack's
 /// lifetime, and no blob is ever copied into a separate in-memory buffer
 /// before decoding.
 namespace augusta::assets {
+
+/// What a pack's file name ends in, by convention only: Load() knows a pack by
+/// its magic, never its name, so it loads whatever file it is given.
+inline constexpr std::string_view kPackExtension = ".apak";
 
 /// The kind of a pack's index entry (ADR-0031's per-blob type tag).
 enum class AssetType : std::uint8_t {
@@ -48,7 +54,7 @@ enum class AssetType : std::uint8_t {
   kScript,
   kCharacters,
   kEye,
-  kSounds,
+  kCueSound,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -163,9 +169,29 @@ struct AudioData {
   std::vector<std::byte> samples;
 };
 
-/// Pack-relative path, in a scenario's client pack, of the prefix its cue sounds
-/// are addressed under: each at `<sounds prefix>/<cue>` (ADR-0031).
-inline constexpr std::string_view kSoundsPath = "Sounds";
+/// A cue's sound (ADR-0041): the gain it plays at and the pack-relative paths
+/// of its variants, one audio blob each, one of which plays each time the cue
+/// does. EncodeCueSoundBlob refuses, and ResolveCueSound never gives, one
+/// without a variant or with a gain that is not finite.
+struct CueSoundData {
+  /// In decibels: 0 plays each variant as its WAV file holds it.
+  float gain_db = 0.0F;
+  std::vector<std::string> variants;
+};
+
+/// The prefix every cue's sound is addressed under in a scenario's client pack
+/// (ADR-0031), fixed for the client and the cooker alike.
+inline constexpr std::string_view kSoundsPrefix = "sounds";
+
+/// Pack-relative path of the sound of the cue named cue (its name in the cue
+/// catalogue, augusta/cues.h), e.g. "sounds/gunshot".
+[[nodiscard]] inline std::string CueSoundPath(std::string_view cue) { return std::format("{}/{}", kSoundsPrefix, cue); }
+
+/// Pack-relative path of the variant-th variant of the cue named cue, e.g.
+/// "sounds/gunshot/0": where the cooker files it, as its CueSoundData names it.
+[[nodiscard]] inline std::string CueVariantPath(std::string_view cue, std::size_t variant) {
+  return std::format("{}/{}/{}", kSoundsPrefix, cue, variant);
+}
 
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
 /// server pack: `parameters.lua` at the root of the scenario's folder.
@@ -224,14 +250,9 @@ std::string SanitizePrimPath(std::string_view usd_prim_path);
 
 }  // namespace augusta::assets
 
-// The Encode*/WritePack functions (and matching Decode* half) live in
-// their own, private header/source pairs (encoder.h/encoder.cpp,
-// decoder.h/decoder.cpp - not under include/augusta/, not installed):
-// the pack-cooking pipeline (tools/pack, ADR-0030) is pure
-// Python and reimplements this wire format independently rather than
-// linking against it, so nothing outside this module calls Encode*/
-// WritePack. They remain as the wire format's canonical reference and as
-// tests/assets_test.cpp's round-trip fixture.
+// The Encode*/WritePack functions and the matching Decode* half live in
+// their own headers, augusta/pack_encoder.h and augusta/pack_decoder.h; the
+// types they share are declared here.
 namespace augusta::assets {
 
 /// One raw blob to be written into a pack, already encoded (e.g. by
@@ -256,9 +277,9 @@ struct Ed25519KeyPair {
   Ed25519PrivateKey private_key;
 };
 
-/// Generates a new Ed25519 keypair (libsodium's CSPRNG), for tests that
-/// need a throwaway keypair for a single run (ENGINEERING.md's
-/// asset-pipeline CI check) without shelling out to a CLI.
+/// Generates a new Ed25519 keypair (libsodium's CSPRNG): the keys
+/// augusta-keygen writes, through the cooker's binding (tools/pack's
+/// keys.py), and the throwaway keypair a test signs its packs with.
 Ed25519KeyPair GenerateEd25519KeyPair();
 
 /// Why ReadEd25519PublicKeyFile could not read a key.
@@ -276,7 +297,7 @@ enum class ReadKeyFileError {
 /// lives here rather than being duplicated per executable.
 std::expected<Ed25519PublicKey, ReadKeyFileError> ReadEd25519PublicKeyFile(const std::filesystem::path& path);
 
-/// Why Pack::Load refused a pack.
+/// Why Pack::Load or ReadPackLayout refused a pack.
 enum class LoadError {
   /// path could not be opened or read.
   kIoError,
@@ -306,6 +327,50 @@ enum class LoadError {
 /// client/server executables, ADR-0019), so it lives here rather than
 /// being duplicated per executable.
 std::string_view DescribeLoadError(LoadError error);
+
+/// The size of an Ed25519 signature, in bytes.
+inline constexpr std::size_t kEd25519SignatureSize = 64;
+
+/// An Ed25519 signature, as a pack's trailer holds it (ADR-0031).
+using Ed25519Signature = std::array<std::byte, kEd25519SignatureSize>;
+
+/// The four bytes every pack file starts with.
+inline constexpr std::string_view kPackMagic = "AUGP";
+
+/// One entry of a pack's index (ADR-0031): where its blob lies in the file.
+struct PackEntry {
+  AssetType type{};
+  /// From the start of the file, in bytes.
+  std::uint64_t offset = 0;
+  /// The blob's, in bytes.
+  std::uint64_t size = 0;
+  std::string path;
+};
+
+/// A pack's header, index and trailer, as ReadPackLayout read them off its file.
+struct PackLayout {
+  std::uint32_t version = 0;
+  /// In bytes.
+  std::uint64_t file_size = 0;
+  /// Where the data section starts, which is where the header ends.
+  std::uint64_t data_offset = 0;
+  /// Where the index starts, which is where the data section ends.
+  std::uint64_t index_offset = 0;
+  /// The hash of the client pack the header names; nullopt if it names none.
+  std::optional<PackHash> client_pack;
+  /// In index order.
+  std::vector<PackEntry> entries;
+  /// The hash the trailer holds, not checked against the file's.
+  PackHash hash{};
+  /// The trailer's signature of hash, not checked against any key.
+  Ed25519Signature signature{};
+};
+
+/// Reads the header, index and trailer of the pack at path without a key, for a
+/// tool to show what a pack holds (augusta-inspect): neither its hash nor its
+/// signature is verified, so nothing in it is to be trusted. Refuses a malformed
+/// layout with the LoadError Pack::Load gives it, through the same parser.
+std::expected<PackLayout, LoadError> ReadPackLayout(const std::filesystem::path& path);
 
 /// Why a Pack::Resolve* call found no usable asset at a path.
 enum class ResolveError {
@@ -378,9 +443,9 @@ class Pack {
   /// pack only.
   [[nodiscard]] std::expected<AudioData, ResolveError> ResolveAudio(std::string_view path) const;
 
-  /// Resolves, at kSoundsPath, the prefix the scenario's cue sounds are
-  /// addressed under (e.g. "sounds"). Present in the client pack only.
-  [[nodiscard]] std::expected<std::string, ResolveError> ResolveSoundsPath() const;
+  /// Resolves a cue's sound by its pack-relative path (CueSoundPath, ADR-0041).
+  /// Present in the client pack only.
+  [[nodiscard]] std::expected<CueSoundData, ResolveError> ResolveCueSound(std::string_view path) const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack
@@ -403,6 +468,16 @@ class Pack {
 
   /// The file this pack was loaded from, as Load was given it.
   [[nodiscard]] const std::filesystem::path& Path() const;
+
+  /// Every entry of this pack's index, in index order.
+  [[nodiscard]] std::span<const PackEntry> Entries() const;
+
+  /// The pack format version its header names (ADR-0031): the one this build
+  /// reads, since Load refuses any other.
+  [[nodiscard]] std::uint32_t Version() const;
+
+  /// The size of the file Load mapped, in bytes.
+  [[nodiscard]] std::uint64_t FileSize() const;
 
  private:
   Pack();

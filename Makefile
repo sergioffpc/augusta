@@ -49,14 +49,16 @@ PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 # output, which CI's Linux build compiles without the client: either platform's
 # default build has the client, so compiles the output device instead. On
 # Windows, the client's and the Renderer's tests too, as CI's client job lints
-# them; elsewhere, not the client's trees or the output device, which CI's Linux
-# build (without the client, AUGUSTA_CLIENT) has no compile commands for.
+# them; elsewhere, not the client's trees, the window module's GLFW half or the
+# output device, which CI's Linux build (without the client, AUGUSTA_CLIENT) has
+# no compile commands for.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
 else
 TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
+TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
 endif
 TIDY_SOURCES := $(shell git ls-files -- "src/*.cpp" "tools/agent/*.cpp" $(TIDY_CLIENT_TESTS) ":(exclude)tools/*/tests/*" $(TIDY_EXCLUDES))
 
@@ -80,7 +82,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage install uninstall clean distclean format format-check tidy lint prepush docs
+.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check tidy lint prepush docs
 
 all: build
 
@@ -92,8 +94,9 @@ help:
 	$(info $()  configure     cmake --preset)
 	$(info $()  build         configure, then compile the binaries (no tests))
 	$(info $()  test          build, then compile the tests and run ctest)
-	$(info $()  check         the same as test)
+	$(info $()  check         configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
+	$(info $()  pack-native   the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
@@ -117,7 +120,12 @@ test: build
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
 	$(RUN) ctest --preset $(PRESET)
 
-check: test
+# The structural checks (checks/CMakeLists.txt) build nothing: configuring
+# registers them, and ctest's check label picks them alone. Then the pytest of
+# the scripts they cover, as CI runs it.
+check: configure
+	$(RUN) ctest --preset $(PRESET) --label-regex check --no-tests=error
+	$(RUN) uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks
 
 # The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
 # preset's tests, then their llvm-cov report. The last run's profiles go first,
@@ -126,6 +134,16 @@ coverage:
 	cmake -E rm -rf build/x64-linux-coverage/profiles
 	$(MAKE) --no-print-directory test PRESET=linux-coverage
 	bash scripts/coverage-report.sh
+
+# The asset cooker's native module alone (tools/pack/native, ADR-0030), which
+# its bootstrap builds (tools/pack/scripts/bootstrap.sh): the preset's build
+# without the client, in a build directory of its own, so the preset's own
+# keeps its configuration. PYTHON_EXECUTABLE names the Python 3.12 it is built
+# against, the tools environment's by default (cmake/AugustaToolsPython.cmake).
+PACK_BUILD_DIR := $(BUILD_DIR)-pack
+pack-native:
+	$(RUN) cmake --preset $(PRESET) -B $(PACK_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
+	$(RUN) cmake --build $(PACK_BUILD_DIR) --target augusta_pack_py
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.

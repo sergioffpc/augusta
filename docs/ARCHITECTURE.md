@@ -128,9 +128,11 @@ IP:port.
 ```
 
 Each block below is a module under `src/modules/`, scoped to the side or sides
-it is compiled into. The executables themselves - augustad, augustac and the C++
-tools - are Glue: their applications and runtimes build these modules and wire
-them together, and hold neither Mechanism nor Game policy (ADR-0060).
+it is compiled into, but for the Runtimes, each kept beside the executable it
+runs (`src/client`, `src/server`, `tools/agent/native`). The executables
+themselves - augustad, augustac and the C++ tools - are Glue: each entry point
+runs one Runtime behind the application, and holds neither Mechanism nor Game
+policy (ADR-0060).
 
 **Shared Core** (compiled into both client and server)
 
@@ -145,14 +147,12 @@ them together, and hold neither Mechanism nor Game policy (ADR-0060).
   verified Pack (augusta/map.h), so it depends on augusta_assets
 - Gameplay — the gameplay rules both Worlds apply identically, in one module
   (augusta_gameplay) with a header and namespace per concept. It builds on
-  Physics and the Primitives and stays below the Networking Protocol and the
+  Physics, Tick and Limits and stays below the Networking Protocol and the
   client's Input handling: the protocol links none of it, and Input builds its
   Commands with it. Its concepts:
     - Command — one tick's player intent (augusta/command.h): what the client's
       Input handling samples and the server screens and simulates, so the server
       links no client input code
-    - Tick schedule — the fixed schedule the server's Simulation loop and the
-      client's Prediction loop both keep (augusta/tick.h, ADR-0005)
     - Parameters — the simulation's data-driven configuration
       (augusta/parameters.h, ADR-0039): the server decides the values, and every
       client ticks and predicts with the same ones
@@ -169,44 +169,55 @@ them together, and hold neither Mechanism nor Game policy (ADR-0060).
       Map impact with it, a visual only. Deciding a bullet's outcome (hit
       detection, damage) stays server-side (ADR-0024, ADR-0044).
 - Networking Protocol — message definitions + custom binary serialization
-- Primitives — the Tick and command sequence widths and the player, command and
-  recoil-kick bounds for the engine and the protocol to share
-  (augusta_primitives), depending on no other module, so neither side needs the
-  other's for them
+- Link — the channel of one Session (augusta_link): every conversion between the
+  game's state and messages, carried over the networking transport (ADR-0038);
+  it replaces the wire module and the Harness's and the Host's own conversions
+- Tick — the simulation's time (augusta_tick): the Tick, the command Sequence,
+  and the fixed schedule the server's Simulation loop and the client's
+  Prediction loop both keep (ADR-0005)
+- Limits — the bounds the rules and the protocol share (augusta_limits): the
+  players a Lobby or a Match holds, the kicks a recoil pattern holds. Tick and
+  Limits depend on no other module, so neither side needs the other's for them
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
   by the shared Physics module (augusta_physics), so PredictionWorld and
   SimulationWorld collide against the same map
-- Lifecycle — how an executable starts, runs its worker threads, stops and ends
-  (augusta_lifecycle): the runtime supervisor both runtimes and the Harness run
-  their threads under (ADR-0005) and the application boundary each executable's
-  `main` runs behind (ADR-0033), each with its own header and namespace. The
-  failure model they report in is a module of its own (augusta_failure), so low
-  layers name a failure without linking thread supervision
+- Supervisor — the runtime supervisor both Runtimes and the Harness run their
+  threads under (augusta_supervisor, ADR-0005)
+- Application — the application boundary each executable's `main` runs behind
+  (augusta_application, ADR-0033). The failure model both report in is a module
+  of its own (augusta_failure), so any module names a failure without linking
+  thread supervision
 
 **Client-only** (Windows and Linux)
 
-- Input handling — turns keyboard/mouse events pushed by Renderer into commands
-  for PredictionWorld. There is no separate Window module: Renderer owns the OS
-  window (GLFW) with its GPU device and swapchain (ADR-0059), and pushes device
-  events to Input rather than a third module managing the window handle
-  independently
+- Window — the OS window (GLFW) and its device events (augusta_window,
+  ADR-0059), knowing no GPU API and no input
+- Input handling — turns the Window's keyboard/mouse events, which the client
+  Runtime hands it, into commands for PredictionWorld
 - Networking — sends commands, receives authoritative server state
-- ClientRuntime
+- Client Runtime — augustac's Runtime (augusta_client, in `src/client`): its
+  config, its Main/Render thread and the wiring of the Harness to the Renderer,
+  the HUD, Input, PresentationWorld and Audio (ADR-0060). The Agent's Runtime
+  (agent, ADR-0052) runs a Harness the same way, without a window or GPU, and is
+  kept under `tools/agent/native`. What the client runs:
     - PredictionWorld (ECS) — consumes commands + authoritative server state;
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
     - PresentationWorld (ECS) — consumes the prediction state; interpolates/
       smooths for display; emits presentation state each render frame. One
       module (augusta_presentation) holds it and its phases, including the
-      animation engine behind its Animation phase
-- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; owns the
-  client's single OS window (see Input handling, above) and consumes
-  presentation state. Exposes pumping window/device events and rendering a frame
-  as two separate operations rather than one combined loop, so the Main/Render
-  thread can drain events at a different cadence than it presents frames
+      animation engine behind its Animation phase. Cosmetic bodies and Props'
+      kinematic poses, which are not gameplay, get a client-only dynamics module
+      with the first of them (ADR-0045)
+- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; creates and
+  owns the client's single Window with its GPU device and swapchain, consumes
+  presentation state and draws text lines. It pumps no window events: the client
+  Runtime drains the Window's `Poll()` itself, so the Main/Render thread can
+  drain events at a different cadence than it presents frames
 - Audio — Steam Audio; consumes presentation state
-- HUD/UI
+- HUD — what the DebugHud shows, system metrics only, as text lines the client
+  Runtime hands the Renderer (augusta_hud, ADR-0059)
 
 ```text
 +-------+     +------------+
@@ -282,6 +293,9 @@ exclusively server-authoritative.
   the Lua embedding and the restricted-environment sandbox (§8) that upholds "no
   I/O inside ECS worlds" structurally (ADR-0022). Server-only - game policy is
   exclusively server-authoritative, never run by either client world.
+- Policy — Game policy's hooks, the views built for them and the typed Policy
+  actions read from their answers, over Scripting (augusta_policy, ADR-0022);
+  Scripting itself knows nothing of Game policy
 - Scenario — what the server loads from its verified pack at startup: the
   scenario it serves, the Parameters its simulation and every client run on
   (ADR-0039) and its Game policy (ADR-0022), with the two loaders that read them
@@ -297,12 +311,14 @@ exclusively server-authoritative.
   a test can drive a Match by hand, one network round and one tick at a time:
   who is in the Match and whether a join is admitted, the Command intake and its
   sanity gate, each peer's misbehaviour count, when an unadmitted peer is past
-  its deadline, the counts behind the once-a-second heartbeat line, the
-  conversions at its seam, what it counts for the metrics endpoint and the Match
-  capture it writes (ADR-0050). One server-only module (augusta_host), the
-  counterpart of the client's Harness; augustad's runtime adds its threads, its
-  clock, the metrics endpoint and its lifecycle (ADR-0060)
-- ServerRuntime
+  its deadline, the counts behind the once-a-second heartbeat line, what it
+  counts for the metrics endpoint and the Match capture it writes (ADR-0050).
+  One server-only module (augusta_host), the counterpart of the client's
+  Harness; its messages go through the Link
+- Server Runtime — augustad's Runtime (augusta_server, in `src/server`): its
+  config, the Network I/O and Simulation threads around the Host, its clock, the
+  metrics endpoint with its liveness and every client's Connection health, and
+  crash handling (ADR-0047, ADR-0049, ADR-0060). What the server runs:
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours
@@ -344,7 +360,7 @@ commands)_
 Scripts/Behaviours → Commit; Dynamics is added with the first Prop, and until
 then the other eight run — ADR-0023). Each tick returns a `TickResult`: the
 Authoritative State, its combat events included, and the Game policy actions
-taken on it, typed and validated in C++ (ADR-0022), which `server::Host` acts on
+taken on it, typed and validated in C++ (ADR-0022), which `host::Host` acts on
 after the tick.
 
 | Phase              | Category                      | Responsibility                                                                                                                                 |
@@ -365,14 +381,13 @@ after the tick.
   usd-optimize (dedup instances, flatten hierarchy, remove degenerate geometry),
   validates it with usd-validation-nvidia, then converts it into the engine's
   runtime level format, including Steam Audio baked reflection/occlusion data
-- Asset cooker (`tools/pack`, a pure-Python project - `augusta-pack`
-  console-script entry point) — walks the cleaned OpenUSD stage via
-  usd-optimize's own `pxr` build, optimizes meshes via meshoptimizer and
-  compresses textures via libktx (BC7/BC5/BC4, KTX2) through two small native
-  pybind11 modules (`tools/pack/native/`, per ADR-0025's vcpkg ports - neither
-  links OpenUSD, see ADR-0030), and packages everything into signed, verified
-  pack files (separate client and server packs) via a pure-Python
-  reimplementation of augusta_assets' wire format. Full ordered pipeline:
+- Asset cooker (`tools/pack`, a Python project - `augusta-pack` console-script
+  entry point) — walks the cleaned OpenUSD stage via usd-optimize's own `pxr`
+  build, then, through one native pybind11 module (`tools/pack/native/`, per
+  ADR-0025's vcpkg ports - it links no OpenUSD, see ADR-0030), optimizes meshes
+  via meshoptimizer, compresses textures via libktx (BC7/BC5/BC4, KTX2) and
+  packages everything into signed, verified pack files (separate client and
+  server packs) with augusta_assets' own encoder. Full ordered pipeline:
   ADR-0030.
 
 ## 6. Runtime View
@@ -444,7 +459,7 @@ What runs on the node, and who reaches it:
 | Windows PC        |     | ns develop      (tracks develop)                |
 |                   | UDP |   augustad-<scenario>   :7777 <- NodePort 307xx |
 |  augustac.exe     |---->|   metrics + /livez      :9464                   |
-|  client.pack      |     | ns staging      (latest v* tag)                 |
+|  client.apak      |     | ns staging      (latest v* tag)                 |
 |  signing.pub      |     |   augustad-<scenario>   :7777 <- NodePort 308xx |
 |                   |     |   metrics + /livez      :9464                   |
 |  browser          |     | ns monitoring                                   |
@@ -456,7 +471,7 @@ What runs on the node, and who reaches it:
                           |                                                 |
                           | hostPath                                        |
                           |   /srv/augusta/asset-packs/<env>/<scenario>/    |
-                          |     <ver>/server.pack + signing.pub, mounted ro |
+                          |     <ver>/server.apak + signing.pub, mounted ro |
                           |   /srv/augusta/captures/<ns>/<scenario>/        |
                           |     Match captures, develop only                |
                           | systemd-coredump        keeps server core dumps |
@@ -499,8 +514,8 @@ How each piece reaches the node or the player:
 | cook + sign      |      +--------------------------+      |                |
 | (env's key)      |                  |                     |                |
 |                  | augusta-publish (ssh + scp)            |                |
-|  server.pack ----+--------------------------------------->| asset-packs/   |
-|  client.pack ... |                  |                     +----------------+
+|  server.apak ----+--------------------------------------->| asset-packs/   |
+|  client.apak ... |                  |                     +----------------+
 +-----------.------+                  | augustac.exe + .pdb
             .                         v
             .  by hand, no      +-----------------+
@@ -622,6 +637,29 @@ not affect numbering.
   Mechanism in modules, Game policy in Lua, the executables only wire them
 - [ADR-0061](./adr/0061-skeletal-hitboxes.md) — Skeletal hitboxes: a shared
   Hitbox pose, evaluated alike by client and server
+- [ADR-0065](./adr/0065-surface-materials-penetration-ricochet.md) — Surface
+  materials, penetration and ricochet: one catalogue for sound, rounds, contact
+  and impacts; rounds go through surfaces and players by energy and thickness
+- [ADR-0066](./adr/0066-character-animation.md) — Character animation: Clips in
+  ozz-animation, a blend space per stance driven by replicated state, Cosmetic
+  layers, GPU skinning and ragdolls from the drawn pose
+- [ADR-0067](./adr/0067-rendering-pipeline.md) — Rendering pipeline: deferred,
+  one `UsdPreviewSurface` Look model, all light ray traced by ray queries with
+  NRD, DLSS or FSR as the anti-aliasing, on GPUs with hardware ray tracing
+- [ADR-0068](./adr/0068-team-match.md) — Team match: every Match between two
+  Teams the rules assign, a Team as Winner, Uniforms, Spawn points per Team and
+  full friendly fire; the free-for-all is gone
+- [ADR-0069](./adr/0069-voice-chat.md) — Voice chat: radio to the Team and aloud
+  to anyone near, push-to-talk, Opus relayed by the server, never captured
+- [ADR-0070](./adr/0070-explosions.md) — Explosions: a short blast and seeded
+  Fragments on the ballistics, launched rounds as rounds, kills to the thrower,
+  a Dazzle the server decides
+- [ADR-0071](./adr/0071-breakables-and-integrity.md) — Breakables and Integrity:
+  the Map never breaks; Breakable Prop kinds break into Props
+- [ADR-0072](./adr/0072-smoke-screens.md) — Smoke screens: a deterministic flood
+  fill of the Map's free space, drawn as a volume alike on every client
+- [ADR-0073](./adr/0073-effects.md) — Effects: one catalogue of particles,
+  decals and brief lights, with fixed bounds and no setting
 
 ### Tooling & Build
 
@@ -668,6 +706,8 @@ not affect numbering.
 - [ADR-0014](./adr/0014-shading-language.md) — Shading language: Slang
 - [ADR-0028](./adr/0028-audio-output.md) — Audio output: miniaudio
 - [ADR-0059](./adr/0059-renderer-nvrhi.md) — Renderer: NVRHI
+- [ADR-0062](./adr/0062-footsteps.md) — Footsteps: heard at a clip's Foot
+  contacts, on the collider's Surface material
 
 ### Asset Pipeline
 

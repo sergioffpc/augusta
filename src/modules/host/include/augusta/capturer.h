@@ -26,7 +26,7 @@
 /// A Match capture (ADR-0050): one file per Match, from its Match start to its
 /// Match end, of what its players did (Join, Commands, Leave) and of the
 /// markers the server decided (Death, Match end), each at its offset in ticks
-/// from the Match's first tick. server::Host hands a Capturer each event on the
+/// from the Match's first tick. host::Host hands a Capturer each event on the
 /// Simulation thread as the tick makes it; the Capturer encodes it there and a
 /// thread of its own opens, writes and flushes the files, so a disk that
 /// stalls never holds up a tick (NFR-01). The capture module
@@ -36,7 +36,7 @@
 /// run is its CaptureMode (#398, ADR-0033): an optional capture, a debugging
 /// aid, degrades and the Match goes on without it; a strict one, for a
 /// playtest whose point is the capture, is the runtime's terminal failure.
-namespace augusta::server {
+namespace augusta::host {
 
 /// Why a Match's capture stopped before its Match end, as logs name it.
 enum class CaptureStop : std::uint8_t {
@@ -308,6 +308,6 @@ class Capturer {
   std::optional<failure::Failure> failure_;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_CAPTURER_H_

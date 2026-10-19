@@ -9,6 +9,7 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/tick.h"
 
 // The sanity gate and the per-player queue are pure: no socket is opened here.
 namespace {
@@ -16,15 +17,15 @@ namespace {
 using augusta::command::Command;
 using augusta::command::HeldTicks;
 using augusta::command::kMaxHeldTime;
+using augusta::host::CommandQueue;
+using augusta::host::Enqueued;
+using augusta::host::kMaxMovementMagnitude;
+using augusta::host::kMaxPitch;
+using augusta::host::kMaxQueuedCommands;
+using augusta::host::Rejection;
+using augusta::host::SequencedCommand;
+using augusta::host::Validate;
 using augusta::math::Vec3;
-using augusta::server::CommandQueue;
-using augusta::server::Enqueued;
-using augusta::server::kMaxMovementMagnitude;
-using augusta::server::kMaxPitch;
-using augusta::server::kMaxQueuedCommands;
-using augusta::server::Rejection;
-using augusta::server::SequencedCommand;
-using augusta::server::Validate;
 
 constexpr float kInfinity = std::numeric_limits<float>::infinity();
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
@@ -33,7 +34,7 @@ constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
 constexpr std::uint8_t kTickRate = 60;
 const int kMaxHeldTicks = HeldTicks(kTickRate);
 
-SequencedCommand Walk(augusta::command::Sequence sequence, float x = 1.0F) {
+SequencedCommand Walk(augusta::tick::Sequence sequence, float x = 1.0F) {
   SequencedCommand sequenced{.sequence = sequence};
   sequenced.command.movement.direction = Vec3(x, 0.0F, 0.0F);
   return sequenced;
@@ -96,7 +97,7 @@ TEST(ValidateTest, AcceptsADiagonalAndALookStraightUp) {
 
 TEST(ValidateTest, EveryRejectionHasADescription) {
   for (const Rejection rejection : {Rejection::kStale, Rejection::kNonFinite, Rejection::kOutOfRange}) {
-    EXPECT_FALSE(augusta::server::DescribeRejection(rejection).empty());
+    EXPECT_FALSE(augusta::host::DescribeRejection(rejection).empty());
   }
 }
 
@@ -233,7 +234,7 @@ TEST(CommandQueueTest, WithNothingEverReceivedAPlayerStandsStill) {
 TEST(CommandQueueTest, WhenAClientRunsAheadTheOldestCommandsGo) {
   CommandQueue queue{kTickRate};
   const auto total = static_cast<std::uint32_t>(kMaxQueuedCommands + 4);
-  for (augusta::command::Sequence sequence = 1; sequence <= total; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= total; ++sequence) {
     ASSERT_TRUE(queue.TryEnqueue(Walk(sequence)).has_value());
   }
 
@@ -243,7 +244,7 @@ TEST(CommandQueueTest, WhenAClientRunsAheadTheOldestCommandsGo) {
 TEST(CommandQueueTest, EnqueuingIntoAFullQueueSaysItDroppedTheOldest) {
   CommandQueue queue{kTickRate};
   const auto full = static_cast<std::uint32_t>(kMaxQueuedCommands);
-  for (augusta::command::Sequence sequence = 1; sequence <= full; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= full; ++sequence) {
     ASSERT_EQ(queue.TryEnqueue(Walk(sequence)), Enqueued::kQueued) << sequence;
   }
 

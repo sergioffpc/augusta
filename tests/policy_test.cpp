@@ -1,3 +1,5 @@
+#include "augusta/policy.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +25,6 @@
 #include "augusta/physics.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
 
@@ -35,13 +36,13 @@ namespace {
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
-using augusta::scripting::Engine;
+using augusta::policy::MatchEnd;
+using augusta::policy::Policy;
+using augusta::policy::SessionId;
 using augusta::simulation::Character;
 using augusta::simulation::EntityId;
-using augusta::simulation::MatchEnd;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::PlayerIdentity;
-using augusta::simulation::SessionId;
 using augusta::simulation::State;
 using augusta::simulation::TickResult;
 using augusta::simulation::World;
@@ -58,7 +59,7 @@ const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
 
 // The Match end Game policy took on the tick of result, if it took one.
 std::optional<MatchEnd> MatchEndOf(const TickResult& result) {
-  for (const augusta::simulation::PolicyAction& action : result.actions) {
+  for (const augusta::policy::PolicyAction& action : result.actions) {
     if (const auto* end = std::get_if<MatchEnd>(&action)) {
       return *end;
     }
@@ -74,14 +75,14 @@ std::vector<PlayerCommand> Walking() {
 }
 
 // The engine loaded with rules as the scenario's rules.lua.
-Engine WithRules(std::string_view rules) {
-  auto engine = Engine::Load(rules);
-  EXPECT_TRUE(engine.has_value()) << augusta::scripting::DescribeLoadError(engine.error());
-  return engine ? *std::move(engine) : Engine{};
+Policy WithRules(std::string_view rules) {
+  auto engine = Policy::Load(rules);
+  EXPECT_TRUE(engine.has_value()) << augusta::policy::DescribeLoadError(engine.error());
+  return engine ? *std::move(engine) : Policy{};
 }
 
 // A world with policy and Alice in it, playing the sniper.
-World WithAlice(Engine policy, const Parameters& parameters = Parameters{}) {
+World WithAlice(Policy policy, const Parameters& parameters = Parameters{}) {
   World world(parameters, kTickRate, std::move(policy));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
                   PlayerIdentity{.session = kAliceSession, .character = "sniper"});
@@ -89,7 +90,7 @@ World WithAlice(Engine policy, const Parameters& parameters = Parameters{}) {
 }
 
 // Where Alice is after walking for ticks in a world with policy.
-Vec3 WalkedTo(Engine policy, int ticks) {
+Vec3 WalkedTo(Policy policy, int ticks) {
   World world = WithAlice(std::move(policy));
   State state;
   for (int i = 0; i < ticks; ++i) {
@@ -147,7 +148,7 @@ TEST_F(PolicyTest, AHookTheRulesDoNotDefineIsANoOp) {
     const std::string log = LogOfTicks(world, 3);
 
     EXPECT_EQ(log, "") << rules;
-    EXPECT_EQ(WalkedTo(WithRules(rules), 10), WalkedTo(Engine{}, 10)) << rules;
+    EXPECT_EQ(WalkedTo(WithRules(rules), 10), WalkedTo(Policy{}, 10)) << rules;
   }
 }
 
@@ -200,7 +201,7 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
     EXPECT_TRUE(second.actions.empty()) << hook.rules;
     EXPECT_EQ(second.state.tick, 2U) << hook.rules;
     ASSERT_EQ(second.state.bodies.size(), 1U) << hook.rules;
-    EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Engine{}, 2)) << hook.rules;
+    EXPECT_EQ(second.state.bodies[0].body.position, WalkedTo(Policy{}, 2)) << hook.rules;
   }
 }
 
@@ -234,17 +235,17 @@ TEST_F(PolicyTest, TheSandboxRefusesAHookTheMachineAndRandomness) {
 TEST_F(PolicyTest, AScriptThatUsesWhatTheSandboxLeavesOutAtItsTopLevelDoesNotLoad) {
   for (const char* use :
        {"io.open('policy.txt')", "os.time()", "require('other')", "math.random()", "package.loadlib('x', 'y')"}) {
-    const auto engine = Engine::Load(use);
+    const auto engine = Policy::Load(use);
 
     ASSERT_FALSE(engine.has_value()) << use;
-    EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos) << use;
+    EXPECT_NE(augusta::policy::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos) << use;
   }
 }
 
 // Memory is bounded per Lua state, as instructions are per call: an allocation
 // past the bound is refused, which fails the call as any error does.
 TEST_F(PolicyTest, AScriptWhoseTopLevelAllocatesPastTheMemoryLimitDoesNotLoad) {
-  const auto engine = Engine::Load("local huge = string.rep('x', 1 << 30)");
+  const auto engine = Policy::Load("local huge = string.rep('x', 1 << 30)");
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_NE(engine.error().message.find("not enough memory"), std::string::npos) << engine.error().message;
@@ -276,7 +277,7 @@ TEST_F(PolicyTest, AHookThatHoardsMemoryFailsOnceItsStateIsFullAndTheTicksGoOn) 
   EXPECT_EQ(result.state.tick, 30U);
   EXPECT_TRUE(result.actions.empty());
   ASSERT_EQ(result.state.bodies.size(), 1U);
-  EXPECT_EQ(result.state.bodies[0].body.position, WalkedTo(Engine{}, 30));
+  EXPECT_EQ(result.state.bodies[0].body.position, WalkedTo(Policy{}, 30));
 }
 
 // Lua's warn writes to stderr, outside the server's log (ADR-0029), once a
@@ -286,7 +287,7 @@ TEST_F(PolicyTest, TheSandboxHasNoWarnSoAScriptWritesNothingToStderr) {
   constexpr std::string_view kWarns = "warn('@on') warn('x')";
 
   testing::internal::CaptureStderr();
-  const auto engine = Engine::Load(kWarns);
+  const auto engine = Policy::Load(kWarns);
   World world = WithAlice(WithRules("function on_tick() " + std::string(kWarns) + " end"));
   const std::string log = LogOfTicks(world, 1);
   const std::string written = testing::internal::GetCapturedStderr();
@@ -297,14 +298,14 @@ TEST_F(PolicyTest, TheSandboxHasNoWarnSoAScriptWritesNothingToStderr) {
 }
 
 TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {
-  const auto engine = Engine::Load("function assign_spawns(");
+  const auto engine = Policy::Load("function assign_spawns(");
 
   ASSERT_FALSE(engine.has_value());
-  EXPECT_NE(augusta::scripting::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos);
+  EXPECT_NE(augusta::policy::DescribeLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
-  const auto engine = Engine::Load("while true do end");
+  const auto engine = Policy::Load("while true do end");
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_NE(engine.error().message.find("instruction limit"), std::string::npos) << engine.error().message;
@@ -313,17 +314,17 @@ TEST_F(PolicyTest, AScriptWhoseTopLevelNeverFinishesDoesNotLoad) {
 // Neither sees the other's globals, whichever is loaded first (ADR-0039).
 // Requirements: US-22
 TEST_F(PolicyTest, TheParametersScriptAndTheRulesShareNoGlobals) {
-  auto policy = Engine::Load(R"(
+  auto policy = Policy::Load(R"(
     policy_global = 1
     function on_tick()
       if parameters_global ~= nil then error("sees the parameters' global") end
     end
   )");
   ASSERT_TRUE(policy.has_value());
-  const auto parameters = augusta::server::LoadParameters(
+  const auto parameters = augusta::scenario::LoadParameters(
       "if policy_global ~= nil then error('sees the policy global') end\nparameters_global = 1\n" + ExampleParameters(),
       kTickRate);
-  ASSERT_TRUE(parameters.has_value()) << augusta::server::DescribeParametersLoadError(parameters.error());
+  ASSERT_TRUE(parameters.has_value()) << augusta::scenario::DescribeParametersLoadError(parameters.error());
   World world = WithAlice(*std::move(policy), *parameters);
 
   EXPECT_EQ(LogOfTicks(world, 1), "");
@@ -562,15 +563,16 @@ TEST_F(PolicyTest, EveryMatchStartsFromFreshBodiesAtFullHealthWithFullRifles) {
 
 // The example scenario's Game policy, read out of its golden server pack by
 // the server's own loader.
-Engine ExamplePolicy() {
+Policy ExamplePolicy() {
   const std::filesystem::path packs{AUGUSTA_EXAMPLE_PACKS};
   const auto public_key = augusta::assets::ReadEd25519PublicKeyFile(packs / "test.pub");
   EXPECT_TRUE(public_key.has_value());
-  auto pack = augusta::assets::Pack::Load(packs / "server.pack", public_key.value());
+  auto pack = augusta::assets::Pack::Load((packs / "server").replace_extension(augusta::assets::kPackExtension),
+                                          public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
-  auto policy = augusta::server::LoadPolicy(pack.value());
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
-  return policy ? *std::move(policy) : Engine{};
+  auto policy = augusta::scenario::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  return policy ? *std::move(policy) : Policy{};
 }
 
 // count players, sessions 1 to count with bodies 101 on, all playing the player.
@@ -847,7 +849,7 @@ TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheW
   Parameters parameters;
   parameters.rifle.muzzle_velocity = 100.0F;
   parameters.ammo.max_range = 1000.0F;
-  World world = WithAlice(Engine{}, parameters);
+  World world = WithAlice(Policy{}, parameters);
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
   Command fire;

@@ -15,7 +15,7 @@ timeout passes first.
 Usage (from tools/, after `uv sync --group agent` and a build of the Agents'
 native module):
     uv run python ../scripts/augustad-seccomp-matches.py \
-        --server 127.0.0.1:7777 --pack <client.pack> \
+        --server 127.0.0.1:7777 --pack <client.apak> \
         --public-key <pack.pub> --matches 2
 """
 

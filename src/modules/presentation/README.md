@@ -16,6 +16,9 @@ cues play.
 - Drawing: renderer. Playing sound: audio.
 - Predicting the local player: prediction.
 - Deciding hits on players: simulation; a tracer is a visual only.
+- Cosmetic bodies and Props' kinematic poses: the client-only dynamics module,
+  which arrives with the client's first dynamic body, as does the Dynamics phase
+  that calls it.
 
 ## Decisions
 

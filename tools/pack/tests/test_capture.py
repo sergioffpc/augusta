@@ -58,7 +58,7 @@ def test_another_format_version_is_refused():
 
 
 def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
-    path = tmp_path / "match.capture"
+    path = tmp_path / "match.acap"
     path.write_bytes(SEED.read_bytes())
 
     status = pack_cli.inspect_main([str(path)])

@@ -20,10 +20,10 @@
 #include <prometheus/metric_type.h>
 
 #include "augusta/connection_sample.h"
+#include "augusta/limits.h"
+#include "augusta/link.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
-#include "augusta/primitives.h"
 
 namespace augusta::server {
 namespace {
@@ -42,25 +42,25 @@ constexpr std::array kQualityBuckets{0.5, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995, 0.9
 constexpr std::array kJitterBucketsSeconds{0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2};
 
 // No more Sessions than the Lobby holds are live at once.
-constexpr std::size_t kSlotCount = primitives::kMaxPlayers;
+constexpr std::size_t kSlotCount = limits::kMaxPlayers;
 
 // Decision: what the transport has measured, in base units. Quality and jitter
-// read negative until it has (networking::ConnectionStats); nullopt then.
+// read negative until it has (link::ConnectionStats); nullopt then.
 std::optional<double> Measured(double value, double per_base_unit) {
   return value >= 0.0 ? std::optional<double>(value / per_base_unit) : std::nullopt;
 }
 
-std::optional<double> RttSeconds(const networking::ConnectionStats& stats) {
+std::optional<double> RttSeconds(const link::ConnectionStats& stats) {
   return Measured(stats.ping_ms, kMillisecondsPerSecond);
 }
 
 std::optional<double> QualityRatio(float quality) { return Measured(quality, 1.0); }
 
-std::optional<double> JitterSeconds(const networking::ConnectionStats& stats) {
+std::optional<double> JitterSeconds(const link::ConnectionStats& stats) {
   return Measured(stats.max_jitter_us, kMicrosecondsPerSecond);
 }
 
-void Observe(Histogram& histogram, const std::optional<double>& value) {
+void Observe(metrics::Histogram& histogram, const std::optional<double>& value) {
   if (value.has_value()) {
     histogram.Observe(*value);
   }
@@ -80,7 +80,7 @@ enum SessionValue : std::uint8_t {
 
 // One Session's gauges, each kNotMeasured until first measured.
 struct SessionGauges {
-  SessionId session{};
+  host::SessionId session{};
   std::array<double, kSessionValueCount> values{};
 };
 
@@ -154,7 +154,7 @@ class PublishedGauges {
       if (!occupied_.load(std::memory_order_relaxed)) {
         return std::nullopt;
       }
-      SessionGauges gauges{.session = SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
+      SessionGauges gauges{.session = host::SessionId{session_.load(std::memory_order_relaxed)}, .values = {}};
       for (std::size_t i = 0; i < values_.size(); ++i) {
         gauges.values[i] = values_[i].load(std::memory_order_relaxed);
       }
@@ -210,15 +210,15 @@ MetricFamily SessionFamily(std::string name, std::string help, const std::vector
 
 struct ConnectionHealth::Impl {
   // Over every connection.
-  Histogram rtt{kRttBucketsSeconds};
-  Histogram quality_local{kQualityBuckets};
-  Histogram quality_remote{kQualityBuckets};
-  Histogram jitter{kJitterBucketsSeconds};
+  metrics::Histogram rtt{kRttBucketsSeconds};
+  metrics::Histogram quality_local{kQualityBuckets};
+  metrics::Histogram quality_remote{kQualityBuckets};
+  metrics::Histogram jitter{kJitterBucketsSeconds};
   // By Session: the writer's own copy, and what the endpoint reads of it.
   SessionSlots sessions;
   PublishedGauges published;
 
-  void ObserveAll(const networking::ConnectionStats& stats) {
+  void ObserveAll(const link::ConnectionStats& stats) {
     Observe(rtt, RttSeconds(stats));
     Observe(quality_local, QualityRatio(stats.quality_local));
     Observe(quality_remote, QualityRatio(stats.quality_remote));
@@ -227,7 +227,7 @@ struct ConnectionHealth::Impl {
 
   // The slot session's gauges are in, or else a free one; nullopt if every
   // slot is taken, which no more Sessions than the Lobby holds can do.
-  [[nodiscard]] std::optional<std::size_t> SlotOf(SessionId session) const {
+  [[nodiscard]] std::optional<std::size_t> SlotOf(host::SessionId session) const {
     std::optional<std::size_t> free;
     for (std::size_t slot = 0; slot < sessions.size(); ++slot) {
       if (!sessions[slot].has_value()) {
@@ -239,7 +239,7 @@ struct ConnectionHealth::Impl {
     return free;
   }
 
-  void SetGauges(SessionId session, const networking::ConnectionStats& stats) {
+  void SetGauges(host::SessionId session, const link::ConnectionStats& stats) {
     const std::optional<std::size_t> slot = SlotOf(session);
     if (!slot.has_value()) {
       return;
@@ -261,9 +261,9 @@ struct ConnectionHealth::Impl {
   }
 
   // Removes the gauges of every Session not in samples: it has ended.
-  void RemoveEnded(const std::vector<ConnectionSample>& samples) {
+  void RemoveEnded(const std::vector<host::ConnectionSample>& samples) {
     for (std::optional<SessionGauges>& gauges : sessions) {
-      if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const ConnectionSample& sample) {
+      if (gauges.has_value() && std::ranges::none_of(samples, [&gauges](const host::ConnectionSample& sample) {
             return sample.session == gauges->session;
           })) {
         gauges.reset();
@@ -278,10 +278,10 @@ ConnectionHealth::ConnectionHealth() : impl_(std::make_unique<Impl>()) {}
 
 ConnectionHealth::~ConnectionHealth() = default;
 
-void ConnectionHealth::Record(const std::vector<ConnectionSample>& samples) {
+void ConnectionHealth::Record(const std::vector<host::ConnectionSample>& samples) {
   // First, so an ended Session's slot is free for a new one.
   impl_->RemoveEnded(samples);
-  for (const ConnectionSample& sample : samples) {
+  for (const host::ConnectionSample& sample : samples) {
     impl_->ObserveAll(sample.stats);
     if (sample.session.has_value()) {
       impl_->SetGauges(*sample.session, sample.stats);
@@ -295,15 +295,15 @@ std::vector<MetricFamily> ConnectionHealth::Collect() const {
   return {
       HistogramFamily("augustad_connection_rtt_seconds",
                       "Every connection's round-trip time, sampled once a heartbeat interval.",
-                      {HistogramSeries(impl_->rtt)}),
+                      {metrics::HistogramSeries(impl_->rtt)}),
       HistogramFamily(
           "augustad_connection_quality_ratio",
           "Every connection's share of packets delivered, as measured here (local) and by the client (remote).",
-          {HistogramSeries(impl_->quality_local, {{.name = "direction", .value = "local"}}),
-           HistogramSeries(impl_->quality_remote, {{.name = "direction", .value = "remote"}})}),
+          {metrics::HistogramSeries(impl_->quality_local, {{.name = "direction", .value = "local"}}),
+           metrics::HistogramSeries(impl_->quality_remote, {{.name = "direction", .value = "remote"}})}),
       HistogramFamily("augustad_connection_jitter_seconds",
                       "Every connection's worst jitter over each heartbeat interval.",
-                      {HistogramSeries(impl_->jitter)}),
+                      {metrics::HistogramSeries(impl_->jitter)}),
       SessionFamily("augustad_session_connection_rtt_seconds", "The round-trip time of each Session's connection.",
                     sessions, {{.value = kRtt}}),
       SessionFamily("augustad_session_connection_quality_ratio",

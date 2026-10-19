@@ -11,9 +11,9 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/input.h"
 #include "augusta/math.h"
 #include "augusta/renderer.h"
+#include "augusta/window.h"
 
 namespace augusta::renderer {
 namespace {
@@ -29,8 +29,8 @@ constexpr int kClearChannel = 34;
 constexpr int kTolerance = 1;
 constexpr std::uint8_t kOpaque = 255;
 
-// The debug HUD's line sits in the frame's top rows: its window 10 pixels in,
-// its padding, and one line of text.
+// The debug HUD's first line sits in the frame's top rows: its window 10 pixels
+// in, its padding, and one line of text.
 constexpr std::uint32_t kHudBottom = 48;
 
 constexpr std::size_t kBytesPerPixel = 4;
@@ -117,20 +117,11 @@ RemotePlayer PlayerAt(float x, math::Vec3 color, std::string_view character = kC
   return {.position = {x, -0.5F, 0.0F}, .yaw = 0.0F, .color = color, .character = std::string(character)};
 }
 
-class IgnoredInput final : public input::EventSink {
- public:
-  void OnKeyEvent(const input::KeyEvent& /*event*/) override {}
-  void OnMouseMoveEvent(const input::MouseMoveEvent& /*event*/) override {}
-};
-
 // What CI's runner, which has no GPU, can run, with every misuse of Vulkan an
 // error the Renderer throws.
 Config SoftwareHiddenConfig() {
-  return {.title = "augusta renderer smoke test",
-          .width = kWidth,
-          .height = kHeight,
+  return {.window = {.title = "augusta renderer smoke test", .width = kWidth, .height = kHeight, .hidden = true},
           .adapter = Adapter::kSoftware,
-          .hidden = true,
           .validation = Validation::kRequired};
 }
 
@@ -150,7 +141,7 @@ class RendererSmokeTest : public ::testing::Test {
   CapturedFrame RenderFrames(std::span<const RemotePlayer> players = {}, const CombatEffects& effects = {},
                              const Overlay& overlay = {}) {
     for (int i = 0; i < 4; ++i) {
-      renderer_->PumpEvents();
+      static_cast<void>(renderer_->GetWindow().Poll());
       renderer_->SetRemotePlayers(players);
       renderer_->SetCombatEffects(effects);
       renderer_->SetOverlay(overlay);
@@ -159,12 +150,11 @@ class RendererSmokeTest : public ::testing::Test {
     return renderer_->CaptureFrame();
   }
 
-  IgnoredInput input_;
-  std::unique_ptr<Renderer> renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig(), input_);
+  std::unique_ptr<Renderer> renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig());
 };
 
-TEST_F(RendererSmokeTest, ReportsTheConfiguredSize) {
-  const Size size = renderer_->GetSize();
+TEST_F(RendererSmokeTest, OpensItsWindowAtTheConfiguredSize) {
+  const window::Size size = renderer_->GetWindow().GetSize();
 
   EXPECT_EQ(size.width, kWidth);
   EXPECT_EQ(size.height, kHeight);
@@ -179,6 +169,7 @@ TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
 }
 
 TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
+  renderer_->SetTextLines({"FPS: 144 (6.9ms) | RTT: --"});
   RenderFrames();
 
   const CapturedFrame frame = renderer_->CaptureFrame();
@@ -189,23 +180,23 @@ TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
   EXPECT_EQ(CountOtherPixels(frame, kHudBottom, kHeight), 0U);
 }
 
-TEST_F(RendererSmokeTest, DrawsTheDebugHudsStatsInItsRegion) {
-  RenderFrames();
-  const std::size_t without_stats = CountOtherPixels(renderer_->CaptureFrame(), 0, kHudBottom);
-
-  renderer_->SetDebugHudStats({.net = DebugHudNetStats{.rtt_ms = 12,
-                                                       .jitter_ms = 0.4F,
-                                                       .loss_percent = 0.0F,
-                                                       .in_bytes_per_sec = 1024.0F,
-                                                       .out_bytes_per_sec = 512.0F}});
-  RenderFrames();
-
-  const CapturedFrame frame = renderer_->CaptureFrame();
+TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
+  const CapturedFrame frame = RenderFrames();
 
   ASSERT_EQ(frame.height, kHeight);
-  // The connection's numbers make the line longer than "RTT: --".
-  EXPECT_GT(without_stats, 0U);
-  EXPECT_GT(CountOtherPixels(frame, 0, kHudBottom), without_stats);
+  EXPECT_EQ(CountOtherPixels(frame, 0, kHeight), 0U);
+}
+
+TEST_F(RendererSmokeTest, DrawsTheDebugHudsLinesInItsRegion) {
+  renderer_->SetTextLines({"FPS: --"});
+  const std::size_t short_line = CountOtherPixels(RenderFrames(), 0, kHudBottom);
+
+  renderer_->SetTextLines({"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.0KB/s | Out: 512B/s"});
+  const CapturedFrame frame = RenderFrames();
+
+  ASSERT_EQ(frame.height, kHeight);
+  EXPECT_GT(short_line, 0U);
+  EXPECT_GT(CountOtherPixels(frame, 0, kHudBottom), short_line);
 }
 
 TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
@@ -319,7 +310,7 @@ TEST_F(RendererSmokeTest, TearsDownSoThatAnotherRendererCanStart) {
   renderer_->RenderFrame();
   renderer_.reset();
 
-  renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig(), input_);
+  renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig());
   renderer_->RenderFrame();
 
   EXPECT_EQ(renderer_->CaptureFrame().width, kWidth);

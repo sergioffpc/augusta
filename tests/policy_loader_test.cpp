@@ -4,14 +4,13 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/scripting.h"
-#include "encoder.h"
+#include "augusta/pack_encoder.h"
+#include "augusta/policy.h"
 
 // The server's startup read of a scenario's Game policy out of its pack: a real
 // signed pack in a temp file, loaded back the way the server loads it.
@@ -20,22 +19,19 @@ namespace {
 using augusta::assets::AssetEntry;
 using augusta::assets::AssetType;
 using augusta::assets::Pack;
-using augusta::server::LoadPolicy;
-using augusta::server::LoadPolicyMaker;
-using augusta::server::PolicyLoadErrorCode;
+using augusta::scenario::LoadPolicy;
+using augusta::scenario::LoadPolicyMaker;
+using augusta::scenario::PolicyLoadErrorCode;
 
 AssetEntry ScriptEntry(std::string path, std::string_view text) {
   return AssetEntry{
       .type = AssetType::kScript, .path = std::move(path), .data = augusta::assets::EncodeScriptBlob(text).value()};
 }
 
-// What hook returns, as a string; empty if it returns anything else.
-std::string Returned(augusta::scripting::Engine& engine, std::string_view hook) {
-  const auto value = engine.Call(hook, {});
-  if (!value || !std::holds_alternative<std::string>(value->data)) {
-    return {};
-  }
-  return std::get<std::string>(value->data);
+// Whether policy's on_tick, called once on a Match with no players, ends it.
+bool EndsTheMatch(augusta::policy::Policy& policy) {
+  const auto action = policy.OnTick(augusta::policy::MatchView{}, 1);
+  return action.has_value() && action->has_value();
 }
 
 class PolicyLoaderTest : public ::testing::Test {
@@ -48,7 +44,8 @@ class PolicyLoaderTest : public ::testing::Test {
 
   // Writes entries into a signed pack and loads it.
   Pack MakePack(const std::string& name, const std::vector<AssetEntry>& entries) {
-    const auto path = std::filesystem::temp_directory_path() / ("augusta_policy_loader_test_" + name + ".pack");
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("augusta_policy_loader_test_" + name + std::string(augusta::assets::kPackExtension));
     cleanup_.push_back(path);
     const auto keys = augusta::assets::GenerateEd25519KeyPair();
     EXPECT_TRUE(augusta::assets::WritePack(path, entries, keys.private_key).has_value());
@@ -63,12 +60,12 @@ class PolicyLoaderTest : public ::testing::Test {
 
 // Requirements: US-22
 TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
-  const Pack pack = MakePack("rules", {ScriptEntry("rules.lua", "function probe() return 'rules' end")});
+  const Pack pack = MakePack("rules", {ScriptEntry("rules.lua", "function on_tick() return {draw = true} end")});
 
   auto engine = LoadPolicy(pack);
 
-  ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
-  EXPECT_EQ(Returned(*engine, "probe"), "rules");
+  ASSERT_TRUE(engine.has_value()) << augusta::scenario::DescribePolicyLoadError(engine.error());
+  EXPECT_TRUE(EndsTheMatch(*engine));
 }
 
 // Every Replay's World runs a policy of its own (ADR-0051): what one keeps
@@ -76,20 +73,22 @@ TEST_F(PolicyLoaderTest, LoadsTheRulesFromThePack) {
 TEST_F(PolicyLoaderTest, EachPolicyTheMakerMakesStartsAfresh) {
   const Pack pack = MakePack(
       "maker",
-      {ScriptEntry("rules.lua", "local calls = 0 function probe() calls = calls + 1 return tostring(calls) end")});
+      {ScriptEntry(
+          "rules.lua",
+          "local calls = 0 function on_tick() calls = calls + 1 if calls == 2 then return {draw = true} end end")});
 
   const auto make = LoadPolicyMaker(pack);
 
-  ASSERT_TRUE(make.has_value()) << augusta::server::DescribePolicyLoadError(make.error());
-  augusta::scripting::Engine first = (*make)();
-  augusta::scripting::Engine second = (*make)();
-  EXPECT_EQ(Returned(first, "probe"), "1");
-  EXPECT_EQ(Returned(first, "probe"), "2");
-  EXPECT_EQ(Returned(second, "probe"), "1");
+  ASSERT_TRUE(make.has_value()) << augusta::scenario::DescribePolicyLoadError(make.error());
+  augusta::policy::Policy first = (*make)();
+  augusta::policy::Policy second = (*make)();
+  EXPECT_FALSE(EndsTheMatch(first));
+  EXPECT_TRUE(EndsTheMatch(first));
+  EXPECT_FALSE(EndsTheMatch(second));
 }
 
 TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
-  const Pack pack = MakePack("maker_broken", {ScriptEntry("rules.lua", "function probe(")});
+  const Pack pack = MakePack("maker_broken", {ScriptEntry("rules.lua", "function on_tick(")});
 
   const auto make = LoadPolicyMaker(pack);
 
@@ -98,25 +97,25 @@ TEST_F(PolicyLoaderTest, TheMakerOfRulesThatDoNotLoadIsTheirError) {
 }
 
 TEST_F(PolicyLoaderTest, ThePolicyMadeForAPackWithoutRulesIsNone) {
-  const Pack pack = MakePack("maker_none", {ScriptEntry("parameters.lua", "function probe() return 'here' end")});
+  const Pack pack =
+      MakePack("maker_none", {ScriptEntry("parameters.lua", "function on_tick() return {draw = true} end")});
 
   const auto make = LoadPolicyMaker(pack);
 
   ASSERT_TRUE(make.has_value());
-  augusta::scripting::Engine none = (*make)();
-  EXPECT_EQ(Returned(none, "probe"), "");
+  augusta::policy::Policy none = (*make)();
+  EXPECT_FALSE(EndsTheMatch(none));
 }
 
 // Requirements: US-22
 TEST_F(PolicyLoaderTest, APackWithoutRulesHasNoPolicy) {
-  const Pack pack = MakePack("no_rules", {ScriptEntry("parameters.lua", "function probe() return 'here' end")});
+  const Pack pack =
+      MakePack("no_rules", {ScriptEntry("parameters.lua", "function on_tick() return {draw = true} end")});
 
   auto engine = LoadPolicy(pack);
 
-  ASSERT_TRUE(engine.has_value()) << augusta::server::DescribePolicyLoadError(engine.error());
-  const auto returned = engine->Call("probe", {});
-  ASSERT_TRUE(returned.has_value());
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(returned->data));
+  ASSERT_TRUE(engine.has_value()) << augusta::scenario::DescribePolicyLoadError(engine.error());
+  EXPECT_FALSE(EndsTheMatch(*engine));
 }
 
 // Requirements: US-22
@@ -127,7 +126,7 @@ TEST_F(PolicyLoaderTest, RulesWithASyntaxErrorAreAnErrorNamingTheScript) {
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kScriptError);
-  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
+  EXPECT_NE(augusta::scenario::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
@@ -139,7 +138,7 @@ TEST_F(PolicyLoaderTest, AnEntryAtTheRulesPathThatIsNotAScriptIsAnError) {
 
   ASSERT_FALSE(engine.has_value());
   EXPECT_EQ(engine.error().code, PolicyLoadErrorCode::kUnreadable);
-  EXPECT_NE(augusta::server::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
+  EXPECT_NE(augusta::scenario::DescribePolicyLoadError(engine.error()).find("rules.lua"), std::string::npos);
 }
 
 }  // namespace

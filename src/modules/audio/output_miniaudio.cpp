@@ -70,6 +70,8 @@ struct Voice {
   SoundHandle sound{};
   const std::vector<float>* samples = nullptr;
   std::size_t cursor = 0;
+  // What its samples are scaled by.
+  float amplitude = 1.0F;
   // Where it is heard from, with the binaural effect that spatializes it there;
   // nullopt and nullptr for one heard as the listener's own.
   std::optional<math::Vec3> position;
@@ -92,7 +94,7 @@ class MiniaudioOutput final : public Output {
   SoundHandle LoadSound(const assets::AudioData& sound) override;
   void UnloadSound(SoundHandle sound) override;
   void SetListener(const Listener& listener) override;
-  VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position) override;
+  VoiceHandle Play(SoundHandle sound, const std::optional<math::Vec3>& position, float amplitude) override;
   void Stop(VoiceHandle voice) override;
 
  private:
@@ -223,18 +225,22 @@ void MiniaudioOutput::SetListener(const Listener& listener) {
   ReleaseRetired();
 }
 
-VoiceHandle MiniaudioOutput::Play(SoundHandle sound, const std::optional<math::Vec3>& position) {
+VoiceHandle MiniaudioOutput::Play(SoundHandle sound, const std::optional<math::Vec3>& position, float amplitude) {
   const auto found = sounds_.find(static_cast<std::uint32_t>(sound));
   if (found == sounds_.end() || found->second.empty()) {
     return VoiceHandle{};
   }
-  Voice voice{.handle = VoiceHandle{next_voice_++}, .sound = sound, .samples = &found->second, .position = position};
+  Voice voice{.handle = VoiceHandle{next_voice_++},
+              .sound = sound,
+              .samples = &found->second,
+              .amplitude = amplitude,
+              .position = position};
   if (position.has_value()) {
     IPLBinauralEffectSettings effect_settings{.hrtf = hrtf_};
     if (const IPLerror error = iplBinauralEffectCreate(context_, &audio_settings_, &effect_settings, &voice.effect);
         error != IPL_STATUS_SUCCESS) {
-      LW("subsystem=audio event=voice_dropped reason=\"binaural effect creation failed\" error={}",
-         static_cast<int>(error));
+      LOG_WARN("subsystem=audio event=voice_dropped reason=\"binaural effect creation failed\" error={}",
+               static_cast<int>(error));
       return VoiceHandle{};
     }
   }
@@ -313,7 +319,9 @@ void MiniaudioOutput::MixVoice(Voice& voice, float* output, ma_uint32 frame_coun
   const std::vector<float>& samples = *voice.samples;
   const std::size_t count = std::min<std::size_t>(frame_count, samples.size() - std::min(voice.cursor, samples.size()));
   std::ranges::fill(mono_, 0.0F);
-  std::copy_n(samples.begin() + static_cast<std::ptrdiff_t>(voice.cursor), count, mono_.begin());
+  std::transform(samples.begin() + static_cast<std::ptrdiff_t>(voice.cursor),
+                 samples.begin() + static_cast<std::ptrdiff_t>(voice.cursor + count), mono_.begin(),
+                 [&voice](float sample) { return sample * voice.amplitude; });
   voice.cursor += count;
 
   const bool spatial =

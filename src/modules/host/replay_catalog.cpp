@@ -14,8 +14,9 @@
 #include <vector>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 
-namespace augusta::server {
+namespace augusta::host {
 
 namespace {
 
@@ -116,4 +117,4 @@ std::optional<capture::Capture> ReplayCatalog::Find(std::string_view name) const
   return std::nullopt;
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::host

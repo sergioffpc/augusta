@@ -20,8 +20,8 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/intent.h"
+#include "augusta/link.h"
 #include "augusta/math.h"
-#include "augusta/networking.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
@@ -41,12 +41,12 @@ using augusta::harness::RunnerHooks;
 using augusta::harness::ServerView;
 using augusta::harness::Session;
 using augusta::harness::SessionConfig;
+using augusta::host::Host;
+using augusta::host::HostConfig;
+using augusta::link::Endpoint;
 using augusta::math::Vec3;
-using augusta::networking::Endpoint;
 using augusta::physics::CollisionMesh;
-using augusta::server::Host;
-using augusta::server::HostConfig;
-using augusta::server::Scenario;
+using augusta::scenario::Scenario;
 
 constexpr std::uint8_t kTickRate = 60;
 constexpr float kFixedTick = 1.0F / kTickRate;
@@ -57,8 +57,8 @@ constexpr float kGroundHeight = -0.5F;
 
 class RunnerEnvironment : public ::testing::Environment {
  public:
-  void SetUp() override { ASSERT_TRUE(augusta::networking::Init().has_value()); }
-  void TearDown() override { augusta::networking::Shutdown(); }
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
 };
 
 [[maybe_unused]] ::testing::Environment* const kRunnerEnvironment =
@@ -121,7 +121,8 @@ class RunnerTest : public ::testing::Test {
               Scenario{.collision = {FloorAt(kGroundHeight)},
                        .spawn_points = {},
                        .characters = {{.path = kCharacter, .hitboxes = {}}}}),
-        session_(SessionConfig{.server = host_.ListenEndpoint(), .character = kCharacter}, WorldWithFloor()) {}
+        session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address}, .character = kCharacter},
+                 WorldWithFloor()) {}
 
   // Runs the host at the tick rate - its network work, then a Tick - and has
   // the session report Ready for every Roster it is sent, as a client that has
@@ -324,7 +325,7 @@ TEST_F(RunnerTest, ANetworkThreadFailureStopsThePredictionTicksAndBothThreadsAre
 // sent, in any build: the Network I/O thread stops on a broken invariant
 // (ADR-0033) instead, and the server admits no one.
 TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvariantFailureOfTheNetworkThread) {
-  Session session(SessionConfig{.server = host_.ListenEndpoint(),
+  Session session(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                 .character = std::string(augusta::protocol::kMaxCharacterNameLength + 1, 'c')},
                   WorldWithFloor());
   const Runner runner(

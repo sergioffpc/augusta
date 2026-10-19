@@ -5,8 +5,8 @@
 ## Responsibility
 
 The gameplay rules both Worlds apply identically, a header and namespace per
-concept: the Command (one tick's player intent), the fixed tick schedule, the
-Parameters' type, the rifle's rules (`augusta/weapon.h`) and bullet trajectories
+concept: the Command (one tick's player intent), the Parameters' type, the
+rifle's rules (`augusta/weapon.h`) and bullet trajectories
 (`augusta/ballistics.h`). Pure, deterministic mechanism with no world or state
 of its own.
 
@@ -17,6 +17,8 @@ of its own.
 - Sampling a device into a Command: input.
 - Deciding which player a bullet hits and for what damage: simulation.
 - Where the Parameters' values come from: the server.
+- The Tick, the command Sequence and the fixed tick schedule: tick.
+- The player and recoil-kick bounds: limits.
 - Encoding any of it: protocol and wire.
 
 ## Decisions

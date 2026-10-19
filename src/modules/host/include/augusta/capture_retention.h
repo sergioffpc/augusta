@@ -24,7 +24,7 @@
 /// starting with a capture's magic; oldest is by the Match start in its name.
 /// Nothing else is ever touched. PlanRetention decides; CaptureDirectory scans
 /// and deletes.
-namespace augusta::server {
+namespace augusta::host {
 
 /// The limits of one server's capture directory, each off when nullopt.
 struct CaptureRetention {
@@ -55,7 +55,7 @@ struct CaptureRetentionObserver {
 [[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
                                           std::uint64_t match_number);
 
-/// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.capture,
+/// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.acap,
 /// the number of 4 digits or more.
 [[nodiscard]] bool IsCaptureFileName(std::string_view name);
 
@@ -135,6 +135,6 @@ class CaptureDirectory {
   bool failure_logged_ = false;
 };
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_CAPTURE_RETENTION_H_

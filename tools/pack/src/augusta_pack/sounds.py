@@ -1,7 +1,8 @@
-"""The client's cue sounds (ADR-0020, ADR-0031).
+"""The client's cue sounds (ADR-0020, ADR-0031, ADR-0041).
 
 The cue catalogue is fixed in code, here and in the client (augusta/cues.h), and
-a scenario's manifest names a mono PCM WAV file for each cue.
+a scenario's manifest names each cue's sound: its variants, mono PCM WAV files
+of which one plays at random each time the cue does, and its gain.
 """
 
 from dataclasses import dataclass
@@ -17,10 +18,6 @@ CUES = (
     "match_won",
     "match_lost",
 )
-
-# The prefix every cue's sound is addressed under in the client pack
-# (<SOUNDS_PREFIX>/<cue>), recorded at SOUNDS_PATH so the client can find them.
-SOUNDS_PREFIX = "sounds"
 
 
 class SoundError(Exception):
@@ -41,11 +38,24 @@ class Sound:
 
 
 @dataclass(frozen=True)
+class CueSound:
+    """A cue's sound: its variants, one of which plays each time, and its gain.
+
+    The cook refuses one with no variant or a gain that is not finite, as the
+    client could not play it.
+    """
+
+    variants: list[Sound]
+    # In decibels: 0 plays each variant as its WAV file holds it.
+    gain_db: float = 0.0
+
+
+@dataclass(frozen=True)
 class CueSounds:
-    """The sound for each of the client's cues, and the folder holding them."""
+    """The sound of each of the client's cues."""
 
     # (cue, sound) for every cue, in CUES order.
-    cues: list[tuple[str, Sound]]
+    cues: list[tuple[str, CueSound]]
 
 
 def read_sound(path: Path) -> Sound:

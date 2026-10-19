@@ -42,7 +42,7 @@ constexpr std::array<std::string_view, 12> kPaths = {
     augusta::assets::kParametersScriptPath,
     "rules.lua",
     "sounds/gunshot",
-    augusta::assets::kSoundsPath,
+    "sounds/gunshot/0",
 };
 
 template <typename Key>
@@ -66,7 +66,8 @@ struct TestKey {
 struct ScratchFile {
   ScratchFile() {
     std::random_device random;
-    path = std::filesystem::temp_directory_path() / ("augusta_pack_load_fuzz_" + std::to_string(random()) + ".pack");
+    path = std::filesystem::temp_directory_path() /
+           ("augusta_pack_load_fuzz_" + std::to_string(random()) + std::string(augusta::assets::kPackExtension));
   }
   ScratchFile(const ScratchFile&) = delete;
   ScratchFile& operator=(const ScratchFile&) = delete;
@@ -112,11 +113,11 @@ void ResolveEverything(const Pack& pack) {
     (void)pack.ResolveEye(path);
     (void)pack.ResolveScript(path);
     (void)pack.ResolveAudio(path);
+    (void)pack.ResolveCueSound(path);
   }
   (void)pack.ResolveHitboxes("soldier");
   (void)pack.ResolveCharacters();
   (void)pack.ClientPackHash();
-  (void)pack.ResolveSoundsPath();
 }
 
 }  // namespace

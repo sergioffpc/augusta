@@ -6,8 +6,8 @@
 #include <optional>
 #include <string_view>
 
+#include "augusta/link.h"
 #include "augusta/match.h"
-#include "augusta/networking.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
@@ -16,7 +16,7 @@
 /// ADR-0038): how a peer, a session and a departure are named in them, and the
 /// lines of a match's end and of a tick's combat. Each of Host's files writes
 /// its other lines where they happen; ServerRuntime writes none of these.
-namespace augusta::server {
+namespace augusta::host {
 
 /// Why a match ended.
 enum class EndReason : std::uint8_t {
@@ -38,8 +38,8 @@ enum class Leaving : std::uint8_t {
   kMisbehaving,
 };
 
-/// The transport's handle as a number, for log lines.
-[[nodiscard]] std::uint32_t PeerNumber(networking::PeerId peer);
+/// The Link's peer identity as a number, for log lines.
+[[nodiscard]] std::uint32_t PeerNumber(link::PeerId peer);
 
 [[nodiscard]] std::uint32_t SessionNumber(SessionId session);
 
@@ -57,6 +57,6 @@ void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, tic
 /// the log for (US-12, US-13), in a Release build too.
 void LogCombat(const simulation::State& state);
 
-}  // namespace augusta::server
+}  // namespace augusta::host
 
 #endif  // AUGUSTA_HOST_LOG_H_

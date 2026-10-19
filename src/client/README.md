@@ -1,0 +1,39 @@
+# client
+
+`augusta_client`, `augusta_client_application`, `augusta_client_content`,
+`augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
+`augusta_client_net_stats`, `augusta_client_phases`, and augustac, the
+executable that runs them. Client-only: the headless server never links it.
+
+## Responsibility
+
+The client Runtime, augustac's: it owns one of every client module and runs the
+Harness live, with its config, its Main/Render thread and the wiring of the
+Harness to the renderer, the HUD, input, PresentationWorld and audio, and runs
+it behind the application boundary in augustac's Lifecycle, beside listing a
+replay server's Replays. It decides at its edges what the client loads from its
+verified pack (the scene, the characters other players bring, the map's
+collision and every cue's sound) and what it loads in the Lobby before it
+reports Ready, converts between the harness's, presentation's and the renderer's
+types, classifies each phase's failure, and shows the connection's numbers on
+the debug HUD and to Nsight Systems.
+
+## Not its responsibility
+
+- What augustac's entry point (`main.cpp`) does: read the command line, then run
+  the Lifecycle and conclude its outcome - Glue, tested only end to end
+  (ADR-0060).
+- Playing: the Harness sends commands, receives the server's state and predicts.
+- The window, drawing, input, audio and what the HUD's lines say: window,
+  renderer, input, audio and hud, which the Runtime only wires together.
+- The Agent's Runtime: agent, under `tools/agent/native`.
+
+## Decisions
+
+[ADR-0005](../../docs/adr/0005-threading-model.md),
+[ADR-0021](../../docs/adr/0021-client-runtime-decomposition.md),
+[ADR-0033](../../docs/adr/0033-error-handling.md),
+[ADR-0043](../../docs/adr/0043-lobby-and-match-lifecycle.md),
+[ADR-0051](../../docs/adr/0051-replay.md),
+[ADR-0059](../../docs/adr/0059-renderer-nvrhi.md),
+[ADR-0060](../../docs/adr/0060-executables-are-glue.md).

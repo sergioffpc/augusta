@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -18,14 +19,14 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
-#include "encoder.h"
+#include "augusta/pack_encoder.h"
 
-// Unit tests for augusta_assets, including its own private pack-format
-// internals (encoder.h/WritePack). Links only augusta_assets - no USD/
-// libktx/meshoptimizer - so it builds and runs under the plain
+// Unit tests for augusta_assets, including its pack encoder
+// (augusta/pack_encoder.h's Encode*/WritePack). Links only augusta_assets - no
+// USD/libktx/meshoptimizer - so it builds and runs under the plain
 // runtime presets (windows/linux/sanitizers). These tests pin down
-// augusta_assets' wire format, which tools/pack's Python
-// WritePack reimplementation (ADR-0030) is validated against.
+// augusta_assets' wire format, the one the cooker (tools/pack, ADR-0030)
+// writes through its binding of this module.
 namespace {
 
 using augusta::assets::Ed25519PublicKey;
@@ -97,6 +98,8 @@ TEST_F(ReadEd25519PublicKeyFileTest, RejectsOversizedFile) {
   EXPECT_EQ(result.error(), ReadKeyFileError::kIoError);
 }
 
+TEST(PackExtensionTest, EveryPackFileEndsInItsExtension) { EXPECT_EQ(augusta::assets::kPackExtension, ".apak"); }
+
 class PackTest : public ::testing::Test {
  protected:
   void TearDown() override {
@@ -109,8 +112,8 @@ class PackTest : public ::testing::Test {
   // its own, possibly in parallel, so no other test removes it while in use.
   std::filesystem::path MakePackPath(std::string_view name) {
     const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
-    std::string unique =
-        std::string("augusta_assets_test_") + test.test_suite_name() + "_" + test.name() + "_" + std::string(name);
+    std::string unique = std::string("augusta_assets_test_") + test.test_suite_name() + "_" + test.name() + "_" +
+                         std::string(name) + std::string(augusta::assets::kPackExtension);
     std::ranges::replace(unique, '/', '_');
     const auto path = std::filesystem::temp_directory_path() / unique;
     cleanup_.push_back(path);
@@ -156,7 +159,7 @@ TEST_F(PackTest, WritePackRejectsDuplicatePaths) {
   };
 
   const auto keys = GenerateEd25519KeyPair();
-  const auto pack_path = MakePackPath("augusta_assets_test_dup.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_dup");
   const auto result = augusta::assets::WritePack(pack_path, entries, keys.private_key);
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), augusta::assets::WriteError::kDuplicatePath);
@@ -196,7 +199,7 @@ class TextureBlobTest : public PackTest {
   // Writes a pack holding ktx2 as the texture "Tex" and resolves it.
   std::expected<augusta::assets::TextureData, augusta::assets::ResolveError> WriteAndResolve(
       const std::vector<std::byte>& ktx2) {
-    const auto pack_path = MakePackPath("augusta_assets_test_texture_blob.pack");
+    const auto pack_path = MakePackPath("augusta_assets_test_texture_blob");
     const auto keys = GenerateEd25519KeyPair();
     const auto blob = augusta::assets::EncodeTextureBlob(ktx2);
     EXPECT_TRUE(blob.has_value());
@@ -249,7 +252,7 @@ TEST_F(TextureBlobTest, RefusesAKtx2OfAnotherVkFormat) {
 // A scenario's Lua scripts ride in its server pack (ADR-0031, ADR-0039) as text,
 // addressed by their path relative to the scenario's folder.
 TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
-  const auto pack_path = MakePackPath("augusta_assets_test_script_blob.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_script_blob");
   const auto keys = GenerateEd25519KeyPair();
   const std::string script = "return { stamina = {} }\n-- utf-8: \xC3\xA7\xC3\xA3o\n";
 
@@ -270,7 +273,7 @@ TEST_F(PackTest, EncodesAndResolvesAScriptBlob) {
 }
 
 TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
-  const auto pack_path = MakePackPath("augusta_assets_test_empty_script.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_empty_script");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "empty.lua", .data = {}},
@@ -284,7 +287,7 @@ TEST_F(PackTest, AnEmptyScriptResolvesToEmptyText) {
 }
 
 TEST_F(PackTest, AScriptThatIsNotThereOrIsSomethingElseIsAResolveError) {
-  const auto pack_path = MakePackPath("augusta_assets_test_script_errors.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_script_errors");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
@@ -305,7 +308,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
   EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kTooLarge);
 
   // A hostile pack can still carry one: the reader refuses it too.
-  const auto pack_path = MakePackPath("augusta_assets_test_huge_script.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_huge_script");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript,
@@ -322,7 +325,7 @@ TEST_F(PackTest, AScriptLargerThanTheLimitIsTooLargeToEncodeAndCorruptToResolve)
 // A scenario's character list rides in both packs (ADR-0042): the character
 // index N names element N-1, so the order the cooker wrote is the order resolved.
 TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
-  const auto pack_path = MakePackPath("augusta_assets_test_characters.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_characters");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<std::string> characters = {"sniper", "soldier", "medic"};
 
@@ -343,7 +346,7 @@ TEST_F(PackTest, EncodesAndResolvesTheCharacterListInOrder) {
 // A cue's sound is mono PCM (ADR-0020): resolved by path with its sample rate,
 // its sample width and its samples as the WAV file held them, and only as audio.
 TEST_F(PackTest, EncodesAndResolvesASound) {
-  const auto pack_path = MakePackPath("augusta_assets_test_audio.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_audio");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<std::byte> samples = {std::byte{0x01}, std::byte{0x00}, std::byte{0xFF}, std::byte{0x7F}};
 
@@ -368,7 +371,7 @@ TEST_F(PackTest, EncodesAndResolvesASound) {
 
 // Only whole samples of a width PCM has are a sound: anything else is corrupt.
 TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
-  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_audio.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_audio");
   const auto keys = GenerateEd25519KeyPair();
   // sample rate 22050, then the bits per sample, then 3 sample bytes.
   const auto blob = [](std::uint8_t bits_per_sample) {
@@ -391,23 +394,100 @@ TEST_F(PackTest, ASoundWithAnUnknownSampleWidthOrAPartialSampleIsCorrupt) {
   EXPECT_TRUE(pack->ResolveAudio("whole24").has_value());
 }
 
-// A client pack names the folder its cue sounds are addressed under (ADR-0031).
-TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
-  const auto pack_path = MakePackPath("augusta_assets_test_sounds.pack");
-  const auto keys = GenerateEd25519KeyPair();
+// The encoder refuses the sounds the decoder would find corrupt, so no cook
+// writes one.
+TEST(EncodeAudioBlobTest, RefusesASampleWidthPcmDoesNotHave) {
+  const std::vector<std::byte> samples(6);
 
-  const auto blob = augusta::assets::EncodeSoundsBlob("sounds");
+  const auto blob = augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 12, .samples = samples});
+
+  ASSERT_FALSE(blob.has_value());
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kUnsupportedSampleWidth);
+}
+
+TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
+  const std::vector<std::byte> samples(3);
+
+  const auto partial =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 16, .samples = samples});
+  const auto whole =
+      augusta::assets::EncodeAudioBlob({.sample_rate = 22050, .bits_per_sample = 24, .samples = samples});
+
+  ASSERT_FALSE(partial.has_value());
+  EXPECT_EQ(partial.error(), augusta::assets::EncodeError::kPartialSample);
+  EXPECT_TRUE(whole.has_value());
+}
+
+// A cue's sound and each of its variants are addressed under the sounds prefix
+// (ADR-0031), which the client and the cooker share.
+TEST(CueSoundPathTest, ACuesSoundAndItsVariantsAreAddressedUnderTheSoundsPrefix) {
+  EXPECT_EQ(augusta::assets::CueSoundPath("gunshot"), "sounds/gunshot");
+  EXPECT_EQ(augusta::assets::CueVariantPath("gunshot", 0), "sounds/gunshot/0");
+  EXPECT_EQ(augusta::assets::CueVariantPath("hit_marker", 12), "sounds/hit_marker/12");
+}
+
+// A cue's sound (ADR-0041) is its gain and its variants' paths, resolved by
+// path and only as a cue sound.
+TEST_F(PackTest, EncodesAndResolvesACueSound) {
+  const auto pack_path = MakePackPath("augusta_assets_test_cue_sound");
+  const auto keys = GenerateEd25519KeyPair();
+  const augusta::assets::CueSoundData sound{.gain_db = -6.5F, .variants = {"sounds/gunshot/0", "sounds/gunshot/1"}};
+
+  const auto blob = augusta::assets::EncodeCueSoundBlob(sound);
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
-      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
-                                  .path = std::string(augusta::assets::kSoundsPath),
-                                  .data = *blob},
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kCueSound, .path = "sounds/gunshot", .data = *blob},
   };
   ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds");
+  const auto resolved = pack->ResolveCueSound("sounds/gunshot");
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->gain_db, -6.5F);
+  EXPECT_EQ(resolved->variants, sound.variants);
+  EXPECT_EQ(pack->ResolveAudio("sounds/gunshot").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveCueSound("sounds/death").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// Every cue needs a sound (ADR-0041): one with no variant, or a gain that is
+// not a number, is refused when encoded and corrupt when decoded.
+TEST(EncodeCueSoundBlobTest, RefusesACueSoundWithNoVariantOrANonFiniteGain) {
+  const auto no_variant = augusta::assets::EncodeCueSoundBlob({.gain_db = 0.0F, .variants = {}});
+  const auto infinite = augusta::assets::EncodeCueSoundBlob(
+      {.gain_db = std::numeric_limits<float>::infinity(), .variants = {"sounds/gunshot/0"}});
+  const auto not_a_number = augusta::assets::EncodeCueSoundBlob(
+      {.gain_db = std::numeric_limits<float>::quiet_NaN(), .variants = {"sounds/gunshot/0"}});
+
+  ASSERT_FALSE(no_variant.has_value());
+  EXPECT_EQ(no_variant.error(), augusta::assets::EncodeError::kInvalidCueSound);
+  ASSERT_FALSE(infinite.has_value());
+  EXPECT_EQ(infinite.error(), augusta::assets::EncodeError::kInvalidCueSound);
+  ASSERT_FALSE(not_a_number.has_value());
+  EXPECT_EQ(not_a_number.error(), augusta::assets::EncodeError::kInvalidCueSound);
+}
+
+TEST_F(PackTest, ACueSoundWithNoVariantOrANonFiniteGainIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_cue_sound");
+  const auto keys = GenerateEd25519KeyPair();
+  // A gain (f32) of 0 dB, then the variant count, and no variant.
+  const std::vector<std::byte> no_variant(8, std::byte{0x00});
+  // A gain of +infinity (0x7F800000), then one variant: the path "a".
+  const std::vector<std::byte> infinite = {std::byte{0x00}, std::byte{0x00}, std::byte{0x80}, std::byte{0x7F},
+                                           std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+                                           std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+                                           std::byte{'a'}};
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCueSound, .path = "none", .data = no_variant},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCueSound, .path = "infinite", .data = infinite},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCueSound("none").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack->ResolveCueSound("infinite").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 // A character's eye is where the local player's camera sits (ADR-0040): a bare
@@ -421,7 +501,7 @@ TEST(CharacterMeshPathTest, ACharactersMeshIsTheVisualChildOfItsRootPrim) {
 }
 
 TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
-  const auto pack_path = MakePackPath("augusta_assets_test_eye.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_eye");
   const auto keys = GenerateEd25519KeyPair();
 
   const auto blob = augusta::assets::EncodeEyeBlob({.position = Vec3(0.0F, 1.6F, 0.1F)});
@@ -461,7 +541,7 @@ class HitboxPackTest : public PackTest {
   augusta::assets::Pack Write(const std::vector<augusta::assets::AssetEntry>& entries) {
     // One file per test: ctest runs each in its own process, possibly at once.
     const auto pack_path = MakePackPath(std::string("augusta_assets_test_hitboxes_") +
-                                        ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".pack");
+                                        ::testing::UnitTest::GetInstance()->current_test_info()->name());
     const auto keys = GenerateEd25519KeyPair();
     EXPECT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
     auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
@@ -528,7 +608,7 @@ TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
 }
 
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
-  const auto pack_path = MakePackPath("augusta_assets_test_no_characters.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_no_characters");
   const auto keys = GenerateEd25519KeyPair();
 
   const auto blob = augusta::assets::EncodeCharactersBlob({});
@@ -548,7 +628,7 @@ TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
 }
 
 TEST_F(PackTest, APackWithoutTheCharacterListIsAResolveError) {
-  const auto pack_path = MakePackPath("augusta_assets_test_missing_characters.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_missing_characters");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
@@ -582,7 +662,7 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
   for (std::size_t i = 0; i < too_many.size(); ++i) {
     hostile.insert(hostile.end(), encoded_string.begin(), encoded_string.end());
   }
-  const auto pack_path = MakePackPath("augusta_assets_test_too_many_characters.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_too_many_characters");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCharacters,
@@ -599,7 +679,7 @@ TEST_F(PackTest, ACharacterListLongerThanTheLimitIsTooLargeToEncodeAndCorruptToR
 // A pack's hash names one cook of it: the trailer's BLAKE3 hash, which the
 // server pack carries for the client pack cooked with it.
 TEST_F(PackTest, APacksHashIsItsTrailersHash) {
-  const auto pack_path = MakePackPath("augusta_assets_test_hash.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_hash");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
@@ -619,7 +699,7 @@ TEST_F(PackTest, APacksHashIsItsTrailersHash) {
 
 // The executables name the pack in every error about its content.
 TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
-  const auto pack_path = MakePackPath("augusta_assets_test_path.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_path");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
       augusta::assets::AssetEntry{
@@ -633,7 +713,7 @@ TEST_F(PackTest, APackRemembersThePathItWasLoadedFrom) {
 }
 
 TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
-  const auto pack_path = MakePackPath("augusta_assets_test_verified.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_verified");
   const auto key_path = MakePackPath("augusta_assets_test_verified.pub");
   const auto keys = GenerateEd25519KeyPair();
   const std::vector<augusta::assets::AssetEntry> entries = {
@@ -651,7 +731,7 @@ TEST_F(PackTest, LoadVerifiedPackLoadsAPackAgainstTheKeyInAFile) {
 
 // Requirements: NFR-08
 TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
-  const auto pack = augusta::assets::LoadVerifiedPack(MakePackPath("augusta_assets_test_unread.pack"),
+  const auto pack = augusta::assets::LoadVerifiedPack(MakePackPath("augusta_assets_test_unread"),
                                                       MakePackPath("augusta_assets_test_missing.pub"));
 
   ASSERT_FALSE(pack.has_value());
@@ -660,7 +740,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAnUnreadableKey) {
 
 // Requirements: NFR-08
 TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
-  const auto pack_path = MakePackPath("augusta_assets_test_other_key.pack");
+  const auto pack_path = MakePackPath("augusta_assets_test_other_key");
   const auto key_path = MakePackPath("augusta_assets_test_other_key.pub");
   const auto keys = GenerateEd25519KeyPair();
   const auto other_keys = GenerateEd25519KeyPair();
@@ -681,7 +761,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
 // Requirements: NFR-08
 TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   const auto keys = GenerateEd25519KeyPair();
-  const auto client_path = MakePackPath("augusta_assets_test_client.pack");
+  const auto client_path = MakePackPath("augusta_assets_test_client");
   ASSERT_TRUE(augusta::assets::WritePack(
                   client_path,
                   {augusta::assets::AssetEntry{
@@ -691,13 +771,126 @@ TEST_F(PackTest, APackNamesTheClientPackItWasWrittenWith) {
   const auto client = augusta::assets::Pack::Load(client_path, keys.public_key);
   ASSERT_TRUE(client.has_value());
 
-  const auto server_path = MakePackPath("augusta_assets_test_server.pack");
+  const auto server_path = MakePackPath("augusta_assets_test_server");
   ASSERT_TRUE(augusta::assets::WritePack(server_path, {}, keys.private_key, client->Hash()).has_value());
   const auto server = augusta::assets::Pack::Load(server_path, keys.public_key);
   ASSERT_TRUE(server.has_value());
 
   EXPECT_EQ(server->ClientPackHash(), client->Hash());
   EXPECT_EQ(client->ClientPackHash(), std::nullopt);
+}
+
+// The cooker names a client pack in its server pack by the hash WritePack
+// returns, so it must be the one Load verifies.
+TEST_F(PackTest, WritePackReturnsTheHashLoadVerifies) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_returned_hash");
+  const auto written = augusta::assets::WritePack(
+      pack_path,
+      {augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = MakeTriangleMeshBlob()}},
+      keys.private_key);
+  ASSERT_TRUE(written.has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(*written, pack->Hash());
+}
+
+// A pack's own bytes, as the layout read must find them: assets.cpp's
+// kHeaderSize, and the 64-byte Ed25519 signature that ends the file.
+constexpr std::uint64_t kWrittenHeaderSize = 4 + 4 + 8 + 8 + 4 + 1 + 32;
+constexpr std::size_t kWrittenSignatureSize = 64;
+
+// What a tool shows of a pack without a key (augusta-inspect): every field of
+// its header, index and trailer, as WritePack wrote them.
+TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWrote) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_layout");
+  const auto mesh = MakeTriangleMeshBlob();
+  const std::vector<std::byte> script = {std::byte{'x'}};
+  const auto written = augusta::assets::WritePack(
+      pack_path,
+      {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = mesh},
+       augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kScript, .path = "rules.lua", .data = script}},
+      keys.private_key);
+  ASSERT_TRUE(written.has_value());
+  const auto bytes = ReadFileBytes(pack_path);
+
+  const auto layout = augusta::assets::ReadPackLayout(pack_path);
+
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(layout->version, 3U);
+  EXPECT_EQ(layout->file_size, bytes.size());
+  EXPECT_EQ(layout->data_offset, kWrittenHeaderSize);
+  EXPECT_EQ(layout->index_offset, kWrittenHeaderSize + mesh.size() + script.size());
+  EXPECT_EQ(layout->client_pack, std::nullopt);
+  ASSERT_EQ(layout->entries.size(), 2U);
+  EXPECT_EQ(layout->entries[0].type, augusta::assets::AssetType::kMesh);
+  EXPECT_EQ(layout->entries[0].path, "Mesh");
+  EXPECT_EQ(layout->entries[0].offset, kWrittenHeaderSize);
+  EXPECT_EQ(layout->entries[0].size, mesh.size());
+  EXPECT_EQ(layout->entries[1].type, augusta::assets::AssetType::kScript);
+  EXPECT_EQ(layout->entries[1].path, "rules.lua");
+  EXPECT_EQ(layout->entries[1].offset, kWrittenHeaderSize + mesh.size());
+  EXPECT_EQ(layout->entries[1].size, script.size());
+  EXPECT_EQ(layout->hash, *written);
+  EXPECT_TRUE(std::ranges::equal(layout->signature, std::span(bytes).last(kWrittenSignatureSize)));
+}
+
+TEST_F(PackTest, TheLayoutReadReturnsTheClientPackAServerPackNames) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto client_path = MakePackPath("augusta_assets_test_layout_client");
+  const auto client_hash = augusta::assets::WritePack(client_path, {}, keys.private_key);
+  ASSERT_TRUE(client_hash.has_value());
+  const auto server_path = MakePackPath("augusta_assets_test_layout_server");
+  ASSERT_TRUE(augusta::assets::WritePack(server_path, {}, keys.private_key, *client_hash).has_value());
+
+  const auto layout = augusta::assets::ReadPackLayout(server_path);
+
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(layout->client_pack, *client_hash);
+  EXPECT_TRUE(layout->entries.empty());
+}
+
+// augusta-verify reports what it verified.
+TEST_F(PackTest, APackListsTheEntriesItWasWrittenWith) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_entries");
+  const auto mesh = MakeTriangleMeshBlob();
+  ASSERT_TRUE(augusta::assets::WritePack(
+                  pack_path,
+                  {augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kMesh, .path = "Mesh", .data = mesh},
+                   augusta::assets::AssetEntry{
+                       .type = augusta::assets::AssetType::kCollision, .path = "Collider", .data = mesh}},
+                  keys.private_key)
+                  .has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  const auto entries = pack->Entries();
+  ASSERT_EQ(entries.size(), 2U);
+  EXPECT_EQ(entries[0].type, augusta::assets::AssetType::kMesh);
+  EXPECT_EQ(entries[0].path, "Mesh");
+  EXPECT_EQ(entries[0].size, mesh.size());
+  EXPECT_EQ(entries[1].type, augusta::assets::AssetType::kCollision);
+  EXPECT_EQ(entries[1].path, "Collider");
+  EXPECT_EQ(entries[1].offset, entries[0].offset + mesh.size());
+}
+
+// augusta-publish names the format a verified server pack was cooked in, and
+// augusta-verify the size it verified.
+TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
+  const auto keys = GenerateEd25519KeyPair();
+  const auto pack_path = MakePackPath("augusta_assets_test_version");
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, {}, keys.private_key).has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(pack->Version(), 3U);
+  EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
 }
 
 // The remaining tests exercise Pack::Load's fail-closed parsing directly,
@@ -717,7 +910,7 @@ class PackLoadNegativeTest : public PackTest {
     const std::vector<augusta::assets::AssetEntry> entries = {
         augusta::assets::AssetEntry{augusta::assets::AssetType::kMesh, "TestMesh", MakeTriangleMeshBlob()},
     };
-    const auto valid_path = MakePackPath("augusta_assets_test_valid_source.pack");
+    const auto valid_path = MakePackPath("augusta_assets_test_valid_source");
     const auto written = augusta::assets::WritePack(valid_path, entries, keys_.private_key);
     ASSERT_TRUE(written.has_value());
     valid_bytes_ = ReadFileBytes(valid_path);
@@ -732,7 +925,7 @@ class PackLoadNegativeTest : public PackTest {
 TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
   auto bytes = valid_bytes_;
   bytes[0] = std::byte{'X'};
-  const auto path = MakePackPath("augusta_assets_test_bad_magic.pack");
+  const auto path = MakePackPath("augusta_assets_test_bad_magic");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -745,7 +938,7 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
 TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{2};
-  const auto path = MakePackPath("augusta_assets_test_version_2.pack");
+  const auto path = MakePackPath("augusta_assets_test_version_2");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -758,7 +951,7 @@ TEST_F(PackLoadNegativeTest, RejectsUnsupportedVersion) {
   auto bytes = valid_bytes_;
   // Version is the u32 right after the 4-byte magic, little-endian.
   bytes[4] = std::byte{99};
-  const auto path = MakePackPath("augusta_assets_test_bad_version.pack");
+  const auto path = MakePackPath("augusta_assets_test_bad_version");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -769,7 +962,7 @@ TEST_F(PackLoadNegativeTest, RejectsUnsupportedVersion) {
 // Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
   const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + 10);
-  const auto path = MakePackPath("augusta_assets_test_truncated_tiny.pack");
+  const auto path = MakePackPath("augusta_assets_test_truncated_tiny");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -782,7 +975,7 @@ TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
   // Short enough that the header's own (unchanged) index_offset now
   // claims to point past this file's much smaller hashed_length.
   const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + kHeaderSize + kTrailerSize + 1);
-  const auto path = MakePackPath("augusta_assets_test_truncated_mid.pack");
+  const auto path = MakePackPath("augusta_assets_test_truncated_mid");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -798,7 +991,7 @@ TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
   // content, so this must be caught as a mismatch rather than silently
   // loading corrupted mesh data.
   bytes[kHeaderSize + 2] ^= std::byte{0xFF};
-  const auto path = MakePackPath("augusta_assets_test_corrupted.pack");
+  const auto path = MakePackPath("augusta_assets_test_corrupted");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -811,7 +1004,7 @@ TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
   auto bytes = valid_bytes_;
   // The hash's first byte, right after the flags byte, which is clear.
   bytes[kHeaderSize - 32] = std::byte{1};
-  const auto path = MakePackPath("augusta_assets_test_unflagged_hash.pack");
+  const auto path = MakePackPath("augusta_assets_test_unflagged_hash");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -823,7 +1016,7 @@ TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
 TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
   auto bytes = valid_bytes_;
   bytes[kHeaderSize - 33] = std::byte{0x02};
-  const auto path = MakePackPath("augusta_assets_test_unknown_flag.pack");
+  const auto path = MakePackPath("augusta_assets_test_unknown_flag");
   WriteFileBytes(path, bytes);
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
@@ -833,13 +1026,81 @@ TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
 
 // Requirements: NFR-08, NFR-12
 TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
-  const auto path = MakePackPath("augusta_assets_test_wrong_key.pack");
+  const auto path = MakePackPath("augusta_assets_test_wrong_key");
   WriteFileBytes(path, valid_bytes_);
 
   const auto other_keys = GenerateEd25519KeyPair();
   const auto pack = augusta::assets::Pack::Load(path, other_keys.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error(), augusta::assets::LoadError::kSignatureInvalid);
+}
+
+// The layout read refuses what Pack::Load refuses, with the same LoadError.
+class PackLayoutNegativeTest : public PackLoadNegativeTest {
+ protected:
+  std::expected<augusta::assets::PackLayout, augusta::assets::LoadError> ReadLayoutOf(
+      std::span<const std::byte> bytes) {
+    const auto path = MakePackPath("augusta_assets_test_layout_negative");
+    WriteFileBytes(path, bytes);
+    return augusta::assets::ReadPackLayout(path);
+  }
+};
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsBadMagic) {
+  auto bytes = valid_bytes_;
+  bytes[0] = std::byte{'X'};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kBadMagic);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsUnsupportedVersion) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{99};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kUnsupportedVersion);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsATruncatedFile) {
+  const std::vector<std::byte> bytes(valid_bytes_.begin(), valid_bytes_.begin() + kHeaderSize + kTrailerSize + 1);
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kTruncated);
+}
+
+// Requirements: NFR-12
+TEST_F(PackLayoutNegativeTest, RejectsAnIndexEntryOfAnUnknownType) {
+  auto bytes = valid_bytes_;
+  // The only entry's type byte opens the index, after its one mesh blob.
+  bytes[kHeaderSize + MakeTriangleMeshBlob().size()] = std::byte{0xFF};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_FALSE(layout.has_value());
+  EXPECT_EQ(layout.error(), augusta::assets::LoadError::kInvalidIndex);
+}
+
+// No key, no verification: a pack modified after signing still shows its
+// layout, which is how augusta-inspect looks inside a pack that fails to verify.
+TEST_F(PackLayoutNegativeTest, ReadsAPackWhoseContentNoLongerMatchesItsHash) {
+  auto bytes = valid_bytes_;
+  bytes[kHeaderSize + 2] ^= std::byte{0xFF};
+
+  const auto layout = ReadLayoutOf(bytes);
+
+  ASSERT_TRUE(layout.has_value());
+  ASSERT_EQ(layout->entries.size(), 1U);
+  EXPECT_EQ(layout->entries[0].path, "TestMesh");
 }
 
 TEST(ComputeWorldTransformsTest, ChainsEachNodeThroughItsParents) {

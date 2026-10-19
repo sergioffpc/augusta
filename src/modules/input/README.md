@@ -4,14 +4,17 @@
 
 ## Responsibility
 
-The client's device-facing vocabulary of player input - raw key and mouse
-events, the EventSink they are pushed to, the keymap - and sampling what
-accumulated into one tick's Command, safely across the Main/Render thread that
-pushes and the Prediction thread that samples.
+Turns the window's device events into player input: the controls, the keymap
+that binds them to the window's keys and the names augustac.yaml spells both by,
+and what the events the client runtime hands it accumulate into, sampled as one
+tick's Command, safely across the Main/Render thread that hands events over and
+the Prediction thread that samples.
 
 ## Not its responsibility
 
-- Owning the window and pumping its events: renderer, which pushes them here.
+- The window, its keys and its events: window, which input links only for the
+  events' type (`augusta_window_events`).
+- When the events are drained and handed over: the client runtime.
 - The Command type: gameplay.
 - Reading the bindings from the config file: config (`augusta_client_config`).
 

@@ -1,6 +1,6 @@
 {
   "name": "augusta",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "dependencies": [
     "abseil",
     "benchmark",
@@ -27,7 +27,7 @@
   ],
   "features": {
     "agent": {
-      "description": "The Agents' Python module (tools/agent): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python",
+      "description": "The Agents' Python module (tools/agent): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python, beside the pack feature. pybind11, which the cooker's module is bound with too",
       "dependencies": [
         "pybind11"
       ]
@@ -81,6 +81,20 @@
           "name": "vulkan-loader",
           "platform": "windows"
         }
+      ]
+    },
+    "pack": {
+      "description": "The asset cooker's Python module (tools/pack): the root CMakeLists.txt turns it on with AUGUSTA_TOOLS and the tools environment's Python, beside the agent feature. meshoptimizer for the mesh pass, ktx with its tools (the ktx command the cooker's tests validate with) and not its defaults, and stb for the texture compression",
+      "dependencies": [
+        "meshoptimizer",
+        {
+          "name": "ktx",
+          "default-features": false,
+          "features": [
+            "tools"
+          ]
+        },
+        "stb"
       ]
     }
   },

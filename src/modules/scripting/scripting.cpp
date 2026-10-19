@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <expected>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -61,11 +60,11 @@ std::unexpected<HookError> Fail(HookErrorCode code, std::string subject = {}) {
   return std::unexpected(HookError{.code = code, .subject = std::move(subject)});
 }
 
-std::expected<Slot, LoadError> LoadScript(std::string_view text) {
+std::expected<Slot, LoadError> LoadScript(std::string_view name, std::string_view text) {
   Slot slot{.lua = MakeSandbox(), .freeze = {}};
   slot.freeze = slot.lua.safe_script(kFreezeSource, sol::script_pass_on_error, "=freeze");
   LimitInstructions(slot.lua, kLoadInstructionLimit);
-  const std::string chunk_name = "=" + std::string(kRulesScriptPath);
+  const std::string chunk_name = "=" + std::string(name);
   const sol::protected_function_result result = slot.lua.safe_script(text, sol::script_pass_on_error, chunk_name);
   if (!result.valid()) {
     const sol::error failure = result;
@@ -198,10 +197,6 @@ std::expected<Value, HookError> ToValue(const sol::object& object, int depth) {
 
 }  // namespace
 
-std::string DescribeLoadError(const LoadError& error) {
-  return "the policy script " + std::string(kRulesScriptPath) + " failed to load: " + error.message;
-}
-
 std::string DescribeHookError(const HookError& error) {
   switch (error.code) {
     case HookErrorCode::kRaised:
@@ -214,31 +209,25 @@ std::string DescribeHookError(const HookError& error) {
   return "the hook failed";
 }
 
-struct Engine::Impl {
-  // Empty when the scenario has no rules.
-  std::optional<Slot> rules;
+struct Script::Impl {
+  Slot slot;
 };
 
-Engine::Engine() : impl_(std::make_unique<Impl>()) {}
-Engine::~Engine() = default;
-Engine::Engine(Engine&&) noexcept = default;
-Engine& Engine::operator=(Engine&&) noexcept = default;
+Script::Script(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+Script::~Script() = default;
+Script::Script(Script&&) noexcept = default;
+Script& Script::operator=(Script&&) noexcept = default;
 
-std::expected<Engine, LoadError> Engine::Load(std::string_view rules) {
-  auto slot = LoadScript(rules);
+std::expected<Script, LoadError> Script::Load(std::string_view name, std::string_view text) {
+  auto slot = LoadScript(name, text);
   if (!slot) {
     return std::unexpected(slot.error());
   }
-  Engine engine;
-  engine.impl_->rules.emplace(*std::move(slot));
-  return engine;
+  return Script(std::make_unique<Impl>(Impl{.slot = *std::move(slot)}));
 }
 
-std::expected<Value, HookError> Engine::Call(std::string_view hook, const Value::Record& view) {
-  std::optional<Slot>& slot = impl_->rules;
-  if (!slot) {
-    return Value{};
-  }
+std::expected<Value, HookError> Script::Call(std::string_view hook, const Value::Record& view) {
+  Slot* const slot = &impl_->slot;
   // The engine's own work in the state is outside a protected call, so it runs
   // with the memory limit lifted; the hook alone runs under it.
   const MemoryLimitScope unlimited(slot->lua, false);

@@ -3,7 +3,7 @@
 Puts a scenario's server pack where the cluster's servers read it (ADR-0026), on
 the k3s node's shared asset-pack volume, in the tree of the Environment that
 serves it, at
-/srv/augusta/asset-packs/<environment>/<scenario>/<version>/{server.pack,signing.pub}.
+/srv/augusta/asset-packs/<environment>/<scenario>/<version>/{server.apak,signing.pub}.
 Each Environment signs its packs with its own key (keys/<environment>.key), so
 one cook signed for develop and for staging is two folders, each with its own
 signing.pub.
@@ -43,12 +43,12 @@ import sys
 import tempfile
 from typing import IO, Protocol
 
+from augusta_pack import _native
 from augusta_pack.assets_root import default_assets_root
 from augusta_pack.keys import read_public_key
-from augusta_pack.reader import verify_pack
 
 VOLUME_ROOT = "/srv/augusta/asset-packs"
-SERVER_PACK_NAME = "server.pack"
+SERVER_PACK_NAME = "server.apak"
 PUBLIC_KEY_NAME = "signing.pub"
 VERSION_LENGTH = 12
 # The Environments the node serves, each from its own tree: the node's end
@@ -131,10 +131,10 @@ def prepare(
         )
     try:
         public_key = read_public_key(public_key_path)
-        client = verify_pack(client_pack, public_key)
-        server = verify_pack(server_pack, public_key)
+        client = _native.load_pack(client_pack, public_key)
+        server = _native.load_pack(server_pack, public_key)
     except (OSError, ValueError) as error:
-        # PackError and read_public_key's size error are both ValueErrors.
+        # LoadError and read_public_key's size error are both ValueErrors.
         raise PublishError(str(error)) from error
     if server.client_pack_hash is None:
         raise PublishError(
@@ -279,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
         "scenario",
         help="Scenario name (ADR-0041), which also names its server in the "
         "cluster: its packs default to "
-        "<assets-root>/packs/<scenario>/{client,server}.pack, where "
+        "<assets-root>/packs/<scenario>/{client,server}.apak, where "
         "augusta-pack writes them.",
     )
     parser.add_argument(
@@ -307,13 +307,13 @@ def main(argv: list[str] | None = None) -> int:
         "--client-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<scenario>/client.pack",
+        help="Default: <assets-root>/packs/<scenario>/client.apak",
     )
     parser.add_argument(
         "--server-pack",
         type=Path,
         default=None,
-        help="Default: <assets-root>/packs/<scenario>/server.pack",
+        help="Default: <assets-root>/packs/<scenario>/server.apak",
     )
     parser.add_argument(
         "--public-key",
@@ -329,8 +329,8 @@ def main(argv: list[str] | None = None) -> int:
         release = prepare(
             args.environment,
             args.scenario,
-            args.client_pack or packs / "client.pack",
-            args.server_pack or packs / "server.pack",
+            args.client_pack or packs / "client.apak",
+            args.server_pack or packs / "server.apak",
             args.public_key
             or args.assets_root / "keys" / f"{args.environment}.pub",
         )

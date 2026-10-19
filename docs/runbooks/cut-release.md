@@ -29,11 +29,9 @@ required check, fails a pull request after which any `packFormat` there differs
 from `kFormatVersion`, or a `packVersion` has none
 ([`scripts/check-pack-formats.py`](../../scripts/check-pack-formats.py)).
 
-A change to `kFormatVersion` (with the cooker's `FORMAT_VERSION`,
-[`tools/pack/src/augusta_pack/pack.py`](../../tools/pack/src/augusta_pack/pack.py))
-therefore needs every scenario re-cooked in the new format, for every
-environment, before it merges. A change that leaves the format version alone
-needs no re-cook. In order:
+A change to `kFormatVersion` therefore needs every scenario re-cooked in the new
+format, for every environment, before it merges. A change that leaves the format
+version alone needs no re-cook. In order:
 
 1. On the `feature/*` branch that changes the format, cook each scenario
    `clusters/` names (`git grep -n packVersion -- clusters/`) with that branch's
@@ -195,16 +193,16 @@ cut that release first and the hotfix off it.
     [Rollback / abort](#rollback--abort) describes, and tag its merge commit
     once its image is published.
 
-9. Watch the workflow. Its `client-x64-windows`, `client-x64-linux`, `server`
-   and `tools` jobs rebuild and test the Release binaries, and
-   `client-x64-windows` and `client-x64-linux` check the zip and the tarball
-   start from an empty folder (ADR-0058). Once the three build jobs pass, its
-   `nightly` job runs every nightly job on the tagged commit (ADR-0013), the
-   scan of the SBOMs just built among them. `publish` creates the GitHub Release
-   only if all of them pass. Plan for the builds' time and then a night's on
-   top, over an hour in all: the fuzzing alone takes 30 minutes per target, the
-   targets side by side. A failing nightly job here fails the run and opens no
-   `nightly-failure` issue; the run is where it shows:
+9. Watch the workflow. Its `client-x64-windows`, `client-x64-linux` and `server`
+   jobs rebuild and test the Release binaries, and `client-x64-windows` and
+   `client-x64-linux` check the zip and the tarball start from an empty folder
+   (ADR-0058). Once the three build jobs pass, its `nightly` job runs every
+   nightly job on the tagged commit (ADR-0013), the scan of the SBOMs just built
+   among them. `publish` creates the GitHub Release only if all of them pass.
+   Plan for the builds' time and then a night's on top, over an hour in all: the
+   fuzzing alone takes 30 minutes per target, the targets side by side. A
+   failing nightly job here fails the run and opens no `nightly-failure` issue;
+   the run is where it shows:
 
     ```sh
     gh run list --workflow release.yml --limit 1

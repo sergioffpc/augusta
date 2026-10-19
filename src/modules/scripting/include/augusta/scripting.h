@@ -10,26 +10,21 @@
 #include <vector>
 
 /// \file
-/// augusta::scripting runs a scenario's Game policy (ADR-0022): its rules, one
-/// Lua script the server reads out of its pack at startup. It runs in a sandbox
-/// of its own (augusta/lua_sandbox.h, ADR-0039) that shares no globals with the
-/// Parameters script. Server-only: game policy is exclusively server-authoritative, never
-/// run by either client world.
+/// augusta::scripting is the sandboxed Lua embedding (ADR-0022): a script
+/// loaded into a sandbox of its own (augusta/lua_sandbox.h, ADR-0039), sharing
+/// no globals with any other, whose global functions are called by name. It
+/// knows nothing of what a script decides: Game policy (augusta/policy.h) gives
+/// its script its meaning. Server-only.
 ///
-/// A hook is a global function a script defines, called by name from
-/// SimulationWorld (ADR-0023); a script that does not define one leaves that
-/// concern to the mechanism. A hook is handed a plain read-only table built for
-/// the call, never a live binding into the ECS, and acts only through the plain
-/// data it returns, which the caller validates in C++. Every call runs under an
-/// instruction limit, and a hook that raises an error, runs past the limit or
-/// returns something that is not plain data fails the call without harming the
-/// engine: the next call runs as usual. Deterministic, like the rest of the
-/// simulation: the same scripts called with the same views return the same values.
+/// A hook is a global function a script defines, called by name; a script that
+/// does not define one answers nil. A hook is handed a plain read-only table
+/// built for the call, never a live binding into the engine, and acts only
+/// through the plain data it returns, which the caller validates in C++. Every
+/// call runs under an instruction limit, and a hook that raises an error, runs
+/// past the limit or returns something that is not plain data fails the call
+/// without harming the engine: the next call runs as usual. Deterministic: the
+/// same script called with the same views returns the same values.
 namespace augusta::scripting {
-
-/// The rules script's path in the scenario's server pack, which is also the
-/// name it is logged under (ADR-0022, ADR-0041).
-inline constexpr std::string_view kRulesScriptPath = "rules.lua";
 
 struct Field;
 
@@ -50,13 +45,10 @@ struct Field {
   Value value;
 };
 
-/// A rules script that failed to load: Lua's message.
+/// A script that failed to load: Lua's message, which names the script.
 struct LoadError {
   std::string message;
 };
-
-/// A message for error fit to log or print, naming the script.
-std::string DescribeLoadError(const LoadError& error);
 
 /// Why a hook call decided nothing.
 enum class HookErrorCode : std::uint8_t {
@@ -79,32 +71,30 @@ struct HookError {
 /// A message for error fit to log.
 std::string DescribeHookError(const HookError& error);
 
-/// The Game policy of one scenario, run in SimulationWorld's
-/// Scripts/Behaviours phase on the Simulation thread (ADR-0005). SimulationWorld
-/// owns exactly one. Move-only: it owns its Lua states.
-class Engine {
+/// One loaded script in a Lua state of its own. Move-only: it owns its Lua
+/// state.
+class Script {
  public:
-  /// No rules loaded: every hook is undefined.
-  Engine();
-  ~Engine();
-  Engine(const Engine&) = delete;
-  Engine& operator=(const Engine&) = delete;
-  Engine(Engine&&) noexcept;
-  Engine& operator=(Engine&&) noexcept;
+  ~Script();
+  Script(const Script&) = delete;
+  Script& operator=(const Script&) = delete;
+  Script(Script&&) noexcept;
+  Script& operator=(Script&&) noexcept;
 
-  /// Loads the rules script into a sandbox and runs its top level, which
-  /// defines its hooks, under the instruction limit. A script that does not
-  /// compile, raises an error or reaches for what the sandbox leaves out (io,
-  /// os, require, math.random, ...) is the error.
-  static std::expected<Engine, LoadError> Load(std::string_view rules);
+  /// Loads text into a sandbox, under name (what Lua's messages call it), and
+  /// runs its top level, which defines its hooks, under the instruction limit.
+  /// A script that does not compile, raises an error or reaches for what the
+  /// sandbox leaves out (io, os, require, math.random, ...) is the error.
+  static std::expected<Script, LoadError> Load(std::string_view name, std::string_view text);
 
   /// Calls hook with view, as a read-only table, and returns what it returned:
-  /// nil when no rules are loaded or they do not define hook, which is then a
-  /// no-op. Each call starts the instruction limit over.
+  /// nil when the script does not define hook. Each call starts the instruction
+  /// limit over.
   std::expected<Value, HookError> Call(std::string_view hook, const Value::Record& view);
 
  private:
   struct Impl;
+  explicit Script(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };
 

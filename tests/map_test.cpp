@@ -12,8 +12,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/math.h"
+#include "augusta/pack_encoder.h"
 #include "augusta/physics.h"
-#include "encoder.h"
 
 // Builds a real signed pack in a temp file and loads it back, so what is tested
 // is the map module reading a Pack the way both executables do.
@@ -68,7 +68,8 @@ class MapTest : public ::testing::Test {
 
   // Writes entries into a signed pack and loads it.
   Pack MakePack(const std::string& name, const std::vector<AssetEntry>& entries) {
-    const auto path = std::filesystem::temp_directory_path() / ("augusta_map_test_" + name + ".pack");
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("augusta_map_test_" + name + std::string(augusta::assets::kPackExtension));
     cleanup_.push_back(path);
     const auto keys = augusta::assets::GenerateEd25519KeyPair();
     EXPECT_TRUE(augusta::assets::WritePack(path, entries, keys.private_key).has_value());

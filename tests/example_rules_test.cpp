@@ -19,14 +19,14 @@
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/pack_encoder.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
-#include "augusta/scripting.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "encoder.h"
 
 // The example scenario's shipped rules (last_man_standing.lua), run inside the real engine
 // through SimulationWorld (ADR-0013's decision for Lua gameplay scripts): loaded
@@ -37,11 +37,11 @@ namespace {
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
+using augusta::policy::SessionId;
 using augusta::simulation::Character;
 using augusta::simulation::EntityId;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::PlayerIdentity;
-using augusta::simulation::SessionId;
 using augusta::simulation::State;
 using augusta::simulation::TickResult;
 using augusta::simulation::World;
@@ -71,26 +71,26 @@ augusta::assets::AssetEntry ScriptEntry(std::string path, const std::string& tex
 // The example scenario's Game policy, written into a signed server pack and
 // loaded back out of it by the server's own loader. ctest runs every test in a
 // process of its own, possibly in parallel, so each writes a pack of its own.
-augusta::scripting::Engine ExamplePolicy() {
+augusta::policy::Policy ExamplePolicy() {
   const ::testing::TestInfo& test = *::testing::UnitTest::GetInstance()->current_test_info();
   std::string name = std::string("augusta_example_rules_test_") + test.test_suite_name() + "_" + test.name();
   std::ranges::replace(name, '/', '_');
-  const auto pack_path = std::filesystem::temp_directory_path() / (name + ".pack");
+  const auto pack_path = std::filesystem::temp_directory_path() / (name + std::string(augusta::assets::kPackExtension));
   const auto keys = augusta::assets::GenerateEd25519KeyPair();
   EXPECT_TRUE(augusta::assets::WritePack(
                   pack_path,
-                  {ScriptEntry(std::string(augusta::scripting::kRulesScriptPath), ReadFile(AUGUSTA_EXAMPLE_RULES))},
+                  {ScriptEntry(std::string(augusta::policy::kRulesScriptPath), ReadFile(AUGUSTA_EXAMPLE_RULES))},
                   keys.private_key)
                   .has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   std::filesystem::remove(pack_path);
   if (!pack.has_value()) {
     ADD_FAILURE() << augusta::assets::DescribeLoadError(pack.error());
-    return augusta::scripting::Engine{};
+    return augusta::policy::Policy{};
   }
-  auto policy = augusta::server::LoadPolicy(*pack);
-  EXPECT_TRUE(policy.has_value()) << augusta::server::DescribePolicyLoadError(policy.error());
-  return policy ? *std::move(policy) : augusta::scripting::Engine{};
+  auto policy = augusta::scenario::LoadPolicy(*pack);
+  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
 // A target hard to miss from any side: two walls 4 m wide and 2 m tall,
@@ -173,7 +173,7 @@ class Arena {
   }
 
   // Every Match end the rules have decided so far, with the tick of each.
-  const std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>>& Ends() const { return ends_; }
+  const std::vector<std::pair<augusta::tick::Tick, augusta::policy::MatchEnd>>& Ends() const { return ends_; }
 
  private:
   static Parameters WithLethalRifle(std::size_t player_count) {
@@ -199,8 +199,8 @@ class Arena {
 
   // Keeps the Match end Game policy took on the tick of result, if any; returns its State.
   State Record(TickResult result) {
-    for (const augusta::simulation::PolicyAction& action : result.actions) {
-      if (const auto* end = std::get_if<augusta::simulation::MatchEnd>(&action)) {
+    for (const augusta::policy::PolicyAction& action : result.actions) {
+      if (const auto* end = std::get_if<augusta::policy::MatchEnd>(&action)) {
         ends_.emplace_back(result.state.tick, *end);
       }
     }
@@ -208,7 +208,7 @@ class Arena {
   }
 
   World world_;
-  std::vector<std::pair<augusta::tick::Tick, augusta::simulation::MatchEnd>> ends_;
+  std::vector<std::pair<augusta::tick::Tick, augusta::policy::MatchEnd>> ends_;
 };
 
 class ExampleRulesTest : public ::testing::TestWithParam<std::size_t> {

@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
+#include "augusta/capture_records.h"
 #include "augusta/command.h"
 #include "augusta/command_queue.h"
 #include "augusta/harness.h"
@@ -158,7 +159,8 @@ TEST(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
 
 TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
   EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(), ScriptError{.capture = ReadError::kNotACapture});
-  std::ifstream missing(std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing.capture",
+  std::ifstream missing((std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing")
+                            .replace_extension(augusta::capture::kExtension),
                         std::ios::binary);
   EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError::kUnreadable});
 }
@@ -335,7 +337,7 @@ Script ThreePlayerScript() {
 // A view of the first Match, its players at the Script's spawns with
 // sessions 11, 12 and 13 and bodies 21, 22 and 23, its newest State of tick
 // (none if nullopt) acknowledging acknowledged.
-ServerView InMatch(std::optional<Tick> tick, augusta::command::Sequence acknowledged = 0) {
+ServerView InMatch(std::optional<Tick> tick, augusta::tick::Sequence acknowledged = 0) {
   ServerView view;
   view.matches_started = 1;
   view.in_match = true;
@@ -412,7 +414,7 @@ TEST(ReenactmentTest, ItLeavesOnlyOnceEveryCommandBeforeItsLeaveHasReachedTheWor
   script.commands = AtOffsets({37, 38, 39});
   Reenactment run(script);
   // Sequences 1 to 3 go for offsets 37 to 39, the last before the Leave at 40.
-  for (augusta::command::Sequence sequence = 1; sequence <= 3; ++sequence) {
+  for (augusta::tick::Sequence sequence = 1; sequence <= 3; ++sequence) {
     ASSERT_TRUE(run.NextCommand(InMatch(kFirstTick + 35 + sequence, sequence - 1), sequence, 0).has_value());
   }
   ASSERT_FALSE(run.NextCommand(InMatch(kFirstTick + 39, 2), 4, 0).has_value());
@@ -518,7 +520,7 @@ TEST(ReenactmentTest, AServerOfAnotherPlayerCountIsSaidSo) {
 
 // --- A run against a server's queue over a link ---
 
-// A Captured player's client and a server's command queue (server::
+// A Captured player's client and a server's command queue (host::
 // CommandQueue) over a link of one_way ticks each way, the server ticking
 // every server_period units of time and the client every client_period: how
 // many Commands the queue dropped, each one it handed to the World and on
@@ -539,22 +541,22 @@ struct LinkRun {
 LinkRun RunOverALink(const Script& script, int server_period, int client_period, int one_way, int server_ticks) {
   struct Message {
     int arrives = 0;
-    augusta::server::SequencedCommand command;
+    augusta::host::SequencedCommand command;
   };
   struct State {
     int arrives = 0;
     Tick tick = 0;
-    augusta::command::Sequence acknowledged = 0;
+    augusta::tick::Sequence acknowledged = 0;
   };
   Reenactment run(script);
-  augusta::server::CommandQueue queue(kTickRate);
+  augusta::host::CommandQueue queue(kTickRate);
   LinkRun result;
   std::vector<Message> to_server;
   std::vector<State> to_client;
   std::optional<State> newest;
   std::optional<int> disconnect_arrives;
   bool connected = true;
-  augusta::command::Sequence next_sequence = 1;
+  augusta::tick::Sequence next_sequence = 1;
   const int latency = one_way * server_period;
   const Tick round_trip = 2 * static_cast<Tick>(one_way);
   for (int now = 0; now <= server_ticks * server_period; ++now) {
@@ -563,7 +565,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
         return message.arrives <= now;
       }
       const auto enqueued = queue.TryEnqueue(message.command);
-      result.dropped += enqueued == augusta::server::Enqueued::kDroppedOldest ? 1 : 0;
+      result.dropped += enqueued == augusta::host::Enqueued::kDroppedOldest ? 1 : 0;
       result.most_queued = std::max(result.most_queued, queue.Queued());
       return true;
     });
@@ -575,7 +577,7 @@ LinkRun RunOverALink(const Script& script, int server_period, int client_period,
         result.left_before = tick;
       }
       if (connected) {
-        const augusta::server::TickCommand next = queue.Next();
+        const augusta::host::TickCommand next = queue.Next();
         if (next.sent) {
           result.handed.push_back({.tick = tick, .command = next.command});
         }

@@ -9,7 +9,7 @@ of each match. It changes parts of ADR-0042 and extends the message catalogue of
 ADR-0038.
 
 **A match has a fixed player count.** The scenario's Parameters (ADR-0039) set
-how many players a match needs, from 1 to `primitives::kMaxPlayers`. The server
+how many players a match needs, from 1 to `limits::kMaxPlayers`. The server
 decides this number and tells each client, as it does for every other parameter.
 A Player count of 1 is allowed for development and tests, so one client can
 exercise a whole match; a scenario meant to be played asks for 2 to 8, as US-02
@@ -68,7 +68,7 @@ leave.
 - **The mid-match Roster in Join accepted goes away.** The Lobby's membership
   replaces it. The server sends it to everyone in the Lobby whenever it changes.
 - **The Spawn point is assigned at match start, not at join, and by Game
-  policy.** `server::Match` decides who is in a match and when it starts, never
+  policy.** `host::Match` decides who is in a match and when it starts, never
   where anyone spawns: SimulationWorld's Match start runs the scenario's
   `assign_spawns` hook (ADR-0022, ADR-0023), and players take the spawn points
   in order, starting over after the last, when the scenario defines no hook or

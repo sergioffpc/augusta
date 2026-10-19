@@ -7,13 +7,13 @@
 The Networking Protocol: the messages client and server exchange, and the
 capture's records, with their custom binary encoding. A pure codec - bytes in, a
 message or a typed error out - that treats its input as untrusted, and whose
-messages hold only its own plain `*Wire` types.
+messages hold only its own plain `*Wire` types. An Authoritative State encoded
+once is readdressed to each recipient by rewriting only its own fields' bytes.
 
 ## Not its responsibility
 
 - Sockets and delivery: networking.
-- Converting to the engine's types: wire (shared core), `augusta/harness_wire.h`
-  (client), `augusta/host_wire.h` (server).
+- Converting to the engine's types: link (`augusta_link_messages`).
 - Which peer may send what, and what a message means for the Match: the
   receiver.
 

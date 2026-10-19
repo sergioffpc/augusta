@@ -2,13 +2,13 @@
 #define AUGUSTA_HARNESS_COMMAND_STREAM_H_
 
 #include <cstdint>
-#include <deque>
 #include <vector>
 
 #include "augusta/command.h"
 #include "augusta/harness.h"
-#include "augusta/harness_wire.h"
+#include "augusta/link_types.h"
 #include "augusta/prediction.h"
+#include "augusta/tick.h"
 
 /// \file
 /// The client's side of each tick in a Session (ADR-0021, ADR-0024): its own
@@ -23,7 +23,7 @@ struct CommandTick {
   prediction::State state{};
   /// Every command the server has not yet acknowledged, this tick's last; empty
   /// when nothing is to be sent, outside a match.
-  std::vector<SequencedCommand> send;
+  std::vector<link::SequencedCommand> send;
 };
 
 /// The predicted player and the stream of commands that moves it on the server.
@@ -36,13 +36,13 @@ class CommandStream {
   [[nodiscard]] CommandTick Tick(const ServerView& server_view, const command::Command& command, float delta_time);
 
   /// The sequence the next command sent goes under.
-  [[nodiscard]] command::Sequence NextSequence() const { return next_sequence_; }
+  [[nodiscard]] tick::Sequence NextSequence() const { return next_sequence_; }
 
  private:
   // Keeps command under sequence with the commands server_view does not yet
-  // acknowledge, and returns them all, as one message carries them.
-  std::vector<SequencedCommand> Queue(const ServerView& server_view, command::Sequence sequence,
-                                      const command::Command& command);
+  // acknowledge, and returns those one message carries, oldest first.
+  std::vector<link::SequencedCommand> Queue(const ServerView& server_view, tick::Sequence sequence,
+                                            const command::Command& command);
 
   prediction::World prediction_;
   // Which match the prediction was last started over in
@@ -52,8 +52,8 @@ class CommandStream {
   // The commands still waiting to be acknowledged, and the sequence the next
   // one goes under. Sequences start at 1; 0 means none. They count this
   // connection's commands alone, so 32 bits outlast any session (ADR-0038).
-  std::deque<SequencedCommand> unacknowledged_;
-  command::Sequence next_sequence_ = 1;
+  std::vector<link::SequencedCommand> unacknowledged_;
+  tick::Sequence next_sequence_ = 1;
 };
 
 }  // namespace augusta::harness
