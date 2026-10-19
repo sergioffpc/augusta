@@ -23,6 +23,9 @@ namespace augusta::prediction {
 
 namespace {
 
+// The Surface id every mesh of the Map is added with: nothing else here is one.
+constexpr physics::SurfaceId kMapSurface{0};
+
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
@@ -187,7 +190,7 @@ World::World() : impl_(std::make_unique<Impl>()) {}
 World::~World() = default;
 
 std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
-  return impl_->physics.AddCollisionMesh(mesh);
+  return impl_->physics.AddCollisionMesh(mesh, kMapSurface);
 }
 
 void World::Start(const math::Vec3& spawn, const parameters::Parameters& parameters) {

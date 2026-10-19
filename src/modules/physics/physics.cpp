@@ -89,6 +89,7 @@ using physx::PxQuat;
 using physx::PxQueryFilterData;
 using physx::PxQueryFlag;
 using physx::PxRaycastBuffer;
+using physx::PxRigidActor;
 using physx::PxRigidActorExt;
 using physx::PxRigidStatic;
 using physx::PxScene;
@@ -346,6 +347,8 @@ struct World::Impl {
   // Static map geometry added by AddCollisionMesh; released with the World.
   std::vector<PxTriangleMesh*> collision_meshes;
   std::vector<PxRigidStatic*> static_actors;
+  // The Surface id each of static_actors was added with.
+  std::unordered_map<const PxRigidActor*, SurfaceId> surfaces;
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
@@ -440,7 +443,7 @@ std::expected<void, CollisionMeshError> ValidateCollisionMesh(const CollisionMes
   return {};
 }
 
-std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionMesh& mesh) {
+std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionMesh& mesh, SurfaceId surface) {
   if (const auto valid = ValidateCollisionMesh(mesh); !valid) {
     return valid;
   }
@@ -464,6 +467,7 @@ std::expected<void, CollisionMeshError> World::AddCollisionMesh(const CollisionM
   impl_->scene->addActor(*actor);
   impl_->collision_meshes.push_back(cooked);
   impl_->static_actors.push_back(actor);
+  impl_->surfaces.emplace(actor, surface);
   LOG_DEBUG("subsystem=physics event=collision_mesh_added triangles={}", mesh.indices.size() / 3);
   return {};
 }
@@ -627,8 +631,8 @@ RaycastHit World::Raycast(const math::Vec3& origin, const math::Vec3& direction,
   return result;
 }
 
-RaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
-  RaycastHit result;
+MapRaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const {
+  MapRaycastHit result;
   const float length = math::Length(direction);
   if (length <= 0.0F || max_distance <= 0.0F) {
     return result;
@@ -645,6 +649,7 @@ RaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& directi
   result.has_hit = true;
   result.point = FromPx(hit.block.position);
   result.distance = hit.block.distance;
+  result.surface = impl_->surfaces.at(hit.block.actor);
   return result;
 }
 

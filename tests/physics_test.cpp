@@ -16,13 +16,18 @@ using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
 using augusta::physics::CollisionMeshError;
 using augusta::physics::FallState;
+using augusta::physics::MapRaycastHit;
 using augusta::physics::MovementInput;
 using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
+using augusta::physics::SurfaceId;
 using augusta::physics::World;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
+
+// The Surface id of a test's Map, where which collider is struck does not matter.
+constexpr SurfaceId kMap{1};
 
 // A character's eye (ADR-0040), standing, relative to its feet.
 const Vec3 kStandingEye(0.0F, 1.7F, 0.1F);
@@ -372,7 +377,8 @@ constexpr float kHalfExtent = 50.0F;
 
 World WorldWithFloor() {
   World world{StaminaConfig{}};
-  EXPECT_TRUE(world.AddCollisionMesh(Floor(0.0F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  EXPECT_TRUE(
+      world.AddCollisionMesh(Floor(0.0F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent), kMap).has_value());
   return world;
 }
 
@@ -425,7 +431,7 @@ class WallTest : public ::testing::TestWithParam<bool> {};
 // Requirements: US-04
 TEST_P(WallTest, AWallStopsAWalkingBody) {
   World world = WorldWithFloor();
-  ASSERT_TRUE(world.AddCollisionMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, GetParam())).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, GetParam()), kMap).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput walk{};
   walk.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -444,7 +450,7 @@ TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
   // A tunnel from x = 3 onward: 1.7 m of headroom fits a crouch (1.3 m, plus the
   // controller's contact skin) but not standing (2.1 m).
-  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent), kMap).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput crouch_in{};
   crouch_in.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -463,7 +469,7 @@ TEST(StaticGeometryTest, ACrouchedBodyCannotStandUpUnderALowCeiling) {
 // Requirements: US-04
 TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
   World world = WorldWithFloor();
-  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(1.7F, 3.0F, kHalfExtent, -kHalfExtent, kHalfExtent), kMap).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.2F, 0.0F));
   MovementInput crawl_in{};
   crawl_in.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -482,7 +488,8 @@ TEST(StaticGeometryTest, AProneBodyCannotStandUpUnderALowCeiling) {
 TEST(StaticGeometryTest, ACeilingJustAboveStandingHeightStillBlocksStandingUp) {
   World world = WorldWithFloor();
   // Standing is 2.1 m tall; the controller also keeps a contact skin around it.
-  ASSERT_TRUE(world.AddCollisionMesh(Ceiling(2.05F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent)).has_value());
+  ASSERT_TRUE(
+      world.AddCollisionMesh(Ceiling(2.05F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent), kMap).has_value());
   const auto body = world.CreateBody(Vec3(0.0F, 1.0F, 0.0F));
   MovementInput crouch{};
   crouch.desired_stance = Stance::kCrouching;
@@ -548,11 +555,29 @@ TEST(StaticGeometryTest, ARaycastOfTheMapSeesTheMapButNoBody) {
   ASSERT_TRUE(world.Raycast(above, down, 20.0F).has_hit);
   ASSERT_GT(world.Raycast(above, down, 20.0F).point.y, 0.5F);
 
-  const RaycastHit hit = world.RaycastMap(above, down, 20.0F);
+  const MapRaycastHit hit = world.RaycastMap(above, down, 20.0F);
 
   ASSERT_TRUE(hit.has_hit);
   EXPECT_NEAR(hit.point.y, 0.0F, 0.01F);
   EXPECT_NEAR(hit.distance, 10.0F, 0.01F);
+}
+
+TEST(StaticGeometryTest, ARaycastOfTheMapReportsTheSurfaceOfTheMeshItStrikes) {
+  World world{StaminaConfig{}};
+  constexpr SurfaceId kFloor{7};
+  constexpr SurfaceId kWall{42};
+  ASSERT_TRUE(
+      world.AddCollisionMesh(Floor(0.0F, -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent), kFloor).has_value());
+  ASSERT_TRUE(world.AddCollisionMesh(Wall(5.0F, 5.0F, -kHalfExtent, kHalfExtent, false), kWall).has_value());
+
+  const MapRaycastHit down = world.RaycastMap(Vec3(0.0F, 10.0F, 0.0F), Vec3(0.0F, -1.0F, 0.0F), 20.0F);
+  const MapRaycastHit across = world.RaycastMap(Vec3(0.0F, 2.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), 20.0F);
+
+  ASSERT_TRUE(down.has_hit);
+  EXPECT_EQ(down.surface, kFloor);
+  ASSERT_TRUE(across.has_hit);
+  EXPECT_EQ(across.surface, kWall);
+  EXPECT_NEAR(across.point.x, 5.0F, 0.01F);
 }
 
 TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
@@ -563,7 +588,7 @@ TEST(StaticGeometryTest, ValidateCollisionMeshAgreesWithAddCollisionMesh) {
 TEST(StaticGeometryTest, AMeshWithNoTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddCollisionMesh(CollisionMesh{});
+  const auto result = world.AddCollisionMesh(CollisionMesh{}, kMap);
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), CollisionMeshError::kEmpty);
@@ -572,8 +597,10 @@ TEST(StaticGeometryTest, AMeshWithNoTrianglesIsRejected) {
 TEST(StaticGeometryTest, AnIndexOutsideThePointsIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddCollisionMesh(CollisionMesh{
-      .points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)}, .indices = {0, 1, 7}});
+  const auto result = world.AddCollisionMesh(
+      CollisionMesh{.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)},
+                    .indices = {0, 1, 7}},
+      kMap);
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
@@ -582,8 +609,10 @@ TEST(StaticGeometryTest, AnIndexOutsideThePointsIsRejected) {
 TEST(StaticGeometryTest, AnIndexCountThatIsNotWholeTrianglesIsRejected) {
   World world{StaminaConfig{}};
 
-  const auto result = world.AddCollisionMesh(CollisionMesh{
-      .points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)}, .indices = {0, 1}});
+  const auto result = world.AddCollisionMesh(
+      CollisionMesh{.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F)},
+                    .indices = {0, 1}},
+      kMap);
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);

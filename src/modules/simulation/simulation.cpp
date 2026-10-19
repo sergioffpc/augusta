@@ -34,6 +34,10 @@ namespace augusta::simulation {
 
 namespace {
 
+// The Surface id every mesh of the Map is added with: the whole Map is one
+// Surface, reserved for it, so a strike on it is never read as anything else.
+constexpr physics::SurfaceId kMapSurface{0};
+
 // One flecs::entity per Phase value, indexed by Phase's declared order -
 // not by its enum value (Phase isn't contiguous-from-zero by design, see
 // simulation.h), so PhaseIndex below is the single place that mapping is
@@ -648,7 +652,7 @@ World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz
 World::~World() = default;
 
 std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
-  return impl_->physics.AddCollisionMesh(mesh);
+  return impl_->physics.AddCollisionMesh(mesh, kMapSurface);
 }
 
 World::World(World&&) noexcept = default;

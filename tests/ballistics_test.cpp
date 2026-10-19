@@ -31,6 +31,7 @@ using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::physics::CollisionMesh;
 using augusta::physics::StaminaConfig;
+using augusta::physics::SurfaceId;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
 constexpr float kGravity = 9.81F;
@@ -250,7 +251,7 @@ std::unique_ptr<augusta::physics::World> MapWithWall(float x) {
       wall.points.push_back(point);
     }
   }
-  EXPECT_TRUE(map->AddCollisionMesh(wall).has_value());
+  EXPECT_TRUE(map->AddCollisionMesh(wall, SurfaceId{1}).has_value());
   return map;
 }
 
