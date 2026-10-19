@@ -321,7 +321,7 @@ def _read_sounds(
 def _read_cue_sound(
     authoring_dir: Path, cue: str, sound_rel: object, manifest_path: Path
 ) -> CueSound:
-    """cue's sound: one WAV file, or a mapping of its variants and gain.
+    """The sound of cue: one WAV file, or a mapping of its variants and gain.
 
     One file is shorthand for one variant at 0 dB (ADR-0041).
     """
