@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "augusta/failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/faults.h"
-#include "augusta/first_failure.h"
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
@@ -30,7 +30,7 @@ struct ReplayListQuery::Impl {
   bool requested = false;
   std::optional<std::vector<ReplayListing>> list;
   std::optional<JoinRefusal> refusal;
-  failure::FirstFailure transport_failure;
+  failure::FailureLatch transport_failure;
 
   Impl(link::Endpoint endpoint, failure::Faults* faults) : server(std::move(endpoint)), channel(faults) {}
 

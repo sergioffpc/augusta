@@ -14,7 +14,7 @@
 
 #include "augusta/command.h"
 #include "augusta/failure.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
@@ -43,12 +43,12 @@ struct Session::Impl {
   // What the server sent, received on the Network I/O thread and read from any.
   Inbox inbox;
   // The first local transport failure any thread's send or receive met, until taken.
-  failure::FirstFailure transport_failure;
+  failure::FailureLatch transport_failure;
   // Prediction thread only.
   CommandStream commands;
 
   // The first message any thread could not encode, which was not sent, until taken.
-  failure::FirstFailure invariant_failure;
+  failure::FailureLatch invariant_failure;
 
   Impl(const SessionConfig& config, prediction::World world)
       : server(config.server),
@@ -82,7 +82,7 @@ struct Session::Impl {
     }
     link::SendResult sent = channel.Send(message);
     if (!sent.has_value()) {
-      failure::FirstFailure& kept =
+      failure::FailureLatch& kept =
           sent.error().code == failure::Code::kInvariantViolated ? invariant_failure : transport_failure;
       kept.Record(std::move(sent.error()));
       return false;

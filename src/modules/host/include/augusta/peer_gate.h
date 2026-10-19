@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "augusta/admission.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
@@ -85,7 +85,7 @@ struct PeerHandlers {
 /// transport_failure, and ends the round there.
 void PumpPeers(link::Server& network, HostMetrics& metrics, std::mutex& mutex, PeerGate& gate,
                std::chrono::steady_clock::time_point now, const PeerHandlers& handlers,
-               failure::FirstFailure& transport_failure);
+               failure::FailureLatch& transport_failure);
 
 }  // namespace augusta::host
 

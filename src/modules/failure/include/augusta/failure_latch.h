@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_FIRST_FAILURE_H_
-#define AUGUSTA_FIRST_FAILURE_H_
+#ifndef AUGUSTA_FAILURE_LATCH_H_
+#define AUGUSTA_FAILURE_LATCH_H_
 
 #include <mutex>
 #include <optional>
@@ -18,7 +18,7 @@
 namespace augusta::failure {
 
 /// The first failure recorded, until taken.
-class FirstFailure {
+class FailureLatch {
  public:
   /// Keeps failure if it is the first ever recorded; a later one is its
   /// consequence, and is dropped.
@@ -52,4 +52,4 @@ class FirstFailure {
 
 }  // namespace augusta::failure
 
-#endif  // AUGUSTA_FIRST_FAILURE_H_
+#endif  // AUGUSTA_FAILURE_LATCH_H_

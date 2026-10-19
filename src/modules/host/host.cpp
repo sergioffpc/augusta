@@ -19,7 +19,7 @@
 #include "augusta/capturer.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"

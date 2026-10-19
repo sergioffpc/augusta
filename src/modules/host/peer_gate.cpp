@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
@@ -44,7 +44,7 @@ void PeerGate::EndRound() { expelled_.clear(); }
 
 void PumpPeers(link::Server& network, HostMetrics& metrics, std::mutex& mutex, PeerGate& gate,
                std::chrono::steady_clock::time_point now, const PeerHandlers& handlers,
-               failure::FirstFailure& transport_failure) {
+               failure::FailureLatch& transport_failure) {
   for (const link::PeerEvent& event : network.PumpEvents()) {
     switch (event.type) {
       case link::PeerEventType::kConnectRequested: {

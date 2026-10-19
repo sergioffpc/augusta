@@ -13,7 +13,7 @@
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
@@ -214,7 +214,7 @@ void Host::Impl::SendTick(const simulation::State& state, const TickRecipients& 
   if (auto sent = SendTickMessages(network, metrics, state, tick, to, [this] { return Failed(); }); !sent.has_value()) {
     // Either the tick's messages could not be encoded, and none was sent, or
     // the local transport failed sending them: each kept where a worker takes it.
-    failure::FirstFailure& kept =
+    failure::FailureLatch& kept =
         sent.error().code == failure::Code::kInvariantViolated ? invariant_failure : transport_failure;
     kept.Record(std::move(sent.error()));
   }
