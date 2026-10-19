@@ -402,6 +402,19 @@ spawn, sends that player's Commands at their ticks, leaves when that player did
 and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
 (it watches, it does not play), bot, ghost
 
+### Debugging
+
+**Debug HUD**: Lines of text over the frame's corner showing the client's system
+metrics. _Avoid_: Overlay, stats panel
+
+**Debug overlay**: Shapes drawn into the 3D world to show state the game itself
+does not show, such as collision shapes, Hitboxes or a Smoke screen's voxels.
+_Avoid_: Debug view, gizmo, wireframe
+
+**Debug panel**: A window over the frame with numbers and controls about one
+part of the game, such as the network or the physics. _Avoid_: Debug menu,
+inspector, debug HUD (text lines only)
+
 ### Combat
 
 **Hitbox**: A volume of a player's body that stands for one body part (head,
