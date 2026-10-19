@@ -15,16 +15,14 @@
 /// replay server's Replays, or the Lifecycle that initializes the transport,
 /// loads the client pack's content, constructs the ClientRuntime (client.h)
 /// from it and runs it. Each classifies its own failure, so main() only
-/// concludes the one Outcome. On Windows each raises the system timer
-/// resolution to 1 ms for as long as it runs: Windows otherwise wakes a
-/// sleeping thread only every 15.6 ms, so the Prediction thread could not keep
-/// a 60 Hz schedule (16.7 ms a tick) and would run well below the server's
-/// rate.
+/// concludes the one Outcome. Each runs at the raised Windows timer resolution
+/// (application::TimerResolution): the Lifecycle through application::Execute,
+/// the listing by holding one itself.
 namespace augusta::client {
 
 /// One augustac run's runtime: the verified pack, the ClientRuntime that reads
 /// from it (it loads the characters other players bring from it, so the pack
-/// outlives it), and the timer resolution it runs at.
+/// outlives it).
 class ClientProcess {
  public:
   /// What it holds, made by ClientLifecycle's construct phase.

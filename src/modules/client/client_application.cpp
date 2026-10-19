@@ -20,47 +20,9 @@
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
 
-#ifdef _WIN32
-#include <windows.h>
-// timeapi.h needs the types windows.h declares, so it comes after it, unsorted.
-#include <timeapi.h>
-
-#include "augusta/logging.h"
-#endif
-
 namespace augusta::client {
 
 namespace {
-
-#ifdef _WIN32
-// Raises the system timer resolution to 1 ms for as long as it lives, and
-// restores it after (client_application.h).
-class TimerResolution {
- public:
-  TimerResolution() : raised_(timeBeginPeriod(kPeriodMs) == TIMERR_NOERROR) {
-    if (!raised_) {
-      LOG_WARN("subsystem=client event=timer_resolution_unchanged period_ms={}", kPeriodMs);
-    }
-  }
-  ~TimerResolution() {
-    if (raised_) {
-      timeEndPeriod(kPeriodMs);
-    }
-  }
-
-  TimerResolution(const TimerResolution&) = delete;
-  TimerResolution& operator=(const TimerResolution&) = delete;
-  TimerResolution(TimerResolution&&) = delete;
-  TimerResolution& operator=(TimerResolution&&) = delete;
-
- private:
-  static constexpr UINT kPeriodMs = 1;
-  bool raised_;
-};
-#else
-// Elsewhere a sleeping thread already wakes on time.
-struct TimerResolution {};
-#endif
 
 // How long `augustac --replays` waits for the replay server's list.
 constexpr auto kReplayListPatience = std::chrono::seconds(10);
@@ -90,10 +52,9 @@ application::Outcome QueryReplays(const config::ClientConfig& file_config) {
 
 }  // namespace
 
-// Declared first, destroyed last: the timer resolution outlives the runtime's
-// threads, and the pack the runtime reads from.
+// Declared first, destroyed last: the pack outlives the runtime that reads from
+// it.
 struct ClientProcess::Parts {
-  TimerResolution timer_resolution;
   std::unique_ptr<const assets::Pack> pack;
   std::unique_ptr<ClientRuntime> runtime;
 };
@@ -137,7 +98,8 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
 }  // namespace
 
 application::Outcome ListReplays(const config::ClientConfig& file_config) {
-  const TimerResolution timer_resolution;
+  // Not run by application::Execute, so it raises the resolution itself.
+  const application::TimerResolution timer_resolution;
   auto listed = failure::Guard(failure::Code::kWorkerFailed, [&file_config] { return QueryReplays(file_config); });
   if (!listed) {
     listed.error().context.push_back({.key = "phase", .value = "list_replays"});

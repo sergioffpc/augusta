@@ -15,9 +15,8 @@ replay server's Replays. It decides at its edges what the client loads from its
 verified pack (the scene, the characters other players bring, the map's
 collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
-types, classifies each phase's failure, shows the connection's numbers on the
-debug HUD and to Nsight Systems, and raises Windows' timer resolution for as
-long as it runs.
+types, classifies each phase's failure, and shows the connection's numbers on
+the debug HUD and to Nsight Systems.
 
 ## Not its responsibility
 
