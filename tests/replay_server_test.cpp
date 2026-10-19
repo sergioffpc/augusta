@@ -262,11 +262,11 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   std::vector<std::uint32_t> reported(sessions.size(), 0);
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
   while (std::chrono::steady_clock::now() < deadline && !std::ranges::all_of(sessions, [](const auto& s) {
-           return s->GetPhase() == augusta::harness::Phase::kMatch;
+           return s->GetServerView()->GetPhase() == augusta::harness::Phase::kMatch;
          })) {
     pump();
     for (std::size_t i = 0; i < sessions.size(); ++i) {
-      const auto lobby = sessions[i]->GetLobby();
+      const auto lobby = sessions[i]->GetServerView()->lobby;
       if (lobby.has_value() && reported[i] != lobby->version) {
         sessions[i]->ReportReady(lobby->version);
         reported[i] = lobby->version;
@@ -277,8 +277,9 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   }
   // Whoever joined first spawned first, at the origin: it aims at the other's head.
   const auto spawned_first = [](const augusta::harness::Session& session) {
-    for (const auto& player : session.GetMatchStart().value().players) {
-      if (player.session == session.GetSessionId()) {
+    const std::shared_ptr<const augusta::harness::ServerView> view = session.GetServerView();
+    for (const auto& player : view->match_start.value().players) {
+      if (player.session == view->accepted.value().session) {
         return std::abs(player.spawn.z) < 0.5F;
       }
     }
@@ -287,7 +288,8 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   if (!spawned_first(*sessions[0])) {
     std::swap(sessions[0], sessions[1]);
   }
-  const auto shooter = static_cast<augusta::host::SessionId>(std::to_underlying(*sessions[0]->GetSessionId()));
+  const auto shooter =
+      static_cast<augusta::host::SessionId>(std::to_underlying(sessions[0]->GetServerView()->accepted->session));
   Command fire;
   const Vec3 aim = Vec3(0.0F, 1.65F - kEyeHeight, -kSpacing);
   fire.yaw = 0.0F;
@@ -689,7 +691,7 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
   ASSERT_TRUE(RunUntil(
       *server, *viewer,
       [&] {
-        const auto taken = viewer->TakeDeaths();
+        const auto taken = viewer->TakeDeaths(*viewer->GetServerView());
         deaths.insert(deaths.end(), taken.begin(), taken.end());
         return viewer->ReplayEnded();
       },
@@ -697,8 +699,8 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
 
   ASSERT_EQ(deaths.size(), 1U);
   EXPECT_EQ(deaths[0].victim, augusta::harness::EntityId{2});
-  ASSERT_TRUE(viewer->GetMatchEnd().has_value());
-  EXPECT_EQ(viewer->GetMatchEnd()->winner, watching->match_start->players[0].session);
+  ASSERT_TRUE(viewer->GetServerView()->match_end.has_value());
+  EXPECT_EQ(viewer->GetServerView()->match_end->winner, watching->match_start->players[0].session);
   EXPECT_FALSE(viewer->GetFailure().has_value());
 }
 

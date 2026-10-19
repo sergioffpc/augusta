@@ -170,7 +170,7 @@ class TransportFailureTest : public ::testing::Test {
 TEST_F(TransportFailureTest, AClientJoinsWithNoFailureAndEverySentMessageIsCounted) {
   session_.Connect();
 
-  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetSessionId().has_value(); }));
+  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->accepted.has_value(); }));
 
   EXPECT_FALSE(host_.TakeTransportFailure().has_value());
   EXPECT_FALSE(session_.TakeTransportFailure().has_value());
@@ -196,7 +196,7 @@ TEST_F(TransportFailureTest, AServerSendTheLocalTransportRefusesIsTheRuntimesFai
   EXPECT_EQ(failure->detail, "socket closed");
   EXPECT_EQ(host_.Metrics().messages_sent.Total(), 0U);
   EXPECT_EQ(host_.Metrics().sent_bytes.Value(), 0U);
-  EXPECT_FALSE(session_.GetSessionId().has_value()) << "a refused send arrived";
+  EXPECT_FALSE(session_.GetServerView()->accepted.has_value()) << "a refused send arrived";
 }
 
 // A runtime that has failed sends nothing more, valid messages included, until
@@ -213,7 +213,7 @@ TEST_F(TransportFailureTest, AfterAServerSendFailsTheHostSendsNothingMore) {
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->code, Code::kTransportSendFailed);
   EXPECT_EQ(host_.Metrics().messages_sent.Total(), 0U) << "the Roster was sent after the runtime failed";
-  EXPECT_FALSE(session_.GetLobby().has_value());
+  EXPECT_FALSE(session_.GetServerView()->lobby.has_value());
 }
 
 TEST_F(TransportFailureTest, AServerReceiveTheLocalTransportFailsIsTheRuntimesFailure) {
@@ -257,13 +257,13 @@ TEST_F(TransportFailureTest, MalformedPeerInputIsThePeersOutcomeNotATransportFai
   EXPECT_FALSE(host_.TakeTransportFailure().has_value());
   // And an honest client is still admitted.
   session_.Connect();
-  EXPECT_TRUE(ExchangeUntil([&] { return session_.GetSessionId().has_value(); }));
+  EXPECT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->accepted.has_value(); }));
   EXPECT_FALSE(host_.TakeTransportFailure().has_value());
 }
 
 TEST_F(TransportFailureTest, APeerLeavingIsItsSessionsOutcomeNotATransportFailure) {
   session_.Connect();
-  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetSessionId().has_value(); }));
+  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->accepted.has_value(); }));
 
   session_.Disconnect();
   ASSERT_TRUE(PollUntil([&] { host_.PumpNetwork(std::chrono::steady_clock::now()); },
@@ -296,8 +296,8 @@ TEST_F(TransportFailureTest, AClientSendTheLocalTransportRefusesIsTheClientsRunt
 // even a Ready the transport would now take.
 TEST_F(TransportFailureTest, AfterAClientSendFailsTheSessionSendsNothingMore) {
   session_.Connect();
-  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetLobby().has_value(); }));
-  const std::uint32_t roster = session_.GetLobby()->version;
+  ASSERT_TRUE(ExchangeUntil([&] { return session_.GetServerView()->lobby.has_value(); }));
+  const std::uint32_t roster = session_.GetServerView()->lobby->version;
   const std::uint64_t received = host_.Metrics().messages_received.Total();
 
   session_faults_.Arm(Site::kTransportSend, "socket closed");
@@ -436,8 +436,8 @@ TEST(HostInvariantFailureTest, AJoinAcceptedTheProtocolCannotCarryIsAnInvariantF
   EXPECT_EQ(failure->code, Code::kInvariantViolated);
   EXPECT_EQ(DispositionOf(failure->code), Disposition::kRuntime);
   EXPECT_EQ(host.Metrics().messages_sent.Total(), 0U);
-  EXPECT_FALSE(session.GetSessionId().has_value());
-  EXPECT_FALSE(session.GetLobby().has_value());
+  EXPECT_FALSE(session.GetServerView()->accepted.has_value());
+  EXPECT_FALSE(session.GetServerView()->lobby.has_value());
   EXPECT_FALSE(host.TakeTransportFailure().has_value());
 }
 

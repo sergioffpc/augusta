@@ -139,7 +139,7 @@ void Agent::AfterTick(const harness::PredictedTick& tick) {
     const std::scoped_lock lock(own_mutex_);
     own_ = tick.state.local_body;
   }
-  const bool in_match = session_.GetPhase() == harness::Phase::kMatch;
+  const bool in_match = session_.GetServerView()->GetPhase() == harness::Phase::kMatch;
   const std::scoped_lock lock(stats_mutex_);
   tally_.RecordTick(tick.state, in_match);
 }

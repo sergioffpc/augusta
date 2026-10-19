@@ -18,7 +18,6 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
-#include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "command_stream.h"
@@ -195,22 +194,6 @@ std::optional<failure::Failure> Session::TakeInvariantFailure() { return impl_->
 
 std::optional<link::ConnectionStats> Session::GetConnectionStats() const { return impl_->channel.GetStats(); }
 
-std::optional<SessionId> Session::GetSessionId() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
-  if (!server_view->accepted.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->accepted->session;
-}
-
-Phase Session::GetPhase() const { return impl_->inbox.View()->GetPhase(); }
-
-std::optional<Lobby> Session::GetLobby() const { return impl_->inbox.View()->lobby; }
-
-std::optional<MatchStart> Session::GetMatchStart() const { return impl_->inbox.View()->match_start; }
-
-std::optional<MatchEnd> Session::GetMatchEnd() const { return impl_->inbox.View()->match_end; }
-
 void Session::ReportReady(std::uint32_t version) {
   const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
@@ -221,51 +204,13 @@ void Session::ReportReady(std::uint32_t version) {
   }
 }
 
-std::optional<std::uint8_t> Session::GetTickRate() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
-  if (!server_view->accepted.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->accepted->tick_rate_hz;
-}
-
-std::optional<parameters::Parameters> Session::GetParameters() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
-  if (!server_view->accepted.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->accepted->parameters;
-}
-
-std::optional<JoinRefusal> Session::GetRefusal() const { return impl_->inbox.View()->refusal; }
-
-std::optional<AuthoritativeState> Session::GetAuthoritativeState() const { return impl_->inbox.View()->authoritative; }
-
-std::vector<Shot> Session::TakeShots() { return TakeShots(*GetServerView()); }
-
 std::vector<Shot> Session::TakeShots(const ServerView& view) { return impl_->inbox.TakeShots(view.matches_started); }
-
-std::vector<HitConfirmation> Session::TakeHitConfirmations() { return TakeHitConfirmations(*GetServerView()); }
 
 std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& view) {
   return impl_->inbox.TakeHitConfirmations(view.matches_started);
 }
 
-std::vector<Death> Session::TakeDeaths() { return TakeDeaths(*GetServerView()); }
-
 std::vector<Death> Session::TakeDeaths(const ServerView& view) { return impl_->inbox.TakeDeaths(view.matches_started); }
-
-bool Session::IsAlive() const { return impl_->inbox.View()->OwnAlive(); }
-
-std::optional<float> Session::GetHealth() const {
-  const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
-  if (!server_view->authoritative.has_value()) {
-    return std::nullopt;
-  }
-  return server_view->authoritative->health;
-}
-
-std::optional<EntityId> Session::GetEntityId() const { return impl_->inbox.View()->OwnEntity(); }
 
 tick::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
 

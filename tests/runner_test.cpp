@@ -190,12 +190,12 @@ TEST_F(RunnerTest, ASourceWithNoCommandSkipsTheTickAndSendsNothing) {
                                             .on_tick = [&](const PredictedTick& /*tick*/) { ++ticks; },
                                             .on_network_round = {},
                                             .on_failure = {}});
-  ASSERT_TRUE(ServeUntil([&] { return session_.GetAuthoritativeState().has_value(); }));
+  ASSERT_TRUE(ServeUntil([&] { return session_.GetServerView()->authoritative.has_value(); }));
   const int ticks_in_match = ticks.load();
 
   ASSERT_TRUE(ServeUntil([&] { return ticks.load() >= ticks_in_match + kTickRate / 2; }));
 
-  EXPECT_EQ(session_.GetAuthoritativeState()->acknowledged_sequence, 0U);
+  EXPECT_EQ(session_.GetServerView()->authoritative->acknowledged_sequence, 0U);
   EXPECT_FALSE(runner.Failure().has_value());
 }
 
@@ -337,7 +337,7 @@ TEST_F(RunnerTest, AJoinRequestTheProtocolCannotCarryStopsTheRunnerWithAnInvaria
   const augusta::failure::Failure failure = *runner.Failure();
   EXPECT_EQ(failure.code, augusta::failure::Code::kInvariantViolated);
   EXPECT_EQ(ContextOf(failure, augusta::supervisor::kThreadContextKey), "network");
-  EXPECT_FALSE(session.GetSessionId().has_value());
+  EXPECT_FALSE(session.GetServerView()->accepted.has_value());
   // The Runner took it: it is reported once.
   EXPECT_FALSE(session.TakeInvariantFailure().has_value());
 }

@@ -157,8 +157,9 @@ struct ClientRuntime::Impl {
 
   void SampleNetworkStats() {
     const std::optional<link::ConnectionStats> stats = session->GetConnectionStats();
-    if (const std::optional<std::uint8_t> rate = session->GetTickRate(); stats.has_value() && rate.has_value()) {
-      round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, *rate));
+    if (const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+        stats.has_value() && view->accepted.has_value()) {
+      round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, view->accepted->tick_rate_hz));
     }
     net_stats_counters.Sample(stats);
     const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
