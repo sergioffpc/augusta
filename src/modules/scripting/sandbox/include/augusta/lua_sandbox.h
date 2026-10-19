@@ -29,7 +29,9 @@ inline constexpr std::size_t kMemoryLimit = std::size_t{32} << 20U;
 /// kMemoryLimit bytes: an allocation past that fails what runs with a "not
 /// enough memory" error. pcall and xpcall are taken out too: the instruction
 /// limit's stop and a refused allocation are errors, and a script that could
-/// catch them would run on for ever.
+/// catch them would run on for ever. setmetatable refuses, with an error, a
+/// metatable that holds __gc: Lua runs a finalizer with debug hooks off and at
+/// a GC step of its own choosing, so neither limit would bound it.
 sol::state MakeSandbox();
 
 /// Lets lua run instructions more Lua instructions from now, then stops what it
