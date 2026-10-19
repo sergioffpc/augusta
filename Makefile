@@ -105,7 +105,7 @@ help:
 	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
-	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits, without pushing)
+	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits and uncommitted changes, without pushing)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
@@ -222,11 +222,13 @@ $(INCLUDE_CHECKS): include-cleaner/%:
 lint: format-check tidy
 
 # The pre-push hook's checks, as a push of HEAD now would run them: on the
-# files of its commits the remote lacks, Git LFS left out. git runs the hook,
+# files of its commits the remote lacks, and of the changes not committed yet,
+# Git LFS left out. git runs the hook,
 # so it gets git's own shell on every platform. The hook reads only the
 # pushed commit from its stdin line, so HEAD stands in for both refs.
 PREPUSH_REFS := $(shell git rev-parse --git-path prepush-refs)
 prepush: export PRE_PUSH_CHECKS_ONLY = 1
+prepush: export PRE_PUSH_WORKTREE = 1
 prepush:
 	$(file >$(PREPUSH_REFS),HEAD $(shell git rev-parse HEAD) HEAD 0000000000000000000000000000000000000000)
 	git hook run --to-stdin=$(PREPUSH_REFS) pre-push -- origin

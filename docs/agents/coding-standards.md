@@ -107,6 +107,11 @@ whole input domain — a serialization round-trip, a value that must never go
 negative, a state that must converge — not in place of example-based tests,
 which stay the default.
 
+A test that asserts something does not happen first shows, in the same setup,
+that it does happen without what prevents it: a control case. A setup that only
+a comment claims proves nothing, and a test without its control passes
+vacuously.
+
 A bug found by the fuzzer or by a shrunk RapidCheck case gets a regression test
 in the pull request that fixes it: the minimized input as a fixture, the case as
 an example-based test.

@@ -79,6 +79,7 @@ main() {
   if [[ "$(uname -s)" = Darwin ]]; then
     printf '%s\n' "${push_refs}" \
       | scripts/dev-container.sh env PRE_PUSH_CHECKS_ONLY=1 \
+        PRE_PUSH_WORKTREE="${PRE_PUSH_WORKTREE:-}" \
         .githooks/pre-push "$@" || exit $?
     lfs_pre_push "${push_refs}" "$@"
     exit $?
@@ -110,6 +111,13 @@ $(git log --format= --name-only --diff-filter=ACMR "${local_sha}" \
   done <<EOF
 ${push_refs}
 EOF
+  # `make prepush` checks the changes not committed yet as well, so they are
+  # checked before the commit that would carry them, not after it.
+  if [[ -n "${PRE_PUSH_WORKTREE:-}" ]]; then
+    files="${files}
+$(git diff --name-only --diff-filter=ACMR HEAD)
+$(git ls-files --others --exclude-standard)"
+  fi
 
   # Lint YAML/config files changed by the commits being pushed. If the shared
   # lint/ignore rules change, lint the whole tree. Helm templates and the
