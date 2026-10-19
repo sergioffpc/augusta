@@ -2,7 +2,7 @@
 # its Runtime, failure, logging and version, and no target links an
 # executable. The Glue check (cmake/AugustaModule.cmake) turns each into a
 # configure-time error, and this script proves it fires both ways by
-# configuring a fixture build graph (tests/glue_fixture) once per shape.
+# configuring a fixture build graph (checks/glue_fixture) once per shape.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -DBINARY_DIR=<scratch dir>
 # [-DGENERATOR=<generator>] -P glue_boundary.cmake`.
@@ -25,7 +25,7 @@ function(configure_fixture case out_failed out_output)
   file(REMOVE_RECURSE "${build}")
   execute_process(
     COMMAND
-      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/tests/glue_fixture" -B "${build}" ${generator} -DCASE=${case}
+      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/checks/glue_fixture" -B "${build}" ${generator} -DCASE=${case}
       -DAUGUSTA_SOURCE_DIR=${SOURCE_DIR}
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output

@@ -91,7 +91,7 @@ target_link_libraries(
     augusta_server
 )
 # The headless server itself, not only its libraries: a client-only module
-# linked straight into it fails the configure (tests/server_boundary.cmake).
+# linked straight into it fails the configure (checks/server_boundary.cmake).
 augusta_set_module_scope(augustad SERVER_ONLY)
 # augustad is Glue: it links only the application, the server Runtime beside
 # it, failure, logging and version - anything else fails the configure

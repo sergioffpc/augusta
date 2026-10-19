@@ -12,7 +12,7 @@
 ///
 /// It depends on nothing but the standard library, and must stay that way; and
 /// nothing else defines these again, but takes them from here
-/// (tests/core_boundary.cmake).
+/// (checks/core_boundary.cmake).
 namespace augusta::limits {
 
 /// The players a Lobby or a Match holds, and so the most a Lobby, a Match start,

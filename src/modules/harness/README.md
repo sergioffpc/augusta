@@ -18,7 +18,7 @@ player's reenactment and the netcode statistics a run leaves.
 - The connection, and what it sends and receives as the Networking Protocol's
   messages, with each one's reliability and the newest of a tick's Commands its
   one message carries: link, which the harness speaks to alone, never the
-  protocol or networking (`tests/core_boundary.cmake`).
+  protocol or networking (`checks/core_boundary.cmake`).
 - Reading a capture file: capture.
 - Python bindings for Agents: `tools/agent`.
 

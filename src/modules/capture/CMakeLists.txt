@@ -12,7 +12,7 @@ augusta_set_module_scope(augusta_capture_records SHARED)
 # record's bytes, the magic and the header's format version are the Link's
 # conversions (augusta_link_messages), linked privately, so no reader reaches
 # them through this module and capture names no protocol type (ADR-0038,
-# tests/core_boundary.cmake).
+# checks/core_boundary.cmake).
 add_library(augusta_capture STATIC capture.cpp)
 target_include_directories(augusta_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_capture PUBLIC augusta_capture_records augusta_failure PRIVATE augusta_link_messages)

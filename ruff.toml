@@ -55,3 +55,4 @@ ban-relative-imports = "all"
 [lint.per-file-ignores]
 # The guide does not require docstrings in tests.
 "**/tests/**" = ["D1"]
+"checks/test_*.py" = ["D1"]

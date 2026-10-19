@@ -18,7 +18,7 @@
 /// It depends on nothing but the standard library, and must stay that way, so
 /// the Networking Protocol encodes the Tick and the Sequence without taking the
 /// gameplay rules; and nothing else gives either an integer type of its own
-/// (tests/core_boundary.cmake).
+/// (checks/core_boundary.cmake).
 namespace augusta::tick {
 
 using Clock = std::chrono::steady_clock;

@@ -4,7 +4,11 @@ import sys
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "check-pack-formats.py"
+_SCRIPT = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "check-pack-formats.py"
+)
 _SPEC = importlib.util.spec_from_file_location("check_pack_formats", _SCRIPT)
 formats = importlib.util.module_from_spec(_SPEC)
 sys.modules["check_pack_formats"] = formats

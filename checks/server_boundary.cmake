@@ -36,7 +36,7 @@ function(configure_fixture edge out_failed out_output)
   file(REMOVE_RECURSE "${build}")
   execute_process(
     COMMAND
-      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/tests/module_scope_fixture" -B "${build}" ${generator} -DEDGE=${edge}
+      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/checks/module_scope_fixture" -B "${build}" ${generator} -DEDGE=${edge}
       -DAUGUSTA_SOURCE_DIR=${SOURCE_DIR}
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output

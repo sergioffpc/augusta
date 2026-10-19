@@ -94,7 +94,7 @@ help:
 	$(info $()  configure     cmake --preset)
 	$(info $()  build         configure, then compile the binaries (no tests))
 	$(info $()  test          build, then compile the tests and run ctest)
-	$(info $()  check         the same as test)
+	$(info $()  check         configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
 	$(info $()  pack-native   the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
 	$(info $()  install       build, then cmake --install augustad (prefix=..., DESTDIR=...))
@@ -120,7 +120,12 @@ test: build
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
 	$(RUN) ctest --preset $(PRESET)
 
-check: test
+# The structural checks (checks/CMakeLists.txt) build nothing: configuring
+# registers them, and ctest's check label picks them alone. Then the pytest of
+# the scripts they cover, as CI runs it.
+check: configure
+	$(RUN) ctest --preset $(PRESET) --label-regex check --no-tests=error
+	$(RUN) uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks
 
 # The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
 # preset's tests, then their llvm-cov report. The last run's profiles go first,

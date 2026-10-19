@@ -13,7 +13,7 @@ nothing but `augusta_math`, which also holds the grids its numbers travel on,
 whose player and recoil bounds it encodes, without owning or re-exporting them;
 a module changing its own structs never changes what travels. How many commands
 a Commands message carries is the protocol's own bound
-(`protocol::kMaxCommandsPerMessage`). `tests/protocol_boundary.cmake` fails if
+(`protocol::kMaxCommandsPerMessage`). `checks/protocol_boundary.cmake` fails if
 the protocol includes or links anything else. A protocol type that mirrors one
 of the engine's carries the suffix `Wire`: `BodyStateWire` for
 `physics::BodyState`, and the Authoritative State message is
@@ -47,7 +47,7 @@ ClientRuntime converts at its own edge into `presentation::EntityId`, so
 `presentation` does not depend on the harness; `host::EntityId`, which
 `host::Host` hands SimulationWorld and `replication` as the
 `simulation::EntityId` of the same number), a pack by `assets::PackHash`, and a
-refusal by its own `JoinRefusal`; `tests/protocol_boundary.cmake` fails the
+refusal by its own `JoinRefusal`; `checks/protocol_boundary.cmake` fails the
 build's tests if one of their headers names the protocol, or a `presentation`
 header the harness.
 

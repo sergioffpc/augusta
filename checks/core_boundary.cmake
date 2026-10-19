@@ -305,6 +305,7 @@ file(
   GLOB_RECURSE listfiles
   "${SOURCE_DIR}/src/*CMakeLists.txt"
   "${SOURCE_DIR}/tests/*CMakeLists.txt"
+  "${SOURCE_DIR}/checks/*CMakeLists.txt"
   "${SOURCE_DIR}/tools/*CMakeLists.txt"
   "${SOURCE_DIR}/cmake/*.cmake"
 )

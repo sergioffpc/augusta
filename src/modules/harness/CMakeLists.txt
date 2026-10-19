@@ -25,7 +25,7 @@ target_link_libraries(
     augusta_capture
     augusta_supervisor
     # The Link alone: it owns the transport and the protocol beneath, which the
-    # harness never links (ADR-0038, tests/core_boundary.cmake).
+    # harness never links (ADR-0038, checks/core_boundary.cmake).
     augusta_link
     augusta_version
   # nvtx3-cpp: runner.cpp names the Prediction and Network I/O loops for Nsight Systems.

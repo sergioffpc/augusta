@@ -227,6 +227,10 @@ endif()
 # graph is complete - see cmake/AugustaModule.cmake.
 augusta_check_module_scopes()
 
+# The repository's structural checks (checks/CMakeLists.txt): scripts that
+# build nothing, so they need no request.
+add_subdirectory(checks)
+
 # Tests, benchmarks and fuzzers build only on request, through the
 # augusta_tests target (tests/CMakeLists.txt) that `make test` builds before
 # ctest: building the binaries never waits on them (ADR-0008).

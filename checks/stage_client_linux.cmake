@@ -25,7 +25,7 @@ function(build_fixture name bundled corrupt)
   set(build "${root}/${name}")
   execute_process(
     COMMAND
-      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/tests/stage_client_fixture" -B "${build}" ${generator}
+      ${CMAKE_COMMAND} -S "${SOURCE_DIR}/checks/stage_client_fixture" -B "${build}" ${generator}
       -DCMAKE_TOOLCHAIN_FILE=${SOURCE_DIR}/cmake/LlvmToolchain.cmake -DCMAKE_BUILD_TYPE=Release
       -DAUGUSTA_SOURCE_DIR=${SOURCE_DIR} -DVERSION=1.2.3 -DBUNDLED=${bundled} -DCORRUPT=${corrupt} -DBUILD=${name}
     COMMAND_ERROR_IS_FATAL ANY

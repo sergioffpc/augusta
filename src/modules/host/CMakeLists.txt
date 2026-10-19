@@ -1,7 +1,7 @@
 # The Host: the server's end of the Link and SimulationWorld without threads or
 # a clock, the counterpart of the client's Harness (ADR-0060). It speaks to the
 # Link alone (augusta/link.h, ADR-0038): no target here links the protocol or
-# networking, which tests/core_boundary.cmake checks. The bookkeeping it keeps
+# networking, which checks/core_boundary.cmake checks. The bookkeeping it keeps
 # around a Match is pure, so each piece is its own target here and a test drives
 # it without a network.
 

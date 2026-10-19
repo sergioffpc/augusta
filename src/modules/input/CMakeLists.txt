@@ -5,5 +5,5 @@ target_link_libraries(augusta_input PUBLIC augusta_gameplay augusta_math augusta
 # samples a device, and the Command it receives is augusta_gameplay's (shared).
 # The client's config file names its keys and controls through
 # augusta_client_config, so the shared augusta_config does not need it either;
-# tests/server_boundary.cmake keeps it that way.
+# checks/server_boundary.cmake keeps it that way.
 augusta_set_module_scope(augusta_input CLIENT_ONLY)
