@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include <benchmark/benchmark.h>
@@ -19,20 +20,21 @@ namespace {
 using augusta::ballistics::BulletConfig;
 using augusta::ballistics::Hitbox;
 using augusta::ballistics::Outcome;
-using augusta::ballistics::TargetId;
 using augusta::ballistics::Triangle;
 using augusta::benchmarks::kBodySquares;
 using augusta::benchmarks::kMuzzleVelocity;
 using augusta::math::Vec3;
 using augusta::physics::StaminaConfig;
+using augusta::physics::SurfaceId;
 
 constexpr float kTick = 1.0F / 60.0F;
 // Every other player of a full Match.
 constexpr std::size_t kTargets = augusta::limits::kMaxPlayers - 1;
+constexpr SurfaceId kFloor{1};
 
 void BM_BallisticsStep(benchmark::State& state) {
   augusta::physics::World map{StaminaConfig{}};
-  if (!map.AddCollisionMesh(augusta::benchmarks::Floor(), augusta::physics::SurfaceId{1}).has_value()) {
+  if (!map.AddCollisionMesh(augusta::benchmarks::Floor(), kFloor).has_value()) {
     state.SkipWithError("the floor does not build");
     return;
   }
@@ -47,8 +49,8 @@ void BM_BallisticsStep(benchmark::State& state) {
   }
   std::vector<Hitbox> hitboxes;
   for (std::size_t index = 0; index < triangles.size(); ++index) {
-    hitboxes.push_back(Hitbox{.target = static_cast<TargetId>(index / kBodySquares.size()),
-                              .part = kBodySquares.at(index % kBodySquares.size()).part,
+    // Each its own Surface, after the floor's.
+    hitboxes.push_back(Hitbox{.surface = static_cast<SurfaceId>(std::to_underlying(kFloor) + 1 + index),
                               .triangles = triangles[index]});
   }
 

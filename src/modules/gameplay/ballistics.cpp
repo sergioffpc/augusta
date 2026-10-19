@@ -82,7 +82,8 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
   const physics::MapRaycastHit map_hit = map.RaycastMap(from, segment, math::Length(segment));
   if (map_hit.has_hit) {
     nearest = map_hit.distance / math::Length(segment);
-    result.outcome = Outcome::kHitMap;
+    result.outcome = Outcome::kStruck;
+    result.surface = map_hit.surface;
     result.impact_point = map_hit.point;
   }
   for (const Hitbox& hitbox : hitboxes) {
@@ -90,9 +91,8 @@ StepResult World::Step(BulletHandle handle, float delta_time, const physics::Wor
       const std::optional<float> crossing = CrossingFraction(from, segment, triangle);
       if (crossing && (!nearest || *crossing < *nearest)) {
         nearest = crossing;
-        result.outcome = Outcome::kHitPlayer;
-        result.target = hitbox.target;
-        result.part = hitbox.part;
+        result.outcome = Outcome::kStruck;
+        result.surface = hitbox.surface;
         result.impact_point = from + segment * *crossing;
       }
     }
