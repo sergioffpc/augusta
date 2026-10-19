@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -382,10 +383,26 @@ std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob) {
                    .samples = std::vector<std::byte>(samples->begin(), samples->end())};
 }
 
-// Sounds blob wire format: see EncodeSoundsBlob.
-std::optional<std::string> DecodeSoundsBlob(std::span<const std::byte> blob) {
+// Cue-sound blob wire format: see EncodeCueSoundBlob. Only a finite gain and at
+// least one variant are a cue's sound.
+std::optional<CueSoundData> DecodeCueSoundBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
-  return reader.ReadString();
+  const auto gain_db = reader.ReadF32();
+  const auto count = reader.ReadU32();
+  if (!gain_db || !std::isfinite(*gain_db) || !count || *count == 0 || *count > kMaxCueVariants) {
+    return std::nullopt;
+  }
+  CueSoundData sound{.gain_db = *gain_db, .variants = {}};
+  // Capped at kMaxCueVariants, so reserving on its word can't over-allocate.
+  sound.variants.reserve(*count);
+  for (std::uint32_t i = 0; i < *count; ++i) {
+    auto variant = reader.ReadString();
+    if (!variant) {
+      return std::nullopt;
+    }
+    sound.variants.push_back(std::move(*variant));
+  }
+  return sound;
 }
 
 }  // namespace augusta::assets

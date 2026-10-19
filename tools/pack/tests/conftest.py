@@ -279,3 +279,20 @@ def decode_string(blob: bytes) -> str:
     """A blob holding one length-prefixed string."""
     (length,) = struct.unpack_from("<I", blob, 0)
     return blob[4 : 4 + length].decode("utf-8")
+
+
+def decode_cue_sound(blob: bytes) -> tuple[float, list[str]]:
+    """A cue-sound blob's gain in decibels and its variants' paths.
+
+    The blob is an f32 gain, a u32 variant count, then each path as a u32
+    length and its bytes.
+    """
+    gain_db, count = struct.unpack_from("<fI", blob, 0)
+    offset = 8
+    variants = []
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", blob, offset)
+        variants.append(blob[offset + 4 : offset + 4 + length].decode("utf-8"))
+        offset += 4 + length
+    assert offset == len(blob)
+    return gain_db, variants

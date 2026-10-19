@@ -27,17 +27,20 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
 - Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
   a USD prim or a script. The cue catalogue is fixed in code, in the client and
   the cooker alike: gunshot, hit marker, hit taken, death, match won, match
-  lost. The scenario's manifest names a mono PCM WAV file for each cue
-  (ADR-0041), which becomes one audio blob at `sounds/<cue>` (e.g.
-  `sounds/gunshot`): its sample rate (u32), bits per sample (u8, 8/16/24/32) and
-  its samples as the WAV held them (a u32 byte count, then the bytes). The
-  prefix the cues are addressed under, `sounds`, is one more blob at the fixed
-  path `Sounds`, a length-prefixed string, so the client finds the cues knowing
-  nothing but the catalogue. Written to the client pack only: the headless
-  server plays nothing (ADR-0019). The cooker refuses a file that is not a mono
-  PCM WAV, naming it, and a manifest lacking any cue, naming the cue; the client
-  resolves every cue's sound at startup, so a missing one is found before a
-  Match, not during one.
+  lost. The scenario's manifest names each cue's sound, its variants and its
+  gain (ADR-0041). Each cue's sound is one small blob at `sounds/<cue>` (e.g.
+  `sounds/gunshot`): its gain in decibels (f32), then its variants' paths (a u32
+  count, then each as a string). Each variant is one audio blob at
+  `sounds/<cue>/<n>`, numbered from 0 in the manifest's order: its sample rate
+  (u32), bits per sample (u8, 8/16/24/32) and its samples as the WAV held them
+  (a u32 byte count, then the bytes). The prefix `sounds` is a constant the
+  client and the cooker share, so the client finds every cue's sound knowing
+  nothing but the catalogue; no blob names it. Written to the client pack only:
+  the headless server plays nothing (ADR-0019). The cooker refuses a file that
+  is not a mono PCM WAV, naming it, and a manifest lacking any cue, or a cue
+  with no variant, a missing file or a gain that is not finite, naming the cue;
+  the client resolves every cue's sound and every variant at startup, so a
+  missing one is found before a Match, not during one.
 - Collision geometry, spawn points, hitboxes: read from the PhysX-authored USD
   data (colliders/joints from Composer, ADR-0015), serialized with the existing
   custom binary format (ADR-0007) rather than a new one. Written to both the
@@ -83,7 +86,7 @@ changes its runtime path; nothing here guards against that.
 2. **Data section** — every asset blob, back-to-back, in traversal order.
    Offsets are recorded as each blob is written.
 3. **Index** — one entry per blob: type tag
-   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/Sounds),
+   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound),
    path, offset, size. Written after the data section, since it needs the
    recorded offsets.
 4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the
@@ -106,7 +109,10 @@ Environment's packs re-cooked in it and published before it merges, and the pull
 request that makes it moves each Environment's `packVersion` and `packFormat` to
 them. `staging` runs the last release tag's binaries but takes its values from
 `develop`, so until that change is tagged its new pod refuses the new pack and
-its old pod serves on.
+its old pod serves on. The version guards what an Environment serves: a change
+to blobs only the client pack holds, which no Environment publishes, leaves it
+as it is, and a client given a client pack of another layout fails its startup
+load, naming the blob it could not resolve.
 
 ## Considered Options
 

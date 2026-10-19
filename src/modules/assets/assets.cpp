@@ -506,7 +506,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kScript:
     case AssetType::kCharacters:
     case AssetType::kEye:
-    case AssetType::kSounds:
+    case AssetType::kCueSound:
       return true;
   }
   return false;
@@ -730,8 +730,8 @@ std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path)
   return ResolveAsset<AudioData>(impl_->index, impl_->mapping, path, AssetType::kAudio, DecodeAudioBlob);
 }
 
-std::expected<std::string, ResolveError> Pack::ResolveSoundsPath() const {
-  return ResolveAsset<std::string>(impl_->index, impl_->mapping, kSoundsPath, AssetType::kSounds, DecodeSoundsBlob);
+std::expected<CueSoundData, ResolveError> Pack::ResolveCueSound(std::string_view path) const {
+  return ResolveAsset<CueSoundData>(impl_->index, impl_->mapping, path, AssetType::kCueSound, DecodeCueSoundBlob);
 }
 
 std::expected<std::string, ResolveError> Pack::ResolveScript(std::string_view path) const {

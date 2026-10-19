@@ -24,7 +24,9 @@ map: maps/firebase.usda
 characters:
   soldier: characters/soldier.usda
 sounds:
-  gunshot: sounds/gunshot.wav
+  gunshot:
+    variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
+    gain: -3
   hit_marker: sounds/hit_marker.wav
   hit_taken: sounds/hit_taken.wav
   death: sounds/death.wav
@@ -43,10 +45,21 @@ scripts:
   in the pack, and it is the scenario's, not the stage's: moving, renaming or
   converting a stage between `.usda` and `.usdc` never renames the character a
   client asks for, and one stage can be composed under different names.
-- `sounds` maps every one of the client's cues to a mono PCM WAV file (ADR-0020,
+- `sounds` maps every one of the client's cues to its sound (ADR-0020,
   ADR-0031). It is required, and so is every cue: the client plays them all, so
   a scenario lacking one is refused when it is cooked rather than found silent
-  in a Match. A file may be the sound of several cues.
+  in a Match. When a cue plays is code, the client's cue catalogue and the
+  detection that fires each cue; what it sounds like is data, here, and every
+  cue's sound has one shape, so what a cue adds later (directivity, a choice by
+  surface or by weapon, ADR-0062) is a field of that shape, never a format of
+  its own. A cue's sound is a mapping: `variants`, a non-empty list of mono PCM
+  WAV files, and an optional `gain` in decibels, 0 if left out. Each time the
+  cue plays, one of its variants is chosen at random, never the one it played
+  last unless it has only one, and played at its gain. A single file in place of
+  the mapping (`hit_marker: sounds/hit_marker.wav`) is shorthand for one variant
+  at 0 dB. A cue with no variant, a missing file or a gain that is not a finite
+  number is refused when cooked, naming the cue. A file may be a variant of
+  several cues.
 - `scripts` maps each script role to a Lua file. `parameters` (ADR-0039) is
   required: the server reads it at startup. `rules` (ADR-0022) is optional:
   without it the scenario has no Game policy and the mechanism decides alone.
@@ -55,16 +68,16 @@ scripts:
   script file can be named for what it does (`last_man_standing.lua`) rather
   than for the slot it fills.
 
-A key, cue or script role the cooker does not know is refused, not ignored, so a
-misspelling is found when cooking. The cooker reads the map's stage, walks the
-characters' stages, reads the cue sounds and scripts, and packs all of it into
-one client/server pack pair: the pack's byte layout (ADR-0031) and the
-client/server split (ADR-0019) are unaffected. A character's own prims are
-addressed `<character name>/<prim path>` (e.g. `soldier/Character/Visual`) with
-the prim's local transform and its stage's own up-axis/metersPerUnit correction
-baked directly into its points, since - unlike a map's top-level nodes - a
-character contributes no `Scene` node of its own to carry that correction as a
-transform; the `Scene` blob stays map-only. usd-optimize and
+A key, cue, cue sound key or script role the cooker does not know is refused,
+not ignored, so a misspelling is found when cooking. The cooker reads the map's
+stage, walks the characters' stages, reads the cue sounds and scripts, and packs
+all of it into one client/server pack pair: the pack's byte layout (ADR-0031)
+and the client/server split (ADR-0019) are unaffected. A character's own prims
+are addressed `<character name>/<prim path>` (e.g. `soldier/Character/Visual`)
+with the prim's local transform and its stage's own up-axis/metersPerUnit
+correction baked directly into its points, since - unlike a map's top-level
+nodes - a character contributes no `Scene` node of its own to carry that
+correction as a transform; the `Scene` blob stays map-only. usd-optimize and
 usd-validation-nvidia run once per composed stage, the map then each character,
 before the cook.
 

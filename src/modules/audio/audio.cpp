@@ -1,5 +1,6 @@
 #include "augusta/audio.h"
 
+#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
@@ -58,11 +59,25 @@ void Engine::SetListener(const Listener& listener) {
   }
 }
 
-VoiceHandle Engine::Play(SoundHandle sound, const math::Vec3& world_position) {
-  return output_ ? output_->Play(sound, world_position) : VoiceHandle{};
+namespace {
+
+// The amplitude gain_db decibels scales a sound's samples by.
+float AmplitudeOf(float gain_db) {
+  // An amplitude ten times as large is 20 dB louder.
+  constexpr float kDecade = 10.0F;
+  constexpr float kDecibelsPerDecade = 20.0F;
+  return std::pow(kDecade, gain_db / kDecibelsPerDecade);
 }
 
-VoiceHandle Engine::Play(SoundHandle sound) { return output_ ? output_->Play(sound, std::nullopt) : VoiceHandle{}; }
+}  // namespace
+
+VoiceHandle Engine::Play(SoundHandle sound, const math::Vec3& world_position, float gain_db) {
+  return output_ ? output_->Play(sound, world_position, AmplitudeOf(gain_db)) : VoiceHandle{};
+}
+
+VoiceHandle Engine::Play(SoundHandle sound, float gain_db) {
+  return output_ ? output_->Play(sound, std::nullopt, AmplitudeOf(gain_db)) : VoiceHandle{};
+}
 
 void Engine::Stop(VoiceHandle voice) {
   if (output_) {

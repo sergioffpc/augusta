@@ -28,7 +28,6 @@ from pxr import UsdShade
 
 from augusta_pack import _native
 from augusta_pack.sounds import CueSounds
-from augusta_pack.sounds import SOUNDS_PREFIX
 
 # augusta:spawnPoint / augusta:hitbox: custom bool attributes (ADR-0032's
 # authoring convention) rather than a native USD prim type. A hitbox is
@@ -808,28 +807,48 @@ def _cook_character_prim(
 
 
 def _sound_entries(sounds: CueSounds) -> list[_native.AssetEntry]:
-    """The client pack's audio entries for sounds, and their prefix's entry."""
-    entries = [
-        _native.AssetEntry(
-            type=_native.AssetType.AUDIO,
-            path=f"{SOUNDS_PREFIX}/{cue}",
-            data=_native.encode_audio_blob(
-                _native.AudioData(
-                    sample_rate=sound.sample_rate,
-                    bits_per_sample=sound.bits_per_sample,
-                    samples=sound.samples,
+    """The client pack's entries for sounds: each cue's, then its variants'.
+
+    Raises CookError naming the cue whose sound does not encode.
+    """
+    entries = []
+    for cue, sound in sounds.cues:
+        variant_paths = [
+            _native.cue_variant_path(cue, variant)
+            for variant in range(len(sound.variants))
+        ]
+        try:
+            entries.append(
+                _native.AssetEntry(
+                    type=_native.AssetType.CUE_SOUND,
+                    path=_native.cue_sound_path(cue),
+                    data=_native.encode_cue_sound_blob(
+                        _native.CueSoundData(
+                            gain_db=sound.gain_db, variants=variant_paths
+                        )
+                    ),
                 )
-            ),
-        )
-        for cue, sound in sounds.cues
-    ]
-    entries.append(
-        _native.AssetEntry(
-            type=_native.AssetType.SOUNDS,
-            path=_native.SOUNDS_PATH,
-            data=_native.encode_sounds_blob(SOUNDS_PREFIX),
-        )
-    )
+            )
+            entries.extend(
+                _native.AssetEntry(
+                    type=_native.AssetType.AUDIO,
+                    path=path,
+                    data=_native.encode_audio_blob(
+                        _native.AudioData(
+                            sample_rate=variant.sample_rate,
+                            bits_per_sample=variant.bits_per_sample,
+                            samples=variant.samples,
+                        )
+                    ),
+                )
+                for path, variant in zip(
+                    variant_paths, sound.variants, strict=True
+                )
+            )
+        except Exception as error:  # noqa: BLE001 - re-raised as CookError
+            raise CookError(
+                "sound_encode_failed", "", f"cue {cue!r}: {error}"
+            ) from error
     return entries
 
 
@@ -855,9 +874,10 @@ def cook_scenario(
     client is sent the values a script decides, never the script.
 
     sounds, if given, are the client's cue sounds: they go into the client pack
-    only, each as an audio asset addressed <SOUNDS_PREFIX>/<cue>, with the
-    prefix itself at _native.SOUNDS_PATH so the client can find them (ADR-0020,
-    ADR-0031). The headless server plays nothing (ADR-0019).
+    only, each cue's gain and variants' paths at sounds/<cue> and each variant
+    as an audio asset at sounds/<cue>/<n> (_native.cue_sound_path and
+    cue_variant_path, ADR-0020, ADR-0031). The headless server plays nothing
+    (ADR-0019).
 
     The character names, in character_stages' order, are also recorded as the
     character list both packs carry (ADR-0042).
@@ -1079,10 +1099,7 @@ def cook_scenario(
         ]
     except Exception as error:  # noqa: BLE001 - re-raised as CookError below
         raise CookError("script_encode_failed", "", str(error)) from error
-    try:
-        sound_entries = _sound_entries(sounds) if sounds is not None else []
-    except Exception as error:  # noqa: BLE001 - re-raised as CookError below
-        raise CookError("sound_encode_failed", "", str(error)) from error
+    sound_entries = _sound_entries(sounds) if sounds is not None else []
 
     # Client pack: everything cooked from this stage, plus the full scene and
     # the cue sounds.

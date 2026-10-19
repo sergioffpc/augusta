@@ -54,7 +54,7 @@ enum class AssetType : std::uint8_t {
   kScript,
   kCharacters,
   kEye,
-  kSounds,
+  kCueSound,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -169,9 +169,29 @@ struct AudioData {
   std::vector<std::byte> samples;
 };
 
-/// Pack-relative path, in a scenario's client pack, of the prefix its cue sounds
-/// are addressed under: each at `<sounds prefix>/<cue>` (ADR-0031).
-inline constexpr std::string_view kSoundsPath = "Sounds";
+/// A cue's sound (ADR-0041): the gain it plays at and the pack-relative paths
+/// of its variants, one audio blob each, one of which plays each time the cue
+/// does. EncodeCueSoundBlob refuses, and ResolveCueSound never gives, one
+/// without a variant or with a gain that is not finite.
+struct CueSoundData {
+  /// In decibels: 0 plays each variant as its WAV file holds it.
+  float gain_db = 0.0F;
+  std::vector<std::string> variants;
+};
+
+/// The prefix every cue's sound is addressed under in a scenario's client pack
+/// (ADR-0031), fixed for the client and the cooker alike.
+inline constexpr std::string_view kSoundsPrefix = "sounds";
+
+/// Pack-relative path of the sound of the cue named cue (its name in the cue
+/// catalogue, augusta/cues.h), e.g. "sounds/gunshot".
+[[nodiscard]] inline std::string CueSoundPath(std::string_view cue) { return std::format("{}/{}", kSoundsPrefix, cue); }
+
+/// Pack-relative path of the variant-th variant of the cue named cue, e.g.
+/// "sounds/gunshot/0": where the cooker files it, as its CueSoundData names it.
+[[nodiscard]] inline std::string CueVariantPath(std::string_view cue, std::size_t variant) {
+  return std::format("{}/{}/{}", kSoundsPrefix, cue, variant);
+}
 
 /// Pack-relative path of the Parameters script (ADR-0039) in a scenario's
 /// server pack: `parameters.lua` at the root of the scenario's folder.
@@ -423,9 +443,9 @@ class Pack {
   /// pack only.
   [[nodiscard]] std::expected<AudioData, ResolveError> ResolveAudio(std::string_view path) const;
 
-  /// Resolves, at kSoundsPath, the prefix the scenario's cue sounds are
-  /// addressed under (e.g. "sounds"). Present in the client pack only.
-  [[nodiscard]] std::expected<std::string, ResolveError> ResolveSoundsPath() const;
+  /// Resolves a cue's sound by its pack-relative path (CueSoundPath, ADR-0041).
+  /// Present in the client pack only.
+  [[nodiscard]] std::expected<CueSoundData, ResolveError> ResolveCueSound(std::string_view path) const;
 
   /// Resolves a Lua script's text by its path relative to the scenario's
   /// folder, e.g. kParametersScriptPath (ADR-0031). Present in the server pack

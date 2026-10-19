@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -73,6 +74,8 @@ std::string_view DescribeEncodeError(EncodeError error) {
       return "has a sample width a PCM WAV file does not hold (8, 16, 24 or 32 bits)";
     case EncodeError::kPartialSample:
       return "is not a whole number of samples";
+    case EncodeError::kInvalidCueSound:
+      return "has no variant, or a gain that is not a finite number";
   }
   return "could not be encoded";
 }
@@ -201,12 +204,23 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioDa
   return blob;
 }
 
-// Sounds blob wire format: one length-prefixed string.
-std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path) {
+// Cue-sound blob wire format: the gain in decibels (f32), then a u32 variant
+// count and that many length-prefixed paths.
+std::expected<std::vector<std::byte>, EncodeError> EncodeCueSoundBlob(const CueSoundData& sound) {
+  if (sound.variants.empty() || !std::isfinite(sound.gain_db)) {
+    return std::unexpected(EncodeError::kInvalidCueSound);
+  }
+  if (sound.variants.size() > kMaxCueVariants) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
-  if (!writer.WriteString(sounds_path)) {
-    return std::unexpected(EncodeError::kTooLarge);
+  writer.WriteF32(sound.gain_db);
+  writer.WriteU32(static_cast<std::uint32_t>(sound.variants.size()));
+  for (const auto& variant : sound.variants) {
+    if (!writer.WriteString(variant)) {
+      return std::unexpected(EncodeError::kTooLarge);
+    }
   }
   return blob;
 }

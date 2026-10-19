@@ -56,7 +56,8 @@ void BindErrors(py::module_& module) {
   py::enum_<assets::EncodeError>(module, "EncodeErrorReason", "Why a blob was refused: an EncodeError's reason.")
       .value("TOO_LARGE", assets::EncodeError::kTooLarge)
       .value("UNSUPPORTED_SAMPLE_WIDTH", assets::EncodeError::kUnsupportedSampleWidth)
-      .value("PARTIAL_SAMPLE", assets::EncodeError::kPartialSample);
+      .value("PARTIAL_SAMPLE", assets::EncodeError::kPartialSample)
+      .value("INVALID_CUE_SOUND", assets::EncodeError::kInvalidCueSound);
   py::enum_<assets::WriteError>(module, "WriteErrorReason", "Why a pack was not written: a WriteError's reason.")
       .value("IO_ERROR", assets::WriteError::kIoError)
       .value("DUPLICATE_PATH", assets::WriteError::kDuplicatePath)
@@ -78,7 +79,7 @@ void BindEnums(py::module_& module) {
       .value("SCRIPT", assets::AssetType::kScript)
       .value("CHARACTERS", assets::AssetType::kCharacters)
       .value("EYE", assets::AssetType::kEye)
-      .value("SOUNDS", assets::AssetType::kSounds);
+      .value("CUE_SOUND", assets::AssetType::kCueSound);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
@@ -88,7 +89,7 @@ void BindEnums(py::module_& module) {
 void BindConstants(py::module_& module) {
   module.attr("SCENE_PATH") = std::string(assets::kScenePath);
   module.attr("CHARACTERS_PATH") = std::string(assets::kCharactersPath);
-  module.attr("SOUNDS_PATH") = std::string(assets::kSoundsPath);
+  module.attr("SOUNDS_PREFIX") = std::string(assets::kSoundsPrefix);
   module.attr("SCENE_NODE_NO_PARENT") = assets::kSceneNodeNoParent;
   module.attr("MAX_CHARACTERS") = assets::kMaxCharacters;
 }
@@ -164,6 +165,14 @@ void BindSceneNode(py::module_& module) {
 }
 
 void BindBlobTypes(py::module_& module) {
+  py::class_<assets::CueSoundData>(module, "CueSoundData",
+                                   "A cue's sound (ADR-0041): its gain in decibels and its variants' paths.")
+      .def(py::init([](float gain_db, std::vector<std::string> variants) {
+             return assets::CueSoundData{.gain_db = gain_db, .variants = std::move(variants)};
+           }),
+           py::arg("gain_db"), py::arg("variants"))
+      .def_readwrite("gain_db", &assets::CueSoundData::gain_db)
+      .def_readwrite("variants", &assets::CueSoundData::variants);
   py::class_<assets::AudioData>(module, "AudioData", "A mono PCM sound (ADR-0020).")
       .def(py::init([](std::uint32_t sample_rate, std::uint8_t bits_per_sample, const py::bytes& samples) {
              return assets::AudioData{
@@ -231,9 +240,13 @@ void BindEncodeFunctions(py::module_& module) {
       [](const assets::AudioData& sound) { return BlobOrThrow(assets::EncodeAudioBlob(sound), "audio"); },
       py::arg("sound"), "An audio blob (ADR-0020).");
   module.def(
-      "encode_sounds_blob",
-      [](std::string_view sounds_path) { return BlobOrThrow(assets::EncodeSoundsBlob(sounds_path), "sounds path"); },
-      py::arg("sounds_path"), "The prefix the cue sounds are addressed under (ADR-0031).");
+      "encode_cue_sound_blob",
+      [](const assets::CueSoundData& sound) { return BlobOrThrow(assets::EncodeCueSoundBlob(sound), "cue sound"); },
+      py::arg("sound"), "A cue's sound: its gain and its variants' paths (ADR-0041).");
+  module.def("cue_sound_path", &assets::CueSoundPath, py::arg("cue"),
+             "The pack-relative path of the cue named cue's sound, e.g. sounds/gunshot (ADR-0031).");
+  module.def("cue_variant_path", &assets::CueVariantPath, py::arg("cue"), py::arg("variant"),
+             "The pack-relative path of the cue named cue's variant-th variant, e.g. sounds/gunshot/0 (ADR-0031).");
 }
 
 }  // namespace
