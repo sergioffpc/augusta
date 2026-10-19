@@ -2,9 +2,9 @@
 
 augustad, augustac and every C++ executable under `tools/` hold only Glue: their
 entry point, which runs one Runtime behind the application boundary (ADR-0033).
-Mechanism lives in the modules under `src/modules/`, the Runtimes among them,
-and Game policy in the scenario's Lua scripts (ADR-0022). The three are
-exclusive: no code is two of them.
+Mechanism lives in the modules under `src/modules/` and in the Runtimes, each
+beside the executable it runs, and Game policy in the scenario's Lua scripts
+(ADR-0022). The three are exclusive: no code is two of them.
 
 Code inside an executable can be tested only through the whole executable, and
 it is where every feature used to land: the Host, the server and client runtimes
@@ -28,26 +28,32 @@ PredictionWorld are a module, tested by hand-driven ticks.
   Runtime only routes it there.
 - **The Harness and the Host.** The client and the server without threads or a
   clock are modules a test drives by hand.
-- **The Runtimes.** What runs the Harness or the Host live is a module too:
-  client (augustac's), server (augustad's) and agent (the Agent's, kept under
-  `tools/agent/native` as the tools layout has it), each in the namespace of its
-  name (`augusta::client`, `augusta::server`, `augusta::agent`); the Host is
-  `augusta::host`'s. A Runtime adds its executable's configuration, its threads,
-  its clock and the wiring of the services the Harness or the Host lacks: the
-  window, the GPU, audio, the metrics endpoint (ADR-0049). End-to-end tests link
-  a Runtime, never an executable.
+- **The Runtimes.** What runs the Harness or the Host live is a building block
+  of its own, kept in its executable's directory rather than under
+  `src/modules/`, since it has no consumer but that executable: client in
+  `src/client/` (augustac's), server in `src/server/` (augustad's) and agent
+  (the Agent's, in `tools/agent/native` as the tools layout has it), each in the
+  namespace of its name (`augusta::client`, `augusta::server`,
+  `augusta::agent`); the Host is `augusta::host`'s. A Runtime is built as a
+  module is - internal targets named `augusta_<runtime>_*`, public headers under
+  `include/augusta/`, a README stating its responsibility - and its executable
+  is one more target beside them. A Runtime adds its executable's configuration,
+  its threads, its clock and the wiring of the services the Harness or the Host
+  lacks: the window, the GPU, audio, the metrics endpoint (ADR-0049). End-to-end
+  tests link a Runtime, never an executable.
 - **Conversions at a seam.** A conversion between two modules' types lives in
   the module whose seam it crosses. Every conversion between the game's state
   and messages is the Link's.
 - **Names.** A module's targets are `augusta_<module>`, its headers under
   `include/augusta/`, its namespace `augusta::<module>` or one per concept, as
-  in the gameplay module. An executable's only target is the executable itself.
+  in the gameplay module. An executable's own target holds its entry point
+  alone.
 - **Checked at configure time.** `cmake/AugustaModule.cmake` refuses a target
-  under `src/server/` or `src/client/` other than the executable, a target that
-  links an executable, and an executable that links more than the application,
-  its Runtime (any target of the Runtime's module), failure, logging and
-  version. The build's own infrastructure that every binary links, such as a
-  sanitizer's default options, is no module and passes.
+  that links an executable, and an executable that links more than the
+  application, its Runtime (any target defined in the executable's own
+  directory), failure, logging and version. The build's own infrastructure that
+  every binary links, such as a sanitizer's default options, is no module and
+  passes.
 - **Existing code.** Migrated gradually, one cohesive cluster at a time, never
   in one change.
 - **Python tools** keep their own project layout (`tools/<tool>/`) and are not
@@ -63,5 +69,11 @@ PredictionWorld are a module, tested by hand-driven ticks.
   targets, so understanding it means reading all of them; cohesion sets the
   module, and finer splits stay internal targets.
 - **Runtimes as Glue, inside the executables**: rejected. Each executable would
-  link every module its Runtime wires, and the Agent's Runtime, linked by its
-  Python module and its C++ tests, could not be shared.
+  link every module its Runtime wires, its Mechanism would be testable only
+  through the executable, and the Agent's Runtime, linked by its Python module
+  and its C++ tests, could not be shared.
+- **Runtimes as modules under `src/modules/`**: rejected. A Runtime is what its
+  executable runs and nothing else links it but its tests, so a module of its
+  own split one program over two directories - `src/client/` with only
+  `main.cpp`, `src/modules/client/` with everything it runs - without a second
+  consumer to justify it.

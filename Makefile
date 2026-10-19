@@ -56,7 +56,7 @@ TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
 else
-TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/client/*" ":(exclude)src/modules/renderer/*"
+TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
 endif

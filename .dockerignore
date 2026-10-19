@@ -7,7 +7,6 @@ build/
 
 # Windows-only client target - not part of the server image, see Dockerfile
 src/client
-src/modules/client
 
 # Local vcpkg working directories - regenerated inside the build stage
 third_party/vcpkg/buildtrees

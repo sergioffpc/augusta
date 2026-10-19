@@ -27,7 +27,7 @@
 /// client's network connection and PredictionWorld (ADR-0021, ADR-0024), without
 /// the parts that need a window or a GPU (Input, Renderer, Audio,
 /// PresentationWorld). Whatever supplies the input for a tick plugs in here:
-/// anything that plays live - ClientRuntime (the client module), a future autonomous
+/// anything that plays live - ClientRuntime (src/client), a future autonomous
 /// agent - runs one in real time under a Runner (runner.h), and an automated
 /// test drives one by hand so client/server behavior can be checked in CI with
 /// no display and no clock.

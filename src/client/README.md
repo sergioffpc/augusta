@@ -2,8 +2,8 @@
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
 `augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
-`augusta_client_net_stats`, `augusta_client_phases`. Client-only: the headless
-server never links it.
+`augusta_client_net_stats`, `augusta_client_phases`, and augustac, the
+executable that runs them. Client-only: the headless server never links it.
 
 ## Responsibility
 
@@ -20,7 +20,9 @@ the debug HUD and to Nsight Systems.
 
 ## Not its responsibility
 
-- The entry point and the command line: augustac (`src/client`).
+- What augustac's entry point (`main.cpp`) does: read the command line, then run
+  the Lifecycle and conclude its outcome - Glue, tested only end to end
+  (ADR-0060).
 - Playing: the Harness sends commands, receives the server's state and predicts.
 - The window, drawing, input, audio and what the HUD's lines say: window,
   renderer, input, audio and hud, which the Runtime only wires together.
@@ -28,10 +30,10 @@ the debug HUD and to Nsight Systems.
 
 ## Decisions
 
-[ADR-0005](../../../docs/adr/0005-threading-model.md),
-[ADR-0021](../../../docs/adr/0021-client-runtime-decomposition.md),
-[ADR-0033](../../../docs/adr/0033-error-handling.md),
-[ADR-0043](../../../docs/adr/0043-lobby-and-match-lifecycle.md),
-[ADR-0051](../../../docs/adr/0051-replay.md),
-[ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md),
-[ADR-0060](../../../docs/adr/0060-executables-are-glue.md).
+[ADR-0005](../../docs/adr/0005-threading-model.md),
+[ADR-0021](../../docs/adr/0021-client-runtime-decomposition.md),
+[ADR-0033](../../docs/adr/0033-error-handling.md),
+[ADR-0043](../../docs/adr/0043-lobby-and-match-lifecycle.md),
+[ADR-0051](../../docs/adr/0051-replay.md),
+[ADR-0059](../../docs/adr/0059-renderer-nvrhi.md),
+[ADR-0060](../../docs/adr/0060-executables-are-glue.md).

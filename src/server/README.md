@@ -2,8 +2,8 @@
 
 `augusta_server`, `augusta_server_application`, `augusta_server_metrics`,
 `augusta_server_liveness`, `augusta_server_connection_health`,
-`augusta_server_crash`, all in `augusta::server`. Server-only: the client never
-links it.
+`augusta_server_crash`, all in `augusta::server`, and augustad, the executable
+that runs them. Server-only: the client never links it.
 
 ## Responsibility
 
@@ -18,8 +18,9 @@ it crashes.
 
 ## Not its responsibility
 
-- The entry point, the command line and the signal handlers: augustad
-  (`src/server`).
+- What augustad's entry point (`main.cpp`) does: read the command line, install
+  the signal handlers, then run the Lifecycle and conclude its outcome - Glue,
+  tested only end to end (ADR-0060).
 - Admitting clients, screening their commands, ticking and replicating a Match:
   host, which the Runtime only runs.
 - The lock-free counters it counts with: metrics.
@@ -27,9 +28,9 @@ it crashes.
 
 ## Decisions
 
-[ADR-0005](../../../docs/adr/0005-threading-model.md),
-[ADR-0033](../../../docs/adr/0033-error-handling.md),
-[ADR-0047](../../../docs/adr/0047-server-crash-reports.md),
-[ADR-0049](../../../docs/adr/0049-metrics-and-liveness.md),
-[ADR-0051](../../../docs/adr/0051-replay.md),
-[ADR-0060](../../../docs/adr/0060-executables-are-glue.md).
+[ADR-0005](../../docs/adr/0005-threading-model.md),
+[ADR-0033](../../docs/adr/0033-error-handling.md),
+[ADR-0047](../../docs/adr/0047-server-crash-reports.md),
+[ADR-0049](../../docs/adr/0049-metrics-and-liveness.md),
+[ADR-0051](../../docs/adr/0051-replay.md),
+[ADR-0060](../../docs/adr/0060-executables-are-glue.md).

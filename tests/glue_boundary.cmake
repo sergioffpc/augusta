@@ -1,9 +1,8 @@
-# Executables are Glue (ADR-0060): an executable's only target is the
-# executable, which links only the application, its Runtime, failure, logging
-# and version, and no target links an executable. The Glue check
-# (cmake/AugustaModule.cmake) turns each into a configure-time error, and this
-# script proves it fires both ways by configuring a fixture build graph
-# (tests/glue_fixture) once per shape.
+# Executables are Glue (ADR-0060): an executable links only the application,
+# its Runtime, failure, logging and version, and no target links an
+# executable. The Glue check (cmake/AugustaModule.cmake) turns each into a
+# configure-time error, and this script proves it fires both ways by
+# configuring a fixture build graph (tests/glue_fixture) once per shape.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -DBINARY_DIR=<scratch dir>
 # [-DGENERATOR=<generator>] -P glue_boundary.cmake`.
@@ -42,7 +41,7 @@ function(configure_fixture case out_failed out_output)
 endfunction()
 
 # An executable linking all it may - the application, every target of its
-# Runtime's module, failure, logging, version, the build infrastructure every
+# Runtime, failure, logging, version, the build infrastructure every
 # binary links and a system library - and a test linking that Runtime
 # configure.
 configure_fixture(GLUE failed output)
@@ -50,19 +49,9 @@ if(failed)
   string(APPEND report "the Glue check refuses an executable linking only what it may:\n${output}\n")
 endif()
 
-# A second target beside the executable is refused, whatever it is called - its
-# runtime's name included - and the refusal says which target, where it is and
-# which decision it breaks.
-configure_fixture(EXTRA_TARGET failed output)
-if(NOT failed)
-  string(APPEND report "the Glue check lets a second target sit inside an executable's directory:\n${output}\n")
-elseif(NOT output MATCHES "fixture_exe_runtime \\(exe\\)" OR NOT output MATCHES "ADR-0060")
-  string(APPEND report "the Glue check's refusal names no target, directory or decision:\n${output}\n")
-endif()
-
-# An executable linking a module that is not its Runtime's, nor the
-# application, failure, logging or version, is refused, and the refusal names
-# the link.
+# An executable linking a module that is not its Runtime - defined outside its
+# directory, whatever it is called - nor the application, failure, logging or
+# version, is refused, and the refusal names the link.
 configure_fixture(LINK_REFUSED failed output)
 if(NOT failed)
   string(APPEND report "the Glue check lets an executable link a module it may not:\n${output}\n")
@@ -85,5 +74,5 @@ if(report)
 endif()
 message(
   STATUS
-  "glue_boundary: the Glue check refuses a second target inside an executable, a link an executable may not have and a test that links an executable"
+  "glue_boundary: the Glue check refuses a link an executable may not have and a test that links an executable"
 )
