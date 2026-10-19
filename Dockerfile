@@ -101,6 +101,7 @@ COPY cmake cmake
 COPY CMakeLists.txt CMakePresets.json ./
 COPY src src
 COPY tests tests
+COPY checks checks
 
 # The install is staged under DESTDIR with the prefix the runtime stage runs
 # it from, so this file never names a path inside the build tree.
