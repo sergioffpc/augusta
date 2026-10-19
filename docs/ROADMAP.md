@@ -5,7 +5,9 @@ relative effort, not calendar estimates: S / M / L. They are grouped by the
 release that shipped them, or the one they are planned for; each requirement in
 REQUIREMENTS.md names the release that first met it, or the one it is planned
 for. A planned release is a delivery point: it ships once its milestones meet
-their exit criteria, and its version is the next major when it is cut.
+their exit criteria, and its version is the next major when it is cut. Releases
+follow semver: a breaking change waiting on `develop` ships as a major of its
+own, ahead of the planned release, and every planned release moves one major on.
 
 ## Contents
 
@@ -31,29 +33,30 @@ their exit criteria, and its version is the next major when it is cut.
     - [M14 — Replay (M)](#m14--replay-m)
     - [M15 — Cluster Hardening (M)](#m15--cluster-hardening-m)
     - [M16 — Hardening & v3 Release (S)](#m16--hardening--v3-release-s)
-- [v4 — Authoritative Body (planned)](#v4--authoritative-body-planned)
+- [v4 — Modules and Packs (4.0.0, 2026-10-19)](#v4--modules-and-packs-400-2026-10-19)
     - [M17 — One Pack Format (S)](#m17--one-pack-format-s)
+- [v5 — Authoritative Body (planned)](#v5--authoritative-body-planned)
     - [M18 — Skeleton (M)](#m18--skeleton-m)
     - [M19 — Muzzle (S)](#m19--muzzle-s)
     - [M20 — Clips & the Hitbox Pose (M)](#m20--clips--the-hitbox-pose-m)
-- [v5 — The Image (planned)](#v5--the-image-planned)
+- [v6 — The Image (planned)](#v6--the-image-planned)
     - [M21 — Deferred Frame & Looks (M)](#m21--deferred-frame--looks-m)
     - [M22 — Upscaling & Graphics Settings (S)](#m22--upscaling--graphics-settings-s)
     - [M23 — Ray-traced Lighting (M)](#m23--ray-traced-lighting-m)
     - [M24 — Drawing the Body (M)](#m24--drawing-the-body-m)
-- [v6 — The World Answers (planned)](#v6--the-world-answers-planned)
+- [v7 — The World Answers (planned)](#v7--the-world-answers-planned)
     - [M25 — Props & Surface Materials (L)](#m25--props--surface-materials-l)
     - [M26 — Impact Effects (S)](#m26--impact-effects-s)
     - [M27 — Ragdolls (S)](#m27--ragdolls-s)
-- [v7 — The Sound (planned)](#v7--the-sound-planned)
+- [v8 — The Sound (planned)](#v8--the-sound-planned)
     - [M28 — Acoustics (L)](#m28--acoustics-l)
     - [M29 — Footsteps (S)](#m29--footsteps-s)
-- [v8 — Teams (planned)](#v8--teams-planned)
+- [v9 — Teams (planned)](#v9--teams-planned)
     - [M30 — Team Match (M)](#m30--team-match-m)
     - [M31 — Voice Chat (M)](#m31--voice-chat-m)
-- [v9 — Explosions, Destruction & Smoke (planned)](#v9--explosions-destruction--smoke-planned)
+- [v10 — Explosions, Destruction & Smoke (planned)](#v10--explosions-destruction--smoke-planned)
     - [M32 — Explosions, Destruction & Smoke (L)](#m32--explosions-destruction--smoke-l)
-- [v10 — VR (planned)](#v10--vr-planned)
+- [v11 — VR (planned)](#v11--vr-planned)
     - [M33 — VR Play Mode (L)](#m33--vr-play-mode-l)
 - [Later — Scalable (planned, no version yet)](#later--scalable-planned-no-version-yet)
     - [M34 — Client-side Metrics (S)](#m34--client-side-metrics-s)
@@ -330,13 +333,14 @@ negative check of the Node runbook is refused on the live cluster
 
 **Exit criteria:** every requirement planned for v3 is met
 
-## v4 — Authoritative Body (planned)
+## v4 — Modules and Packs (4.0.0, 2026-10-19)
 
-v3 made what goes wrong under load reproducible; v4 makes a Shot land where the
-body is. A Character gets a Skeleton, its Hitboxes follow Joints posed from
-replicated state, and rounds leave the rifle's Muzzle. All of it is the
-server's: clients draw the same rigid body until v5. First, the pack format is
-written once, in C++, since every release from here adds blobs to it.
+v4 writes the pack format once, in C++, since every release from here adds blobs
+to it. Captures and packs take extensions of their own, which every Node's
+publish receiver must be reinstalled for: a breaking change, so v4 ships ahead
+of the Authoritative Body. It also settles the engine's modules (each executable
+is Glue beside its Runtime, and the Host and the Harness speak to the Link
+only), and gives every cue's sound variants and a gain.
 
 ### M17 — One Pack Format (S)
 
@@ -348,6 +352,13 @@ written once, in C++, since every release from here adds blobs to it.
 **Exercises:** ADR-0030, ADR-0031, ADR-0050 **Exit criteria:** no pack blob is
 encoded or decoded in Python, and the golden packs cook unchanged through the
 C++ encoder
+
+## v5 — Authoritative Body (planned)
+
+v4 wrote the pack format once; v5 makes a Shot land where the body is. A
+Character gets a Skeleton, its Hitboxes follow Joints posed from replicated
+state, and rounds leave the rifle's Muzzle. All of it is the server's: clients
+draw the same rigid body until v6.
 
 ### M18 — Skeleton (M)
 
@@ -382,9 +393,9 @@ starts at its rifle's Muzzle
 aiming player is hit where its posed arm is, and a client's pose agrees with the
 server's within the tolerance
 
-## v5 — The Image (planned)
+## v6 — The Image (planned)
 
-v4 poses the body; v5 draws it, in a world with materials and light. It meets
+v5 poses the body; v6 draws it, in a world with materials and light. It meets
 NFR-17.
 
 ### M21 — Deferred Frame & Looks (M)
@@ -426,9 +437,9 @@ lighting in the pack
 skinned in its pose, the local player sees its own body, and an 8-player Match
 holds NFR-17
 
-## v6 — The World Answers (planned)
+## v7 — The World Answers (planned)
 
-v5 makes the world visible; v6 makes it physical. Objects move when pushed or
+v6 makes the world visible; v7 makes it physical. Objects move when pushed or
 shot, rounds go through what they can, and strikes show what they hit.
 
 ### M25 — Props & Surface Materials (L)
@@ -458,9 +469,9 @@ metal and concrete each looks and sounds its own
 **Exercises:** ADR-0066, ADR-0045 **Exit criteria:** a killed player falls as a
 ragdoll from its drawn pose, thrown along the killing blow
 
-## v7 — The Sound (planned)
+## v8 — The Sound (planned)
 
-v7 makes the Map heard: sound is occluded, reflected and routed by its geometry,
+v8 makes the Map heard: sound is occluded, reflected and routed by its geometry,
 and players' feet make noise.
 
 ### M28 — Acoustics (L)
@@ -484,9 +495,9 @@ corridor rings
 **Exercises:** ADR-0062, ADR-0066, US-04 **Exit criteria:** a player running
 over a metal floor is heard, and one walking is quieter
 
-## v8 — Teams (planned)
+## v9 — Teams (planned)
 
-v8 turns the last player standing into two sides. It meets US-26 and US-27.
+v9 turns the last player standing into two sides. It meets US-26 and US-27.
 
 ### M30 — Team Match (M)
 
@@ -505,10 +516,10 @@ has no one left alive
 teammate and no enemy, and Speech aloud is heard by anyone near, through the
 acoustics
 
-## v9 — Explosions, Destruction & Smoke (planned)
+## v10 — Explosions, Destruction & Smoke (planned)
 
-v9 adds what blows up, breaks and hides. It builds on the Props, Surface
-materials and impact effects of v6, and on the Teams of v8 for friendly fire.
+v10 adds what blows up, breaks and hides. It builds on the Props, Surface
+materials and impact effects of v7, and on the Teams of v9 for friendly fire.
 
 ### M32 — Explosions, Destruction & Smoke (L)
 
@@ -521,9 +532,9 @@ milestones once its decisions (ADR-0070 to ADR-0073) are recorded.
 **Exercises:** ADR-0070, ADR-0071, ADR-0072, ADR-0073 **Exit criteria:** set
 with its specs
 
-## v10 — VR (planned)
+## v11 — VR (planned)
 
-v10 lets a player play with a PC VR headset, in the same Matches as desktop
+v11 lets a player play with a PC VR headset, in the same Matches as desktop
 players. It meets US-25 and NFR-16.
 
 ### M33 — VR Play Mode (L)
