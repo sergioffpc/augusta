@@ -2,6 +2,103 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 4.0.0 - 2026-10-19
+
+### Features
+
+- **link:** give the client its end of the Link
+- **link:** give the server its end of the Link
+- **protocol:** readdress an encoded Authoritative State
+- **pack:** write packs through augusta_assets' encoder
+- **assets:** read a pack's layout without a key and list a Pack's entries
+- **pack:** inspect and verify packs through augusta_assets
+- **pack:** generate keys through augusta_assets
+- **assets:** refuse unplayable sounds and name a pack's format
+- **audio:** give every cue's sound variants and a gain
+
+### Bug Fixes
+
+- **tests:** keep the allocation count out of ThreadSanitizer builds
+- **link:** keep a tick's one Commands message within the bound
+- **window:** include what the window test and client runtime use
+- **protocol:** refuse to readdress anything but an Authoritative State
+- **build:** let an executable link what every binary links
+- **lint:** include the capture records where used, lint GLFW on Windows
+- address review of the .acap/.apak rename
+- **application:** declare raised_ only on Windows
+- copy checks/ into the server image build
+- **audio:** name the decade the gain conversion raises
+
+### Refactoring
+
+- **logging:** rename the level macros to LOG_<LEVEL>
+- **logging:** rename LOG_WARNING to LOG_WARN
+- **tick:** split tick and limits out of primitives and gameplay
+- **lifecycle:** split into supervisor and application
+- **link:** augusta_link_messages replaces wire
+- **policy:** move Game policy out of scripting into a policy module
+- **simulation:** log an undecided on_tick call in a helper of its own
+- **link:** include what each source uses after the move
+- **host:** move the Host's types to augusta::host
+- **host:** move metrics and scenario to their own namespaces
+- **window:** move the window and HUD out of the renderer
+- **host:** include only what tick_messages uses
+- **link:** take in each received payload apart
+- **host:** speak to the Link only
+- **agent:** make the Agent's native core the agent Runtime module
+- **host:** include what each source names of the Link
+- **client:** move augustac's Runtime into the client module
+- **link:** only the Link links networking
+- **link:** define Readdressed in its header's order
+- **server:** move augustad's Runtime into the server module
+- **link:** name what fills in a recipient's fields, and a message type
+- **capture:** convert a record's bytes through the Link alone
+- **client:** move augustac's Lifecycle into the client module
+- **link:** include only what capture, its tests and the Link's ends use
+- **BREAKING** rename the capture and pack file extensions to .acap and .apak
+- **BREAKING** keep the client and server Runtimes beside their executables
+- **assets:** make the pack encoder and decoder headers public
+- **assets:** parse a pack header's client pack on its own
+- **pack:** one binding unit per augusta_assets part
+- **pack:** report a verified pack's format and size off its load
+- **application:** raise the Windows timer resolution in Execute
+- move the structural checks out of tests/ into checks/
+- **failure:** rename FirstFailure to FailureLatch
+
+### Documentation
+
+- adopt strict module layers (ADR-0062)
+- drop the module layers and record the module adjustment
+- record the footsteps decision and the acoustics vocabulary
+- record the VR Play mode and the rifle's Muzzle
+- record Prop kinds, Surface materials, penetration and ricochet
+- record Character animation decisions
+- **presentation:** name dynamics as the home of client dynamic bodies
+- record the Link's vocabulary and the Runtimes' Lifecycles
+- record rendering pipeline decisions
+- record explosion, destruction and smoke decisions
+- record team match and voice chat decisions
+- run the upscaler before bloom and tonemapping
+- plan releases v4 to v10 in the roadmap
+- **adr:** name the Steam Audio scene layout in ADR-0071
+- **window:** restore the \file tag in window_events.h
+- name every Runtime's home and rewrap the Glue comments
+- plan v4 as Modules and Packs and move planned releases on
+
+### Tests
+
+- **link:** include the capture records the tests name
+- **host:** include only what the replication benchmark uses
+- **harness:** include the Link's header for its connection state
+
+### Build
+
+- **glue:** executables link only the application and their Runtime
+- **link:** keep the test-only raw ends out of augusta_link
+- **agent:** link physics, which the agent Runtime's header names
+- **deps:** Bump third_party/vcpkg from `2750401` to `20ceb8a`
+- **deps:** Bump the actions group with 5 updates
+- **pack:** build the cooker's native module in the main project
 ## 3.3.0 - 2026-10-17
 
 ### Features
