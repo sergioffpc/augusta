@@ -409,7 +409,11 @@ metrics. _Avoid_: Overlay, stats panel
 
 **Debug overlay**: Shapes drawn into the 3D world to show state the game itself
 does not show, such as collision shapes, Hitboxes or a Smoke screen's voxels.
-_Avoid_: Debug view, gizmo, wireframe
+_Avoid_: Debug view (it replaces the frame), gizmo, wireframe
+
+**Debug view**: The frame replaced by one of the images it is made from, such as
+albedo, normals or shadows. _Avoid_: Debug overlay (drawn over the world),
+render mode
 
 **Debug panel**: A window over the frame with numbers and controls about one
 part of the game, such as the network or the physics. _Avoid_: Debug menu,
