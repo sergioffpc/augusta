@@ -164,8 +164,10 @@ map: maps/test_map.usda
 characters:
   marine: characters/marine.usda              # by name
 sounds:
-  gunshot: sounds/gunshot.wav
-  hit_marker: sounds/hit_marker.wav
+  gunshot:                                     # one of its variants each time
+    variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
+    gain: -3                                   # decibels; 0 if left out
+  hit_marker: sounds/hit_marker.wav            # one variant at 0 dB
   hit_taken: sounds/hit_taken.wav
   death: sounds/death.wav
   match_won: sounds/match_won.wav
@@ -193,19 +195,21 @@ decides and never receives the script (ADR-0019). The characters' names, in
 manifest order, go into both packs as the `Characters` entry, the list a joining
 client's character is checked against (ADR-0042); a manifest naming more than
 255 characters fails the cook. Each cue's sound goes into the **client** pack
-only, as an audio asset addressed `sounds/<cue>` (e.g. `sounds/gunshot`), with
-the prefix `sounds` as the `Sounds` entry the client finds them by (ADR-0020,
-ADR-0031); one file may be the sound of several cues. Each character's
+only: its gain and its variants' paths at `sounds/<cue>` (e.g.
+`sounds/gunshot`), and each variant as an audio asset at `sounds/<cue>/<n>`
+(ADR-0020, ADR-0031, ADR-0041). A cue's sound is one WAV file, shorthand for one
+variant at 0 dB, or a mapping of its `variants` and an optional `gain` in
+decibels; one file may be a variant of several cues. Each character's
 `Character/Eye` prim, where its player's camera sits and its Shots leave from,
 goes into both packs as that point alone (ADR-0040). It is an error if the
 manifest is missing, if it holds a key, cue or script role the cooker does not
 know, if a file it names is missing or is not what its key needs (the map and
 characters a USD stage, a sound a mono PCM WAV - the error names the file), if a
 character's name is not one lowercase word or is a root prim of the map, if a
-character has no `Character/Eye`, if a cue has no sound (the error names the
-cue), or if there is no `parameters` script: the server reads its Parameters out
-of its pack at startup, so that is found here rather than when a server starts
-on the pack.
+character has no `Character/Eye`, if a cue has no sound, no variant, a missing
+WAV or a gain that is not a finite number (the error names the cue), or if there
+is no `parameters` script: the server reads its Parameters out of its pack at
+startup, so that is found here rather than when a server starts on the pack.
 
 By default, packs are written under `<assets-root>/packs`, keyed by the
 scenario's name alone, not its `authoring/scenarios/` position (`firebase` ->

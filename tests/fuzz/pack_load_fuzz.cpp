@@ -42,7 +42,7 @@ constexpr std::array<std::string_view, 12> kPaths = {
     augusta::assets::kParametersScriptPath,
     "rules.lua",
     "sounds/gunshot",
-    augusta::assets::kSoundsPath,
+    "sounds/gunshot/0",
 };
 
 template <typename Key>
@@ -113,11 +113,11 @@ void ResolveEverything(const Pack& pack) {
     (void)pack.ResolveEye(path);
     (void)pack.ResolveScript(path);
     (void)pack.ResolveAudio(path);
+    (void)pack.ResolveCueSound(path);
   }
   (void)pack.ResolveHitboxes("soldier");
   (void)pack.ResolveCharacters();
   (void)pack.ClientPackHash();
-  (void)pack.ResolveSoundsPath();
 }
 
 }  // namespace

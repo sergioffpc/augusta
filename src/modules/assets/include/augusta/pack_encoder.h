@@ -23,13 +23,16 @@ namespace augusta::assets {
 enum class EncodeError {
   /// A count or length exceeded what the wire format's fields can hold, or
   /// this module's own pragmatic sanity limits (kMaxPathLength,
-  /// kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties).
+  /// kMaxMeshPoints, kMaxMeshIndices, kMaxSceneNodes, kMaxProperties,
+  /// kMaxCueVariants).
   kTooLarge,
   /// A sound's bits per sample is not one a PCM WAV file holds (8, 16, 24 or
   /// 32).
   kUnsupportedSampleWidth,
   /// A sound's samples are not a whole number of samples of its width.
   kPartialSample,
+  /// A cue's sound has no variant, or a gain that is not a finite number.
+  kInvalidCueSound,
 };
 
 /// A phrase for error that follows the name of what was encoded, e.g. "exceeds
@@ -74,9 +77,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeCharactersBlob(std::spa
 /// otherwise.
 std::expected<std::vector<std::byte>, EncodeError> EncodeAudioBlob(const AudioData& sound);
 
-/// Encodes sounds_path, the prefix the cue sounds are addressed under, into
-/// the pack's sounds-blob byte layout (ADR-0031).
-std::expected<std::vector<std::byte>, EncodeError> EncodeSoundsBlob(std::string_view sounds_path);
+/// Encodes sound into the pack's cue-sound-blob byte layout (ADR-0031,
+/// ADR-0041): kInvalidCueSound with no variant or a gain that is not finite,
+/// kTooLarge past kMaxCueVariants variants.
+std::expected<std::vector<std::byte>, EncodeError> EncodeCueSoundBlob(const CueSoundData& sound);
 
 /// Why WritePack failed.
 enum class WriteError {

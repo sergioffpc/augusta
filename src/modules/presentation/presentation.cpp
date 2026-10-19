@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,6 +18,7 @@
 #include <nvtx3/nvtx3.hpp>
 
 #include "augusta/animation.h"
+#include "augusta/assets.h"
 #include "augusta/audio.h"
 #include "augusta/audio_cues.h"
 #include "augusta/command.h"
@@ -52,9 +54,17 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   audio::Engine& audio_engine;
-  // Every cue's sound, loaded into audio_engine, index for index with
-  // audio::kCues.
-  std::array<audio::SoundHandle, audio::kCues.size()> cue_sounds{};
+  // A cue's sound as loaded into audio_engine: its variants, its gain, and the
+  // variant it played last.
+  struct LoadedCue {
+    std::vector<audio::SoundHandle> variants;
+    float gain_db = 0.0F;
+    std::optional<std::size_t> last;
+  };
+  // Every cue's sound, index for index with audio::kCues.
+  std::array<LoadedCue, audio::kCues.size()> cue_sounds{};
+  // What chooses each cue's variant as it plays (audio::ChooseVariant).
+  std::mt19937 variant_random{std::random_device{}()};
   // Where the camera sits relative to the local player's body position
   // (physics::BodyState's feet) standing: its character's eye (World's
   // constructor).
@@ -129,7 +139,10 @@ struct World::Impl {
   Impl(audio::Engine& engine, const audio::CueSounds& sounds, const math::Vec3& local_eye)
       : audio_engine(engine), eye(local_eye) {
     for (std::size_t i = 0; i < sounds.size(); ++i) {
-      cue_sounds[i] = audio_engine.LoadSound(sounds[i]);
+      cue_sounds[i].gain_db = sounds[i].gain_db;
+      for (const assets::AudioData& variant : sounds[i].variants) {
+        cue_sounds[i].variants.push_back(audio_engine.LoadSound(variant));
+      }
     }
     // Chain the five phases in Phase's declared order (ADR-0024): each
     // depends_on the previous one, and the first depends on Flecs's
@@ -322,10 +335,17 @@ struct World::Impl {
     audio_engine.SetListener(ListenerOf(camera));
     for (const CuePlay& play : cue_selector.Select(*input, rounds_fired)) {
       const auto index = static_cast<std::size_t>(std::ranges::find(audio::kCues, play.cue) - audio::kCues.begin());
+      LoadedCue& cue = cue_sounds.at(index);
+      // A World given no sounds (a test's) plays none.
+      if (cue.variants.empty()) {
+        continue;
+      }
+      const std::size_t variant = audio::ChooseVariant(cue.variants.size(), cue.last, variant_random());
+      cue.last = variant;
       if (play.position.has_value()) {
-        audio_engine.Play(cue_sounds.at(index), *play.position);
+        audio_engine.Play(cue.variants.at(variant), *play.position, cue.gain_db);
       } else {
-        audio_engine.Play(cue_sounds.at(index));
+        audio_engine.Play(cue.variants.at(variant), cue.gain_db);
       }
     }
   }

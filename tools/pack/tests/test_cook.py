@@ -11,13 +11,14 @@ import struct
 from augusta_pack import _native
 from augusta_pack.cook import cook_scenario
 from augusta_pack.cook import CookError
+from augusta_pack.sounds import CueSound
 from augusta_pack.sounds import CueSounds
 from augusta_pack.sounds import Sound
 from conftest import decode_audio
+from conftest import decode_cue_sound
 from conftest import decode_hitbox
 from conftest import decode_mesh
 from conftest import decode_spawn_point
-from conftest import decode_string
 from conftest import decode_texture
 from conftest import encode_png
 from conftest import FIXTURES_DIR
@@ -332,44 +333,86 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     assert server.blob("parameters.lua") == b"return {}"
 
 
-def test_cue_sounds_go_into_the_client_pack_only_under_the_sounds_prefix(
-    tmp_path, key_pair
-):
-    gunshot = Sound(
-        sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
-    )
-    death = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
-    client_path = tmp_path / "client.apak"
-    server_path = tmp_path / "server.apak"
+GUNSHOT = Sound(
+    sample_rate=22050, bits_per_sample=16, samples=b"\x01\x00\xff\x7f"
+)
+DEATH = Sound(sample_rate=44100, bits_per_sample=8, samples=b"\x80\x90\xa0")
+
+
+def cook_sounds(sounds, tmp_path, key_pair):
+    """Cooks the mesh fixture with sounds, into client.apak and server.apak."""
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
-        client_path,
-        server_path,
+        tmp_path / "client.apak",
+        tmp_path / "server.apak",
         key_pair.private_key,
-        sounds=CueSounds(cues=[("gunshot", gunshot), ("death", death)]),
+        sounds=CueSounds(cues=sounds),
     )
 
-    client = read_pack_contents(client_path, key_pair.public_key)
-    server = read_pack_contents(server_path, key_pair.public_key)
-    assert client.paths_of_type(_native.AssetType.AUDIO) == {
+
+def test_a_cues_variants_and_gain_go_into_the_client_pack_only(
+    tmp_path, key_pair
+):
+    cook_sounds(
+        [
+            ("gunshot", CueSound(variants=[GUNSHOT, DEATH], gain_db=-6.0)),
+            ("death", CueSound(variants=[DEATH])),
+        ],
+        tmp_path,
+        key_pair,
+    )
+
+    client = read_pack_contents(tmp_path / "client.apak", key_pair.public_key)
+    server = read_pack_contents(tmp_path / "server.apak", key_pair.public_key)
+    assert client.paths_of_type(_native.AssetType.CUE_SOUND) == {
         "sounds/gunshot",
         "sounds/death",
     }
-    assert decode_audio(client.blob("sounds/gunshot")) == (
+    assert decode_cue_sound(client.blob("sounds/gunshot")) == (
+        -6.0,
+        ["sounds/gunshot/0", "sounds/gunshot/1"],
+    )
+    assert decode_cue_sound(client.blob("sounds/death")) == (
+        0.0,
+        ["sounds/death/0"],
+    )
+    assert client.paths_of_type(_native.AssetType.AUDIO) == {
+        "sounds/gunshot/0",
+        "sounds/gunshot/1",
+        "sounds/death/0",
+    }
+    assert decode_audio(client.blob("sounds/gunshot/0")) == (
         22050,
         16,
         b"\x01\x00\xff\x7f",
     )
-    assert decode_audio(client.blob("sounds/death")) == (
+    assert decode_audio(client.blob("sounds/gunshot/1")) == (
         44100,
         8,
         b"\x80\x90\xa0",
     )
-    assert decode_string(client.blob(_native.SOUNDS_PATH)) == "sounds"
-    assert client.entries[_native.SOUNDS_PATH][0] == _native.AssetType.SOUNDS
     assert server.paths_of_type(_native.AssetType.AUDIO) == set()
-    assert _native.SOUNDS_PATH not in server.entries
+    assert server.paths_of_type(_native.AssetType.CUE_SOUND) == set()
+
+
+@pytest.mark.parametrize(
+    "sound",
+    [
+        CueSound(variants=[]),
+        CueSound(variants=[GUNSHOT], gain_db=math.inf),
+        CueSound(variants=[GUNSHOT], gain_db=math.nan),
+    ],
+)
+def test_a_cue_sound_the_client_cannot_play_is_refused_naming_the_cue(
+    sound, tmp_path, key_pair
+):
+    with pytest.raises(CookError, match="hit_marker") as refused:
+        cook_sounds([("hit_marker", sound)], tmp_path, key_pair)
+
+    assert refused.value.code == "sound_encode_failed"
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
 
 
 def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):

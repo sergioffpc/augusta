@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -417,23 +418,76 @@ TEST(EncodeAudioBlobTest, RefusesSamplesThatAreNotAWholeNumberOfSamples) {
   EXPECT_TRUE(whole.has_value());
 }
 
-// A client pack names the folder its cue sounds are addressed under (ADR-0031).
-TEST_F(PackTest, EncodesAndResolvesTheSoundsFolder) {
-  const auto pack_path = MakePackPath("augusta_assets_test_sounds");
-  const auto keys = GenerateEd25519KeyPair();
+// A cue's sound and each of its variants are addressed under the sounds prefix
+// (ADR-0031), which the client and the cooker share.
+TEST(CueSoundPathTest, ACuesSoundAndItsVariantsAreAddressedUnderTheSoundsPrefix) {
+  EXPECT_EQ(augusta::assets::CueSoundPath("gunshot"), "sounds/gunshot");
+  EXPECT_EQ(augusta::assets::CueVariantPath("gunshot", 0), "sounds/gunshot/0");
+  EXPECT_EQ(augusta::assets::CueVariantPath("hit_marker", 12), "sounds/hit_marker/12");
+}
 
-  const auto blob = augusta::assets::EncodeSoundsBlob("sounds");
+// A cue's sound (ADR-0041) is its gain and its variants' paths, resolved by
+// path and only as a cue sound.
+TEST_F(PackTest, EncodesAndResolvesACueSound) {
+  const auto pack_path = MakePackPath("augusta_assets_test_cue_sound");
+  const auto keys = GenerateEd25519KeyPair();
+  const augusta::assets::CueSoundData sound{.gain_db = -6.5F, .variants = {"sounds/gunshot/0", "sounds/gunshot/1"}};
+
+  const auto blob = augusta::assets::EncodeCueSoundBlob(sound);
   ASSERT_TRUE(blob.has_value());
   const std::vector<augusta::assets::AssetEntry> entries = {
-      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSounds,
-                                  .path = std::string(augusta::assets::kSoundsPath),
-                                  .data = *blob},
+      augusta::assets::AssetEntry{
+          .type = augusta::assets::AssetType::kCueSound, .path = "sounds/gunshot", .data = *blob},
   };
   ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
   auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
   ASSERT_TRUE(pack.has_value());
 
-  EXPECT_EQ(pack->ResolveSoundsPath().value(), "sounds");
+  const auto resolved = pack->ResolveCueSound("sounds/gunshot");
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(resolved->gain_db, -6.5F);
+  EXPECT_EQ(resolved->variants, sound.variants);
+  EXPECT_EQ(pack->ResolveAudio("sounds/gunshot").error(), augusta::assets::ResolveError::kTypeMismatch);
+  EXPECT_EQ(pack->ResolveCueSound("sounds/death").error(), augusta::assets::ResolveError::kNotFound);
+}
+
+// Every cue needs a sound (ADR-0041): one with no variant, or a gain that is
+// not a number, is refused when encoded and corrupt when decoded.
+TEST(EncodeCueSoundBlobTest, RefusesACueSoundWithNoVariantOrANonFiniteGain) {
+  const auto no_variant = augusta::assets::EncodeCueSoundBlob({.gain_db = 0.0F, .variants = {}});
+  const auto infinite = augusta::assets::EncodeCueSoundBlob(
+      {.gain_db = std::numeric_limits<float>::infinity(), .variants = {"sounds/gunshot/0"}});
+  const auto not_a_number = augusta::assets::EncodeCueSoundBlob(
+      {.gain_db = std::numeric_limits<float>::quiet_NaN(), .variants = {"sounds/gunshot/0"}});
+
+  ASSERT_FALSE(no_variant.has_value());
+  EXPECT_EQ(no_variant.error(), augusta::assets::EncodeError::kInvalidCueSound);
+  ASSERT_FALSE(infinite.has_value());
+  EXPECT_EQ(infinite.error(), augusta::assets::EncodeError::kInvalidCueSound);
+  ASSERT_FALSE(not_a_number.has_value());
+  EXPECT_EQ(not_a_number.error(), augusta::assets::EncodeError::kInvalidCueSound);
+}
+
+TEST_F(PackTest, ACueSoundWithNoVariantOrANonFiniteGainIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_corrupt_cue_sound");
+  const auto keys = GenerateEd25519KeyPair();
+  // A gain (f32) of 0 dB, then the variant count, and no variant.
+  const std::vector<std::byte> no_variant(8, std::byte{0x00});
+  // A gain of +infinity (0x7F800000), then one variant: the path "a".
+  const std::vector<std::byte> infinite = {std::byte{0x00}, std::byte{0x00}, std::byte{0x80}, std::byte{0x7F},
+                                           std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+                                           std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, std::byte{0x00},
+                                           std::byte{'a'}};
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCueSound, .path = "none", .data = no_variant},
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kCueSound, .path = "infinite", .data = infinite},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveCueSound("none").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack->ResolveCueSound("infinite").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
 // A character's eye is where the local player's camera sits (ADR-0040): a bare

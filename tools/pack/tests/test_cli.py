@@ -67,8 +67,11 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
         "match_won",
         "match_lost",
     )
-    assert client.paths_of_type(_native.AssetType.AUDIO) == {
+    assert client.paths_of_type(_native.AssetType.CUE_SOUND) == {
         f"sounds/{cue}" for cue in cues
+    }
+    assert client.paths_of_type(_native.AssetType.AUDIO) == {
+        f"sounds/{cue}/0" for cue in cues
     }
     assert server.paths_of_type(_native.AssetType.AUDIO) == set()
 
