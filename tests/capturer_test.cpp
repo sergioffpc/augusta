@@ -10,6 +10,7 @@
 #include <iterator>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -594,6 +595,32 @@ TEST_F(CapturerTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
   ASSERT_EQ(written.size(), 2U);
   EXPECT_FALSE(written.front().empty());
   EXPECT_EQ(written.front(), written.back());
+}
+
+// Throws as the writer creates a Match's file, as any dependency the writer
+// calls might.
+class ThrowsAtTheStart final : public CaptureObserver {
+ public:
+  void OnStarted() override { throw std::runtime_error("observer refused"); }
+};
+
+// An exception on the writer's thread is the capture's loss, as a failed write
+// is, never the process's end.
+// Requirements: NFR-07
+TEST_F(CapturerTest, AnExceptionOnTheWritersThreadIsAWriteFailureInEitherMode) {
+  for (const CaptureMode mode : {CaptureMode::kOptional, CaptureMode::kStrict}) {
+    ThrowsAtTheStart observer;
+    Capturer capturer(directory_, Header(), CaptureOptions{.mode = mode, .observer = &observer});
+    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.WaitUntilWritten();
+
+    EXPECT_EQ(capturer.Health(), mode == CaptureMode::kStrict ? CaptureHealth::kStopped : CaptureHealth::kDegraded);
+    const std::optional<augusta::failure::Failure> lost = capturer.Loss();
+    ASSERT_TRUE(lost.has_value());
+    EXPECT_EQ(lost->code, mode == CaptureMode::kStrict ? Code::kStrictCaptureFailed : Code::kCaptureWriteFailed);
+    EXPECT_TRUE(Names(*lost, "match=1 step=write")) << DescribeFailure(*lost);
+    EXPECT_EQ(lost->detail, "observer refused");
+  }
 }
 
 #ifndef _WIN32

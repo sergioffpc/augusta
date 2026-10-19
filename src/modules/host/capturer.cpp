@@ -34,6 +34,7 @@
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/tick.h"
+#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -302,7 +303,7 @@ class Capturer::Writer {
       }
       writing_ = true;
       lock.unlock();
-      std::optional<Failed> loss = Handle(item);
+      std::optional<Failed> loss = HandleGuarded(item);
       lock.lock();
       writing_ = false;
       if (loss.has_value()) {
@@ -319,6 +320,17 @@ class Capturer::Writer {
         written_.notify_all();
       }
     }
+  }
+
+  // Handle under the writer thread's boundary: an exception escaping it, from
+  // the disk or anything else the writer calls, loses the capture as a failed
+  // write does, where it would otherwise end the process.
+  std::optional<Failed> HandleGuarded(const Item& item) {
+    auto handled = failure::Guard(failure::Code::kCaptureWriteFailed, [&] { return Handle(item); });
+    if (!handled.has_value()) {
+      return Failed{.step = CaptureStep::kWrite, .detail = std::move(handled.error().detail)};
+    }
+    return *std::move(handled);
   }
 
   // Mechanism: carries out item on the writer's own file, or says why the
@@ -339,17 +351,17 @@ class Capturer::Writer {
   // Makes room in the directory for the magic and the header, then creates
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
-    if (!directory_.Open(item.match, item.path.filename().string(), item.encoded->SizeOnDisk())) {
+    if (!directory_.Open(item.match, Utf8(item.path.filename()), item.encoded->SizeOnDisk())) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Failed{.step = CaptureStep::kCreate, .detail = item.path.string()};
+      return Failed{.step = CaptureStep::kCreate, .detail = Utf8(item.path)};
     }
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
-    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, path_.string());
+    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, Utf8(path_));
     observer_->OnStarted();
     return Write(*item.encoded);
   }
@@ -375,7 +387,7 @@ class Capturer::Writer {
     }
     capture::Write(file_, encoded);
     if (!file_) {
-      return Failed{.step = CaptureStep::kWrite, .detail = path_.string()};
+      return Failed{.step = CaptureStep::kWrite, .detail = Utf8(path_)};
     }
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
       file_.setstate(std::ios::badbit);
@@ -383,7 +395,7 @@ class Capturer::Writer {
     }
     file_.flush();
     if (!file_) {
-      return Failed{.step = CaptureStep::kFlush, .detail = path_.string()};
+      return Failed{.step = CaptureStep::kFlush, .detail = Utf8(path_)};
     }
     ++records_;
     observer_->OnWritten(encoded.SizeOnDisk());
@@ -404,8 +416,7 @@ class Capturer::Writer {
     file_match_ = 0;
     // A capture that stopped said so once already.
     if (!stopped) {
-      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, path_.string(),
-               records_);
+      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, Utf8(path_), records_);
       observer_->OnCompleted();
     }
   }
