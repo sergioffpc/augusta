@@ -1,9 +1,8 @@
 # Executables are Glue (ADR-0060): an executable links only the application,
 # its Runtime, failure, logging and version, and no target links an
-# executable. The Glue check
-# (cmake/AugustaModule.cmake) turns each into a configure-time error, and this
-# script proves it fires both ways by configuring a fixture build graph
-# (tests/glue_fixture) once per shape.
+# executable. The Glue check (cmake/AugustaModule.cmake) turns each into a
+# configure-time error, and this script proves it fires both ways by
+# configuring a fixture build graph (tests/glue_fixture) once per shape.
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -DBINARY_DIR=<scratch dir>
 # [-DGENERATOR=<generator>] -P glue_boundary.cmake`.

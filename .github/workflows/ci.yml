@@ -397,16 +397,17 @@ jobs:
         id: lint
         # Both checks run, and the step fails if either does, so one run shows
         # every finding. clang-tidy with .clang-tidy's full profile on src:
-        # src/client, the renderer's GPU half and the window
-        # module's GLFW half (its GLFW-free events are linted here) build only
-        # with the client (AUGUSTA_CLIENT), which this job leaves off, as does the audio
+        # src/client, the renderer's GPU half and the window module's GLFW half
+        # (its GLFW-free events are linted here) build only with the client
+        # (AUGUSTA_CLIENT), which this job leaves off, as does the audio
         # module's output device (miniaudio and Steam Audio, built only with
         # AUGUSTA_AUDIO_OUTPUT, which follows it -
-        # src/modules/audio/CMakeLists.txt), and aren't part of this configure's build graph
-        # at all, so they have no compile_commands.json entry here - excluded
-        # rather than linted against the wrong platform's (missing) compile
-        # flags. The renderer's vertices.cpp builds here but is skipped too:
-        # the client job lints the whole Renderer, from its own build.
+        # src/modules/audio/CMakeLists.txt), and aren't part of this
+        # configure's build graph at all, so they have no compile_commands.json
+        # entry here - excluded rather than linted against the wrong platform's
+        # (missing) compile flags. The renderer's vertices.cpp builds here but
+        # is skipped too: the client job lints the whole Renderer, from its own
+        # build.
         # One file per clang-tidy, on every core: a serial run over the
         # whole list took most of the job. One file per invocation also
         # keeps a stray Windows-only file to its own error, where a multi-file

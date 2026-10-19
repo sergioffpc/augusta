@@ -284,8 +284,8 @@ conflates policy with mechanism)
 thing it adds: its entry point, which runs one Runtime behind the application
 boundary, and uses only the application, that Runtime, failure, logging and
 version. It holds neither Mechanism nor Game policy; anything worth a test of
-its own is not Glue and belongs in a module. _Avoid_: Application logic, server
-logic, client logic
+its own is not Glue and belongs to the Runtime or to a module. _Avoid_:
+Application logic, server logic, client logic
 
 **Runtime**: What runs a Harness or a Host live for one executable: the threads
 and clock around it, the executable's own configuration and the wiring of the
