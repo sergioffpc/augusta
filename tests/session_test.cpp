@@ -118,6 +118,17 @@ std::optional<Code> CodeThrownBy(const std::function<void()>& construct) {
   return std::nullopt;
 }
 
+// The session the server admitted view's client as, or nullopt until it has.
+std::optional<SessionId> AdmittedSession(const ServerView& view) {
+  return view.accepted.has_value() ? std::optional<SessionId>(view.accepted->session) : std::nullopt;
+}
+
+// view's client's own player's health, as its newest Authoritative State told
+// it; nullopt without one.
+std::optional<float> OwnHealth(const ServerView& view) {
+  return view.authoritative.has_value() ? std::optional<float>(view.authoritative->health) : std::nullopt;
+}
+
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
 constexpr float kFixedTick = 1.0F / 60.0F;
@@ -354,12 +365,13 @@ bool DriveIntoMatch(Host& host, const std::vector<Session*>& sessions, RawClient
     for (Session* session : sessions) {
       session->PumpEvents();
       session->ExchangeMessages();
-      const auto lobby = session->GetLobby();
-      if (lobby.has_value() && session->GetPhase() == Phase::kLobby && reported[session] != lobby->version) {
+      const auto lobby = session->GetServerView()->lobby;
+      if (lobby.has_value() && session->GetServerView()->GetPhase() == Phase::kLobby &&
+          reported[session] != lobby->version) {
         session->ReportReady(lobby->version);
         reported[session] = lobby->version;
       }
-      all_in_match = all_in_match && session->GetPhase() == Phase::kMatch;
+      all_in_match = all_in_match && session->GetServerView()->GetPhase() == Phase::kMatch;
     }
     if (all_in_match) {
       return true;
@@ -517,7 +529,7 @@ class JoinTest : public ::testing::Test {
   bool WaitForAnswers() {
     return ExchangeUntil(host_, Pointers(sessions_), [&] {
       return std::ranges::all_of(sessions_, [](const auto& session) {
-        return session->GetSessionId().has_value() || session->GetRefusal().has_value();
+        return session->GetServerView()->accepted.has_value() || session->GetServerView()->refusal.has_value();
       });
     });
   }
@@ -541,9 +553,9 @@ TEST_F(JoinTest, AClientWithTheMatchingVersionIsAdmittedWithASessionId) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_TRUE(client.GetSessionId().has_value());
-  EXPECT_FALSE(client.GetRefusal().has_value());
-  EXPECT_EQ(client.GetPhase(), Phase::kLobby);
+  EXPECT_TRUE(client.GetServerView()->accepted.has_value());
+  EXPECT_FALSE(client.GetServerView()->refusal.has_value());
+  EXPECT_EQ(client.GetServerView()->GetPhase(), Phase::kLobby);
 }
 
 // Requirements: US-01
@@ -557,8 +569,8 @@ TEST_F(JoinTest, SessionIdsAreUniqueAmongConnectedClients) {
 
   std::set<SessionId> ids;
   for (const auto& session : sessions_) {
-    ASSERT_TRUE(session->GetSessionId().has_value());
-    ids.insert(*session->GetSessionId());
+    ASSERT_TRUE(session->GetServerView()->accepted.has_value());
+    ids.insert(session->GetServerView()->accepted->session);
   }
   EXPECT_EQ(ids.size(), static_cast<std::size_t>(kClients));
 }
@@ -572,8 +584,9 @@ TEST_F(JoinTest, EachConnectionIsSampledWithTheSessionItCarries) {
 
   ASSERT_EQ(samples.size(), 1U);
   ASSERT_TRUE(samples.front().session.has_value());
-  ASSERT_TRUE(client.GetSessionId().has_value());
-  EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session), static_cast<std::uint32_t>(*client.GetSessionId()));
+  ASSERT_TRUE(client.GetServerView()->accepted.has_value());
+  EXPECT_EQ(static_cast<std::uint32_t>(*samples.front().session),
+            static_cast<std::uint32_t>(client.GetServerView()->accepted->session));
 }
 
 // Requirements: NFR-07
@@ -613,9 +626,9 @@ TEST_F(JoinTest, AClientWithAnotherEngineVersionIsRefusedForTheVersion) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
-  EXPECT_FALSE(client.GetSessionId().has_value());
-  EXPECT_EQ(client.GetPhase(), Phase::kNotAdmitted);
+  EXPECT_EQ(client.GetServerView()->refusal, JoinRefusal::kVersionMismatch);
+  EXPECT_FALSE(client.GetServerView()->accepted.has_value());
+  EXPECT_EQ(client.GetServerView()->GetPhase(), Phase::kNotAdmitted);
 }
 
 // Requirements: US-01
@@ -642,9 +655,9 @@ TEST_F(JoinTest, AClientThatAsksForItsSpawnIsRefusedByAServerThatTakesNoReenactm
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kReenactmentsNotAccepted);
+  EXPECT_EQ(client.GetServerView()->refusal, JoinRefusal::kReenactmentsNotAccepted);
   EXPECT_EQ(client.GetFailure().value().refusal, JoinRefusal::kReenactmentsNotAccepted);
-  EXPECT_FALSE(client.GetSessionId().has_value());
+  EXPECT_FALSE(client.GetServerView()->accepted.has_value());
 }
 
 // Requirements: US-01, NFR-08
@@ -653,8 +666,8 @@ TEST_F(JoinTest, AClientWithAnotherClientPackIsRefusedForThePack) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kPackMismatch);
-  EXPECT_FALSE(client.GetSessionId().has_value());
+  EXPECT_EQ(client.GetServerView()->refusal, JoinRefusal::kPackMismatch);
+  EXPECT_FALSE(client.GetServerView()->accepted.has_value());
 }
 
 // Requirements: US-02, US-16
@@ -663,8 +676,8 @@ TEST_F(JoinTest, AClientThatPicksACharacterTheScenarioLacksIsRefusedForIt) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kUnknownCharacter);
-  EXPECT_FALSE(client.GetSessionId().has_value());
+  EXPECT_EQ(client.GetServerView()->refusal, JoinRefusal::kUnknownCharacter);
+  EXPECT_FALSE(client.GetServerView()->accepted.has_value());
   const auto failure = client.GetFailure();
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
@@ -677,7 +690,7 @@ TEST_F(JoinTest, AWrongVersionIsReportedBeforeAnUnknownCharacter) {
 
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(client.GetRefusal(), JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(client.GetServerView()->refusal, JoinRefusal::kVersionMismatch);
 }
 
 // Requirements: US-01
@@ -696,14 +709,14 @@ TEST_F(JoinTest, TheNinthClientIsRefusedBecauseTheLobbyIsFull) {
   }
   ASSERT_TRUE(WaitForAnswers());
   for (const auto& session : sessions_) {
-    ASSERT_TRUE(session->GetSessionId().has_value());
+    ASSERT_TRUE(session->GetServerView()->accepted.has_value());
   }
 
   Session& ninth = AddClient();
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kLobbyFull);
-  EXPECT_FALSE(ninth.GetSessionId().has_value());
+  EXPECT_EQ(ninth.GetServerView()->refusal, JoinRefusal::kLobbyFull);
+  EXPECT_FALSE(ninth.GetServerView()->accepted.has_value());
 }
 
 // Requirements: US-02
@@ -713,7 +726,7 @@ TEST_F(JoinTest, AClientThatConnectsDuringAMatchIsRefusedBecauseOneIsInProgress)
   Session& late = AddClient();
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(late.GetRefusal(), JoinRefusal::kMatchInProgress);
+  EXPECT_EQ(late.GetServerView()->refusal, JoinRefusal::kMatchInProgress);
   const auto failure = late.GetFailure();
   ASSERT_TRUE(failure.has_value());
   EXPECT_EQ(failure->kind, FailureKind::kRefused);
@@ -729,8 +742,8 @@ TEST_F(JoinTest, DuringAMatchAWrongVersionOrCharacterIsStillWhatAClientIsTold) {
   Session& unknown_character = AddClient(std::string(augusta::EngineVersion()), "characters/nobody");
   ASSERT_TRUE(WaitForAnswers());
 
-  EXPECT_EQ(wrong_version.GetRefusal(), JoinRefusal::kVersionMismatch);
-  EXPECT_EQ(unknown_character.GetRefusal(), JoinRefusal::kUnknownCharacter);
+  EXPECT_EQ(wrong_version.GetServerView()->refusal, JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(unknown_character.GetServerView()->refusal, JoinRefusal::kUnknownCharacter);
 }
 
 // M3 exit criteria (issue #84): 8 clients moving, sprinting and changing
@@ -794,7 +807,7 @@ TEST_F(JoinTest, EightClientsMoveSprintAndChangeStanceForARoundWithNoMissedTicks
       EXPECT_EQ(sessions_[i]->GetConnectionState(), ConnectionState::kConnected)
           << "client " << i << " dropped at tick " << tick;
 
-      if (const auto authoritative = sessions_[i]->GetAuthoritativeState()) {
+      if (const auto authoritative = sessions_[i]->GetServerView()->authoritative) {
         max_acknowledged[i] = std::max(max_acknowledged[i], authoritative->acknowledged_sequence);
       }
     }
@@ -967,10 +980,10 @@ class MovementTest : public ::testing::Test {
   // passed; returns the sequence it has processed.
   augusta::tick::Sequence DrainServer(int last_sequence) {
     constexpr int kMaxTicks = 120;
-    augusta::tick::Sequence acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    augusta::tick::Sequence acknowledged = session_.GetServerView()->authoritative->acknowledged_sequence;
     for (int i = 0; i < kMaxTicks && acknowledged < static_cast<augusta::tick::Sequence>(last_sequence); ++i) {
       ServerTickAndDeliver();
-      acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+      acknowledged = session_.GetServerView()->authoritative->acknowledged_sequence;
     }
     return acknowledged;
   }
@@ -984,11 +997,11 @@ class MovementTest : public ::testing::Test {
   }
 
   [[nodiscard]] augusta::physics::BodyState Self() const {
-    const auto state = session_.GetAuthoritativeState();
+    const auto state = session_.GetServerView()->authoritative;
     EXPECT_TRUE(state.has_value());
     if (state.has_value()) {
       for (const auto& body : state->bodies) {
-        if (body.entity == *session_.GetEntityId()) {
+        if (body.entity == *session_.GetServerView()->OwnEntity()) {
           return body.body;
         }
       }
@@ -1030,7 +1043,7 @@ TEST_F(MovementTest, TheServerAcknowledgesTheCommandsItHasProcessed) {
     Step(Walking());
   }
 
-  const auto state = session_.GetAuthoritativeState();
+  const auto state = session_.GetServerView()->authoritative;
   ASSERT_TRUE(state.has_value());
   EXPECT_GE(state->acknowledged_sequence, kSettleTicks + kSteps - 2U);
   EXPECT_LE(state->acknowledged_sequence, kSettleTicks + kSteps);
@@ -1062,7 +1075,7 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
     Step(Walking());
   }
 
-  augusta::tick::Sequence previous = session_.GetAuthoritativeState()->acknowledged_sequence;
+  augusta::tick::Sequence previous = session_.GetServerView()->authoritative->acknowledged_sequence;
 
   // CommandsWire the server never hears, then one that arrives together with them.
   augusta::link::SimulateNetworkConditions({.loss_percent = 100.0F});
@@ -1079,7 +1092,7 @@ TEST_F(MovementTest, ALostDatagramDoesNotLoseAMovementCommand) {
   augusta::tick::Sequence acknowledged = 0;
   for (int i = 0; i < 12; ++i) {
     ServerTickAndDeliver();
-    acknowledged = session_.GetAuthoritativeState()->acknowledged_sequence;
+    acknowledged = session_.GetServerView()->authoritative->acknowledged_sequence;
     EXPECT_LE(acknowledged, previous + 1) << "the server skipped a command";
     previous = acknowledged;
   }
@@ -1143,7 +1156,8 @@ class PacingTest : public MovementTest {
   std::vector<Told> RunPaced(double clock_rate, int ticks) {
     const auto nominal =
         std::chrono::duration_cast<augusta::tick::Clock::duration>(std::chrono::duration<double>(kFixedTick));
-    const auto self = static_cast<augusta::host::SessionId>(std::to_underlying(*session_.GetSessionId()));
+    const auto self =
+        static_cast<augusta::host::SessionId>(std::to_underlying(session_.GetServerView()->accepted->session));
     std::chrono::duration<double> server_next = nominal;
     std::chrono::duration<double> client_next{};
     std::vector<Told> told;
@@ -1154,12 +1168,13 @@ class PacingTest : public MovementTest {
         DeliverUntil(
             [&] { return host_.QueuedCommands(self) > queued || queued == augusta::host::kMaxQueuedCommands; });
         client_next +=
-            augusta::tick::PacedTickDuration(nominal, session_.GetAuthoritativeState()->queued_commands) / clock_rate;
+            augusta::tick::PacedTickDuration(nominal, session_.GetServerView()->authoritative->queued_commands) /
+            clock_rate;
       } else {
-        const augusta::tick::Tick last_tick = session_.GetAuthoritativeState()->tick;
+        const augusta::tick::Tick last_tick = session_.GetServerView()->authoritative->tick;
         host_.Tick(kFixedTick);
-        DeliverUntil([&] { return session_.GetAuthoritativeState()->tick > last_tick; });
-        const auto state = session_.GetAuthoritativeState();
+        DeliverUntil([&] { return session_.GetServerView()->authoritative->tick > last_tick; });
+        const auto state = session_.GetServerView()->authoritative;
         told.push_back(
             {.queued_commands = state->queued_commands, .acknowledged_sequence = state->acknowledged_sequence});
         server_next += nominal;
@@ -1287,15 +1302,16 @@ class LoopbackMatch : public ::testing::Test {
         std::make_unique<Session>(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kFloorY)));
     Session& client = *sessions_.back();
     client.Connect();
-    ExchangeUntil(host_, Pointers(sessions_),
-                  [&] { return client.GetSessionId().has_value() || client.GetRefusal().has_value(); });
+    ExchangeUntil(host_, Pointers(sessions_), [&] {
+      return client.GetServerView()->accepted.has_value() || client.GetServerView()->refusal.has_value();
+    });
     return client;
   }
 
   // Connects a new client that the server must admit to the Lobby.
   Session& Join() {
     Session& client = Connect();
-    EXPECT_TRUE(client.GetSessionId().has_value());
+    EXPECT_TRUE(client.GetServerView()->accepted.has_value());
     return client;
   }
 
@@ -1324,16 +1340,17 @@ class LoopbackMatch : public ::testing::Test {
     std::vector<std::pair<const Session*, augusta::host::SessionId>> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
-      if (session->GetPhase() == Phase::kMatch && session->GetConnectionState() == ConnectionState::kConnected) {
-        sending.emplace_back(session.get(),
-                             static_cast<augusta::host::SessionId>(std::to_underlying(*session->GetSessionId())));
+      if (session->GetServerView()->GetPhase() == Phase::kMatch &&
+          session->GetConnectionState() == ConnectionState::kConnected) {
+        sending.emplace_back(session.get(), static_cast<augusta::host::SessionId>(
+                                                std::to_underlying(session->GetServerView()->accepted->session)));
       }
       states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
     const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
     ExchangeUntil(host_, Pointers(sessions_), [&] {
       return std::chrono::steady_clock::now() >= give_up || std::ranges::all_of(sending, [&](const auto& sent) {
-               return host_.QueuedCommands(sent.second) > 0 || sent.first->GetPhase() != Phase::kMatch;
+               return host_.QueuedCommands(sent.second) > 0 || sent.first->GetServerView()->GetPhase() != Phase::kMatch;
              });
     });
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
@@ -1365,7 +1382,7 @@ class LoopbackMatch : public ::testing::Test {
 
   // Where the newest state client received puts entity, or nullopt if it lists no such body.
   static std::optional<augusta::physics::BodyState> BodySeenBy(const Session& client, EntityId entity) {
-    const auto state = client.GetAuthoritativeState();
+    const auto state = client.GetServerView()->authoritative;
     if (state.has_value()) {
       for (const auto& body : state->bodies) {
         if (body.entity == entity) {
@@ -1383,8 +1400,8 @@ class LoopbackMatch : public ::testing::Test {
 
   // Where client's own player spawned at the start of its last match.
   static Vec3 OwnSpawn(const Session& client) {
-    for (const auto& player : client.GetMatchStart().value().players) {
-      if (player.session == client.GetSessionId()) {
+    for (const auto& player : client.GetServerView()->match_start.value().players) {
+      if (player.session == AdmittedSession(*client.GetServerView())) {
         return player.spawn;
       }
     }
@@ -1427,10 +1444,10 @@ TEST_F(SpawnTest, EachClientIsToldTheBodyItControlsAndSeesEveryBodyByIt) {
 
   Run(kSettleTicks);
 
-  ASSERT_TRUE(first.GetEntityId().has_value() && second.GetEntityId().has_value());
-  EXPECT_NE(*first.GetEntityId(), *second.GetEntityId());
-  EXPECT_TRUE(PositionSeenBy(first, *second.GetEntityId()).has_value());
-  EXPECT_TRUE(PositionSeenBy(second, *first.GetEntityId()).has_value());
+  ASSERT_TRUE(first.GetServerView()->OwnEntity().has_value() && second.GetServerView()->OwnEntity().has_value());
+  EXPECT_NE(*first.GetServerView()->OwnEntity(), *second.GetServerView()->OwnEntity());
+  EXPECT_TRUE(PositionSeenBy(first, *second.GetServerView()->OwnEntity()).has_value());
+  EXPECT_TRUE(PositionSeenBy(second, *first.GetServerView()->OwnEntity()).has_value());
 }
 
 // Requirements: US-03
@@ -1441,8 +1458,8 @@ TEST_F(SpawnTest, TwoClientsInAMatchSpawnAtDifferentSpawnPoints) {
 
   Run(kSettleTicks);
 
-  const auto first_position = PositionSeenBy(first, *first.GetEntityId());
-  const auto second_position = PositionSeenBy(first, *second.GetEntityId());
+  const auto first_position = PositionSeenBy(first, *first.GetServerView()->OwnEntity());
+  const auto second_position = PositionSeenBy(first, *second.GetServerView()->OwnEntity());
   ASSERT_TRUE(first_position.has_value() && second_position.has_value());
   EXPECT_NEAR(first_position->x, SpawnPoints()[0].x, 0.1F);
   EXPECT_NEAR(first_position->z, SpawnPoints()[0].z, 0.1F);
@@ -1471,13 +1488,13 @@ TEST_F(SpawnTest, EveryClientIsToldEveryPlayersCharacterAndSpawnPointAtMatchStar
   ASSERT_TRUE(StartMatch());
 
   for (const Session* client : {&first, &second}) {
-    const auto start = client->GetMatchStart();
+    const auto start = client->GetServerView()->match_start;
     ASSERT_TRUE(start.has_value());
     ASSERT_EQ(start->players.size(), 2U);
-    EXPECT_EQ(start->players[0].session, *first.GetSessionId());
+    EXPECT_EQ(start->players[0].session, first.GetServerView()->accepted->session);
     EXPECT_EQ(start->players[0].character, kCharacter);
     EXPECT_EQ(start->players[0].spawn, SpawnPoints()[0]);
-    EXPECT_EQ(start->players[1].session, *second.GetSessionId());
+    EXPECT_EQ(start->players[1].session, second.GetServerView()->accepted->session);
     EXPECT_EQ(start->players[1].character, kCharacter);
     EXPECT_EQ(start->players[1].spawn, SpawnPoints()[1]);
   }
@@ -1523,7 +1540,7 @@ TEST_F(PolicySpawnTest, EveryClientIsToldTheDistinctSpawnPointPolicyGaveEachPlay
   ASSERT_TRUE(StartMatch());
 
   for (const auto& client : sessions_) {
-    const auto start = client->GetMatchStart();
+    const auto start = client->GetServerView()->match_start;
     ASSERT_TRUE(start.has_value());
     ASSERT_EQ(start->players.size(), 3U);
     EXPECT_EQ(start->players[0].spawn, SpawnPoints()[2]);
@@ -1543,11 +1560,11 @@ TEST_F(PolicySpawnTest, TheFirstAuthoritativeStatePlacesEachBodyAtItsSpawnPointA
 
   ASSERT_EQ(first.bodies.size(), 3U);
   for (const auto& client : sessions_) {
-    const auto state = client->GetAuthoritativeState();
+    const auto state = client->GetServerView()->authoritative;
     ASSERT_TRUE(state.has_value());
     EXPECT_EQ(state->health, kTestParameters.starting_health);
     const Vec3 spawn = OwnSpawn(*client);
-    const auto position = PositionSeenBy(*client, *client->GetEntityId());
+    const auto position = PositionSeenBy(*client, *client->GetServerView()->OwnEntity());
     ASSERT_TRUE(position.has_value());
     EXPECT_NEAR(position->x, spawn.x, 0.1F);
     EXPECT_NEAR(position->z, spawn.z, 0.1F);
@@ -1566,8 +1583,8 @@ TEST_F(SpawnWrapTest, MorePlayersThanSpawnPointsWrapInsteadOfFailing) {
   Run(kSettleTicks);
 
   Session& last = *sessions_.back();
-  EXPECT_EQ(last.GetAuthoritativeState()->bodies.size(), 4U);
-  const auto position = PositionSeenBy(last, *last.GetEntityId());
+  EXPECT_EQ(last.GetServerView()->authoritative->bodies.size(), 4U);
+  const auto position = PositionSeenBy(last, *last.GetServerView()->OwnEntity());
   ASSERT_TRUE(position.has_value());
   EXPECT_NEAR(position->x, SpawnPoints()[0].x, 0.1F);
 }
@@ -1581,38 +1598,39 @@ TEST_F(LobbyTest, AdmittedClientsAreToldWhoIsInTheLobbyAndWithWhichCharacter) {
   Session& second = Join();
 
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return first.GetLobby().has_value() && first.GetLobby()->roster.size() == 2 && second.GetLobby().has_value();
+    return first.GetServerView()->lobby.has_value() && first.GetServerView()->lobby->roster.size() == 2 &&
+           second.GetServerView()->lobby.has_value();
   }));
 
   for (const Session* client : {&first, &second}) {
-    const auto lobby = client->GetLobby();
+    const auto lobby = client->GetServerView()->lobby;
     ASSERT_TRUE(lobby.has_value());
     ASSERT_EQ(lobby->roster.size(), 2U);
-    EXPECT_EQ(lobby->roster[0].session, *first.GetSessionId());
+    EXPECT_EQ(lobby->roster[0].session, first.GetServerView()->accepted->session);
     EXPECT_EQ(lobby->roster[0].character, kCharacter);
-    EXPECT_EQ(lobby->roster[1].session, *second.GetSessionId());
+    EXPECT_EQ(lobby->roster[1].session, second.GetServerView()->accepted->session);
     EXPECT_EQ(lobby->roster[1].character, kCharacter);
-    EXPECT_EQ(client->GetPhase(), Phase::kLobby);
+    EXPECT_EQ(client->GetServerView()->GetPhase(), Phase::kLobby);
   }
-  EXPECT_EQ(first.GetLobby()->version, second.GetLobby()->version);
+  EXPECT_EQ(first.GetServerView()->lobby->version, second.GetServerView()->lobby->version);
 }
 
 // Requirements: US-02
 TEST_F(LobbyTest, TheRosterVersionGrowsOnEveryJoinAndLeave) {
   Session& first = Join();
-  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
-  const auto alone = first.GetLobby()->version;
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetServerView()->lobby.has_value(); }));
+  const auto alone = first.GetServerView()->lobby->version;
 
   Session& second = Join();
-  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 2; }));
-  const auto joined = first.GetLobby()->version;
-  const SessionId leaver = *second.GetSessionId();
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetServerView()->lobby->roster.size() == 2; }));
+  const auto joined = first.GetServerView()->lobby->version;
+  const SessionId leaver = second.GetServerView()->accepted->session;
   second.Disconnect();
-  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby()->roster.size() == 1; }));
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetServerView()->lobby->roster.size() == 1; }));
 
   EXPECT_GT(joined, alone);
-  EXPECT_GT(first.GetLobby()->version, joined);
-  EXPECT_NE(first.GetLobby()->roster[0].session, leaver);
+  EXPECT_GT(first.GetServerView()->lobby->version, joined);
+  EXPECT_NE(first.GetServerView()->lobby->roster[0].session, leaver);
 }
 
 // Requirements: US-02
@@ -1620,11 +1638,12 @@ TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryone
   Join();
   Join();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_,
-                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 2; });
+    return std::ranges::all_of(sessions_, [](const auto& s) {
+      return s->GetServerView()->lobby && s->GetServerView()->lobby->roster.size() == 2;
+    });
   }));
   for (const auto& session : sessions_) {
-    session->ReportReady(session->GetLobby()->version);
+    session->ReportReady(session->GetServerView()->lobby->version);
   }
   Settle(host_, All());
 
@@ -1632,8 +1651,8 @@ TEST_F(LobbyTest, NoMatchStartsBeforeTheLobbyHoldsThePlayerCountEvenWithEveryone
     EXPECT_TRUE(ServerTick().bodies.empty()) << "a body at tick " << i;
   }
   for (const auto& session : sessions_) {
-    EXPECT_EQ(session->GetPhase(), Phase::kLobby);
-    EXPECT_FALSE(session->GetAuthoritativeState().has_value());
+    EXPECT_EQ(session->GetServerView()->GetPhase(), Phase::kLobby);
+    EXPECT_FALSE(session->GetServerView()->authoritative.has_value());
   }
 }
 
@@ -1643,20 +1662,22 @@ TEST_F(LobbyTest, AMatchStartsOnTheTickTheLastClientOfAFullLobbyIsReady) {
     Join();
   }
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_,
-                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 3; });
+    return std::ranges::all_of(sessions_, [](const auto& s) {
+      return s->GetServerView()->lobby && s->GetServerView()->lobby->roster.size() == 3;
+    });
   }));
-  sessions_[0]->ReportReady(sessions_[0]->GetLobby()->version);
-  sessions_[1]->ReportReady(sessions_[1]->GetLobby()->version);
+  sessions_[0]->ReportReady(sessions_[0]->GetServerView()->lobby->version);
+  sessions_[1]->ReportReady(sessions_[1]->GetServerView()->lobby->version);
   Settle(host_, All());
   EXPECT_TRUE(host_.Tick(kFixedTick).state.bodies.empty()) << "started with a client not ReadyWire";
 
-  sessions_[2]->ReportReady(sessions_[2]->GetLobby()->version);
+  sessions_[2]->ReportReady(sessions_[2]->GetServerView()->lobby->version);
   Settle(host_, All());
 
   EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 3U);
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kMatch; });
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetServerView()->GetPhase() == Phase::kMatch; });
   }));
 }
 
@@ -1665,21 +1686,22 @@ using ReadyTest = MatchOf<2>;
 // Requirements: US-02
 TEST_F(ReadyTest, ANewcomerMakesTheClientsAlreadyThereNotReadyUntilTheyReportTheNewRoster) {
   Session& first = Join();
-  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetLobby().has_value(); }));
-  const auto before = first.GetLobby()->version;
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return first.GetServerView()->lobby.has_value(); }));
+  const auto before = first.GetServerView()->lobby->version;
   first.ReportReady(before);
   Settle(host_, All());
 
   Session& second = Join();
-  ASSERT_TRUE(ExchangeUntil(host_, All(),
-                            [&] { return first.GetLobby()->roster.size() == 2 && second.GetLobby().has_value(); }));
-  second.ReportReady(second.GetLobby()->version);
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
+    return first.GetServerView()->lobby->roster.size() == 2 && second.GetServerView()->lobby.has_value();
+  }));
+  second.ReportReady(second.GetServerView()->lobby->version);
   // The harness sends nothing for a Roster older than its newest.
   first.ReportReady(before);
   Settle(host_, All());
   EXPECT_TRUE(host_.Tick(kFixedTick).state.bodies.empty()) << "started on a ReadyWire for an older Roster";
 
-  first.ReportReady(first.GetLobby()->version);
+  first.ReportReady(first.GetServerView()->lobby->version);
   Settle(host_, All());
 
   EXPECT_EQ(host_.Tick(kFixedTick).state.bodies.size(), 2U);
@@ -1692,14 +1714,14 @@ TEST_F(ReadyTest, AClientInTheLobbyNeitherPredictsNorSendsCommands) {
   Run(kSettleTicks, Forward());
 
   EXPECT_EQ(states_.at(&first).local_body.position, idle.local_body.position);
-  EXPECT_FALSE(first.GetAuthoritativeState().has_value());
+  EXPECT_FALSE(first.GetServerView()->authoritative.has_value());
 
   Join();
   ASSERT_TRUE(StartMatch());
   constexpr int kSteps = 10;
   Run(kSteps, Forward());
   // Sequences start with the match: nothing was sent from the Lobby.
-  EXPECT_LE(first.GetAuthoritativeState()->acknowledged_sequence, static_cast<augusta::tick::Sequence>(kSteps));
+  EXPECT_LE(first.GetServerView()->authoritative->acknowledged_sequence, static_cast<augusta::tick::Sequence>(kSteps));
   EXPECT_GT(states_.at(&first).local_body.position.x, OwnSpawn(first).x);
 }
 
@@ -1713,16 +1735,16 @@ TEST_F(MidMatchTest, APlayerWhoDisconnectsLeavesTheOthersStateAndTheSimulationAn
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), 3U);
-  const EntityId leaver = *sessions_.back()->GetEntityId();
+  ASSERT_EQ(watcher.GetServerView()->authoritative->bodies.size(), 3U);
+  const EntityId leaver = *sessions_.back()->GetServerView()->OwnEntity();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), 2U);
+  EXPECT_EQ(watcher.GetServerView()->authoritative->bodies.size(), 2U);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
   EXPECT_EQ(ServerTick().bodies.size(), 2U);
-  EXPECT_EQ(watcher.GetPhase(), Phase::kMatch);
+  EXPECT_EQ(watcher.GetServerView()->GetPhase(), Phase::kMatch);
 }
 
 // Two players through a match, back to the Lobby and into the next (ADR-0043).
@@ -1740,18 +1762,19 @@ TEST_F(MatchCycleTest, EndingTheMatchSendsEveryoneBackToTheLobbyUnderANewRoster)
   Join();
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
-  const auto version = sessions_[0]->GetLobby()->version;
+  const auto version = sessions_[0]->GetServerView()->lobby->version;
 
   host_.EndMatch();
 
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetServerView()->GetPhase() == Phase::kLobby; });
   }));
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetLobby()->version > version; });
+    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetServerView()->lobby->version > version; });
   }));
   for (const auto& session : sessions_) {
-    EXPECT_EQ(session->GetLobby()->roster.size(), 2U);
+    EXPECT_EQ(session->GetServerView()->lobby->roster.size(), 2U);
   }
 }
 
@@ -1766,12 +1789,12 @@ TEST_F(MatchCycleTest, AServerViewKeepsTheMomentItWasTakenAt) {
   const std::shared_ptr<const ServerView> in_match = client.GetServerView();
 
   host_.EndMatch();
-  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return client.GetPhase() == Phase::kLobby; }));
+  ASSERT_TRUE(ExchangeUntil(host_, All(), [&] { return client.GetServerView()->GetPhase() == Phase::kLobby; }));
 
   EXPECT_EQ(in_match->GetPhase(), Phase::kMatch);
   EXPECT_TRUE(in_match->authoritative.has_value());
   EXPECT_FALSE(in_match->match_end.has_value());
-  EXPECT_EQ(in_match->OwnEntity(), client.GetEntityId());
+  EXPECT_EQ(in_match->OwnEntity(), client.GetServerView()->OwnEntity());
   EXPECT_TRUE(in_match->OwnAlive());
   const std::shared_ptr<const ServerView> in_lobby = client.GetServerView();
   EXPECT_EQ(in_lobby->GetPhase(), Phase::kLobby);
@@ -1792,8 +1815,8 @@ TEST_F(MatchCycleTest, AfterMatchEndNoBodyIsSimulatedAndNoStateReachesAClient) {
   EXPECT_TRUE(ServerTick().bodies.empty());
   Run(kSettleTicks, Forward());
   for (const auto& session : sessions_) {
-    EXPECT_EQ(session->GetPhase(), Phase::kLobby);
-    EXPECT_FALSE(session->GetAuthoritativeState().has_value());
+    EXPECT_EQ(session->GetServerView()->GetPhase(), Phase::kLobby);
+    EXPECT_FALSE(session->GetServerView()->authoritative.has_value());
   }
 }
 
@@ -1802,13 +1825,13 @@ TEST_F(MatchCycleTest, TheNextMatchStartsExactlyThePauseAfterTheLastEndedAndNotO
   Join();
   Join();
   ASSERT_TRUE(StartMatch());
-  const auto version = sessions_[0]->GetLobby()->version;
+  const auto version = sessions_[0]->GetServerView()->lobby->version;
   host_.EndMatch();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetLobby()->version > version; });
+    return std::ranges::all_of(sessions_, [&](const auto& s) { return s->GetServerView()->lobby->version > version; });
   }));
   for (const auto& session : sessions_) {
-    session->ReportReady(session->GetLobby()->version);
+    session->ReportReady(session->GetServerView()->lobby->version);
   }
   Settle(host_, All());
 
@@ -1824,19 +1847,20 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOu
   Session& first = Join();
   Session& second = Join();
   ASSERT_TRUE(StartMatch());
-  const SessionId first_session = *first.GetSessionId();
-  const SessionId second_session = *second.GetSessionId();
+  const SessionId first_session = first.GetServerView()->accepted->session;
+  const SessionId second_session = second.GetServerView()->accepted->session;
   host_.EndMatch();
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetServerView()->GetPhase() == Phase::kLobby; });
   }));
 
   ASSERT_TRUE(StartMatch());
   Run(1);
 
-  EXPECT_EQ(first.GetSessionId(), first_session);
-  EXPECT_EQ(second.GetSessionId(), second_session);
-  const auto start = first.GetMatchStart();
+  EXPECT_EQ(AdmittedSession(*first.GetServerView()), first_session);
+  EXPECT_EQ(AdmittedSession(*second.GetServerView()), second_session);
+  const auto start = first.GetServerView()->match_start;
   ASSERT_EQ(start->players.size(), 2U);
   EXPECT_EQ(start->players[0].session, first_session);
   EXPECT_EQ(start->players[0].character, kCharacter);
@@ -1862,9 +1886,9 @@ TEST_F(MatchCycleTest, AMatchWhoseLastPlayerLeavesEndsOnItsOwnAndTheLobbyTakesPl
 
   EXPECT_TRUE(ServerTick().bodies.empty());
   Session& next = Connect();
-  EXPECT_TRUE(next.GetSessionId().has_value())
+  EXPECT_TRUE(next.GetServerView()->accepted.has_value())
       << "refused: "
-      << augusta::harness::DescribeJoinRefusal(next.GetRefusal().value_or(JoinRefusal::kVersionMismatch));
+      << augusta::harness::DescribeJoinRefusal(next.GetServerView()->refusal.value_or(JoinRefusal::kVersionMismatch));
 }
 
 // A directory removed only once everything declared after it is gone: as a
@@ -1981,10 +2005,10 @@ TEST_F(CaptureHostTest, EveryClientReadsTheMatchsFirstTickFromMatchStart) {
   ASSERT_TRUE(StartMatch());
   Step();
 
-  const augusta::tick::Tick first_tick = first.GetMatchStart().value().first_tick;
+  const augusta::tick::Tick first_tick = first.GetServerView()->match_start.value().first_tick;
   EXPECT_GT(first_tick, 0U);
-  EXPECT_EQ(second.GetMatchStart().value().first_tick, first_tick);
-  EXPECT_GE(first.GetAuthoritativeState().value().tick, first_tick);
+  EXPECT_EQ(second.GetServerView()->match_start.value().first_tick, first_tick);
+  EXPECT_GE(first.GetServerView()->authoritative.value().tick, first_tick);
 }
 
 // The capturer's writer counts on a thread of its own, after the file
@@ -2127,7 +2151,8 @@ class ReenactmentHostTest : public ::testing::Test {
     std::vector<augusta::host::SessionId> sending;
     for (std::size_t i = 0; i < sessions.size(); ++i) {
       Session& session = *sessions[i];
-      if (session.GetPhase() != Phase::kMatch || session.GetConnectionState() != ConnectionState::kConnected) {
+      if (session.GetServerView()->GetPhase() != Phase::kMatch ||
+          session.GetConnectionState() != ConnectionState::kConnected) {
         continue;
       }
       // A Captured player with enough Commands already waiting skips the tick.
@@ -2135,7 +2160,8 @@ class ReenactmentHostTest : public ::testing::Test {
       if (!command.has_value()) {
         continue;
       }
-      sending.push_back(static_cast<augusta::host::SessionId>(std::to_underlying(*session.GetSessionId())));
+      sending.push_back(
+          static_cast<augusta::host::SessionId>(std::to_underlying(session.GetServerView()->accepted->session)));
       session.Tick(*command, kFixedTick);
     }
     const auto give_up = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
@@ -2153,8 +2179,9 @@ class ReenactmentHostTest : public ::testing::Test {
     Command command;
     command.movement.direction = Vec3(player == 0 ? 1.0F : -1.0F, 0.0F, 0.0F);
     command.yaw = augusta::math::SnapAngle(0.02F * static_cast<float>(step) + (player == 0 ? 0.0F : 1.0F));
-    const auto state = session.GetAuthoritativeState();
-    const augusta::tick::Tick newest = state.has_value() ? state->tick : session.GetMatchStart()->first_tick;
+    const auto state = session.GetServerView()->authoritative;
+    const augusta::tick::Tick newest =
+        state.has_value() ? state->tick : session.GetServerView()->match_start->first_tick;
     command.seen_tick = newest - kSeenDelay;
     return command;
   }
@@ -2209,8 +2236,8 @@ class ReenactmentHostTest : public ::testing::Test {
     EXPECT_TRUE(DriveIntoMatch(*host, Pointers(sessions)));
     std::vector<Vec3> spawned;
     for (const auto& session : sessions) {
-      for (const auto& player : session->GetMatchStart().value().players) {
-        if (player.session == session->GetSessionId()) {
+      for (const auto& player : session->GetServerView()->match_start.value().players) {
+        if (player.session == AdmittedSession(*session->GetServerView())) {
           spawned.insert(spawned.begin(), player.spawn);
         }
       }
@@ -2309,7 +2336,7 @@ TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWher
   // Both connect at once, so either may be admitted first: the Match start
   // lists them in that order, which this does not look at.
   std::vector<Vec3> spawns;
-  for (const auto& player : sessions[0]->GetMatchStart().value().players) {
+  for (const auto& player : sessions[0]->GetServerView()->match_start.value().players) {
     spawns.push_back(player.spawn);
   }
   ASSERT_EQ(spawns.size(), 2U);
@@ -2345,7 +2372,7 @@ class StaminaTest : public LoopbackMatch {
   }
 
   [[nodiscard]] augusta::physics::BodyState Authoritative() const {
-    return BodySeenBy(*client_, *client_->GetEntityId()).value();
+    return BodySeenBy(*client_, *client_->GetServerView()->OwnEntity()).value();
   }
 
   static float Speed(const augusta::physics::BodyState& body) { return std::hypot(body.velocity.x, body.velocity.z); }
@@ -2487,7 +2514,8 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsStaminaWithTheRulesOfTheServers
 
   // Nothing else depletes a bar this fast and nothing refills it: the client is following the script.
   EXPECT_LT(states_.at(&client).local_body.stamina, 0.7F);
-  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetEntityId())->stamina, 0.1F);
+  EXPECT_NEAR(states_.at(&client).local_body.stamina, BodySeenBy(client, *client.GetServerView()->OwnEntity())->stamina,
+              0.1F);
 }
 
 // Requirements: US-07, US-08, US-22
@@ -2504,8 +2532,8 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersS
   // The script's magazine of 30 at its 600 rounds a minute, ten of them gone: a
   // client on values of its own has one round and fires it once a minute.
   EXPECT_EQ(states_.at(&client).rifle.rounds, 20);
-  ASSERT_TRUE(client.GetAuthoritativeState().has_value());
-  EXPECT_EQ(client.GetAuthoritativeState()->rifle.rounds, 20);
+  ASSERT_TRUE(client.GetServerView()->authoritative.has_value());
+  EXPECT_EQ(client.GetServerView()->authoritative->rifle.rounds, 20);
   EXPECT_EQ(states_.at(&client).rifle_corrections, 0U);
 }
 
@@ -2534,13 +2562,13 @@ class ScriptedServer {
     start_match_ = start_match;
     session.Connect();
     const auto deadline = std::chrono::steady_clock::now() + wait;
-    while (!session.GetSessionId().has_value() && std::chrono::steady_clock::now() < deadline) {
+    while (!session.GetServerView()->accepted.has_value() && std::chrono::steady_clock::now() < deadline) {
       Pump();
       session.PumpEvents();
       session.ExchangeMessages();
       std::this_thread::sleep_for(kPollInterval);
     }
-    return session.GetSessionId().has_value();
+    return session.GetServerView()->accepted.has_value();
   }
 
   // Serves the connection and the join, and takes in whatever the client sent.
@@ -2656,10 +2684,10 @@ class ScriptedServerTest : public ::testing::Test {
 
 // Requirements: US-22
 TEST_F(ScriptedServerTest, AClientPredictsWithTheParametersItWasAdmittedWith) {
-  ASSERT_TRUE(session_.GetParameters().has_value());
-  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
+  ASSERT_TRUE(session_.GetServerView()->accepted.has_value());
+  EXPECT_FLOAT_EQ(session_.GetServerView()->accepted->parameters.stamina.deplete_per_second, 0.0F);
   Settle();
-  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+  ASSERT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
@@ -2672,8 +2700,8 @@ TEST_F(ScriptedServerTest, BytesThatAreNoMessageChangeNothingAndTheClientKeepsRu
     Settle();
   }
 
-  EXPECT_FLOAT_EQ(session_.GetParameters()->stamina.deplete_per_second, 0.0F);
-  EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
+  EXPECT_FLOAT_EQ(session_.GetServerView()->accepted->parameters.stamina.deplete_per_second, 0.0F);
+  EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
   EXPECT_GT(PredictedStaminaAfterSprinting(60), 0.99F);
 }
 
@@ -2705,11 +2733,11 @@ TEST_F(ScriptedServerTest, AStateNamingABodyNotInTheMatchIsDropped) {
 
   server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity, EntityIdWire{99}}));
   Settle();
-  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+  EXPECT_FALSE(session_.GetServerView()->authoritative.has_value());
 
   server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
-  EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
+  EXPECT_TRUE(session_.GetServerView()->authoritative.has_value());
 }
 
 // The server's tick never starts over (ADR-0038): past the last one 32 bits
@@ -2721,16 +2749,16 @@ TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
 
   server_.Send(ScriptedServer::StateOf(kLastOf32Bits, {kScriptedEntity}));
   Settle();
-  ASSERT_TRUE(session_.GetAuthoritativeState().has_value());
-  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits);
+  ASSERT_TRUE(session_.GetServerView()->authoritative.has_value());
+  EXPECT_EQ(session_.GetServerView()->authoritative->tick, kLastOf32Bits);
 
   server_.Send(ScriptedServer::StateOf(kLastOf32Bits + 1, {kScriptedEntity}));
   Settle();
-  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits + 1);
+  EXPECT_EQ(session_.GetServerView()->authoritative->tick, kLastOf32Bits + 1);
 
   server_.Send(ScriptedServer::StateOf(kLastOf32Bits, {kScriptedEntity}));
   Settle();
-  EXPECT_EQ(session_.GetAuthoritativeState()->tick, kLastOf32Bits + 1);
+  EXPECT_EQ(session_.GetServerView()->authoritative->tick, kLastOf32Bits + 1);
 
   const int sent_before = server_.CommandsReceived();
   session_.Tick(Command{}, kFixedTick);
@@ -2742,14 +2770,14 @@ TEST_F(ScriptedServerTest, StatesPastThirtyTwoBitsOfTicksAreStillNewestWins) {
 TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIsBackInTheLobby) {
   server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
-  ASSERT_TRUE(session_.GetAuthoritativeState().has_value());
+  ASSERT_TRUE(session_.GetServerView()->authoritative.has_value());
 
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
 
-  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
-  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+  EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetServerView()->authoritative.has_value());
 }
 
 // Requirements: US-14
@@ -2782,14 +2810,14 @@ class ScriptedLobbyTest : public ScriptedServerTest {
 TEST_F(ScriptedLobbyTest, AStateThatArrivesBeforeMatchStartIsDropped) {
   server_.Send(ScriptedServer::StateOf(1, {kScriptedEntity}));
   Settle();
-  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
-  EXPECT_FALSE(session_.GetAuthoritativeState().has_value());
+  EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetServerView()->authoritative.has_value());
 
   server_.Send(ScriptedServer::StartOfAlone());
   server_.Send(ScriptedServer::StateOf(2, {kScriptedEntity}));
   Settle();
-  EXPECT_EQ(session_.GetPhase(), Phase::kMatch);
-  EXPECT_TRUE(session_.GetAuthoritativeState().has_value());
+  EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
+  EXPECT_TRUE(session_.GetServerView()->authoritative.has_value());
 }
 
 TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
@@ -2797,8 +2825,8 @@ TEST_F(ScriptedLobbyTest, AMatchStartThatLeavesThisClientOutIsDropped) {
       .players = {{.spawn = {}, .session = SessionIdWire{2}, .entity = EntityIdWire{102}, .character = kCharacter}}});
   Settle();
 
-  EXPECT_EQ(session_.GetPhase(), Phase::kLobby);
-  EXPECT_FALSE(session_.GetMatchStart().has_value());
+  EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(session_.GetServerView()->match_start.has_value());
 }
 
 // Requirements: US-03
@@ -2831,7 +2859,7 @@ TEST_F(ScriptedLobbyTest, ReadyIsSentOnlyWhenToldAndOnlyForTheNewestRoster) {
                                             .roster = {{.session = kScriptedSession, .character = kCharacter},
                                                        {.session = SessionIdWire{2}, .character = kCharacter}}});
   Settle();
-  ASSERT_EQ(session_.GetLobby()->version, 2U);
+  ASSERT_EQ(session_.GetServerView()->lobby->version, 2U);
   EXPECT_TRUE(server_.Readies().empty()) << "sent ReadyWire on its own";
 
   session_.ReportReady(1);
@@ -2856,7 +2884,7 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseParametersFailTheRange
     Session session(TestSessionConfig(server.LocalEndpoint()), EmptyWorld());
 
     EXPECT_FALSE(server.Admit(session, bad, std::chrono::milliseconds(500)));
-    EXPECT_FALSE(session.GetParameters().has_value());
+    EXPECT_FALSE(session.GetServerView()->accepted.has_value());
   }
 }
 
@@ -2872,14 +2900,14 @@ class TickRateTest : public LoopbackMatch {
 TEST_F(TickRateTest, AClientLearnsTheServersTickRateWhenItJoins) {
   Session& client = Join();
 
-  ASSERT_TRUE(client.GetTickRate().has_value());
-  EXPECT_EQ(*client.GetTickRate(), kServerRate);
+  ASSERT_TRUE(client.GetServerView()->accepted.has_value());
+  EXPECT_EQ(client.GetServerView()->accepted->tick_rate_hz, kServerRate);
 }
 
 TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutCorrection) {
   Session& client = Join();
   ASSERT_TRUE(StartMatch());
-  const float client_delta = 1.0F / *client.GetTickRate();
+  const float client_delta = 1.0F / client.GetServerView()->accepted->tick_rate_hz;
   const float server_delta = 1.0F / kServerRate;
   Command walk;
   walk.movement.direction = Vec3(1.0F, 0.0F, 0.0F);
@@ -2897,7 +2925,7 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
   // Walking 3 s at 3 m/s: what the client covered is what the server did, so
   // reconciliation never had a jump to make.
   EXPECT_GT(state.local_body.position.x, 6.0F);
-  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetEntityId())->position.x, 0.5F);
+  EXPECT_NEAR(state.local_body.position.x, BodySeenBy(client, *client.GetServerView()->OwnEntity())->position.x, 0.5F);
   EXPECT_NEAR(state.total_correction.x, 0.0F, 0.01F);
   EXPECT_NEAR(state.total_correction.z, 0.0F, 0.01F);
 }
@@ -2905,14 +2933,14 @@ TEST_F(TickRateTest, AClientTickingAtTheRateItWasToldAgreesWithTheServerWithoutC
 // A client that has not joined holds nothing a server decides.
 // Requirements: US-22
 TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
-  EXPECT_FALSE(session_.GetParameters().has_value());
-  EXPECT_FALSE(session_.GetTickRate().has_value());
+  EXPECT_FALSE(session_.GetServerView()->accepted.has_value());
+  EXPECT_FALSE(session_.GetServerView()->accepted.has_value());
   ASSERT_TRUE(ConnectSession());
-  ASSERT_TRUE(ExchangeUntil(host_, {&session_}, [&] { return session_.GetSessionId().has_value(); }));
+  ASSERT_TRUE(ExchangeUntil(host_, {&session_}, [&] { return session_.GetServerView()->accepted.has_value(); }));
 
-  ASSERT_TRUE(session_.GetParameters().has_value());
-  ASSERT_TRUE(session_.GetTickRate().has_value());
-  EXPECT_EQ(*session_.GetTickRate(), kTestTickRate);
+  ASSERT_TRUE(session_.GetServerView()->accepted.has_value());
+  ASSERT_TRUE(session_.GetServerView()->accepted.has_value());
+  EXPECT_EQ(session_.GetServerView()->accepted->tick_rate_hz, kTestTickRate);
 }
 
 // A server whose tick rate is unusable (zero): the client drops the Join
@@ -2927,9 +2955,9 @@ TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks
   const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
   ExchangeUntil(host, {&session}, [&] { return std::chrono::steady_clock::now() >= until; });
 
-  EXPECT_FALSE(session.GetSessionId().has_value());
-  EXPECT_FALSE(session.GetTickRate().has_value());
-  EXPECT_FALSE(session.GetParameters().has_value());
+  EXPECT_FALSE(session.GetServerView()->accepted.has_value());
+  EXPECT_FALSE(session.GetServerView()->accepted.has_value());
+  EXPECT_FALSE(session.GetServerView()->accepted.has_value());
 }
 
 // What a client is told when its session ends on its own.
@@ -3043,20 +3071,20 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
   Session& watcher = *sessions_.front();
-  ASSERT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers);
-  const auto leaver = *sessions_.back()->GetEntityId();
+  ASSERT_EQ(watcher.GetServerView()->authoritative->bodies.size(), augusta::limits::kMaxPlayers);
+  const auto leaver = *sessions_.back()->GetServerView()->OwnEntity();
 
   sessions_.back()->Disconnect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers - 1);
+  EXPECT_EQ(watcher.GetServerView()->authoritative->bodies.size(), augusta::limits::kMaxPlayers - 1);
   EXPECT_FALSE(PositionSeenBy(watcher, leaver).has_value());
 
   Session& ninth = Connect();
   Run(kSettleTicks);
 
-  EXPECT_EQ(ninth.GetRefusal(), JoinRefusal::kMatchInProgress);
-  EXPECT_EQ(watcher.GetAuthoritativeState()->bodies.size(), augusta::limits::kMaxPlayers - 1);
+  EXPECT_EQ(ninth.GetServerView()->refusal, JoinRefusal::kMatchInProgress);
+  EXPECT_EQ(watcher.GetServerView()->authoritative->bodies.size(), augusta::limits::kMaxPlayers - 1);
 }
 
 // Requirements: NFR-06
@@ -3087,8 +3115,8 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
   Session& next = Join();
   ASSERT_TRUE(DriveIntoMatch(host_, {&next}));
   Run(kSettleTicks);
-  EXPECT_TRUE(next.GetAuthoritativeState().has_value());
-  EXPECT_EQ(next.GetAuthoritativeState()->bodies.size(), 1U);
+  EXPECT_TRUE(next.GetServerView()->authoritative.has_value());
+  EXPECT_EQ(next.GetServerView()->authoritative->bodies.size(), 1U);
 }
 
 // US-15 and NFR-05: the catalogue of impossible actions
@@ -3170,7 +3198,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
     Run(kTicks);
     Settle(host_, Pointers(sessions_));
     adversary_.Receive();
-    bystander_shots_ += bystander_->TakeShots().size();
+    bystander_shots_ += bystander_->TakeShots(*bystander_->GetServerView()).size();
     return Now();
   }
 
@@ -3377,15 +3405,15 @@ TEST_F(ImpossibleCommandTest, BytesThatAreNoMessageChangeNothing) {
   }
 
   ExpectNothingTaken(before, RunAndTell());
-  EXPECT_EQ(bystander_->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(bystander_->GetServerView()->GetPhase(), Phase::kMatch);
   EXPECT_EQ(bystander_->GetConnectionState(), ConnectionState::kConnected);
   ExpectTheNextHonestCommandTaken(before);
 }
 
 // Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClientSendsIt) {
-  const auto bystander_health = bystander_->GetHealth();
-  const EntityIdWire bystander{std::to_underlying(*bystander_->GetEntityId())};
+  const auto bystander_health = OwnHealth(*bystander_->GetServerView());
+  const EntityIdWire bystander{std::to_underlying(*bystander_->GetServerView()->OwnEntity())};
   const SessionIdWire adversary = adversary_.ReceivedOf<protocol::JoinAcceptedWire>().front().session;
   const protocol::MessageWire server_only[] = {
       protocol::JoinAcceptedWire{.session = SessionIdWire{99}, .tick_rate_hz = 1, .character = kCharacter},
@@ -3407,11 +3435,11 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
   }
 
   ExpectNothingTaken(before, RunAndTell());
-  EXPECT_EQ(bystander_->GetPhase(), Phase::kMatch);
-  EXPECT_EQ(bystander_->GetHealth(), bystander_health);
-  EXPECT_TRUE(bystander_->TakeHitConfirmations().empty());
-  EXPECT_TRUE(bystander_->TakeDeaths().empty());
-  EXPECT_EQ(bystander_->GetAuthoritativeState()->bodies.size(), 2U);
+  EXPECT_EQ(bystander_->GetServerView()->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(OwnHealth(*bystander_->GetServerView()), bystander_health);
+  EXPECT_TRUE(bystander_->TakeHitConfirmations(*bystander_->GetServerView()).empty());
+  EXPECT_TRUE(bystander_->TakeDeaths(*bystander_->GetServerView()).empty());
+  EXPECT_EQ(bystander_->GetServerView()->authoritative->bodies.size(), 2U);
   EXPECT_EQ(bystander_->GetConnectionState(), ConnectionState::kConnected);
   ExpectTheNextHonestCommandTaken(before);
 }
@@ -3442,7 +3470,7 @@ TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllo
 TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing) {
   RawClient intruder(host_.ListenEndpoint(), RawClient::Mode::kScripted);
   ASSERT_TRUE(intruder.Connect(host_));
-  const EntityId bystander = *bystander_->GetEntityId();
+  const EntityId bystander = *bystander_->GetServerView()->OwnEntity();
   const auto bystander_before = PositionSeenBy(*bystander_, bystander);
   ASSERT_TRUE(bystander_before.has_value());
   const Told before = Now();
@@ -3454,7 +3482,7 @@ TEST_F(ImpossibleCommandTest, CommandsFromAPeerThatHasNotBeenAdmittedMoveNothing
   ASSERT_TRUE(bystander_after.has_value());
   EXPECT_NEAR(bystander_after->x, bystander_before->x, kStill);
   EXPECT_NEAR(bystander_after->z, bystander_before->z, kStill);
-  EXPECT_EQ(bystander_->GetAuthoritativeState()->bodies.size(), 2U);
+  EXPECT_EQ(bystander_->GetServerView()->authoritative->bodies.size(), 2U);
   intruder.Receive();
   EXPECT_EQ(intruder.ReceivedCount(), 0U);
 }
@@ -3518,8 +3546,9 @@ class ImpossibleLobbyOf : public LoopbackMatch {
       for (const auto& session : sessions_) {
         session->PumpEvents();
         session->ExchangeMessages();
-        const auto lobby = session->GetLobby();
-        if (lobby.has_value() && session->GetPhase() == Phase::kLobby && reported[session.get()] != lobby->version) {
+        const auto lobby = session->GetServerView()->lobby;
+        if (lobby.has_value() && session->GetServerView()->GetPhase() == Phase::kLobby &&
+            reported[session.get()] != lobby->version) {
           session->ReportReady(lobby->version);
           reported[session.get()] = lobby->version;
         }
@@ -3532,7 +3561,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   // The Lobby the first Session was told of last, once what is on its way has arrived.
   augusta::harness::Lobby FirstLobby() {
     Settle(host_, Pointers(sessions_));
-    return sessions_.front()->GetLobby().value();
+    return sessions_.front()->GetServerView()->lobby.value();
   }
 };
 
@@ -3551,7 +3580,7 @@ TEST_F(ImpossibleReadyTest, AReadyForAnyRosterButTheCurrentOneStartsNoMatch) {
   }
   RunLobby({&adversary});
 
-  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+  EXPECT_EQ(bystander.GetServerView()->GetPhase(), Phase::kLobby);
   EXPECT_FALSE(adversary.InMatch());
   EXPECT_EQ(FirstLobby().version, *current);
 
@@ -3597,7 +3626,7 @@ TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePla
       EXPECT_EQ(entry.character, admitted.front().character);
     }
   }
-  EXPECT_EQ(sessions_.front()->GetPhase(), Phase::kLobby);
+  EXPECT_EQ(sessions_.front()->GetServerView()->GetPhase(), Phase::kLobby);
   EXPECT_FALSE(adversary.InMatch());
 
   // A third player fills it, and the match starts with three players, each once.
@@ -3606,7 +3635,7 @@ TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePla
   ASSERT_TRUE(full.has_value());
   adversary.Send(protocol::ReadyWire{.version = *full});
   ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary));
-  const auto start = sessions_.front()->GetMatchStart();
+  const auto start = sessions_.front()->GetServerView()->match_start;
   ASSERT_TRUE(start.has_value());
   std::set<SessionId> players;
   for (const auto& player : start->players) {
@@ -3656,7 +3685,7 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
   const augusta::harness::Lobby lobby = FirstLobby();
   EXPECT_EQ(lobby.version, version);
   EXPECT_EQ(lobby.roster.size(), 1U);
-  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+  EXPECT_EQ(bystander.GetServerView()->GetPhase(), Phase::kLobby);
 }
 
 // ADR-0050: a Reenact request names its own spawn, which only a server with
@@ -3681,7 +3710,7 @@ TEST_F(ImpossibleJoinTest, AReenactRequestToAServerThatTakesNoneIsRefusedAndTheL
   EXPECT_TRUE(adversary.ReceivedOf<protocol::LobbyWire>().empty());
   EXPECT_EQ(FirstLobby().version, version);
   EXPECT_EQ(FirstLobby().roster.size(), 1U);
-  EXPECT_EQ(bystander.GetPhase(), Phase::kLobby);
+  EXPECT_EQ(bystander.GetServerView()->GetPhase(), Phase::kLobby);
 }
 
 // How many times log holds needle.
@@ -3712,7 +3741,7 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(DriveIntoMatch(host_, All(), &raw));
   Run(kSettleTicks);
-  ASSERT_EQ(honest.GetAuthoritativeState()->bodies.size(), 2U);
+  ASSERT_EQ(honest.GetServerView()->authoritative->bodies.size(), 2U);
 
   testing::internal::CaptureStdout();
   for (std::size_t i = 0; i < kFlood; ++i) {
@@ -3730,9 +3759,9 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
 
   EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
   EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
-  EXPECT_EQ(honest.GetPhase(), Phase::kMatch);
-  EXPECT_EQ(honest.GetAuthoritativeState()->bodies.size(), 1U);
-  EXPECT_GT(BodySeenBy(honest, *honest.GetEntityId())->position.x, SpawnPoints()[0].x + 1.0F);
+  EXPECT_EQ(honest.GetServerView()->GetPhase(), Phase::kMatch);
+  EXPECT_EQ(honest.GetServerView()->authoritative->bodies.size(), 1U);
+  EXPECT_GT(BodySeenBy(honest, *honest.GetServerView()->OwnEntity())->position.x, SpawnPoints()[0].x + 1.0F);
   EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
   EXPECT_NE(log.find("WARN subsystem=serverruntime event=misbehaving_disconnected peer="), std::string::npos) << log;
   EXPECT_NE(log.find("session=" + std::to_string(std::to_underlying(raw.GetSessionId().value())) +
@@ -3751,22 +3780,23 @@ TEST_F(LobbyMisbehaviourTest, AMisbehavingPlayerDisconnectedFromTheLobbyChangesT
   RawClient raw(host_.ListenEndpoint());
   ASSERT_TRUE(raw.Join(host_));
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_,
-                               [](const auto& s) { return s->GetLobby() && s->GetLobby()->roster.size() == 3; });
+    return std::ranges::all_of(sessions_, [](const auto& s) {
+      return s->GetServerView()->lobby && s->GetServerView()->lobby->roster.size() == 3;
+    });
   }));
-  const auto version = first.GetLobby()->version;
+  const auto version = first.GetServerView()->lobby->version;
 
   for (std::size_t i = 0; i < kFlood; ++i) {
     raw.SendPayload(kUndecodable);
   }
 
   ASSERT_TRUE(ExchangeUntil(host_, All(), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetLobby()->roster.size() == 2; });
+    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetServerView()->lobby->roster.size() == 2; });
   }));
   for (const Session* client : {&first, &second}) {
-    EXPECT_GT(client->GetLobby()->version, version);
-    EXPECT_EQ(client->GetLobby()->roster[0].session, *first.GetSessionId());
-    EXPECT_EQ(client->GetLobby()->roster[1].session, *second.GetSessionId());
+    EXPECT_GT(client->GetServerView()->lobby->version, version);
+    EXPECT_EQ(client->GetServerView()->lobby->roster[0].session, first.GetServerView()->accepted->session);
+    EXPECT_EQ(client->GetServerView()->lobby->roster[1].session, second.GetServerView()->accepted->session);
   }
   raw.Serve();
   EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kDisconnected);
@@ -3790,7 +3820,7 @@ TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisc
     raw.Send(commands(1));
   }
   Run(kSettleTicks, Forward());
-  const auto version = honest.GetLobby()->version;
+  const auto version = honest.GetServerView()->lobby->version;
   host_.EndMatch();
   // Commands still arriving after the match ended, and a Ready for the Roster before it.
   for (std::size_t i = 0; i < kFlood; ++i) {
@@ -3803,8 +3833,8 @@ TEST_F(MisbehaviourTest, StaleRepeatsAndCommandsInFlightAcrossAMatchEndNeverDisc
 
   EXPECT_EQ(raw.GetConnectionState(), ConnectionState::kConnected);
   EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
-  EXPECT_EQ(honest.GetPhase(), Phase::kLobby);
-  EXPECT_EQ(honest.GetLobby()->roster.size(), 2U);
+  EXPECT_EQ(honest.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_EQ(honest.GetServerView()->lobby->roster.size(), 2U);
 }
 
 // An honest client under NFR-02's 100 ms of latency, and with packet loss, never
@@ -3825,13 +3855,14 @@ TEST_F(HonestClientTest, AtAHundredMillisecondsOfLatencyAndWithPacketLossAClient
   // Its commands in flight as the match ends arrive after it.
   Run(kSettleTicks, Walking());
   augusta::link::SimulateNetworkConditions({});
-  const bool back_in_lobby = ExchangeUntil(host_, {&session_}, [&] { return session_.GetPhase() == Phase::kLobby; });
+  const bool back_in_lobby =
+      ExchangeUntil(host_, {&session_}, [&] { return session_.GetServerView()->GetPhase() == Phase::kLobby; });
   Settle(host_, {&session_});
   const std::string log = testing::internal::GetCapturedStdout();
 
   EXPECT_TRUE(back_in_lobby);
   EXPECT_EQ(session_.GetConnectionState(), ConnectionState::kConnected);
-  EXPECT_EQ(session_.GetLobby()->roster.size(), 1U);
+  EXPECT_EQ(session_.GetServerView()->lobby->roster.size(), 1U);
   EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 0U) << log;
 }
 
@@ -3931,9 +3962,9 @@ TEST_F(AdmissionDeadlineTest, AClientThatJoinsWithinTheDeadlineIsAdmittedAndStay
   // The idle peer beside it is not spared: the deadline did pass.
   EXPECT_TRUE(DisconnectedAt(past_the_deadline, idle));
   EXPECT_EQ(honest.GetConnectionState(), ConnectionState::kConnected);
-  EXPECT_EQ(honest.GetPhase(), Phase::kLobby);
-  ASSERT_TRUE(honest.GetLobby().has_value());
-  EXPECT_EQ(honest.GetLobby()->roster.size(), 1U);
+  EXPECT_EQ(honest.GetServerView()->GetPhase(), Phase::kLobby);
+  ASSERT_TRUE(honest.GetServerView()->lobby.has_value());
+  EXPECT_EQ(honest.GetServerView()->lobby->roster.size(), 1U);
 }
 
 // Requirements: NFR-05
@@ -4036,7 +4067,7 @@ class FireMatchOf : public LoopbackMatch {
   void Collect() {
     for (const auto& session : sessions_) {
       std::vector<Shot>& shots = shots_[session.get()];
-      const std::vector<Shot> taken = session->TakeShots();
+      const std::vector<Shot> taken = session->TakeShots(*session->GetServerView());
       shots.insert(shots.end(), taken.begin(), taken.end());
     }
   }
@@ -4148,12 +4179,13 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   Session& shooter = *sessions_[0];
   Session& bystander = *sessions_[1];
   Settle(host_, Pointers(sessions_));
-  const augusta::tick::Tick last_tick = shooter.GetAuthoritativeState()->tick;
-  const Vec3 feet = PositionSeenBy(shooter, *shooter.GetEntityId()).value();
+  const augusta::tick::Tick last_tick = shooter.GetServerView()->authoritative->tick;
+  const Vec3 feet = PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value();
   Command command = Firing();
   command.yaw = 0.75F;
   command.pitch = -0.25F;
-  const auto shooter_session = static_cast<augusta::host::SessionId>(std::to_underlying(*shooter.GetSessionId()));
+  const auto shooter_session =
+      static_cast<augusta::host::SessionId>(std::to_underlying(shooter.GetServerView()->accepted->session));
 
   // One tick, by hand: the server takes in the fire command on its next tick.
   shooter.Tick(command, kFixedTick);
@@ -4165,7 +4197,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
   for (const Session* client : {&shooter, &bystander}) {
     ASSERT_EQ(shots_[client].size(), 1U);
     const Shot& shot = shots_[client].front();
-    EXPECT_EQ(shot.shooter, *shooter.GetEntityId());
+    EXPECT_EQ(shot.shooter, *shooter.GetServerView()->OwnEntity());
     EXPECT_EQ(shot.tick, last_tick + 1);
     EXPECT_NEAR(shot.origin.x, feet.x, 0.002F);
     EXPECT_NEAR(shot.origin.y, feet.y + kEyeHeight, 0.002F);
@@ -4228,7 +4260,7 @@ class PredictedFireTest : public FireMatchOf<1> {
 
   // The newest of the client's commands the server has told it of.
   [[nodiscard]] augusta::tick::Sequence Acknowledged() const {
-    const auto state = client_->GetAuthoritativeState();
+    const auto state = client_->GetServerView()->authoritative;
     return state.has_value() ? state->acknowledged_sequence : 0U;
   }
 
@@ -4242,7 +4274,7 @@ class PredictedFireTest : public FireMatchOf<1> {
   // Holds the rifle of the newest update the client has against the one it
   // predicted after the command that update acknowledges.
   void CompareWithTheServer() {
-    const auto state = client_->GetAuthoritativeState();
+    const auto state = client_->GetServerView()->authoritative;
     ASSERT_TRUE(state.has_value());
     const auto predicted = predicted_.find(state->acknowledged_sequence);
     if (predicted == predicted_.end()) {
@@ -4268,7 +4300,8 @@ class PredictedFireTest : public FireMatchOf<1> {
   // Ticks the server through the commands that reach it within a tick's time,
   // then lets its answers reach the client.
   void ServeDelivered() {
-    const auto self = static_cast<augusta::host::SessionId>(std::to_underlying(*client_->GetSessionId()));
+    const auto self =
+        static_cast<augusta::host::SessionId>(std::to_underlying(client_->GetServerView()->accepted->session));
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     while (host_.QueuedCommands(self) > 0) {
@@ -4513,7 +4546,7 @@ TEST_F(RecoilTest, TheViewAClientSendsNeverIncludesItsRecoil) {
 
   EXPECT_NE(states_.at(&client).rifle.recoil.yaw, 0.0F);
   EXPECT_NE(shots[3].yaw, kViewYaw);
-  const auto state = client.GetAuthoritativeState();
+  const auto state = client.GetServerView()->authoritative;
   ASSERT_TRUE(state.has_value());
   ASSERT_EQ(state->bodies.size(), 1U);
   EXPECT_EQ(state->bodies.front().yaw, kViewYaw);
@@ -4649,16 +4682,17 @@ class HitMatchOf : public LoopbackMatch {
   // target's feet as the newest update it has shows them, which is the Seen
   // time its Command reports, and the match runs until its rifle is ready again.
   void ShootAt(const Session& target, const Vec3& offset) {
-    ShootThrough(PositionSeenBy(Standing(0), *target.GetEntityId()).value() + offset);
+    ShootThrough(PositionSeenBy(Standing(0), *target.GetServerView()->OwnEntity()).value() + offset);
   }
 
   // As ShootAt, aimed at point, whatever is there.
   void ShootThrough(const Vec3& point) {
     Session& shooter = Standing(0);
-    const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+    const Vec3 eye =
+        PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
     Command& command = CommandOf(shooter);
     AimAt(command, point - eye);
-    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetServerView()->authoritative.value().tick;
     command.fire = true;
     Fight(1);
     command.fire = false;
@@ -4671,7 +4705,7 @@ class HitMatchOf : public LoopbackMatch {
     Settle(host_, Pointers(sessions_));
     for (const auto& session : sessions_) {
       std::vector<HitConfirmation>& confirmations = confirmations_[session.get()];
-      const std::vector<HitConfirmation> taken = session->TakeHitConfirmations();
+      const std::vector<HitConfirmation> taken = session->TakeHitConfirmations(*session->GetServerView());
       confirmations.insert(confirmations.end(), taken.begin(), taken.end());
     }
     return confirmations_[&client];
@@ -4689,7 +4723,7 @@ class HitMatchOf : public LoopbackMatch {
   void CollectDeaths() {
     for (const auto& session : sessions_) {
       std::vector<Death>& deaths = deaths_received_[session.get()];
-      const std::vector<Death> taken = session->TakeDeaths();
+      const std::vector<Death> taken = session->TakeDeaths(*session->GetServerView());
       deaths.insert(deaths.end(), taken.begin(), taken.end());
     }
   }
@@ -4728,7 +4762,7 @@ TEST_F(HitLineTest, ShootingAStandingTargetsHeadTorsoAndLimbConfirmsEachToTheSho
   const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
   ASSERT_EQ(confirmations.size(), 3U);
   for (const HitConfirmation& confirmation : confirmations) {
-    EXPECT_EQ(confirmation.target, *target.GetEntityId());
+    EXPECT_EQ(confirmation.target, *target.GetServerView()->OwnEntity());
   }
   EXPECT_EQ(confirmations[0].part, BodyPart::kHead);
   EXPECT_EQ(confirmations[0].damage, kHeadDamage);
@@ -4748,9 +4782,9 @@ TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
   ShootAt(near, Vec3(0.0F, kTorsoHeight, 0.0F));
 
   ASSERT_EQ(hits_.size(), 1U);
-  EXPECT_EQ(std::to_underlying(hits_[0].target), std::to_underlying(*near.GetEntityId()));
+  EXPECT_EQ(std::to_underlying(hits_[0].target), std::to_underlying(*near.GetServerView()->OwnEntity()));
   ASSERT_EQ(ConfirmationsOf(Standing(0)).size(), 1U);
-  EXPECT_EQ(ConfirmationsOf(Standing(0))[0].target, *near.GetEntityId());
+  EXPECT_EQ(ConfirmationsOf(Standing(0))[0].target, *near.GetServerView()->OwnEntity());
 }
 
 using HitDuelTest = HitMatchOf<2>;
@@ -4768,7 +4802,7 @@ TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAn
   for (const Lowered& lowered : {Lowered{Stance::kCrouching, 1.3F}, Lowered{Stance::kProne, 0.7F}}) {
     CommandOf(target).movement.desired_stance = lowered.stance;
     Fight(kSettleTicks);
-    ASSERT_EQ(BodySeenBy(shooter, *target.GetEntityId())->stance, lowered.stance);
+    ASSERT_EQ(BodySeenBy(shooter, *target.GetServerView()->OwnEntity())->stance, lowered.stance);
 
     ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
     EXPECT_TRUE(hits_.empty()) << "stance " << static_cast<int>(lowered.stance);
@@ -4795,8 +4829,8 @@ TEST_F(HitDuelTest, AShotAtATargetsSideHitsAccordingToItsReplicatedFacing) {
   const Vec3 right_of_it(0.35F, kTorsoHeight, 0.0F);
   const Vec3 left_of_it(-0.35F, kTorsoHeight, 0.0F);
   const auto yaw_seen = [&] {
-    for (const auto& body : shooter.GetAuthoritativeState().value().bodies) {
-      if (body.entity == *target.GetEntityId()) {
+    for (const auto& body : shooter.GetServerView()->authoritative.value().bodies) {
+      if (body.entity == *target.GetServerView()->OwnEntity()) {
         return body.yaw;
       }
     }
@@ -4855,7 +4889,7 @@ TEST_F(LoneHitTest, AShooterFiringForwardWhileMovingNeverHitsItself) {
   Fight(60);
 
   Settle(host_, Pointers(sessions_));
-  EXPECT_EQ(shooter.TakeShots().size(), 10U);
+  EXPECT_EQ(shooter.TakeShots(*shooter.GetServerView()).size(), 10U);
   EXPECT_TRUE(hits_.empty());
   EXPECT_TRUE(ConfirmationsOf(shooter).empty());
 }
@@ -4876,8 +4910,8 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   // Whether the server holds a command of every client for its next tick.
   [[nodiscard]] bool EveryoneHasACommandQueued() const {
     return std::ranges::all_of(sessions_, [&](const auto& session) {
-      return host_.QueuedCommands(static_cast<augusta::host::SessionId>(std::to_underlying(*session->GetSessionId()))) >
-             0;
+      return host_.QueuedCommands(static_cast<augusta::host::SessionId>(
+                 std::to_underlying(session->GetServerView()->accepted->session))) > 0;
     });
   }
 
@@ -4897,8 +4931,8 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
     }
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
-    if (const auto feet = PositionSeenBy(shooter, *target.GetEntityId()); feet.has_value()) {
-      seen_[shooter.GetAuthoritativeState()->tick] = *feet;
+    if (const auto feet = PositionSeenBy(shooter, *target.GetServerView()->OwnEntity()); feet.has_value()) {
+      seen_[shooter.GetServerView()->authoritative->tick] = *feet;
     }
   }
 
@@ -4931,7 +4965,8 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
   // The target has since walked clear of where the Seen time shows its torso, 0.4 m wide.
   ASSERT_GT(seen_.rbegin()->second.x - feet.x, 0.25F);
 
-  const Vec3 eye = PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+  const Vec3 eye =
+      PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
   Command& command = CommandOf(shooter);
   AimAt(command, feet + Vec3(0.0F, kTorsoHeight, 0.0F) - eye);
   command.seen_tick = shown->first;
@@ -4947,7 +4982,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
   EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
   const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
   ASSERT_EQ(confirmations.size(), 1U);
-  EXPECT_EQ(confirmations[0].target, *target.GetEntityId());
+  EXPECT_EQ(confirmations[0].target, *target.GetServerView()->OwnEntity());
   EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
   EXPECT_TRUE(ConfirmationsOf(target).empty());
 }
@@ -5039,8 +5074,8 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
   std::map<std::uint32_t, std::size_t> hits_by;
   const auto collect = [&] {
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
-      clients[i].shots += sessions_[i]->TakeShots().size();
-      clients[i].confirmations += sessions_[i]->TakeHitConfirmations().size();
+      clients[i].shots += sessions_[i]->TakeShots(*sessions_[i]->GetServerView()).size();
+      clients[i].confirmations += sessions_[i]->TakeHitConfirmations(*sessions_[i]->GetServerView()).size();
     }
   };
 
@@ -5062,7 +5097,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
       command.yaw = client.yaw;
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
-      if (const auto shown = sessions_[i]->GetAuthoritativeState()) {
+      if (const auto shown = sessions_[i]->GetServerView()->authoritative) {
         command.seen_tick = shown->tick;
       }
 
@@ -5083,7 +5118,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
       EXPECT_EQ(sessions_[i]->GetConnectionState(), ConnectionState::kConnected)
           << "client " << i << " dropped at tick " << tick;
 
-      if (const auto authoritative = sessions_[i]->GetAuthoritativeState()) {
+      if (const auto authoritative = sessions_[i]->GetServerView()->authoritative) {
         clients[i].acknowledged = std::max(clients[i].acknowledged, authoritative->acknowledged_sequence);
       }
     }
@@ -5111,7 +5146,7 @@ TEST_F(FullAutoMatchTest, EightClientsMoveFireFullAutoReloadAndHitEachOtherForAM
     EXPECT_GT(client.farthest, 0.5F) << "client " << i << " did not move over the match";
     EXPECT_EQ(client.shots, fired) << "client " << i << " was not told of every Shot";
     EXPECT_GT(client.confirmations, 0U) << "client " << i << " never hit its partner";
-    EXPECT_EQ(client.confirmations, hits_by[std::to_underlying(*sessions_[i]->GetEntityId())])
+    EXPECT_EQ(client.confirmations, hits_by[std::to_underlying(*sessions_[i]->GetServerView()->OwnEntity())])
         << "client " << i << " was not told of every hit of its own";
   }
 }
@@ -5126,20 +5161,20 @@ TEST_F(ScriptedServerTest, AHitConfirmationOfABodyInTheMatchIsHandedOutOnceAsItW
   server_.Send(HitOn(kScriptedEntity));
   Settle();
 
-  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations();
+  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations(*session_.GetServerView());
 
   ASSERT_EQ(hits.size(), 1U);
-  EXPECT_EQ(hits[0].target, *session_.GetEntityId());
+  EXPECT_EQ(hits[0].target, *session_.GetServerView()->OwnEntity());
   EXPECT_EQ(hits[0].part, augusta::ballistics::BodyPart::kHead);
   EXPECT_EQ(hits[0].damage, 37.5F);
-  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, AHitConfirmationNamingABodyNotInTheMatchIsDropped) {
   server_.Send(HitOn(EntityIdWire{99}));
   Settle();
 
-  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, AHitConfirmationThatArrivesAfterMatchEndIsDropped) {
@@ -5147,7 +5182,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationThatArrivesAfterMatchEndIsDropped) {
   server_.Send(HitOn(kScriptedEntity));
   Settle();
 
-  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, AHitConfirmationNobodyAskedForIsNotHandedOutInTheNextMatch) {
@@ -5155,9 +5190,9 @@ TEST_F(ScriptedServerTest, AHitConfirmationNobodyAskedForIsNotHandedOutInTheNext
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
-  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+  ASSERT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
 
-  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedLobbyTest, AHitConfirmationThatArrivesBeforeMatchStartIsDropped) {
@@ -5166,7 +5201,7 @@ TEST_F(ScriptedLobbyTest, AHitConfirmationThatArrivesBeforeMatchStartIsDropped) 
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
 
-  EXPECT_TRUE(session_.TakeHitConfirmations().empty());
+  EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }
 
 // A client nobody asks keeps the newest Hit confirmations, not all of them for ever.
@@ -5179,7 +5214,7 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestHitConfirmat
   }
   Settle();
 
-  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations();
+  const std::vector<HitConfirmation> hits = session_.TakeHitConfirmations(*session_.GetServerView());
 
   ASSERT_EQ(hits.size(), augusta::harness::kMaxPendingHitConfirmations);
   EXPECT_EQ(hits.front().damage, 11.0F);
@@ -5196,15 +5231,15 @@ TEST_F(ScriptedServerTest, AShotOfABodyInTheMatchIsHandedOutOnceAsItWasSent) {
   server_.Send(ShotBy(kScriptedEntity));
   Settle();
 
-  const std::vector<Shot> shots = session_.TakeShots();
+  const std::vector<Shot> shots = session_.TakeShots(*session_.GetServerView());
 
   ASSERT_EQ(shots.size(), 1U);
-  EXPECT_EQ(shots[0].shooter, *session_.GetEntityId());
+  EXPECT_EQ(shots[0].shooter, *session_.GetServerView()->OwnEntity());
   EXPECT_EQ(shots[0].tick, 7U);
   EXPECT_EQ(shots[0].origin, Vec3(1.0F, 1.5F, -2.0F));
   EXPECT_EQ(shots[0].yaw, 0.5F);
   EXPECT_EQ(shots[0].pitch, -0.125F);
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
@@ -5215,7 +5250,7 @@ TEST_F(ScriptedServerTest, ShotsAreHandedOutInTheOrderTheyArrived) {
   }
   Settle();
 
-  const std::vector<Shot> shots = session_.TakeShots();
+  const std::vector<Shot> shots = session_.TakeShots(*session_.GetServerView());
 
   ASSERT_EQ(shots.size(), 3U);
   EXPECT_EQ(shots[0].tick, 1U);
@@ -5227,7 +5262,7 @@ TEST_F(ScriptedServerTest, AShotNamingABodyNotInTheMatchIsDropped) {
   server_.Send(ShotBy(EntityIdWire{99}));
   Settle();
 
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, AShotThatArrivesAfterMatchEndIsDropped) {
@@ -5235,7 +5270,7 @@ TEST_F(ScriptedServerTest, AShotThatArrivesAfterMatchEndIsDropped) {
   server_.Send(ShotBy(kScriptedEntity));
   Settle();
 
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedServerTest, AShotNobodyAskedForIsNotHandedOutInTheNextMatch) {
@@ -5243,19 +5278,19 @@ TEST_F(ScriptedServerTest, AShotNobodyAskedForIsNotHandedOutInTheNextMatch) {
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
-  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+  ASSERT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
 
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
 TEST_F(ScriptedLobbyTest, AShotThatArrivesBeforeMatchStartIsDropped) {
   server_.Send(ShotBy(kScriptedEntity));
   Settle();
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
-  EXPECT_TRUE(session_.TakeShots().empty());
+  EXPECT_TRUE(session_.TakeShots(*session_.GetServerView()).empty());
 }
 
 // A client nobody asks keeps the newest Shots, not all of them for ever.
@@ -5268,7 +5303,7 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
   }
   Settle();
 
-  const std::vector<Shot> shots = session_.TakeShots();
+  const std::vector<Shot> shots = session_.TakeShots(*session_.GetServerView());
 
   ASSERT_EQ(shots.size(), augusta::harness::kMaxPendingShots);
   EXPECT_EQ(shots.front().tick, 11U);
@@ -5289,8 +5324,8 @@ TEST_F(DeathTest, APlayerShotToZeroHealthDiesAndEveryClientIsToldWhoKilledItAndW
   for (const Session* client : {&shooter, &victim, &bystander}) {
     const std::vector<Death>& deaths = DeathsOf(*client);
     ASSERT_EQ(deaths.size(), 1U);
-    EXPECT_EQ(deaths[0].victim, *victim.GetEntityId());
-    EXPECT_EQ(deaths[0].killer, *shooter.GetEntityId());
+    EXPECT_EQ(deaths[0].victim, *victim.GetServerView()->OwnEntity());
+    EXPECT_EQ(deaths[0].killer, *shooter.GetServerView()->OwnEntity());
     EXPECT_EQ(deaths[0].part, BodyPart::kHead);
     EXPECT_EQ(deaths[0].yaw, deaths_[0].yaw);
     EXPECT_EQ(deaths[0].pitch, deaths_[0].pitch);
@@ -5305,9 +5340,9 @@ TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
   Fight(30);
 
   for (const auto& client : sessions_) {
-    EXPECT_FALSE(BodySeenBy(*client, *victim.GetEntityId()).has_value());
-    EXPECT_TRUE(BodySeenBy(*client, *Standing(0).GetEntityId()).has_value());
-    EXPECT_TRUE(BodySeenBy(*client, *Standing(2).GetEntityId()).has_value());
+    EXPECT_FALSE(BodySeenBy(*client, *victim.GetServerView()->OwnEntity()).has_value());
+    EXPECT_TRUE(BodySeenBy(*client, *Standing(0).GetServerView()->OwnEntity()).has_value());
+    EXPECT_TRUE(BodySeenBy(*client, *Standing(2).GetServerView()->OwnEntity()).has_value());
   }
 }
 
@@ -5335,8 +5370,8 @@ TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
   for (const auto& client : sessions_) {
     const std::vector<Death>& deaths = DeathsOf(*client);
     ASSERT_EQ(deaths.size(), 1U);
-    EXPECT_EQ(deaths[0].victim, *victim.GetEntityId());
-    EXPECT_EQ(deaths[0].killer, *Standing(0).GetEntityId());
+    EXPECT_EQ(deaths[0].victim, *victim.GetServerView()->OwnEntity());
+    EXPECT_EQ(deaths[0].killer, *Standing(0).GetServerView()->OwnEntity());
     EXPECT_EQ(deaths[0].part, BodyPart::kHead);
   }
 }
@@ -5357,8 +5392,8 @@ TEST_F(DeathTest, ADeadPlayersFireAndMovementChangeNothingOnTheServer) {
 
   EXPECT_EQ(shots_fired_.size(), rounds);
   EXPECT_EQ(hits_.size(), 2U);
-  EXPECT_FALSE(BodySeenBy(shooter, *victim.GetEntityId()).has_value());
-  EXPECT_EQ(shooter.GetHealth(), 100.0F);
+  EXPECT_FALSE(BodySeenBy(shooter, *victim.GetServerView()->OwnEntity()).has_value());
+  EXPECT_EQ(OwnHealth(*shooter.GetServerView()), 100.0F);
 }
 
 // The third player stands behind the second, on the line the shooter fires along.
@@ -5366,31 +5401,31 @@ TEST_F(DeathTest, ADeadPlayersFireAndMovementChangeNothingOnTheServer) {
 TEST_F(DeathTest, ABulletAimedThroughWhereTheDeadPlayerStoodHitsWhatIsBehindIt) {
   Session& victim = Standing(1);
   Session& behind = Standing(2);
-  const Vec3 stood = PositionSeenBy(Standing(0), *victim.GetEntityId()).value();
+  const Vec3 stood = PositionSeenBy(Standing(0), *victim.GetServerView()->OwnEntity()).value();
   Kill(victim);
 
   ShootThrough(stood + Vec3(0.0F, kTorsoHeight, 0.0F));
 
   ASSERT_EQ(hits_.size(), 3U);
-  EXPECT_EQ(std::to_underlying(hits_.back().target), std::to_underlying(*behind.GetEntityId()));
+  EXPECT_EQ(std::to_underlying(hits_.back().target), std::to_underlying(*behind.GetServerView()->OwnEntity()));
 }
 
 // Requirements: US-13
 TEST_F(DeathTest, ADeadPlayersOwnClientKnowsItIsDeadAndItsHealthAndStopsPredicting) {
   Session& victim = Standing(1);
   Settle(host_, Pointers(sessions_));
-  ASSERT_TRUE(victim.IsAlive());
-  ASSERT_EQ(victim.GetHealth(), 100.0F);
+  ASSERT_TRUE(victim.GetServerView()->OwnAlive());
+  ASSERT_EQ(OwnHealth(*victim.GetServerView()), 100.0F);
 
   ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   Settle(host_, Pointers(sessions_));
-  EXPECT_TRUE(victim.IsAlive());
-  EXPECT_EQ(victim.GetHealth(), 50.0F);
+  EXPECT_TRUE(victim.GetServerView()->OwnAlive());
+  EXPECT_EQ(OwnHealth(*victim.GetServerView()), 50.0F);
 
   ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   Settle(host_, Pointers(sessions_));
-  EXPECT_FALSE(victim.IsAlive());
-  EXPECT_EQ(victim.GetHealth(), 0.0F);
+  EXPECT_FALSE(victim.GetServerView()->OwnAlive());
+  EXPECT_EQ(OwnHealth(*victim.GetServerView()), 0.0F);
 
   const augusta::prediction::State dead = states_[&victim];
   Command& command = CommandOf(victim);
@@ -5399,7 +5434,7 @@ TEST_F(DeathTest, ADeadPlayersOwnClientKnowsItIsDeadAndItsHealthAndStopsPredicti
   Fight(30);
   EXPECT_EQ(states_[&victim].local_body.position, dead.local_body.position);
   EXPECT_EQ(states_[&victim].total_rounds_fired, dead.total_rounds_fired);
-  EXPECT_TRUE(Standing(0).IsAlive());
+  EXPECT_TRUE(Standing(0).GetServerView()->OwnAlive());
 }
 
 using NextMatchTest = HitMatchOf<2>;
@@ -5413,7 +5448,8 @@ TEST_F(NextMatchTest, TheSecondMatchOfARunStartsWithFullHealthAndFullMagazines) 
   ASSERT_EQ(deaths_.size(), 1U);
   host_.EndMatch();
   ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& s) { return s->GetPhase() == Phase::kLobby; });
+    return std::ranges::all_of(sessions_,
+                               [](const auto& s) { return s->GetServerView()->GetPhase() == Phase::kLobby; });
   }));
 
   ASSERT_TRUE(StartMatch());
@@ -5421,9 +5457,9 @@ TEST_F(NextMatchTest, TheSecondMatchOfARunStartsWithFullHealthAndFullMagazines) 
 
   ASSERT_EQ(first.bodies.size(), 2U);
   for (const auto& client : sessions_) {
-    const auto state = client->GetAuthoritativeState();
+    const auto state = client->GetServerView()->authoritative;
     ASSERT_TRUE(state.has_value());
-    EXPECT_TRUE(client->IsAlive());
+    EXPECT_TRUE(client->GetServerView()->OwnAlive());
     EXPECT_EQ(state->health, 100.0F);
     EXPECT_EQ(state->rifle.rounds, 30U);
     EXPECT_EQ(state->rifle.reload_remaining, 0.0F);
@@ -5447,13 +5483,13 @@ TEST_F(ScriptedServerTest, ADeathNamingABodyNotInTheMatchIsDropped) {
   server_.Send(DeathOf(EntityIdWire{99}, kScriptedEntity));
   server_.Send(DeathOf(kScriptedEntity, EntityIdWire{99}));
   Settle();
-  EXPECT_TRUE(session_.TakeDeaths().empty());
-  EXPECT_TRUE(session_.IsAlive());
+  EXPECT_TRUE(session_.TakeDeaths(*session_.GetServerView()).empty());
+  EXPECT_TRUE(session_.GetServerView()->OwnAlive());
 
   server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
   Settle();
-  EXPECT_EQ(session_.TakeDeaths().size(), 1U);
-  EXPECT_FALSE(session_.IsAlive());
+  EXPECT_EQ(session_.TakeDeaths(*session_.GetServerView()).size(), 1U);
+  EXPECT_FALSE(session_.GetServerView()->OwnAlive());
 }
 
 // The tick that ends a Match sends its own Shots, Hit confirmations and Deaths
@@ -5465,11 +5501,11 @@ TEST_F(ScriptedServerTest, TheShotsHitsAndDeathsThatArriveJustBeforeMatchEndAreS
   server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
   server_.Send(augusta::protocol::MatchEndWire{});
   Settle();
-  ASSERT_EQ(session_.GetPhase(), Phase::kLobby);
+  ASSERT_EQ(session_.GetServerView()->GetPhase(), Phase::kLobby);
 
-  EXPECT_EQ(session_.TakeShots().size(), 1U);
-  EXPECT_EQ(session_.TakeHitConfirmations().size(), 1U);
-  EXPECT_EQ(session_.TakeDeaths().size(), 1U);
+  EXPECT_EQ(session_.TakeShots(*session_.GetServerView()).size(), 1U);
+  EXPECT_EQ(session_.TakeHitConfirmations(*session_.GetServerView()).size(), 1U);
+  EXPECT_EQ(session_.TakeDeaths(*session_.GetServerView()).size(), 1U);
 }
 
 TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
@@ -5479,9 +5515,9 @@ TEST_F(ScriptedServerTest, ADeathNobodyAskedForIsNotHandedOutInTheNextMatch) {
   server_.Send(augusta::protocol::MatchEndWire{});
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
-  ASSERT_EQ(session_.GetPhase(), Phase::kMatch);
+  ASSERT_EQ(session_.GetServerView()->GetPhase(), Phase::kMatch);
 
-  EXPECT_TRUE(session_.TakeDeaths().empty());
+  EXPECT_TRUE(session_.TakeDeaths(*session_.GetServerView()).empty());
 }
 
 // Told of its own death, a client predicts no more, even before an update says so.
@@ -5503,16 +5539,16 @@ TEST_F(ScriptedServerTest, AClientToldOfItsOwnDeathStopsPredicting) {
 }
 
 TEST_F(ScriptedLobbyTest, ADeathThatArrivesOutsideAMatchIsDropped) {
-  EXPECT_FALSE(session_.IsAlive());
+  EXPECT_FALSE(session_.GetServerView()->OwnAlive());
   server_.Send(DeathOf(kScriptedEntity, kScriptedEntity));
   Settle();
-  EXPECT_TRUE(session_.TakeDeaths().empty());
+  EXPECT_TRUE(session_.TakeDeaths(*session_.GetServerView()).empty());
 
   server_.Send(ScriptedServer::StartOfAlone());
   Settle();
-  EXPECT_TRUE(session_.TakeDeaths().empty());
-  EXPECT_TRUE(session_.IsAlive());
-  EXPECT_FALSE(session_.GetHealth().has_value());
+  EXPECT_TRUE(session_.TakeDeaths(*session_.GetServerView()).empty());
+  EXPECT_TRUE(session_.GetServerView()->OwnAlive());
+  EXPECT_FALSE(session_.GetServerView()->authoritative.has_value());
 }
 
 // A reader still holding the Server view of a Match that has ended takes
@@ -5592,13 +5628,13 @@ TEST_F(ScriptedServerTest, AReaderThatHasSeenAMatchStartNeverTakesTheEventsOfAnE
         foreign += death.yaw != tag(match) ? 1 : 0;
       }
       const std::uint32_t seen = session_.GetServerView()->matches_started;
-      for (const Shot& shot : session_.TakeShots()) {
+      for (const Shot& shot : session_.TakeShots(*session_.GetServerView())) {
         stale += shot.tick < seen ? 1 : 0;
       }
-      for (const HitConfirmation& hit : session_.TakeHitConfirmations()) {
+      for (const HitConfirmation& hit : session_.TakeHitConfirmations(*session_.GetServerView())) {
         stale += hit.damage < tag(seen) ? 1 : 0;
       }
-      for (const Death& death : session_.TakeDeaths()) {
+      for (const Death& death : session_.TakeDeaths(*session_.GetServerView())) {
         stale += death.yaw < tag(seen) ? 1 : 0;
       }
     }
@@ -5645,7 +5681,8 @@ class LastStandingMatchOf : public HitMatchOf<kPlayers> {
     return ExchangeUntil(this->host_, Pointers(this->sessions_), [&] {
       return std::ranges::all_of(this->sessions_, [](const auto& session) {
         return session->GetConnectionState() != ConnectionState::kConnected ||
-               (session->GetPhase() == Phase::kLobby && session->GetMatchEnd().has_value());
+               (session->GetServerView()->GetPhase() == Phase::kLobby &&
+                session->GetServerView()->match_end.has_value());
       });
     });
   }
@@ -5653,12 +5690,13 @@ class LastStandingMatchOf : public HitMatchOf<kPlayers> {
   // shooter aims at target's head, as the newest update shooter has shows it,
   // and holds fire.
   void AimAtHead(Session& shooter, const Session& target) {
-    const Vec3 eye = this->PositionSeenBy(shooter, *shooter.GetEntityId()).value() + Vec3(0.0F, this->kEyeHeight, 0.0F);
-    const Vec3 head =
-        this->PositionSeenBy(shooter, *target.GetEntityId()).value() + Vec3(0.0F, this->kHeadHeight, 0.0F);
+    const Vec3 eye = this->PositionSeenBy(shooter, *shooter.GetServerView()->OwnEntity()).value() +
+                     Vec3(0.0F, this->kEyeHeight, 0.0F);
+    const Vec3 head = this->PositionSeenBy(shooter, *target.GetServerView()->OwnEntity()).value() +
+                      Vec3(0.0F, this->kHeadHeight, 0.0F);
     Command& command = this->CommandOf(shooter);
     this->AimAt(command, head - eye);
-    command.seen_tick = shooter.GetAuthoritativeState().value().tick;
+    command.seen_tick = shooter.GetServerView()->authoritative.value().tick;
     command.fire = true;
   }
 
@@ -5688,8 +5726,8 @@ TEST_F(LastStandingDuelTest, OneKillingTheOtherEndsTheMatchAndBothAreToldTheKill
   ASSERT_EQ(match_ends_.size(), 1U);
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
   for (const Session* client : {&shooter, &victim}) {
-    EXPECT_EQ(client->GetPhase(), Phase::kLobby);
-    EXPECT_EQ(client->GetMatchEnd()->winner, shooter.GetSessionId());
+    EXPECT_EQ(client->GetServerView()->GetPhase(), Phase::kLobby);
+    EXPECT_EQ(client->GetServerView()->match_end->winner, AdmittedSession(*shooter.GetServerView()));
   }
 }
 
@@ -5712,7 +5750,7 @@ TEST_F(LastStandingDuelTest, WithPacketLossBothAreStillToldTheMatchEndedAndWhoWo
   ASSERT_EQ(match_ends_.size(), 1U);
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
   for (const Session* client : {&shooter, &victim}) {
-    EXPECT_EQ(client->GetMatchEnd()->winner, shooter.GetSessionId());
+    EXPECT_EQ(client->GetServerView()->match_end->winner, AdmittedSession(*shooter.GetServerView()));
   }
 }
 
@@ -5729,7 +5767,7 @@ TEST_F(LastStandingDuelTest, TheLastTwoDyingOnTheSameTickIsADraw) {
   EXPECT_FALSE(match_ends_[0].second.winner.has_value());
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
   for (const auto& client : sessions_) {
-    EXPECT_FALSE(client->GetMatchEnd()->winner.has_value());
+    EXPECT_FALSE(client->GetServerView()->match_end->winner.has_value());
   }
 }
 
@@ -5748,8 +5786,9 @@ TEST_F(LastStandingDuelTest, TheNextMatchStartsOnItsOwnOnceEveryoneIsReadyAgainN
   while (started == 0 && std::chrono::steady_clock::now() < deadline) {
     Exchange();
     for (const auto& session : sessions_) {
-      const auto lobby = session->GetLobby();
-      if (session->GetPhase() == Phase::kLobby && lobby.has_value() && reported[session.get()] != lobby->version) {
+      const auto lobby = session->GetServerView()->lobby;
+      if (session->GetServerView()->GetPhase() == Phase::kLobby && lobby.has_value() &&
+          reported[session.get()] != lobby->version) {
         session->ReportReady(lobby->version);
         reported[session.get()] = lobby->version;
       }
@@ -5762,14 +5801,15 @@ TEST_F(LastStandingDuelTest, TheNextMatchStartsOnItsOwnOnceEveryoneIsReadyAgainN
   ASSERT_NE(started, 0U) << "no next match started";
   EXPECT_GE(started - ended, PauseTicks());
   ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
-    return std::ranges::all_of(sessions_, [](const auto& session) { return session->GetPhase() == Phase::kMatch; });
+    return std::ranges::all_of(
+        sessions_, [](const auto& session) { return session->GetServerView()->GetPhase() == Phase::kMatch; });
   }));
   Run(kSettleTicks);
   for (const auto& client : sessions_) {
-    EXPECT_TRUE(client->IsAlive());
-    EXPECT_EQ(client->GetHealth(), 100.0F);
-    EXPECT_EQ(client->GetAuthoritativeState()->rifle.rounds, 30U);
-    EXPECT_FALSE(client->GetMatchEnd().has_value());
+    EXPECT_TRUE(client->GetServerView()->OwnAlive());
+    EXPECT_EQ(OwnHealth(*client->GetServerView()), 100.0F);
+    EXPECT_EQ(client->GetServerView()->authoritative->rifle.rounds, 30U);
+    EXPECT_FALSE(client->GetServerView()->match_end.has_value());
   }
 }
 
@@ -5784,7 +5824,7 @@ TEST_F(LastStandingDuelTest, EveryMatchEndIsLoggedWithItsWinnerItsDurationAndIts
 
   ASSERT_EQ(match_ends_.size(), 1U);
   EXPECT_NE(log.find("event=match_ended reason=\"win condition\" winner=" +
-                     std::to_string(std::to_underlying(*shooter.GetSessionId())) + " ticks="),
+                     std::to_string(std::to_underlying(shooter.GetServerView()->accepted->session)) + " ticks="),
             std::string::npos)
       << log;
 }
@@ -5802,8 +5842,8 @@ TEST_F(LastStandingTrioTest, WhenAllButOnePlayerDisconnectTheOneLeftWins) {
 
   ASSERT_EQ(match_ends_.size(), 1U);
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
-  EXPECT_EQ(survivor.GetPhase(), Phase::kLobby);
-  EXPECT_EQ(survivor.GetMatchEnd()->winner, survivor.GetSessionId());
+  EXPECT_EQ(survivor.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_EQ(survivor.GetServerView()->match_end->winner, AdmittedSession(*survivor.GetServerView()));
 }
 
 // A full Match of eight under the example scenario's Game policy, everyone
@@ -5897,7 +5937,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   ASSERT_EQ(by_rank.size(), kPlayers) << "the players did not spawn at a Spawn point each";
   std::vector<std::uint32_t> entities;
   for (const Session* client : by_rank) {
-    entities.push_back(std::to_underlying(*client->GetEntityId()));
+    entities.push_back(std::to_underlying(*client->GetServerView()->OwnEntity()));
   }
 
   struct Client {
@@ -5910,7 +5950,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   std::vector<Client> clients(kPlayers);
   const auto collect = [&] {
     for (std::size_t rank = 0; rank < kPlayers; ++rank) {
-      for (const Death& death : by_rank[rank]->TakeDeaths()) {
+      for (const Death& death : by_rank[rank]->TakeDeaths(*by_rank[rank]->GetServerView())) {
         clients[rank].victims.push_back(std::to_underlying(death.victim));
       }
     }
@@ -5940,11 +5980,11 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
       command.pitch = its_turn ? at_the_one_in_front : kOverTheirHeads;
       command.fire = true;
       command.reload = tick > 0 && client.rifle.rounds == 0 && client.rifle.reload_remaining <= 0.0F;
-      if (const auto shown = session.GetAuthoritativeState()) {
+      if (const auto shown = session.GetServerView()->authoritative) {
         command.seen_tick = shown->tick;
       }
 
-      if (session.GetPhase() == Phase::kMatch) {
+      if (session.GetServerView()->GetPhase() == Phase::kMatch) {
         ++client.sent;
       }
       client.rifle = session.Tick(command, kFixedTick).rifle;
@@ -5960,7 +6000,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
       EXPECT_EQ(session.GetConnectionState(), ConnectionState::kConnected)
           << "rank " << rank << " dropped at tick " << tick;
 
-      if (const auto authoritative = session.GetAuthoritativeState()) {
+      if (const auto authoritative = session.GetServerView()->authoritative) {
         clients[rank].acknowledged = std::max(clients[rank].acknowledged, authoritative->acknowledged_sequence);
       }
     }
@@ -5974,7 +6014,8 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
 
   ASSERT_TRUE(match_end.has_value()) << "the Match had not ended after " << kTickLimit << " ticks";
   ASSERT_TRUE(match_end->winner.has_value());
-  EXPECT_EQ(std::to_underlying(*match_end->winner), std::to_underlying(*by_rank.back()->GetSessionId()));
+  EXPECT_EQ(std::to_underlying(*match_end->winner),
+            std::to_underlying(by_rank.back()->GetServerView()->accepted->session));
   ASSERT_EQ(deaths.size(), kPlayers - 1);
   std::vector<std::uint32_t> victims;
   for (std::size_t rank = 0; rank + 1 < kPlayers; ++rank) {
@@ -5987,7 +6028,7 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
   ASSERT_TRUE(ExchangeUntil(host_, by_rank, [&] {
     collect();
     return std::ranges::all_of(by_rank, [](const Session* session) {
-      return session->GetPhase() == Phase::kLobby && session->GetMatchEnd().has_value();
+      return session->GetServerView()->GetPhase() == Phase::kLobby && session->GetServerView()->match_end.has_value();
     });
   }));
   for (std::size_t rank = 0; rank < kPlayers; ++rank) {
@@ -5996,7 +6037,8 @@ TEST_F(EightPlayerMatchTest, EightPlayersFightAMatchToItsEndWithAWinnerAndNoMiss
         << "rank " << rank << " fell behind: server acknowledged only " << client.acknowledged << " of " << client.sent
         << " commands";
     EXPECT_EQ(client.victims, victims) << "rank " << rank << " was not told of every Death";
-    EXPECT_EQ(by_rank[rank]->GetMatchEnd()->winner, by_rank.back()->GetSessionId()) << "rank " << rank;
+    EXPECT_EQ(by_rank[rank]->GetServerView()->match_end->winner, AdmittedSession(*by_rank.back()->GetServerView()))
+        << "rank " << rank;
   }
 }
 
@@ -6028,8 +6070,8 @@ TEST_F(SoloLastStandingTest, ALonePlayerPlaysOnUnderTheExampleObjectives) {
 
   Run(2 * kTestTickRate);
 
-  EXPECT_EQ(client.GetPhase(), Phase::kMatch);
-  EXPECT_FALSE(client.GetMatchEnd().has_value());
+  EXPECT_EQ(client.GetServerView()->GetPhase(), Phase::kMatch);
+  EXPECT_FALSE(client.GetServerView()->match_end.has_value());
 }
 
 class SoloDrawTest : public SoloMatchTest {
@@ -6046,12 +6088,12 @@ class SoloDrawTest : public SoloMatchTest {
 // Requirements: US-14
 TEST_F(SoloDrawTest, ASoloMatchEndedAsADrawIsToldToItsPlayerAsADrawAndItIsBackInTheLobby) {
   Session& client = Join();
-  ASSERT_TRUE(StartMatch() || client.GetMatchEnd().has_value());
+  ASSERT_TRUE(StartMatch() || client.GetServerView()->match_end.has_value());
 
-  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return client.GetMatchEnd().has_value(); }));
+  ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] { return client.GetServerView()->match_end.has_value(); }));
 
-  EXPECT_EQ(client.GetPhase(), Phase::kLobby);
-  EXPECT_FALSE(client.GetMatchEnd()->winner.has_value());
+  EXPECT_EQ(client.GetServerView()->GetPhase(), Phase::kLobby);
+  EXPECT_FALSE(client.GetServerView()->match_end->winner.has_value());
 }
 
 // The catalogue's corrected entries (impossible_actions.md): an adversary, a
@@ -6120,8 +6162,9 @@ class AdversaryMatch : public LoopbackMatch {
     }
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       Session& session = *sessions_[i];
-      if (session.GetPhase() == Phase::kMatch && session.IsAlive()) {
-        sending.push_back(static_cast<augusta::host::SessionId>(std::to_underlying(*session.GetSessionId())));
+      if (session.GetServerView()->GetPhase() == Phase::kMatch && session.GetServerView()->OwnAlive()) {
+        sending.push_back(
+            static_cast<augusta::host::SessionId>(std::to_underlying(session.GetServerView()->accepted->session)));
       }
       states_[&session] = session.Tick(honest_commands_.at(i), kFixedTick);
     }
@@ -6134,7 +6177,7 @@ class AdversaryMatch : public LoopbackMatch {
     });
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     Deliver(result.state.tick);
-    const std::vector<Shot> taken = sessions_.front()->TakeShots();
+    const std::vector<Shot> taken = sessions_.front()->TakeShots(*sessions_.front()->GetServerView());
     told_shots_.insert(told_shots_.end(), taken.begin(), taken.end());
     return result;
   }
@@ -6173,7 +6216,7 @@ class AdversaryMatch : public LoopbackMatch {
     const auto told = [&] {
       const auto newest = adversary_.NewestState();
       return newest.has_value() && newest->tick >= tick && std::ranges::all_of(sessions_, [&](const auto& session) {
-               const auto state = session->GetAuthoritativeState();
+               const auto state = session->GetServerView()->authoritative;
                return state.has_value() && state->tick >= tick;
              });
     };
@@ -6218,7 +6261,7 @@ class CorrectedActionTest : public AdversaryMatch {
 
   Session& Honest() { return *sessions_.front(); }
   Command& HonestCommand() { return honest_commands_.front(); }
-  EntityId HonestEntity() { return *Honest().GetEntityId(); }
+  EntityId HonestEntity() { return *Honest().GetServerView()->OwnEntity(); }
 
   // Where the honest player is told entity is.
   Vec3 Seen(EntityId entity) { return PositionSeenBy(Honest(), entity).value(); }
@@ -6405,7 +6448,7 @@ TEST_F(CorrectedActionTest, SprintingWithNoStaminaIsHeldToAWalkUntilItRecoversAb
 // the honest player stands still.
 // Requirements: US-15, NFR-05
 TEST_F(CorrectedActionTest, CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSendersOwnBody) {
-  const auto honest_before = Honest().GetAuthoritativeState();
+  const auto honest_before = Honest().GetServerView()->authoritative;
   ASSERT_TRUE(honest_before.has_value());
   const Vec3 adversary_from = Seen(Adversary());
   const Vec3 honest_from = Seen(HonestEntity());
@@ -6415,7 +6458,7 @@ TEST_F(CorrectedActionTest, CommandsNumberedAsAnotherPlayersMoveAndFireOnlyTheSe
 
   EXPECT_NEAR(Seen(HonestEntity()).x, honest_from.x, kAlike);
   EXPECT_NEAR(Seen(HonestEntity()).z, honest_from.z, kAlike);
-  EXPECT_EQ(Honest().GetAuthoritativeState()->rifle.rounds, kMagazine);
+  EXPECT_EQ(Honest().GetServerView()->authoritative->rifle.rounds, kMagazine);
   EXPECT_TRUE(ShotTicks(HonestEntity()).empty());
   EXPECT_GT(Seen(Adversary()).x - adversary_from.x, 1.0F);
   // A round every kTicksPerRound of the 30 ticks.
@@ -6463,7 +6506,7 @@ class CorrectedAimTest : public AdversaryMatch {
 
   Session& Target() { return *sessions_.front(); }
   Command& TargetCommand() { return honest_commands_.front(); }
-  EntityIdWire TargetWire() { return EntityIdWire{std::to_underlying(*Target().GetEntityId())}; }
+  EntityIdWire TargetWire() { return EntityIdWire{std::to_underlying(*Target().GetServerView()->OwnEntity())}; }
 
   // The Shooter's delay's cap in ticks: 250 ms at 60 Hz.
   static Tick Cap() { return augusta::simulation::HitboxHistoryTicks(kTestTickRate); }
@@ -6536,7 +6579,7 @@ class CorrectedAimTest : public AdversaryMatch {
       EXPECT_EQ(confirmation.part, protocol::BodyPartWire::kLimb);
       EXPECT_EQ(confirmation.damage, kLimbDamage);
     }
-    EXPECT_EQ(Target().GetHealth(), kStartingHealth - (static_cast<float>(rounds) * kLimbDamage));
+    EXPECT_EQ(OwnHealth(*Target().GetServerView()), kStartingHealth - (static_cast<float>(rounds) * kLimbDamage));
   }
 };
 
@@ -6597,12 +6640,13 @@ TEST_F(CorrectedAimTest, ASeenTimeFractionOutsideZeroToOneIsHeldWithinIt) {
 TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
   // The target shoots the adversary twice in the head, from the update it was told last.
   for (int round = 0; round < 2; ++round) {
-    const Vec3 eye = PositionSeenBy(Target(), *Target().GetEntityId()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
+    const Vec3 eye =
+        PositionSeenBy(Target(), *Target().GetServerView()->OwnEntity()).value() + Vec3(0.0F, kEyeHeight, 0.0F);
     const Vec3 head = PositionSeenBy(Target(), Adversary()).value() + Vec3(0.0F, kHeadHeight, 0.0F);
     const View view = ViewFrom(eye, head);
     TargetCommand().yaw = view.yaw;
     TargetCommand().pitch = view.pitch;
-    TargetCommand().seen_tick = Target().GetAuthoritativeState()->tick;
+    TargetCommand().seen_tick = Target().GetServerView()->authoritative->tick;
     TargetCommand().fire = true;
     Play();
     TargetCommand().fire = false;
@@ -6611,10 +6655,10 @@ TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
     }
   }
   ASSERT_EQ(AdversaryTold().health, 0.0F);
-  const std::vector<Death> deaths = Target().TakeDeaths();
+  const std::vector<Death> deaths = Target().TakeDeaths(*Target().GetServerView());
   ASSERT_EQ(deaths.size(), 1U);
   ASSERT_EQ(deaths.front().victim, Adversary());
-  const Vec3 target = PositionSeenBy(Target(), *Target().GetEntityId()).value();
+  const Vec3 target = PositionSeenBy(Target(), *Target().GetServerView()->OwnEntity()).value();
 
   // It walks at the target, turned to face it, sprinting and firing.
   protocol::CommandWire charge = Intent(kFire | kSprint, Vec3(0.0F, 0.0F, 1.0F));
@@ -6624,10 +6668,10 @@ TEST_F(CorrectedAimTest, ADeadPlayersCommandsMoveTurnAndFireNothing) {
   EXPECT_TRUE(ShotTicks(Adversary()).empty());
   EXPECT_TRUE(adversary_.ReceivedOf<protocol::HitConfirmationWire>().empty());
   EXPECT_FALSE(BodySeenBy(Target(), Adversary()).has_value());
-  EXPECT_EQ(Target().GetHealth(), kStartingHealth);
-  EXPECT_TRUE(Target().IsAlive());
-  EXPECT_NEAR(PositionSeenBy(Target(), *Target().GetEntityId())->z, target.z, 0.01F);
-  EXPECT_TRUE(Target().TakeDeaths().empty());
+  EXPECT_EQ(OwnHealth(*Target().GetServerView()), kStartingHealth);
+  EXPECT_TRUE(Target().GetServerView()->OwnAlive());
+  EXPECT_NEAR(PositionSeenBy(Target(), *Target().GetServerView()->OwnEntity())->z, target.z, 0.01F);
+  EXPECT_TRUE(Target().TakeDeaths(*Target().GetServerView()).empty());
 }
 
 // Reported outcomes, structural: no client message carries a hit, a damage, a
@@ -6650,10 +6694,10 @@ TEST_F(CorrectedAimTest, AClientThatClaimsAHitAKillAndAWinHurtsNoOne) {
   EXPECT_TRUE(adversary_.ReceivedOf<protocol::HitConfirmationWire>().empty());
   EXPECT_TRUE(adversary_.ReceivedOf<protocol::DeathWire>().empty());
   EXPECT_TRUE(adversary_.ReceivedOf<protocol::MatchEndWire>().empty());
-  EXPECT_EQ(Target().GetHealth(), kStartingHealth);
-  EXPECT_TRUE(Target().IsAlive());
-  EXPECT_TRUE(Target().TakeDeaths().empty());
-  EXPECT_EQ(Target().GetPhase(), Phase::kMatch);
+  EXPECT_EQ(OwnHealth(*Target().GetServerView()), kStartingHealth);
+  EXPECT_TRUE(Target().GetServerView()->OwnAlive());
+  EXPECT_TRUE(Target().TakeDeaths(*Target().GetServerView()).empty());
+  EXPECT_EQ(Target().GetServerView()->GetPhase(), Phase::kMatch);
 }
 
 // Lobby: Commands from a player in the Lobby are dropped at the server, so its
@@ -6681,7 +6725,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
     adversary.Send(walking);
   }
   RunLobby({&adversary});
-  ASSERT_EQ(honest.GetPhase(), Phase::kLobby);
+  ASSERT_EQ(honest.GetServerView()->GetPhase(), Phase::kLobby);
   adversary.Send(protocol::ReadyWire{.version = *current});
   ASSERT_TRUE(DriveIntoMatch(host_, Pointers(sessions_), &adversary));
   Run(kSettleTicks);
@@ -6697,7 +6741,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
     }
   }
   const protocol::AuthoritativeStateWire told = adversary.NewestState().value();
-  const auto honest_told = honest.GetAuthoritativeState();
+  const auto honest_told = honest.GetServerView()->authoritative;
   ASSERT_TRUE(honest_told.has_value());
   EXPECT_EQ(told.acknowledged_sequence, 0U);
   EXPECT_EQ(told.rifle.rounds, honest_told->rifle.rounds);
@@ -6713,7 +6757,7 @@ TEST_F(CorrectedLobbyTest, CommandsFromAPlayerInTheLobbyAffectNothing) {
   ASSERT_TRUE(seen.has_value());
   EXPECT_NEAR(seen->x, spawn.x, 0.01F);
   EXPECT_NEAR(seen->z, spawn.z, 0.01F);
-  EXPECT_TRUE(honest.TakeShots().empty());
+  EXPECT_TRUE(honest.TakeShots(*honest.GetServerView()).empty());
 
   // Now that it plays, its Commands are taken in from 1.
   protocol::SequencedCommandWire first{.sequence = 1};
@@ -6765,7 +6809,7 @@ TEST_F(HostCountsTest, JoinsAreCountedByResultAndTheSessionsAndTheLobbyByWhoIsIn
   Join();
   Join();
   const Session& third = Connect();
-  ASSERT_EQ(third.GetRefusal(), JoinRefusal::kLobbyFull);
+  ASSERT_EQ(third.GetServerView()->refusal, JoinRefusal::kLobbyFull);
 
   const HostMetrics& metrics = host_.Metrics();
   EXPECT_EQ(metrics.joins_admitted.Value(), 2U);
