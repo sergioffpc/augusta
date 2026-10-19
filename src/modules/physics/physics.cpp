@@ -639,7 +639,9 @@ MapRaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& dire
   }
   const math::Vec3 dir = direction / length;
 
-  // The Map's meshes are the only static actors; every controller's is dynamic.
+  // The query admits static actors only, and the Map's meshes are the only
+  // static actors (AddCollisionMesh), every controller's being dynamic. So
+  // whatever it hits has the Surface id it was added with in surfaces.
   PxRaycastBuffer hit;
   const PxQueryFilterData filter(PxQueryFlag::eSTATIC);
   const bool has_hit = impl_->scene->raycast(ToPx(origin), ToPx(dir), max_distance, hit, PxHitFlag::eDEFAULT, filter);

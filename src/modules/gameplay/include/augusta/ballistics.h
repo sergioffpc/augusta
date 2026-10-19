@@ -144,10 +144,11 @@ class World {
   /// integrates gravity, then tests the tick's movement segment against
   /// map's collision meshes and against hitboxes. The nearest Surface
   /// crossed along the segment is the one struck, so nothing is struck
-  /// through a wall or through another player, and at most one is; with none, a bullet past its max range, or on
-  /// its MaxFlightSteps(delta_time)-th Step, expires. Once this returns a
-  /// non-kInFlight outcome for handle, the bullet no longer exists - calling
-  /// Step again with the same handle is undefined behavior.
+  /// through a wall or through another player, and at most one is; with
+  /// none, a bullet past its max range, or on its MaxFlightSteps(delta_time)-th
+  /// Step, expires. Once this returns a non-kInFlight outcome for handle, the
+  /// bullet no longer exists - calling Step again with the same handle is
+  /// undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
   /// The segment the next Step of handle's bullet by delta_time tests, without

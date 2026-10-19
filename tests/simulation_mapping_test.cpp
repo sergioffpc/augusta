@@ -19,6 +19,7 @@ namespace {
 using augusta::assets::BodyPart;
 using augusta::assets::HitboxData;
 using augusta::host::EntityId;
+using augusta::host::FromBlob;
 using augusta::host::FromSimulation;
 using augusta::host::SessionId;
 using augusta::host::ToSimulation;
@@ -38,10 +39,10 @@ TEST(SimulationMappingTest, MatchAndGamePolicyNameAPlayerByTheSameSession) {
   EXPECT_EQ(std::to_underlying(ToSimulation(SessionId{5})), 5U);
 }
 
-TEST(SimulationMappingTest, EveryBodyPartIsTheSameBodyPartToTheSimulation) {
-  EXPECT_EQ(ToSimulation(BodyPart::kHead), augusta::body_part::BodyPart::kHead);
-  EXPECT_EQ(ToSimulation(BodyPart::kTorso), augusta::body_part::BodyPart::kTorso);
-  EXPECT_EQ(ToSimulation(BodyPart::kLimb), augusta::body_part::BodyPart::kLimb);
+TEST(SimulationMappingTest, EveryBodyPartOfTheBlobIsTheSameBodyPart) {
+  EXPECT_EQ(FromBlob(BodyPart::kHead), augusta::body_part::BodyPart::kHead);
+  EXPECT_EQ(FromBlob(BodyPart::kTorso), augusta::body_part::BodyPart::kTorso);
+  EXPECT_EQ(FromBlob(BodyPart::kLimb), augusta::body_part::BodyPart::kLimb);
 }
 
 TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {

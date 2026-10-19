@@ -35,8 +35,9 @@ namespace augusta::host {
 /// A Game policy player's session as Match named it; the inverse of ToSimulation.
 [[nodiscard]] SessionId FromSimulation(policy::SessionId session);
 
-/// part, in the blob's numbering, as the gameplay Body part SimulationWorld takes.
-[[nodiscard]] body_part::BodyPart ToSimulation(assets::BodyPart part);
+/// part, in the blob's numbering, as the Body part every module names, the way
+/// the link's FromWire takes one off the protocol's wire enum.
+[[nodiscard]] body_part::BodyPart FromBlob(assets::BodyPart part);
 
 /// hitbox, of the character at path, as the triangles a bullet is tested
 /// against. Throws failure::ClassifiedFailure (failure::Code::kInvalidContent),

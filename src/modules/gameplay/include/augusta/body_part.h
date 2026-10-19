@@ -8,11 +8,9 @@
 /// \file
 /// augusta::body_part is the Body part (GLOSSARY.md): where on a player a
 /// Hitbox stands and so where a round struck them (US-11), the one domain enum
-/// every module naming one uses. The simulation decides damage from it,
-/// replication and the link carry it, and the host's logs and metrics and the
-/// harness name it through NameOf. The assets' blob keeps its own numbering,
-/// which the host converts to this one, as the link converts the protocol's
-/// wire enum.
+/// every module naming one uses, from the simulation's damage to the link and
+/// the host's logs and metrics. The assets' blob keeps its own numbering, which
+/// the host converts to this one. ADR-0040 decides the three, one per Hitbox.
 namespace augusta::body_part {
 
 /// The coarse zones REQUIREMENTS.md's "e.g., head, torso, limb" asks for.

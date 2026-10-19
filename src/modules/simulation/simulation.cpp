@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -237,8 +238,10 @@ physics::SurfaceId SurfaceOf(std::size_t posed_hitbox) {
   return static_cast<physics::SurfaceId>(std::to_underlying(kMapSurface) + 1 + posed_hitbox);
 }
 
-// The place in the tick's posed hitboxes of a struck Surface that is not the Map.
+// The place in the tick's posed hitboxes of a struck Surface that is not the
+// Map: the inverse of SurfaceOf.
 std::size_t PosedHitboxOf(physics::SurfaceId surface) {
+  assert(surface != kMapSurface);
   return std::to_underlying(surface) - std::to_underlying(kMapSurface) - 1;
 }
 
@@ -514,6 +517,10 @@ struct World::Impl {
         if (result.surface == kMapSurface) {
           committed.map_impacts.push_back(result.impact_point);
         } else {
+          // Step hands back only an id it was given: kMapSurface, which every
+          // Map mesh is added with, or a SurfaceOf id of this Step's hitboxes,
+          // so any other is a posed hitbox's. at() keeps a broken one from
+          // reading past them.
           const PosedHitbox& hitbox = posed_hitboxes.at(PosedHitboxOf(result.surface));
           player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
                                           .target = hitbox.target,

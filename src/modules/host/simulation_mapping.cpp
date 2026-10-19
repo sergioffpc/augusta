@@ -37,7 +37,7 @@ policy::SessionId ToSimulation(SessionId session) {
 
 SessionId FromSimulation(policy::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
 
-body_part::BodyPart ToSimulation(assets::BodyPart part) {
+body_part::BodyPart FromBlob(assets::BodyPart part) {
   switch (part) {
     case assets::BodyPart::kHead:
       return body_part::BodyPart::kHead;
@@ -57,7 +57,7 @@ simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const
         .context = {{.key = "character", .value = path}},
         .detail = std::format("hitbox rejected: {}", physics::DescribeCollisionMeshError(valid.error()))});
   }
-  simulation::CharacterHitbox result{.part = ToSimulation(hitbox.part), .triangles = {}};
+  simulation::CharacterHitbox result{.part = FromBlob(hitbox.part), .triangles = {}};
   result.triangles.reserve(mesh.indices.size() / 3);
   for (std::size_t i = 0; i < mesh.indices.size(); i += 3) {
     result.triangles.push_back(ballistics::Triangle{.a = mesh.points[mesh.indices[i]],

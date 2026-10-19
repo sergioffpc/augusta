@@ -7,7 +7,9 @@
 Wraps PhysX for collision and movement: player bodies, stance, stamina, raycasts
 against the Map, dynamic bodies, and restoring a body to a given state for
 reconciliation. It builds a map's static collision from a verified pack
-(`augusta/map.h`). PredictionWorld and SimulationWorld use the same World.
+(`augusta/map.h`), keeping the opaque Surface id its caller adds each collision
+mesh with and reporting it from the Map raycast, never interpreting it.
+PredictionWorld and SimulationWorld use the same World.
 
 ## Not its responsibility
 
