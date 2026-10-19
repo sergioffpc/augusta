@@ -187,6 +187,23 @@ TEST_F(ReplayCatalogTest, FindsACaptureByItsListedName) {
   EXPECT_EQ(found->events.back().offset, 12U);
 }
 
+// A name the ANSI code page lacks is listed and found in UTF-8, as the Replay
+// list carries it.
+// Requirements: US-21
+TEST_F(ReplayCatalogTest, ListsAndFindsACaptureNamedOutsideTheCodePage) {
+  const std::filesystem::path wide = std::filesystem::path(u8"中文") += capture::kExtension;
+  std::filesystem::rename(directory_ / Write(), directory_ / wide);
+  const std::u8string utf8 = wide.u8string();
+  const std::string name(utf8.begin(), utf8.end());
+
+  ReplayCatalog catalog(directory_, Terms());
+  const std::vector<ReplayListing> listed = catalog.List();
+
+  ASSERT_EQ(listed.size(), 1U);
+  EXPECT_EQ(listed[0].name, name);
+  EXPECT_TRUE(catalog.Find(name).has_value());
+}
+
 // A name is matched against the directory's listing, never opened as a path
 // (ADR-0051): a capture outside the directory, however named, is no capture
 // of its, and neither is one it lists but does not replay.

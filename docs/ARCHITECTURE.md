@@ -592,6 +592,8 @@ How each piece reaches the node or the player:
   no `io`, `os`, `package`, `require`, or filesystem/ network access — an
   instruction limit per hook call and a memory limit per Lua state, upholding
   "no I/O inside ECS worlds" structurally, not just by convention (ADR-0022).
+  Scripts cannot install finalizers (`__gc`): Lua runs them with debug hooks
+  off, so neither limit would bound one.
 - **Asset packaging & integrity:** runtime assets ship as a single signed pack
   file per target (client/server), never as loose files. Content is hashed with
   BLAKE3 and signed with Ed25519; both the client and server take the pack path

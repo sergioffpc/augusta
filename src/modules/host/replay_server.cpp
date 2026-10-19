@@ -41,6 +41,7 @@
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
 #include "augusta/version.h"
+#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -65,7 +66,7 @@ std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   std::error_code error;
   if (!std::filesystem::is_directory(directory, error)) {
     throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                                      .context = {{.key = "directory", .value = directory.string()}},
+                                                      .context = {{.key = "directory", .value = Utf8(directory)}},
                                                       .detail = "the replay captures directory is not a directory"});
   }
   return directory;
@@ -146,7 +147,7 @@ struct ReplayServer::Impl {
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
         network(ListenOnceTheMapBuilds(config.listen), config.faults) {
-    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", config.captures.string(),
+    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
              max_viewers);
   }
 

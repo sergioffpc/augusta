@@ -391,6 +391,16 @@ TEST(ParametersLoaderSandboxTest, AScriptCannotCatchTheInstructionLimitAndRunOn)
   }
 }
 
+// Lua runs a finalizer outside the instruction limit, so the sandbox refuses a
+// metatable that holds __gc.
+TEST(ParametersLoaderSandboxTest, AScriptThatSetsAFinalizerIsAScriptError) {
+  const auto loaded = Load("setmetatable({}, {__gc = function() end})\n" + std::string(kValid));
+
+  ASSERT_FALSE(loaded.has_value());
+  EXPECT_EQ(loaded.error().code, ParametersLoadErrorCode::kScriptError);
+  EXPECT_NE(loaded.error().subject.find("__gc"), std::string::npos) << loaded.error().subject;
+}
+
 // Requirements: US-22
 TEST(ParametersLoaderSandboxTest, AScriptThatDoesRealWorkWithinTheLimitStillLoads) {
   const auto loaded = Load(
