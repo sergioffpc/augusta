@@ -10,8 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/failure_latch.h"
 #include "augusta/faults.h"
-#include "augusta/first_failure.h"
 
 // The shared error model (ADR-0033): a stable code classifies a failure into
 // the scope it is recovered at, whatever its dependency said; a controlled
@@ -24,8 +24,8 @@ using augusta::failure::DescribeFailure;
 using augusta::failure::Disposition;
 using augusta::failure::DispositionOf;
 using augusta::failure::Failure;
+using augusta::failure::FailureLatch;
 using augusta::failure::Faults;
-using augusta::failure::FirstFailure;
 using augusta::failure::Guard;
 using augusta::failure::InjectedFault;
 using augusta::failure::Site;
@@ -133,28 +133,28 @@ TEST(FailureTest, GuardTurnsSomethingThrownThatIsNotAnExceptionIntoTheFailure) {
   EXPECT_EQ(result.error().detail, "unknown exception");
 }
 
-TEST(FirstFailureTest, OnlyTheFirstFailureIsKeptAndTakenOnce) {
-  FirstFailure first;
-  first.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
-  first.Record(Failure{.code = Code::kInvariantViolated, .context = {}, .detail = {}});
+TEST(FailureLatchTest, OnlyTheFirstFailureIsKeptAndTakenOnce) {
+  FailureLatch latch;
+  latch.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
+  latch.Record(Failure{.code = Code::kInvariantViolated, .context = {}, .detail = {}});
 
-  const std::optional<Failure> taken = first.Take();
+  const std::optional<Failure> taken = latch.Take();
 
   ASSERT_TRUE(taken.has_value());
   EXPECT_EQ(taken->code, Code::kTransportSendFailed);
-  EXPECT_FALSE(first.Take().has_value());
+  EXPECT_FALSE(latch.Take().has_value());
 }
 
 // What keeps it goes on knowing it has failed after a worker took the failure.
-TEST(FirstFailureTest, AFailureStaysRecordedAfterItIsTaken) {
-  FirstFailure first;
-  EXPECT_FALSE(first.Recorded());
+TEST(FailureLatchTest, AFailureStaysRecordedAfterItIsTaken) {
+  FailureLatch latch;
+  EXPECT_FALSE(latch.Recorded());
 
-  first.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
-  EXPECT_TRUE(first.Recorded());
-  static_cast<void>(first.Take());
+  latch.Record(Failure{.code = Code::kTransportSendFailed, .context = {}, .detail = {}});
+  EXPECT_TRUE(latch.Recorded());
+  static_cast<void>(latch.Take());
 
-  EXPECT_TRUE(first.Recorded());
+  EXPECT_TRUE(latch.Recorded());
 }
 
 TEST(FaultsTest, AnUnarmedSiteNeverTrips) {

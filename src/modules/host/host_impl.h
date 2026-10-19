@@ -19,7 +19,7 @@
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host.h"
 #include "augusta/host_log.h"
@@ -90,10 +90,10 @@ struct Host::Impl {
   // The server's end of the Link: thread-safe by its contract, used from both threads.
   link::Server network;
   // The first local transport failure either thread met, until a worker takes it.
-  failure::FirstFailure transport_failure;
+  failure::FailureLatch transport_failure;
   // The first outbound message or record either thread could not encode: a
   // broken invariant, never sent, until a worker takes it (ADR-0033).
-  failure::FirstFailure invariant_failure;
+  failure::FailureLatch invariant_failure;
 
   // Guards everything below: written by the Network I/O thread as clients
   // join, leave and send commands, and by the Simulation thread as matches

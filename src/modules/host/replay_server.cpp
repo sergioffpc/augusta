@@ -20,7 +20,7 @@
 #include "augusta/connection_sample.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
-#include "augusta/first_failure.h"
+#include "augusta/failure_latch.h"
 #include "augusta/heartbeat.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
@@ -121,8 +121,8 @@ struct ReplayServer::Impl {
   ReplayCatalog catalog;
 
   link::Server network;
-  failure::FirstFailure transport_failure;
-  failure::FirstFailure invariant_failure;
+  failure::FailureLatch transport_failure;
+  failure::FailureLatch invariant_failure;
 
   // Guards everything below: the Network I/O thread adds viewers, and both
   // threads take them out.
