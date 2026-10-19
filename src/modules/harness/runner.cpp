@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -72,8 +73,9 @@ supervisor::WorkerResult SessionResult(Session& session) {
 // How long the next Tick lasts: the server's tick, paced by how many of the
 // client's commands the server last said it held (tick.h).
 tick::Clock::duration NextTickDuration(const Session& session, tick::Clock::duration nominal) {
-  const std::optional<AuthoritativeState> state = session.GetAuthoritativeState();
-  return state.has_value() ? tick::PacedTickDuration(nominal, state->queued_commands) : nominal;
+  const std::shared_ptr<const ServerView> view = session.GetServerView();
+  return view->authoritative.has_value() ? tick::PacedTickDuration(nominal, view->authoritative->queued_commands)
+                                         : nominal;
 }
 
 }  // namespace
@@ -91,8 +93,8 @@ std::optional<failure::Failure> Runner::Failure() const { return workers_.Failur
 std::optional<float> Runner::WaitForTickRate() {
   constexpr auto kPollInterval = std::chrono::milliseconds(10);
   while (!workers_.StopRequested()) {
-    if (const auto rate = session_.GetTickRate()) {
-      return rate;
+    if (const std::shared_ptr<const ServerView> view = session_.GetServerView(); view->accepted.has_value()) {
+      return view->accepted->tick_rate_hz;
     }
     std::this_thread::sleep_for(kPollInterval);
   }

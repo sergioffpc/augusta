@@ -190,9 +190,12 @@ enum class JoinRefusal : std::uint8_t {
 struct Admission {
   /// The session the server assigned to the client.
   SessionId session{};
-  /// The rate, in Hz, at which the server ticks and the client must.
+  /// The rate, in Hz, at which the server ticks and the client must: the
+  /// server's startup setting, fixed for the life of its process. The client
+  /// has no rate of its own.
   std::uint8_t tick_rate_hz = 0;
-  /// The parameters the client must predict with.
+  /// The parameters the client must predict with, for the whole run; it has
+  /// none of its own.
   parameters::Parameters parameters{};
   /// The client's own character (see RosterEntry::character).
   std::string character;
