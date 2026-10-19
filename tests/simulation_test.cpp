@@ -1324,6 +1324,30 @@ TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
   EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
 }
 
+// A round aimed a metre beside Bob passes near enough for his and Carol's
+// Hitboxes to be posed for the Step it strikes a wall in, just short of them:
+// the Map it strikes is never read as one of those Hitboxes.
+// Requirements: US-10, US-11
+TEST_F(HitTest, ARoundStrikingTheMapWhileHitboxesArePosedForItsStepHitsNoOne) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, Vec3(1.0F, 0.5F, -10.5F), Target());
+  Wait(kSettleTicks);
+  constexpr float kWallZ = -9.0F;
+  ASSERT_TRUE(world_
+                  .AddCollisionMesh(CollisionMesh{.points = {Vec3(-20.0F, 0.0F, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
+                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, 0.0F, kWallZ)},
+                                                  .indices = {0, 1, 2, 0, 2, 3}})
+                  .has_value());
+
+  const State state = Tick(FiringAt(Vec3(1.0F, kTorsoHeight, 0.0F)));
+
+  EXPECT_TRUE(state.hits.empty());
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  EXPECT_NEAR(state.map_impacts[0].z, kWallZ, 0.01F);
+  EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
+  EXPECT_EQ(Entity(state, kCarol).health, kStartingHealth);
+}
+
 // Alice and Bob fire at each other on one tick, from the same Seen time: each
 // round is judged against the other, never against its own shooter.
 // Requirements: US-11

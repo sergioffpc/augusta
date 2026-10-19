@@ -99,7 +99,7 @@ TEST_F(TracersTest, BetweenTwoTicksATracerIsPartWayAlongTheTicksPath) {
 TEST_F(TracersTest, ATracerThatMeetsTheMapEndsInAnImpactWhereItStruck) {
   ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F), augusta::physics::SurfaceId{1}).has_value());
   const std::vector<StepResult> trajectory = Trajectory(map_);
-  ASSERT_EQ(trajectory.back().outcome, Outcome::kHitMap);
+  ASSERT_EQ(trajectory.back().outcome, Outcome::kStruck);
   Tracers tracers(map_);
   tracers.Fire(kEye, kAim, kRules);
 

@@ -119,7 +119,8 @@ struct Bullet {
 };
 
 // One hitbox of one player, where a bullet judges that player to be: its
-// triangles are count of the posed triangles, from first.
+// triangles are count of the posed triangles, from first. Ballistics knows it
+// only as a Surface (see SurfaceOf); this is what a strike on it means.
 struct PosedHitbox {
   EntityId target{};
   body_part::BodyPart part = body_part::BodyPart::kTorso;
@@ -230,10 +231,16 @@ float DamageFor(const parameters::Damage& damage, body_part::BodyPart part) {
   std::unreachable();
 }
 
-// Ballistics names the player a hitbox belongs to by the body's own number.
-ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::TargetId>(std::to_underlying(entity)); }
+// A posed hitbox's Surface id: its place in the tick's posed hitboxes, counted
+// from one past kMapSurface, so no posed hitbox ever shares the Map's id.
+physics::SurfaceId SurfaceOf(std::size_t posed_hitbox) {
+  return static_cast<physics::SurfaceId>(std::to_underlying(kMapSurface) + 1 + posed_hitbox);
+}
 
-EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
+// The place in the tick's posed hitboxes of a struck Surface that is not the Map.
+std::size_t PosedHitboxOf(physics::SurfaceId surface) {
+  return std::to_underlying(surface) - std::to_underlying(kMapSurface) - 1;
+}
 
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
@@ -485,9 +492,9 @@ struct World::Impl {
     bullet_hitboxes.clear();
     const std::span<const ballistics::Triangle> triangles(posed_triangles);
     for (const Posing& posing : bullet_posings) {
-      for (const PosedHitbox& hitbox : std::span(posed_hitboxes).subspan(posing.first, posing.count)) {
-        bullet_hitboxes.push_back(ballistics::Hitbox{.target = ToTarget(hitbox.target),
-                                                     .part = hitbox.part,
+      for (std::size_t index = posing.first; index < posing.first + posing.count; ++index) {
+        const PosedHitbox& hitbox = posed_hitboxes[index];
+        bullet_hitboxes.push_back(ballistics::Hitbox{.surface = SurfaceOf(index),
                                                      .triangles = triangles.subspan(hitbox.first, hitbox.count)});
       }
     }
@@ -503,15 +510,17 @@ struct World::Impl {
       case ballistics::Outcome::kInFlight:
         ++committed.bullets_in_flight;
         return;
-      case ballistics::Outcome::kHitMap:
-        committed.map_impacts.push_back(result.impact_point);
-        break;
-      case ballistics::Outcome::kHitPlayer:
-        player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
-                                        .target = FromTarget(result.target),
-                                        .yaw = bullet.yaw,
-                                        .pitch = bullet.pitch,
-                                        .part = result.part});
+      case ballistics::Outcome::kStruck:
+        if (result.surface == kMapSurface) {
+          committed.map_impacts.push_back(result.impact_point);
+        } else {
+          const PosedHitbox& hitbox = posed_hitboxes.at(PosedHitboxOf(result.surface));
+          player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
+                                          .target = hitbox.target,
+                                          .yaw = bullet.yaw,
+                                          .pitch = bullet.pitch,
+                                          .part = hitbox.part});
+        }
         break;
       case ballistics::Outcome::kExpired:
         break;
