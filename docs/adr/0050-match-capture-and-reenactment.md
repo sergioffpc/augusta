@@ -174,12 +174,13 @@ request at its spawn, and asks `assign_spawns` only for the others. The Join
 request is untouched: a person's client never names a spawn.
 
 **augustad takes Reenact requests only when asked.** A spawn a client names is
-taken on trust, so `simulation.reenactments` in `augustad.yaml` (ADR-0034), off
-by default, turns them on; with it off, a Reenact request is refused with a new
+taken on trust, so `debug.reenactments` in `augustad.yaml` (ADR-0034), off by
+default, turns them on; with it off, a Reenact request is refused with a new
 Join refused reason, _reenactments not accepted_, before any of the Join
 request's checks: whether it may name a spawn at all comes before its version,
-pack or Character. It is a debugging setting, never on for a server open to
-players, as capturing is.
+pack or Character. It is a debug tool, never on for a server open to players, as
+capturing is: a Shipping build has no such key and refuses every Reenact request
+with the same reason (ADR-0074).
 
 A Reenactment need not have every player captured: the other places can be
 anyone's, a person's included, joining with a Join request as always.

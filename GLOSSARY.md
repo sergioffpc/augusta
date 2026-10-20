@@ -419,6 +419,15 @@ render mode
 part of the game, such as the network or the physics. _Avoid_: Debug menu,
 inspector, debug HUD (text lines only)
 
+**Development build**: A build of the game with its debug tools in, whatever its
+optimisation: what developers run, and what the `develop` Environment serves.
+_Avoid_: Debug build (one kind of Development build, unoptimised)
+
+**Shipping build**: The build of the game players get, with every debug tool
+left out of it, not merely switched off: what a release publishes and what the
+`staging` Environment serves. _Avoid_: Release build (Release is also how a
+Development build is optimised), ship build, retail build
+
 ### Combat
 
 **Hitbox**: A volume of a player's body that stands for one body part (head,
