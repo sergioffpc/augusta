@@ -33,7 +33,9 @@
   @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
     padding: 14px 16px; margin-bottom: 16px; }
-  #mapWrap { width: 100%; display: flex; justify-content: center; }
+  #mapWrap, #sideWrap { width: 100%; display: flex; justify-content: center; }
+  canvas#side { display: block; max-width: 100%; border-radius: 6px; }
+  .sideHead { color: var(--muted); font-size: 12px; margin: 10px 0 4px; }
   canvas#map { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
   button { font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
@@ -90,6 +92,7 @@
     <ul class="assume">
       <li>The Map is a 72.5 m × 43 m test Map: a yard 8 m high beside a building of six rooms, 3 m high, either side of a corridor; a grenade bursts 0.25 m above the floor. The grid is 3D; the map is seen from above.</li>
       <li>Clearing: voxels start thinning one after another, evenly spread over rank, the last reached first; each thins over the ramp time, so the first reached is gone exactly at growing + holding + clearing.</li>
+      <li>Rise is an experiment, not in the spec: a step up costs that percentage less and a step down that percentage more, so the cloud rises and fills ceilings first.</li>
       <li>The volume curve's <em>N</em> is the cloud's target voxel count (volume ÷ 0.125 m³) by default; a cloud stopped short by its reach then fills on the curve's early, fast part. Switch it under Parameters to the voxels actually in the plan.</li>
       <li>The source is the free voxel nearest the burst point within 4 voxels (2 m) on each axis, ties to the lower index.</li>
       <li>The seed comes from the burst point and the time it burst; the Smoke screen voxel bound is a stand-in of 16 384 voxels (2 048 m³).</li>
@@ -112,6 +115,8 @@
           </select>
         </div>
         <div id="mapWrap"><canvas id="map"></canvas></div>
+        <div class="sideHead" id="sideHead"></div>
+        <div id="sideWrap"><canvas id="side"></canvas></div>
         <div class="row">
           <span>Show:</span>
           <label class="radio"><input type="radio" name="view" value="smoke" checked> Smoke, all heights</label>
@@ -234,11 +239,15 @@ const SmokeFill = (() => {
   }
 
   // Plans a Smoke screen: which voxels, in which order, reached and cleared when.
-  // s: { volumeM3, growMs, holdMs, clearMs, frontMmPerS, reachMm, rampMs, curveOver, steps }.
+  // s: { volumeM3, growMs, holdMs, clearMs, frontMmPerS, reachMm, rampMs, curveOver, steps, risePct }.
+  // risePct makes a step up that much cheaper and a step down that much dearer, so the
+  // cloud rises; costs are kept ×10 so the percentage stays an integer change.
   function plan(g, burst, seed, s) {
     const source = findSource(g, burst);
     if (source < 0) return null;
-    const unit = NEIGHBOURHOODS[s.steps].unit, steps = STEPS[s.steps];
+    const unit = NEIGHBOURHOODS[s.steps].unit * 10;
+    const steps = STEPS[s.steps].map(st => ({ ...st, cost: Math.max(1, Math.floor(st.cost * 10 *
+      (100 + (st.d[2] > 0 ? -s.risePct : st.d[2] < 0 ? s.risePct : 0)) / 100)) }));
     const reachLen = Math.floor(s.reachMm * unit / VOXEL_MM);
     const dist = new Int32Array(g.w * g.d * g.h).fill(-1);
     const buckets = Array.from({ length: reachLen + 1 }, () => []);
@@ -381,7 +390,7 @@ for (const [x0, x1, y0, y1] of DOORS) carve(x0, x1, y0, y1, 0, 4);
 for (let x = 56; x < 59; x++) breakable[x + W * 45] = 1;    // Room 3's door is closed
 
 const DEFAULTS = { volumeM3: 500, growMs: 6000, holdMs: 40000, clearMs: 10000,
-  frontMmPerS: 4000, reachMm: 20000, rampMs: 1000, curveOver: 'target', steps: '345' };
+  frontMmPerS: 4000, reachMm: 20000, rampMs: 1000, curveOver: 'target', steps: '5x5x5', risePct: 0 };
 const T_MAX = 80000;
 
 const state = {
@@ -522,6 +531,32 @@ function fitCanvas() {
   canvas.width = W * cell; canvas.height = D * cell;
   canvas.style.width = (W * cell / dpr) + 'px'; canvas.style.height = (D * cell / dpr) + 'px';
   ctx.imageSmoothingEnabled = false;
+  side.width = W * cell; side.height = H * cell * SIDE_STRETCH;
+  side.style.width = (W * cell / dpr) + 'px'; side.style.height = (H * cell * SIDE_STRETCH / dpr) + 'px';
+}
+
+// A vertical section through the last burst, west to east, drawn twice as tall as it is.
+const side = document.getElementById('side');
+const sctx = side.getContext('2d');
+const SIDE_STRETCH = 2;
+function drawSide() {
+  const last = [...state.bursts].reverse().find(b => b.plan);
+  const row = last ? SmokeFill.coords(grid, last.plan.source)[1] : Math.floor(D / 4);
+  document.getElementById('sideHead').textContent =
+    `Side view, west to east, ${(row * 0.5).toFixed(1)} m from the north edge` +
+    `${last ? ', through smoke grenade ' + last.id : ''} (height drawn twice as tall)`;
+  const cw = cell, ch = cell * SIDE_STRETCH;
+  for (let z = 0; z < H; z++)
+    for (let x = 0; x < W; x++) {
+      const i = vi(x, row, z), top = (H - 1 - z) * ch;
+      const c = grid.free[i] ? (breakable[x + W * row] && z < 4 ? COLORS.door : COLORS.yard) : COLORS.solid;
+      sctx.fillStyle = `rgb(${c.join(',')})`;
+      sctx.fillRect(x * cw, top, cw, ch);
+      if (dens[i]) {
+        sctx.fillStyle = `rgba(72, 82, 98, ${(dens[i] / 255 * 0.9).toFixed(3)})`;
+        sctx.fillRect(x * cw, top, cw, ch);
+      }
+    }
 }
 
 const COLORS = {
@@ -617,6 +652,7 @@ function draw() {
     ctx.strokeStyle = '#2b67d1'; ctx.lineWidth = 2 * dpr;
     ctx.strokeRect(state.hover.x * cell, state.hover.y * cell, cell, cell);
   }
+  drawSide();
 }
 
 // ---- State panels -------------------------------------------------------------
@@ -769,6 +805,7 @@ const PARAMS = [
   { key: 'frontMmPerS', label: 'Front speed (m/s)', step: 0.5, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
   { key: 'reachMm', label: 'Reach (m)', step: 1, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
   { key: 'rampMs', label: 'Ramp (s)', step: 0.25, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'risePct', label: 'Rise (%)', step: 10, toUi: v => v, fromUi: v => Math.max(0, Math.min(90, Math.round(v))) },
 ];
 {
   const box = document.getElementById('params');
@@ -786,7 +823,7 @@ const PARAMS = [
   l.querySelector('select').addEventListener('change', e => { api.set('curveOver', e.target.value); render(); });
   const n = document.createElement('label');
   n.innerHTML = `<span>Steps</span><select id="p-steps">
-    <option value="345">3×3×3, costs 3-4-5 (spec)</option><option value="5x5x5">5×5×5, rounder</option></select>`;
+    <option value="5x5x5">5×5×5, costs 7-10-12-16-17-21</option><option value="345">3×3×3, costs 3-4-5 (spiky)</option></select>`;
   box.appendChild(n);
   PARAMS.push({ key: 'steps', toUi: v => v });
   n.querySelector('select').addEventListener('change', e => { api.set('steps', e.target.value); render(); });
@@ -850,14 +887,14 @@ const SCENARIOS = [
   {
     title: 'In the open',
     text: 'A smoke grenade bursts in the middle of the yard.',
-    watch: 'The cloud should be round from the start, not a diamond or a square, and give most of its cover in the first second or two, then grow slower. With the 3-4-5 steps from the spec it is an octagon at floor height, but seen from above, the layers higher up stick out in spikes. Switch to the 5×5×5 steps to compare.',
+    watch: 'The cloud should be round from the start, not a diamond or a square, and give most of its cover in the first second or two, then grow slower. With the 5×5×5 steps it is round within about 4%. Switch to the old 3-4-5 steps to see the spiky star they grow.',
     steps: [
       ['Throw in the yard', () => api.throwAt(...OPEN)],
       ['0.5 s', () => api.time(0.5)], ['1.5 s', () => api.time(1.5)],
       ['3 s', () => api.time(3)], ['7 s', () => api.time(7)],
       ['When it arrives', () => api.view('arrival')],
       ['Smoke, all heights', () => api.view('smoke')],
-      ['Rounder 5×5×5 steps', () => api.set('steps', '5x5x5')],
+      ['Old 3-4-5 steps', () => api.set('steps', '345')],
       ['When it arrives', () => api.view('arrival')],
     ],
   },
@@ -910,6 +947,19 @@ const SCENARIOS = [
     steps: [
       ['Throw on the wall', () => api.throwAt(37.6, 30.2)],
       ['5 s', () => api.time(5)],
+    ],
+  },
+  {
+    title: 'Rising smoke',
+    text: 'An experiment, not in the spec: with Rise above zero a step up is cheaper than a step down, so the cloud climbs before it spreads. One grenade in the yard, one in Room 4.',
+    watch: 'In the side view, the yard cloud should grow taller and narrower, and the cloud in Room 4 should fill the ceiling first and come down to the floor last. Compare with Rise 0.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['Throw in Room 4', () => api.throwAt(46.2, 32.2)],
+      ['2 s, no rise', () => api.time(2)],
+      ['Rise 40%', () => api.set('risePct', 40)],
+      ['Rise 70%', () => api.set('risePct', 70)],
+      ['7 s', () => api.time(7)],
     ],
   },
   {
