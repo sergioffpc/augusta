@@ -34,12 +34,22 @@ fuzz or coverage presets.
 **Switched on at runtime.** In a Development build, a `debug` section in each
 executable's config file (ADR-0034) says which tools start on. Its keys exist
 only in a Development build, so a Shipping build fails a config that has them as
-it fails any unknown key, rather than ignoring them. How a developer opens and
-closes a tool while the game runs (keys, a menu, a console) is decided with the
-tools themselves. The server's reenactments setting is one of these keys,
-`debug.reenactments` (ADR-0050), and so is each stream of the server's state a
-client's Debug overlay can subscribe to, such as `debug.shot_judgements`
-(ADR-0038).
+it fails any unknown key, rather than ignoring them. The section is the one list
+of the tools an executable carries: one key per tool, each Debug overlay and
+each Debug panel its own key (such as `debug.physics.collision` and
+`debug.physics.panel`), the Debug HUD's `debug.hud` on by default. The server's
+reenactments setting is one of these keys, `debug.reenactments` (ADR-0050), and
+so is each stream of the server's state a client's Debug overlay can subscribe
+to, such as `debug.shot_judgements` (ADR-0038).
+
+**Opened and closed in the client, never in the server.** A developer opens and
+closes a client's tools while the game runs through the Debug index, the Debug
+panel F1 opens (ADR-0075); there is no console and no key per tool. F1 is
+reserved in every build, Shipping included, so the `keys` section refuses a
+control bound to it and one config loads in both kinds of build. What the
+developer switches at runtime lasts until the client exits: nothing writes back
+to the config file. The server reads its `debug` section at startup only; it has
+no runtime control, and a change is a config edit and a restart.
 
 **The two kinds never meet.** A Development build's engine version ends in
 `+dev`, so a Development client never joins a Shipping server, nor a Shipping

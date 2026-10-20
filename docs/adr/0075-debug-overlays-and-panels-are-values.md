@@ -47,6 +47,31 @@ the area that built the panel, whose panel is a pure function of its state and
 whose update is a pure function of its state and the event. A change to state
 another thread owns travels by the way that thread already takes orders.
 
+**Shown, or in Debug interaction.** A Debug panel that is on is shown over the
+frame but takes no input: the cursor stays captured and the game plays on. F1
+enters Debug interaction, from a captured or a released cursor: the cursor is
+released, the Debug panels take the mouse and keyboard, the Debug index shows,
+and the game gets nothing. F1 leaves it for the state it was entered from;
+Escape leaves it with the cursor released, as Escape does in the game, and does
+nothing else. Debug overlays never take input. Which state the client is in is a
+small pure state in `augusta_debug`, driven by F1 and Escape; the client Runtime
+only routes by it. In Debug interaction it hands the window's events to the
+Renderer's ImGui rather than to `input::Input`, which drops whatever was held so
+no key stays pressed; out of it ImGui is told to ignore mouse and keyboard,
+since its GLFW binding hears the Window too. The cursor is locked only while
+`Input` captures it and the client is out of Debug interaction. `Input` knows
+nothing of debug tools.
+
+**The Debug index.** One Debug panel, built in `augusta_debug` from the entries
+the client Runtime passes it (a name and whether it is on), lists the Debug HUD
+and each area's Debug panel; an area's Debug overlays are switched inside that
+area's panel and stay drawn once it is closed. The index lists only the tools
+the client's mode can feed, so a Replay viewer's has no Debug overlays until
+they are drawn there. Turning on an overlay fed by a stream of the server's
+state subscribes to that stream (ADR-0038), and turning it off unsubscribes;
+when the server's config does not allow the stream, the area's panel says so.
+Panels open at fixed default positions, never remembered between runs.
+
 **Beside the Debug HUD and Debug views.** The three stay apart: the Debug HUD
 remains `augusta_hud`'s text lines, Debug views still replace the frame inside
 the Renderer (ADR-0067), and Debug overlays draw over whichever frame shows.
@@ -66,6 +91,12 @@ own business.
 - **Each area writing Dear ImGui in a callback**: the most flexible panels, but
   ImGui and the Main/Render thread in every module, and panels testable only by
   drawing them.
+- **A key per tool**: one press to any tool, but more tools than free function
+  keys, and nothing that says which key does what.
+- **A console**: every tool and setting by name, but text input, a parser and a
+  character callback the Window does not have, for what toggles already do.
+- **Panels that always take input when shown**: one state fewer, but a developer
+  could not play with the network panel in view.
 - **The building code in `augusta_debug`, or in the client Runtime**: the first
   makes the vocabulary module depend on every area, and the second puts reusable
   logic in an executable, which is glue.
@@ -76,5 +107,8 @@ own business.
   pure functions of its state.
 - The Renderer's interface grows a call for the frame's shapes and one for its
   panels, and `RenderFrame` returns the panels' events.
-- How a developer opens and closes a Debug panel or overlay while the game runs,
-  and how the server's state reaches one, are decided apart.
+- How the server's state reaches a Debug overlay is decided apart (ADR-0038,
+  ADR-0044).
+- `input::Input` grows a way to drop the keys and buttons held, and the client
+  Runtime's frame loop routes the window's events by the Debug interaction
+  state.

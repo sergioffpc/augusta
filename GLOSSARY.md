@@ -419,6 +419,12 @@ render mode
 part of the game, such as the network or the physics. _Avoid_: Debug menu,
 inspector, debug HUD (text lines only)
 
+**Debug index**: The Debug panel listing the debug tools a client carries, each
+switched on or off from it. _Avoid_: Debug menu, console
+
+**Debug interaction**: The state in which the Debug panels take the mouse and
+keyboard and the game gets neither. _Avoid_: Debug mode, edit mode
+
 **Development build**: A build of the game with its debug tools in, whatever its
 optimisation: what developers run, and what the `develop` Environment serves.
 _Avoid_: Debug build (one kind of Development build, unoptimised)
