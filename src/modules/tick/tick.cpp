@@ -30,7 +30,8 @@ Timing Measure(Clock::time_point deadline, Clock::duration tick_duration, Clock:
 
 Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_commands) {
   const float off_target = static_cast<float>(queued_commands) - kTargetQueuedCommands;
-  const float pacing = std::clamp(off_target * kPacingPerCommand, -kMaxPacing, kMaxPacing);
+  const float max_lengthening = queued_commands > kBacklogCommands ? kMaxBacklogPacing : kMaxPacing;
+  const float pacing = std::clamp(off_target * kPacingPerCommand, -kMaxPacing, max_lengthening);
   return std::chrono::duration_cast<Clock::duration>(nominal * (1.0 + pacing));
 }
 

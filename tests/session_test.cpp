@@ -6547,7 +6547,7 @@ class CorrectedAimTest : public AdversaryMatch {
   Command& TargetCommand() { return honest_commands_.front(); }
   EntityIdWire TargetWire() { return EntityIdWire{std::to_underlying(*Target().GetServerView()->OwnEntity())}; }
 
-  // The Shooter's delay's cap in ticks: 250 ms at 60 Hz.
+  // The Shooter's delay's cap in ticks: 300 ms at 60 Hz.
   static Tick Cap() { return augusta::simulation::HitboxHistoryTicks(kTestTickRate); }
 
   // Where the update of tick the adversary was told of put entity's feet.
@@ -7067,8 +7067,7 @@ TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapA
   EXPECT_EQ(metrics.shots.Value(), 1U);
   const auto delays = metrics.shooters_delay.Read();
   EXPECT_EQ(delays.cumulative_counts.back(), 1U);
-  EXPECT_FLOAT_EQ(static_cast<float>(delays.sum),
-                  std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+  EXPECT_FLOAT_EQ(static_cast<float>(delays.sum), 0.3F);
   EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
 }
 

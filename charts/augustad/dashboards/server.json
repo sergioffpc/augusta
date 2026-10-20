@@ -2071,7 +2071,7 @@
     {
       "type": "timeseries",
       "title": "Shooter's delay",
-      "description": "Quantiles of each round fired's Shooter's delay, capped at 250 ms (ADR-0044).",
+      "description": "Quantiles of each round fired's Shooter's delay, capped at 300 ms (ADR-0044).",
       "targets": [
         {
           "datasource": {
@@ -2175,7 +2175,7 @@
     {
       "type": "timeseries",
       "title": "Shooter's delay capped",
-      "description": "Share of rounds fired whose Shooter's delay was held at the 250 ms cap.",
+      "description": "Share of rounds fired whose Shooter's delay was held at the 300 ms cap.",
       "targets": [
         {
           "datasource": {
