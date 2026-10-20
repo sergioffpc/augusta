@@ -79,11 +79,16 @@ add() {
     || git -C "${vcpkg}" fetch origin "${sha}"
   rmdir "${wt}/third_party/vcpkg"
   git -C "${vcpkg}" worktree add --detach "${wt}/third_party/vcpkg" "${sha}"
-  for tool in vcpkg.exe vcpkg; do
-    if [[ -f "${vcpkg}/${tool}" ]]; then
-      cp "${vcpkg}/${tool}" "${wt}/third_party/vcpkg/"
-    fi
-  done
+  # Only this platform's tool: a main checkout also built elsewhere (WSL, the
+  # dev container) holds both, and Git Bash's cp writes vcpkg onto a vcpkg.exe
+  # already there, leaving a Linux binary in its place.
+  tool=vcpkg
+  if on_windows; then
+    tool=vcpkg.exe
+  fi
+  if [[ -f "${vcpkg}/${tool}" ]]; then
+    cp "${vcpkg}/${tool}" "${wt}/third_party/vcpkg/"
+  fi
 
   echo "worktree: ${wt} on ${branch}"
 }
