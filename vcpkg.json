@@ -44,12 +44,7 @@
             }
           ]
         },
-        {
-          "name": "imgui",
-          "features": [
-            "glfw-binding"
-          ]
-        },
+        "imgui",
         "miniaudio",
         "nvrhi",
         {

@@ -47,25 +47,29 @@ between backends would double what has to be tested, for no gain to a player.
   the loader finds none. The smoke test requires it, and fails to start without
   it. An error the layer reports is thrown by the Renderer call it happened in,
   so API misuse fails where it is found.
-- **Window and input.** GLFW, in the window module (`augusta_window`): the OS
-  window and its device events, knowing no GPU API and no input. The Renderer
-  creates its window and owns it; its `glfwCreateWindowSurface` makes the Vulkan
-  surface, the one thing that differs between the platforms. The window's
-  `Poll()` returns the device events since the last call; the client Runtime
-  calls it on its Main/Render thread and hands them to the input module, which
-  links the window only for the events' type, so neither the window nor the
-  Renderer knows anything of input. Cursor lock is GLFW's disabled cursor with
-  raw mouse motion, which needs no patch.
+- **Window and input.** GLFW, in the window module (`augusta_window`) and
+  private to it: the OS window and its device events. Its header names no GLFW
+  type; of GPU APIs it knows only Vulkan's handles, to find the system's loader
+  and make the window's Vulkan surface with `glfwCreateWindowSurface`, the one
+  thing that differs between the platforms, and it knows no input. The Renderer
+  creates its window and owns it. The window's `Poll()` returns the device
+  events since the last call; the client Runtime calls it on its Main/Render
+  thread and hands them to the input module, which links the window only for the
+  events' type, so neither the window nor the Renderer knows anything of input.
+  Cursor lock is GLFW's disabled cursor with raw mouse motion, which needs no
+  patch.
 - **Shaders.** Slang (ADR-0014), compiled to SPIR-V at build time by `slangc`
   from vcpkg's `shader-slang`, a host tool in the manifest. The SPIR-V is
   embedded in the executable, so there are no shader files to ship or find, and
   the client ships no `slang.dll`.
-- **Debug HUD.** Dear ImGui from vcpkg, with its GLFW binding, drawn by a small
-  ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace font,
-  JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the repository
-  with its licence and embedded in the executable at build time. The Renderer
-  only draws text lines; what they say is the hud module's (`augusta_hud`), free
-  of any GPU API, and the client Runtime hands its lines to the Renderer.
+- **Debug HUD.** Dear ImGui from vcpkg, without a platform binding, since the
+  HUD takes no input: the Renderer gives ImGui each frame's size. It is drawn by
+  a small ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace
+  font, JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the
+  repository with its licence and embedded in the executable at build time. The
+  Renderer only draws text lines; what they say is the hud module's
+  (`augusta_hud`), free of any GPU API, and the client Runtime hands its lines
+  to the Renderer.
 - **GPU crash dumps.** Nsight Aftermath, from the SDK an installed Nsight
   Graphics bundles, which the build autodetects; without it the build and the
   client are unchanged. With it, the Renderer has Aftermath watch Vulkan devices

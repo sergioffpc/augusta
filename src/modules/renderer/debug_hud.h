@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <nvrhi/nvrhi.h>
 
@@ -19,10 +18,8 @@ namespace augusta::renderer {
 
 class DebugHud final {
  public:
-  /// Installs ImGui's GLFW callbacks on window. They chain to the callbacks
-  /// already installed, so make this after the window's own: its events still
-  /// reach them. window and device must outlive this HUD.
-  DebugHud(GLFWwindow& window, nvrhi::IDevice& device);
+  /// device must outlive this HUD.
+  explicit DebugHud(nvrhi::IDevice& device);
   ~DebugHud();
 
   DebugHud(const DebugHud&) = delete;

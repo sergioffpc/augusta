@@ -4,9 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
 #include <nvrhi/nvrhi.h>
 
 #include "debug_hud_font.h"
@@ -20,6 +18,10 @@ namespace {
 constexpr ImVec4 kGreen(0.0F, 1.0F, 0.0F, 1.0F);
 constexpr ImVec2 kWindowPos(10.0F, 10.0F);
 constexpr float kFontSizePixels = 14.0F;
+
+// The time ImGui is told passes between frames. The HUD neither animates nor
+// takes input, so any positive time draws it the same.
+constexpr float kFrameSeconds = 1.0F / 60.0F;
 
 // No title bar, not movable, no focus stealing, and sized to fit its text
 // every frame.
@@ -39,8 +41,9 @@ void AddFont(ImFontAtlas& atlas) {
   }
 }
 
-// A new ImGui context, current, set up for the HUD on window.
-ImGuiContext* CreateContext(GLFWwindow& window) {
+// A new ImGui context, current, set up for the HUD. It has no platform
+// binding: the HUD takes no input, and Render gives ImGui the frame's size.
+ImGuiContext* CreateContext() {
   ImGuiContext* context = ImGui::CreateContext();
   ImGui::SetCurrentContext(context);
   ImGuiIO& io = ImGui::GetIO();
@@ -49,26 +52,22 @@ ImGuiContext* CreateContext(GLFWwindow& window) {
   io.IniFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
   AddFont(*io.Fonts);
-  if (!ImGui_ImplGlfw_InitForOther(&window, true)) {
-    throw std::runtime_error("Initializing ImGui's GLFW binding failed");
-  }
   return context;
 }
 
 }  // namespace
 
-DebugHud::DebugHud(GLFWwindow& window, nvrhi::IDevice& device) : context_(CreateContext(window)), renderer_(device) {}
+DebugHud::DebugHud(nvrhi::IDevice& device) : context_(CreateContext()), renderer_(device) {}
 
-DebugHud::~DebugHud() {
-  ImGui::SetCurrentContext(context_);
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext(context_);
-}
+DebugHud::~DebugHud() { ImGui::DestroyContext(context_); }
 
 void DebugHud::Render(nvrhi::ICommandList& commands, nvrhi::IFramebuffer& framebuffer,
                       const std::vector<std::string>& lines) {
   ImGui::SetCurrentContext(context_);
-  ImGui_ImplGlfw_NewFrame();
+  ImGuiIO& io = ImGui::GetIO();
+  const nvrhi::FramebufferInfoEx& frame = framebuffer.getFramebufferInfo();
+  io.DisplaySize = ImVec2(static_cast<float>(frame.width), static_cast<float>(frame.height));
+  io.DeltaTime = kFrameSeconds;
   ImGui::NewFrame();
   // Fully transparent and without a border, so only the text shows.
   ImGui::SetNextWindowPos(kWindowPos, ImGuiCond_FirstUseEver);

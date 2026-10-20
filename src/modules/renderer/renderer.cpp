@@ -211,8 +211,7 @@ struct Renderer::Impl {
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
-  // Made once the device is, and after the window's own GLFW callbacks: its
-  // ImGui binding chains to them.
+  // Made once the device is.
   std::unique_ptr<DebugHud> debug_hud;
   std::vector<std::string> text_lines;
 
@@ -250,13 +249,13 @@ struct Renderer::Impl {
 
   explicit Impl(const Config& config)
       : window(config.window),
-        vulkan(window.Glfw(), config.adapter, config.validation),
+        vulkan(window, config.adapter, config.validation),
         device(&vulkan.Nvrhi()),
         swapchain(vulkan, window.GetSize()) {
     CreateFramebuffer(swapchain.ImageSize().value_or(window.GetSize()));
     commands = device->createCommandList();
     CreatePipelines();
-    debug_hud = std::make_unique<DebugHud>(window.Glfw(), *device);
+    debug_hud = std::make_unique<DebugHud>(*device);
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
