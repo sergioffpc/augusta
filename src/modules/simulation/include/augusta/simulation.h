@@ -133,11 +133,11 @@ struct PlayerIdentity {
 
 /// The longest Shooter's delay (CONTEXT.md, ADR-0044): a round whose shooter
 /// reports an older Seen time is judged against the players as they were this long ago.
-inline constexpr std::chrono::milliseconds kMaxShootersDelay{250};
+inline constexpr std::chrono::milliseconds kMaxShootersDelay{300};
 
 /// How many ticks of every player's poses the Hitbox history (CONTEXT.md)
 /// keeps at tick_rate_hz: kMaxShootersDelay in ticks, rounded up, which is all
-/// the cap can ask for. 15 at 60 Hz.
+/// the cap can ask for. 18 at 60 Hz.
 [[nodiscard]] std::size_t HitboxHistoryTicks(std::uint8_t tick_rate_hz);
 
 /// The validated command for one tick of the player who controls entity. The
