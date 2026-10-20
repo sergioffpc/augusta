@@ -84,6 +84,13 @@ one with fire pressed: whether a Command fires a round is the server's to decide
   confirmations included, is server-only and stops at the engine's own types: a
   pure decision tested without a network, which `host::Host` turns into
   messages.
+- **A Development build tells a shooter how its round was judged.** There,
+  SimulationWorld reports with each round whose flight ended a Shot judgement:
+  the Hitbox poses it tested at the Shooter's delay, tick by tick, and what the
+  round struck. `host::Host` sends it to the shooter only while its
+  `debug.shot_judgements` key is on and the shooter subscribed (ADR-0038), so a
+  Debug overlay can draw the server's Hitboxes beside the client's own. A
+  Shipping build has neither the report nor the message (ADR-0074).
 - **A shooter's hit marker lags its shot** by the flight time plus half an RTT.
   That is the price of never showing one that is taken back.
 

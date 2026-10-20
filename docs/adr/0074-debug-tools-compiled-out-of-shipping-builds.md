@@ -37,7 +37,15 @@ only in a Development build, so a Shipping build fails a config that has them as
 it fails any unknown key, rather than ignoring them. How a developer opens and
 closes a tool while the game runs (keys, a menu, a console) is decided with the
 tools themselves. The server's reenactments setting is one of these keys,
-`debug.reenactments` (ADR-0050).
+`debug.reenactments` (ADR-0050), and so is each stream of the server's state a
+client's Debug overlay can subscribe to, such as `debug.shot_judgements`
+(ADR-0038).
+
+**The two kinds never meet.** A Development build's engine version ends in
+`+dev`, so a Development client never joins a Shipping server, nor a Shipping
+client a Development one: each refuses the other as a version mismatch
+(ADR-0038). A Development build's messages then never reach a peer that cannot
+decode them.
 
 **Tests.** A debug tool's tests compile only in a Development build. The release
 workflow runs the rest of the suite on the Shipping build it publishes, and one
@@ -71,3 +79,7 @@ test, compiled only there, checks that a `debug` section is refused.
   carries it.
 - The specs that call a debug tool "absent from release builds" mean absent from
   Shipping builds.
+- A developer plays a Development client against the `develop` Environment or a
+  local server, never against `staging`; and a Match capture from the `develop`
+  Environment names a `+dev` version, so only a Development build reenacts or
+  replays it.

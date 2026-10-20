@@ -71,6 +71,11 @@ request, Replay request and Replay view join the catalogue, with the Join
 refused reasons _reenactments not accepted_, _replay server_ and _unknown
 capture_.
 
+**Extended by ADR-0074**: the engine version names the kind of build, so a
+Development build and a Shipping build never join each other; and a Development
+build's catalogue holds two messages more, below, that let the server's state
+reach a client's Debug overlay.
+
 **Wire shape.** One message is one transport payload: a one-byte `MessageType`
 followed by that type's fields, fixed-width and little-endian; a string is a
 one-byte length and its bytes. Every field takes the smallest type that holds
@@ -251,6 +256,40 @@ and it is made loss-tolerant without retransmission:
   ignores one not newer than the update it holds. Every recipient is sent every
   player.
 
+**Messages of a Development build.** Every body the server holds already reaches
+every client in the Authoritative State, so a Debug overlay draws the server's
+bodies and Props from the Server view, and needs nothing new. What never left
+the server is how it judged a round: the Hitboxes it tested, placed by the
+Hitbox history at the Shooter's delay, and what the round struck. Two messages
+carry that, and exist only in a Development build (ADR-0074): their types, codec
+and Link conversions are compiled only with `AUGUSTA_DEBUG_TOOLS`, so a Shipping
+build decodes neither, and since the two kinds of build never join each other
+(**Joining**), neither ever reaches one.
+
+| Message         | Direction       | Reliability | Fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------- | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Debug subscribe | client → server | reliable    | one byte of flags, one per stream of the server's state the client wants from now on (bit 0: Shot judgements); a cleared bit stops its stream                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Shot judgement  | server → client | reliable    | one round the recipient fired, sent once its flight ends: the server tick of its Shot; the Shooter's delay as one byte of whole ticks and one of the fraction; one byte holding what the round struck (none, the Map, a Prop or a Hitbox, bits 0-1), the Body part of a Hitbox (bits 2-3) and whether entries were left out (bit 4); the point it struck and the entity ID of the Prop or body (0 otherwise); then at most 16 entries, oldest first: the tick's distance from the Shot's in 2 bytes, then the players whose bounds that tick's segment crossed (one byte for how many), each by entity ID, position, one byte for its stance and the yaw it faced, as the Hitbox history held it |
+
+- **A stream flows only when both sides ask for it.** Each bit of Debug
+  subscribe has its own key in the `debug` section of `augustad.yaml` (ADR-0074;
+  bit 0's is `debug.shot_judgements`), off by default. The server sends a stream
+  to a peer only while the key is on and the peer's last Debug subscribe sets
+  its bit; a bit whose key is off is ignored, with one `INFO`, and never counts
+  toward a misbehaving disconnect. The client sends Debug subscribe when a Debug
+  overlay that draws a stream opens or closes, so a server pays for a stream
+  only while someone is looking at it.
+- **A Shot judgement carries what the client cannot work out.** The client
+  already flies the round itself, from its Shot and the Parameters' ballistics
+  (ADR-0044), so it draws each tick's segment without being sent it. Only the
+  ticks whose segment crossed some player's bounds travel, each with the pose of
+  every player crossed (position, stance and facing, 17 bytes): the client
+  places the Hitboxes from that pose and the Character, which the pack hash
+  makes the server's own. A round flies at most 5 seconds, so the entries stop
+  at 16 and the flag says some were left out. A round that passes one or two
+  players is 40 to 80 bytes, about 1 KB/s at an automatic rifle's rate, sent
+  only to its shooter.
+
 **Joining.** A connection is accepted at the transport unconditionally, because
 a refusal is itself a message and needs a connection to travel on. The client's
 first message is a Join request carrying its engine version and the hash of the
@@ -260,8 +299,11 @@ hash with the one its server pack carries for the client pack cooked with it;
 ADR-0042 and ADR-0043 add the character and the Lobby's checks, and ADR-0043
 gives the order of them all. Both packs being signed by the same key proves only
 that each is genuine, not that they are the same cook: a client on another cook
-could hold different collision or characters and mispredict every tick. After a
-refusal the client closes the connection.
+could hold different collision or characters and mispredict every tick. A
+Development build's engine version ends in `+dev` (ADR-0074), so a Development
+client and a Shipping server, or the other way round, refuse each other as a
+version mismatch: the messages of a Development build never reach a peer that
+cannot decode them. After a refusal the client closes the connection.
 
 **What a join carries.** Join accepted tells the client everything it must know
 before its first tick, so nothing is learned by guessing. Who else is playing,

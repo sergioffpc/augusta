@@ -512,6 +512,12 @@ shooter's hit marker; a client never predicts a hit. _Avoid_: Hit marker (the
 marker is how the client shows a Hit confirmation), hit prediction, hit
 registration
 
+**Shot judgement**: How the Authoritative server judged one of a shooter's
+rounds, told to that shooter in a Development build: the Hitboxes each tick of
+its flight was tested against, as they were the Shooter's delay ago, and what
+the round struck. _Avoid_: Impacts, hit report, Hit confirmation (only a hit,
+and in every build)
+
 **Death**: A player's health reaching zero in a Match, as the Authoritative
 server resolves it: who died, who killed it and on which tick. The player stays
 in the Match as a Spectator, and Game policy decides from the Deaths when the
