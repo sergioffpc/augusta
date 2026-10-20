@@ -33,6 +33,20 @@ is `main`, so a `Closes #<n>` in a PR merged into `develop` closes nothing: once
 the PR is merged, close each issue it resolves with
 `gh issue close <n> --comment "Done in #<pr>, merged into develop."`.
 
+## Milestones
+
+A milestone is a release; the rules for drawing issues into one are
+`docs/ENGINEERING.md`'s Milestones section. Each skill applies its part:
+
+- `/triage` gives a `ready-for-*` issue its milestone, takes it off a
+  `needs-triage` or `needs-info` one, and checks that nothing in a milestone is
+  blocked by an issue in a later one.
+- `/to-spec` proposes the milestone a new spec goes into, by the new-spec rule.
+- `/to-tickets` gives every ticket its spec's milestone, and a native
+  `blockedBy` link for each blocker the ticket names.
+- **Set a milestone**: `gh issue edit <n> --milestone "<title>"`, or
+  `--remove-milestone`.
+
 Infer the repo from `git remote -v`; `gh` does this automatically when run
 inside a clone.
 

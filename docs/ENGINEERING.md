@@ -11,6 +11,7 @@ Complements [ARCHITECTURE.md](./ARCHITECTURE.md) (system design) and
 - [Design Philosophy](#design-philosophy)
 - [CI/CD](#cicd)
 - [Git Workflow](#git-workflow)
+- [Milestones](#milestones)
 - [Deployment & CD](#deployment--cd)
 - [Developer Environment](#developer-environment)
 - [Code Quality](#code-quality)
@@ -295,8 +296,8 @@ decisions already made in ARCHITECTURE.md:
 - **Branching model:** Git Flow — `main` (production/release) + `develop`
   (integration), with `feature/*`, `release/*`, `hotfix/*` branches.
 - **Tags/releases:** created only when there's an actual release to make (e.g.,
-  v1.0.0) — ROADMAP.md milestones (M0–M18) are internal checkpoints, not tagged
-  releases.
+  v1.0.0) — ROADMAP.md's milestones (M0, M1, …) are internal checkpoints, not
+  tagged releases.
 - **Pull requests:** used even solo — `feature/*` → `develop`,
   `release/*`/`hotfix/*` → `main`, and the same `release/*`/`hotfix/*` branch
   back into `develop`, go through a PR so CI gates the merge; no formal review
@@ -311,6 +312,46 @@ decisions already made in ARCHITECTURE.md:
   `chore(release)` commit so the cut leaves itself out, and the release workflow
   publishes that section as the GitHub Release's notes, refusing a tag that has
   none.
+
+## Milestones
+
+A GitHub milestone is a release: the delivery point the issues are drawn into.
+ROADMAP.md's milestones (M18, M19, …) are sections of a release there, not
+GitHub milestones.
+
+- **Title:** an open milestone is named by its theme alone ("Authoritative
+  Body"). It takes its version only when its release is cut, so a breaking
+  change shipped ahead of it renames nothing; ROADMAP.md holds the order.
+- **Exit criteria:** every milestone has one observable exit criterion,
+  something shown running in a build or on `staging`, not "the code is done". It
+  is written in ROADMAP.md and copied into the milestone's description.
+- **When it is made:** once its specs are written and its exit criterion exists.
+  Until then the theme lives in ROADMAP.md only, as planned.
+- **Dependencies:** a milestone depends only on earlier ones. A spec blocked by
+  work in a later milestone moves to that milestone. GitHub's native `blockedBy`
+  links are what this is checked on: every "Blocked by" line in a spec has a
+  link to match.
+- **What carries it:** the whole tree of a spec, its decision tickets, the spec
+  and its sub-issues, carries the spec's milestone. Every `ready-for-agent` and
+  `ready-for-human` issue has one; a `needs-triage` or `needs-info` issue has
+  none.
+- **Size:** a release is the smallest set of ROADMAP.md milestones whose exit
+  criterion means something alone, about 3 specs or 25 tickets at most. A larger
+  one is split into releases that each have their own exit criterion, or
+  ROADMAP.md says why it is not.
+- **Work outside a theme:** a bug in released code ships as a patch through
+  `hotfix/*`, in a patch milestone of its own. Refactors go into a maintenance
+  milestone that ships as a minor once complete, without holding back the next
+  major.
+- **A new spec:** goes into the first open milestone its dependencies allow and
+  whose theme covers it. If none covers it, a new milestone is made where the
+  dependency order puts it, with its exit criterion. A breaking spec ships as a
+  major of its own, ahead of the next planned release.
+- **Dates:** none. A release's date is written in ROADMAP.md when it is cut.
+- **Closing:** a milestone closes when its release is cut, once `develop` holds
+  its tag ([cut-release.md](runbooks/cut-release.md) step 10). Its title then
+  takes the version ("v5 — Protocol Buffers"); an issue still open moves to
+  another milestone before the cut.
 
 ## Deployment & CD
 
