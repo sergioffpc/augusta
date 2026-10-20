@@ -63,8 +63,11 @@ Host -> SimulationWorld -> TickResult -> replication + typed Game policy actions
   changes one it has published. A reader on another thread takes one view and
   reads everything it needs from it, so what a render frame shows (the
   Authoritative State, the bodies it names, the match they belong to, how it
-  ended) is of one moment, never a mix of two messages. Independent getters
-  remain for a single value; a reader that needs several takes the view.
+  ended) is of one moment, never a mix of two messages. Besides the newest
+  Authoritative State, the view keeps the updates received most recently, as
+  many as the interpolation keeps per body, oldest first, so a frame below the
+  tick rate still takes every update since the last. Independent getters remain
+  for a single value; a reader that needs several takes the view.
 - **Prediction State crosses to presentation as a value.** The Prediction thread
   publishes each tick's Prediction State (with the one before it and the tick's
   schedule) under a lock, and the Main/Render thread copies it out once per
