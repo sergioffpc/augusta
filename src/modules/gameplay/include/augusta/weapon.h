@@ -9,9 +9,10 @@
 #include "augusta/command.h"
 
 /// \file
-/// augusta::weapon holds the rifle's rules (US-07 to US-09): what a tick's
-/// Command does to a player's rifle, whether it fires a round, and where that
-/// round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
+/// augusta::weapon holds the rifle and its ammunition (US-06, US-10, US-12),
+/// as the Parameters configure them, and the rifle's rules (US-07 to US-09):
+/// what a tick's Command does to a player's rifle, whether it fires a round,
+/// and where that round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
 /// in the shared core, with no world and no state of its own, so the two Worlds
 /// that run a WeaponHandling phase call the same function, as both call
 /// physics::World. The server's SimulationWorld takes the result as
@@ -21,6 +22,8 @@
 /// random, so the two agree.
 ///
 /// The rifle's values are the Parameters' (ADR-0039), handed in on every call.
+/// How a round flies is ballistics' BulletConfig, and what it does to each Body
+/// part is body_part's Damage: the Ammo only bundles the two.
 namespace augusta::weapon {
 
 /// How far one round of a burst turns the aim, in radians: a positive pitch up,
@@ -59,8 +62,8 @@ struct Rifle {
 
 /// The rifle's ammunition: how its rounds fly (US-10) and what they do (US-12).
 struct Ammo {
-  /// How a round flies: its gravity, in meters per second squared, and how far
-  /// it flies before it is a miss, in meters.
+  /// How a round flies. A range of 1, not BulletConfig's 0, so a default
+  /// Parameters is one the simulation can run on.
   ballistics::BulletConfig flight{.gravity = 0.0F, .max_range = 1.0F};
   body_part::Damage damage{};
 
