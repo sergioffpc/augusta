@@ -329,9 +329,9 @@ to PresentationWorld and never changed after (ADR-0005). _Avoid_: Predicted
 snapshot, client state
 
 **PresentationWorld**: The client's world run once per render frame: it turns
-the Prediction State and the Authoritative State updates into what the frame
-shows, showing the other players an Interpolation delay behind and smoothing
-Reconciliation's jumps. _Avoid_: Render world, scene
+the Prediction State and every Authoritative State update since the last frame
+into what the frame shows, showing the other players an Interpolation delay
+behind and smoothing Reconciliation's jumps. _Avoid_: Render world, scene
 
 **Data-driven configuration**: Tunable values (e.g. weapon/ammo damage, stamina
 rules) written as a Lua table script rather than expressed as mechanism code or

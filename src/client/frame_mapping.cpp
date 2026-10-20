@@ -77,13 +77,6 @@ presentation::Shot ToPresentation(const harness::Shot& shot) {
 
 presentation::Aim ToPresentation(const input::Aim& aim) { return {.yaw = aim.yaw, .pitch = aim.pitch, .ads = aim.ads}; }
 
-std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::ServerView& view) {
-  if (!view.authoritative.has_value() || !view.accepted.has_value()) {
-    return std::nullopt;
-  }
-  return ToPresentation(*view.authoritative, view.accepted->tick_rate_hz);
-}
-
 std::vector<presentation::PlayerCharacter> CharactersOf(const std::optional<harness::MatchStart>& match_start) {
   std::vector<presentation::PlayerCharacter> characters;
   if (match_start.has_value()) {
@@ -102,17 +95,25 @@ void ConvertedServerView::Update(const harness::ServerView& view) {
     characters_ = CharactersOf(view.match_start);
     characters_match_ = view.matches_started;
   }
-  const bool converted = snapshot_.has_value() && view.authoritative.has_value() &&
-                         snapshot_match_ == view.matches_started && snapshot_->tick == view.authoritative->tick;
-  if (!converted) {
-    snapshot_ = SnapshotOf(view);
-    snapshot_match_ = view.matches_started;
+  if (view.matches_started != updates_match_ || !view.accepted.has_value()) {
+    updates_.clear();
+    updates_match_ = view.matches_started;
+  }
+  const std::vector<harness::AuthoritativeState>& recent = view.recent_authoritative;
+  std::erase_if(updates_, [&](const presentation::WorldSnapshot& update) {
+    return recent.empty() || update.tick < recent.front().tick;
+  });
+  if (!view.accepted.has_value()) {
+    return;
+  }
+  for (const harness::AuthoritativeState& state : recent) {
+    if (updates_.empty() || state.tick > updates_.back().tick) {
+      updates_.push_back(ToPresentation(state, view.accepted->tick_rate_hz));
+    }
   }
 }
 
-const presentation::WorldSnapshot* ConvertedServerView::Snapshot() const {
-  return snapshot_.has_value() ? &*snapshot_ : nullptr;
-}
+std::span<const presentation::WorldSnapshot> ConvertedServerView::Updates() const { return updates_; }
 
 std::span<const presentation::PlayerCharacter> ConvertedServerView::Characters() const { return characters_; }
 

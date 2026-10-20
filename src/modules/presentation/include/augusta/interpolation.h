@@ -31,7 +31,8 @@
 ///
 /// Pure - no clock, no ECS, no network - so it is tested on its own;
 /// PresentationWorld feeds it each frame with its render frame's elapsed time
-/// and the newest Authoritative State (see presentation.cpp).
+/// and every Authoritative State update since the last frame (see
+/// presentation.cpp).
 namespace augusta::presentation {
 
 /// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), as
