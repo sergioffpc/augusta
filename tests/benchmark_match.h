@@ -79,7 +79,7 @@ inline std::optional<policy::Policy> ExamplePolicy() {
   if (!pack.has_value()) {
     return std::nullopt;
   }
-  auto policy = scenario::LoadPolicy(*pack);
+  auto policy = policy::LoadPolicy(*pack);
   if (!policy.has_value()) {
     return std::nullopt;
   }

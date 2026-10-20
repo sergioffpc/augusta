@@ -7,10 +7,10 @@
 #include "augusta/assets.h"
 #include "augusta/policy.h"
 
-namespace augusta::scenario {
+namespace augusta::policy {
 
 std::string DescribePolicyLoadError(const PolicyLoadError& error) {
-  const std::string script(policy::kRulesScriptPath);
+  const std::string script(kRulesScriptPath);
   switch (error.code) {
     case PolicyLoadErrorCode::kUnreadable:
       return "the policy script " + script + " is unreadable: " + error.subject;
@@ -20,16 +20,16 @@ std::string DescribePolicyLoadError(const PolicyLoadError& error) {
   return "the policy script " + script + " is invalid";
 }
 
-std::expected<policy::Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
-  const auto rules = pack.ResolveScript(policy::kRulesScriptPath);
+std::expected<Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pack) {
+  const auto rules = pack.ResolveScript(kRulesScriptPath);
   if (!rules) {
     if (rules.error() == assets::ResolveError::kNotFound) {
-      return policy::Policy{};
+      return Policy{};
     }
     return std::unexpected(PolicyLoadError{.code = PolicyLoadErrorCode::kUnreadable,
                                            .subject = assets::DescribeResolveError(rules.error(), "script")});
   }
-  auto loaded = policy::Policy::Load(*rules);
+  auto loaded = Policy::Load(*rules);
   if (!loaded) {
     return std::unexpected(
         PolicyLoadError{.code = PolicyLoadErrorCode::kScriptError, .subject = std::move(loaded.error().message)});
@@ -38,15 +38,15 @@ std::expected<policy::Policy, PolicyLoadError> LoadPolicy(const assets::Pack& pa
 }
 
 std::expected<PolicyMaker, PolicyLoadError> LoadPolicyMaker(const assets::Pack& pack) {
-  const auto rules = pack.ResolveScript(policy::kRulesScriptPath);
+  const auto rules = pack.ResolveScript(kRulesScriptPath);
   if (!rules && rules.error() == assets::ResolveError::kNotFound) {
-    return PolicyMaker([] { return policy::Policy{}; });
+    return PolicyMaker([] { return Policy{}; });
   }
   if (auto checked = LoadPolicy(pack); !checked) {
     return std::unexpected(std::move(checked.error()));
   }
   // Loaded once already, from the same text: Load cannot fail now.
-  return PolicyMaker([text = *rules] { return *policy::Policy::Load(text); });
+  return PolicyMaker([text = *rules] { return *Policy::Load(text); });
 }
 
-}  // namespace augusta::scenario
+}  // namespace augusta::policy

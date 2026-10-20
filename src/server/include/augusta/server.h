@@ -44,7 +44,7 @@ class ServerRuntime {
   /// says what it throws), whose Replays each tick at config.tick_rate_hz. It
   /// captures nothing, so it has no capture to fail.
   ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                scenario::PolicyMaker policy, failure::Faults* faults = nullptr);
+                policy::PolicyMaker policy, failure::Faults* faults = nullptr);
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do

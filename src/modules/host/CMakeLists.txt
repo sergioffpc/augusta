@@ -71,6 +71,7 @@ target_link_libraries(
     augusta_physics
     augusta_simulation
     augusta_scenario
+    augusta_policy_loader
     augusta_host_commands
     augusta_host_match
     augusta_host_misbehaviour

@@ -73,7 +73,7 @@ target_include_directories(augusta_server_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_server_application
   PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augusta_server
-  PRIVATE augusta_assets augusta_link augusta_logging augusta_scenario augusta_scenario_policy_loader augusta_host
+  PRIVATE augusta_assets augusta_link augusta_logging augusta_scenario augusta_policy_loader augusta_host
 )
 augusta_set_module_scope(augusta_server_application SERVER_ONLY)
 

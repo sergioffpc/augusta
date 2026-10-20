@@ -78,10 +78,10 @@ std::expected<parameters::Parameters, failure::Failure> ReadParameters(const ass
 
 // The scenario's Game policy, its rules (ADR-0022), out of the same pack.
 std::expected<policy::Policy, failure::Failure> ReadPolicy(const assets::Pack& pack) {
-  auto policy = LoadPolicy(pack);
+  auto policy = policy::LoadPolicy(pack);
   if (!policy) {
     return std::unexpected(ContentFailure(pack, {{.key = "script", .value = std::string(policy::kRulesScriptPath)}},
-                                          DescribePolicyLoadError(policy.error())));
+                                          policy::DescribePolicyLoadError(policy.error())));
   }
   LOG_INFO("subsystem=server event=policy_loaded");
   return *std::move(policy);

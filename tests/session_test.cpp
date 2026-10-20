@@ -5663,8 +5663,8 @@ augusta::policy::Policy ExamplePolicy() {
   auto pack = augusta::assets::Pack::Load((packs / "server").replace_extension(augusta::assets::kPackExtension),
                                           public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
-  auto policy = augusta::scenario::LoadPolicy(pack.value());
-  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::policy::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::policy::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
