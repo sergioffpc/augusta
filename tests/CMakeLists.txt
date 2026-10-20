@@ -40,7 +40,7 @@ target_link_libraries(
     augusta_simulation
     augusta_version
     augusta_host_replay
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     benchmark::benchmark
     benchmark::benchmark_main
 )
@@ -247,7 +247,7 @@ target_link_libraries(
     augusta_simulation
     augusta_policy
     augusta_scenario_parameters_loader
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -279,7 +279,7 @@ gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
   augusta_example_rules_tests
-  PRIVATE augusta_simulation augusta_scenario_policy_loader augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE augusta_simulation augusta_policy_loader augusta_logging GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_example_rules_tests
@@ -422,7 +422,7 @@ target_link_libraries(augusta_map_tests PRIVATE augusta_physics GTest::gtest GTe
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
-target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_scenario_policy_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_policy_loader GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
@@ -437,7 +437,7 @@ target_link_libraries(
     augusta_link_messages
     augusta_protocol
     augusta_scenario_parameters_loader
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -655,7 +655,7 @@ add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
 # and every cue's sound as the client does.
 target_link_libraries(
   augusta_cooked_pack_tests
-  PRIVATE augusta_assets augusta_cues augusta_scenario_policy_loader GTest::gtest GTest::gtest_main
+  PRIVATE augusta_assets augusta_cues augusta_policy_loader GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_cooked_pack_tests

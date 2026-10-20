@@ -117,7 +117,7 @@ struct ReplayServer::Impl {
   // What every Replay's World is built from, unchanged for the server's life.
   const scenario::Scenario scenario;
   const std::unordered_map<std::string, simulation::Character> characters;
-  const scenario::PolicyMaker policy;
+  const policy::PolicyMaker policy;
   // Network I/O thread only, without the lock: listing reads the disk.
   ReplayCatalog catalog;
 
@@ -134,7 +134,7 @@ struct ReplayServer::Impl {
   // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
 
-  Impl(const ReplayServerConfig& config, scenario::Scenario scenario_in, scenario::PolicyMaker policy_in)
+  Impl(const ReplayServerConfig& config, scenario::Scenario scenario_in, policy::PolicyMaker policy_in)
       : metrics(config.tick_rate_hz),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
@@ -373,7 +373,7 @@ struct ReplayServer::Impl {
   }
 };
 
-ReplayServer::ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, scenario::PolicyMaker policy)
+ReplayServer::ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, policy::PolicyMaker policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 ReplayServer::~ReplayServer() = default;

@@ -95,7 +95,7 @@ keeps game policy separate from mechanism code.
 - **Two modules.** The sandboxed Lua embedding is the scripting module, which
   knows nothing of Game policy. The hooks, the views built for them and the
   typed actions read from their answers are the policy module, which
-  SimulationWorld and the scenario loader call.
+  SimulationWorld calls and whose loader reads the rules from the server pack.
 - **Deterministic and server-only.** The same rules called with the same views
   return the same decisions; neither client world runs policy (ADR-0024).
 

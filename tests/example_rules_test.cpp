@@ -89,8 +89,8 @@ augusta::policy::Policy ExamplePolicy() {
     ADD_FAILURE() << augusta::assets::DescribeLoadError(pack.error());
     return augusta::policy::Policy{};
   }
-  auto policy = augusta::scenario::LoadPolicy(*pack);
-  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::policy::LoadPolicy(*pack);
+  EXPECT_TRUE(policy.has_value()) << augusta::policy::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 

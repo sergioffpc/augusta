@@ -41,9 +41,9 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
 std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
     const config::ServerConfig& file_config, const assets::Pack& pack, scenario::Content content,
     failure::Faults* faults) {
-  auto policy = scenario::LoadPolicyMaker(pack);
+  auto policy = policy::LoadPolicyMaker(pack);
   if (!policy) {
-    return std::unexpected(ContentFailure(pack.Path(), scenario::DescribePolicyLoadError(policy.error())));
+    return std::unexpected(ContentFailure(pack.Path(), policy::DescribePolicyLoadError(policy.error())));
   }
   const host::ReplayServerConfig replay_config{
       .tick_rate_hz = file_config.tick_rate_hz,
