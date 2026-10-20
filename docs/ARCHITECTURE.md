@@ -168,7 +168,8 @@ policy (ADR-0060).
       each client's PresentationWorld draws every announced Shot's tracer and
       Map impact with it, a visual only. Deciding a bullet's outcome (hit
       detection, damage) stays server-side (ADR-0024, ADR-0044).
-- Networking Protocol — message definitions + custom binary serialization
+- Networking Protocol — message definitions, serialized as Protocol Buffers
+  (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
   game's state and messages, carried over the networking transport (ADR-0038);
   it replaces the wire module and the Harness's and the Host's own conversions

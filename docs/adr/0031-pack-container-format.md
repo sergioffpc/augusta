@@ -42,15 +42,16 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   the client resolves every cue's sound and every variant at startup, so a
   missing one is found before a Match, not during one.
 - Collision geometry, spawn points, hitboxes: read from the PhysX-authored USD
-  data (colliders/joints from Composer, ADR-0015), serialized with the existing
-  custom binary format (ADR-0007) rather than a new one. Written to both the
-  client and server pack (ADR-0019) - unlike mesh/texture content, which is
+  data (colliders/joints from Composer, ADR-0015), serialized in the pack's own
+  binary format of fixed-width fields, not the protocol's Protocol Buffers
+  (ADR-0007): a pack's contents are never messages. Written to both the client
+  and server pack (ADR-0019) - unlike mesh/texture content, which is
   client-pack-only, the client needs this data too (e.g. client-side prediction
   of movement against the same geometry the server uses, and drawing where a
   Shot lands, ADR-0044; hit detection itself runs only on the server, ADR-0024).
 - Prop kinds and the Props placed in the Map (ADR-0045): each Prop kind's stage,
   with PhysX's rigid-body and mass schemas, read into its colliders, mass and
-  Surface material and serialized in the same custom binary format, and each
+  Surface material and serialized in the pack's same binary format, and each
   placed Prop as its Prop kind and pose. Written to both the client and server
   pack: the server simulates them and the client moves them to the poses it is
   sent and predicts against them. The Prop kind's mesh is client-pack-only, like

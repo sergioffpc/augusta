@@ -46,9 +46,10 @@ decisions already made in ARCHITECTURE.md:
   expected failure modes; exceptions only for truly unrecoverable startup
   errors; never exceptions in the per-tick hot path.
 - **Prefer proven tools over reinventing them — except where reinventing is the
-  point.** Ballistics, the ECS integration, and the network protocol are
-  hand-built because that's the learning goal (VISION.md); rendering, physics,
-  and transport are not.
+  point.** Ballistics, the ECS integration, and the network protocol's design
+  (its messages, grids and reliability) are hand-built because that's the
+  learning goal (VISION.md); rendering, physics, transport and the protocol's
+  serialization (Protocol Buffers, ADR-0007) are not.
 
 ## CI/CD
 
