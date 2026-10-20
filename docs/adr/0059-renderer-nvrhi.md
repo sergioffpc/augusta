@@ -51,13 +51,14 @@ between backends would double what has to be tested, for no gain to a player.
   private to it: the OS window and its device events. Its header names no GLFW
   type; of GPU APIs it knows only Vulkan's handles, to find the system's loader
   and make the window's Vulkan surface with `glfwCreateWindowSurface`, the one
-  thing that differs between the platforms, and it knows no input. The Renderer
-  creates its window and owns it. The window's `Poll()` returns the device
-  events since the last call; the client Runtime calls it on its Main/Render
-  thread and hands them to the input module, which links the window only for the
-  events' type, so neither the window nor the Renderer knows anything of input.
-  Cursor lock is GLFW's disabled cursor with raw mouse motion, which needs no
-  patch.
+  thing that differs between the platforms, and it knows no input. The client
+  Runtime owns the window, beside the Renderer and declared before it so that it
+  outlives it; the Renderer draws into the window it is lent and does not own
+  it. The window's `Poll()` returns the device events since the last call; the
+  client Runtime calls it on its Main/Render thread and hands them to the input
+  module, which links the window only for the events' type, so neither the
+  window nor the Renderer knows anything of input. Cursor lock is GLFW's
+  disabled cursor with raw mouse motion, which needs no patch.
 - **Shaders.** Slang (ADR-0014), compiled to SPIR-V at build time by `slangc`
   from vcpkg's `shader-slang`, a host tool in the manifest. The SPIR-V is
   embedded in the executable, so there are no shader files to ship or find, and
@@ -84,17 +85,17 @@ between backends would double what has to be tested, for no gain to a player.
   few seconds for the dump before it throws. A dump is a `.nv-gpudmp` beside the
   executable. The build stages the SDK's shared libraries beside the executable
   and in the client's package. The code is the same on both platforms.
-- **Testing.** `Config` can choose `kSoftware`, a hidden window and validation,
-  and `Renderer::CaptureFrame` reads the last frame back. A smoke test drives
-  the Renderer through its interface on Mesa's lavapipe, a software Vulkan
-  driver, and checks the pixels it drew, so it runs on CI's runners, which have
-  no GPU. On Windows lavapipe comes from vcpkg's `mesa` port, through the
-  manifest's `lavapipe` feature, for tests only: CI's `client-x64-windows` job
-  and the `windows-debug` preset turn it on, and a release's build leaves it
-  out. The test's environment makes it the loader's only driver
-  (`VK_DRIVER_FILES`). The same feature has vcpkg's `vulkan-loader`, which the
-  test loads where no GPU driver installed the system's; nothing links it, and
-  no package ships it.
+- **Testing.** `Config` can choose `kSoftware` and validation, the Renderer can
+  be lent a hidden window, and `Renderer::CaptureFrame` reads the last frame
+  back. A smoke test drives the Renderer through its interface on Mesa's
+  lavapipe, a software Vulkan driver, and checks the pixels it drew, so it runs
+  on CI's runners, which have no GPU. On Windows lavapipe comes from vcpkg's
+  `mesa` port, through the manifest's `lavapipe` feature, for tests only: CI's
+  `client-x64-windows` job and the `windows-debug` preset turn it on, and a
+  release's build leaves it out. The test's environment makes it the loader's
+  only driver (`VK_DRIVER_FILES`). The same feature has vcpkg's `vulkan-loader`,
+  which the test loads where no GPU driver installed the system's; nothing links
+  it, and no package ships it.
 
 ## Consequences
 

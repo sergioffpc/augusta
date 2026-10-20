@@ -211,11 +211,12 @@ policy (ADR-0060).
       animation engine behind its Animation phase. Cosmetic bodies and Props'
       kinematic poses, which are not gameplay, get a client-only dynamics module
       with the first of them (ADR-0045)
-- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; creates and
-  owns the client's single Window with its GPU device and swapchain, consumes
-  presentation state and draws text lines. It pumps no window events: the client
-  Runtime drains the Window's `Poll()` itself, so the Main/Render thread can
-  drain events at a different cadence than it presents frames
+- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; draws into the
+  client's single Window, which the client Runtime owns and lends it, with the
+  GPU device and swapchain it owns, consumes presentation state and draws text
+  lines. It pumps no window events: the client Runtime drains the Window's
+  `Poll()` itself, so the Main/Render thread can drain events at a different
+  cadence than it presents frames
 - Audio — Steam Audio; consumes presentation state
 - HUD — what the DebugHud shows, system metrics only, as text lines the client
   Runtime hands the Renderer (augusta_hud, ADR-0059)

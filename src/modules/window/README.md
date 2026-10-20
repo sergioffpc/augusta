@@ -14,8 +14,8 @@ knows no GPU API, and it knows no input.
 
 ## Not its responsibility
 
-- Creating and owning the window and its Vulkan surface, and all other Vulkan:
-  renderer.
+- Owning the window: the client runtime, which lends it to the renderer.
+- Every other Vulkan object, and when the surface is made: renderer.
 - Turning the events into Commands, and which key does what: input.
 - When the events are drained and who gets them: the client runtime.
 

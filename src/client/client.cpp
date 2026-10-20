@@ -49,12 +49,17 @@ namespace augusta::client {
 
 namespace {
 
-// The window the client opens, titled as the game; a Debug build runs under
-// Vulkan's validation layer (ADR-0059) wherever the loader finds it through
-// VK_ADD_LAYER_PATH.
+// The window the client opens, titled as the game.
+window::Config WindowConfig() {
+  window::Config config;
+  config.title = "augusta";
+  return config;
+}
+
+// A Debug build runs under Vulkan's validation layer (ADR-0059) wherever the
+// loader finds it through VK_ADD_LAYER_PATH.
 renderer::Config RendererConfig() {
   renderer::Config config;
-  config.window.title = "augusta";
 #ifndef NDEBUG
   config.validation = renderer::Validation::kIfAvailable;
 #endif
@@ -85,6 +90,9 @@ struct ClientRuntime::Impl {
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
+  // Main/Render thread only. The window is declared first so that it outlives
+  // the Renderer, which draws into it.
+  window::Window window;
   renderer::Renderer renderer;
 
   // A Captured player's run (ADR-0050), if this client is one: NextCommand is
@@ -173,7 +181,8 @@ struct ClientRuntime::Impl {
         load_character(std::move(loader)),
         input(cfg.input),
         presentation(audio, cue_sounds, eye),
-        renderer(RendererConfig()) {
+        window(WindowConfig()),
+        renderer(window, RendererConfig()) {
     if (cfg.reenactment.has_value()) {
       reenactment.emplace(*cfg.reenactment);
     }
@@ -374,7 +383,7 @@ struct ClientRuntime::Impl {
   // first. Main/Render thread only.
   std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
-    while (!renderer.GetWindow().ShouldClose()) {
+    while (!window.ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
         return failure;
       }
@@ -388,7 +397,7 @@ struct ClientRuntime::Impl {
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
         return std::nullopt;
       }
-      input.Handle(renderer.GetWindow().Poll());
+      input.Handle(window.Poll());
       std::this_thread::sleep_for(kPollInterval);
     }
     return std::nullopt;
@@ -504,7 +513,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     return failure;
   }
 
-  window::Window& window = impl_->renderer.GetWindow();
+  window::Window& window = impl_->window;
   bool cursor_locked = impl_->input.CursorCaptured();
   window.SetCursorLocked(cursor_locked);
   LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");

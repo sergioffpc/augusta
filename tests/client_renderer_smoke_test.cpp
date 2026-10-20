@@ -117,13 +117,14 @@ RemotePlayer PlayerAt(float x, math::Vec3 color, std::string_view character = kC
   return {.position = {x, -0.5F, 0.0F}, .yaw = 0.0F, .color = color, .character = std::string(character)};
 }
 
+// A window that never shows, for a test that only reads frames back.
+window::Config HiddenWindowConfig() {
+  return {.title = "augusta renderer smoke test", .width = kWidth, .height = kHeight, .hidden = true};
+}
+
 // What CI's runner, which has no GPU, can run, with every misuse of Vulkan an
 // error the Renderer throws.
-Config SoftwareHiddenConfig() {
-  return {.window = {.title = "augusta renderer smoke test", .width = kWidth, .height = kHeight, .hidden = true},
-          .adapter = Adapter::kSoftware,
-          .validation = Validation::kRequired};
-}
+Config SoftwareConfig() { return {.adapter = Adapter::kSoftware, .validation = Validation::kRequired}; }
 
 class RendererSmokeTest : public ::testing::Test {
  protected:
@@ -141,7 +142,7 @@ class RendererSmokeTest : public ::testing::Test {
   CapturedFrame RenderFrames(std::span<const RemotePlayer> players = {}, const CombatEffects& effects = {},
                              const Overlay& overlay = {}) {
     for (int i = 0; i < 4; ++i) {
-      static_cast<void>(renderer_->GetWindow().Poll());
+      static_cast<void>(window_.Poll());
       renderer_->SetRemotePlayers(players);
       renderer_->SetCombatEffects(effects);
       renderer_->SetOverlay(overlay);
@@ -150,11 +151,13 @@ class RendererSmokeTest : public ::testing::Test {
     return renderer_->CaptureFrame();
   }
 
-  std::unique_ptr<Renderer> renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig());
+  // Declared first, so that it outlives the Renderer drawing into it.
+  window::Window window_{HiddenWindowConfig()};
+  std::unique_ptr<Renderer> renderer_ = std::make_unique<Renderer>(window_, SoftwareConfig());
 };
 
 TEST_F(RendererSmokeTest, OpensItsWindowAtTheConfiguredSize) {
-  const window::Size size = renderer_->GetWindow().GetSize();
+  const window::Size size = window_.GetSize();
 
   EXPECT_EQ(size.width, kWidth);
   EXPECT_EQ(size.height, kHeight);
@@ -310,7 +313,7 @@ TEST_F(RendererSmokeTest, TearsDownSoThatAnotherRendererCanStart) {
   renderer_->RenderFrame();
   renderer_.reset();
 
-  renderer_ = std::make_unique<Renderer>(SoftwareHiddenConfig());
+  renderer_ = std::make_unique<Renderer>(window_, SoftwareConfig());
   renderer_->RenderFrame();
 
   EXPECT_EQ(renderer_->CaptureFrame().width, kWidth);
