@@ -733,7 +733,8 @@ Response:    The input is refused with a typed error, nothing is allocated from
              a length that was not checked, and the process keeps running
 Measure:     No crash, hang (5 s per input) or sanitizer report across every
              fuzz run (about 60 s per target per pull request, 30 min nightly);
-             every payload decoding accepts re-encodes to the same bytes
+             every payload decoding accepts encodes again and decodes to the
+             same value
 ```
 
 The fuzz targets' seeds and regressions replay under ctest on every preset
@@ -811,10 +812,10 @@ Measure:     kube-bench reports no CIS k3s failure outside the recorded
              game ports and Grafana
 ```
 
-Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no
-admission policy, signature check or NetworkPolicy (ADR-0057, ADR-0056). The
-Node stays LAN-only; exposing a game port range to the internet is outside this
-requirement, but it is one firewall rule once this one is met.
+Met by v3; v1 and v2 ran k3s on its defaults, with no admission policy,
+signature check or NetworkPolicy (ADR-0057, ADR-0056). The Node stays LAN-only;
+exposing a game port range to the internet is outside this requirement, but it
+is one firewall rule once this one is met.
 
 ### NFR-16: VR Frame Rate
 
