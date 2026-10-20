@@ -6,7 +6,6 @@
 
 #include "augusta/command.h"
 #include "augusta/grid.h"
-#include "augusta/parameters.h"
 
 namespace augusta::weapon {
 
@@ -21,12 +20,12 @@ constexpr float kReadyWithin = 1e-4F;
 // What state's rifle points off the view by once the round it just fired has
 // kicked it: the pattern's kick for the round's place in its Burst, the last
 // one again past the pattern's end.
-RecoilOffset Kicked(const parameters::Rifle& rifle, const State& state, bool ads) {
+RecoilOffset Kicked(const Rifle& rifle, const State& state, bool ads) {
   if (rifle.recoil_pattern.empty()) {
     return state.recoil;
   }
   const std::size_t last = rifle.recoil_pattern.size() - 1;
-  const parameters::RecoilKick& kick = rifle.recoil_pattern[std::min<std::size_t>(state.burst_index, last)];
+  const RecoilKick& kick = rifle.recoil_pattern[std::min<std::size_t>(state.burst_index, last)];
   const float scale = ads ? rifle.ads_recoil_scale : 1.0F;
   return RecoilOffset{.pitch = math::SnapAngle(state.recoil.pitch + (kick.pitch * scale)),
                       .yaw = math::SnapAngle(state.recoil.yaw + (kick.yaw * scale))};
@@ -45,12 +44,12 @@ RecoilOffset Recovered(const RecoilOffset& recoil, float angle) {
 
 }  // namespace
 
-State Loaded(const parameters::Rifle& rifle) {
+State Loaded(const Rifle& rifle) {
   return State{
       .cooldown = 0.0F, .reload_remaining = 0.0F, .recoil = {}, .rounds = rifle.magazine_capacity, .burst_index = 0};
 }
 
-Result Step(const parameters::Rifle& rifle, const State& state, const command::Command& command, float delta_time) {
+Result Step(const Rifle& rifle, const State& state, const command::Command& command, float delta_time) {
   Result result{.state = state};
   State& next = result.state;
   const bool starts_reload = command.reload && state.reload_remaining <= 0.0F && state.rounds < rifle.magazine_capacity;

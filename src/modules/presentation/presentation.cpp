@@ -382,7 +382,7 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
 void World::SetParameters(const parameters::Parameters& parameters, float tick_duration) {
   impl_->tracer_rules = TracerRules{
       .muzzle_velocity = parameters.rifle.muzzle_velocity,
-      .bullet = {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range},
+      .bullet = parameters.ammo.flight,
       .tick_duration = tick_duration,
   };
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;

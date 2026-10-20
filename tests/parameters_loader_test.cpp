@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/parameters.h"
+#include "augusta/weapon.h"
 
 // The loader is a pure function of the script text (ADR-0039): every case here
 // is a script in, Parameters or an error out.
@@ -99,7 +100,7 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   EXPECT_FLOAT_EQ(loaded->stamina.deplete_per_second, 0.2F);
   EXPECT_FLOAT_EQ(loaded->stamina.regen_per_second, 0.1F);
   EXPECT_FLOAT_EQ(loaded->stamina.forced_walk_below, 0.05F);
-  const augusta::parameters::Rifle& rifle = loaded->rifle;
+  const augusta::weapon::Rifle& rifle = loaded->rifle;
   EXPECT_EQ(rifle.magazine_capacity, 30U);
   EXPECT_FLOAT_EQ(rifle.rounds_per_minute, 600.0F);
   EXPECT_FLOAT_EQ(rifle.muzzle_velocity, 800.0F);
@@ -112,8 +113,8 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   EXPECT_FLOAT_EQ(rifle.recoil_recovery_per_second, 0.2F);
   EXPECT_FLOAT_EQ(rifle.ads_recoil_scale, 0.5F);
   EXPECT_FLOAT_EQ(rifle.ads_field_of_view, 0.7F);
-  EXPECT_FLOAT_EQ(loaded->ammo.gravity, 9.81F);
-  EXPECT_FLOAT_EQ(loaded->ammo.max_range, 1000.0F);
+  EXPECT_FLOAT_EQ(loaded->ammo.flight.gravity, 9.81F);
+  EXPECT_FLOAT_EQ(loaded->ammo.flight.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, 100.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.torso, 34.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.limb, 25.0F);
@@ -541,7 +542,7 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   EXPECT_FLOAT_EQ(loaded->rifle.rounds_per_minute, 600.0F);
   EXPECT_FLOAT_EQ(loaded->rifle.muzzle_velocity, 800.0F);
   EXPECT_EQ(loaded->rifle.recoil_pattern.size(), 30U);
-  EXPECT_FLOAT_EQ(loaded->ammo.max_range, 1000.0F);
+  EXPECT_FLOAT_EQ(loaded->ammo.flight.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, loaded->starting_health);
   EXPECT_FLOAT_EQ(loaded->starting_health, 100.0F);
 }

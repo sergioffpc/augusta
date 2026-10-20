@@ -3156,7 +3156,7 @@ class ImpossibleCommandTest : public LoopbackMatch {
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = kMagazine;
     parameters.rifle.muzzle_velocity = 800.0F;
-    parameters.ammo.max_range = 1000.0F;
+    parameters.ammo.flight.max_range = 1000.0F;
     return OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
   }
 
@@ -4031,7 +4031,7 @@ class FireMatchOf : public LoopbackMatch {
                                        {.pitch = kThirdPitch, .yaw = kThirdYaw}};
     parameters.rifle.recoil_recovery_per_second = 0.375F;
     parameters.rifle.ads_recoil_scale = 0.5F;
-    parameters.ammo.max_range = 1000.0F;
+    parameters.ammo.flight.max_range = 1000.0F;
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
     setup.scenario.characters.front().eye = Vec3(0.0F, kEyeHeight, 0.0F);
     return setup;
@@ -4602,7 +4602,7 @@ class HitMatchOf : public LoopbackMatch {
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = 30;
     parameters.rifle.muzzle_velocity = 800.0F;
-    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.flight.max_range = 200.0F;
     parameters.ammo.damage = {.head = kHeadDamage, .torso = kTorsoDamage, .limb = kLimbDamage};
     parameters.starting_health = 100.0F;
     std::vector<Vec3> spawn_points;
@@ -5007,8 +5007,8 @@ class FullAutoMatchTest : public LoopbackMatch {
     parameters.rifle.muzzle_velocity = 800.0F;
     parameters.rifle.recoil_pattern = {{.pitch = 1.0F / 256.0F, .yaw = 0.0F}};
     parameters.rifle.recoil_recovery_per_second = 0.375F;
-    parameters.ammo.gravity = 9.81F;
-    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.flight.gravity = 9.81F;
+    parameters.ammo.flight.max_range = 200.0F;
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
     // So much that no one dies of ten seconds of fire, and everyone fires throughout.
     parameters.starting_health = 100000.0F;
@@ -5867,8 +5867,8 @@ class EightPlayerMatchTest : public LoopbackMatch {
     parameters.rifle.muzzle_velocity = 800.0F;
     parameters.rifle.recoil_pattern = {{.pitch = 1.0F / 256.0F, .yaw = 0.0F}};
     parameters.rifle.recoil_recovery_per_second = 0.375F;
-    parameters.ammo.gravity = 9.81F;
-    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.flight.gravity = 9.81F;
+    parameters.ammo.flight.max_range = 200.0F;
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
     parameters.starting_health = 100.0F;
     std::vector<Vec3> spawn_points;
@@ -6250,7 +6250,7 @@ class CorrectedActionTest : public AdversaryMatch {
     parameters.rifle.magazine_capacity = kMagazine;
     parameters.rifle.reload_seconds = 0.5F;
     parameters.rifle.muzzle_velocity = 800.0F;
-    parameters.ammo.max_range = 1000.0F;
+    parameters.ammo.flight.max_range = 1000.0F;
     parameters.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.25F, .forced_walk_below = 0.2F};
     return OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F)}, parameters);
   }
@@ -6491,7 +6491,7 @@ class CorrectedAimTest : public AdversaryMatch {
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = 30;
     parameters.rifle.muzzle_velocity = 8000.0F;
-    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.flight.max_range = 200.0F;
     parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = kLimbDamage};
     parameters.starting_health = kStartingHealth;
     HostSetup setup = OnTheFloor({Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -60.0F)}, parameters);

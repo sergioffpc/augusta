@@ -5,10 +5,10 @@
 ## Responsibility
 
 The gameplay rules both Worlds apply identically, a header and namespace per
-concept: the Command (one tick's player intent), the Parameters' type, the
-rifle's rules (`augusta/weapon.h`), the Body part (`augusta/body_part.h`) and
-bullet trajectories (`augusta/ballistics.h`). Pure, deterministic mechanism with
-no world or state of its own.
+concept: the Command (one tick's player intent), the Parameters (only the
+aggregate of its sections and its validation: each section is typed by the
+concept it configures), the rifle and its ammunition, the Body part and bullet
+trajectories. Pure, deterministic mechanism with no world or state of its own.
 
 ## Not its responsibility
 

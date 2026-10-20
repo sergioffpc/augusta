@@ -11,6 +11,7 @@
 /// every module naming one uses, from the simulation's damage to the link and
 /// the host's logs and metrics. The assets' blob keeps its own numbering, which
 /// the host converts to this one. ADR-0040 decides the three, one per Hitbox.
+/// It also holds the damage a round does to each, as the Parameters set it.
 namespace augusta::body_part {
 
 /// The coarse zones REQUIREMENTS.md's "e.g., head, torso, limb" asks for.
@@ -35,6 +36,15 @@ inline constexpr std::array kBodyParts = {BodyPart::kHead, BodyPart::kTorso, Bod
   }
   return {};
 }
+
+/// The damage a round does, by the Body part it hits (US-12).
+struct Damage {
+  float head = 0.0F;
+  float torso = 0.0F;
+  float limb = 0.0F;
+
+  bool operator==(const Damage&) const = default;
+};
 
 }  // namespace augusta::body_part
 

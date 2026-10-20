@@ -891,7 +891,7 @@ World Duel(std::string_view rules) {
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 30;
   parameters.rifle.muzzle_velocity = 800.0F;
-  parameters.ammo.max_range = 200.0F;
+  parameters.ammo.flight.max_range = 200.0F;
   parameters.ammo.damage = {.head = 100.0F, .torso = 100.0F, .limb = 100.0F};
   parameters.starting_health = 100.0F;
   World world(parameters, kTickRate, WithRules(rules));
@@ -957,7 +957,7 @@ TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
 TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheWorld) {
   Parameters parameters;
   parameters.rifle.muzzle_velocity = 100.0F;
-  parameters.ammo.max_range = 1000.0F;
+  parameters.ammo.flight.max_range = 1000.0F;
   World world = WithAlice(Policy{}, parameters);
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
