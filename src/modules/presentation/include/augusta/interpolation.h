@@ -59,21 +59,33 @@ inline constexpr std::size_t kUpdatesKept = static_cast<std::size_t>(kInterpolat
 /// server's timeline (tick × tick duration). Aligned to the first update's
 /// server time, then advanced by each render frame's elapsed time and pulled
 /// back into step with each newer update slowly - never backwards, never more
-/// than kMaxSlew faster or slower than real time - so neither network jitter
-/// nor frame timing shows as uneven motion. Pure: the caller supplies both
-/// the elapsed time and the updates' server times.
+/// than kSlew faster or slower than real time while within kFastSlewBeyond of
+/// it, kFastSlew beyond - so neither network jitter nor frame timing shows as
+/// uneven motion, yet a latency spike is caught up with within seconds. Pure:
+/// the caller supplies both the elapsed time and the updates' server times.
 class ServerClock {
  public:
   /// The most the clock runs faster or slower than real time to get back into
-  /// step, as a fraction of each frame's elapsed time.
-  static constexpr double kMaxSlew = 0.02;
+  /// step while within kFastSlewBeyond of the newest update's server time, as
+  /// a fraction of each frame's elapsed time: ordinary jitter never moves it
+  /// faster, so remote players never visibly speed up or slow down.
+  static constexpr double kSlew = 0.02;
+  /// The same, further off than kFastSlewBeyond: after a latency spike, remote
+  /// players are held at the newest update for under a second rather than
+  /// several (prototypes/replication-interpolation.html).
+  static constexpr double kFastSlew = 0.10;
+  /// How far off the newest update's server time the clock is, in seconds,
+  /// beyond which it slews at kFastSlew rather than kSlew, whether ahead or
+  /// behind.
+  static constexpr double kFastSlewBeyond = 0.05;
   /// An update's server time further than this from the clock, in seconds,
   /// realigns it at once instead: the server's timeline itself jumped.
   static constexpr double kResyncThreshold = 0.25;
 
-  /// Advances the clock by one render frame's elapsed seconds, adjusted by at
-  /// most kMaxSlew of them toward the newest observed server time. Does
-  /// nothing before the first Observe.
+  /// Advances the clock by one render frame's elapsed seconds, adjusted toward
+  /// the newest observed server time by at most kSlew of them, or kFastSlew
+  /// while further off than kFastSlewBeyond. Does nothing before the first
+  /// Observe.
   void Advance(double elapsed);
 
   /// Takes server_time, an update's time on the server's timeline, as it
