@@ -5,7 +5,7 @@ target_include_directories(augusta_window_events PUBLIC ${CMAKE_CURRENT_SOURCE_D
 augusta_set_module_scope(augusta_window_events CLIENT_ONLY)
 
 if(AUGUSTA_CLIENT)
-  # The window (ADR-0059), which the Renderer creates and owns. GLFW, the
+  # The window (ADR-0059), which the client Runtime owns. GLFW, the
   # manifest's client feature, which AUGUSTA_CLIENT installs, is private to the
   # module, as are glfw_keys.h, its mapping of GLFW's keys, and internals.h, its
   # GLFW window: their tests reach them through this directory. Only Vulkan's

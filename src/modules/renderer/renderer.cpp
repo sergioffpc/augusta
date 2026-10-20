@@ -32,9 +32,9 @@
 #include "kScenePs.h"
 #include "kSceneVs.h"
 
-// The Renderer on NVRHI's Vulkan backend, in its window (ADR-0059). It draws
-// into an offscreen target, then copies that to the swapchain's image and
-// presents it (swapchain.h). It draws the scene, the remote players, the
+// The Renderer on NVRHI's Vulkan backend, in the window it is lent (ADR-0059).
+// It draws into an offscreen target, then copies that to the swapchain's image
+// and presents it (swapchain.h). It draws the scene, the remote players, the
 // fight's effects and the overlay, and the debug HUD's lines over them.
 namespace augusta::renderer {
 
@@ -202,7 +202,8 @@ void SwapRedAndBlue(CapturedFrame& frame) {
 
 struct Renderer::Impl {
   // Declared in the order they are made, so they are destroyed in reverse.
-  window::Window window;
+  // window, lent by the Renderer's owner, outlives them all.
+  const window::Window& window;
   VulkanDevice vulkan;
   nvrhi::IDevice* device;
   Swapchain swapchain;
@@ -247,8 +248,8 @@ struct Renderer::Impl {
   std::array<nvrhi::EventQueryHandle, kFramesInFlight> frame_done;
   std::uint64_t frame_index = 0;
 
-  explicit Impl(const Config& config)
-      : window(config.window),
+  Impl(const window::Window& window, const Config& config)
+      : window(window),
         vulkan(window, config.adapter, config.validation),
         device(&vulkan.Nvrhi()),
         swapchain(vulkan, window.GetSize()) {
@@ -508,11 +509,10 @@ struct Renderer::Impl {
   }
 };
 
-Renderer::Renderer(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+Renderer::Renderer(const window::Window& window, const Config& config)
+    : impl_(std::make_unique<Impl>(window, config)) {}
 
 Renderer::~Renderer() = default;
-
-window::Window& Renderer::GetWindow() { return impl_->window; }
 
 void Renderer::RenderFrame() { impl_->RenderFrame(); }
 

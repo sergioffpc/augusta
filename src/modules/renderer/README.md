@@ -6,16 +6,16 @@ it.
 
 ## Responsibility
 
-Draws through NVRHI on Vulkan with Slang shaders: it creates and owns the
-client's single window, with the window's Vulkan surface, its GPU device and
-swapchain, and draws the Presentation State - the scene, remote players, the
-fight's effects, the overlay - and the debug HUD's text lines over them,
-rendering a frame apart from when the window's events are drained.
+Draws through NVRHI on Vulkan with Slang shaders into the client's single
+window, which it is lent: it has the window make its Vulkan surface, creates its
+GPU device and swapchain, and draws the Presentation State - the scene, remote
+players, the fight's effects, the overlay - and the debug HUD's text lines over
+them, rendering a frame apart from when the window's events are drained.
 
 ## Not its responsibility
 
 - The window and its device events, and draining them: window, which the client
-  runtime polls.
+  runtime owns and polls.
 - Input: the renderer knows nothing of it.
 - What the debug HUD's lines say: hud.
 - What is shown and where the camera is: presentation.

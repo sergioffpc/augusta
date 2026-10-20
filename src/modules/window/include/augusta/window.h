@@ -12,9 +12,9 @@
 /// augusta::window is the client's single OS window and its device events
 /// (ADR-0059); the windowing library it opens them with stays inside the
 /// module. Of GPU APIs it knows only Vulkan's handles, to make the surface the
-/// Renderer presents to (window_vulkan.h), and it knows no input: the Renderer
-/// creates and owns it, and the client Runtime drains its events with Poll() on the Main/Render
-/// thread and hands them to input. Poll() only drains, apart from presenting a
+/// Renderer presents to (window_vulkan.h), and it knows no input: the client
+/// Runtime owns it and lends it to the Renderer, and drains its events with
+/// Poll() on the Main/Render thread and hands them to input. Poll() only drains, apart from presenting a
 /// frame, so the Runtime decides when each happens. Every call is from the
 /// thread that constructed the Window, the windowing library's own rule.
 namespace augusta::window {
