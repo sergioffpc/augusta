@@ -516,13 +516,13 @@ punch
 
 **Shooter's delay**: How far in the past the shooter saw other players when it
 fired: from the Seen time its fire Command reports to the tick the server takes
-that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for
+that Command in, capped at 300 ms. Fixed when the Shot is fired, it holds for
 the bullet's whole flight (ADR-0044). _Avoid_: Ping, lag, latency, rewind time
 (the RTT is only part of it, next to the Interpolation delay)
 
 **Hitbox history**: Every player's pose (position, stance and facing) on each of
 the Authoritative server's recent ticks, as that tick's Authoritative State
-reported it: enough ticks to cover the Shooter's delay's cap, 15 at 60 Hz. What
+reported it: enough ticks to cover the Shooter's delay's cap, 18 at 60 Hz. What
 Lag compensation places a player's Hitboxes by. _Avoid_: Rewind buffer, position
 history, snapshot history
 

@@ -113,8 +113,8 @@ Validation proves that no client can do what the game forbids. It cannot prove
 that a client plays fairly with what the game allows:
 
 - A client may always claim the Shooter's delay's cap: any Seen time up to
-  `kMaxShootersDelay` old is one an honest client on a slow link could report,
-  so a round is judged against the targets as they were then (ADR-0044).
+  `kMaxShootersDelay` (300 ms) old is one an honest client on a slow link could
+  report, so a round is judged against the targets as they were then (ADR-0044).
 - Every client is sent every body, so a wallhack sees them all. The game runs on
   a trusted LAN.
 - Aim assistance cannot be told from good aim: an aimbot's Commands are views

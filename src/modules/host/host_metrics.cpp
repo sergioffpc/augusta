@@ -46,9 +46,9 @@ constexpr std::initializer_list<double> kTickBuckets = {0.001,  0.002, 0.004, 0.
 constexpr std::initializer_list<double> kMatchBuckets = {30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600};
 // Around a datagram's size, up to a few.
 constexpr std::initializer_list<double> kUpdateBuckets = {64, 128, 256, 512, 1024, 1200, 1500, 2048, 4096};
-// Up to the 250 ms cap (simulation::kMaxShootersDelay), which a capped round falls in.
-constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100,
-                                                                 0.125, 0.150, 0.200, 0.250};
+// Up to the 300 ms cap (simulation::kMaxShootersDelay), which a capped round falls in.
+constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100, 0.125,
+                                                                 0.150, 0.200, 0.250, 0.300};
 
 // Each label below is empty for a value no counter has, which
 // LabelledExactly checks.
@@ -292,7 +292,7 @@ void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metric
   families.push_back(HistogramFamily("augustad_shooters_delay_seconds", "The Shooter's delay of each round fired.",
                                      metrics.shooters_delay));
   families.push_back(CounterFamily("augustad_shooters_delay_capped_total",
-                                   "Rounds whose Shooter's delay was held at the 250 ms cap.",
+                                   "Rounds whose Shooter's delay was held at the 300 ms cap.",
                                    metrics.shooters_delay_capped));
   families.push_back(GaugeFamily("augustad_bullets_in_flight", "Bullets still flying after the last tick.",
                                  metrics.bullets_in_flight));

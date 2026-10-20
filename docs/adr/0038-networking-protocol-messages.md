@@ -242,7 +242,7 @@ and it is made loss-tolerant without retransmission:
   the message carries the newest of them once, in full, and each command how
   many ticks before it its own is, up to 255. A Seen time more than 255 ticks
   before the message's travels as 255, at least a second old at any tick rate
-  and so already past the 250 ms a shot is judged within. The fraction's last
+  and so already past the 300 ms a shot is judged within. The fraction's last
   step is 255/256: a Seen time a whole tick on names the next tick instead.
 - **The server takes each command in once.** A sequence not newer than the last
   taken in from that client is dropped (routine, since commands repeat), and so
