@@ -16,6 +16,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -104,7 +105,7 @@ Character Cross() {
     triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
   }
   return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
 }
 
 augusta::physics::CollisionMesh Floor() {

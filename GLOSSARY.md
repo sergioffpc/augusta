@@ -404,6 +404,10 @@ and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
 
 ### Combat
 
+**Surface**: Anything a round can strike: a collider of the Map, a Prop, or one
+of a player's Hitboxes. Ballistics knows a Surface only by the id its caller
+gave it. _Avoid_: Target; collider, when the Surface is a Hitbox
+
 **Hitbox**: A volume of a player's body that stands for one body part (head,
 torso or limb), used server-side to resolve where a bullet impacts. Authored
 with the Character, one or more per body part (ADR-0040). _Avoid_: Collider (a

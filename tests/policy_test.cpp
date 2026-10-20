@@ -23,6 +23,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -870,7 +871,7 @@ Character Broad() {
   const Vec3 up(0.0F, 2.0F, 0.0F);
   const Vec3 half(2.0F, 0.0F, 0.0F);
   return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso,
+                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso,
                                  .triangles = {Triangle{.a = -half, .b = half, .c = half + up},
                                                Triangle{.a = -half, .b = half + up, .c = -half + up}}}}};
 }

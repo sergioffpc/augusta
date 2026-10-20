@@ -44,7 +44,7 @@ std::vector<Tracer> Tracers::Drawn() const {
 std::span<const Effect> Tracers::Impacts() const { return impacts_; }
 
 void Tracers::StepAhead(Flight& flight) {
-  // No hitboxes: a tracer never hits a player (see tracers.h).
+  // No hitboxes: whatever a tracer strikes is the Map (see tracers.h).
   const ballistics::StepResult step = ballistics_.Step(flight.bullet, flight.tick_duration, map_, {});
   flight.behind = flight.from;
   flight.from = flight.to;
@@ -53,10 +53,9 @@ void Tracers::StepAhead(Flight& flight) {
     case ballistics::Outcome::kExpired:
       flight.to = step.state.position;
       break;
-    case ballistics::Outcome::kHitMap:
-    case ballistics::Outcome::kHitPlayer:
+    case ballistics::Outcome::kStruck:
       flight.to = step.impact_point;
-      flight.strikes_map = step.outcome == ballistics::Outcome::kHitMap;
+      flight.strikes_map = true;
       break;
   }
   flight.ends = step.outcome != ballistics::Outcome::kInFlight;

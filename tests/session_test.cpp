@@ -29,7 +29,7 @@
 
 #include "augusta/admission.h"
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
 #include "augusta/capturer.h"
@@ -4582,7 +4582,7 @@ std::vector<augusta::assets::HitboxData> HumanHitboxes() {
 template <std::uint8_t kPlayers>
 class HitMatchOf : public LoopbackMatch {
  protected:
-  using BodyPart = augusta::ballistics::BodyPart;
+  using BodyPart = augusta::body_part::BodyPart;
 
   static constexpr float kEyeHeight = 1.6F;
   static constexpr float kSpacing = 10.0F;
@@ -5165,7 +5165,7 @@ TEST_F(ScriptedServerTest, AHitConfirmationOfABodyInTheMatchIsHandedOutOnceAsItW
 
   ASSERT_EQ(hits.size(), 1U);
   EXPECT_EQ(hits[0].target, *session_.GetServerView()->OwnEntity());
-  EXPECT_EQ(hits[0].part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(hits[0].part, augusta::body_part::BodyPart::kHead);
   EXPECT_EQ(hits[0].damage, 37.5F);
   EXPECT_TRUE(session_.TakeHitConfirmations(*session_.GetServerView()).empty());
 }

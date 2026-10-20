@@ -5,13 +5,12 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
@@ -19,22 +18,6 @@
 #include "match_players.h"
 
 namespace augusta::harness {
-
-namespace {
-
-std::string_view BodyPartName(ballistics::BodyPart part) {
-  switch (part) {
-    case ballistics::BodyPart::kHead:
-      return "head";
-    case ballistics::BodyPart::kTorso:
-      return "torso";
-    case ballistics::BodyPart::kLimb:
-      return "limb";
-  }
-  std::unreachable();
-}
-
-}  // namespace
 
 void Inbox::Receive(link::ServerMessage message) {
   std::visit(
@@ -198,7 +181,7 @@ void Inbox::OnDeath(const Death& death) {
   Publish([&](ServerView& next) { next.dead.push_back(death.victim); });
   deaths_.Add(current->matches_started, death);
   LOG_INFO("subsystem=harness event=death victim={} killer={} part={}", std::to_underlying(death.victim),
-           std::to_underlying(death.killer), BodyPartName(death.part));
+           std::to_underlying(death.killer), body_part::NameOf(death.part));
 }
 
 // Keeps state if it is newer than the one held (unreliable delivery can
