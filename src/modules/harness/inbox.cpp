@@ -108,6 +108,7 @@ void Inbox::OnMatchStart(MatchStart start) {
     next.in_match = true;
     next.match_end.reset();
     next.authoritative.reset();
+    next.recent_authoritative.clear();
     next.dead.clear();
     next.replay_view.reset();
   });
@@ -118,6 +119,7 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   Publish([&](ServerView& next) {
     next.in_match = false;
     next.authoritative.reset();
+    next.recent_authoritative.clear();
     next.replay_view.reset();
     next.match_end = end;
   });
@@ -186,7 +188,8 @@ void Inbox::OnDeath(const Death& death) {
 
 // Keeps state if it is newer than the one held (unreliable delivery can
 // reorder) and belongs to the match in progress: unreliable, it can arrive
-// before Match start or after Match end.
+// before Match start or after Match end. It is the newest, and the last of the
+// recent ones, the oldest of which goes once kRecentStatesKept are held.
 void Inbox::OnAuthoritativeState(AuthoritativeState state) {
   const std::shared_ptr<const ServerView> current = View();
   if (!current->in_match) {
@@ -203,7 +206,13 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
   if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
     return;
   }
-  Publish([&](ServerView& next) { next.authoritative = std::move(state); });
+  Publish([&](ServerView& next) {
+    if (next.recent_authoritative.size() == kRecentStatesKept) {
+      next.recent_authoritative.erase(next.recent_authoritative.begin());
+    }
+    next.recent_authoritative.push_back(state);
+    next.authoritative = std::move(state);
+  });
 }
 
 // Keeps view if it is newer than the one held and of the Replay in progress,
