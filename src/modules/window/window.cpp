@@ -3,14 +3,18 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_core.h>
 
 #include "augusta/window_events.h"
+#include "augusta/window_vulkan.h"
 #include "glfw_keys.h"
+#include "internals.h"
 
 namespace augusta::window {
 
@@ -133,6 +137,26 @@ Size Window::GetSize() const { return impl_->size; }
 
 void Window::SetCursorLocked(bool locked) { impl_->SetCursorLocked(locked); }
 
-GLFWwindow& Window::Glfw() const { return *impl_->window; }
+GLFWwindow& Internals::Glfw(const Window& window) { return *window.impl_->window; }
+
+PFN_vkGetInstanceProcAddr VulkanLoader(const Window& /*window*/) {
+  if (glfwVulkanSupported() != GLFW_TRUE) {
+    return nullptr;
+  }
+  return reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
+}
+
+std::span<const char* const> VulkanInstanceExtensions(const Window& /*window*/) {
+  std::uint32_t count = 0;
+  const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+  if (extensions == nullptr) {
+    return {};
+  }
+  return {extensions, count};
+}
+
+VkResult CreateVulkanSurface(const Window& window, VkInstance instance, VkSurfaceKHR& surface) {
+  return glfwCreateWindowSurface(instance, &Internals::Glfw(window), nullptr, &surface);
+}
 
 }  // namespace augusta::window

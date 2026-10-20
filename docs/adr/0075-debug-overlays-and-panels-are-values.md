@@ -56,11 +56,11 @@ Escape leaves it with the cursor released, as Escape does in the game, and does
 nothing else. Debug overlays never take input. Which state the client is in is a
 small pure state in `augusta_debug`, driven by F1 and Escape; the client Runtime
 only routes by it. In Debug interaction it hands the window's events to the
-Renderer's ImGui rather than to `input::Input`, which drops whatever was held so
-no key stays pressed; out of it ImGui is told to ignore mouse and keyboard,
-since its GLFW binding hears the Window too. The cursor is locked only while
-`Input` captures it and the client is out of Debug interaction. `Input` knows
-nothing of debug tools.
+Renderer, which feeds them to ImGui, rather than to `input::Input`, which drops
+whatever was held so no key stays pressed; out of it ImGui gets none, having no
+platform binding of its own (ADR-0059). The cursor is locked only while `Input`
+captures it and the client is out of Debug interaction. `Input` knows nothing of
+debug tools.
 
 **The Debug index.** One Debug panel, built in `augusta_debug` from the entries
 the client Runtime passes it (a name and whether it is on), lists the Debug HUD
@@ -106,7 +106,8 @@ own business.
 - An area's debug tool is tested without a GPU: its shapes and its panel are
   pure functions of its state.
 - The Renderer's interface grows a call for the frame's shapes and one for its
-  panels, and `RenderFrame` returns the panels' events.
+  panels and one for the window's events in Debug interaction, and `RenderFrame`
+  returns the panels' events.
 - How the server's state reaches a Debug overlay is decided apart (ADR-0038,
   ADR-0044).
 - `input::Input` grows a way to drop the keys and buttons held, and the client

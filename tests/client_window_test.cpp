@@ -7,6 +7,7 @@
 
 #include "augusta/window.h"
 #include "augusta/window_events.h"
+#include "internals.h"
 
 namespace augusta::window {
 namespace {
@@ -43,7 +44,7 @@ constexpr std::uint32_t kHeight = 240;
 class WindowTest : public ::testing::Test {
  protected:
   Window window_{{.title = "augusta window test", .width = kWidth, .height = kHeight, .hidden = true}};
-  OsEvents os_{window_.Glfw()};
+  OsEvents os_{Internals::Glfw(window_)};
 };
 
 TEST_F(WindowTest, PollsNoEventsBeforeTheOsDeliversAny) { EXPECT_TRUE(window_.Poll().empty()); }
