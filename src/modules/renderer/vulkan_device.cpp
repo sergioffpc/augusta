@@ -19,6 +19,7 @@
 #include "augusta/logging.h"
 #include "augusta/renderer.h"
 #include "augusta/window.h"
+#include "augusta/window_vulkan.h"
 #include "device_choice.h"
 #include "gpu_crash_dumps.h"
 
@@ -38,7 +39,7 @@ constexpr std::string_view kValidationLayer = "VK_LAYER_KHRONOS_validation";
 
 // Points the dispatcher at the loader the window found, the system's.
 void LoadVulkan(const window::Window& window) {
-  const PFN_vkGetInstanceProcAddr loader = window.VulkanLoader();
+  const PFN_vkGetInstanceProcAddr loader = window::VulkanLoader(window);
   if (loader == nullptr) {
     throw std::runtime_error("No Vulkan loader found: the client needs a GPU driver with Vulkan 1.3");
   }
@@ -166,7 +167,7 @@ VulkanDevice::VulkanDevice(const window::Window& window, Adapter adapter, Valida
   LoadVulkan(window);
   CreateInstance(window, validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
-  if (const VkResult result = window.CreateVulkanSurface(*instance_, surface); result != VK_SUCCESS) {
+  if (const VkResult result = window::CreateVulkanSurface(window, *instance_, surface); result != VK_SUCCESS) {
     throw std::runtime_error(
         std::format("Creating the window's Vulkan surface failed: {}", nvrhi::vulkan::resultToString(result)));
   }
@@ -226,7 +227,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
 }
 
 void VulkanDevice::CreateInstance(const window::Window& window, Validation requested) {
-  const std::span<const char* const> window_extensions = window.VulkanInstanceExtensions();
+  const std::span<const char* const> window_extensions = window::VulkanInstanceExtensions(window);
   if (window_extensions.empty()) {
     throw std::runtime_error("The system's Vulkan loader can't present to a window");
   }
