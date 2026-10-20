@@ -852,8 +852,10 @@ if(AUGUSTA_CLIENT)
 
   # The window itself, hidden, which needs a display: on Linux CI's runner gives
   # it a virtual X server, as the renderer smoke test's (nightly-jobs.yml). It
-  # calls the window's GLFW callbacks as the OS's events would.
+  # calls the window's GLFW callbacks as the OS's events would, on the GLFW
+  # window internals.h, private to the module, gives it.
   add_executable(augusta_client_window_tests client_window_test.cpp)
+  target_include_directories(augusta_client_window_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/window)
   target_link_libraries(augusta_client_window_tests PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_window_tests)
 endif()

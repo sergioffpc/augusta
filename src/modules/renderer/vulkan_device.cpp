@@ -12,13 +12,13 @@
 #include <string_view>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <nvrhi/nvrhi.h>
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/logging.h"
 #include "augusta/renderer.h"
+#include "augusta/window.h"
 #include "device_choice.h"
 #include "gpu_crash_dumps.h"
 
@@ -36,13 +36,13 @@ constexpr std::uint32_t kVulkanVersion = VK_API_VERSION_1_3;
 
 constexpr std::string_view kValidationLayer = "VK_LAYER_KHRONOS_validation";
 
-// Points the dispatcher at the loader GLFW found, the system's.
-void LoadVulkan() {
-  if (glfwVulkanSupported() != GLFW_TRUE) {
+// Points the dispatcher at the loader the window found, the system's.
+void LoadVulkan(const window::Window& window) {
+  const PFN_vkGetInstanceProcAddr loader = window.VulkanLoader();
+  if (loader == nullptr) {
     throw std::runtime_error("No Vulkan loader found: the client needs a GPU driver with Vulkan 1.3");
   }
-  VULKAN_HPP_DEFAULT_DISPATCHER.init(
-      reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr")));
+  VULKAN_HPP_DEFAULT_DISPATCHER.init(loader);
   // Vulkan 1.0's loader has no vkEnumerateInstanceVersion.
   if (VULKAN_HPP_DEFAULT_DISPATCHER.vkEnumerateInstanceVersion == nullptr ||
       vk::enumerateInstanceVersion() < kVulkanVersion) {
@@ -160,13 +160,13 @@ std::string_view Describe(Adapter adapter) {
 
 }  // namespace
 
-VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation) {
+VulkanDevice::VulkanDevice(const window::Window& window, Adapter adapter, Validation validation) {
   // Aftermath watches only the devices made after it starts.
   const bool gpu_crash_dumps = EnableGpuCrashDumps();
-  LoadVulkan();
-  CreateInstance(validation);
+  LoadVulkan(window);
+  CreateInstance(window, validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
-  if (const VkResult result = glfwCreateWindowSurface(*instance_, &window, nullptr, &surface); result != VK_SUCCESS) {
+  if (const VkResult result = window.CreateVulkanSurface(*instance_, surface); result != VK_SUCCESS) {
     throw std::runtime_error(
         std::format("Creating the window's Vulkan surface failed: {}", nvrhi::vulkan::resultToString(result)));
   }
@@ -225,13 +225,12 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
   return vk::False;
 }
 
-void VulkanDevice::CreateInstance(Validation requested) {
-  std::uint32_t window_extension_count = 0;
-  const char** window_extensions = glfwGetRequiredInstanceExtensions(&window_extension_count);
-  if (window_extensions == nullptr) {
+void VulkanDevice::CreateInstance(const window::Window& window, Validation requested) {
+  const std::span<const char* const> window_extensions = window.VulkanInstanceExtensions();
+  if (window_extensions.empty()) {
     throw std::runtime_error("The system's Vulkan loader can't present to a window");
   }
-  instance_extensions_.assign(window_extensions, window_extensions + window_extension_count);
+  instance_extensions_.assign(window_extensions.begin(), window_extensions.end());
   const bool validation = LoadsValidationLayer(requested, requested != Validation::kOff && HasValidationLayer());
   std::vector<const char*> layers;
   if (validation) {
