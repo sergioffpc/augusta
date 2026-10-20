@@ -4,10 +4,11 @@ Milestones are ordered, not dated (no fixed deadline — see VISION.md). Sizes a
 relative effort, not calendar estimates: S / M / L. They are grouped by the
 release that shipped them, or the one they are planned for; each requirement in
 REQUIREMENTS.md names the release that first met it, or the one it is planned
-for. A planned release is a delivery point: it ships once its milestones meet
-their exit criteria, and its version is the next major when it is cut. Releases
-follow semver: a breaking change waiting on `develop` ships as a major of its
-own, ahead of the planned release, and every planned release moves one major on.
+for. A planned release is a delivery point named by its theme: it ships once its
+milestones meet their exit criteria, and takes its version, the next major, when
+it is cut. Releases follow semver: a breaking change waiting on `develop` ships
+as a major of its own, ahead of the planned release. How releases are drawn from
+the issues is ENGINEERING.md's Milestones section.
 
 ## Contents
 
@@ -35,34 +36,38 @@ own, ahead of the planned release, and every planned release moves one major on.
     - [M16 — Hardening & v3 Release (S)](#m16--hardening--v3-release-s)
 - [v4 — Modules and Packs (4.0.0, 2026-10-19)](#v4--modules-and-packs-400-2026-10-19)
     - [M17 — One Pack Format (S)](#m17--one-pack-format-s)
-- [v5 — Protocol Buffers (planned)](#v5--protocol-buffers-planned)
+- [Codebase Review (planned)](#codebase-review-planned)
+- [Protocol Buffers (planned)](#protocol-buffers-planned)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
-- [v6 — Debug Tooling (planned)](#v6--debug-tooling-planned)
+- [Debug Tooling (planned)](#debug-tooling-planned)
     - [M19 — Debug Tooling (L)](#m19--debug-tooling-l)
-- [v7 — Authoritative Body (planned)](#v7--authoritative-body-planned)
+- [Authoritative Body (planned)](#authoritative-body-planned)
     - [M20 — Skeleton (M)](#m20--skeleton-m)
     - [M21 — Muzzle (S)](#m21--muzzle-s)
     - [M22 — Clips & the Hitbox Pose (M)](#m22--clips--the-hitbox-pose-m)
-- [v8 — The Image (planned)](#v8--the-image-planned)
+- [The Image (planned)](#the-image-planned)
     - [M23 — Deferred Frame & Looks (M)](#m23--deferred-frame--looks-m)
     - [M24 — Upscaling & Graphics Settings (S)](#m24--upscaling--graphics-settings-s)
     - [M25 — Ray-traced Lighting (M)](#m25--ray-traced-lighting-m)
+- [The Drawn Body (planned)](#the-drawn-body-planned)
     - [M26 — Drawing the Body (M)](#m26--drawing-the-body-m)
-- [v9 — The World Answers (planned)](#v9--the-world-answers-planned)
+- [The World Answers (planned)](#the-world-answers-planned)
     - [M27 — Props & Surface Materials (L)](#m27--props--surface-materials-l)
-    - [M28 — Impact Effects (S)](#m28--impact-effects-s)
+    - [M28 — Effects & Impact Effects (M)](#m28--effects--impact-effects-m)
     - [M29 — Ragdolls (S)](#m29--ragdolls-s)
-- [v10 — The Sound (planned)](#v10--the-sound-planned)
+- [The Sound (planned)](#the-sound-planned)
     - [M30 — Acoustics (L)](#m30--acoustics-l)
     - [M31 — Footsteps (S)](#m31--footsteps-s)
-- [v11 — Teams (planned)](#v11--teams-planned)
+- [Teams (planned)](#teams-planned)
     - [M32 — Team Match (M)](#m32--team-match-m)
     - [M33 — Voice Chat (M)](#m33--voice-chat-m)
-- [v12 — Explosions, Destruction & Smoke (planned)](#v12--explosions-destruction--smoke-planned)
-    - [M34 — Explosions, Destruction & Smoke (L)](#m34--explosions-destruction--smoke-l)
-- [v13 — VR (planned)](#v13--vr-planned)
+- [Explosions (planned)](#explosions-planned)
+    - [M34a — Explosions (L)](#m34a--explosions-l)
+- [Destruction & Smoke (planned)](#destruction--smoke-planned)
+    - [M34b — Destruction & Smoke (M)](#m34b--destruction--smoke-m)
+- [VR (planned)](#vr-planned)
     - [M35 — VR Play Mode (L)](#m35--vr-play-mode-l)
-- [Later — Scalable (planned, no version yet)](#later--scalable-planned-no-version-yet)
+- [Scalable (planned)](#scalable-planned)
     - [M36 — Client-side Metrics (S)](#m36--client-side-metrics-s)
     - [M37 — Horizontal Scalability (M)](#m37--horizontal-scalability-m)
 - [Not yet planned](#not-yet-planned)
@@ -357,12 +362,22 @@ only), and gives every cue's sound variants and a gain.
 encoded or decoded in Python, and the golden packs cook unchanged through the
 C++ encoder
 
-## v5 — Protocol Buffers (planned)
+## Codebase Review (planned)
 
-v5 moves the Networking Protocol's wire to Protocol Buffers, so that one schema
-describes every message, for the game and for the tools that read its traffic.
-It is breaking for clients and servers of v4, so it ships as a major of its own,
-as early as it can.
+A maintenance release: refactors and module boundary adjustments found by a
+review of the code, with no new behaviour. It ships as a minor once complete,
+without holding back the next major; a breaking change makes it a major of its
+own.
+
+**Exit criteria:** every refactor in it lands with the behaviour its tests pin
+unchanged
+
+## Protocol Buffers (planned)
+
+This release moves the Networking Protocol's wire to Protocol Buffers, so that
+one schema describes every message, for the game and for the tools that read its
+traffic. It is breaking for clients and servers of v4, so it ships as a major of
+its own, as early as it can.
 
 ### M18 — Protocol Buffers (M)
 
@@ -376,13 +391,13 @@ message) are recorded.
 **Exercises:** ADR-0007, ADR-0038 **Exit criteria:** every message crosses the
 wire as Protocol Buffers, through the codec the build generates
 
-## v6 — Debug Tooling (planned)
+## Debug Tooling (planned)
 
-v6 lets developers see what the game does before the releases that build on it:
-what collides, which bodies the server holds, where a Shot was judged, and what
-the network carries. Every tool is compiled out of the Shipping build players
-get, not merely switched off. The Smoke screen and rendering overlays wait on
-what they show, and ship with the releases that bring it.
+Debug Tooling lets developers see what the game does before the releases that
+build on it: what collides, which bodies the server holds, where a Shot was
+judged, and what the network carries. Every tool is compiled out of the Shipping
+build players get, not merely switched off. The Smoke screen and rendering
+overlays wait on what they show, and ship with the releases that bring it.
 
 ### M19 — Debug Tooling (L)
 
@@ -397,7 +412,8 @@ what they show, and ship with the releases that bring it.
   traffic per message type, Authoritative State rate and size, Reconciliation
   corrections and interpolation slack
 - A Wireshark dissector over the game's own capture of decrypted messages,
-  handing each message to Wireshark's `protobuf` dissector over v5's schema
+  handing each message to Wireshark's `protobuf` dissector over the schema of
+  the Protocol Buffers release
 
 Its specs are written once its remaining decisions (network impairment, the
 shortcuts into OmniPVD and Nsight, the order of the specs) are recorded.
@@ -407,12 +423,12 @@ Development build shows where the server judged a Shot against the Hitboxes the
 shooter saw, Wireshark names every message in a Development build's capture, and
 a Shipping build holds no debug tool
 
-## v7 — Authoritative Body (planned)
+## Authoritative Body (planned)
 
-v6 lets developers see the game; v7 makes a Shot land where the body is. A
-Character gets a Skeleton, its Hitboxes follow Joints posed from replicated
-state, and rounds leave the rifle's Muzzle. All of it is the server's: clients
-draw the same rigid body until v8.
+Debug Tooling lets developers see the game; the Authoritative Body makes a Shot
+land where the body is. A Character gets a Skeleton, its Hitboxes follow Joints
+posed from replicated state, and rounds leave the rifle's Muzzle. All of it is
+the server's: clients draw the same rigid body until The Drawn Body.
 
 ### M20 — Skeleton (M)
 
@@ -447,10 +463,10 @@ starts at its rifle's Muzzle
 aiming player is hit where its posed arm is, and a client's pose agrees with the
 server's within the tolerance
 
-## v8 — The Image (planned)
+## The Image (planned)
 
-v7 poses the body; v8 draws it, in a world with materials and light. It meets
-NFR-17.
+The Authoritative Body poses the body; The Image draws the world it stands in,
+with materials and light.
 
 ### M23 — Deferred Frame & Looks (M)
 
@@ -482,6 +498,11 @@ anti-aliased with either upscaler, and each setting takes effect from the config
 lamps, reflections and bounced light all come from its geometry, with no baked
 lighting in the pack
 
+## The Drawn Body (planned)
+
+The Image draws the world; The Drawn Body draws the players in it, in their
+pose. It meets NFR-17.
+
 ### M26 — Drawing the Body (M)
 
 - The client's Animation phase, Cosmetic layers and GPU skinning
@@ -491,10 +512,11 @@ lighting in the pack
 skinned in its pose, the local player sees its own body, and an 8-player Match
 holds NFR-17
 
-## v9 — The World Answers (planned)
+## The World Answers (planned)
 
-v8 makes the world visible; v9 makes it physical. Objects move when pushed or
-shot, rounds go through what they can, and strikes show what they hit.
+The Image makes the world visible; The World Answers makes it physical. Objects
+move when pushed or shot, rounds go through what they can, and strikes show what
+they hit.
 
 ### M27 — Props & Surface Materials (L)
 
@@ -508,13 +530,14 @@ The two are built in parallel; Props join as surfaces when they land.
 passes through a wooden door and stops in a concrete wall, and a struck crate
 moves the same way on every client
 
-### M28 — Impact Effects (S)
+### M28 — Effects & Impact Effects (M)
 
+- Effects: one catalogue of particles, decals and brief lights
 - Particles, a decal in the G-buffer and a sound for each Surface material
 - Debris as the client's dynamic bodies
 
-**Exercises:** ADR-0065, ADR-0045 **Exit criteria:** a strike on glass, wood,
-metal and concrete each looks and sounds its own
+**Exercises:** ADR-0073, ADR-0065, ADR-0045 **Exit criteria:** a strike on
+glass, wood, metal and concrete each looks and sounds its own
 
 ### M29 — Ragdolls (S)
 
@@ -523,15 +546,15 @@ metal and concrete each looks and sounds its own
 **Exercises:** ADR-0066, ADR-0045 **Exit criteria:** a killed player falls as a
 ragdoll from its drawn pose, thrown along the killing blow
 
-## v10 — The Sound (planned)
+## The Sound (planned)
 
-v10 makes the Map heard: sound is occluded, reflected and routed by its
+The Sound makes the Map heard: sound is occluded, reflected and routed by its
 geometry, and players' feet make noise.
 
 ### M30 — Acoustics (L)
 
 - Steam Audio's overlay port with Embree, first: the built-in ray tracer can
-  stand in for it only until M34's Breakables (ADR-0071)
+  stand in for it only until M34b's Breakables (ADR-0071)
 - One sound shape for every cue; a player-chosen SOFA HRTF
 - Air absorption, cue directivity, occlusion and transmission from the Map's
   Acoustic geometry and placed Props
@@ -549,9 +572,9 @@ corridor rings
 **Exercises:** ADR-0062, ADR-0066, US-04 **Exit criteria:** a player running
 over a metal floor is heard, and one walking is quieter
 
-## v11 — Teams (planned)
+## Teams (planned)
 
-v11 turns the last player standing into two sides. It meets US-26 and US-27.
+Teams turns the last player standing into two sides. It meets US-26 and US-27.
 
 ### M32 — Team Match (M)
 
@@ -570,25 +593,43 @@ has no one left alive
 teammate and no enemy, and Speech aloud is heard by anyone near, through the
 acoustics
 
-## v12 — Explosions, Destruction & Smoke (planned)
+## Explosions (planned)
 
-v12 adds what blows up, breaks and hides. It builds on the Props, Surface
-materials and impact effects of v9, and on the Teams of v11 for friendly fire.
+Explosions adds what blows up. It builds on the Props, Surface materials and
+impact effects of The World Answers, and on Teams for friendly fire.
 
-### M34 — Explosions, Destruction & Smoke (L)
+### M34a — Explosions (L)
 
-- Explosions and their Fragments, Breakable Props and Integrity, Smoke screens,
-  the flashbang's Dazzle, launched rounds, Effects and the Loadout
+- The Loadout and the fragmentation grenade: cooking, throwing, blast and
+  Fragments
+- The flashbang's Dazzle: its white-out, muffle and ringing
+- Launched rounds: the underbarrel launcher and the AT4, arming and Explosions
+  on impact
 
-Its specs are not written yet: they are sliced, ordered and split into
-milestones once its decisions (ADR-0070 to ADR-0073) are recorded.
+**Exercises:** ADR-0070 **Exit criteria:** a grenade's Fragments wound whoever
+they reach through what they can cross, a flashbang dazzles whoever sees it go
+off, and a launched round explodes on impact only once armed
 
-**Exercises:** ADR-0070, ADR-0071, ADR-0072, ADR-0073 **Exit criteria:** set
-with its specs
+## Destruction & Smoke (planned)
 
-## v13 — VR (planned)
+Destruction & Smoke adds what breaks and what hides. It builds on the Explosions
+before it, and on the acoustics of The Sound for sound through an opened wall.
 
-v13 lets a player play with a PC VR headset, in the same Matches as desktop
+### M34b — Destruction & Smoke (M)
+
+- Breakable and explosive Prop kinds: breaking into pieces, chains, and sound
+  through an opened wall
+- Smoke screens: the smoke grenade, the Map's voxel grid, the flood fill and the
+  ray-marched cloud
+- The Smoke screen Debug overlays
+
+**Exercises:** ADR-0071, ADR-0072 **Exit criteria:** an Explosion breaks a wall
+into pieces that open a line of sight and let sound through, and a Smoke screen
+hides a player standing in it from one side to the other
+
+## VR (planned)
+
+VR lets a player play with a PC VR headset, in the same Matches as desktop
 players. It meets US-25 and NFR-16.
 
 ### M35 — VR Play Mode (L)
@@ -602,11 +643,10 @@ players. It meets US-25 and NFR-16.
 VR player plays a full Match holding the rifle in two hands, hit on its tracked
 body, at NFR-16's frame rate
 
-## Later — Scalable (planned, no version yet)
+## Scalable (planned)
 
 A later release runs more than one Match of a scenario at once, with Agents as
-the load that proves it. It meets US-24, NFR-13 and NFR-14; its version is
-chosen when it is cut.
+the load that proves it. It meets US-24, NFR-13 and NFR-14.
 
 ### M36 — Client-side Metrics (S)
 
