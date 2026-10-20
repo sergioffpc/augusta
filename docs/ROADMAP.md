@@ -40,7 +40,9 @@ the issues is ENGINEERING.md's Milestones section.
 - [Protocol Buffers (planned)](#protocol-buffers-planned)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
 - [Debug Tooling (planned)](#debug-tooling-planned)
-    - [M19 — Debug Tooling (L)](#m19--debug-tooling-l)
+    - [M19a — Debug Tooling (L)](#m19a--debug-tooling-l)
+- [Network Tooling (planned)](#network-tooling-planned)
+    - [M19b — Network Tooling (M)](#m19b--network-tooling-m)
 - [Authoritative Body (planned)](#authoritative-body-planned)
     - [M20 — Skeleton (M)](#m20--skeleton-m)
     - [M21 — Muzzle (S)](#m21--muzzle-s)
@@ -53,6 +55,7 @@ the issues is ENGINEERING.md's Milestones section.
     - [M26 — Drawing the Body (M)](#m26--drawing-the-body-m)
 - [The World Answers (planned)](#the-world-answers-planned)
     - [M27 — Props & Surface Materials (L)](#m27--props--surface-materials-l)
+- [Impacts (planned)](#impacts-planned)
     - [M28 — Effects & Impact Effects (M)](#m28--effects--impact-effects-m)
     - [M29 — Ragdolls (S)](#m29--ragdolls-s)
 - [The Sound (planned)](#the-sound-planned)
@@ -61,10 +64,12 @@ the issues is ENGINEERING.md's Milestones section.
 - [Teams (planned)](#teams-planned)
     - [M32 — Team Match (M)](#m32--team-match-m)
     - [M33 — Voice Chat (M)](#m33--voice-chat-m)
-- [Explosions (planned)](#explosions-planned)
-    - [M34a — Explosions (L)](#m34a--explosions-l)
+- [Grenades (planned)](#grenades-planned)
+    - [M34a — Grenades (L)](#m34a--grenades-l)
+- [Flashbang & Launchers (planned)](#flashbang--launchers-planned)
+    - [M34b — Flashbang & Launched Rounds (M)](#m34b--flashbang--launched-rounds-m)
 - [Destruction & Smoke (planned)](#destruction--smoke-planned)
-    - [M34b — Destruction & Smoke (M)](#m34b--destruction--smoke-m)
+    - [M34c — Destruction & Smoke (M)](#m34c--destruction--smoke-m)
 - [VR (planned)](#vr-planned)
     - [M35 — VR Play Mode (L)](#m35--vr-play-mode-l)
 - [Scalable (planned)](#scalable-planned)
@@ -382,24 +387,23 @@ its own, as early as it can.
 ### M18 — Protocol Buffers (M)
 
 - The Networking Protocol's wire moved to Protocol Buffers: one schema, one
-  envelope message, the codec generated in the build
+  envelope message, the codec generated in the build behind the hand-written
+  `*Wire` types
+- A Match capture's records in the same schema, as the capture format's version
+  3, read by `augusta-inspect` through the same schema
 
-Its spec is written once its remaining decisions (which wire invariants survive,
-whether the protocol's types stay hand-written, how Readdress rewrites a
-message) are recorded.
-
-**Exercises:** ADR-0007, ADR-0038 **Exit criteria:** every message crosses the
-wire as Protocol Buffers, through the codec the build generates
+**Exercises:** ADR-0007, ADR-0038, ADR-0050 **Exit criteria:** every message
+crosses the wire as Protocol Buffers, through the codec the build generates
 
 ## Debug Tooling (planned)
 
 Debug Tooling lets developers see what the game does before the releases that
-build on it: what collides, which bodies the server holds, where a Shot was
-judged, and what the network carries. Every tool is compiled out of the Shipping
-build players get, not merely switched off. The Smoke screen and rendering
-overlays wait on what they show, and ship with the releases that bring it.
+build on it: what collides, which bodies the server holds and where a Shot was
+judged. Every tool is compiled out of the Shipping build players get, not merely
+switched off. The Smoke screen and rendering overlays wait on what they show,
+and ship with the releases that bring it.
 
-### M19 — Debug Tooling (L)
+### M19a — Debug Tooling (L)
 
 - One build option: the Shipping build players get and `staging` runs carries no
   debug tool, every other build is a Development build; a `debug` config section
@@ -407,21 +411,34 @@ overlays wait on what they show, and ship with the releases that bring it.
 - Debug overlays and Debug panels handed to the Renderer as values each frame;
   F1 opens the Debug index
 - A Physics Debug panel: Collision, Server bodies, Hitboxes and Shot judgements,
-  the last sent by the server in Development-build-only messages
+  the last sent by the server in Development-build-only messages; OmniPVD
+  recording from a `debug` key
+- A Profiling Debug panel: an NVTX capture window for Nsight Systems and
+  Aftermath's status
+
+**Exercises:** ADR-0074, ADR-0075, ADR-0038, ADR-0044 **Exit criteria:** a
+Development build shows where the server judged a Shot against the Hitboxes the
+shooter saw, and a Shipping build holds no debug tool
+
+## Network Tooling (planned)
+
+Debug Tooling shows the game; Network Tooling shows what the network carries,
+from the client's own numbers and from a capture Wireshark reads. Its tools are
+compiled out of the Shipping build like the rest.
+
+### M19b — Network Tooling (M)
+
 - A network Debug panel from the client's own numbers: connection quality,
   traffic per message type, Authoritative State rate and size, Reconciliation
-  corrections and interpolation slack
+  corrections and interpolation slack; the client impairs its own connection
+  from it
 - A Wireshark dissector over the game's own capture of decrypted messages,
   handing each message to Wireshark's `protobuf` dissector over the schema of
   the Protocol Buffers release
 
-Its specs are written once its remaining decisions (network impairment, the
-shortcuts into OmniPVD and Nsight, the order of the specs) are recorded.
-
-**Exercises:** ADR-0074, ADR-0075, ADR-0038, ADR-0044 **Exit criteria:** a
-Development build shows where the server judged a Shot against the Hitboxes the
-shooter saw, Wireshark names every message in a Development build's capture, and
-a Shipping build holds no debug tool
+**Exercises:** ADR-0074, ADR-0075, ADR-0038 **Exit criteria:** Wireshark names
+every message in a Development build's capture, and the network Debug panel
+shows and impairs the client's own connection
 
 ## Authoritative Body (planned)
 
@@ -466,7 +483,10 @@ server's within the tolerance
 ## The Image (planned)
 
 The Authoritative Body poses the body; The Image draws the world it stands in,
-with materials and light.
+with materials and light. It is a little larger than a release should be (about
+30 tickets), and is not split: the deferred frame has no anti-aliasing until the
+upscaler, and the upscaler's reduced render resolution is what ray tracing is
+sized for, so none of its three milestones is worth shipping alone.
 
 ### M23 — Deferred Frame & Looks (M)
 
@@ -507,6 +527,8 @@ pose. It meets NFR-17.
 
 - The client's Animation phase, Cosmetic layers and GPU skinning
 - The local player's own body in first person
+- Skinned bodies in the ray-traced lighting: their shadows and reflections
+  follow the pose, the local player's hidden head included
 
 **Exercises:** ADR-0066, ADR-0061 **Exit criteria:** every player is drawn
 skinned in its pose, the local player sees its own body, and an 8-player Match
@@ -515,8 +537,10 @@ holds NFR-17
 ## The World Answers (planned)
 
 The Image makes the world visible; The World Answers makes it physical. Objects
-move when pushed or shot, rounds go through what they can, and strikes show what
-they hit.
+move when pushed or shot, and rounds go through what they can. At about 27
+tickets it is a little larger than a release should be, and is not split: Props
+alone move nothing a round can reach, and Surface materials alone have no Props
+to stop in.
 
 ### M27 — Props & Surface Materials (L)
 
@@ -530,14 +554,21 @@ The two are built in parallel; Props join as surfaces when they land.
 passes through a wooden door and stops in a concrete wall, and a struck crate
 moves the same way on every client
 
+## Impacts (planned)
+
+The World Answers makes the world physical; Impacts shows and plays what a
+strike hits, and lets a killed player fall.
+
 ### M28 — Effects & Impact Effects (M)
 
 - Effects: one catalogue of particles, decals and brief lights
 - Particles, a decal in the G-buffer and a sound for each Surface material
 - Debris as the client's dynamic bodies
+- The Rendering Debug overlays: the Map's local lights, Effects' brief lights
+  and the probe grid
 
-**Exercises:** ADR-0073, ADR-0065, ADR-0045 **Exit criteria:** a strike on
-glass, wood, metal and concrete each looks and sounds its own
+**Exercises:** ADR-0073, ADR-0065, ADR-0045, ADR-0075 **Exit criteria:** a
+strike on glass, wood, metal and concrete each looks and sounds its own
 
 ### M29 — Ragdolls (S)
 
@@ -554,7 +585,7 @@ geometry, and players' feet make noise.
 ### M30 — Acoustics (L)
 
 - Steam Audio's overlay port with Embree, first: the built-in ray tracer can
-  stand in for it only until M34b's Breakables (ADR-0071)
+  stand in for it only until M34c's Breakables (ADR-0071)
 - One sound shape for every cue; a player-chosen SOFA HRTF
 - Air absorption, cue directivity, occlusion and transmission from the Map's
   Acoustic geometry and placed Props
@@ -593,29 +624,43 @@ has no one left alive
 teammate and no enemy, and Speech aloud is heard by anyone near, through the
 acoustics
 
-## Explosions (planned)
+## Grenades (planned)
 
-Explosions adds what blows up. It builds on the Props, Surface materials and
-impact effects of The World Answers, and on Teams for friendly fire.
+Grenades adds what blows up: the Loadout, the Held item and the Explosion that
+the releases after it build on. It builds on the Props, Surface materials and
+impact effects of The World Answers and Impacts, and on Teams for friendly fire.
 
-### M34a — Explosions (L)
+### M34a — Grenades (L)
 
 - The Loadout and the fragmentation grenade: cooking, throwing, blast and
   Fragments
+
+**Exercises:** ADR-0070 **Exit criteria:** a grenade's Fragments wound whoever
+they reach through what they can cross
+
+## Flashbang & Launchers (planned)
+
+Flashbang & Launchers adds the other ways to set off an Explosion, on the
+Loadout, Held item and Explosion of Grenades.
+
+### M34b — Flashbang & Launched Rounds (M)
+
 - The flashbang's Dazzle: its white-out, muffle and ringing
 - Launched rounds: the underbarrel launcher and the AT4, arming and Explosions
   on impact
 
-**Exercises:** ADR-0070 **Exit criteria:** a grenade's Fragments wound whoever
-they reach through what they can cross, a flashbang dazzles whoever sees it go
-off, and a launched round explodes on impact only once armed
+**Exercises:** ADR-0070 **Exit criteria:** a flashbang dazzles whoever sees it
+go off, and a launched round explodes on impact only once armed
 
 ## Destruction & Smoke (planned)
 
 Destruction & Smoke adds what breaks and what hides. It builds on the Explosions
 before it, and on the acoustics of The Sound for sound through an opened wall.
+At about 27 tickets it is a little larger than a release should be, and is not
+split: its Smoke screen Debug overlays are small and wait on the Smoke screens,
+and Breakables and Smoke screens share the Map's voxel grid's free space.
 
-### M34b — Destruction & Smoke (M)
+### M34c — Destruction & Smoke (M)
 
 - Breakable and explosive Prop kinds: breaking into pieces, chains, and sound
   through an opened wall
@@ -636,7 +681,9 @@ players. It meets US-25 and NFR-16.
 
 - The Play mode and the Tracked pose on the server, bounded to the Character's
   Joints
-- The OpenXR client: head and hands, the deferred frame drawn with multiview
+- The OpenXR client: head and hands, the deferred frame drawn with multiview;
+  Voice chat's push-to-talk on the controllers and the Smoke screen marched at
+  half resolution per eye
 - Body tracking from the player's cameras
 
 **Exercises:** ADR-0063, ADR-0064, ADR-0061, US-25, NFR-16 **Exit criteria:** a
