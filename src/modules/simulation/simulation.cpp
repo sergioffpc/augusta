@@ -13,7 +13,6 @@
 #include <span>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <flecs.h>
@@ -22,7 +21,6 @@
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
-#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -31,6 +29,7 @@
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "hitbox_history.h"
+#include "policy_bridge.h"
 
 namespace augusta::simulation {
 
@@ -245,20 +244,6 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
   return std::to_underlying(surface) - std::to_underlying(kMapSurface) - 1;
 }
 
-// How often a failing Game policy hook is logged: one that fails every tick
-// would otherwise write a line a tick (ADR-0029).
-constexpr std::chrono::seconds kPolicyWarningInterval{1};
-
-// The Spawn point, from 0, each of a Match's players takes with no Game policy
-// for it: in order, starting over after the last.
-std::vector<std::size_t> InOrderSpawns(std::size_t players, std::size_t spawn_points) {
-  std::vector<std::size_t> indices(players);
-  for (std::size_t i = 0; i < players; ++i) {
-    indices[i] = i % spawn_points;
-  }
-  return indices;
-}
-
 // player as Game policy sees it (ADR-0022).
 policy::PlayerView ViewOf(EntityId entity, const PlayerIdentity& identity, bool alive, float health,
                           std::optional<EntityId> killer) {
@@ -297,11 +282,7 @@ struct World::Impl {
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
-  policy::Policy policy;
-  logging::Throttle policy_warnings{kPolicyWarningInterval};
-  // Whether policy has ended the Match the world's players are in: it then
-  // decides no more until EndMatch.
-  bool match_ended_by_policy = false;
+  PolicyBridge policy_bridge;
   PhaseEntities phases;
   std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit and
@@ -331,7 +312,7 @@ struct World::Impl {
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
-        policy(std::move(game_policy)),
+        policy_bridge(std::move(game_policy)),
         targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
@@ -596,63 +577,25 @@ struct World::Impl {
 
   // Calls the rules' on_tick with the Match view while the world has a
   // Match policy has not ended, and records the action it takes, if any, in
-  // the tick's result. A hook that fails or decides what it may not is logged
-  // and decides nothing; either way the tick goes on.
+  // the tick's result.
   void OnScriptsBehaviours() {
-    if (players.empty() || match_ended_by_policy) {
+    if (players.empty() || policy_bridge.MatchEnded()) {
       return;
     }
-    const auto action = policy.OnTick(TickView(), tick);
-    if (!action) {
-      WarnUndecidedOnTick(action.error());
-      return;
-    }
-    if (action->has_value()) {
-      match_ended_by_policy = std::holds_alternative<policy::MatchEnd>(**action);
-      actions.push_back(**action);
+    if (auto action = policy_bridge.OnTick(TickView(), tick)) {
+      actions.push_back(*std::move(action));
     }
   }
 
-  // Logs an on_tick call that decided nothing, at most once a
-  // kPolicyWarningInterval, as policy may fail every tick.
-  void WarnUndecidedOnTick(const policy::Undecided& undecided) {
-    if (undecided.code == policy::UndecidedCode::kHookFailed) {
-      LOG_WARN_LIMITED(policy_warnings,
-                       "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                       policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
-    } else {
-      LOG_WARN_LIMITED(
-          policy_warnings,
-          "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-          policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
-    }
-  }
-
-  // The Spawn point, from 0 and below spawn_points, each of match_players takes:
-  // what the rules' assign_spawns answers, or in order when it is not
-  // defined, answers nil or is refused. A refusal is logged; as a hook is
-  // called once a Match, it is not limited.
+  // The Spawn point, from 0 and below spawn_points, each of match_players
+  // takes, as Game policy places them at the Match's start.
   std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
     policy::MatchView view{.player_count = parameters.player_count, .players = {}};
     view.players.reserve(match_players.size());
     for (const MatchPlayer& player : match_players) {
       view.players.push_back(ViewOf(player.entity, player.identity, true, parameters.starting_health, std::nullopt));
     }
-    auto assignment = policy.AssignSpawns(view, spawn_points);
-    if (!assignment) {
-      if (assignment.error().code == policy::UndecidedCode::kHookFailed) {
-        LOG_WARN("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
-      } else {
-        LOG_WARN("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
-      }
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    if (!assignment->has_value()) {
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    return **std::move(assignment);
+    return policy_bridge.AssignSpawns(view, spawn_points, tick);
   }
 
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
@@ -747,7 +690,7 @@ void World::EndMatch() {
   }
   impl.ecs.delete_with<Bullet>();
   impl.ballistics = ballistics::World();
-  impl.match_ended_by_policy = false;
+  impl.policy_bridge.ForgetMatchEnd();
 }
 
 TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
