@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ballistics Penetration</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <!--
   PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
   Answers: does ADR-0065's resolution of a strike (penetration by energy and thickness,
@@ -17,11 +18,28 @@
     --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
     --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
     --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e;
+    --btn: #ffffff; --code: #f0eee8;
+    --range: #fbfaf7; --grid: #ece9e1; --body: #e6dccd; --body-hit: #f3c6b4; --body-edge: #8a7d6a;
   }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --grid: #2a2c31; --body: #5a5248; --body-hit: #8a4a36; --body-edge: #9a8e7c;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --grid: #2a2c31; --body: #5a5248; --body-hit: #8a4a36; --body-edge: #9a8e7c;
+    color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 1480px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 1480px; margin: 0 auto; padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .layout > div { min-width: 0; }
+  .scroll { overflow-x: auto; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
     color: var(--muted); margin: 0 0 10px; font-weight: 600; }
@@ -39,7 +57,7 @@
   canvas#map { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
   canvas#chart { display: block; max-width: 100%; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
-  button { font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+  button { font: inherit; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
     padding: 6px 12px; border-radius: 6px; cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
@@ -50,7 +68,7 @@
   label.check { display: inline-flex; gap: 4px; align-items: center; }
   .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
   .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px;
-    vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(0,0,0,.15); }
+    vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
   dt { color: var(--muted); }
   dd { margin: 0; font-variant-numeric: tabular-nums; }
@@ -74,8 +92,8 @@
   .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   details summary { cursor: pointer; color: var(--muted); }
   ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
-  code { font-size: 12px; background: #f0eee8; padding: 1px 4px; border-radius: 3px; }
-  #tip { position: fixed; pointer-events: none; background: var(--ink); color: #fff; font-size: 12px;
+  code { font-size: 12px; background: var(--code); overflow-wrap: anywhere; padding: 1px 4px; border-radius: 3px; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px;
     padding: 4px 8px; border-radius: 5px; display: none; white-space: nowrap; }
 </style>
 </head>
@@ -100,6 +118,7 @@
       <li>The angle is measured from the surface: 90° is head-on, 0° grazing. Thickness along the path is the wall's thickness ÷ sin(angle), so an oblique shot meets more material.</li>
       <li>The back query starts the maximum depth (1 m) beyond the entry and casts back to it; the exit is the first face it meets. If it starts inside a collider, no exit is found and the round stops in the surface it struck.</li>
       <li>The bound is on strikes: a round passes through or ricochets off that many surfaces; the next one stops it where it touches. A player that is the next one is still hit.</li>
+      <li>A round crosses a surface in a straight line and deviates only as it leaves. Under Parameters, the spread on leaving can be the material's own, or scaled by the speed lost and the entry angle; a ricochet always uses the material's own.</li>
       <li>A deviation is uniform within ±spread, one draw per penetration or ricochet, from a seed of the shooter's Entity ID and the Shot's tick. A ricochet that the deviation would turn back into the surface is reflected without it.</li>
       <li>Hitboxes are judged where they stand: there is no Shooter's delay here.</li>
     </ul>
@@ -135,7 +154,7 @@
         <h2>Parameters</h2>
         <div class="params" id="params"></div>
         <h2 style="margin-top:14px">Surface material catalogue (ballistic facet)</h2>
-        <table class="mats" id="mats"></table>
+        <div class="scroll"><table class="mats" id="mats"></table></div>
         <div id="refusals" style="margin-top:10px"></div>
       </div>
     </div>
@@ -229,6 +248,16 @@ const Strike = (() => {
     return exit === null ? null : exit - hitT;
   }
 
+  // The spread a round leaving a surface deviates within. 'flat': the material's
+  // spread (ADR-0065 as written). 'lost': scaled by the fraction of speed lost, so a
+  // round that barely gets through deviates most. 'lost-angle': also up to twice that
+  // for a round that entered at a grazing angle (2 - sin angle).
+  function exitSpread(rule, spread, vIn, vOut, angleDeg) {
+    if (rule === 'flat') return spread;
+    const lost = spread * (1 - vOut / vIn);
+    return rule === 'lost' ? lost : lost * (2 - Math.sin(angleDeg * Math.PI / 180));
+  }
+
   // Flies one round from shot = { x, y, aimDeg }; s holds the Parameters and the catalogue.
   // Returns the drawn segments, every strike in order, and how the flight ended.
   function fly(world, shot, s) {
@@ -307,8 +336,9 @@ const Strike = (() => {
         }
         for (const [a, b] of merged) segments.push({ from: at(o, d, a), to: at(o, d, b), v, inside: true });
         const exitT = merged[merged.length - 1][1];
-        const [nd, dev] = deviate(d, mat.spread);
-        Object.assign(ev, { outcome: 'through', vOut: Math.sqrt(v2), dev, exit: at(o, d, exitT) });
+        const spread = exitSpread(s.deviation, mat.spread, v, Math.sqrt(v2), 90);
+        const [nd, dev] = deviate(d, spread);
+        Object.assign(ev, { outcome: 'through', vOut: Math.sqrt(v2), dev, spread, exit: at(o, d, exitT) });
         flown += exitT - best.t;
         o = at(o, d, exitT); d = nd; v = Math.sqrt(v2);
         continue;
@@ -329,7 +359,7 @@ const Strike = (() => {
         const r = [d[0] - 2 * dot(d, best.n) * best.n[0], d[1] - 2 * dot(d, best.n) * best.n[1]];
         let [nd, dev] = deviate(r, mat.spread);
         if (dot(nd, best.n) <= 1e-4) { nd = r; dev = 0; }
-        Object.assign(ev, { outcome: 'ricochet', vOut: v * mat.keep, dev });
+        Object.assign(ev, { outcome: 'ricochet', vOut: v * mat.keep, dev, spread: mat.spread });
         o = [p0[0] + best.n[0] * 1e-5, p0[1] + best.n[1] * 1e-5]; d = nd; v *= mat.keep;
         continue;
       }
@@ -350,8 +380,9 @@ const Strike = (() => {
       }
       const exit = at(o, d, best.t + measured);
       segments.push({ from: p0, to: exit, v, inside: true });
-      const [nd, dev] = deviate(d, mat.spread);
-      Object.assign(ev, { outcome: 'through', vOut: Math.sqrt(v2), dev, exit });
+      const spread = exitSpread(s.deviation, mat.spread, v, Math.sqrt(v2), angle);
+      const [nd, dev] = deviate(d, spread);
+      Object.assign(ev, { outcome: 'through', vOut: Math.sqrt(v2), dev, spread, exit });
       flown += measured;
       o = exit; d = nd; v = Math.sqrt(v2);
     }
@@ -416,7 +447,12 @@ const MATERIAL_FILL = {
 };
 const DEFAULTS = {
   v0: 800, P: 1, maxRange: 1000, bound: 4, maxDepth: 1, mode: 'back-all',
-  shooterId: 7, tick: 1200, torso: 100 / 3 + 1, limb: 25,
+  shooterId: 7, tick: 1200, torso: 100 / 3 + 1, limb: 25, deviation: 'flat',
+};
+const DEVIATIONS = {
+  flat: 'The material\'s spread (ADR-0065 as written)',
+  lost: 'Spread × fraction of speed lost',
+  'lost-angle': 'Spread × fraction lost × (2 − sin angle)',
 };
 const MODES = {
   'back-all': 'Back from max depth, every collider (ADR-0065 as written)',
@@ -455,6 +491,15 @@ function recompute() {
 
 // ---- Drawing ------------------------------------------------------------------------
 
+// Canvas colours come from the page's tokens, read again whenever the theme changes.
+const C = {};
+function readTheme() {
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['ink', 'muted', 'accent', 'accent-soft', 'bad', 'bad-soft', 'line', 'panel',
+    'range', 'grid', 'body', 'body-hit', 'body-edge']) C[k] = css.getPropertyValue(`--${k}`).trim();
+}
+readTheme();
+
 const canvas = document.getElementById('map'), ctx = canvas.getContext('2d');
 let scale = 25;
 function fitCanvas() {
@@ -472,48 +517,49 @@ function drawBox(b, fill, highlight) {
   if (w < 3) { x -= (3 - w) / 2; w = 3; }
   if (h < 3) { y -= (3 - h) / 2; h = 3; }
   ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
-  if (highlight) { ctx.strokeStyle = '#1c1c1f'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2); }
+  if (highlight) { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2); }
 }
 
 function drawFlight(f, faint) {
   for (const sg of f.segments) {
     const [a, b] = [px(sg.from), px(sg.to)];
     ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b);
-    if (faint) { ctx.strokeStyle = 'rgba(43,103,209,.18)'; ctx.lineWidth = 1; ctx.setLineDash([]); }
-    else if (sg.inside) { ctx.strokeStyle = '#b3401a'; ctx.lineWidth = 2; ctx.setLineDash([3, 2]); }
+    ctx.globalAlpha = 1;
+    if (faint) { ctx.strokeStyle = C.accent; ctx.globalAlpha = 0.18; ctx.lineWidth = 1; ctx.setLineDash([]); }
+    else if (sg.inside) { ctx.strokeStyle = C.bad; ctx.lineWidth = 2; ctx.setLineDash([3, 2]); }
     else {
-      ctx.strokeStyle = `rgba(43,103,209,${0.25 + 0.75 * sg.v / state.settings.v0})`;
+      ctx.strokeStyle = C.accent; ctx.globalAlpha = 0.25 + 0.75 * sg.v / state.settings.v0;
       ctx.lineWidth = 2; ctx.setLineDash([]);
     }
-    ctx.stroke(); ctx.setLineDash([]);
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
   }
   if (faint) return;
   f.events.forEach((e, i) => {
     const [x, y] = px(e.point);
-    ctx.fillStyle = '#1c1c1f';
+    ctx.fillStyle = C.ink;
     ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     if (e.exit) {
       const [ex, ey] = px(e.exit);
-      ctx.strokeStyle = '#1c1c1f'; ctx.lineWidth = 1.2;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(ex, ey, 4, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.font = '600 11px system-ui'; ctx.fillStyle = '#1c1c1f';
+    ctx.font = '600 11px system-ui'; ctx.fillStyle = C.ink;
     ctx.fillText(String(i + 1), x + 5, y - 5);
   });
   const last = f.segments[f.segments.length - 1];
   if (last && !f.end.ok) {
     const [x, y] = px(last.to);
-    ctx.strokeStyle = '#b3401a'; ctx.lineWidth = 2.5;
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke();
   }
 }
 
 function draw() {
-  ctx.fillStyle = '#fbfaf7'; ctx.fillRect(0, 0, WORLD.w * scale, WORLD.h * scale);
-  ctx.strokeStyle = '#ece9e1'; ctx.lineWidth = 1;
+  ctx.fillStyle = C.range; ctx.fillRect(0, 0, WORLD.w * scale, WORLD.h * scale);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
   for (let x = 0; x <= WORLD.w; x++) { ctx.beginPath(); ctx.moveTo(x * scale, 0); ctx.lineTo(x * scale, WORLD.h * scale); ctx.stroke(); }
   for (let y = 0; y <= WORLD.h; y++) { ctx.beginPath(); ctx.moveTo(0, y * scale); ctx.lineTo(WORLD.w * scale, y * scale); ctx.stroke(); }
-  ctx.font = '11px system-ui'; ctx.fillStyle = '#6a6a70';
+  ctx.font = '11px system-ui'; ctx.fillStyle = C.muted;
   for (const [x, y, t] of LABELS) ctx.fillText(t, x * scale, y * scale - 6);
   const hc = state.hover?.collider;
   for (const c of WORLD.colliders) for (const b of c.boxes) drawBox(b, MATERIAL_FILL[c.material], c === hc);
@@ -524,21 +570,21 @@ function draw() {
     for (const h of Strike.hitboxes(p)) {
       const [x, y] = px(h.c);
       ctx.beginPath(); ctx.arc(x, y, h.r * scale, 0, Math.PI * 2);
-      ctx.fillStyle = e ? '#f3c6b4' : '#e6dccd'; ctx.fill();
-      ctx.strokeStyle = state.hover?.player === p ? '#1c1c1f' : '#8a7d6a'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = e ? C['body-hit'] : C.body; ctx.fill();
+      ctx.strokeStyle = state.hover?.player === p ? C.ink : C['body-edge']; ctx.lineWidth = 1; ctx.stroke();
     }
     const [x, y] = px([p.x, p.y]);
-    ctx.font = '600 11px system-ui'; ctx.fillStyle = '#1c1c1f';
+    ctx.font = '600 11px system-ui'; ctx.fillStyle = C.ink;
     ctx.fillText(p.name.slice(-1), x - 3, y - 0.3 * scale - 4);
-    if (e) { ctx.fillStyle = '#b3401a'; ctx.fillText(`−${e.damage.toFixed(1)}`, x + 0.3 * scale, y + 0.35 * scale + 6); }
+    if (e) { ctx.fillStyle = C.bad; ctx.fillText(`−${e.damage.toFixed(1)}`, x + 0.3 * scale, y + 0.35 * scale + 6); }
   }
 
   for (const f of fanFlights) drawFlight(f, true);
   if (flight) drawFlight(flight, false);
 
   const [sx, sy] = px([state.shot.x, state.shot.y]);
-  ctx.fillStyle = '#2b67d1'; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = C.range; ctx.lineWidth = 2; ctx.stroke();
 }
 
 // ---- Panels -------------------------------------------------------------------------
@@ -554,7 +600,8 @@ function renderState() {
     <dl>
       <dt>Shooter</dt><dd>(${state.shot.x.toFixed(2)}, ${state.shot.y.toFixed(2)}) m, aim ${state.shot.aimDeg.toFixed(1)}°</dd>
       <dt>Seed</dt><dd>Entity ${s.shooterId}, tick ${s.tick}${flight ? ` → ${hex(flight.seed)}` : ''}</dd>
-      <dt>Thickness</dt><dd>${MODES[s.mode]}</dd>`;
+      <dt>Thickness</dt><dd>${MODES[s.mode]}</dd>
+      <dt>Deviation</dt><dd>${DEVIATIONS[s.deviation]}</dd>`;
   if (!flight) { el.innerHTML = body + '</dl><p class="bad" style="margin-top:8px">Refused Parameters: no flight.</p>'; return; }
   body += `<dt>Outcome</dt><dd class="${flight.end.ok ? 'ok' : 'bad'}">${flight.end.text}</dd>
       <dt>Strikes</dt><dd>${flight.strikes} of a bound of ${s.bound}</dd></dl>`;
@@ -565,18 +612,19 @@ function renderState() {
       : mismatch ? `<span class="bad">${fmtLen(e.measured)}</span> (real ${fmtLen(e.real)})` : fmtLen(e.measured);
     const what = e.kind === 'hit' ? `<strong>${e.name}</strong>, ${e.part}` : `${e.name} <span class="watch">(${e.material})</span>`;
     const angle = e.kind === 'hit' ? '—' : `${e.angle.toFixed(1)}°`;
-    const out = e.outcome === 'through' ? `through${e.dev ? `, ${e.dev >= 0 ? '+' : ''}${e.dev.toFixed(2)}°` : ''}`
-      : e.outcome === 'ricochet' ? `<strong>ricochet</strong>, ${e.dev >= 0 ? '+' : ''}${e.dev.toFixed(2)}°`
+    const dev = `${e.dev >= 0 ? '+' : ''}${e.dev?.toFixed(2)}° <span class="watch">of ±${e.spread?.toFixed(2)}°</span>`;
+    const out = e.outcome === 'through' ? `through, ${dev}`
+      : e.outcome === 'ricochet' ? `<strong>ricochet</strong>, ${dev}`
       : `<span class="bad">${e.outcome}</span>`;
     return `<tr><td>${i + 1}</td><td>${what}</td><td>${angle}</td><td>${thick}</td>
       <td>${fmtV(e.vIn)} → ${e.vOut ? fmtV(e.vOut) : '0'}</td><td>${out}</td></tr>`;
   }).join('');
   body += `<h2 style="margin-top:14px">Strikes, in order</h2>
-    <table class="events"><tr><th>#</th><th>Surface</th><th>Angle</th><th>Thickness</th><th>Speed</th><th>Then</th></tr>${rows || '<tr><td colspan="6" class="watch">None.</td></tr>'}</table>`;
+    <div class="scroll"><table class="events"><tr><th>#</th><th>Surface</th><th>Angle</th><th>Thickness</th><th>Speed</th><th>Then</th></tr>${rows || '<tr><td colspan="6" class="watch">None.</td></tr>'}</table></div>`;
   const hits = flight.events.filter(e => e.kind === 'hit');
   body += `<h2 style="margin-top:14px">Hits</h2>` + (hits.length
-    ? `<table class="events"><tr><th>Player</th><th>Body part</th><th>Speed at entry</th><th>(v/v₀)²</th><th>Damage</th></tr>${hits.map(h =>
-      `<tr><td>${h.name}</td><td>${h.part}</td><td>${fmtV(h.vIn)}</td><td>${((h.vIn / s.v0) ** 2).toFixed(2)}</td><td><strong>${h.damage.toFixed(1)}</strong> of ${(h.part === 'torso' ? s.torso : s.limb).toFixed(1)}</td></tr>`).join('')}</table>`
+    ? `<div class="scroll"><table class="events"><tr><th>Player</th><th>Body part</th><th>Speed at entry</th><th>(v/v₀)²</th><th>Damage</th></tr>${hits.map(h =>
+      `<tr><td>${h.name}</td><td>${h.part}</td><td>${fmtV(h.vIn)}</td><td>${((h.vIn / s.v0) ** 2).toFixed(2)}</td><td><strong>${h.damage.toFixed(1)}</strong> of ${(h.part === 'torso' ? s.torso : s.limb).toFixed(1)}</td></tr>`).join('')}</table></div>`
     : '<p class="watch">No player hit.</p>');
   if (fanFlights.length) {
     const all = [flight, ...fanFlights];
@@ -613,16 +661,19 @@ function renderParams() {
     num('maxDepth', 'Max depth of the query, m', 0.1) + num('torso', 'Torso damage', 1) + num('limb', 'Limb damage', 1) +
     num('shooterId', 'Shooter Entity ID', 1) + num('tick', 'Shot\'s tick', 1) +
     `<label style="grid-column:1/-1">Thickness query <select id="mode">${Object.entries(MODES).map(([k, t]) =>
-      `<option value="${k}" ${k === s.mode ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+      `<option value="${k}" ${k === s.mode ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` +
+    `<label style="grid-column:1/-1">Deviation on leaving <select id="deviation">${Object.entries(DEVIATIONS).map(([k, t]) =>
+      `<option value="${k}" ${k === s.deviation ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
   document.querySelectorAll('#params input').forEach(i => i.addEventListener('change', () => {
     api.set(i.dataset.k, Number(i.value)); render();
   }));
   document.getElementById('mode').addEventListener('change', e => { api.mode(e.target.value); render(); });
+  document.getElementById('deviation').addEventListener('change', e => { api.deviation(e.target.value); render(); });
 
   const rows = Object.entries(state.materials).map(([k, m]) => {
     const stops = s.v0 ** 2 * s.P / (m.R * 1e6);
     const cell = (f, step) => (m[f] === null ? '<td class="watch">never</td>' : `<td><input type="number" data-m="${k}" data-f="${f}" step="${step}" value="${m[f]}"></td>`);
-    return `<tr><td><span class="sw" style="background:${MATERIAL_FILL[k] || '#e6dccd'}"></span>${k}</td>${cell('R', 0.1)}${cell('crit', 1)}${cell('keep', 0.05)}${cell('spread', 0.5)}<td>${fmtLen(stops)}</td></tr>`;
+    return `<tr><td><span class="sw" style="background:${MATERIAL_FILL[k] || 'var(--body)'}"></span>${k}</td>${cell('R', 0.1)}${cell('crit', 1)}${cell('keep', 0.05)}${cell('spread', 0.5)}<td>${fmtLen(stops)}</td></tr>`;
   }).join('');
   document.getElementById('mats').innerHTML = `<tr><th>Material</th><th>R, ×10⁶ m/s² </th><th>Critical angle °</th><th>Speed kept on ricochet</th><th>Spread ±°</th><th>Stops a muzzle round in</th></tr>${rows}`;
   document.querySelectorAll('#mats input').forEach(i => i.addEventListener('change', () => {
@@ -635,7 +686,7 @@ function renderParams() {
 function renderLegend() {
   document.getElementById('legend').innerHTML =
     Object.entries(MATERIAL_FILL).map(([k, c]) => `<span><span class="sw" style="background:${c}"></span>${k}</span>`).join('') +
-    `<span><span class="sw" style="background:#e6dccd"></span>player (torso, arms)</span>
+    `<span><span class="sw" style="background:var(--body)"></span>player (torso, arms)</span>
      <span>— tracer, fainter as it slows</span><span class="bad">- - inside a surface</span>
      <span>● entry · ○ exit · <span class="bad">✕</span> stopped</span>`;
 }
@@ -672,10 +723,10 @@ function drawChart() {
   // Bands by outcome.
   for (const [deg, o] of pts) {
     if (o.kind === 'through') continue;
-    cctx.fillStyle = o.kind === 'ricochet' ? '#e6eefb' : '#fbece6';
+    cctx.fillStyle = o.kind === 'ricochet' ? C['accent-soft'] : C['bad-soft'];
     cctx.fillRect(X(deg - 0.25), CH.t, X(deg) - X(deg - 0.25) + 0.5, ph);
   }
-  cctx.strokeStyle = '#ece9e1'; cctx.lineWidth = 1; cctx.font = '11px system-ui'; cctx.fillStyle = '#6a6a70';
+  cctx.strokeStyle = C.line; cctx.lineWidth = 1; cctx.font = '11px system-ui'; cctx.fillStyle = C.muted;
   for (let v = 0; v <= vmax; v += 200) {
     cctx.beginPath(); cctx.moveTo(CH.l, Y(v)); cctx.lineTo(CH.l + pw, Y(v)); cctx.stroke();
     cctx.fillText(`${v}`, 8, Y(v) + 4);
@@ -683,16 +734,16 @@ function drawChart() {
   for (let d = 0; d <= 90; d += 15) cctx.fillText(`${d}°`, X(d) - 8, CH.t + ph + 16);
   cctx.fillText('angle from the surface (0° grazing, 90° head-on)', CH.l + pw / 2 - 130, CH.h - 4);
   cctx.fillText('m/s after', CH.l + 4, CH.t + ph - 6);
-  cctx.strokeStyle = '#2b67d1'; cctx.lineWidth = 2; cctx.beginPath();
+  cctx.strokeStyle = C.accent; cctx.lineWidth = 2; cctx.beginPath();
   pts.forEach(([deg, o], i) => (i ? cctx.lineTo(X(deg), Y(o.v)) : cctx.moveTo(X(deg), Y(o.v))));
   cctx.stroke();
-  cctx.fillStyle = '#6a6a70';
+  cctx.fillStyle = C.muted;
   if (m.crit > 3) cctx.fillText('ricochet', X(m.crit / 2) - 20, CH.t + 14);
   const stopEnd = pts.filter(([, o]) => o.kind === 'stopped').map(([d]) => d);
   if (stopEnd.length) cctx.fillText('stops', X((stopEnd[0] + stopEnd[stopEnd.length - 1]) / 2) - 14, CH.t + 14);
   const here = outcomeAt(m, e.normalThickness, e.vIn, e.angle);
-  cctx.fillStyle = '#1c1c1f'; cctx.beginPath(); cctx.arc(X(e.angle), Y(here.v), 5, 0, Math.PI * 2); cctx.fill();
-  cctx.strokeStyle = '#fff'; cctx.lineWidth = 2; cctx.stroke();
+  cctx.fillStyle = C.ink; cctx.beginPath(); cctx.arc(X(e.angle), Y(here.v), 5, 0, Math.PI * 2); cctx.fill();
+  cctx.strokeStyle = C.panel; cctx.lineWidth = 2; cctx.stroke();
 }
 
 chart.addEventListener('mousemove', ev => {
@@ -716,6 +767,7 @@ const api = {
   set(k, v) { state.settings[k] = v; state.changed = `${k} set to ${v}.`; },
   setMat(m, f, v) { state.materials[m][f] = v; state.changed = `${m}'s ${f} set to ${v}.`; },
   mode(m) { state.settings.mode = m; state.changed = `Thickness now measured: ${MODES[m]}.`; },
+  deviation(r) { state.settings.deviation = r; state.changed = `Deviation on leaving: ${DEVIATIONS[r]}.`; },
   fan(on) { state.fan = on; state.changed = on ? 'Showing 32 seeds (ticks) at once.' : 'One seed.'; },
   nextTick() { state.settings.tick++; state.changed = `Tick ${state.settings.tick}: a new seed for the same shot.`; },
 };
@@ -856,6 +908,20 @@ const SCENARIOS = [
     ],
   },
   {
+    title: 'Deviation',
+    text: 'Two rounds at 32 seeds each: one through the 6 mm glass, which costs it 1% of its speed, and one through the 10 cm slab at 45°, which costs it 66%. Both materials are given a ±6° spread so the fans can be compared.',
+    watch: 'With the material\'s spread alone, both fans are the same width: the glass deflects a round as much as a slab it barely got through. Scaled by the speed lost, the glass fan closes to almost a line and the slab\'s stays wide. Adding the angle widens the slab\'s further, since the round entered at 45°. Look at "of ±…°" in the strikes table for the spread each exit used.',
+    steps: [
+      ['Spreads ±6°', () => { api.setMat('glass', 'spread', 6); api.setMat('concrete', 'spread', 6); api.fan(true); }],
+      ['Through the glass', () => api.shoot(4, 2, 0)],
+      ['Through the slab at 45°', () => api.shoot(24, 14, 45)],
+      ['Scale by speed lost', () => api.deviation('lost')],
+      ['Through the glass', () => api.shoot(4, 2, 0)],
+      ['Through the slab at 45°', () => api.shoot(24, 14, 45)],
+      ['Also by angle', () => api.deviation('lost-angle')],
+    ],
+  },
+  {
     title: 'Refused Parameters',
     text: 'An ammo penetration of 0.',
     watch: 'The Parameters loader refuses it (#1072): with P = 0 every surface would have infinite resistance. Here no flight is drawn.',
@@ -890,6 +956,9 @@ renderLegend();
 fitCanvas();
 render();
 new ResizeObserver(() => { fitCanvas(); draw(); drawChart(); }).observe(document.getElementById('mapWrap'));
+const retheme = () => { readTheme(); draw(); drawChart(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 </script>
 </body>
 </html>
