@@ -22,6 +22,7 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/weapon.h"
 #include "shared_core.h"
 
 namespace augusta::link {
@@ -272,7 +273,7 @@ physics::BodyState FromWire(const protocol::BodyStateWire& body) {
 }
 
 protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
-  const parameters::Rifle& rifle = parameters.rifle;
+  const weapon::Rifle& rifle = parameters.rifle;
   protocol::RifleWire rifle_wire{
       .rounds_per_minute = rifle.rounds_per_minute,
       .muzzle_velocity = rifle.muzzle_velocity,
@@ -284,10 +285,10 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
       .magazine_capacity = rifle.magazine_capacity,
   };
   rifle_wire.recoil_pattern.reserve(rifle.recoil_pattern.size());
-  for (const parameters::RecoilKick& kick : rifle.recoil_pattern) {
+  for (const weapon::RecoilKick& kick : rifle.recoil_pattern) {
     rifle_wire.recoil_pattern.push_back(protocol::RecoilKickWire{.pitch = kick.pitch, .yaw = kick.yaw});
   }
-  const parameters::Ammo& ammo = parameters.ammo;
+  const weapon::Ammo& ammo = parameters.ammo;
   return protocol::ParametersWire{
       .stamina =
           {
@@ -298,8 +299,8 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
       .rifle = std::move(rifle_wire),
       .ammo =
           {
-              .gravity = ammo.gravity,
-              .max_range = ammo.max_range,
+              .gravity = ammo.flight.gravity,
+              .max_range = ammo.flight.max_range,
               .head_damage = ammo.damage.head,
               .torso_damage = ammo.damage.torso,
               .limb_damage = ammo.damage.limb,
@@ -323,11 +324,11 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
   result.rifle.ads_field_of_view = rifle.ads_field_of_view;
   result.rifle.recoil_pattern.reserve(rifle.recoil_pattern.size());
   for (const protocol::RecoilKickWire& kick : rifle.recoil_pattern) {
-    result.rifle.recoil_pattern.push_back(parameters::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
+    result.rifle.recoil_pattern.push_back(weapon::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
   }
   result.rifle.magazine_capacity = rifle.magazine_capacity;
-  result.ammo.gravity = parameters.ammo.gravity;
-  result.ammo.max_range = parameters.ammo.max_range;
+  result.ammo.flight.gravity = parameters.ammo.gravity;
+  result.ammo.flight.max_range = parameters.ammo.max_range;
   result.ammo.damage = {
       .head = parameters.ammo.head_damage,
       .torso = parameters.ammo.torso_damage,

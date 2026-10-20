@@ -238,8 +238,8 @@ Parameters WithTheTestRifle() {
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 200;
   parameters.rifle.muzzle_velocity = 600.0F;
-  parameters.ammo.gravity = 0.0F;
-  parameters.ammo.max_range = 1000.0F;
+  parameters.ammo.flight.gravity = 0.0F;
+  parameters.ammo.flight.max_range = 1000.0F;
   return parameters;
 }
 
@@ -454,7 +454,7 @@ class ShortRangeFireTest : public FireTest {
  protected:
   static Parameters WithARangeOfTwentyFiveMeters() {
     Parameters parameters = WithTheTestRifle();
-    parameters.ammo.max_range = 25.0F;
+    parameters.ammo.flight.max_range = 25.0F;
     return parameters;
   }
 
@@ -488,8 +488,8 @@ class ExtremeFireTest : public ::testing::Test {
     parameters.rifle.rounds_per_minute = std::numeric_limits<float>::max();
     parameters.rifle.magazine_capacity = std::numeric_limits<std::uint8_t>::max();
     parameters.rifle.muzzle_velocity = 1.0F;
-    parameters.ammo.gravity = 0.0F;
-    parameters.ammo.max_range = std::numeric_limits<float>::max();
+    parameters.ammo.flight.gravity = 0.0F;
+    parameters.ammo.flight.max_range = std::numeric_limits<float>::max();
     return parameters;
   }
 

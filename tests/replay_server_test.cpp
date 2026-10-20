@@ -139,7 +139,7 @@ Parameters Rules() {
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 30;
   parameters.rifle.muzzle_velocity = 800.0F;
-  parameters.ammo.max_range = 200.0F;
+  parameters.ammo.flight.max_range = 200.0F;
   parameters.ammo.damage = {.head = 50.0F, .torso = 20.0F, .limb = 10.0F};
   parameters.starting_health = 100.0F;
   return parameters;

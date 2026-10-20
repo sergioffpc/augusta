@@ -351,7 +351,8 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
                       .ads_field_of_view = 0.65F,
                       .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.007F, .yaw = -0.003F}},
                       .magazine_capacity = 25};
-  parameters.ammo = {.gravity = 9.81F, .max_range = 900.0F, .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
+  parameters.ammo = {.flight = {.gravity = 9.81F, .max_range = 900.0F},
+                     .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
   parameters.starting_health = 120.0F;
   parameters.player_count = 4;
 
