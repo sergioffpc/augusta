@@ -665,6 +665,9 @@ not affect numbering.
 - [ADR-0074](./adr/0074-debug-tools-compiled-out-of-shipping-builds.md) — Debug
   tools: one CMake option, compiled out of Shipping builds, started from the
   config's `debug` section
+- [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
+  overlays and panels: values each area builds and the Renderer draws, ImGui
+  inside the Renderer
 
 ### Tooling & Build
 
