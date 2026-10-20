@@ -457,6 +457,24 @@ the same one from the same state, so a shooter hits where it sees a body; what
 the client draws on top of it (Cosmetic layers) never moves a Hitbox. _Avoid_:
 Server pose, physics pose, hit pose
 
+**Skeleton**: The jointed frame of a Character, authored with it and the same
+for every player who plays that Character: what a Hitbox hangs from and what a
+Hitbox pose moves. Each Character has its own; a Clip plays on several only when
+their Skeletons share its Joints. _Avoid_: Rig (a rig is the authoring apparatus
+around a skeleton, including what never ships), armature, bones (a Joint is the
+unit, and "bone" names the gap between two)
+
+**Joint**: One articulation of a Skeleton, named by its place in it, carrying
+the Hitboxes authored under it. Every Hitbox belongs to exactly one; a Joint may
+carry none. _Avoid_: Bone, node, transform (a Joint has a transform; it is not
+one)
+
+**Rest pose**: The Hitbox pose a Character is in when nothing animates it — the
+pose it was authored in. What the engine poses a player by until a Character has
+Clips, and what a Skeleton's Joint transforms describe as authored. _Avoid_:
+Bind pose (that names the pose a mesh was skinned in, a client concern), T-pose,
+default pose, idle (an idle is a Clip, not the absence of one)
+
 **Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
 without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:
 Client-side animation, visual pose
