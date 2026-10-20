@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -1392,13 +1391,14 @@ TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
 }
 
-// What the Shooter's delay's cap of 250 ms needs, and no more (ADR-0044).
+// What the Shooter's delay's cap of 300 ms needs, and no more (ADR-0044).
 // Requirements: NFR-02
 TEST(HitboxHistoryTest, TheHistoryHoldsTheCapsWorthOfTicksAtTheTickRate) {
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(60), 15U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(60), 18U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(30), 9U);
   // A cap that is not a whole number of ticks takes the tick that covers it.
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(30), 8U);
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(255), 64U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(255), 77U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(25), 8U);
   EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(1), 1U);
 }
 
@@ -1417,8 +1417,8 @@ Character Sliver() {
 class LagCompensationTest : public ::testing::Test {
  protected:
   static constexpr float kAimHeight = 1.2F;
-  // The Shooter's delay's cap, 250 ms, in ticks of kTick.
-  static constexpr std::uint32_t kCapTicks = 15;
+  // The Shooter's delay's cap, 300 ms, in ticks of kTick.
+  static constexpr std::uint32_t kCapTicks = 18;
 
   explicit LagCompensationTest(float distance = 8.0F) : world_(WithTheTestRifle(), kTickRate) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
@@ -1528,6 +1528,14 @@ TEST_F(LagCompensationTest, ASeenTimeAsOldAsTheCapIsJudgedWhereTheTargetWasThen)
   EXPECT_EQ(Shoot(BobAt(seen), seen, 0.0F).size(), 1U);
 }
 
+// 280 ms is 16.8 ticks, short of the cap: judged where it reports, not at the cap.
+// Requirements: NFR-02
+TEST_F(LagCompensationTest, ASeenTimeShortOfTheCapIsJudgedWhereItReports) {
+  const augusta::tick::Tick seen = Next() - 17;
+
+  EXPECT_EQ(Shoot(BobAt(seen, 0.2F), seen, 0.2F).size(), 1U);
+}
+
 // A shooter with a delay past the cap still fires, and is judged against the
 // oldest Seen time the cap allows, not against the one it reports.
 // Requirements: NFR-02, US-15
@@ -1573,7 +1581,19 @@ TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
   const std::vector<float> delays = TickWith(command).shooters_delays;
 
   ASSERT_EQ(delays.size(), 1U);
-  EXPECT_EQ(delays[0], std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+  EXPECT_EQ(delays[0], 0.3F);
+}
+
+// Requirements: NFR-02
+TEST_F(LagCompensationTest, ARoundShortOfTheCapReportsItsOwnDelay) {
+  Command command = Firing();
+  command.seen_tick = Next() - 17;
+  command.seen_fraction = 0.2F;
+
+  const std::vector<float> delays = TickWith(command).shooters_delays;
+
+  ASSERT_EQ(delays.size(), 1U);
+  EXPECT_NEAR(delays[0], 0.28F, 1e-5F);
 }
 
 // Requirements: NFR-02

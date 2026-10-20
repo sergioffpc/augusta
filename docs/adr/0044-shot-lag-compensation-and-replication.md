@@ -9,24 +9,28 @@ that judgement, how the shooter learns of a hit, and how every client learns of
 a shot. It extends the message catalogue of ADR-0038 and changes ADR-0024's
 split of ballistics between client and server.
 
-**Lag compensation favors the shooter, capped at 250 ms.** A fire Command
+**Lag compensation favors the shooter, capped at 300 ms.** A fire Command
 carries its Seen time, what the shooter was seeing when it fired: the tick of
 the Authoritative State update being shown and the interpolation fraction
 between it and the next one (0 to 1). The server keeps, for every player, the
 hitboxes of each of its recent ticks, as that tick's Authoritative State
-reported them, enough ticks to cover the cap at its tick rate (15 at 60 Hz). It
+reported them, enough ticks to cover the cap at its tick rate (18 at 60 Hz). It
 tests the shot against the hitboxes interpolated between those two ticks at that
 fraction: position and facing interpolated, the facing along the shorter arc,
 and the stance of the nearer tick, which is how a client shows a body between
 two updates. The time between that Seen time and the tick the server takes the
-Command in is the Shooter's delay. A delay beyond 250 ms is clamped to 250 ms,
-not refused: the shot is judged against the oldest Seen time the cap allows. The
-cap bounds how far into the past a high-latency player can hit, which is the
-cost the victim pays (being shot after reaching cover). The Seen time is only
-what a client says, so the server holds it within what it can have been shown: a
-fraction outside 0 to 1 is the nearer of the two, and a Seen time newer than the
-last Authoritative State the server emitted is that State, so a delay is never
-less than a tick.
+Command in is the Shooter's delay. A delay beyond 300 ms is clamped to 300 ms,
+not refused: the shot is judged against the oldest Seen time the cap allows. A
+real client's Shooter's delay is its round trip, plus the Interpolation delay,
+plus up to two ticks its fire Command waits queued, so the cap is set to cover
+ADR-0013's worst-case round trip (150 ms): 150 + 100 + 2 ticks at 60 Hz is no
+more than 300 ms, and a client on that link is judged exactly where it saw its
+target. A test holds the cap to that budget. The cap bounds how far into the
+past a high-latency player can hit, which is the cost the victim pays (being
+shot after reaching cover). The Seen time is only what a client says, so the
+server holds it within what it can have been shown: a fraction outside 0 to 1 is
+the nearer of the two, and a Seen time newer than the last Authoritative State
+the server emitted is that State, so a delay is never less than a tick.
 
 **A bullet lives in the shooter's time for its whole flight.** At 800 m/s a
 bullet takes several ticks to reach its target. The server fixes the Shooter's

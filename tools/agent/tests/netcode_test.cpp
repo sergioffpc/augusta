@@ -48,11 +48,13 @@ struct Profile {
 void PrintTo(const Profile& profile, std::ostream* out) { *out << profile.name; }
 
 // From a good broadband link up to the agreed worst case: NFR-02's latency and
-// beyond, as far as an Agent's Shooter's delay stays within lag compensation's
-// 250 ms cap (ADR-0044). An Agent's AimAt aims at where the newest
-// Authoritative State puts its target and the Harness reports that state's
-// tick as its Seen time, so its delay is about a round trip, the jitter both
-// ways and the couple of ticks its commands wait queued on the server.
+// beyond, up to the 150 ms round trip lag compensation's 300 ms cap is set to
+// cover (ADR-0044). An Agent's AimAt aims at where the newest Authoritative
+// State puts its target and the Harness reports that state's tick as its Seen
+// time, so its delay is about a round trip, the jitter both ways and the
+// couple of ticks its commands wait queued on the server: it leaves out the
+// Interpolation delay a real client adds. A real client's budget is held by
+// the budget test (tests/shooters_delay_budget_test.cpp) instead.
 constexpr Profile kBroadband{
     .name = "Broadband",
     .conditions = {.latency_ms = 20,
