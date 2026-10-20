@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +19,7 @@
 #include <flecs.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
@@ -33,6 +35,10 @@
 namespace augusta::simulation {
 
 namespace {
+
+// The Surface id every mesh of the Map is added with: the whole Map is one
+// Surface, reserved for it, so a strike on it is never read as anything else.
+constexpr physics::SurfaceId kMapSurface{0};
 
 // One flecs::entity per Phase value, indexed by Phase's declared order -
 // not by its enum value (Phase isn't contiguous-from-zero by design, see
@@ -114,10 +120,11 @@ struct Bullet {
 };
 
 // One hitbox of one player, where a bullet judges that player to be: its
-// triangles are count of the posed triangles, from first.
+// triangles are count of the posed triangles, from first. Ballistics knows it
+// only as a Surface (see SurfaceOf); this is what a strike on it means.
 struct PosedHitbox {
   EntityId target{};
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   std::size_t first = 0;
   std::size_t count = 0;
 };
@@ -149,7 +156,7 @@ struct PlayerHit {
   EntityId target{};
   float yaw = 0.0F;
   float pitch = 0.0F;
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 // point, of a standing character's root space, where it is on a body in pose:
@@ -213,22 +220,30 @@ float ShootersDelay(tick::Tick tick, const command::Command& command, float max_
 }
 
 // What damage gives for a hit on part.
-float DamageFor(const parameters::Damage& damage, ballistics::BodyPart part) {
+float DamageFor(const parameters::Damage& damage, body_part::BodyPart part) {
   switch (part) {
-    case ballistics::BodyPart::kHead:
+    case body_part::BodyPart::kHead:
       return damage.head;
-    case ballistics::BodyPart::kTorso:
+    case body_part::BodyPart::kTorso:
       return damage.torso;
-    case ballistics::BodyPart::kLimb:
+    case body_part::BodyPart::kLimb:
       return damage.limb;
   }
   std::unreachable();
 }
 
-// Ballistics names the player a hitbox belongs to by the body's own number.
-ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::TargetId>(std::to_underlying(entity)); }
+// A posed hitbox's Surface id: its place in the tick's posed hitboxes, counted
+// from one past kMapSurface, so no posed hitbox ever shares the Map's id.
+physics::SurfaceId SurfaceOf(std::size_t posed_hitbox) {
+  return static_cast<physics::SurfaceId>(std::to_underlying(kMapSurface) + 1 + posed_hitbox);
+}
 
-EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
+// The place in the tick's posed hitboxes of a struck Surface that is not the
+// Map: the inverse of SurfaceOf.
+std::size_t PosedHitboxOf(physics::SurfaceId surface) {
+  assert(surface != kMapSurface);
+  return std::to_underlying(surface) - std::to_underlying(kMapSurface) - 1;
+}
 
 // How often a failing Game policy hook is logged: one that fails every tick
 // would otherwise write a line a tick (ADR-0029).
@@ -480,9 +495,9 @@ struct World::Impl {
     bullet_hitboxes.clear();
     const std::span<const ballistics::Triangle> triangles(posed_triangles);
     for (const Posing& posing : bullet_posings) {
-      for (const PosedHitbox& hitbox : std::span(posed_hitboxes).subspan(posing.first, posing.count)) {
-        bullet_hitboxes.push_back(ballistics::Hitbox{.target = ToTarget(hitbox.target),
-                                                     .part = hitbox.part,
+      for (std::size_t index = posing.first; index < posing.first + posing.count; ++index) {
+        const PosedHitbox& hitbox = posed_hitboxes[index];
+        bullet_hitboxes.push_back(ballistics::Hitbox{.surface = SurfaceOf(index),
                                                      .triangles = triangles.subspan(hitbox.first, hitbox.count)});
       }
     }
@@ -498,15 +513,21 @@ struct World::Impl {
       case ballistics::Outcome::kInFlight:
         ++committed.bullets_in_flight;
         return;
-      case ballistics::Outcome::kHitMap:
-        committed.map_impacts.push_back(result.impact_point);
-        break;
-      case ballistics::Outcome::kHitPlayer:
-        player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
-                                        .target = FromTarget(result.target),
-                                        .yaw = bullet.yaw,
-                                        .pitch = bullet.pitch,
-                                        .part = result.part});
+      case ballistics::Outcome::kStruck:
+        if (result.surface == kMapSurface) {
+          committed.map_impacts.push_back(result.impact_point);
+        } else {
+          // Step hands back only an id it was given: kMapSurface, which every
+          // Map mesh is added with, or a SurfaceOf id of this Step's hitboxes,
+          // so any other is a posed hitbox's. at() keeps a broken one from
+          // reading past them.
+          const PosedHitbox& hitbox = posed_hitboxes.at(PosedHitboxOf(result.surface));
+          player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
+                                          .target = hitbox.target,
+                                          .yaw = bullet.yaw,
+                                          .pitch = bullet.pitch,
+                                          .part = hitbox.part});
+        }
         break;
       case ballistics::Outcome::kExpired:
         break;
@@ -648,7 +669,7 @@ World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz
 World::~World() = default;
 
 std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
-  return impl_->physics.AddCollisionMesh(mesh);
+  return impl_->physics.AddCollisionMesh(mesh, kMapSurface);
 }
 
 World::World(World&&) noexcept = default;

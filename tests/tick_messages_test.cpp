@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/failure.h"
 #include "augusta/limits.h"
 #include "augusta/link.h"
@@ -186,13 +186,13 @@ TEST(TickMessagesTest, CombatEventsFollowTheUpdatesShotsThenHitConfirmationsThen
                  .target = EntityId{3},
                  .damage = 100.0F,
                  .health = 0.0F,
-                 .part = augusta::ballistics::BodyPart::kHead,
+                 .part = augusta::body_part::BodyPart::kHead,
                  .reached_zero = true}};
   state.deaths = {{.victim = EntityId{3},
                    .killer = EntityId{1},
                    .yaw = 0.5F,
                    .pitch = 0.0F,
-                   .part = augusta::ballistics::BodyPart::kHead}};
+                   .part = augusta::body_part::BodyPart::kHead}};
 
   const std::vector<Sent> sent = SendAll(state, 42, ThreePlayers());
 
@@ -263,7 +263,7 @@ TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
                    .killer = EntityId{1},
                    .yaw = 0.5F,
                    .pitch = 0.0F,
-                   .part = static_cast<augusta::ballistics::BodyPart>(99)}};
+                   .part = static_cast<augusta::body_part::BodyPart>(99)}};
   std::vector<Sent> sent;
 
   const auto handed = ForEachTickMessage(state, 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {

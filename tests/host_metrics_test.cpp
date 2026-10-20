@@ -16,7 +16,7 @@
 #include <prometheus/metric_family.h>
 #include <prometheus/metric_type.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/capture_retention.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -414,7 +414,7 @@ TEST(HostMetricsTest, MatchesEndedAreLabelledByOutcome) {
 // Requirements: NFR-07
 TEST(HostMetricsTest, HitConfirmationsAreLabelledByBodyPart) {
   HostMetrics metrics(kTickRate);
-  metrics.hit_confirmations[augusta::ballistics::BodyPart::kHead].Increment();
+  metrics.hit_confirmations[augusta::body_part::BodyPart::kHead].Increment();
 
   const std::vector<MetricFamily> families = metrics.Collect();
   const MetricFamily& hits = Family(families, "augustad_hit_confirmations_total");

@@ -38,6 +38,9 @@ namespace augusta::presentation {
 
 namespace {
 
+// The Surface id every mesh of the Map is added with: tracers meet nothing else.
+constexpr physics::SurfaceId kMapSurface{0};
+
 constexpr std::size_t kPhaseCount = 5;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
@@ -373,7 +376,7 @@ World::World(World&&) noexcept = default;
 World& World::operator=(World&&) noexcept = default;
 
 std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
-  return impl_->map.AddCollisionMesh(mesh);
+  return impl_->map.AddCollisionMesh(mesh, kMapSurface);
 }
 
 void World::SetParameters(const parameters::Parameters& parameters, float tick_duration) {

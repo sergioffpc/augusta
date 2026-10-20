@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
@@ -105,7 +105,7 @@ struct HitConfirmation {
   /// The damage the hit did.
   float damage = 0.0F;
   /// Where on the body it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 /// The Hit confirmations of state, one per hit, in its order: each for the
@@ -123,7 +123,7 @@ struct Death {
   float yaw = 0.0F;
   float pitch = 0.0F;
   /// Where on the victim it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 /// The Deaths of state, in its order. Every recipient is sent every one of

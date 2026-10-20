@@ -18,19 +18,18 @@
 
 namespace {
 
-using augusta::ballistics::BodyPart;
 using augusta::ballistics::BulletConfig;
 using augusta::ballistics::Hitbox;
 using augusta::ballistics::Outcome;
 using augusta::ballistics::Segment;
 using augusta::ballistics::StepResult;
-using augusta::ballistics::TargetId;
 using augusta::ballistics::Triangle;
 using augusta::ballistics::World;
 using augusta::math::Length;
 using augusta::math::Vec3;
 using augusta::physics::CollisionMesh;
 using augusta::physics::StaminaConfig;
+using augusta::physics::SurfaceId;
 
 constexpr float kFixedTick = 1.0F / 60.0F;
 constexpr float kGravity = 9.81F;
@@ -222,7 +221,7 @@ TEST(BallisticsWorldTest, EachBulletKeepsItsOwnConfig) {
   EXPECT_EQ(world.Step(light, kFixedTick, physics_world, {}).state.position.y, 0.0F);
 }
 
-// ---- What a tick's segment hits ----
+// ---- What a tick's segment strikes ----
 
 // Every test below fires along +x from x = 0, at 10 units a tick, so the first
 // tick's segment runs from x = 0 to x = 10.
@@ -230,6 +229,11 @@ constexpr float kTenUnitsATick = 10.0F / kFixedTick;
 const Vec3 kAlongX(1.0F, 0.0F, 0.0F);
 const Vec3 kMuzzle(0.0F, 1.0F, 0.0F);
 constexpr BulletConfig kNoDrop{.gravity = 0.0F, .max_range = 1000.0F};
+
+// Arbitrary ids: ballistics hands back whatever id it was given.
+constexpr SurfaceId kWall{41};
+constexpr SurfaceId kNearHitbox{7};
+constexpr SurfaceId kFarHitbox{9};
 
 // A square across the x axis at x, spanning y 0..2 and z -1..1.
 std::array<Triangle, 2> Plane(float x) {
@@ -240,7 +244,7 @@ std::array<Triangle, 2> Plane(float x) {
   return {Triangle{low_near, low_far, high_far}, Triangle{low_near, high_far, high_near}};
 }
 
-// A Map with a wall across the x axis at x.
+// A Map with a wall across the x axis at x, added as Surface kWall.
 std::unique_ptr<augusta::physics::World> MapWithWall(float x) {
   auto map = std::make_unique<augusta::physics::World>(StaminaConfig{});
   CollisionMesh wall;
@@ -250,38 +254,39 @@ std::unique_ptr<augusta::physics::World> MapWithWall(float x) {
       wall.points.push_back(point);
     }
   }
-  EXPECT_TRUE(map->AddCollisionMesh(wall).has_value());
+  EXPECT_TRUE(map->AddCollisionMesh(wall, kWall).has_value());
   return map;
 }
 
 // Requirements: US-10
-TEST(BallisticsHitTest, ABulletStopsOnTheMapWhereItCrossesIt) {
+TEST(BallisticsStrikeTest, ABulletStopsOnTheMapWhereItCrossesItAndReportsItsColliderId) {
   const auto map = MapWithWall(5.0F);
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   const StepResult result = world.Step(bullet, kFixedTick, *map, {});
 
-  EXPECT_EQ(result.outcome, Outcome::kHitMap);
+  EXPECT_EQ(result.outcome, Outcome::kStruck);
+  EXPECT_EQ(result.surface, kWall);
   EXPECT_NEAR(result.impact_point.x, 5.0F, 1e-3F);
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-3F);
 }
 
 // Requirements: US-10
-TEST(BallisticsHitTest, ABulletShortOfTheMapStaysInFlight) {
+TEST(BallisticsStrikeTest, ABulletShortOfTheMapStaysInFlight) {
   const auto map = MapWithWall(15.0F);
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   EXPECT_EQ(world.Step(bullet, kFixedTick, *map, {}).outcome, Outcome::kInFlight);
-  EXPECT_EQ(world.Step(bullet, kFixedTick, *map, {}).outcome, Outcome::kHitMap);
+  EXPECT_EQ(world.Step(bullet, kFixedTick, *map, {}).outcome, Outcome::kStruck);
 }
 
-// A player is hit through its Hitboxes only (ADR-0044): its controller's
+// A player is struck through its Hitboxes only (ADR-0044): its controller's
 // capsule, which the physics scene holds where the controller was made, is
-// never what a bullet hits (ADR-0002).
+// never what a bullet strikes (ADR-0002).
 // Requirements: US-11
-TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHandedIn) {
+TEST(BallisticsStrikeTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHandedIn) {
   augusta::physics::World map{StaminaConfig{}};
   map.CreateBody(Vec3(0.0F));
   // The controller's capsule stands on the world origin (ADR-0002); this line
@@ -295,27 +300,26 @@ TEST(BallisticsHitTest, ABulletPassesThroughAPlayersControllerWhenNoHitboxIsHand
 }
 
 // Requirements: US-11
-TEST(BallisticsHitTest, ABulletThatCrossesAHitboxHitsItsTargetAndBodyPart) {
+TEST(BallisticsStrikeTest, ABulletThatCrossesAHitboxReportsItsId) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
-  const std::array hitboxes{Hitbox{.target = TargetId{7}, .part = BodyPart::kHead, .triangles = plane}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = plane}};
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   const StepResult result = world.Step(bullet, kFixedTick, map, hitboxes);
 
-  EXPECT_EQ(result.outcome, Outcome::kHitPlayer);
-  EXPECT_EQ(result.target, TargetId{7});
-  EXPECT_EQ(result.part, BodyPart::kHead);
+  EXPECT_EQ(result.outcome, Outcome::kStruck);
+  EXPECT_EQ(result.surface, kNearHitbox);
   EXPECT_NEAR(result.impact_point.x, 5.0F, 1e-4F);
   EXPECT_NEAR(result.impact_point.y, 1.0F, 1e-4F);
 }
 
 // Requirements: US-11
-TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
+TEST(BallisticsStrikeTest, ABulletThatMissesAHitboxStaysInFlight) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(5.0F);
-  const std::array hitboxes{Hitbox{.target = TargetId{7}, .part = BodyPart::kTorso, .triangles = plane}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = plane}};
   World world;
   // Level at y = 3, over the top of the hitbox.
   const auto bullet = world.Fire(Vec3(0.0F, 3.0F, 0.0F), kAlongX, kTenUnitsATick, kNoDrop);
@@ -324,61 +328,62 @@ TEST(BallisticsHitTest, ABulletThatMissesAHitboxStaysInFlight) {
 }
 
 // Requirements: US-10, US-11
-TEST(BallisticsHitTest, AWallInFrontOfAHitboxStopsTheBullet) {
+TEST(BallisticsStrikeTest, AWallInFrontOfAHitboxIsStruck) {
   const auto map = MapWithWall(3.0F);
   const auto plane = Plane(5.0F);
-  const std::array hitboxes{Hitbox{.target = TargetId{7}, .part = BodyPart::kTorso, .triangles = plane}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = plane}};
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   const StepResult result = world.Step(bullet, kFixedTick, *map, hitboxes);
 
-  EXPECT_EQ(result.outcome, Outcome::kHitMap);
+  EXPECT_EQ(result.outcome, Outcome::kStruck);
+  EXPECT_EQ(result.surface, kWall);
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-3F);
 }
 
 // Requirements: US-11
-TEST(BallisticsHitTest, AHitboxInFrontOfAWallIsHit) {
+TEST(BallisticsStrikeTest, AHitboxInFrontOfAWallIsStruck) {
   const auto map = MapWithWall(5.0F);
   const auto plane = Plane(3.0F);
-  const std::array hitboxes{Hitbox{.target = TargetId{7}, .part = BodyPart::kTorso, .triangles = plane}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = plane}};
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   const StepResult result = world.Step(bullet, kFixedTick, *map, hitboxes);
 
-  EXPECT_EQ(result.outcome, Outcome::kHitPlayer);
+  EXPECT_EQ(result.outcome, Outcome::kStruck);
+  EXPECT_EQ(result.surface, kNearHitbox);
   EXPECT_NEAR(result.impact_point.x, 3.0F, 1e-4F);
 }
 
 // Requirements: US-11
-TEST(BallisticsHitTest, OfTwoPlayersInLineOnlyTheNearerIsHit) {
+TEST(BallisticsStrikeTest, OfTwoHitboxesInLineTheNearerOnesIdIsReported) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto far = Plane(6.0F);
   const auto near = Plane(4.0F);
   // Handed in far first, so the nearer one wins by distance, not by order.
-  const std::array hitboxes{Hitbox{.target = TargetId{1}, .part = BodyPart::kTorso, .triangles = far},
-                            Hitbox{.target = TargetId{2}, .part = BodyPart::kLimb, .triangles = near}};
+  const std::array hitboxes{Hitbox{.surface = kFarHitbox, .triangles = far},
+                            Hitbox{.surface = kNearHitbox, .triangles = near}};
   World world;
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, kNoDrop);
 
   const StepResult result = world.Step(bullet, kFixedTick, map, hitboxes);
 
-  EXPECT_EQ(result.outcome, Outcome::kHitPlayer);
-  EXPECT_EQ(result.target, TargetId{2});
-  EXPECT_EQ(result.part, BodyPart::kLimb);
+  EXPECT_EQ(result.outcome, Outcome::kStruck);
+  EXPECT_EQ(result.surface, kNearHitbox);
 }
 
 // Requirements: US-10, US-11
-TEST(BallisticsHitTest, AHitIsNotAnExpiry) {
+TEST(BallisticsStrikeTest, AStrikeIsNotAnExpiry) {
   const augusta::physics::World map{StaminaConfig{}};
   const auto plane = Plane(9.0F);
-  const std::array hitboxes{Hitbox{.target = TargetId{7}, .part = BodyPart::kTorso, .triangles = plane}};
+  const std::array hitboxes{Hitbox{.surface = kNearHitbox, .triangles = plane}};
   World world;
   // The range runs out within the same tick the hitbox is crossed.
   const auto bullet = world.Fire(kMuzzle, kAlongX, kTenUnitsATick, {.gravity = 0.0F, .max_range = 9.5F});
 
-  EXPECT_EQ(world.Step(bullet, kFixedTick, map, hitboxes).outcome, Outcome::kHitPlayer);
+  EXPECT_EQ(world.Step(bullet, kFixedTick, map, hitboxes).outcome, Outcome::kStruck);
 }
 
 // NFR-03: every golden shot, fired again here, follows its recorded trajectory

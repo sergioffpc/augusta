@@ -54,6 +54,12 @@ enum class Stance {
 /// another is undefined behavior.
 enum class BodyHandle : std::uint32_t {};
 
+/// Opaque id of a Surface (GLOSSARY.md): something a round can strike, here a
+/// collision mesh of the Map. Its caller chooses it when adding the mesh
+/// (World::AddCollisionMesh), and World::RaycastMap hands it back for the mesh
+/// struck; physics stores and returns it but never interprets it.
+enum class SurfaceId : std::uint32_t {};
+
 /// This tick's desired movement for one body, supplied by the caller (the
 /// orchestrating World) from that tick's input commands.
 struct MovementInput {
@@ -164,6 +170,22 @@ struct RaycastHit {
   float distance = 0.0F;
 };
 
+/// The result of one World::RaycastMap query.
+struct MapRaycastHit {
+  /// True if the ray intersected a collision mesh within max_distance. If
+  /// false, every other field here is unspecified.
+  bool has_hit = false;
+  /// The Surface id the struck mesh was added with. Only meaningful if has_hit
+  /// is true.
+  SurfaceId surface{};
+  /// World-space point where the ray intersected the mesh. Only meaningful if
+  /// has_hit is true.
+  math::Vec3 point;
+  /// Distance along the ray from origin to point. Only meaningful if has_hit
+  /// is true.
+  float distance = 0.0F;
+};
+
 /// Owns every body's PhysX state for one side (client or server) of the
 /// engine. One World instance is created per process; see
 /// ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
@@ -208,9 +230,11 @@ class World {
   /// with it.
   BodyHandle CreateBody(const math::Vec3& initial_position);
 
-  /// Adds mesh as immovable geometry that bodies collide with and stand on.
-  /// Meant to be called while loading a map, before bodies are stepped.
-  std::expected<void, CollisionMeshError> AddCollisionMesh(const CollisionMesh& mesh);
+  /// Adds mesh as immovable geometry that bodies collide with and stand on,
+  /// known to RaycastMap as surface. Meant to be called while loading a map,
+  /// before bodies are stepped. surface has no default: one could silently
+  /// equal an id the caller gives something else a round can strike.
+  std::expected<void, CollisionMeshError> AddCollisionMesh(const CollisionMesh& mesh, SurfaceId surface);
 
   /// Removes a body from this World and invalidates its handle. Calling
   /// any other method with a handle after it has been destroyed is
@@ -256,7 +280,9 @@ class World {
   /// Like Raycast, but against the collision meshes (the Map) only: no body is
   /// ever reported, wherever its controller is. What a bullet's flight is tested
   /// against, since player hits are judged against hitboxes instead (ADR-0044).
-  [[nodiscard]] RaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
+  /// Reports which mesh it struck by the Surface id the mesh was added with.
+  [[nodiscard]] MapRaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction,
+                                         float max_distance) const;
 
  private:
   struct Impl;

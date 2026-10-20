@@ -18,11 +18,15 @@
 /// nothing in REQUIREMENTS.md asks for aerodynamic drag/wind modeling.
 ///
 /// Ballistics is shared (ADR-0024, ADR-0044): the server advances every
-/// bullet with it and decides what each one hits, and each client's
-/// presentation draws every announced Shot's tracer and Map impact with
-/// the same World, handing it no hitboxes - a visual only. Deciding
-/// which player a bullet hits, where and for what damage stays the
-/// server's: only the server has the hitboxes to hand in.
+/// bullet with it, and each client's presentation draws every announced
+/// Shot's tracer and Map impact with the same World, handing it no
+/// hitboxes - a visual only.
+///
+/// Ballistics knows what a bullet strikes only as a Surface: an opaque
+/// physics::SurfaceId its caller chose, for each collider of the Map
+/// (physics::World::AddCollisionMesh) and each Hitbox it hands in. What a
+/// struck id means - which player, which Body part, what damage - is the
+/// caller's to decide: only the server has the hitboxes to hand in.
 ///
 /// World::Step follows the same per-handle, called-once-per-tick shape as
 /// physics::World::Step, since bullets are ECS entities too
@@ -36,14 +40,6 @@
 /// since they are posed anew for every tick; NextSegment tells the caller
 /// which players a bullet passes near, so it poses only those.
 namespace augusta::ballistics {
-
-/// Where on a hit player's body a bullet struck (US-11): the coarse zones
-/// REQUIREMENTS.md's "e.g., head, torso, limb" asks for.
-enum class BodyPart : std::uint8_t {
-  kHead,
-  kTorso,
-  kLimb,
-};
 
 /// Tunable per-shot values (ARCHITECTURE.md §8 mechanism/policy/data
 /// split, same category as physics::StaminaConfig): the gravity
@@ -78,15 +74,13 @@ struct Triangle {
   math::Vec3 c;
 };
 
-/// The caller's name for the player a Hitbox belongs to: the server hands in
-/// its Entity ID, so a hit names the body it struck.
-enum class TargetId : std::uint32_t {};
-
-/// One body part of one player, posed in world space for one Step. Views its
+/// One Surface posed in world space for one Step: for the server, one Body
+/// part of one player. surface is the caller's id for it, handed back when
+/// it is struck; it should differ from every Map collider's and every other
+/// Hitbox's in the same Step, or a strike cannot tell them apart. Views its
 /// triangles, which must outlive the Step it is handed to.
 struct Hitbox {
-  TargetId target{};
-  BodyPart part = BodyPart::kTorso;
+  physics::SurfaceId surface{};
   std::span<const Triangle> triangles;
 };
 
@@ -111,10 +105,9 @@ struct Segment {
 enum class Outcome {
   /// Still travelling; Step must be called again next tick.
   kInFlight,
-  /// Struck the Map this tick (see StepResult::impact_point).
-  kHitMap,
-  /// Struck a player's Hitbox this tick (see StepResult::target/part/impact_point).
-  kHitPlayer,
+  /// Struck a Surface this tick: a Map collider or a Hitbox (see
+  /// StepResult::surface/impact_point).
+  kStruck,
   /// Exceeded BulletConfig::max_range, or flew kMaxFlightTime, without
   /// hitting anything - a miss.
   kExpired,
@@ -126,13 +119,9 @@ struct StepResult {
   /// The bullet's position/velocity at the end of the tick's movement,
   /// regardless of outcome: past the impact point on a hit.
   BulletState state;
-  /// The player that was hit. Only meaningful if outcome is kHitPlayer.
-  TargetId target{};
-  /// Which part of target was hit. Only meaningful if outcome is
-  /// kHitPlayer.
-  BodyPart part = BodyPart::kTorso;
-  /// World-space point of impact. Only meaningful if outcome is kHitMap
-  /// or kHitPlayer.
+  /// The id of the Surface struck. Only meaningful if outcome is kStruck.
+  physics::SurfaceId surface{};
+  /// World-space point of impact. Only meaningful if outcome is kStruck.
   math::Vec3 impact_point;
 };
 
@@ -153,12 +142,13 @@ class World {
 
   /// Advances handle's bullet by one fixed tick of delta_time seconds:
   /// integrates gravity, then tests the tick's movement segment against
-  /// map's collision meshes and against hitboxes. The nearest intersection
-  /// along the segment is the outcome, so nothing is hit through a wall or
-  /// through another player; with none, a bullet past its max range, or on
-  /// its MaxFlightSteps(delta_time)-th Step, expires. Once this returns a
-  /// non-kInFlight outcome for handle, the bullet no longer exists - calling
-  /// Step again with the same handle is undefined behavior.
+  /// map's collision meshes and against hitboxes. The nearest Surface
+  /// crossed along the segment is the one struck, so nothing is struck
+  /// through a wall or through another player, and at most one is; with
+  /// none, a bullet past its max range, or on its MaxFlightSteps(delta_time)-th
+  /// Step, expires. Once this returns a non-kInFlight outcome for handle, the
+  /// bullet no longer exists - calling Step again with the same handle is
+  /// undefined behavior.
   StepResult Step(BulletHandle handle, float delta_time, const physics::World& map, std::span<const Hitbox> hitboxes);
 
   /// The segment the next Step of handle's bullet by delta_time tests, without

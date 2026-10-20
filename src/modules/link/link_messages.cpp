@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/link_types.h"
@@ -48,13 +48,13 @@ protocol::StanceWire ToWire(physics::Stance stance) { return static_cast<protoco
 
 physics::Stance FromWire(protocol::StanceWire stance) { return static_cast<physics::Stance>(stance); }
 
-protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
+protocol::BodyPartWire ToWire(body_part::BodyPart part) {
   switch (part) {
-    case ballistics::BodyPart::kHead:
+    case body_part::BodyPart::kHead:
       return protocol::BodyPartWire::kHead;
-    case ballistics::BodyPart::kTorso:
+    case body_part::BodyPart::kTorso:
       return protocol::BodyPartWire::kTorso;
-    case ballistics::BodyPart::kLimb:
+    case body_part::BodyPart::kLimb:
       return protocol::BodyPartWire::kLimb;
   }
   // A part none of the above names is a corrupted one: it travels on as a
@@ -62,14 +62,14 @@ protocol::BodyPartWire ToWire(ballistics::BodyPart part) {
   return protocol::BodyPartWire{};
 }
 
-ballistics::BodyPart FromWire(protocol::BodyPartWire part) {
+body_part::BodyPart FromWire(protocol::BodyPartWire part) {
   switch (part) {
     case protocol::BodyPartWire::kHead:
-      return ballistics::BodyPart::kHead;
+      return body_part::BodyPart::kHead;
     case protocol::BodyPartWire::kTorso:
-      return ballistics::BodyPart::kTorso;
+      return body_part::BodyPart::kTorso;
     case protocol::BodyPartWire::kLimb:
-      return ballistics::BodyPart::kLimb;
+      return body_part::BodyPart::kLimb;
   }
   // Decode admits only the body parts above.
   std::unreachable();

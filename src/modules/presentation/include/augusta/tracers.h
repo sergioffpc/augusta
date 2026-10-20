@@ -15,8 +15,8 @@
 /// ballistics::World, with the Parameters' muzzle velocity and ammo, stepped a
 /// server tick at a time - until it meets the Map, where it leaves an impact,
 /// or expires as the server's does. A tracer is a visual only: it is handed no
-/// player's hitboxes, so it never hits a player (ADR-0044: hits on players are
-/// drawn only from the server's Hit confirmations).
+/// player's hitboxes, so the only Surface it can strike is the Map (ADR-0044:
+/// hits on players are drawn only from the server's Hit confirmations).
 ///
 /// Pure of clocks and ECS - the caller hands in each frame's elapsed time - so
 /// it is tested on its own; PresentationWorld feeds it (see presentation.cpp).
