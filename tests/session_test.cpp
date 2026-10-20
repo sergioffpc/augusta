@@ -2778,6 +2778,45 @@ TEST_F(ScriptedServerTest, AStateThatArrivesAfterMatchEndIsDroppedAndTheClientIs
 
   EXPECT_EQ(session_.GetServerView()->GetPhase(), Phase::kLobby);
   EXPECT_FALSE(session_.GetServerView()->authoritative.has_value());
+  EXPECT_TRUE(session_.GetServerView()->recent_authoritative.empty());
+}
+
+// Below the tick rate, a render frame comes after several updates have arrived:
+// the view keeps them, oldest first, for the interpolation to record each.
+TEST_F(ScriptedServerTest, TheViewKeepsTheRecentStatesInTickOrderTheNewestLast) {
+  Settle();
+  for (const augusta::tick::Tick tick : {1U, 2U, 3U}) {
+    server_.Send(ScriptedServer::StateOf(tick, {kScriptedEntity}));
+  }
+  Settle();
+
+  const std::shared_ptr<const augusta::harness::ServerView> view = session_.GetServerView();
+  std::vector<augusta::tick::Tick> ticks;
+  for (const augusta::harness::AuthoritativeState& state : view->recent_authoritative) {
+    ticks.push_back(state.tick);
+  }
+  EXPECT_EQ(ticks, (std::vector<augusta::tick::Tick>{1, 2, 3}));
+  ASSERT_TRUE(view->authoritative.has_value());
+  EXPECT_EQ(view->authoritative->tick, 3U);
+}
+
+// The view keeps no more updates than the interpolation keeps per body (28,
+// at the fastest tick rate): the oldest go first. A stale one is not kept.
+TEST_F(ScriptedServerTest, TheViewKeepsNoMoreRecentStatesThanTheInterpolationKeeps) {
+  constexpr augusta::tick::Tick kSent = 40;
+  Settle();
+  for (augusta::tick::Tick tick = 1; tick <= kSent; ++tick) {
+    server_.Send(ScriptedServer::StateOf(tick, {kScriptedEntity}));
+  }
+  server_.Send(ScriptedServer::StateOf(20, {kScriptedEntity}));
+  Settle();
+
+  const std::shared_ptr<const augusta::harness::ServerView> view = session_.GetServerView();
+  ASSERT_EQ(view->recent_authoritative.size(), 28U);
+  EXPECT_EQ(view->recent_authoritative.front().tick, 13U);
+  EXPECT_EQ(view->recent_authoritative.back().tick, kSent);
+  ASSERT_TRUE(view->authoritative.has_value());
+  EXPECT_EQ(view->authoritative->tick, kSent);
 }
 
 // Requirements: US-14
