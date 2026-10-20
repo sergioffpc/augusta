@@ -375,15 +375,19 @@ what they show, and ship with the releases that bring it.
 - A network Debug panel from the client's own numbers: connection quality,
   traffic per message type, Authoritative State rate and size, Reconciliation
   corrections and interpolation slack
-- A Wireshark dissector over the game's own capture of decrypted messages, once
-  the protocol has moved to Protocol Buffers
+- The Networking Protocol's wire moved to Protocol Buffers: one schema, one
+  envelope message, the codec generated in the build (breaking for clients and
+  servers of v4)
+- A Wireshark dissector over the game's own capture of decrypted messages,
+  handing each message to Wireshark's `protobuf` dissector
 
 Its specs are written once its remaining decisions (network impairment, the
 shortcuts into OmniPVD and Nsight, the order of the specs) are recorded.
 
-**Exercises:** ADR-0074, ADR-0075, ADR-0038, ADR-0044 **Exit criteria:** a
-Development build shows where the server judged a Shot against the Hitboxes the
-shooter saw, and a Shipping build holds no debug tool
+**Exercises:** ADR-0074, ADR-0075, ADR-0007, ADR-0038, ADR-0044 **Exit
+criteria:** a Development build shows where the server judged a Shot against the
+Hitboxes the shooter saw, Wireshark names every message in a Development build's
+capture, and a Shipping build holds no debug tool
 
 ## v6 — Authoritative Body (planned)
 
