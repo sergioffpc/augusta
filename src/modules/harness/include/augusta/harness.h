@@ -77,6 +77,12 @@ inline constexpr std::size_t kMaxPendingDeaths = 16;
 /// than one rifle lands between two frames, by far.
 inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 
+/// The most Authoritative State updates a Server view keeps
+/// (ServerView::recent_authoritative): as many as the interpolation keeps per
+/// body (presentation::kUpdatesKept, which ClientRuntime holds equal to this),
+/// so a frame below the tick rate still finds every update since the last.
+inline constexpr std::size_t kRecentStatesKept = 28;
+
 /// Where a Session is in the lifecycle of ADR-0043.
 enum class Phase : std::uint8_t {
   /// The server has not admitted this client: not yet, or it refused.
@@ -140,6 +146,12 @@ struct ServerView {
   /// outside a match (unreliable, it can overtake Match start or Match end) or
   /// that names a body not in the match is dropped.
   std::optional<AuthoritativeState> authoritative;
+  /// The Authoritative State updates of the match in progress received most
+  /// recently, oldest first, the newest (authoritative) last: at most
+  /// kRecentStatesKept, and each newer than the one before it. A render frame
+  /// takes every one newer than the last it recorded, so none that arrived
+  /// between two frames is missed.
+  std::vector<AuthoritativeState> recent_authoritative;
   /// The bodies of the match in progress whose Death has been told.
   std::vector<EntityId> dead;
   /// The newest Replay view of the Replay this client watches (ADR-0051), a

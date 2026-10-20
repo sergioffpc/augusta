@@ -19,6 +19,11 @@
 
 namespace augusta::client {
 
+// Neither module names the other (checks/protocol_boundary.cmake), so their
+// edge holds the Server view's recent updates to what the interpolation keeps.
+static_assert(harness::kRecentStatesKept == presentation::kUpdatesKept,
+              "the Server view keeps as many recent updates as the interpolation keeps per body");
+
 renderer::RemotePlayer ToRenderer(const presentation::RemotePlayer& remote) {
   return {.position = remote.body.position, .yaw = remote.body.yaw, .character = remote.character};
 }

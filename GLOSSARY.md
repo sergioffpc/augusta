@@ -310,7 +310,8 @@ actions taken on it (ADR-0023).
 **Server view**: Everything the server has told one client, as of one moment
 (harness::ServerView): published whole by the client's Network I/O thread for
 every message that changes it and never changed after, so a reader on another
-thread sees one moment (ADR-0005). _Avoid_: Snapshot (an Authoritative State
+thread sees one moment (ADR-0005). It holds the newest Authoritative State
+update and the recent ones before it. _Avoid_: Snapshot (an Authoritative State
 update is not one), network state
 
 **SimulationWorld**: The Authoritative server's one world: every player and
