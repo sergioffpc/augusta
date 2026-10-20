@@ -266,9 +266,13 @@ and it is made loss-tolerant without retransmission:
   recipient how many of its commands are still queued, and the client lengthens
   its next tick when that is above 1.5 and shortens it when below, by 4% per
   command and never more than 5% either way, which keeps one or two queued
-  against a clock up to about 2% off. Only when the client's ticks happen
-  changes: each still simulates the nominal tick of the rate told in Join
-  accepted (ADR-0039), and the server still consumes one command per tick.
+  against a clock up to about 2% off. While more than 3 are queued, a backlog a
+  gap in its commands leaves once they arrive, it may lengthen its tick by up to
+  25%, so 7 queued drain in about 0.75 s rather than 1.8 s; steady, jittery and
+  lossy links pace as before (`prototypes/prediction-reconciliation.html`). Only
+  when the client's ticks happen changes: each still simulates the nominal tick
+  of the rate told in Join accepted (ADR-0039), and the server still consumes
+  one command per tick.
 - **State is newest-wins.** An update carries the server tick, and a client
   ignores one not newer than the update it holds. Every recipient is sent every
   player.

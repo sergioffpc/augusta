@@ -529,7 +529,7 @@ TEST(ServerClockTest, UpdatesInStepLeaveItAdvancingAtRealTime) {
 
 // Requirements: NFR-02
 TEST(ServerClockTest, ALateOrEarlyUpdateIsCaughtUpWithSlowlyAndNeverBackwards) {
-  constexpr Seconds kOffset = 0.05;
+  constexpr Seconds kOffset = 0.04;
   for (const Seconds offset : {kOffset, -kOffset}) {
     ServerClock clock;
     clock.Observe(0.0);
@@ -543,12 +543,59 @@ TEST(ServerClockTest, ALateOrEarlyUpdateIsCaughtUpWithSlowlyAndNeverBackwards) {
       real_time += kFrameDuration;
       const Seconds now = clock.Now().value();
       const Seconds step = now - previous;
-      EXPECT_GE(step, kFrameDuration * (1.0 - ServerClock::kMaxSlew) - 1e-12) << offset;
-      EXPECT_LE(step, kFrameDuration * (1.0 + ServerClock::kMaxSlew) + 1e-12) << offset;
+      EXPECT_GE(step, kFrameDuration * (1.0 - ServerClock::kSlew) - 1e-12) << offset;
+      EXPECT_LE(step, kFrameDuration * (1.0 + ServerClock::kSlew) + 1e-12) << offset;
       previous = now;
     }
     // Back in step with the server's timeline.
     EXPECT_NEAR(clock.Now().value(), real_time + offset, 1e-9) << offset;
+  }
+}
+
+// Requirements: NFR-02
+TEST(ServerClockTest, WithinFiftyMillisecondsItClosesTheGapAtTwoPercent) {
+  for (const Seconds offset : {0.04, -0.04}) {
+    ServerClock clock;
+    clock.Observe(0.0);
+    clock.Observe(offset);
+
+    clock.Advance(kFrameDuration);
+
+    const Seconds sign = offset > 0.0 ? 1.0 : -1.0;
+    EXPECT_NEAR(clock.Now().value(), kFrameDuration * (1.0 + (sign * 0.02)), 1e-12) << offset;
+  }
+}
+
+// Requirements: NFR-02
+TEST(ServerClockTest, BeyondFiftyMillisecondsItClosesTheGapAtTenPercentThenAtTwo) {
+  constexpr Seconds kTolerance = 1e-9;
+  for (const Seconds offset : {0.15, -0.15}) {
+    const Seconds sign = offset > 0.0 ? 1.0 : -1.0;
+    ServerClock clock;
+    clock.Observe(0.0);
+    clock.Observe(offset);
+
+    Seconds real_time = 0.0;
+    Seconds previous = clock.Now().value();
+    int fast_frames = 0;
+    for (int frame = 0; frame < 1000; ++frame) {
+      // How far the clock is from the server's timeline before this frame.
+      const Seconds gap = std::abs(real_time + offset - previous);
+      clock.Advance(kFrameDuration);
+      real_time += kFrameDuration;
+      const Seconds step = clock.Now().value() - previous;
+      if (gap > 0.05 + kTolerance) {
+        EXPECT_NEAR(step, kFrameDuration * (1.0 + (sign * 0.10)), 1e-12) << offset << " frame " << frame;
+        ++fast_frames;
+      } else if (gap < 0.05 - kTolerance) {
+        EXPECT_LE(std::abs(step - kFrameDuration), (kFrameDuration * 0.02) + 1e-12) << offset << " frame " << frame;
+      }
+      previous = clock.Now().value();
+    }
+    // 100 ms closed at 10% of each 1/144 s frame: 144 frames, give or take the
+    // one landing on the threshold.
+    EXPECT_NEAR(fast_frames, 144, 1) << offset;
+    EXPECT_NEAR(clock.Now().value(), real_time + offset, kTolerance) << offset;
   }
 }
 
