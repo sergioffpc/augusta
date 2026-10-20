@@ -73,11 +73,14 @@ responsibility, in this shape:
 - `## Decisions`: links to the ADRs that decide it, if any.
 
 A new module adds its README in the same change; a change that moves a
-responsibility into, out of or between modules updates every README it touches.
-If the paragraph needs "and also" to fit something in, the module has more than
-one responsibility (see Single responsibility). The details stay in the headers'
-`/// \file` comments; the README is the one place the module's boundary is
-stated.
+responsibility into, out of or between modules updates every README it touches,
+and every other place that restates who owns it: `docs/ARCHITECTURE.md`'s module
+list, the ADR that decides it, the `/// \file` comments of the modules on both
+sides and their `CMakeLists.txt` comments. Search them for the prose, not just
+for the symbols the change renames. If the paragraph needs "and also" to fit
+something in, the module has more than one responsibility (see Single
+responsibility). The details stay in the headers' `/// \file` comments; the
+README is the one place the module's boundary is stated.
 
 ## Testing
 

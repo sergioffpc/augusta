@@ -1,8 +1,9 @@
 #!/bin/bash
-# Runs clang-tidy on changed C++ files, yamllint on changed YAML files,
-# luacheck on changed Lua files, taplo on changed TOML files, ruff on changed
-# Python, shellcheck on changed shell scripts, pymarkdown on changed Markdown,
-# and actionlint on changed workflows before pushing. Git LFS uploads still run after the checks pass.
+# Runs yamllint on changed YAML files, luacheck on changed Lua files, taplo on
+# changed TOML files, ruff on changed Python, shellcheck on changed shell
+# scripts, pymarkdown on changed Markdown, actionlint on changed workflows and,
+# last, clang-tidy on changed C++ files before pushing. Git LFS uploads still
+# run after the checks pass.
 
 readonly ZERO_SHA=0000000000000000000000000000000000000000
 
@@ -208,44 +209,6 @@ $(git ls-files --others --exclude-standard)"
     exit $?
   fi
 
-  # clang-tidy, through vcenv.cmd on Windows.
-  local tidy=(clang-tidy --quiet -p="${build_dir}")
-  if [[ "${windows}" = 1 ]]; then
-    tidy=(scripts/vcenv.cmd "${tidy[@]}")
-  fi
-
-  if [[ -n "${files}" ]]; then
-    if [[ ! -f "${build_dir}/compile_commands.json" ]]; then
-      local preset
-      preset=$(basename "${build_dir}" | sed 's/^x64-//')
-      echo "pre-push: ${build_dir}/compile_commands.json not found -" \
-        "configure a build first (make configure PRESET=${preset};" \
-        "on macOS, through scripts/dev-container.sh)," \
-        "or push with --no-verify to skip clang-tidy." >&2
-      exit 1
-    fi
-
-    echo "pre-push: clang-tidy on $(count "${files}") changed file(s)..." >&2
-    # One argument per file; src/ paths have no spaces.
-    # shellcheck disable=SC2086
-    "${tidy[@]}" ${files} || {
-      failed clang-tidy "fix the warnings above"
-      exit 1
-    }
-  fi
-
-  if [[ -n "${include_files}" ]]; then
-    echo "pre-push: include-cleaner on $(count "${include_files}") changed" \
-      "file(s)..." >&2
-    # One argument per file; src/ and tests/ paths have no spaces.
-    # shellcheck disable=SC2086
-    "${tidy[@]}" --checks=-*,misc-include-cleaner --extra-arg=-w \
-      ${include_files} || {
-      failed include-cleaner "fix the includes above (clang-tidy --fix can)"
-      exit 1
-    }
-  fi
-
   if [[ -n "${yaml_files}" ]]; then
     local yamllint
     if command -v yamllint >/dev/null 2>&1; then
@@ -318,6 +281,45 @@ $(git ls-files --others --exclude-standard)"
   [[ -z "${workflows_changed}" ]] \
     || lint actionlint uv tool run --from actionlint-py==1.7.12.25 \
       --with shellcheck-py==0.11.0.1 actionlint
+
+  # clang-tidy, through vcenv.cmd on Windows: last, as it takes minutes where
+  # the linters above take seconds, so a push they fail fails fast.
+  local tidy=(clang-tidy --quiet -p="${build_dir}")
+  if [[ "${windows}" = 1 ]]; then
+    tidy=(scripts/vcenv.cmd "${tidy[@]}")
+  fi
+
+  if [[ -n "${files}" ]]; then
+    if [[ ! -f "${build_dir}/compile_commands.json" ]]; then
+      local preset
+      preset=$(basename "${build_dir}" | sed 's/^x64-//')
+      echo "pre-push: ${build_dir}/compile_commands.json not found -" \
+        "configure a build first (make configure PRESET=${preset};" \
+        "on macOS, through scripts/dev-container.sh)," \
+        "or push with --no-verify to skip clang-tidy." >&2
+      exit 1
+    fi
+
+    echo "pre-push: clang-tidy on $(count "${files}") changed file(s)..." >&2
+    # One argument per file; src/ paths have no spaces.
+    # shellcheck disable=SC2086
+    "${tidy[@]}" ${files} || {
+      failed clang-tidy "fix the warnings above"
+      exit 1
+    }
+  fi
+
+  if [[ -n "${include_files}" ]]; then
+    echo "pre-push: include-cleaner on $(count "${include_files}") changed" \
+      "file(s)..." >&2
+    # One argument per file; src/ and tests/ paths have no spaces.
+    # shellcheck disable=SC2086
+    "${tidy[@]}" --checks=-*,misc-include-cleaner --extra-arg=-w \
+      ${include_files} || {
+      failed include-cleaner "fix the includes above (clang-tidy --fix can)"
+      exit 1
+    }
+  fi
 
   lfs_pre_push "${push_refs}" "$@"
 }

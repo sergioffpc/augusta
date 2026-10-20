@@ -71,6 +71,10 @@ add() {
 
   rmdir "${wt}/third_party/nvtx"
   link_dir "${wt}/third_party/nvtx" "${main}/third_party/nvtx"
+  # Through the link, nvtx's .git names its gitdir relative to the main
+  # checkout, which from here resolves to nothing: git add -A and -u would
+  # fail on it. The worktree never bumps nvtx, so git leaves the entry alone.
+  git -C "${wt}" update-index --skip-worktree third_party/nvtx
 
   local vcpkg sha tool
   vcpkg="${main}/third_party/vcpkg"
