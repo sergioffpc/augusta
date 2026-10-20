@@ -62,14 +62,17 @@ between backends would double what has to be tested, for no gain to a player.
   from vcpkg's `shader-slang`, a host tool in the manifest. The SPIR-V is
   embedded in the executable, so there are no shader files to ship or find, and
   the client ships no `slang.dll`.
-- **Debug HUD.** Dear ImGui from vcpkg, without a platform binding, since the
-  HUD takes no input: the Renderer gives ImGui each frame's size. It is drawn by
-  a small ImGui renderer on NVRHI adapted from Donut's (MIT). Its monospace
-  font, JetBrains Mono Bold (SIL Open Font License 1.1), is kept in the
-  repository with its licence and embedded in the executable at build time. The
-  Renderer only draws text lines; what they say is the hud module's
-  (`augusta_hud`), free of any GPU API, and the client Runtime hands its lines
-  to the Renderer.
+- **Debug HUD and Debug panels.** Dear ImGui from vcpkg, without a platform
+  binding: the Renderer gives ImGui each frame's size and, in Debug interaction
+  only, the window's events the client Runtime hands it (ADR-0075); the Debug
+  HUD takes no input. It is drawn by a small ImGui renderer on NVRHI adapted
+  from Donut's (MIT). Its monospace font, JetBrains Mono Bold (SIL Open Font
+  License 1.1), is kept in the repository with its licence and embedded in the
+  executable at build time. For the Debug HUD the Renderer only draws text
+  lines; what they say is the hud module's (`augusta_hud`), free of any GPU API,
+  and the client Runtime hands its lines to the Renderer. Debug panels and Debug
+  overlays reach it the same way, as values described by `augusta_debug`
+  (ADR-0075); ImGui stays inside the Renderer.
 - **GPU crash dumps.** Nsight Aftermath, from the SDK an installed Nsight
   Graphics bundles, which the build autodetects; without it the build and the
   client are unchanged. With it, the Renderer has Aftermath watch Vulkan devices

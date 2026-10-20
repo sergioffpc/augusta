@@ -662,6 +662,12 @@ not affect numbering.
   fill of the Map's free space, drawn as a volume alike on every client
 - [ADR-0073](./adr/0073-effects.md) — Effects: one catalogue of particles,
   decals and brief lights, with fixed bounds and no setting
+- [ADR-0074](./adr/0074-debug-tools-compiled-out-of-shipping-builds.md) — Debug
+  tools: one CMake option, compiled out of Shipping builds, started from the
+  config's `debug` section
+- [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
+  overlays and panels: values each area builds and the Renderer draws, ImGui
+  inside the Renderer
 
 ### Tooling & Build
 

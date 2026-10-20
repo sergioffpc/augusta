@@ -78,12 +78,21 @@ one with fire pressed: whether a Command fires a round is the server's to decide
   therefore does not decide player hit detection.
 - **Ballistics is shared, in `augusta_gameplay`.** Its trajectory integration is
   used by the client's presentation as well; its hit testing and the outcome it
-  reports stay server-side.
+  reports stay server-side. Placing a player's Hitboxes from a Hitbox pose and
+  its Character is shared there too, so a client's Debug overlay draws them
+  where the server tested them; the Hitbox history stays SimulationWorld's.
 - **Replication lives with SimulationWorld, in `augusta_simulation`.** Deciding
   what each client is sent of a tick's Authoritative State, its Shots and Hit
   confirmations included, is server-only and stops at the engine's own types: a
   pure decision tested without a network, which `host::Host` turns into
   messages.
+- **A Development build tells a shooter how its round was judged.** There,
+  SimulationWorld reports with each round whose flight ended a Shot judgement:
+  the Hitbox poses it tested at the Shooter's delay, tick by tick, and what the
+  round struck. `host::Host` sends it to the shooter only while its
+  `debug.shot_judgements` key is on and the shooter subscribed (ADR-0038), so a
+  Debug overlay can draw the server's Hitboxes beside the client's own. A
+  Shipping build has neither the report nor the message (ADR-0074).
 - **A shooter's hit marker lags its shot** by the flight time plus half an RTT.
   That is the price of never showing one that is taken back.
 

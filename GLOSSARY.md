@@ -402,6 +402,38 @@ spawn, sends that player's Commands at their ticks, leaves when that player did
 and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
 (it watches, it does not play), bot, ghost
 
+### Debugging
+
+**Debug HUD**: Lines of text over the frame's corner showing the client's system
+metrics. _Avoid_: Overlay, stats panel
+
+**Debug overlay**: Shapes drawn into the 3D world to show state the game itself
+does not show, such as collision shapes, Hitboxes or a Smoke screen's voxels.
+_Avoid_: Debug view (it replaces the frame), gizmo, wireframe
+
+**Debug view**: The frame replaced by one of the images it is made from, such as
+albedo, normals or shadows. _Avoid_: Debug overlay (drawn over the world),
+render mode
+
+**Debug panel**: A window over the frame with numbers and controls about one
+part of the game, such as the network or the physics. _Avoid_: Debug menu,
+inspector, debug HUD (text lines only)
+
+**Debug index**: The Debug panel listing the debug tools a client carries, each
+switched on or off from it. _Avoid_: Debug menu, console
+
+**Debug interaction**: The state in which the Debug panels take the mouse and
+keyboard and the game gets neither. _Avoid_: Debug mode, edit mode
+
+**Development build**: A build of the game with its debug tools in, whatever its
+optimisation: what developers run, and what the `develop` Environment serves.
+_Avoid_: Debug build (one kind of Development build, unoptimised)
+
+**Shipping build**: The build of the game players get, with every debug tool
+left out of it, not merely switched off: what a release publishes and what the
+`staging` Environment serves. _Avoid_: Release build (Release is also how a
+Development build is optimised), ship build, retail build
+
 ### Combat
 
 **Surface**: Anything a round can strike: a collider of the Map, a Prop, or one
@@ -485,6 +517,12 @@ hit a player: the target, the body part and the damage. The only source of the
 shooter's hit marker; a client never predicts a hit. _Avoid_: Hit marker (the
 marker is how the client shows a Hit confirmation), hit prediction, hit
 registration
+
+**Shot judgement**: How the Authoritative server judged one of a shooter's
+rounds, told to that shooter in a Development build: the Hitboxes each tick of
+its flight was tested against, as they were the Shooter's delay ago, and what
+the round struck. _Avoid_: Impacts, hit report, Hit confirmation (only a hit,
+and in every build)
 
 **Death**: A player's health reaching zero in a Match, as the Authoritative
 server resolves it: who died, who killed it and on which tick. The player stays
