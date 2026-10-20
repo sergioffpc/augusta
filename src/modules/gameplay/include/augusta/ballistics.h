@@ -54,6 +54,8 @@ struct BulletConfig {
   /// this far from its origin without hitting anything, or once it has
   /// flown kMaxFlightTime, whichever comes first.
   float max_range = 0.0F;
+
+  bool operator==(const BulletConfig&) const = default;
 };
 
 /// The longest any bullet flies (ADR-0002): one still in flight after this

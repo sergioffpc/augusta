@@ -219,7 +219,7 @@ float ShootersDelay(tick::Tick tick, const command::Command& command, float max_
 }
 
 // What damage gives for a hit on part.
-float DamageFor(const parameters::Damage& damage, body_part::BodyPart part) {
+float DamageFor(const body_part::Damage& damage, body_part::BodyPart part) {
   switch (part) {
     case body_part::BodyPart::kHead:
       return damage.head;
@@ -425,9 +425,8 @@ struct World::Impl {
     committed.shots.push_back(shot);
     // As a fraction of the cap, so a delay held at it is the cap exactly.
     shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
-    const ballistics::BulletHandle bullet =
-        ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
-                        {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
+    const ballistics::BulletHandle bullet = ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
+                                                            parameters.rifle.muzzle_velocity, parameters.ammo.flight);
     ecs.entity().set<Bullet>(
         {.handle = bullet, .shooter = shot.shooter, .shooters_delay = delay, .yaw = shot.yaw, .pitch = shot.pitch});
   }

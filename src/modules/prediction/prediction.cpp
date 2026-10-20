@@ -64,7 +64,7 @@ struct World::Impl {
   physics::BodyHandle local_body;
   // The local player's rifle and the server's values for it. Until Start gives
   // them, a rifle with no round: it fires nothing.
-  parameters::Rifle rifle_rules;
+  weapon::Rifle rifle_rules;
   weapon::State rifle;
   PhaseEntities phases;
 

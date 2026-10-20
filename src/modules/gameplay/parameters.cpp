@@ -8,6 +8,7 @@
 
 #include "augusta/limits.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 namespace augusta::parameters {
 namespace {
@@ -35,7 +36,7 @@ std::expected<void, InvalidParameter> ValidateStamina(const physics::StaminaConf
   return {};
 }
 
-std::expected<void, InvalidParameter> ValidateRifle(const Rifle& rifle) {
+std::expected<void, InvalidParameter> ValidateRifle(const weapon::Rifle& rifle) {
   if (!FiniteAndAbove(rifle.rounds_per_minute, 0.0F)) {
     return Invalid("rifle.rounds_per_minute");
   }
@@ -57,7 +58,7 @@ std::expected<void, InvalidParameter> ValidateRifle(const Rifle& rifle) {
   if (rifle.recoil_pattern.size() > limits::kMaxRecoilKicks) {
     return Invalid("rifle.recoil_pattern");
   }
-  for (const RecoilKick& kick : rifle.recoil_pattern) {
+  for (const weapon::RecoilKick& kick : rifle.recoil_pattern) {
     if (!std::isfinite(kick.pitch) || !std::isfinite(kick.yaw)) {
       return Invalid("rifle.recoil_pattern");
     }
@@ -68,11 +69,11 @@ std::expected<void, InvalidParameter> ValidateRifle(const Rifle& rifle) {
   return {};
 }
 
-std::expected<void, InvalidParameter> ValidateAmmo(const Ammo& ammo) {
-  if (!FiniteAndAtLeast(ammo.gravity, 0.0F)) {
+std::expected<void, InvalidParameter> ValidateAmmo(const weapon::Ammo& ammo) {
+  if (!FiniteAndAtLeast(ammo.flight.gravity, 0.0F)) {
     return Invalid("ammo.gravity");
   }
-  if (!FiniteAndAbove(ammo.max_range, 0.0F)) {
+  if (!FiniteAndAbove(ammo.flight.max_range, 0.0F)) {
     return Invalid("ammo.max_range");
   }
   if (!FiniteAndAtLeast(ammo.damage.head, 0.0F)) {
