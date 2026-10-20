@@ -1,11 +1,11 @@
 # Debug Overlays and Panels Are Values Handed to the Renderer
 
-Physics, collision, Smoke screens and the network each need to draw shapes into
-the world and show Debug panels, and none of them may reach into the Renderer or
-its GPU API. One mechanism serves them all: each frame, the client Runtime hands
-the Renderer the frame's Debug overlay shapes and Debug panels as values, the
-same way it hands the scene, the combat effects and the Debug HUD's lines
-(ADR-0059). Like every debug tool, it exists only in a Development build
+Physics, collision, Smoke screens, lighting and the network each need to draw
+shapes into the world and show Debug panels, and none of them may reach into the
+Renderer or its GPU API. One mechanism serves them all: each frame, the client
+Runtime hands the Renderer the frame's Debug overlay shapes and Debug panels as
+values, the same way it hands the scene, the combat effects and the Debug HUD's
+lines (ADR-0059). Like every debug tool, it exists only in a Development build
 (ADR-0074).
 
 **One vocabulary module.** `augusta_debug`, client-only and compiled only with
@@ -76,7 +76,11 @@ Panels open at fixed default positions, never remembered between runs.
 remains `augusta_hud`'s text lines, Debug views still replace the frame inside
 the Renderer (ADR-0067), and Debug overlays draw over whichever frame shows.
 Whether the Renderer draws the HUD and the panels through one ImGui path is its
-own business.
+own business. The line between an overlay and a view is where the state lives: a
+Debug overlay draws only values already on the CPU, such as a Map's local lights
+or where its probes stand, built by the module that holds them, even when that
+state is the Renderer's input; what only the GPU knows, such as a probe's light
+or how many lights a screen tile traces, is a Debug view.
 
 ## Considered Options
 
@@ -85,6 +89,10 @@ own business.
 - **The Renderer drawing each shape kind itself**: one draw path per kind on the
   GPU, untested off it; tessellating on the CPU keeps the Renderer at two
   primitives.
+- **Overlays the Renderer draws from its own GPU state** (probes shaded by their
+  light): shows more over the world, but a second draw path inside the Renderer
+  that no test reaches without a GPU; the same state reads as well in a Debug
+  view.
 - **Shapes with a lifetime the Renderer keeps**: one-shot producers get simpler,
   but the Renderer then holds a clock and a store; the helper gives the same to
   the producers that want it.
