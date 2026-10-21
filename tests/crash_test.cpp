@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -17,13 +18,21 @@
 
 #ifdef _WIN32
 #include <windows.h>
+// After <windows.h>, whose types it uses.
+#include <cstdint>
+#include <iterator>
+#include <thread>
+
+#include <dbghelp.h>
 #else
 #include <unistd.h>
 #endif
 
 namespace {
 
+using augusta::crash::FormatExceptionLine;
 using augusta::crash::FormatFrameLine;
+using augusta::crash::FormatModuleFrameLine;
 using augusta::crash::FormatSignalLine;
 using augusta::crash::Line;
 
@@ -102,6 +111,44 @@ TEST(CrashFormat, QuotesAndBackslashesInASymbolAreEscaped) {
             LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10 symbol=\"f(\\\"\\\\\\\")\""));
 }
 
+// A Windows frame names the module it is in and the offset into it, which the
+// release's PDB symbolizes later: the zip carries none (ADR-0055).
+// Requirements: NFR-10
+TEST(CrashFormat, WindowsFrameLineNamesModuleAndOffset) {
+  Line line{};
+  EXPECT_EQ(FormatModuleFrameLine(line, "client", kFixedTime, 4, 0x7ff6a0011a2bU, "augustac.exe", 0x11a2bU,
+                                  "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
+            LoggedLine(kFixedTime,
+                       "subsystem=client event=crash_frame index=4 pc=0x7ff6a0011a2b module=\"augustac.exe\" "
+                       "offset=0x11a2b run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
+}
+
+// Requirements: NFR-10
+TEST(CrashFormat, WindowsFrameOutsideAnyModuleHasNoModule) {
+  Line line{};
+  EXPECT_EQ(FormatModuleFrameLine(line, kServer, kFixedTime, 0, 0x10U, nullptr, 0),
+            LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10"));
+}
+
+// Requirements: NFR-10
+TEST(CrashFormat, ModuleTooLongForTheLineKeepsOffsetAndRunWhole) {
+  Line line{};
+  const std::string module(line.size() * 2, 'm');
+  const std::string_view written = FormatModuleFrameLine(line, "client", kFixedTime, 0, 0x10U, module.c_str(), 0x20U,
+                                                         "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
+  EXPECT_EQ(written.size(), line.size());
+  EXPECT_TRUE(written.ends_with("mm\" offset=0x20 run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f\n")) << written;
+}
+
+// A Windows crash is an exception, named by its code as WinDbg shows it.
+// Requirements: NFR-10
+TEST(CrashFormat, ExceptionLineNamesItsCode) {
+  Line line{};
+  EXPECT_EQ(FormatExceptionLine(line, "client", kFixedTime, 0xC0000005U, "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
+            LoggedLine(kFixedTime,
+                       "subsystem=client event=crash exception=0xc0000005 run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
+}
+
 // Requirements: NFR-10
 TEST(CrashFormat, SymbolTooLongForTheLineIsCutButStillClosed) {
   Line line{};
@@ -121,21 +168,51 @@ TEST(CrashFormat, SymbolTooLongForTheLineKeepsTheRunWhole) {
   EXPECT_TRUE(written.ends_with("xx\" run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f\n"));
 }
 
+#ifdef _WIN32
+// What a defect does on Windows: an access violation, which no handler takes.
+// On a thread of its own, since gtest takes an SEH exception in the test's
+// thread before the unhandled-exception filter could.
+void Crash() {
+  std::thread([] {
+    volatile std::uintptr_t address = 0;
+    // NOLINTNEXTLINE(performance-no-int-to-ptr) - a null pointer the compiler cannot see, to fault on.
+    *reinterpret_cast<volatile int*>(address) = 1;
+  }).join();
+}
+
+// The crash line Crash leaves.
+constexpr std::string_view kCrashEvent = "event=crash exception=0xc0000005";
+#else
+void Crash() { std::raise(SIGSEGV); }
+
+constexpr std::string_view kCrashEvent = "event=crash signal=SIGSEGV";
+#endif
+
 // The handler writes where the log sink does, stdout; a death test reads
 // stderr, so the dying child points one at the other first. Installed as
-// subsystem with settings.
-void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::crash::Settings settings = {}) {
+// subsystem with settings, then crashes by crash.
+void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::crash::Settings settings = {},
+                             void (*crash)() = Crash) {
 #ifdef _WIN32
   SetStdHandle(STD_OUTPUT_HANDLE, GetStdHandle(STD_ERROR_HANDLE));
 #else
   dup2(STDERR_FILENO, STDOUT_FILENO);
 #endif
   augusta::crash::Install("augusta_crash_tests", subsystem, std::move(settings));
-  std::raise(SIGSEGV);
+  crash();
 }
 
 // A Run's ID, in its canonical form.
 constexpr std::string_view kRunId = "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f";
+
+// A new, empty directory of the test's own under the temporary directory,
+// which the child that dies makes again (on Windows it reruns the test).
+std::filesystem::path EmptyDirectory(std::string_view name) {
+  const std::filesystem::path directory = std::filesystem::temp_directory_path() / "augusta_crash_tests" / name;
+  std::filesystem::remove_all(directory);
+  std::filesystem::create_directories(directory);
+  return directory;
+}
 
 // The lines of the file at path, without their line feeds.
 std::vector<std::string> ReadLines(const std::filesystem::path& path) {
@@ -151,7 +228,7 @@ std::vector<std::string> ReadLines(const std::filesystem::path& path) {
 // plain substrings.
 // Requirements: NFR-10
 TEST(CrashHandlerDeathTest, FatalSignalIsLoggedBeforeTheProcessDies) {
-  EXPECT_DEATH(CrashWithStdoutOnStderr(), "CRITICAL subsystem=server event=crash signal=SIGSEGV");
+  EXPECT_DEATH(CrashWithStdoutOnStderr(), "CRITICAL subsystem=server " + std::string(kCrashEvent));
 }
 
 // Requirements: NFR-10
@@ -159,17 +236,79 @@ TEST(CrashHandlerDeathTest, FatalSignalLogsTheStack) {
   EXPECT_DEATH(CrashWithStdoutOnStderr(), "CRITICAL subsystem=server event=crash_frame index=0 pc=0x");
 }
 
+// Requirements: NFR-10
+TEST(CrashHandlerDeathTest, AbortIsLoggedBeforeTheProcessDies) {
+  EXPECT_DEATH(CrashWithStdoutOnStderr(kServer, {}, [] { std::abort(); }),
+               "CRITICAL subsystem=server event=crash signal=SIGABRT");
+}
+
+#ifdef _WIN32
+// The Run ID the user stream of the minidump at path holds, or nullopt if it
+// has none.
+std::optional<std::string> RunIdStream(const std::filesystem::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  std::vector<char> dump{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  MINIDUMP_DIRECTORY* directory = nullptr;
+  void* stream = nullptr;
+  ULONG size = 0;
+  if (dump.empty() ||
+      MiniDumpReadDumpStream(dump.data(), augusta::crash::kRunIdStreamType, &directory, &stream, &size) == FALSE) {
+    return std::nullopt;
+  }
+  return std::string(static_cast<const char*>(stream), size);
+}
+
+// A Windows client's crash writes its minidump, named by the Run, which says
+// its Run though renamed, and its lines reach the Run's log, each frame naming
+// its module and offset into it (ADR-0055).
+// Requirements: NFR-10
+TEST(CrashHandlerDeathTest, UnhandledExceptionWritesTheRunsMinidumpAndLog) {
+  const std::filesystem::path directory = EmptyDirectory("UnhandledExceptionWritesTheRunsMinidumpAndLog");
+  const std::filesystem::path log = directory / "logs" / "augustac-0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f.log";
+  const std::filesystem::path minidump = directory / "dumps" / "augustac-0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f.dmp";
+  std::filesystem::create_directories(log.parent_path());
+
+  EXPECT_DEATH(
+      CrashWithStdoutOnStderr(
+          "client",
+          {.minidump_file = minidump, .run_id = std::string(kRunId), .log_file = log, .core_location = std::nullopt}),
+      "event=crash exception=0xc0000005");
+
+  ASSERT_TRUE(std::filesystem::exists(minidump));
+  EXPECT_EQ(RunIdStream(minidump), kRunId);
+  const std::vector<std::string> lines = ReadLines(log);
+  ASSERT_GE(lines.size(), 2U);
+  EXPECT_EQ(lines[0].substr(lines[0].find(' ')),
+            " CRITICAL subsystem=client event=crash exception=0xc0000005 run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
+  EXPECT_TRUE(lines[1].contains(" CRITICAL subsystem=client event=crash_frame index=0 pc=0x")) << lines[1];
+  EXPECT_TRUE(lines[1].contains(" module=\"augusta_crash_tests.exe\" offset=0x")) << lines[1];
+  EXPECT_TRUE(lines[1].ends_with(" run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f")) << lines[1];
+}
+
+// An abort is no exception, but leaves the same minidump.
+// Requirements: NFR-10
+TEST(CrashHandlerDeathTest, AbortWritesTheRunsMinidump) {
+  const std::filesystem::path minidump =
+      EmptyDirectory("AbortWritesTheRunsMinidump") / "dumps" / "augustac-0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f.dmp";
+
+  EXPECT_DEATH(CrashWithStdoutOnStderr("client",
+                                       {.minidump_file = minidump,
+                                        .run_id = std::string(kRunId),
+                                        .log_file = std::nullopt,
+                                        .core_location = std::nullopt},
+                                       [] { std::abort(); }),
+               "event=crash signal=SIGABRT");
+
+  EXPECT_EQ(RunIdStream(minidump), kRunId);
+}
+#else
 // The client's crash reaches the Run's log, as its other lines do, under its
-// Run ID, and says where the core is. The file is the test's own, which the
-// child that dies opens again (on Windows it reruns the test).
+// Run ID, and says where the core is.
 // Requirements: NFR-10
 TEST(CrashHandlerDeathTest, FatalSignalIsLoggedIntoTheRunsLogFile) {
-  const std::filesystem::path log =
-      std::filesystem::temp_directory_path() / "augusta_crash_tests" / "FatalSignalIsLoggedIntoTheRunsLogFile.log";
-  std::filesystem::create_directories(log.parent_path());
-  std::filesystem::remove(log);
+  const std::filesystem::path log = EmptyDirectory("FatalSignalIsLoggedIntoTheRunsLogFile") / "run.log";
 
-  EXPECT_DEATH(CrashWithStdoutOnStderr("client", {.dumps_directory = std::nullopt,
+  EXPECT_DEATH(CrashWithStdoutOnStderr("client", {.minidump_file = std::nullopt,
                                                   .run_id = std::string(kRunId),
                                                   .log_file = log,
                                                   .core_location = "coredumpctl dump augustac"}),
@@ -183,5 +322,6 @@ TEST(CrashHandlerDeathTest, FatalSignalIsLoggedIntoTheRunsLogFile) {
   EXPECT_TRUE(lines[1].contains(" CRITICAL subsystem=client event=crash_frame index=0 pc=0x")) << lines[1];
   EXPECT_TRUE(lines[1].ends_with(" run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f")) << lines[1];
 }
+#endif
 
 }  // namespace

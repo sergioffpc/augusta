@@ -46,11 +46,12 @@ void PruneOldRuns(const std::filesystem::path& directory) {
 }  // namespace
 
 Run BeginRun() {
-  Run run{.id = uuid::Generate(), .log_file = std::nullopt};
+  Run run{.id = uuid::Generate(), .log_file = std::nullopt, .minidump_file = std::nullopt};
   logging::SetContext(logging::ContextField::kRun, run.id.ToString());
   const auto directory = config::ExecutableDirectory();
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
+    run.minidump_file = MinidumpPath(*directory, run.id);
   } else {
     LOG_WARN("subsystem=client event=log_file_unavailable reason=\"executable directory unknown\"");
   }

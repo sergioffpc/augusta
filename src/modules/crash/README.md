@@ -11,12 +11,17 @@ that signal so the kernel still dumps its core. Given a Run, the client's, its
 lines end in the Run's `run=` and also reach the Run's log file, through a
 descriptor opened when it is installed, and the crash line says where the core
 is. It runs inside the signal handler, so it formats and writes its lines
-itself, allocating nothing.
+itself, allocating nothing. On Windows a crash is an unhandled exception, met by
+an unhandled-exception filter: its frame lines name each frame's module and
+offset, and, given a minidump file, it writes a minidump of the process holding
+the Run ID before the process ends.
 
 ## Not its responsibility
 
 - Installing it first thing, with the executable's subsystem and, where it has
-  them, its Run ID, log file and core's location: each executable's entry point.
+  them, its Run ID, log file, minidump file and core's location: each
+  executable's entry point. The minidump's name is the client's
+  (`augusta/run_files.h`).
 - Every other log line: logging, whose sink the handler writes past.
 - Where the core goes and the debug info that reads it: the node's or the
   player's `systemd-coredump` and the build (ADR-0047, ADR-0055).
