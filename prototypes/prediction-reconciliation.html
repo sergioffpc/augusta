@@ -346,7 +346,7 @@ const Netcode = (() => {
       C.inbox = C.inbox.filter(m => m.arrive > t);
       if (C.latest && C.latest.tick !== C.handledTick) {
         C.handledTick = C.latest.tick;
-        C.pace = cfg.pacing ? 1 + clamp(0.04 * (C.latest.queued - 1.5), -0.05, 0.05) : 1;
+        C.pace = cfg.pacing ? 1 + clamp(0.04 * (C.latest.queued - 1.5), -0.05, C.latest.queued > 3 ? cfg.drainPct / 100 : 0.05) : 1;
         reconcile(t, C.latest);
       }
       const move = moveAt(cfg.input, t);
@@ -436,7 +436,7 @@ const DEFAULTS = {
   duration: 6, tickRate: 60, frameRate: 120, seed: 11, start: [3, 4.5],
   upMs: 50, downMs: 50, jitterMs: 8, loss: 0, clockPct: 0, pacing: true,
   holdMs: 100, tolMm: 1, fadeMs: 47, snap: 2, driftMm: 0, mode: 'replay', blend: 0.1,
-  clientPhaseMs: 4, input: 'strafe',
+  clientPhaseMs: 4, input: 'strafe', drainPct: 5,
   p: { walk: 3, sprint: 5.5, accel: 30, drain: 0.35, regen: 0.2, recover: 0.3 },
 };
 
@@ -698,6 +698,7 @@ function renderParams() {
     num('tolMm', 'Agreement tolerance, mm', 0.5) + num('driftMm', 'PhysX drift per tick, mm', 0.1) +
     num('fadeMs', 'Fade time constant, ms', 1) + num('snap', 'Shown at once from, m', 0.5) +
     num('blend', 'Blend fraction', 0.05) + num('seed', 'Seed', 1) +
+    num('drainPct', 'Longest tick above 3 queued, %', 5) +
     `<label><span>Client paces its ticks</span><input type="checkbox" id="pacing" ${c.pacing ? 'checked' : ''}></label>` +
     `<label style="grid-column:1/-1">Player's input <select id="input">${Object.entries(INPUT_NAMES).map(([k, t]) =>
       `<option value="${k}" ${k === c.input ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` +
@@ -814,13 +815,14 @@ const SCENARIOS = [
   {
     title: 'Lost Commands',
     text: 'First 20% of datagrams lost each way; then every Commands message lost for 250 ms while the player strafes right and then stops.',
-    watch: 'At 20% loss no input is lost, since each Commands message repeats the 8 newest; but the server queues only 1 or 2, so two lost in a row leave it a tick with nothing, and it holds the last movement (7 ticks over the run, 3 small corrections). A 250 ms gap is longer than 8 Commands (133 ms): the queue empties, the server repeats the last movement for 100 ms (red in the third lane), then stands. The player stopped in that gap, so the server walked on, and the next acknowledgement replays 14 Commands to correct it by 14 cm. Then the third lane: the gap\'s Commands arrive at once and 7 sit queued; pacing drains them at most 5% a tick, which takes about 2 s, and every Command meanwhile waits up to 100 ms longer.',
+    watch: 'At 20% loss no input is lost, since each Commands message repeats the 8 newest; but the server queues only 1 or 2, so two lost in a row leave it a tick with nothing, and it holds the last movement (7 ticks over the run, 3 small corrections). A 250 ms gap is longer than 8 Commands (133 ms): the queue empties, the server repeats the last movement for 100 ms (red in the third lane), then stands. The player stopped in that gap, so the server walked on, and the next acknowledgement replays 14 Commands to correct it by 14 cm. Then the third lane: the gap\'s Commands arrive at once and 7 sit queued; pacing drains them at most 5% a tick, which takes about 2 s, and every Command meanwhile waits up to 100 ms longer. Letting a tick run up to 25% longer while more than 3 are queued, and 5% nearer the target, drains them in about 0.75 s and changes nothing else.',
     steps: [
       ['Loss 20%', () => api.set('loss', 20)],
       ['Loss 0%, a 250 ms gap at 1.85 s', () => { api.set('loss', 0); api.lossWindow('up', 1.85, 0.25); }],
       ['Go to the gap', () => api.jump(2.0, 'At 2.0 s, inside the gap.')],
       ['Next correction', () => api.nextFix()],
       ['The backlog', () => api.jump(2.5, 'At 2.5 s: 7 Commands queued.')],
+      ['Up to 25% above 3 queued', () => { api.set('drainPct', 25); api.jump(2.5, 'At 2.5 s, draining at up to 25%.'); }],
     ],
   },
   {

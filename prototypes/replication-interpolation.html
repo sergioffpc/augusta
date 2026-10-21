@@ -181,7 +181,7 @@
 // The server's updates, the network and each client's interpolation, pure: no DOM.
 // Lengths in metres, times in seconds on the server's timeline.
 const Interp = (() => {
-  const DELAY = 0.1, MAX_SLEW = 0.02, RESYNC = 0.25, KEPT = Math.floor(0.1 * 255) + 3;
+  const DELAY = 0.1, RESYNC = 0.25, KEPT = Math.floor(0.1 * 255) + 3;
 
   function random(seed) {
     let s = seed >>> 0;
@@ -210,10 +210,10 @@ const Interp = (() => {
 
   // presentation::ServerClock.
   class ServerClock {
-    constructor() { this.now = null; this.behind = 0; this.resyncs = 0; }
+    constructor(aheadSlew, behindSlew) { this.now = null; this.behind = 0; this.resyncs = 0; this.aheadSlew = aheadSlew; this.behindSlew = behindSlew; this.wideMs = Infinity; this.wideSlew = behindSlew; }
     advance(elapsed) {
       if (this.now === null) return;
-      const limit = MAX_SLEW * elapsed;
+      const limit = (Math.abs(this.behind) > this.wideMs / 1000 ? this.wideSlew : this.behind < 0 ? this.aheadSlew : this.behindSlew) * elapsed;
       const c = Math.max(-limit, Math.min(limit, this.behind));
       this.now += elapsed + c; this.behind -= c;
     }
@@ -258,7 +258,8 @@ const Interp = (() => {
         return { ...u, arrive, fate: lost ? 'lost' : 'flight' };
       });
       const byArrival = sent.filter(u => u.arrive !== null).sort((a, b) => a.arrive - b.arrive);
-      const clock = new ServerClock();
+      const clock = new ServerClock(cfg.aheadSlewPct / 100, cfg.behindSlewPct / 100);
+      if (cfg.wide) { clock.wideMs = 50; clock.wideSlew = 0.1; }
       let buffer = [], recorded = null, firstTick = null, ai = 0, newestArrived = null;
       const frames = [];
       let t = link.phaseMs / 1000, prevT = t, prevShown = null;
@@ -339,6 +340,7 @@ const PATH_NAMES = {
 };
 const DEFAULTS = {
   duration: 6, tickRate: 60, fps: 144, seed: 5, path: 'circuit', recordAll: false, leaveAt: null,
+  aheadSlewPct: 2, behindSlewPct: 2, wide: false,
   clients: [
     { ms: 20, jitterMs: 4, loss: 0, phaseMs: 1 },
     { ms: 50, jitterMs: 8, loss: 0, phaseMs: 3 },
@@ -561,10 +563,12 @@ function renderParams() {
     `<label>Client frame rate, fps <input type="number" id="fps" step="1" value="${c.fps}"></label>
      <label>Seed <input type="number" id="seed" step="1" value="${c.seed}"></label>
      <label><span>Record every update that arrived</span><input type="checkbox" id="recordAll" ${c.recordAll ? 'checked' : ''}></label>
+     <label><span>Clock slews 10% when off by over 50 ms</span><input type="checkbox" id="wide" ${c.wide ? 'checked' : ''}></label>
      <label style="grid-column:1/-1">R <select id="path">${Object.entries(PATH_NAMES).map(([k, t]) => `<option value="${k}" ${k === c.path ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
   document.getElementById('fps').addEventListener('change', e => { api.set('fps', Number(e.target.value)); render(); });
   document.getElementById('seed').addEventListener('change', e => { api.set('seed', Number(e.target.value)); render(); });
   document.getElementById('recordAll').addEventListener('change', e => { api.set('recordAll', e.target.checked); render(); });
+  document.getElementById('wide').addEventListener('change', e => { api.set('wide', e.target.checked); render(); });
   document.getElementById('path').addEventListener('change', e => { api.set('path', e.target.value); render(); });
   document.getElementById('links').innerHTML = `<tr><th>Client</th><th>One-way latency, ms</th><th>Jitter, ms</th><th>Loss, %</th></tr>` +
     c.clients.map((l, i) => `<tr><td><span class="dot" style="background:${colour(i)}"></span>${NAMES[i]}</td>${['ms', 'jitterMs', 'loss'].map(k =>
@@ -686,8 +690,9 @@ const SCENARIOS = [
   {
     title: 'A latency spike',
     text: 'B\'s latency rises by 150 ms for 2 s, at 2 s, as a congested route would.',
-    watch: 'Updates now arrive 150 ms later, but the clock only slows by 2% to meet them: 150 ms takes 7.5 s of slewing. Meanwhile what is shown is ahead of the newest update, so R is held at the newest one, not interpolated, for nearly 2 s (275 frames): it steps with each arrival, jitter included, which is exactly what the Interpolation delay exists to hide. When the spike ends, the clock has slowed by only about 40 ms, so B shows R up to 190 ms behind for the rest of the run. Is 2% too slow to meet a spike, or is the alternative, a clock that jerks, worse?',
-    steps: [['Spike at 2 s', () => api.add({ kind: 'spike', client: 1, t: 2, len: 2, extra: 150 })], ['During it', () => api.jump(3, 'At 3 s.')], ['After it', () => api.jump(4.5, 'At 4.5 s.')]],
+    watch: 'Updates now arrive 150 ms later, but the clock only slows by 2% to meet them: 150 ms takes 7.5 s of slewing. Meanwhile what is shown is ahead of the newest update, so R is held at the newest one, not interpolated, for nearly 2 s (275 frames): it steps with each arrival, jitter included, which is exactly what the Interpolation delay exists to hide. When the spike ends, the clock has slowed by only about 40 ms, so B shows R up to 190 ms behind for the rest of the run. Let the clock slew 10% while it is off by more than 50 ms, and 2% within that: R is held for 84 frames instead of 275 and is back to its usual delay by 6 s, while 60 ms of ordinary jitter still never moves the clock faster than 2%, so R never visibly speeds up or slows down.',
+    steps: [['Spike at 2 s', () => api.add({ kind: 'spike', client: 1, t: 2, len: 2, extra: 150 })], ['During it', () => api.jump(3, 'At 3 s.')], ['After it', () => api.jump(4.5, 'At 4.5 s.')],
+      ['10% past 50 ms', () => { api.set('wide', true); api.jump(3, 'At 3 s, the clock slewing 10% while off by over 50 ms.'); }]],
   },
   {
     title: 'A bigger spike',
