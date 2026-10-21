@@ -15,6 +15,7 @@
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/hardware.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
@@ -41,9 +42,9 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
 std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayRuntime(
     const config::ServerConfig& file_config, const assets::Pack& pack, scenario::Content content,
     failure::Faults* faults) {
-  auto policy = scenario::LoadPolicyMaker(pack);
+  auto policy = policy::LoadPolicyMaker(pack);
   if (!policy) {
-    return std::unexpected(ContentFailure(pack.Path(), scenario::DescribePolicyLoadError(policy.error())));
+    return std::unexpected(ContentFailure(pack.Path(), policy::DescribePolicyLoadError(policy.error())));
   }
   const host::ReplayServerConfig replay_config{
       .tick_rate_hz = file_config.tick_rate_hz,
@@ -120,7 +121,11 @@ application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig
   return {
       // link::Init() must run once, process-wide, before any Server is
       // constructed - see link.h.
-      .initialize = [faults] { return link::Init(faults); },
+      .initialize =
+          [faults] {
+            LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+            return link::Init(faults);
+          },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };

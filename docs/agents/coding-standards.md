@@ -73,11 +73,14 @@ responsibility, in this shape:
 - `## Decisions`: links to the ADRs that decide it, if any.
 
 A new module adds its README in the same change; a change that moves a
-responsibility into, out of or between modules updates every README it touches.
-If the paragraph needs "and also" to fit something in, the module has more than
-one responsibility (see Single responsibility). The details stay in the headers'
-`/// \file` comments; the README is the one place the module's boundary is
-stated.
+responsibility into, out of or between modules updates every README it touches,
+and every other place that restates who owns it: `docs/ARCHITECTURE.md`'s module
+list, the ADR that decides it, the `/// \file` comments of the modules on both
+sides and their `CMakeLists.txt` comments. Search them for the prose, not just
+for the symbols the change renames. If the paragraph needs "and also" to fit
+something in, the module has more than one responsibility (see Single
+responsibility). The details stay in the headers' `/// \file` comments; the
+README is the one place the module's boundary is stated.
 
 ## Testing
 
@@ -106,6 +109,11 @@ Reach for a property-based test (RapidCheck) when an invariant holds over a
 whole input domain — a serialization round-trip, a value that must never go
 negative, a state that must converge — not in place of example-based tests,
 which stay the default.
+
+A test that asserts something does not happen first shows, in the same setup,
+that it does happen without what prevents it: a control case. A setup that only
+a comment claims proves nothing, and a test without its control passes
+vacuously.
 
 A bug found by the fuzzer or by a shrunk RapidCheck case gets a regression test
 in the pull request that fixes it: the minimized input as a fixture, the case as

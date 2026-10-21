@@ -6,56 +6,69 @@
 #include <gtest/gtest.h>
 
 #include "augusta/renderer.h"
-#include "device_choice.h"
+#include "vulkan_device_choice.h"
 
 namespace augusta::renderer {
 namespace {
 
-DeviceCandidate Usable(DeviceType type) { return {.type = type, .supports_vulkan_1_3 = true, .presents = true}; }
+DeviceCandidate UsableCandidate(DeviceType type) {
+  return {.type = type, .supports_vulkan_1_3 = true, .presents = true};
+}
+
+TEST(DeviceChoiceTest, UsableNeedsVulkan13AndPresenting) {
+  EXPECT_TRUE(Usable(UsableCandidate(DeviceType::kDiscreteGpu)));
+  EXPECT_FALSE(
+      Usable(DeviceCandidate{.type = DeviceType::kDiscreteGpu, .supports_vulkan_1_3 = false, .presents = true}));
+  EXPECT_FALSE(
+      Usable(DeviceCandidate{.type = DeviceType::kDiscreteGpu, .supports_vulkan_1_3 = true, .presents = false}));
+}
 
 TEST(DeviceChoiceTest, HardwarePrefersADiscreteGpuOverAnIntegratedOne) {
-  const std::vector<DeviceCandidate> candidates{Usable(DeviceType::kIntegratedGpu), Usable(DeviceType::kDiscreteGpu)};
+  const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kIntegratedGpu),
+                                                UsableCandidate(DeviceType::kDiscreteGpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
 TEST(DeviceChoiceTest, HardwareTakesAnIntegratedGpuWithoutADiscreteOne) {
-  const std::vector<DeviceCandidate> candidates{Usable(DeviceType::kCpu), Usable(DeviceType::kIntegratedGpu)};
+  const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kCpu),
+                                                UsableCandidate(DeviceType::kIntegratedGpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
 TEST(DeviceChoiceTest, HardwareNeverTakesACpuDevice) {
-  const std::vector<DeviceCandidate> candidates{Usable(DeviceType::kCpu), Usable(DeviceType::kOther)};
+  const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kCpu), UsableCandidate(DeviceType::kOther)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::nullopt);
 }
 
 TEST(DeviceChoiceTest, SoftwareTakesTheFirstCpuDevice) {
-  const std::vector<DeviceCandidate> candidates{Usable(DeviceType::kDiscreteGpu), Usable(DeviceType::kCpu),
-                                                Usable(DeviceType::kCpu)};
+  const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kDiscreteGpu),
+                                                UsableCandidate(DeviceType::kCpu), UsableCandidate(DeviceType::kCpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::optional<std::size_t>{1});
 }
 
 TEST(DeviceChoiceTest, SoftwareNeverFallsBackToAGpu) {
-  const std::vector<DeviceCandidate> candidates{Usable(DeviceType::kDiscreteGpu), Usable(DeviceType::kIntegratedGpu)};
+  const std::vector<DeviceCandidate> candidates{UsableCandidate(DeviceType::kDiscreteGpu),
+                                                UsableCandidate(DeviceType::kIntegratedGpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::nullopt);
 }
 
 TEST(DeviceChoiceTest, PassesOverADeviceWithoutVulkan13) {
-  DeviceCandidate old_discrete = Usable(DeviceType::kDiscreteGpu);
+  DeviceCandidate old_discrete = UsableCandidate(DeviceType::kDiscreteGpu);
   old_discrete.supports_vulkan_1_3 = false;
-  const std::vector<DeviceCandidate> candidates{old_discrete, Usable(DeviceType::kIntegratedGpu)};
+  const std::vector<DeviceCandidate> candidates{old_discrete, UsableCandidate(DeviceType::kIntegratedGpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kHardware), std::optional<std::size_t>{1});
 }
 
 TEST(DeviceChoiceTest, PassesOverADeviceThatCannotPresentToTheWindow) {
-  DeviceCandidate headless = Usable(DeviceType::kCpu);
+  DeviceCandidate headless = UsableCandidate(DeviceType::kCpu);
   headless.presents = false;
-  const std::vector<DeviceCandidate> candidates{headless, Usable(DeviceType::kCpu)};
+  const std::vector<DeviceCandidate> candidates{headless, UsableCandidate(DeviceType::kCpu)};
 
   EXPECT_EQ(ChooseDevice(candidates, Adapter::kSoftware), std::optional<std::size_t>{1});
 }
@@ -66,7 +79,7 @@ TEST(DeviceChoiceTest, ChoosesNothingFromNoDevices) {
 }
 
 // What Vulkan names the device extensions the Renderer may ask for, spelt out
-// rather than taken from device_choice.h, so a misspelling there fails.
+// rather than taken from vulkan_device_choice.h, so a misspelling there fails.
 constexpr std::string_view kSwapchain = "VK_KHR_swapchain";
 constexpr std::string_view kDiagnosticsConfig = "VK_NV_device_diagnostics_config";
 constexpr std::string_view kDiagnosticCheckpoints = "VK_NV_device_diagnostic_checkpoints";

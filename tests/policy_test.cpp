@@ -1,14 +1,20 @@
 #include "augusta/policy.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -17,6 +23,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -105,6 +112,23 @@ std::string ExampleParameters() {
   std::stringstream text;
   text << file.rdbuf();
   return text.str();
+}
+
+// What work returns, run on a thread of its own. Should it not have returned
+// within the deadline, the test process ends with a failure: a hang is reported,
+// never waited on for ever.
+template <typename Work>
+auto WithinADeadline(Work work) {
+  constexpr std::chrono::seconds kDeadline{10};
+  std::packaged_task<std::invoke_result_t<Work>()> task(std::move(work));
+  auto result = task.get_future();
+  std::thread runner(std::move(task));
+  if (result.wait_for(kDeadline) == std::future_status::timeout) {
+    std::fputs("FAILED: the work did not return within the deadline\n", stderr);
+    std::_Exit(EXIT_FAILURE);
+  }
+  runner.join();
+  return result.get();
 }
 
 class PolicyTest : public ::testing::Test {
@@ -295,6 +319,91 @@ TEST_F(PolicyTest, TheSandboxHasNoWarnSoAScriptWritesNothingToStderr) {
   EXPECT_FALSE(engine.has_value());
   EXPECT_NE(log.find("event=policy_hook_failed"), std::string::npos) << log;
   EXPECT_EQ(written, "");
+}
+
+// Lua runs a finalizer with debug hooks off, so the instruction limit never
+// stops one: the sandbox refuses a metatable that holds __gc when it is set.
+// Each case runs under a deadline, so a finalizer that does run fails the test
+// rather than hanging it.
+constexpr std::string_view kLoopingFinalizer = "setmetatable({}, {__gc = function() while true do end end})";
+// Enough allocation for Lua to run a GC step, and so a pending finalizer.
+constexpr std::string_view kAllocates = "for i = 1, 20000 do local t = {i} end";
+
+TEST_F(PolicyTest, AHookThatSetsAFinalizerFailsAndTheTicksGoOn) {
+  const std::string rules =
+      "function on_tick() " + std::string(kLoopingFinalizer) + " " + std::string(kAllocates) + " end";
+
+  const auto [log, second] = WithinADeadline([&] {
+    World world = WithAlice(WithRules(rules));
+    testing::internal::CaptureStdout();
+    world.Tick(Walking(), kTick);
+    std::string logged = testing::internal::GetCapturedStdout();
+    return std::pair{std::move(logged), world.Tick(Walking(), kTick)};
+  });
+
+  EXPECT_NE(log.find("event=policy_hook_failed"), std::string::npos) << log;
+  EXPECT_NE(log.find("__gc"), std::string::npos) << log;
+  EXPECT_EQ(second.state.tick, 2U);
+}
+
+TEST_F(PolicyTest, AScriptThatSetsAFinalizerAtItsTopLevelDoesNotLoad) {
+  const std::string rules = std::string(kLoopingFinalizer) + " " + std::string(kAllocates);
+
+  const auto engine = WithinADeadline([&] { return Policy::Load(rules); });
+
+  ASSERT_FALSE(engine.has_value());
+  EXPECT_NE(engine.error().message.find("__gc"), std::string::npos) << engine.error().message;
+}
+
+// A finalizer still pending when the Policy goes would run in lua_close.
+TEST_F(PolicyTest, APolicyWhoseScriptTriedToSetAFinalizerIsDestroyed) {
+  const std::string rules = "function on_tick() held = " + std::string(kLoopingFinalizer) + " end";
+
+  const std::string log = WithinADeadline([&] {
+    World world = WithAlice(WithRules(rules));
+    return LogOfTicks(world, 1);
+  });
+
+  EXPECT_NE(log.find("event=policy_hook_failed"), std::string::npos) << log;
+}
+
+TEST_F(PolicyTest, AHookStillSetsAMetatableWithoutAFinalizer) {
+  World world = WithAlice(WithRules(R"(
+    function on_tick()
+      local t = setmetatable({}, {__index = {x = 5}})
+      if t.x ~= 5 then error("no __index") end
+      if getmetatable(t).__index.x ~= 5 then error("no metatable") end
+    end
+  )"));
+
+  EXPECT_EQ(LogOfTicks(world, 3), "");
+}
+
+// Lua marks an object for finalization only as its metatable is set, so a
+// __gc added to the metatable afterwards never runs.
+TEST_F(PolicyTest, AFinalizerAddedAfterTheMetatableIsSetNeverRuns) {
+  const std::string rules =
+      "function on_tick() local mt = {} held = setmetatable({}, mt) "
+      "mt.__gc = function() while true do end end " +
+      std::string(kAllocates) + " end";
+
+  const std::string log = WithinADeadline([&] {
+    World world = WithAlice(WithRules(rules));
+    return LogOfTicks(world, 3);
+  });
+
+  EXPECT_EQ(log, "");
+}
+
+// What setmetatable refuses for its arguments still names it.
+TEST_F(PolicyTest, ASetmetatableOfTheWrongArgumentsFailsNamingIt) {
+  for (const char* call : {"setmetatable(1, {})", "setmetatable({}, 1)"}) {
+    World world = WithAlice(WithRules(std::string("function on_tick() ") + call + " end"));
+
+    const std::string log = LogOfTicks(world, 1);
+
+    EXPECT_NE(log.find("to 'setmetatable'"), std::string::npos) << call << "\n" << log;
+  }
 }
 
 TEST_F(PolicyTest, AScriptWithASyntaxErrorDoesNotLoad) {
@@ -570,8 +679,8 @@ Policy ExamplePolicy() {
   auto pack = augusta::assets::Pack::Load((packs / "server").replace_extension(augusta::assets::kPackExtension),
                                           public_key.value());
   EXPECT_TRUE(pack.has_value()) << augusta::assets::DescribeLoadError(pack.error());
-  auto policy = augusta::scenario::LoadPolicy(pack.value());
-  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::policy::LoadPolicy(pack.value());
+  EXPECT_TRUE(policy.has_value()) << augusta::policy::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : Policy{};
 }
 
@@ -762,7 +871,7 @@ Character Broad() {
   const Vec3 up(0.0F, 2.0F, 0.0F);
   const Vec3 half(2.0F, 0.0F, 0.0F);
   return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso,
+                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso,
                                  .triangles = {Triangle{.a = -half, .b = half, .c = half + up},
                                                Triangle{.a = -half, .b = half + up, .c = -half + up}}}}};
 }
@@ -782,7 +891,7 @@ World Duel(std::string_view rules) {
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 30;
   parameters.rifle.muzzle_velocity = 800.0F;
-  parameters.ammo.max_range = 200.0F;
+  parameters.ammo.flight.max_range = 200.0F;
   parameters.ammo.damage = {.head = 100.0F, .torso = 100.0F, .limb = 100.0F};
   parameters.starting_health = 100.0F;
   World world(parameters, kTickRate, WithRules(rules));
@@ -848,7 +957,7 @@ TEST_F(PolicyTest, ADeadPlayerCannotBeDeclaredTheWinner) {
 TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheWorld) {
   Parameters parameters;
   parameters.rifle.muzzle_velocity = 100.0F;
-  parameters.ammo.max_range = 1000.0F;
+  parameters.ammo.flight.max_range = 1000.0F;
   World world = WithAlice(Policy{}, parameters);
   world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});

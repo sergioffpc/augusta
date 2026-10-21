@@ -32,7 +32,8 @@ void ServerClock::Advance(double elapsed) {
   if (!now_.has_value()) {
     return;
   }
-  const double limit = kMaxSlew * elapsed;
+  const double rate = std::abs(behind_) > kFastSlewBeyond ? kFastSlew : kSlew;
+  const double limit = rate * elapsed;
   const double catch_up = std::clamp(behind_, -limit, limit);
   *now_ += elapsed + catch_up;
   behind_ -= catch_up;

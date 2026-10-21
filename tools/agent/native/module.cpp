@@ -24,7 +24,7 @@
 
 #include "augusta/agent.h"
 #include "augusta/agent_report.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
@@ -50,7 +50,7 @@ using augusta::agent::Readiness;
 using augusta::agent::Report;
 using augusta::agent::ReportQueue;
 using augusta::agent::ReportSink;
-using augusta::ballistics::BodyPart;
+using augusta::body_part::BodyPart;
 using augusta::command::Command;
 using augusta::harness::AimAt;
 using augusta::harness::AimIntent;

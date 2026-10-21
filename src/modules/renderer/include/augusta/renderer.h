@@ -12,10 +12,10 @@
 
 /// \file
 /// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
-/// exclusively by the client. It creates and owns the client's single
-/// window::Window and makes its Vulkan surface, but knows nothing of input:
-/// the client Runtime drains the window's events itself (GetWindow, then
-/// Window::Poll) and hands them to input.
+/// exclusively by the client. It draws into the client's single
+/// window::Window, which the client Runtime owns and lends it, and makes its
+/// Vulkan surface, but knows nothing of input: the client Runtime drains the
+/// window's events itself (Window::Poll) and hands them to input.
 ///
 /// Draining the window and RenderFrame are deliberately two separate calls,
 /// not one opaque loop, because this engine's threads don't share a cadence
@@ -63,11 +63,8 @@ enum class Validation : std::uint8_t {
   kRequired,
 };
 
-/// Initial window/renderer parameters.
+/// Initial renderer parameters.
 struct Config {
-  /// The window the Renderer creates: hidden, for a test that only reads
-  /// frames back (CaptureFrame).
-  window::Config window;
   Adapter adapter = Adapter::kHardware;
   Validation validation = Validation::kOff;
 };
@@ -167,36 +164,33 @@ struct Overlay {
   bool hit_marker = false;
 };
 
-/// Owns the client's single window, GPU device, and swapchain. The client
-/// constructs exactly one, on the Main/Render thread.
+/// Draws into the client's single window, which it borrows, with the GPU device
+/// and swapchain it owns. The client constructs exactly one, on the Main/Render
+/// thread.
 class Renderer {
  public:
-  /// Creates the window and GPU device per config. Throws
-  /// std::runtime_error if window or device creation fails - there is no
-  /// recoverable path for a client that can't render: no Vulkan 1.3, no
+  /// Creates the GPU device per config, to draw into window - a hidden one for
+  /// a test that only reads frames back (CaptureFrame). window must outlive
+  /// this Renderer. Throws std::runtime_error if device creation fails - there
+  /// is no recoverable path for a client that can't render: no Vulkan 1.3, no
   /// device of config's adapter, or Validation::kRequired without its layer.
   ///
   /// Under validation, the constructor, RenderFrame and CaptureFrame also
   /// throw std::runtime_error once the validation layer has reported an
   /// error: API misuse is a bug, and fails where it is found.
-  explicit Renderer(const Config& config);
+  Renderer(const window::Window& window, const Config& config);
 
-  /// The window, device and swapchain are unique hardware resources owned
-  /// through Impl (see the .cpp) - ~Renderer waits for the GPU to go idle
-  /// before tearing them down.
+  /// The device and swapchain are unique hardware resources owned through Impl
+  /// (see the .cpp) - ~Renderer waits for the GPU to go idle before tearing
+  /// them down.
   ~Renderer();
 
   /// Non-copyable/non-movable, same reasoning as ClientRuntime (the sole
-  /// owner ties window/device lifetime to the thread that constructed it).
+  /// owner ties device lifetime to the thread that constructed it).
   Renderer(const Renderer&) = delete;
   Renderer& operator=(const Renderer&) = delete;
   Renderer(Renderer&&) = delete;
   Renderer& operator=(Renderer&&) = delete;
-
-  /// The window this Renderer draws into, for the client Runtime to drain
-  /// (Window::Poll), ask whether it should close and lock its cursor. It lives
-  /// as long as this Renderer. From the Main/Render thread.
-  [[nodiscard]] window::Window& GetWindow();
 
   /// Draws and presents one frame - the actual GPU work, at the window's size
   /// as of its last Poll. Call this at the app's target presentation rate

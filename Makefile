@@ -33,6 +33,11 @@ PYTHON_SOURCES := "*.py" ":!:third_party/*"
 SHELL_SOURCES := "*.sh" ".githooks/*"
 CMAKE_SOURCES := "CMakeLists.txt" "*/CMakeLists.txt" "*.cmake" ":!:third_party/*"
 MARKDOWN_SOURCES := "*.md" ":!:third_party/*" ":!:CHANGELOG.md"
+# What .yamlfmt and .yamllint cover, named file by file for format-files and
+# lint-files.
+YAML_SOURCES := "*.yaml" "*.yml" "*.yamlfmt" "*.yamllint" ":!:third_party/*" \
+  ":!:charts/augustad/templates/*" ":!:clusters/onprem/flux-system/gotk-components.yaml" \
+  ":!:clusters/onprem/infrastructure/kube-bench/cfg/*"
 
 # The formatters and linters uv runs, at the versions CI pins.
 RUFF := uv tool run ruff@0.16.10
@@ -41,6 +46,7 @@ SHELLCHECK := uv tool run --from shellcheck-py==0.11.0.1 shellcheck
 ACTIONLINT := uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
 GERSEMI := uv tool run gersemi@0.29.2
 PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json
+YAMLLINT := uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 
@@ -82,7 +88,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check tidy lint prepush docs
+.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check format-files tidy lint lint-files prepush docs
 
 all: build
 
@@ -101,11 +107,13 @@ help:
 	$(info $()  uninstall     remove what install put in place (same DESTDIR))
 	$(info $()  clean         remove build outputs, keep the configuration)
 	$(info $()  distclean     delete $(BUILD_DIR))
-	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown, PowerShell) on tracked files)
+	$(info $()  format        every formatter (C++, YAML, Lua, TOML, Python, shell, CMake, Markdown) on tracked files)
+	$(info $()  format-files  format's formatters on FILES alone, as the pre-commit hook runs them)
 	$(info $()  format-check  every formatter check and linter CI's format job runs (not clang-tidy))
 	$(info $()  tidy          clang-tidy on src, include-cleaner on what it leaves out, as CI runs them (configures first))
 	$(info $()  lint          format-check, then tidy: everything CI lints)
-	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits, without pushing)
+	$(info $()  lint-files    lint's linters and tidy's clang-tidy on FILES alone, as the pre-push hook runs them)
+	$(info $()  prepush       the pre-push hook's checks on this branch's unpushed commits and uncommitted changes, without pushing)
 	$(info $()  docs          the documentation site, MkDocs and Doxygen, into build/docs-site)
 	@:
 
@@ -118,13 +126,13 @@ build: configure
 # The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_tests
-	$(RUN) ctest --preset $(PRESET)
+	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS)
 
 # The structural checks (checks/CMakeLists.txt) build nothing: configuring
 # registers them, and ctest's check label picks them alone. Then the pytest of
 # the scripts they cover, as CI runs it.
 check: configure
-	$(RUN) ctest --preset $(PRESET) --label-regex check --no-tests=error
+	$(RUN) ctest --preset $(PRESET) --parallel $(JOBS) --label-regex check --no-tests=error
 	$(RUN) uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks
 
 # The tests' coverage (ADR-0013), whatever PRESET says: the linux-coverage
@@ -183,7 +191,7 @@ format:
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
 	yamlfmt -conf .yamlfmt -lint
-	uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
+	$(YAMLLINT) .
 	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
 	luacheck $(shell git ls-files -- $(LUA_SOURCES))
 	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
@@ -207,8 +215,8 @@ tidy: configure
 # steps run it: a file whose preprocessed source, configuration and arguments
 # passed before is skipped. Its results live under build/, for every preset,
 # apart per clang-tidy version (the first number `clang-tidy --version`
-# prints), which ctcache's key leaves out. Recursive, so only tidy runs
-# clang-tidy for it, and hands it to the per-file targets.
+# prints), which ctcache's key leaves out. Recursive, so only tidy and lint-files
+# run clang-tidy for it, and hand it to the per-file targets.
 CLANG_TIDY := clang-tidy-cache clang-tidy
 CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
 
@@ -221,12 +229,62 @@ $(INCLUDE_CHECKS): include-cleaner/%:
 
 lint: format-check tidy
 
+# The hooks' half of format and lint, on the files they hand over (FILES="a b
+# ..."): each formatter and linter runs on the ones it covers, with the commands
+# above, so a hook never states them again.
+#
+# The files of FILES that the pathspecs $(1) cover, tracked or new and not
+# ignored, as `make prepush` hands over the files not added yet.
+covered = $(filter $(FILES),$(shell git ls-files --cached --others --exclude-standard -- $(1)))
+# The same, or all of them when FILES holds one of $(2), the linter's own
+# configuration, which reaches every file it lints.
+linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call covered,$(1)))
+
+format-files:
+	$(if $(call covered,$(CXX_SOURCES)),clang-format -i $(call covered,$(CXX_SOURCES)),@:)
+	$(if $(call covered,$(YAML_SOURCES)),yamlfmt -conf .yamlfmt $(call covered,$(YAML_SOURCES)),@:)
+	$(if $(call covered,$(LUA_SOURCES)),stylua $(call covered,$(LUA_SOURCES)),@:)
+	$(if $(call covered,$(TOML_SOURCES)),taplo fmt $(call covered,$(TOML_SOURCES)),@:)
+	$(if $(call covered,$(PYTHON_SOURCES)),$(RUFF) format --quiet $(call covered,$(PYTHON_SOURCES)),@:)
+	$(if $(call covered,$(SHELL_SOURCES)),$(SHFMT) -w $(call covered,$(SHELL_SOURCES)),@:)
+	$(if $(call covered,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call covered,$(CMAKE_SOURCES)),@:)
+	$(if $(call covered,$(MARKDOWN_SOURCES)),$(PRETTIER) --log-level warn --write $(call covered,$(MARKDOWN_SOURCES)),@:)
+
+# format-check's linters, then tidy's clang-tidy and include-cleaner, side by
+# side as tidy runs them. Unlike tidy it does not configure first, which would
+# make every push wait on CMake and vcpkg: the build must have been configured.
+LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint)
+LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
+lint-files:
+	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)) - on macOS through scripts/dev-container.sh)))
+	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(strip $(LINT_TIDY)),"CTCACHE_DIR=$(CTCACHE_DIR)") $(LINT_CHECKS) $(LINT_TIDY)
+
+.PHONY: $(LINT_CHECKS)
+lint/yamllint:
+	$(if $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),$(YAMLLINT) $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),@:)
+lint/luacheck:
+	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),luacheck $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
+lint/taplo:
+	$(if $(call covered,$(TOML_SOURCES)),taplo lint $(call covered,$(TOML_SOURCES)),@:)
+lint/ruff:
+	$(if $(call linted,$(PYTHON_SOURCES),ruff.toml),$(RUFF) check $(call linted,$(PYTHON_SOURCES),ruff.toml),@:)
+lint/shellcheck:
+	$(if $(call linted,$(SHELL_SOURCES),.shellcheckrc),$(SHELLCHECK) $(call linted,$(SHELL_SOURCES),.shellcheckrc),@:)
+lint/pymarkdown:
+	$(if $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),$(PYMARKDOWN) scan $(call linted,$(MARKDOWN_SOURCES),.pymarkdown.json),@:)
+# actionlint reads the workflows together: a call into another is checked
+# against it.
+lint/actionlint:
+	$(if $(filter .github/workflows/% .github/actionlint.yaml,$(FILES)),$(ACTIONLINT),@:)
+
 # The pre-push hook's checks, as a push of HEAD now would run them: on the
-# files of its commits the remote lacks, Git LFS left out. git runs the hook,
+# files of its commits the remote lacks, and of the changes not committed yet,
+# Git LFS left out. git runs the hook,
 # so it gets git's own shell on every platform. The hook reads only the
 # pushed commit from its stdin line, so HEAD stands in for both refs.
 PREPUSH_REFS := $(shell git rev-parse --git-path prepush-refs)
 prepush: export PRE_PUSH_CHECKS_ONLY = 1
+prepush: export PRE_PUSH_WORKTREE = 1
 prepush:
 	$(file >$(PREPUSH_REFS),HEAD $(shell git rev-parse HEAD) HEAD 0000000000000000000000000000000000000000)
 	git hook run --to-stdin=$(PREPUSH_REFS) pre-push -- origin

@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/grid.h"
@@ -351,7 +351,8 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
                       .ads_field_of_view = 0.65F,
                       .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.007F, .yaw = -0.003F}},
                       .magazine_capacity = 25};
-  parameters.ammo = {.gravity = 9.81F, .max_range = 900.0F, .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
+  parameters.ammo = {.flight = {.gravity = 9.81F, .max_range = 900.0F},
+                     .damage = {.head = 100.0F, .torso = 34.0F, .limb = 22.5F}};
   parameters.starting_health = 120.0F;
   parameters.player_count = 4;
 
@@ -497,7 +498,7 @@ TEST(LinkMessagesTest, AShotTheServerAnnouncesReachesTheClientUnchanged) {
 }
 
 TEST(LinkMessagesTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) {
-  using augusta::ballistics::BodyPart;
+  using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
     const augusta::link::HitConfirmation sent{.target = EntityId{5}, .damage = 37.5F, .part = part};
 
@@ -521,7 +522,7 @@ TEST(LinkMessagesTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsA
 }
 
 TEST(LinkMessagesTest, ADeathTheServerTellsReachesTheClientUnchanged) {
-  using augusta::ballistics::BodyPart;
+  using augusta::body_part::BodyPart;
   for (const BodyPart part : {BodyPart::kHead, BodyPart::kTorso, BodyPart::kLimb}) {
     // Its direction on the angle grid, as its Shot's (ADR-0038).
     const augusta::link::Death sent{

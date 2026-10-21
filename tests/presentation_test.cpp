@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -58,12 +59,17 @@ std::vector<PlayerCharacter> SessionOrder() {
           {.entity = kMedic, .character = "medic"}};
 }
 
-FrameInput InMatch(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
+// The frame of a match whose recent updates are updates, oldest first.
+FrameInput InMatch(std::span<const WorldSnapshot> updates, const std::vector<PlayerCharacter>& characters) {
   FrameInput input;
   input.local_entity = kLocal;
-  input.snapshot = &snapshot;
+  input.updates = updates;
   input.characters = characters;
   return input;
+}
+
+FrameInput InMatch(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
+  return InMatch(std::span(&snapshot, 1), characters);
 }
 
 const RemotePlayer* Find(const State& state, EntityId entity) {
@@ -113,7 +119,7 @@ FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerChara
                     const std::vector<PlayerView>& views) {
   FrameInput input;
   input.replay_viewer = true;
-  input.snapshot = &snapshot;
+  input.updates = std::span(&snapshot, 1);
   input.characters = characters;
   input.views = views;
   return input;
@@ -227,6 +233,64 @@ TEST_F(PresentationWorldTest, OutsideAMatchNoRemotePlayerIsShown) {
 
   EXPECT_TRUE(state.remote_players.empty());
   EXPECT_FALSE(state.seen_time.has_value());
+}
+
+// Updates a second apart, so each realigns the frame's clock to it
+// (ServerClock::kResyncThreshold): a frame samples exactly kInterpolationDelay
+// before the newest it recorded, however long it took.
+constexpr double kSlowTickDuration = 1.0;
+
+// The sniper at x on tick, a slow tick apart from the next.
+WorldSnapshot SniperAt(augusta::tick::Tick tick, float x) {
+  return {.tick = tick, .tick_duration = kSlowTickDuration, .bodies = {BodyAt(kLocal, 0.0F), BodyAt(kSniper, x)}};
+}
+
+// The sniper holds still on ticks 0 to 2 and steps 10 m on tick 3: shown
+// 0.1 s before tick 3, it is 9 m along only if tick 2 was recorded too, and
+// 9.67 m along if the frame had cut from tick 0 straight to tick 3.
+// Requirements: US-17
+TEST_F(PresentationWorldTest, AFrameGivenSeveralNewUpdatesInterpolatesThroughEachOfThem) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<WorldSnapshot> first = {SniperAt(0, 0.0F)};
+  (void)world.RunFrame(InMatch(first, characters));
+
+  const std::vector<WorldSnapshot> since = {SniperAt(0, 0.0F), SniperAt(1, 0.0F), SniperAt(2, 0.0F),
+                                            SniperAt(3, 10.0F)};
+  const State state = world.RunFrame(InMatch(since, characters));
+
+  ASSERT_NE(Find(state, kSniper), nullptr);
+  EXPECT_NEAR(Find(state, kSniper)->body.position.x, 9.0F, kTolerance);
+}
+
+// Updates a frame already recorded are not recorded again, whatever they say:
+// the sniper is still shown between tick 2's 0 m and tick 3's 10 m.
+// Requirements: US-17
+TEST_F(PresentationWorldTest, AFrameGivenOnlyUpdatesItRecordedChangesNothing) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<WorldSnapshot> recorded = {SniperAt(1, 0.0F), SniperAt(2, 0.0F), SniperAt(3, 10.0F)};
+  (void)world.RunFrame(InMatch(recorded, characters));
+
+  const std::vector<WorldSnapshot> again = {SniperAt(2, 500.0F), SniperAt(3, 500.0F)};
+  const State state = world.RunFrame(InMatch(again, characters));
+
+  ASSERT_NE(Find(state, kSniper), nullptr);
+  EXPECT_GE(Find(state, kSniper)->body.position.x, 9.0F - kTolerance);
+  EXPECT_LE(Find(state, kSniper)->body.position.x, 10.0F + kTolerance);
+}
+
+// The first frame of a match is given three updates: it shows the sniper 0.1 s
+// before the newest, between the two before it, and reports that as its Seen
+// time - not the newest alone, had it recorded only that.
+// Requirements: US-17
+TEST_F(PresentationWorldTest, TheSeenTimeIsOfTheUpdatesTheFrameRecorded) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<WorldSnapshot> updates = {SniperAt(1, 0.0F), SniperAt(2, 0.0F), SniperAt(3, 10.0F)};
+
+  const State state = world.RunFrame(InMatch(updates, characters));
+
+  ASSERT_TRUE(state.seen_time.has_value());
+  EXPECT_EQ(state.seen_time->tick, 2U);
+  EXPECT_NEAR(state.seen_time->fraction, 0.9F, kTolerance);
 }
 
 }  // namespace

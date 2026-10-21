@@ -16,6 +16,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -88,8 +89,8 @@ augusta::policy::Policy ExamplePolicy() {
     ADD_FAILURE() << augusta::assets::DescribeLoadError(pack.error());
     return augusta::policy::Policy{};
   }
-  auto policy = augusta::scenario::LoadPolicy(*pack);
-  EXPECT_TRUE(policy.has_value()) << augusta::scenario::DescribePolicyLoadError(policy.error());
+  auto policy = augusta::policy::LoadPolicy(*pack);
+  EXPECT_TRUE(policy.has_value()) << augusta::policy::DescribePolicyLoadError(policy.error());
   return policy ? *std::move(policy) : augusta::policy::Policy{};
 }
 
@@ -104,7 +105,7 @@ Character Cross() {
     triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
   }
   return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
 }
 
 augusta::physics::CollisionMesh Floor() {
@@ -182,7 +183,7 @@ class Arena {
     parameters.rifle.rounds_per_minute = 600.0F;
     parameters.rifle.magazine_capacity = 30;
     parameters.rifle.muzzle_velocity = 800.0F;
-    parameters.ammo.max_range = 200.0F;
+    parameters.ammo.flight.max_range = 200.0F;
     parameters.ammo.damage = {.head = 100.0F, .torso = 100.0F, .limb = 100.0F};
     parameters.starting_health = 100.0F;
     return parameters;

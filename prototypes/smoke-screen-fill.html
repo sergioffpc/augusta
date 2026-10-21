@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smoke Screen Fill</title>
+<!--
+  PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
+  Answers: how does a Smoke screen spread through a Map over time (#840, #865, #1170)?
+  The <script id="smoke-fill"> block is pure and is the part worth lifting into the
+  Smoke screen module; the page around it is not.
+-->
+<style>
+  :root {
+    --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
+    --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
+    --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--muted); max-width: 980px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    background: var(--bad-soft); color: var(--bad); padding: 2px 8px; border-radius: 99px;
+    margin-bottom: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px;
+    margin-top: 16px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px; }
+  #mapWrap, #sideWrap { width: 100%; display: flex; justify-content: center; }
+  canvas#side { display: block; max-width: 100%; border-radius: 6px; }
+  .sideHead { color: var(--muted); font-size: 12px; margin: 10px 0 4px; }
+  canvas#map { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
+  button.next { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=range] { flex: 1; min-width: 160px; }
+  input[type=number] { width: 80px; font: inherit; padding: 3px 6px;
+    border: 1px solid var(--line); border-radius: 5px; }
+  select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; }
+  label.radio { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; }
+  .time { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 18px; min-width: 90px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+    vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(0,0,0,.15); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .changed { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .cloud { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .cloud h3 { margin: 0 0 6px; font-size: 14px; }
+  .bad { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .refusal { background: var(--bad-soft); color: var(--bad); border-radius: 6px; padding: 6px 10px;
+    margin-bottom: 6px; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 16px; }
+  .params label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .watch { color: var(--muted); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  code { font-size: 12px; background: #f0eee8; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>How a Smoke screen spreads through a Map</h1>
+  <p class="lede">
+    A smoke grenade bursts; every client grows the same cloud through the Map's free space on a
+    0.5 m grid. Does the fill decided in ADR-0072 (#840, #865, #1170) give the shape and the pace we
+    want: round in the open, never through a wall or a wall corner, stopping short in a long
+    corridor, thick at once, clearing from its edges in? Click the map to throw a smoke grenade at
+    the current time, then move time and watch.
+  </p>
+  <details>
+    <summary>What this prototype assumes that the spec does not fix</summary>
+    <ul class="assume">
+      <li>The Map is a 72.5 m × 43 m test Map: a yard 8 m high beside a building of six rooms, 3 m high, either side of a corridor; a grenade bursts 0.25 m above the floor. The grid is 3D; the map is seen from above.</li>
+      <li>Clearing: voxels start thinning one after another, evenly spread over rank, the last reached first; each thins over the ramp time, so the first reached is gone exactly at growing + holding + clearing.</li>
+      <li>Rise is an experiment, not in the spec: a step up costs that percentage less and a step down that percentage more, so the cloud rises and fills ceilings first.</li>
+      <li>The volume curve's <em>N</em> is the cloud's target voxel count (volume ÷ 0.125 m³) by default; a cloud stopped short by its reach then fills on the curve's early, fast part. Switch it under Parameters to the voxels actually in the plan.</li>
+      <li>The source is the free voxel nearest the burst point within 4 voxels (2 m) on each axis, ties to the lower index.</li>
+      <li>The seed comes from the burst point and the time it burst; the Smoke screen voxel bound is a stand-in of 16 384 voxels (2 048 m³).</li>
+    </ul>
+  </details>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="row">
+          <button id="play" class="primary">Play</button>
+          <span class="time" id="timeLabel">0.00 s</span>
+          <input type="range" id="time" min="0" max="80000" step="10" value="0">
+          <button data-dt="-1000">−1 s</button>
+          <button data-dt="1000">+1 s</button>
+          <select id="speed">
+            <option value="1">1× speed</option>
+            <option value="4">4× speed</option>
+            <option value="10">10× speed</option>
+          </select>
+        </div>
+        <div id="mapWrap"><canvas id="map"></canvas></div>
+        <div class="sideHead" id="sideHead"></div>
+        <div id="sideWrap"><canvas id="side"></canvas></div>
+        <div class="row">
+          <span>Show:</span>
+          <label class="radio"><input type="radio" name="view" value="smoke" checked> Smoke, all heights</label>
+          <label class="radio"><input type="radio" name="view" value="slice"> Smoke at one height</label>
+          <label class="radio"><input type="radio" name="view" value="arrival"> When smoke arrives</label>
+          <span id="sliceBox">height <select id="slice"></select></span>
+        </div>
+        <div class="row">
+          <button id="clearAll">Remove all smoke</button>
+          <button id="reseed">Same throw, another seed</button>
+          <button id="compare">Compare the last cloud with another seed</button>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+
+      <div class="card">
+        <h2>Parameters</h2>
+        <div class="params" id="params"></div>
+        <div id="refusals" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" id="state"></div>
+      <div class="card" id="hover"></div>
+    </div>
+  </div>
+</main>
+
+<script id="smoke-fill">
+// The flood fill, pure: no DOM. Integer arithmetic throughout, so the same inputs give
+// the same voxels and times on every platform.
+const SmokeFill = (() => {
+  const VOXEL_MM = 500;
+  const SOURCE_SEARCH = 4;         // voxels
+  const VOXELS_PER_M3 = 8;         // a voxel is 0.125 m³
+  const VOXEL_BOUND = 16384;       // stand-in for the limits module's bound
+
+  function isqrt(n) {
+    let s = Math.floor(Math.sqrt(n));
+    while (s * s > n) s--;
+    while ((s + 1) * (s + 1) <= n) s++;
+    return s;
+  }
+
+  function hash32(a, b) {
+    let h = (Math.imul(a, 0x9e3779b1) ^ b) >>> 0;
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return h >>> 0;
+  }
+
+  // Two neighbourhoods. '345': the 26 steps of a 3×3×3 block, costing 3, 4 and 5
+  // (3 units = 0.5 m). '5x5x5': adds the knight-like steps of a 5×5×5 block, each
+  // costing its length rounded with 7 units = 0.5 m, so the cloud comes out rounder.
+  // Either way a step is taken only when every voxel in the box it spans is free,
+  // so it never cuts a wall corner.
+  const NEIGHBOURHOODS = {
+    '345': { radius: 1, unit: 3, cost: { '100': 3, '110': 4, '111': 5 } },
+    '5x5x5': { radius: 2, unit: 7,
+      cost: { '100': 7, '110': 10, '111': 12, '210': 16, '211': 17, '221': 21 } },
+  };
+  const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
+  const STEPS = {};
+  for (const [name, n] of Object.entries(NEIGHBOURHOODS)) {
+    STEPS[name] = [];
+    const r = n.radius;
+    for (let dz = -r; dz <= r; dz++)
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          const a = [dx, dy, dz].map(Math.abs);
+          if (a[0] + a[1] + a[2] === 0 || gcd(gcd(a[0], a[1]), a[2]) > 1) continue;
+          const box = [];
+          for (let z = Math.min(0, dz); z <= Math.max(0, dz); z++)
+            for (let y = Math.min(0, dy); y <= Math.max(0, dy); y++)
+              for (let x = Math.min(0, dx); x <= Math.max(0, dx); x++) {
+                if ((x === 0 && y === 0 && z === 0) || (x === dx && y === dy && z === dz)) continue;
+                box.push([x, y, z]);
+              }
+          STEPS[name].push({ d: [dx, dy, dz], cost: n.cost[a.sort((p, q) => q - p).join('')], box });
+        }
+  }
+
+  function makeGrid(w, d, h) {
+    return { w, d, h, free: new Uint8Array(w * d * h) };
+  }
+
+  function isFree(g, x, y, z) {
+    if (x < 0 || y < 0 || z < 0 || x >= g.w || y >= g.d || z >= g.h) return false;
+    return g.free[x + g.w * (y + g.d * z)] === 1;
+  }
+
+  function coords(g, i) {
+    return [i % g.w, Math.floor(i / g.w) % g.d, Math.floor(i / (g.w * g.d))];
+  }
+
+  // The free voxel nearest the burst point (mm), or -1 when none is within reach of it.
+  function findSource(g, p) {
+    const vx = Math.floor(p.x / VOXEL_MM), vy = Math.floor(p.y / VOXEL_MM), vz = Math.floor(p.z / VOXEL_MM);
+    let best = -1, bestD = Infinity;
+    for (let z = vz - SOURCE_SEARCH; z <= vz + SOURCE_SEARCH; z++)
+      for (let y = vy - SOURCE_SEARCH; y <= vy + SOURCE_SEARCH; y++)
+        for (let x = vx - SOURCE_SEARCH; x <= vx + SOURCE_SEARCH; x++) {
+          if (!isFree(g, x, y, z)) continue;
+          const ex = x * VOXEL_MM + VOXEL_MM / 2 - p.x;
+          const ey = y * VOXEL_MM + VOXEL_MM / 2 - p.y;
+          const ez = z * VOXEL_MM + VOXEL_MM / 2 - p.z;
+          const dist = ex * ex + ey * ey + ez * ez;
+          const i = x + g.w * (y + g.d * z);
+          if (dist < bestD || (dist === bestD && i < best)) { best = i; bestD = dist; }
+        }
+    return best;
+  }
+
+  // Plans a Smoke screen: which voxels, in which order, reached and cleared when.
+  // s: { volumeM3, growMs, holdMs, clearMs, frontMmPerS, reachMm, rampMs, curveOver, steps, risePct }.
+  // risePct makes a step up that much cheaper and a step down that much dearer, so the
+  // cloud rises; costs are kept ×10 so the percentage stays an integer change.
+  function plan(g, burst, seed, s) {
+    const source = findSource(g, burst);
+    if (source < 0) return null;
+    const unit = NEIGHBOURHOODS[s.steps].unit * 10;
+    const steps = STEPS[s.steps].map(st => ({ ...st, cost: Math.max(1, Math.floor(st.cost * 10 *
+      (100 + (st.d[2] > 0 ? -s.risePct : st.d[2] < 0 ? s.risePct : 0)) / 100)) }));
+    const reachLen = Math.floor(s.reachMm * unit / VOXEL_MM);
+    const dist = new Int32Array(g.w * g.d * g.h).fill(-1);
+    const buckets = Array.from({ length: reachLen + 1 }, () => []);
+    dist[source] = 0;
+    buckets[0].push(source);
+    const order = [], orderLen = [];
+    for (let len = 0; len <= reachLen; len++) {
+      const settled = [];
+      for (const v of buckets[len]) {
+        if (dist[v] !== len) continue;
+        settled.push(v);
+        const [x, y, z] = coords(g, v);
+        for (const st of steps) {
+          const next = len + st.cost;
+          if (next > reachLen) continue;
+          const nx = x + st.d[0], ny = y + st.d[1], nz = z + st.d[2];
+          if (!isFree(g, nx, ny, nz)) continue;
+          if (!st.box.every(o => isFree(g, x + o[0], y + o[1], z + o[2]))) continue;
+          const n = nx + g.w * (ny + g.d * nz);
+          if (dist[n] < 0 || next < dist[n]) { dist[n] = next; buckets[next].push(n); }
+        }
+      }
+      // Ties at one path length scattered by a seeded hash, so the edge is not lopsided.
+      settled.sort((a, b) => (hash32(a, seed) - hash32(b, seed)) || (a - b));
+      for (const v of settled) { order.push(v); orderLen.push(len); }
+    }
+
+    const target = s.volumeM3 * VOXELS_PER_M3;
+    const count = Math.min(target, order.length);
+    const curveN = s.curveOver === 'plan' ? count : target;
+    const voxels = Int32Array.from(order.slice(0, count));
+    const pathLen = Int32Array.from(orderLen.slice(0, count));
+    const reachMs = new Int32Array(count);
+    const clearMs = new Int32Array(count);
+    const clearFrom = s.growMs + s.holdMs;
+    const clearSpan = s.clearMs - s.rampMs;
+    for (let k = 0; k < count; k++) {
+      // Ease-out volume curve: grow × (1 − √(1 − (k+1)/N)), √ in 16.16 fixed point.
+      const rest = curveN - (k + 1);
+      const root = isqrt(Math.floor(rest * 4294967296 / curveN));
+      const byVolume = s.growMs - Math.floor(s.growMs * root / 65536);
+      const byFront = Math.floor(pathLen[k] * VOXEL_MM * 1000 / (unit * s.frontMmPerS));
+      reachMs[k] = Math.max(byVolume, byFront);
+      // The last reached thins first, so the cloud shrinks to its core.
+      clearMs[k] = clearFrom + (count > 1
+        ? Math.floor(clearSpan * (count - 1 - k) / (count - 1))
+        : clearSpan);
+    }
+    let fullBy = 0;
+    for (let k = 0; k < count; k++) fullBy = Math.max(fullBy, reachMs[k] + s.rampMs);
+    return {
+      source, seed, unit, reached: order.length, target, count, voxels, pathLen, reachMs, clearMs,
+      fullBy, clearFrom, goneAt: clearFrom + s.clearMs,
+    };
+  }
+
+  // The plan's densities (0..255) at a time since the burst, aligned with plan.voxels.
+  function densitiesAt(p, s, tMs) {
+    const out = new Uint8Array(p.count);
+    const ramp = s.rampMs;
+    for (let k = 0; k < p.count; k++) {
+      const r = p.reachMs[k], c = p.clearMs[k];
+      let v = 0;
+      if (tMs < r) v = 0;
+      else if (tMs < r + ramp) v = Math.floor(255 * (tMs - r) / ramp);
+      else if (tMs < c) v = 255;
+      else if (tMs < c + ramp) v = 255 - Math.floor(255 * (tMs - c) / ramp);
+      out[k] = v;
+    }
+    return out;
+  }
+
+  // What #1176 would refuse.
+  function refusals(s) {
+    const out = [];
+    for (const [name, v] of [['Growing time', s.growMs], ['Holding time', s.holdMs],
+      ['Clearing time', s.clearMs], ['Ramp time', s.rampMs]]) {
+      if (!(v > 0)) out.push(`${name} must be above zero.`);
+    }
+    if (!(s.volumeM3 > 0)) out.push('Volume must be above zero.');
+    if (s.volumeM3 * VOXELS_PER_M3 > VOXEL_BOUND)
+      out.push(`Volume above the Smoke screen voxel bound (${VOXEL_BOUND / VOXELS_PER_M3} m³).`);
+    if (s.frontMmPerS > 0 && Math.ceil(s.reachMm * 1000 / s.frontMmPerS) > s.growMs)
+      out.push('Reach over front speed is longer than the growing time: some voxels would be reached after it.');
+    if (s.rampMs > s.holdMs) out.push('Ramp time is longer than the holding time.');
+    return out;
+  }
+
+  function checksum(words) {
+    let h = 0x811c9dc5;
+    for (const w of words)
+      for (let b = 0; b < 4; b++) { h ^= (w >>> (8 * b)) & 0xff; h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  function planChecksum(p) {
+    const words = [];
+    for (let k = 0; k < p.count; k++) words.push(p.voxels[k], p.reachMs[k], p.clearMs[k]);
+    return checksum(words);
+  }
+
+  return { VOXEL_MM, makeGrid, isFree, coords, findSource, plan, densitiesAt, refusals,
+    checksum, planChecksum, hash32 };
+})();
+</script>
+
+<script>
+// The page: a thin shell over SmokeFill.
+const W = 145, D = 86, H = 16;
+const VOX = SmokeFill.VOXEL_MM;
+const grid = SmokeFill.makeGrid(W, D, H);
+const breakable = new Uint8Array(W * D);
+const vi = (x, y, z) => x + W * (y + D * z);
+
+function carve(x0, x1, y0, y1, z0, z1, v = 1) {
+  for (let z = z0; z < z1; z++)
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) grid.free[vi(x, y, z)] = v;
+}
+// A 72.5 m × 43 m test Map in voxels [x0, x1) × [y0, y1): a yard and a building of
+// six rooms on either side of a corridor, every room 3 m high.
+const ROOMS = [
+  { name: 'Hall', x: [41, 80], y: [2, 40] },
+  { name: 'Room 1', x: [81, 112], y: [2, 40] },
+  { name: 'Room 2', x: [113, 143], y: [2, 40] },
+  { name: 'Room 3', x: [41, 75], y: [46, 84] },
+  { name: 'Room 4', x: [76, 109], y: [46, 84] },
+  { name: 'Room 5', x: [110, 143], y: [46, 84] },
+];
+carve(2, 40, 2, 84, 0, 16);                                  // yard, 8 m high
+for (const r of ROOMS) carve(r.x[0], r.x[1], r.y[0], r.y[1], 0, 6);
+carve(41, 143, 41, 45, 0, 6);                                // corridor
+carve(40, 41, 56, 60, 2, 4);                                 // window yard-Room 3, 1 m to 2 m
+const DOORS = [                                              // 1.5 m wide, 2 m high
+  [40, 41, 18, 21], [80, 81, 25, 28],                        // yard-Hall, Hall-Room 1
+  [60, 63, 40, 41], [95, 98, 40, 41], [126, 129, 40, 41],    // north row onto the corridor
+  [56, 59, 45, 46], [90, 93, 45, 46], [125, 128, 45, 46],    // south row onto the corridor
+];
+for (const [x0, x1, y0, y1] of DOORS) carve(x0, x1, y0, y1, 0, 4);
+for (let x = 56; x < 59; x++) breakable[x + W * 45] = 1;    // Room 3's door is closed
+
+const DEFAULTS = { volumeM3: 500, growMs: 6000, holdMs: 40000, clearMs: 10000,
+  frontMmPerS: 4000, reachMm: 20000, rampMs: 1000, curveOver: 'target', steps: '5x5x5', risePct: 0 };
+const T_MAX = 80000;
+
+const state = {
+  t: 0, playing: false, speed: 1, view: 'smoke', slice: 0,
+  settings: { ...DEFAULTS }, bursts: [], nextId: 1, changed: 'Nothing yet. Click the map to throw a smoke grenade.',
+  compare: null, hover: null,
+};
+
+// ---- Actions ---------------------------------------------------------------
+
+function seedFor(point, t0) {
+  return SmokeFill.hash32(SmokeFill.hash32(point.x, point.y), t0);
+}
+
+function planBurst(b) {
+  const started = performance.now();
+  b.plan = SmokeFill.plan(grid, b.point, b.seed, state.settings);
+  b.planMs = performance.now() - started;
+  b.colArrival = new Int32Array(W * D).fill(-1);
+  b.colLen = new Int32Array(W * D).fill(-1);
+  if (!b.plan) return;
+  const p = b.plan;
+  for (let k = 0; k < p.count; k++) {
+    const c = p.voxels[k] % (W * D);
+    if (b.colArrival[c] < 0 || p.reachMs[k] < b.colArrival[c]) b.colArrival[c] = p.reachMs[k];
+    if (b.colLen[c] < 0 || p.pathLen[k] < b.colLen[c]) b.colLen[c] = p.pathLen[k];
+  }
+}
+
+const api = {
+  reset() {
+    state.t = 0; state.playing = false; state.bursts = []; state.nextId = 1; state.compare = null;
+    state.settings = { ...DEFAULTS }; state.view = 'smoke'; state.slice = 0;
+    state.changed = 'Reset: no smoke, time 0, default Parameters.';
+  },
+  throwAt(xm, ym, seedOverride) {
+    const point = { x: Math.round(xm * 1000), y: Math.round(ym * 1000), z: 250 };
+    const t0 = Math.floor(state.t);
+    const b = { id: state.nextId++, t0, point, seed: seedOverride ?? seedFor(point, t0) };
+    planBurst(b);
+    state.bursts.push(b);
+    state.compare = null;
+    state.changed = b.plan
+      ? `Smoke grenade ${b.id} burst at (${xm.toFixed(1)} m, ${ym.toFixed(1)} m) at ${fmt(t0)}: ` +
+        `${b.plan.count} voxels planned (${(b.plan.count / 8).toFixed(0)} m³).`
+      : `Smoke grenade ${b.id} burst at (${xm.toFixed(1)} m, ${ym.toFixed(1)} m) inside solid ground: ` +
+        'no free voxel within 2 m, so no Smoke screen.';
+  },
+  time(s) {
+    state.t = Math.max(0, Math.min(T_MAX, Math.round(s * 1000)));
+    state.playing = false;
+    state.changed = `Time set to ${fmt(state.t)}.`;
+  },
+  view(v, slice) {
+    state.view = v;
+    if (slice !== undefined) state.slice = slice;
+    state.changed = v === 'slice' ? `Showing smoke ${heightLabel(state.slice)} only.`
+      : v === 'arrival' ? 'Showing when smoke arrives in each place (the plan, whatever the time).'
+      : 'Showing smoke at all heights.';
+  },
+  reseed() {
+    const last = state.bursts[state.bursts.length - 1];
+    if (!last) return;
+    last.seed = (last.seed + 1) >>> 0;
+    planBurst(last);
+    state.compare = null;
+    state.changed = `Smoke grenade ${last.id} re-planned with seed ${hex(last.seed)}.`;
+  },
+  compare() {
+    const last = [...state.bursts].reverse().find(b => b.plan);
+    if (!last) return;
+    const seedB = (last.seed ^ 0x5bd1e995) >>> 0;
+    const pb = SmokeFill.plan(grid, last.point, seedB, state.settings);
+    const inA = new Set(last.plan.voxels), inB = new Set(pb.voxels);
+    const onlyA = [...inA].filter(v => !inB.has(v));
+    const onlyB = [...inB].filter(v => !inA.has(v));
+    const lenOf = new Map();
+    last.plan.voxels.forEach((v, k) => lenOf.set(v, last.plan.pathLen[k]));
+    pb.voxels.forEach((v, k) => lenOf.set(v, pb.pathLen[k]));
+    const lens = [...onlyA, ...onlyB].map(v => lenOf.get(v));
+    const edgeLen = last.plan.count ? last.plan.pathLen[last.plan.count - 1] : 0;
+    state.compare = { id: last.id, seedB, onlyA, onlyB, unit: last.plan.unit,
+      minLen: lens.length ? Math.min(...lens) : null, maxLen: lens.length ? Math.max(...lens) : null, edgeLen };
+    state.changed = `Cloud ${last.id} re-planned with seed ${hex(seedB)} for comparison: ` +
+      `${onlyA.length + onlyB.length} voxels differ (outlined in red).`;
+  },
+  clearAll() {
+    state.bursts = []; state.compare = null;
+    state.changed = 'All smoke removed.';
+  },
+  set(key, value) {
+    state.settings[key] = value;
+    state.bursts.forEach(planBurst);
+    state.compare = null;
+    state.changed = `Parameter changed; every cloud re-planned.`;
+  },
+};
+
+// ---- Density at the current time --------------------------------------------
+
+const dens = new Uint8Array(W * D * H);
+function computeDensity() {
+  dens.fill(0);
+  const stats = new Map();
+  for (const b of state.bursts) {
+    const st = { occupied: 0, thickening: 0, held: 0, thinning: 0 };
+    stats.set(b.id, st);
+    if (!b.plan) continue;
+    const tb = Math.floor(state.t) - b.t0;
+    if (tb < 0) continue;
+    const p = b.plan, s = state.settings;
+    const ds = SmokeFill.densitiesAt(p, s, tb);
+    for (let k = 0; k < p.count; k++) {
+      const v = ds[k];
+      if (v === 0) continue;
+      st.occupied++;
+      if (tb < p.reachMs[k] + s.rampMs) st.thickening++;
+      else if (tb >= p.clearMs[k]) st.thinning++;
+      else st.held++;
+      const i = p.voxels[k];
+      if (v > dens[i]) dens[i] = v;
+    }
+  }
+  return stats;
+}
+
+// ---- Drawing ----------------------------------------------------------------
+
+// The canvas is drawn at the screen's own resolution with a whole number of device
+// pixels per voxel, so every wall is as sharp and as thick as every other.
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+let cell = 6, dpr = 1;
+function fitCanvas() {
+  dpr = window.devicePixelRatio || 1;
+  const wrap = document.getElementById('mapWrap').clientWidth;
+  cell = Math.max(2, Math.floor(wrap * dpr / W));
+  canvas.width = W * cell; canvas.height = D * cell;
+  canvas.style.width = (W * cell / dpr) + 'px'; canvas.style.height = (D * cell / dpr) + 'px';
+  ctx.imageSmoothingEnabled = false;
+  side.width = W * cell; side.height = H * cell * SIDE_STRETCH;
+  side.style.width = (W * cell / dpr) + 'px'; side.style.height = (H * cell * SIDE_STRETCH / dpr) + 'px';
+}
+
+// A vertical section through the last burst, west to east, drawn twice as tall as it is.
+const side = document.getElementById('side');
+const sctx = side.getContext('2d');
+const SIDE_STRETCH = 2;
+function drawSide() {
+  const last = [...state.bursts].reverse().find(b => b.plan);
+  const row = last ? SmokeFill.coords(grid, last.plan.source)[1] : Math.floor(D / 4);
+  document.getElementById('sideHead').textContent =
+    `Side view, west to east, ${(row * 0.5).toFixed(1)} m from the north edge` +
+    `${last ? ', through smoke grenade ' + last.id : ''} (height drawn twice as tall)`;
+  const cw = cell, ch = cell * SIDE_STRETCH;
+  for (let z = 0; z < H; z++)
+    for (let x = 0; x < W; x++) {
+      const i = vi(x, row, z), top = (H - 1 - z) * ch;
+      const c = grid.free[i] ? (breakable[x + W * row] && z < 4 ? COLORS.door : COLORS.yard) : COLORS.solid;
+      sctx.fillStyle = `rgb(${c.join(',')})`;
+      sctx.fillRect(x * cw, top, cw, ch);
+      if (dens[i]) {
+        sctx.fillStyle = `rgba(72, 82, 98, ${(dens[i] / 255 * 0.9).toFixed(3)})`;
+        sctx.fillRect(x * cw, top, cw, ch);
+      }
+    }
+}
+
+const COLORS = {
+  solid: [104, 96, 86], yard: [236, 232, 222], indoor: [214, 207, 192],
+  window: [143, 179, 232], door: [185, 138, 82],
+};
+function columnKind(x, y) {
+  let free = 0, firstFree = -1;
+  for (let z = 0; z < H; z++) if (grid.free[vi(x, y, z)]) { free++; if (firstFree < 0) firstFree = z; }
+  if (free === 0) return 'solid';
+  if (breakable[x + W * y]) return 'door';
+  if (firstFree > 0) return 'window';
+  return free > 6 ? 'yard' : 'indoor';
+}
+const kinds = new Array(W * D);
+const base = document.createElement('canvas');
+base.width = W; base.height = D;
+{
+  const bctx = base.getContext('2d');
+  const img = bctx.createImageData(W, D);
+  for (let y = 0; y < D; y++)
+    for (let x = 0; x < W; x++) {
+      const k = columnKind(x, y);
+      kinds[x + W * y] = k;
+      const c = COLORS[k], o = 4 * (x + W * y);
+      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+    }
+  bctx.putImageData(img, 0, 0);
+}
+const overlay = document.createElement('canvas');
+overlay.width = W; overlay.height = D;
+const octx = overlay.getContext('2d');
+const oimg = octx.createImageData(W, D);
+
+const ARRIVAL_STOPS = [[255, 224, 138], [214, 96, 40], [88, 36, 140]];
+function arrivalColor(f) {
+  f = Math.max(0, Math.min(1, f));
+  const seg = f < 0.5 ? 0 : 1, u = f < 0.5 ? f * 2 : (f - 0.5) * 2;
+  const a = ARRIVAL_STOPS[seg], b = ARRIVAL_STOPS[seg + 1];
+  return a.map((c, i) => Math.round(c + (b[i] - c) * u));
+}
+
+function draw() {
+  const d = oimg.data;
+  d.fill(0);
+  for (let y = 0; y < D; y++)
+    for (let x = 0; x < W; x++) {
+      const c = x + W * y, o = 4 * c;
+      if (state.view === 'arrival') {
+        let best = -1;
+        for (const b of state.bursts) {
+          const a = b.colArrival[c];
+          if (a >= 0 && (best < 0 || a < best)) best = a;
+        }
+        if (best < 0) continue;
+        const col = arrivalColor(best / state.settings.growMs);
+        d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 235;
+        continue;
+      }
+      let alpha;
+      if (state.view === 'slice') {
+        alpha = dens[vi(x, y, state.slice)] / 255 * 0.9;
+      } else {
+        let sum = 0;
+        for (let z = 0; z < H; z++) sum += dens[vi(x, y, z)];
+        alpha = Math.min(1, sum / (255 * 4)) * 0.9;
+      }
+      if (alpha <= 0) continue;
+      d[o] = 72; d[o + 1] = 82; d[o + 2] = 98; d[o + 3] = Math.round(alpha * 255);
+    }
+  octx.putImageData(oimg, 0, 0);
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(base, 0, 0, W * cell, D * cell);
+  ctx.fillStyle = 'rgba(70, 62, 50, 0.55)';
+  ctx.font = `600 ${Math.round(11 * dpr)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const r of ROOMS) ctx.fillText(r.name, (r.x[0] + r.x[1]) / 2 * cell, (r.y[0] + r.y[1]) / 2 * cell);
+  ctx.drawImage(overlay, 0, 0, W * cell, D * cell);
+
+  if (state.compare) {
+    ctx.strokeStyle = '#d0311c'; ctx.lineWidth = dpr;
+    const cols = new Set([...state.compare.onlyA, ...state.compare.onlyB].map(v => v % (W * D)));
+    for (const c of cols) ctx.strokeRect((c % W) * cell + .5, Math.floor(c / W) * cell + .5, cell - 1, cell - 1);
+  }
+  for (const b of state.bursts) {
+    const px = b.point.x / VOX * cell, py = b.point.y / VOX * cell;
+    ctx.fillStyle = b.plan ? '#2b67d1' : '#b3401a';
+    ctx.beginPath(); ctx.arc(px, py, 7 * dpr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(10 * dpr)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(b.id), px, py + .5);
+  }
+  if (state.hover) {
+    ctx.strokeStyle = '#2b67d1'; ctx.lineWidth = 2 * dpr;
+    ctx.strokeRect(state.hover.x * cell, state.hover.y * cell, cell, cell);
+  }
+  drawSide();
+}
+
+// ---- State panels -------------------------------------------------------------
+
+const fmt = ms => (ms / 1000).toFixed(2) + ' s';
+const hex = n => n.toString(16).padStart(8, '0');
+const heightLabel = z => `from ${(z * 0.5).toFixed(1)} m to ${(z * 0.5 + 0.5).toFixed(1)} m high`;
+const metres = (len, unit) => (len * 0.5 / unit).toFixed(1) + ' m';
+
+function renderState(stats) {
+  let occupied = 0, maxD = 0;
+  const words = [];
+  for (let i = 0; i < dens.length; i++) if (dens[i]) { occupied++; maxD = Math.max(maxD, dens[i]); words.push(i, dens[i]); }
+  const live = state.bursts.filter(b => b.plan && state.t >= b.t0 && state.t < b.t0 + b.plan.goneAt).length;
+  let html = `<h2>Current state</h2>
+    <div class="changed"><strong>Just changed:</strong> ${state.changed}</div>
+    <dl>
+      <dt>Time</dt><dd>${fmt(state.t)}</dd>
+      <dt>Live Smoke screens</dt><dd>${live}</dd>
+      <dt>Voxels with smoke</dt><dd>${occupied} (${(occupied / 8).toFixed(0)} m³)</dd>
+      <dt>Thickest voxel</dt><dd>${maxD} / 255</dd>
+      <dt>Frame fingerprint</dt><dd><code>${SmokeFill.checksum(words)}</code></dd>
+    </dl>`;
+  if (state.compare) {
+    const c = state.compare;
+    const onlyEdge = c.minLen !== null && c.minLen >= c.edgeLen;
+    html += `<div class="cloud"><h3>Seed comparison, cloud ${c.id}</h3><dl>
+      <dt>Other seed</dt><dd><code>${hex(c.seedB)}</code></dd>
+      <dt>Only with this seed</dt><dd>${c.onlyA.length} voxels</dd>
+      <dt>Only with the other</dt><dd>${c.onlyB.length} voxels</dd>
+      <dt>Where they differ</dt><dd>${c.minLen === null ? 'nowhere' :
+        `path length ${metres(c.minLen, c.unit)} to ${metres(c.maxLen, c.unit)}`}</dd>
+      <dt>Cloud's edge</dt><dd>path length ${metres(c.edgeLen, c.unit)}</dd>
+      <dt>Only at the edge?</dt><dd class="${onlyEdge || c.minLen === null ? 'ok' : 'bad'}">${
+        c.minLen === null ? 'identical' : onlyEdge ? 'yes' : 'no'}</dd>
+    </dl></div>`;
+  }
+  for (const b of [...state.bursts].reverse()) {
+    const p = b.plan, st = stats.get(b.id), tb = Math.floor(state.t) - b.t0;
+    html += `<div class="cloud"><h3>Smoke grenade ${b.id}</h3><dl>
+      <dt>Burst</dt><dd>at ${fmt(b.t0)}, (${(b.point.x / 1000).toFixed(1)} m, ${(b.point.y / 1000).toFixed(1)} m)</dd>
+      <dt>Seed</dt><dd><code>${hex(b.seed)}</code></dd>`;
+    if (!p) {
+      html += `<dt>Smoke screen</dt><dd class="bad">none: no free voxel within 2 m</dd></dl></div>`;
+      continue;
+    }
+    const [sx, sy, sz] = SmokeFill.coords(grid, p.source);
+    const short = p.count < p.target;
+    html += `
+      <dt>Source voxel</dt><dd>(${sx}, ${sy}, ${sz})</dd>
+      <dt>Reached within reach</dt><dd>${p.reached} voxels</dd>
+      <dt>Wanted</dt><dd>${p.target} voxels (${(p.target / 8).toFixed(0)} m³)</dd>
+      <dt>Planned</dt><dd class="${short ? 'bad' : ''}">${p.count} voxels${short ? ' — stopped short by its reach' : ''}</dd>
+      <dt>Farthest path</dt><dd>${metres(p.count ? p.pathLen[p.count - 1] : 0, p.unit)}</dd>
+      <dt>Thick everywhere by</dt><dd>${fmt(p.fullBy)} after the burst</dd>
+      <dt>Starts clearing</dt><dd>${fmt(p.clearFrom)}</dd>
+      <dt>Gone at</dt><dd>${fmt(p.goneAt)}</dd>
+      <dt>Now (${tb < 0 ? 'not burst yet' : fmt(tb) + ' after'})</dt>
+        <dd>${st.occupied} with smoke: ${st.thickening} thickening, ${st.held} full, ${st.thinning} thinning</dd>
+      <dt>Plan fingerprint</dt><dd><code>${SmokeFill.planChecksum(p)}</code></dd>
+      <dt>Planning took</dt><dd>${b.planMs.toFixed(0)} ms in this browser</dd>
+    </dl></div>`;
+  }
+  document.getElementById('state').innerHTML = html;
+}
+
+function roomName(x, y) {
+  const r = ROOMS.find(r => x >= r.x[0] && x < r.x[1] && y >= r.y[0] && y < r.y[1]);
+  return r ? ', ' + r.name : '';
+}
+
+function renderHover() {
+  const el = document.getElementById('hover');
+  if (!state.hover) { el.innerHTML = '<h2>Under the cursor</h2><p class="watch">Point at the map.</p>'; return; }
+  const { x, y } = state.hover, c = x + W * y;
+  const names = { solid: 'solid', yard: 'yard, 8 m high', indoor: 'indoors, 3 m high',
+    window: 'window, open from 1 m to 2 m', door: 'closed door (a Breakable, counted free)' };
+  let free = 0, smoky = 0, maxD = 0;
+  const layers = [];
+  for (let z = 0; z < H; z++) {
+    const i = vi(x, y, z);
+    if (grid.free[i]) free++;
+    if (dens[i]) { smoky++; maxD = Math.max(maxD, dens[i]); }
+    if (grid.free[i]) layers.push(dens[i]);
+  }
+  let arrival = -1, len = -1, unit = 3;
+  for (const b of state.bursts) {
+    if (b.colArrival[c] >= 0 && (arrival < 0 || b.colArrival[c] < arrival)) arrival = b.colArrival[c];
+    if (b.colLen[c] >= 0 && (len < 0 || b.colLen[c] < len)) { len = b.colLen[c]; unit = b.plan.unit; }
+  }
+  el.innerHTML = `<h2>Under the cursor</h2><dl>
+    <dt>Place</dt><dd>(${(x * 0.5).toFixed(1)} m, ${(y * 0.5).toFixed(1)} m), voxel column (${x}, ${y})</dd>
+    <dt>What is there</dt><dd>${names[kinds[c]]}${roomName(x, y)}</dd>
+    <dt>Free voxels</dt><dd>${free} of ${H}</dd>
+    <dt>With smoke now</dt><dd>${smoky}, thickest ${maxD} / 255</dd>
+    <dt>Density by height</dt><dd><code>${layers.length ? layers.join(' ') : '—'}</code></dd>
+    <dt>Smoke arrives</dt><dd>${arrival < 0 ? 'never' : fmt(arrival) + ' after its burst'}</dd>
+    <dt>Shortest path</dt><dd>${len < 0 ? '—' : metres(len, unit)}</dd>
+  </dl>`;
+}
+
+function renderRefusals() {
+  const r = SmokeFill.refusals(state.settings);
+  const extra = state.settings.clearMs < state.settings.rampMs
+    ? ['Prototype only: clearing shorter than the ramp breaks the clearing schedule assumed here.'] : [];
+  document.getElementById('refusals').innerHTML =
+    r.length + extra.length
+      ? r.map(m => `<div class="refusal">The spec would refuse this: ${m}</div>`).join('') +
+        extra.map(m => `<div class="refusal">${m}</div>`).join('')
+      : '<span class="ok">The spec would accept these Parameters.</span>';
+}
+
+function renderLegend() {
+  const sw = c => `<span class="sw" style="background:rgb(${c.join(',')})"></span>`;
+  let html = `${sw(COLORS.yard)}yard (8 m) ${sw(COLORS.indoor)}indoors (3 m) ${sw(COLORS.solid)}solid
+    ${sw(COLORS.window)}window (1–2 m) ${sw(COLORS.door)}closed door`;
+  html += state.view === 'arrival'
+    ? ` &nbsp; ${sw(arrivalColor(0))}arrives at once ${sw(arrivalColor(.5))}half the growing time ${sw(arrivalColor(1))}at the growing time`
+    : ` &nbsp; ${sw([72, 82, 98])}smoke (darker is thicker)`;
+  document.getElementById('legend').innerHTML = html;
+}
+
+function syncControls() {
+  document.getElementById('time').value = Math.floor(state.t);
+  document.getElementById('timeLabel').textContent = fmt(state.t);
+  document.getElementById('play').textContent = state.playing ? 'Pause' : 'Play';
+  document.querySelectorAll('input[name=view]').forEach(r => { r.checked = r.value === state.view; });
+  document.getElementById('sliceBox').style.visibility = state.view === 'slice' ? 'visible' : 'hidden';
+  document.getElementById('slice').value = state.slice;
+  for (const f of PARAMS) document.getElementById('p-' + f.key).value = f.toUi(state.settings[f.key]);
+}
+
+function render() {
+  const stats = computeDensity();
+  draw();
+  renderState(stats);
+  renderHover();
+  renderRefusals();
+  renderLegend();
+  syncControls();
+}
+
+// ---- Controls -------------------------------------------------------------------
+
+const PARAMS = [
+  { key: 'volumeM3', label: 'Volume (m³)', step: 50, toUi: v => v, fromUi: v => Math.round(v) },
+  { key: 'growMs', label: 'Growing (s)', step: 0.5, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'holdMs', label: 'Holding (s)', step: 1, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'clearMs', label: 'Clearing (s)', step: 1, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'frontMmPerS', label: 'Front speed (m/s)', step: 0.5, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'reachMm', label: 'Reach (m)', step: 1, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'rampMs', label: 'Ramp (s)', step: 0.25, toUi: v => v / 1000, fromUi: v => Math.round(v * 1000) },
+  { key: 'risePct', label: 'Rise (%)', step: 10, toUi: v => v, fromUi: v => Math.max(0, Math.min(90, Math.round(v))) },
+];
+{
+  const box = document.getElementById('params');
+  for (const f of PARAMS) {
+    const l = document.createElement('label');
+    l.innerHTML = `<span>${f.label}</span><input type="number" id="p-${f.key}" step="${f.step}" min="0">`;
+    box.appendChild(l);
+    l.querySelector('input').addEventListener('change', e => { api.set(f.key, f.fromUi(Number(e.target.value))); render(); });
+  }
+  const l = document.createElement('label');
+  l.innerHTML = `<span>Volume curve's N</span><select id="p-curveOver">
+    <option value="target">wanted voxels</option><option value="plan">planned voxels</option></select>`;
+  box.appendChild(l);
+  PARAMS.push({ key: 'curveOver', toUi: v => v });
+  l.querySelector('select').addEventListener('change', e => { api.set('curveOver', e.target.value); render(); });
+  const n = document.createElement('label');
+  n.innerHTML = `<span>Steps</span><select id="p-steps">
+    <option value="5x5x5">5×5×5, costs 7-10-12-16-17-21</option><option value="345">3×3×3, costs 3-4-5 (spiky)</option></select>`;
+  box.appendChild(n);
+  PARAMS.push({ key: 'steps', toUi: v => v });
+  n.querySelector('select').addEventListener('change', e => { api.set('steps', e.target.value); render(); });
+}
+{
+  const sel = document.getElementById('slice');
+  for (let z = 0; z < H; z++) sel.add(new Option(heightLabel(z), z));
+  sel.addEventListener('change', e => { api.view('slice', Number(e.target.value)); render(); });
+}
+document.querySelectorAll('input[name=view]').forEach(r =>
+  r.addEventListener('change', e => { api.view(e.target.value); render(); }));
+document.getElementById('time').addEventListener('input', e => {
+  state.t = Number(e.target.value); state.playing = false; state.changed = `Time set to ${fmt(state.t)}.`; render();
+});
+document.querySelectorAll('[data-dt]').forEach(btn => btn.addEventListener('click', () => {
+  api.time((state.t + Number(btn.dataset.dt)) / 1000); render();
+}));
+document.getElementById('speed').addEventListener('change', e => { state.speed = Number(e.target.value); });
+document.getElementById('clearAll').addEventListener('click', () => { api.clearAll(); render(); });
+document.getElementById('reseed').addEventListener('click', () => { api.reseed(); render(); });
+document.getElementById('compare').addEventListener('click', () => { api.compare(); render(); });
+
+let lastFrame = 0;
+function tick(now) {
+  if (!state.playing) return;
+  const dt = lastFrame ? now - lastFrame : 0;
+  lastFrame = now;
+  state.t = Math.min(T_MAX, state.t + dt * state.speed);
+  if (state.t >= T_MAX) state.playing = false;
+  state.changed = 'Playing.';
+  render();
+  requestAnimationFrame(tick);
+}
+document.getElementById('play').addEventListener('click', () => {
+  state.playing = !state.playing;
+  state.changed = state.playing ? 'Playing.' : `Paused at ${fmt(state.t)}.`;
+  lastFrame = 0;
+  render();
+  if (state.playing) requestAnimationFrame(tick);
+});
+
+function cellAt(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / r.width * W), y = Math.floor((e.clientY - r.top) / r.height * D);
+  return { x: Math.max(0, Math.min(W - 1, x)), y: Math.max(0, Math.min(D - 1, y)),
+    xm: (e.clientX - r.left) / r.width * W * 0.5, ym: (e.clientY - r.top) / r.height * D * 0.5 };
+}
+canvas.addEventListener('click', e => { const c = cellAt(e); api.throwAt(c.xm, c.ym); render(); });
+canvas.addEventListener('mousemove', e => {
+  const c = cellAt(e);
+  if (state.hover && state.hover.x === c.x && state.hover.y === c.y) return;
+  state.hover = { x: c.x, y: c.y };
+  if (!state.playing) { draw(); renderHover(); }
+});
+canvas.addEventListener('mouseleave', () => { state.hover = null; if (!state.playing) { draw(); renderHover(); } });
+
+// ---- Walkthroughs -----------------------------------------------------------------
+
+const OPEN = [10.2, 21.2];
+const SCENARIOS = [
+  {
+    title: 'In the open',
+    text: 'A smoke grenade bursts in the middle of the yard.',
+    watch: 'The cloud should be round from the start, not a diamond or a square, and give most of its cover in the first second or two, then grow slower. With the 5×5×5 steps it is round within about 4%. Switch to the old 3-4-5 steps to see the spiky star they grow.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['0.5 s', () => api.time(0.5)], ['1.5 s', () => api.time(1.5)],
+      ['3 s', () => api.time(3)], ['7 s', () => api.time(7)],
+      ['When it arrives', () => api.view('arrival')],
+      ['Smoke, all heights', () => api.view('smoke')],
+      ['Old 3-4-5 steps', () => api.set('steps', '345')],
+      ['When it arrives', () => api.view('arrival')],
+    ],
+  },
+  {
+    title: 'Thin wall',
+    text: 'A grenade bursts in Room 1, right beside its half-metre wall with Room 2.',
+    watch: 'Nothing should come through the wall. Room 2 should stay clear: the cloud fits inside Room 1, and its only other way to Room 2 is the long way round, out through Room 1\'s door and along the corridor.',
+    steps: [
+      ['Throw beside the wall', () => api.throwAt(55.2, 10.2)],
+      ['2 s', () => api.time(2)], ['7 s', () => api.time(7)],
+      ['When it arrives', () => api.view('arrival')],
+    ],
+  },
+  {
+    title: 'Corridor',
+    text: 'A grenade bursts in the corridor, between Room 1\'s and Room 4\'s doors.',
+    watch: 'Along the corridor the front speed, 4 m/s, sets the pace. Smoke enters a room only through its doorway, then spreads round inside it.',
+    steps: [
+      ['Throw in the corridor', () => api.throwAt(45.7, 21.5)],
+      ['1 s', () => api.time(1)], ['3 s', () => api.time(3)], ['7 s', () => api.time(7)],
+      ['When it arrives', () => api.view('arrival')],
+    ],
+  },
+  {
+    title: 'Window',
+    text: 'A grenade bursts in the yard beside a window into Room 3, open from 1 m to 2 m above the floor. Its only other opening is a closed door on the far side.',
+    watch: 'Smoke should enter Room 3 only through the window\'s height, then spread down to its floor and through the room, never through the wall below or above the window.',
+    steps: [
+      ['Throw by the window', () => api.throwAt(17.2, 29.2)],
+      ['2 s', () => api.time(2)],
+      ['Floor height', () => api.view('slice', 0)],
+      ['Window height', () => api.view('slice', 2)],
+      ['7 s', () => api.time(7)],
+      ['Floor height', () => api.view('slice', 0)],
+    ],
+  },
+  {
+    title: 'Closed door',
+    text: 'A grenade bursts in the corridor beside the closed door into Room 3.',
+    watch: 'The closed door is a Breakable, and Breakables count as free whether open or not, so smoke goes through it as if it were open (ADR-0072). A late joiner needs no history of which doors opened when.',
+    steps: [
+      ['Throw by the door', () => api.throwAt(28.7, 21.7)],
+      ['2 s', () => api.time(2)], ['7 s', () => api.time(7)],
+    ],
+  },
+  {
+    title: 'Burst on a wall',
+    text: 'A grenade bursts right on top of the wall between Room 3 and Room 4.',
+    watch: 'The burst moves to the nearest free voxel beside the wall, here in Room 3, and grows from there, on that side only.',
+    steps: [
+      ['Throw on the wall', () => api.throwAt(37.6, 30.2)],
+      ['5 s', () => api.time(5)],
+    ],
+  },
+  {
+    title: 'Rising smoke',
+    text: 'An experiment, not in the spec: with Rise above zero a step up is cheaper than a step down, so the cloud climbs before it spreads. One grenade in the yard, one in Room 4.',
+    watch: 'In the side view, the yard cloud should grow taller and narrower, and the cloud in Room 4 should fill the ceiling first and come down to the floor last. Compare with Rise 0.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['Throw in Room 4', () => api.throwAt(46.2, 32.2)],
+      ['2 s, no rise', () => api.time(2)],
+      ['Rise 40%', () => api.set('risePct', 40)],
+      ['Rise 70%', () => api.set('risePct', 70)],
+      ['7 s', () => api.time(7)],
+    ],
+  },
+  {
+    title: 'Clearing',
+    text: 'One cloud, from bursting to gone: it holds from 6 s and starts clearing at 46 s.',
+    watch: 'Through the hold every voxel is fully thick (all "full", none thickening). From 46 s it should shrink towards its core, the last reached clearing first, and be gone at 56 s with nothing left.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['30 s', () => api.time(30)], ['47 s', () => api.time(47)], ['50 s', () => api.time(50)],
+      ['53 s', () => api.time(53)], ['55.5 s', () => api.time(55.5)], ['56 s', () => api.time(56)],
+    ],
+  },
+  {
+    title: 'Seeds',
+    text: 'The same burst planned with two seeds.',
+    watch: 'The seed only breaks ties between voxels at the same path length, so the two plans should differ only at the cloud\'s outermost path length (the edge), never inside it.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['10 s', () => api.time(10)],
+      ['Compare with another seed', () => api.compare()],
+    ],
+  },
+  {
+    title: 'Two clouds',
+    text: 'Two grenades burst 3 s apart, close enough for their clouds to overlap.',
+    watch: 'Where they overlap the smoke is as thick as the thicker cloud, never thicker: the thickest voxel stays 255 and the overlap looks no darker than either cloud alone.',
+    steps: [
+      ['Throw the first', () => api.throwAt(9.2, 15.2)],
+      ['3 s', () => api.time(3)],
+      ['Throw the second', () => api.throwAt(12.2, 19.2)],
+      ['10 s', () => api.time(10)],
+    ],
+  },
+  {
+    title: 'Arriving late',
+    text: 'A client whose burst message arrives late draws the cloud as it is by then. Here, the same cloud watched from the start, then jumped to directly.',
+    watch: 'The frame fingerprint at 30 s must be the same both ways: the cloud at any moment depends only on the Map, the burst, the Parameters and the time.',
+    steps: [
+      ['Throw in the yard', () => api.throwAt(...OPEN)],
+      ['10 s', () => api.time(10)], ['20 s', () => api.time(20)], ['30 s', () => api.time(30)],
+      ['Start over', () => api.reset()],
+      ['Throw again', () => api.throwAt(...OPEN)],
+      ['Jump to 30 s', () => api.time(30)],
+    ],
+  },
+  {
+    title: 'Refused Parameters',
+    text: 'A front speed of 1 m/s needs 20 s to cover the 20 m reach, longer than the 6 s growing time.',
+    watch: 'The spec refuses these Parameters. Here they run anyway: smoke more than 6 m along its path arrives after the growing time is over (the deep purple part), so the cloud is still growing when it should be holding.',
+    steps: [
+      ['Front speed 1 m/s', () => api.set('frontMmPerS', 1000)],
+      ['Throw in the corridor', () => api.throwAt(45.7, 21.5)],
+      ['When it arrives', () => api.view('arrival')],
+      ['7 s', () => { api.time(7); api.view('smoke'); }],
+    ],
+  },
+];
+
+let activeTab = 0, nextStep = 0;
+function renderScenario() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button class="${i === activeTab ? 'active' : ''}" data-tab="${i}">${s.title}</button>`).join('');
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    activeTab = Number(b.dataset.tab); nextStep = 0; renderScenario();
+  }));
+  const s = SCENARIOS[activeTab];
+  const steps = [['Start: reset', () => api.reset()], ...s.steps];
+  document.getElementById('scenario').innerHTML = `<p>${s.text}</p>
+    <p class="watch"><strong>Watch for:</strong> ${s.watch}</p>
+    <div class="steps">${steps.map(([label], i) =>
+      `<button data-step="${i}" class="${i < nextStep ? 'done' : i === nextStep ? 'next' : ''}">${i + 1}. ${label}</button>`).join('')}</div>`;
+  document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.step);
+    steps[i][1]();
+    nextStep = i + 1;
+    renderScenario();
+    render();
+  }));
+}
+
+renderScenario();
+fitCanvas();
+render();
+new ResizeObserver(() => { fitCanvas(); draw(); })
+  .observe(document.getElementById('mapWrap'));
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RENDERER_DEVICE_CHOICE_H_
-#define AUGUSTA_RENDERER_DEVICE_CHOICE_H_
+#ifndef AUGUSTA_RENDERER_VULKAN_DEVICE_CHOICE_H_
+#define AUGUSTA_RENDERER_VULKAN_DEVICE_CHOICE_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +37,10 @@ struct DeviceCandidate {
   bool presents = false;
 };
 
+/// Whether candidate could be drawn with at all: it has Vulkan 1.3 and presents
+/// to the window.
+bool Usable(const DeviceCandidate& candidate);
+
 /// The index in candidates of the device adapter asks for, or nullopt if none
 /// is one: for kHardware the first discrete GPU, else the first integrated one;
 /// for kSoftware the first CPU device. A device without Vulkan 1.3, or which
@@ -50,11 +54,11 @@ constexpr const char* kDiagnosticCheckpointsExtension = "VK_NV_device_diagnostic
 
 /// The device extensions that the Renderer turns on for a device that has
 /// available: the swapchain's, and, when gpu_crash_dumps says Aftermath is
-/// watching (gpu_crash_dumps.h), whichever of the two extensions Aftermath
+/// watching (vulkan_gpu_crash_dumps.h), whichever of the two extensions Aftermath
 /// reads the device has, diagnostics config and diagnostic checkpoints. Each
 /// is one of the names above.
 std::vector<const char*> DeviceExtensions(bool gpu_crash_dumps, std::span<const std::string_view> available);
 
 }  // namespace augusta::renderer
 
-#endif  // AUGUSTA_RENDERER_DEVICE_CHOICE_H_
+#endif  // AUGUSTA_RENDERER_VULKAN_DEVICE_CHOICE_H_

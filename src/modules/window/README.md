@@ -8,11 +8,14 @@ never links them.
 The client's single OS window, a GLFW one, and its device events: it opens the
 window, maps GLFW's keys, mouse buttons and cursor onto the engine's own Key and
 events, and returns the events received since the last `Poll()`, apart from when
-frames are presented. It knows no GPU API and no input.
+frames are presented. It finds the system's Vulkan loader and makes the window's
+Vulkan surface, so GLFW never leaves the module; beyond Vulkan's handles it
+knows no GPU API, and it knows no input.
 
 ## Not its responsibility
 
-- Creating and owning the window, and its Vulkan surface: renderer.
+- Owning the window: the client runtime, which lends it to the renderer.
+- Every other Vulkan object, and when the surface is made: renderer.
 - Turning the events into Commands, and which key does what: input.
 - When the events are drained and who gets them: the client runtime.
 

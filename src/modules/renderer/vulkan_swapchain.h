@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RENDERER_SWAPCHAIN_H_
-#define AUGUSTA_RENDERER_SWAPCHAIN_H_
+#ifndef AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_
+#define AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_
 
 #include <array>
 #include <cstdint>
@@ -20,22 +20,22 @@
 /// Used on the Main/Render thread.
 namespace augusta::renderer {
 
-class Swapchain final {
+class VulkanSwapchain final {
  public:
   /// How many frames the Renderer may have in flight: Acquire's regions.
   static constexpr std::uint32_t kFramesInFlight = 3;
 
   /// Throws std::runtime_error if the window's surface takes no 4-byte sRGB
   /// format. device must outlive this swapchain.
-  Swapchain(VulkanDevice& device, window::Size size);
+  VulkanSwapchain(VulkanDevice& device, window::Size size);
 
-  Swapchain(const Swapchain&) = delete;
-  Swapchain& operator=(const Swapchain&) = delete;
-  Swapchain(Swapchain&&) = delete;
-  Swapchain& operator=(Swapchain&&) = delete;
+  VulkanSwapchain(const VulkanSwapchain&) = delete;
+  VulkanSwapchain& operator=(const VulkanSwapchain&) = delete;
+  VulkanSwapchain(VulkanSwapchain&&) = delete;
+  VulkanSwapchain& operator=(VulkanSwapchain&&) = delete;
 
   /// Waits for the GPU and the display to finish with its images.
-  ~Swapchain();
+  ~VulkanSwapchain();
 
   /// Its images' format, which the Renderer draws in so that a copy into them
   /// keeps every byte: sRGB, 4 bytes a pixel, in red-first or blue-first
@@ -59,7 +59,7 @@ class Swapchain final {
   /// Presents the image Acquire last gave, once the command list executed
   /// after it is done. Throws std::runtime_error if presenting fails, the
   /// device lost included, once its GPU crash dump is written
-  /// (gpu_crash_dumps.h).
+  /// (vulkan_gpu_crash_dumps.h).
   void Present();
 
  private:
@@ -87,4 +87,4 @@ class Swapchain final {
 
 }  // namespace augusta::renderer
 
-#endif  // AUGUSTA_RENDERER_SWAPCHAIN_H_
+#endif  // AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_

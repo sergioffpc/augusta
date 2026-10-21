@@ -48,44 +48,43 @@ namespace augusta::client {
 
 [[nodiscard]] presentation::Aim ToPresentation(const input::Aim& aim);
 
-/// view's newest Authoritative State update as presentation's WorldSnapshot, or
-/// nullopt outside a match. An Authoritative State only follows Join accepted,
-/// which told the tick rate.
-[[nodiscard]] std::optional<presentation::WorldSnapshot> SnapshotOf(const harness::ServerView& view);
-
 /// Every player's character as Match start named it, in Session order, for
 /// PresentationWorld::RunFrame; empty before the first match. Only the
 /// characters: presentation needs nothing else of Match start.
 [[nodiscard]] std::vector<presentation::PlayerCharacter> CharactersOf(
     const std::optional<harness::MatchStart>& match_start);
 
-/// The Server view's newest Authoritative State update and its match's
+/// The Server view's recent Authoritative State updates and its match's
 /// characters in presentation's own types, converted only when the server has
 /// sent new ones and lent to every render frame in between
 /// (presentation::FrameInput). Main/Render thread only, like the frames it lends
 /// to.
 class ConvertedServerView {
  public:
-  /// Brings the conversions up to date with view. The Authoritative State update
-  /// is converted again only when its match (ServerView::matches_started) or its
-  /// tick differs from the last converted: within a match the Inbox only ever
-  /// publishes a newer tick. The characters are converted again only when
-  /// another match has started. The tick rate is taken as fixed: the server
-  /// tells it once, when it admits this client.
+  /// Brings the conversions up to date with view. Of its recent Authoritative
+  /// State updates (ServerView::recent_authoritative), only those of a newer
+  /// tick than the last converted are converted, and those it no longer keeps
+  /// are dropped: within a match the Inbox only ever publishes a newer tick, so
+  /// one of a tick already converted is the same update. Another match
+  /// (ServerView::matches_started) is converted anew, as are its characters,
+  /// which are converted again only then. The tick rate is taken as fixed: the
+  /// server tells it once, when it admits this client, and an Authoritative
+  /// State only follows.
   void Update(const harness::ServerView& view);
 
-  /// The last Update's view's newest Authoritative State update (SnapshotOf),
-  /// or null outside a match. Valid until the next Update.
-  [[nodiscard]] const presentation::WorldSnapshot* Snapshot() const;
+  /// The last Update's view's recent Authoritative State updates, oldest first
+  /// and the newest last, each at the server's tick duration; empty outside a
+  /// match and before its first. Valid until the next Update.
+  [[nodiscard]] std::span<const presentation::WorldSnapshot> Updates() const;
 
   /// The last Update's view's characters (CharactersOf), in Session order.
   /// Valid until the next Update.
   [[nodiscard]] std::span<const presentation::PlayerCharacter> Characters() const;
 
  private:
-  // The match snapshot_ is of: a new one can start back at a tick already seen.
-  std::uint32_t snapshot_match_ = 0;
-  std::optional<presentation::WorldSnapshot> snapshot_;
+  // The match updates_ are of: a new one can start back at a tick already seen.
+  std::uint32_t updates_match_ = 0;
+  std::vector<presentation::WorldSnapshot> updates_;
   // The match characters_ are of; 0 before the first.
   std::uint32_t characters_match_ = 0;
   std::vector<presentation::PlayerCharacter> characters_;

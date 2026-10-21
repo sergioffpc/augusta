@@ -6,21 +6,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
 #include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <flecs.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
-#include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -29,6 +27,8 @@
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "hitbox_history.h"
+#include "hitbox_posing.h"
+#include "policy_bridge.h"
 
 namespace augusta::simulation {
 
@@ -113,85 +113,18 @@ struct Bullet {
   float pitch = 0.0F;
 };
 
-// One hitbox of one player, where a bullet judges that player to be: its
-// triangles are count of the posed triangles, from first.
-struct PosedHitbox {
-  EntityId target{};
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
-  std::size_t first = 0;
-  std::size_t count = 0;
-};
-
-// One player's hitboxes posed at one moment, counted in ticks: what every
-// bullet of a tick judged at that moment is tested against.
-struct PosingKey {
-  EntityId target{};
-  double time = 0.0;
-
-  bool operator==(const PosingKey&) const = default;
-};
-
-struct PosingKeyHash {
-  std::size_t operator()(const PosingKey& key) const noexcept {
-    return std::hash<double>{}(key.time) ^ std::hash<std::uint32_t>{}(std::to_underlying(key.target));
-  }
-};
-
-// Where one posing's hitboxes are: count of the posed hitboxes, from first.
-struct Posing {
-  std::size_t first = 0;
-  std::size_t count = 0;
-};
-
 // A bullet that struck a player this tick, for Damage to resolve.
 struct PlayerHit {
   EntityId shooter{};
   EntityId target{};
   float yaw = 0.0F;
   float pitch = 0.0F;
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
-
-// point, of a standing character's root space, where it is on a body in pose:
-// lowered for its stance as the eye is, turned about the vertical as the view
-// is, then moved to the body.
-math::Vec3 PosePoint(const math::Vec3& point, const Pose& pose) {
-  return pose.position + (command::ViewRotation(pose.yaw, 0.0F) * physics::LowerToStance(point, pose.stance));
-}
 
 // Where a player's body is and faces this tick, as the tick's State reports it.
 Pose PoseOf(const Body& body, const Facing& facing) {
   return Pose{.position = body.state.position, .yaw = facing.yaw, .stance = body.state.stance};
-}
-
-// What Hitboxes::reach adds to the farthest point of a character's hitboxes:
-// far above the rounding of posing them, or of Reaches, anywhere on the
-// position grid, so culling by it never drops a hitbox a bullet crosses.
-constexpr float kReachMargin = 0.1F;
-
-// Hitboxes::reach of a character's hitboxes. Measured standing: any other
-// stance only lowers a point (physics::LowerToStance), which brings it no
-// farther from the root.
-float ReachOf(const std::vector<CharacterHitbox>& hitboxes) {
-  float reach = 0.0F;
-  for (const CharacterHitbox& hitbox : hitboxes) {
-    for (const ballistics::Triangle& triangle : hitbox.triangles) {
-      for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-        reach = std::max(reach, math::Length(point));
-      }
-    }
-  }
-  return reach + kReachMargin;
-}
-
-// Whether segment passes within reach of center.
-bool Reaches(const ballistics::Segment& segment, const math::Vec3& center, float reach) {
-  const math::Vec3 along = segment.to - segment.from;
-  const float length_squared = math::Dot(along, along);
-  const float fraction =
-      length_squared > 0.0F ? std::clamp(math::Dot(center - segment.from, along) / length_squared, 0.0F, 1.0F) : 0.0F;
-  const math::Vec3 apart = center - (segment.from + (along * fraction));
-  return math::Dot(apart, apart) <= reach * reach;
 }
 
 // kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.
@@ -213,35 +146,16 @@ float ShootersDelay(tick::Tick tick, const command::Command& command, float max_
 }
 
 // What damage gives for a hit on part.
-float DamageFor(const parameters::Damage& damage, ballistics::BodyPart part) {
+float DamageFor(const body_part::Damage& damage, body_part::BodyPart part) {
   switch (part) {
-    case ballistics::BodyPart::kHead:
+    case body_part::BodyPart::kHead:
       return damage.head;
-    case ballistics::BodyPart::kTorso:
+    case body_part::BodyPart::kTorso:
       return damage.torso;
-    case ballistics::BodyPart::kLimb:
+    case body_part::BodyPart::kLimb:
       return damage.limb;
   }
   std::unreachable();
-}
-
-// Ballistics names the player a hitbox belongs to by the body's own number.
-ballistics::TargetId ToTarget(EntityId entity) { return static_cast<ballistics::TargetId>(std::to_underlying(entity)); }
-
-EntityId FromTarget(ballistics::TargetId target) { return static_cast<EntityId>(std::to_underlying(target)); }
-
-// How often a failing Game policy hook is logged: one that fails every tick
-// would otherwise write a line a tick (ADR-0029).
-constexpr std::chrono::seconds kPolicyWarningInterval{1};
-
-// The Spawn point, from 0, each of a Match's players takes with no Game policy
-// for it: in order, starting over after the last.
-std::vector<std::size_t> InOrderSpawns(std::size_t players, std::size_t spawn_points) {
-  std::vector<std::size_t> indices(players);
-  for (std::size_t i = 0; i < players; ++i) {
-    indices[i] = i % spawn_points;
-  }
-  return indices;
 }
 
 // player as Game policy sees it (ADR-0022).
@@ -282,11 +196,7 @@ struct World::Impl {
   flecs::world ecs;
   physics::World physics;
   ballistics::World ballistics;
-  policy::Policy policy;
-  logging::Throttle policy_warnings{kPolicyWarningInterval};
-  // Whether policy has ended the Match the world's players are in: it then
-  // decides no more until EndMatch.
-  bool match_ended_by_policy = false;
+  PolicyBridge policy_bridge;
   PhaseEntities phases;
   std::unordered_map<EntityId, Slot> players;
   // Set by Tick for CommandIngestion to read, and filled by Commit and
@@ -298,17 +208,10 @@ struct World::Impl {
   // Every player a bullet may strike, for posing its hitboxes where the bullet
   // judges it to be.
   flecs::query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory> targets;
-  // Every posing of the tick, for each bullet of it judged at the same moment:
-  // nothing a pose is taken from changes while the tick's bullets fly. Cleared
-  // each tick.
-  std::vector<ballistics::Triangle> posed_triangles;
-  std::vector<PosedHitbox> posed_hitboxes;
-  std::unordered_map<PosingKey, Posing, PosingKeyHash> posings;
-  // The posings one bullet is tested against and their hitboxes, and the
-  // players the tick's bullets struck, for Damage. Kept between bullets and
-  // ticks for their storage only.
-  std::vector<Posing> bullet_posings;
-  std::vector<ballistics::Hitbox> bullet_hitboxes;
+  // Their hitboxes, posed for the tick's bullets. Cleared each tick.
+  HitboxPosing posing;
+  // The players the tick's bullets struck, for Damage. Kept between ticks for
+  // its storage only.
   std::vector<PlayerHit> player_hits;
 
   Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy)
@@ -316,7 +219,7 @@ struct World::Impl {
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
-        policy(std::move(game_policy)),
+        policy_bridge(std::move(game_policy)),
         targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
@@ -429,34 +332,10 @@ struct World::Impl {
     committed.shots.push_back(shot);
     // As a fraction of the cap, so a delay held at it is the cap exactly.
     shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
-    const ballistics::BulletHandle bullet =
-        ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), parameters.rifle.muzzle_velocity,
-                        {.gravity = parameters.ammo.gravity, .max_range = parameters.ammo.max_range});
+    const ballistics::BulletHandle bullet = ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
+                                                            parameters.rifle.muzzle_velocity, parameters.ammo.flight);
     ecs.entity().set<Bullet>(
         {.handle = bullet, .shooter = shot.shooter, .shooters_delay = delay, .yaw = shot.yaw, .pitch = shot.pitch});
-  }
-
-  // Places hitboxes, target's, where pose puts them.
-  void PoseHitboxes(EntityId target, const Hitboxes& hitboxes, const Pose& pose) {
-    for (const CharacterHitbox& hitbox : hitboxes.standing) {
-      posed_hitboxes.push_back(PosedHitbox{
-          .target = target, .part = hitbox.part, .first = posed_triangles.size(), .count = hitbox.triangles.size()});
-      for (const ballistics::Triangle& triangle : hitbox.triangles) {
-        posed_triangles.push_back(ballistics::Triangle{
-            .a = PosePoint(triangle.a, pose), .b = PosePoint(triangle.b, pose), .c = PosePoint(triangle.c, pose)});
-      }
-    }
-  }
-
-  // target's hitboxes posed by pose, at the moment key names: posed now if no
-  // bullet of this tick has asked for them yet.
-  Posing PosingOf(const PosingKey& key, const Hitboxes& hitboxes, const Pose& pose) {
-    const auto [posing, added] =
-        posings.try_emplace(key, Posing{.first = posed_hitboxes.size(), .count = hitboxes.standing.size()});
-    if (added) {
-      PoseHitboxes(key.target, hitboxes, pose);
-    }
-    return posing->second;
   }
 
   // The hitboxes of every player but bullet's shooter, which a bullet never
@@ -464,29 +343,17 @@ struct World::Impl {
   // those segment passes near enough to cross. A player with no tick behind it
   // yet is judged where it is. Valid until the next call.
   std::span<const ballistics::Hitbox> HitboxesFor(const Bullet& bullet, const ballistics::Segment& segment) {
-    bullet_posings.clear();
     const double time = static_cast<double>(tick) - static_cast<double>(bullet.shooters_delay);
+    posing.BeginBullet(time, segment);
     targets.each([&](const Player& player, const Body& body, const Facing& facing, const Hitboxes& hitboxes,
                      const HitboxHistory& history) {
       if (player.entity == bullet.shooter) {
         return;
       }
-      const Pose pose = history.poses.At(time).value_or(PoseOf(body, facing));
-      if (Reaches(segment, pose.position, hitboxes.reach)) {
-        bullet_posings.push_back(PosingOf(PosingKey{.target = player.entity, .time = time}, hitboxes, pose));
-      }
+      posing.Consider(player.entity, hitboxes.standing, hitboxes.reach,
+                      history.poses.At(time).value_or(PoseOf(body, facing)));
     });
-    // Only now, with every triangle in place, can the hitboxes view them.
-    bullet_hitboxes.clear();
-    const std::span<const ballistics::Triangle> triangles(posed_triangles);
-    for (const Posing& posing : bullet_posings) {
-      for (const PosedHitbox& hitbox : std::span(posed_hitboxes).subspan(posing.first, posing.count)) {
-        bullet_hitboxes.push_back(ballistics::Hitbox{.target = ToTarget(hitbox.target),
-                                                     .part = hitbox.part,
-                                                     .triangles = triangles.subspan(hitbox.first, hitbox.count)});
-      }
-    }
-    return bullet_hitboxes;
+    return posing.BulletHitboxes();
   }
 
   // Advances one bullet a tick, to the nearest of the Map and the other
@@ -498,15 +365,19 @@ struct World::Impl {
       case ballistics::Outcome::kInFlight:
         ++committed.bullets_in_flight;
         return;
-      case ballistics::Outcome::kHitMap:
-        committed.map_impacts.push_back(result.impact_point);
-        break;
-      case ballistics::Outcome::kHitPlayer:
-        player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
-                                        .target = FromTarget(result.target),
-                                        .yaw = bullet.yaw,
-                                        .pitch = bullet.pitch,
-                                        .part = result.part});
+      case ballistics::Outcome::kStruck:
+        if (result.surface == kMapSurface) {
+          committed.map_impacts.push_back(result.impact_point);
+        } else {
+          // Step hands back only an id it was given: kMapSurface, which every
+          // Map mesh is added with, or one of this Step's posed hitboxes.
+          const StruckHitbox struck = posing.Struck(result.surface);
+          player_hits.push_back(PlayerHit{.shooter = bullet.shooter,
+                                          .target = struck.target,
+                                          .yaw = bullet.yaw,
+                                          .pitch = bullet.pitch,
+                                          .part = struck.part});
+        }
         break;
       case ballistics::Outcome::kExpired:
         break;
@@ -575,63 +446,25 @@ struct World::Impl {
 
   // Calls the rules' on_tick with the Match view while the world has a
   // Match policy has not ended, and records the action it takes, if any, in
-  // the tick's result. A hook that fails or decides what it may not is logged
-  // and decides nothing; either way the tick goes on.
+  // the tick's result.
   void OnScriptsBehaviours() {
-    if (players.empty() || match_ended_by_policy) {
+    if (players.empty() || policy_bridge.MatchEnded()) {
       return;
     }
-    const auto action = policy.OnTick(TickView(), tick);
-    if (!action) {
-      WarnUndecidedOnTick(action.error());
-      return;
-    }
-    if (action->has_value()) {
-      match_ended_by_policy = std::holds_alternative<policy::MatchEnd>(**action);
-      actions.push_back(**action);
+    if (auto action = policy_bridge.OnTick(TickView(), tick)) {
+      actions.push_back(*std::move(action));
     }
   }
 
-  // Logs an on_tick call that decided nothing, at most once a
-  // kPolicyWarningInterval, as policy may fail every tick.
-  void WarnUndecidedOnTick(const policy::Undecided& undecided) {
-    if (undecided.code == policy::UndecidedCode::kHookFailed) {
-      LOG_WARN_LIMITED(policy_warnings,
-                       "subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                       policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
-    } else {
-      LOG_WARN_LIMITED(
-          policy_warnings,
-          "subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-          policy::kRulesScriptPath, policy::kOnTick, tick, undecided.description);
-    }
-  }
-
-  // The Spawn point, from 0 and below spawn_points, each of match_players takes:
-  // what the rules' assign_spawns answers, or in order when it is not
-  // defined, answers nil or is refused. A refusal is logged; as a hook is
-  // called once a Match, it is not limited.
+  // The Spawn point, from 0 and below spawn_points, each of match_players
+  // takes, as Game policy places them at the Match's start.
   std::vector<std::size_t> AssignSpawns(std::span<const MatchPlayer> match_players, std::size_t spawn_points) {
     policy::MatchView view{.player_count = parameters.player_count, .players = {}};
     view.players.reserve(match_players.size());
     for (const MatchPlayer& player : match_players) {
       view.players.push_back(ViewOf(player.entity, player.identity, true, parameters.starting_health, std::nullopt));
     }
-    auto assignment = policy.AssignSpawns(view, spawn_points);
-    if (!assignment) {
-      if (assignment.error().code == policy::UndecidedCode::kHookFailed) {
-        LOG_WARN("subsystem=simulationworld event=policy_hook_failed script={} hook={} tick={} error=\"{}\"",
-                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
-      } else {
-        LOG_WARN("subsystem=simulationworld event=policy_decision_refused script={} hook={} tick={} reason=\"{}\"",
-                 policy::kRulesScriptPath, policy::kAssignSpawns, tick, assignment.error().description);
-      }
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    if (!assignment->has_value()) {
-      return InOrderSpawns(match_players.size(), spawn_points);
-    }
-    return **std::move(assignment);
+    return policy_bridge.AssignSpawns(view, spawn_points, tick);
   }
 
   void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
@@ -648,7 +481,7 @@ World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz
 World::~World() = default;
 
 std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const physics::CollisionMesh& mesh) {
-  return impl_->physics.AddCollisionMesh(mesh);
+  return impl_->physics.AddCollisionMesh(mesh, kMapSurface);
 }
 
 World::World(World&&) noexcept = default;
@@ -726,7 +559,7 @@ void World::EndMatch() {
   }
   impl.ecs.delete_with<Bullet>();
   impl.ballistics = ballistics::World();
-  impl.match_ended_by_policy = false;
+  impl.policy_bridge.ForgetMatchEnd();
 }
 
 TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_time) {
@@ -748,9 +581,7 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   impl.actions.clear();
   impl.shooters_delays.clear();
   impl.player_hits.clear();
-  impl.posed_triangles.clear();
-  impl.posed_hitboxes.clear();
-  impl.posings.clear();
+  impl.posing.Clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.
   std::ranges::sort(impl.committed.bodies, {}, &EntityState::entity);

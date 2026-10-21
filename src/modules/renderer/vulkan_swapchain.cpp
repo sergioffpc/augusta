@@ -1,4 +1,4 @@
-#include "swapchain.h"
+#include "vulkan_swapchain.h"
 
 #include <algorithm>
 #include <array>
@@ -17,8 +17,8 @@
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/window.h"
-#include "gpu_crash_dumps.h"
 #include "vulkan_device.h"
+#include "vulkan_gpu_crash_dumps.h"
 
 namespace augusta::renderer {
 
@@ -75,7 +75,7 @@ vk::Extent2D ExtentFor(const vk::SurfaceCapabilitiesKHR& capabilities, window::S
 // One image more than frames in flight would leave the CPU waiting on the
 // display; fewer than the surface's minimum it can't have.
 std::uint32_t ImageCountFor(const vk::SurfaceCapabilitiesKHR& capabilities) {
-  const std::uint32_t count = std::max(capabilities.minImageCount, Swapchain::kFramesInFlight);
+  const std::uint32_t count = std::max(capabilities.minImageCount, VulkanSwapchain::kFramesInFlight);
   return capabilities.maxImageCount == 0 ? count : std::min(count, capabilities.maxImageCount);
 }
 
@@ -92,7 +92,7 @@ void ThrowIfFailed(VkResult result, const char* what) {
 
 }  // namespace
 
-Swapchain::Swapchain(VulkanDevice& device, window::Size size)
+VulkanSwapchain::VulkanSwapchain(VulkanDevice& device, window::Size size)
     : device_(device), present_mode_(ChoosePresentMode(device.PhysicalDevice(), device.Surface())), size_(size) {
   std::tie(surface_format_, format_) = ChooseFormat(device.PhysicalDevice(), device.Surface());
   for (vk::UniqueSemaphore& semaphore : acquired_) {
@@ -101,7 +101,7 @@ Swapchain::Swapchain(VulkanDevice& device, window::Size size)
   Create();
 }
 
-Swapchain::~Swapchain() {
+VulkanSwapchain::~VulkanSwapchain() {
   // Presentation, which the GPU's own tracking leaves out, is done with every
   // semaphore once the device is idle; and the swapchain goes before them.
   device_.Device().waitIdle();
@@ -109,14 +109,14 @@ Swapchain::~Swapchain() {
   swapchain_.reset();
 }
 
-std::optional<window::Size> Swapchain::ImageSize() const {
+std::optional<window::Size> VulkanSwapchain::ImageSize() const {
   if (!swapchain_) {
     return std::nullopt;
   }
   return window::Size{.width = extent_.width, .height = extent_.height};
 }
 
-void Swapchain::Update(window::Size size) {
+void VulkanSwapchain::Update(window::Size size) {
   if (swapchain_ && !stale_ && size.width == size_.width && size.height == size_.height) {
     return;
   }
@@ -124,7 +124,7 @@ void Swapchain::Update(window::Size size) {
   Create();
 }
 
-nvrhi::ITexture* Swapchain::Acquire(std::uint32_t region) {
+nvrhi::ITexture* VulkanSwapchain::Acquire(std::uint32_t region) {
   image_index_.reset();
   if (!swapchain_) {
     return nullptr;
@@ -150,7 +150,7 @@ nvrhi::ITexture* Swapchain::Acquire(std::uint32_t region) {
   return images_.at(index);
 }
 
-void Swapchain::Present() {
+void VulkanSwapchain::Present() {
   if (!image_index_) {
     return;
   }
@@ -169,7 +169,7 @@ void Swapchain::Present() {
   ThrowIfFailed(result, "Presenting");
 }
 
-void Swapchain::Create() {
+void VulkanSwapchain::Create() {
   const vk::Device device = device_.Device();
   device.waitIdle();
   images_.clear();

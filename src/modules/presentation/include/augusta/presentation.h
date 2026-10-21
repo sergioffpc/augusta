@@ -57,15 +57,15 @@ enum class Phase {
   /// tick elapsed at render time of the way from the previous Prediction State
   /// to the newest (BlendTicks, local_view.h), and slides it out of the jumps
   /// a reconciliation replay makes (Correction, ADR-0004). For every other
-  /// player, buffers the newest reported body (World::RunFrame's snapshot
-  /// parameter) per remote entity, placed on the server's timeline by its
-  /// tick, and renders each kInterpolationDelay behind a render-side clock
+  /// player, buffers every body reported since the last frame
+  /// (FrameInput::updates), in tick order, per remote entity, placed on the
+  /// server's timeline by its tick, and renders each kInterpolationDelay behind a render-side clock
   /// aligned to that timeline, interpolated between the two surrounding
   /// updates (ServerClock and RemoteInterpolator, interpolation.h) - smooth
   /// motion independent of render frame rate and of when updates arrive. An
-  /// entity no longer in the snapshot is no longer shown, nor for the rest of
+  /// entity an update no longer lists is no longer shown, nor for the rest of
   /// the match is one whose Death has arrived (FrameInput::deaths), and neither
-  /// is anyone while there is no snapshot (outside a match). Each is drawn as its character
+  /// is anyone while there is no update (outside a match). Each is drawn as its character
   /// (FrameInput::characters), turned where it faces. Which moment of the
   /// server's timeline they are shown at is the frame's Seen time (SeenTimeAt,
   /// interpolation.h). Moves the fight on to the frame's time too: starts a
@@ -179,7 +179,7 @@ struct MatchEnd {
 /// its edge, the way each peer converts the protocol at its own (ADR-0038), so
 /// this module does not depend on the network session.
 ///
-/// snapshot and characters are borrowed, not owned: the caller converts the
+/// updates and characters are borrowed, not owned: the caller converts the
 /// server's data once when it arrives and lends it to every render frame until
 /// newer data replaces it. They need only outlive the RunFrame call; World keeps
 /// nothing of them past it but its own copies.
@@ -194,11 +194,15 @@ struct FrameInput {
   bool fire = false;
   /// The body this client's player controls, or nullopt before its first match.
   std::optional<EntityId> local_entity;
-  /// The newest Authoritative State update of the match in progress, or null
-  /// outside one. Every body in it other than local_entity's is fed to the
-  /// RemoteInterpolator (see interpolation.h); a repeated snapshot (from no
-  /// newer a tick than the previous frame's) is not recorded again.
-  const WorldSnapshot* snapshot = nullptr;
+  /// The Authoritative State updates of the match in progress received most
+  /// recently, oldest first and the newest last, each of a newer tick than the
+  /// one before it; empty outside a match and before its first. Each one newer
+  /// than the last recorded is recorded, in tick order: every body in it other
+  /// than local_entity's is fed to the RemoteInterpolator (see
+  /// interpolation.h), and any body it no longer lists is forgotten. One no
+  /// newer than the last recorded is not recorded again, so a frame below the
+  /// tick rate misses none and a frame above it repeats none.
+  std::span<const WorldSnapshot> updates;
   /// Every player's character, as the server named them when the match
   /// started, in Session order (whom a spectator watches first and next), or
   /// empty before the first.

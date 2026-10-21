@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/match.h"
@@ -19,9 +19,9 @@ namespace {
 using augusta::assets::BodyPart;
 using augusta::assets::HitboxData;
 using augusta::host::EntityId;
+using augusta::host::FromBlob;
 using augusta::host::FromSimulation;
 using augusta::host::SessionId;
-using augusta::host::ToBallistics;
 using augusta::host::ToSimulation;
 using augusta::math::Vec3;
 
@@ -39,16 +39,16 @@ TEST(SimulationMappingTest, MatchAndGamePolicyNameAPlayerByTheSameSession) {
   EXPECT_EQ(std::to_underlying(ToSimulation(SessionId{5})), 5U);
 }
 
-TEST(SimulationMappingTest, EveryBodyPartIsTheSameBodyPartToBallistics) {
-  EXPECT_EQ(ToBallistics(BodyPart::kHead), augusta::ballistics::BodyPart::kHead);
-  EXPECT_EQ(ToBallistics(BodyPart::kTorso), augusta::ballistics::BodyPart::kTorso);
-  EXPECT_EQ(ToBallistics(BodyPart::kLimb), augusta::ballistics::BodyPart::kLimb);
+TEST(SimulationMappingTest, EveryBodyPartOfTheBlobIsTheSameBodyPart) {
+  EXPECT_EQ(FromBlob(BodyPart::kHead), augusta::body_part::BodyPart::kHead);
+  EXPECT_EQ(FromBlob(BodyPart::kTorso), augusta::body_part::BodyPart::kTorso);
+  EXPECT_EQ(FromBlob(BodyPart::kLimb), augusta::body_part::BodyPart::kLimb);
 }
 
 TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {
   const auto hitbox = ToSimulation(Triangle(BodyPart::kHead), "medic");
 
-  EXPECT_EQ(hitbox.part, augusta::ballistics::BodyPart::kHead);
+  EXPECT_EQ(hitbox.part, augusta::body_part::BodyPart::kHead);
   ASSERT_EQ(hitbox.triangles.size(), 1U);
   EXPECT_EQ(hitbox.triangles[0].a, Vec3(0.0F, 0.0F, 0.0F));
   EXPECT_EQ(hitbox.triangles[0].b, Vec3(1.0F, 0.0F, 0.0F));

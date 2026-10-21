@@ -2,14 +2,17 @@
 #define AUGUSTA_WEAPON_H_
 
 #include <cstdint>
+#include <vector>
 
+#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
-#include "augusta/parameters.h"
 
 /// \file
-/// augusta::weapon holds the rifle's rules (US-07 to US-09): what a tick's
-/// Command does to a player's rifle, whether it fires a round, and where that
-/// round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
+/// augusta::weapon holds the rifle and its ammunition (US-06, US-10, US-12),
+/// as the Parameters configure them, and the rifle's rules (US-07 to US-09):
+/// what a tick's Command does to a player's rifle, whether it fires a round,
+/// and where that round leaves for. It is ARCHITECTURE.md §5's WeaponHandling: pure mechanism
 /// in the shared core, with no world and no state of its own, so the two Worlds
 /// that run a WeaponHandling phase call the same function, as both call
 /// physics::World. The server's SimulationWorld takes the result as
@@ -19,7 +22,53 @@
 /// random, so the two agree.
 ///
 /// The rifle's values are the Parameters' (ADR-0039), handed in on every call.
+/// How a round flies is ballistics' BulletConfig, and what it does to each Body
+/// part is body_part's Damage: the Ammo only bundles the two.
 namespace augusta::weapon {
+
+/// How far one round of a burst turns the aim, in radians: a positive pitch up,
+/// a positive yaw left (as command::Command's view turns).
+struct RecoilKick {
+  float pitch = 0.0F;
+  float yaw = 0.0F;
+
+  bool operator==(const RecoilKick&) const = default;
+};
+
+/// The rifle every player carries (US-06 to US-09; the only weapon).
+struct Rifle {
+  /// How many rounds per minute holding fire shoots. At most one round fires a
+  /// tick, so a rate above the tick rate fires at the tick rate.
+  float rounds_per_minute = 1.0F;
+  /// How fast a round leaves the muzzle, in meters per second.
+  float muzzle_velocity = 1.0F;
+  /// How long a reload takes, in seconds.
+  float reload_seconds = 0.0F;
+  /// How fast, in radians per second, the recoil a burst built up returns to
+  /// zero while the rifle is not firing.
+  float recoil_recovery_per_second = 0.0F;
+  /// What aiming down sights scales every recoil kick by, above 0 and at most 1.
+  float ads_recoil_scale = 1.0F;
+  /// The vertical field of view aiming down sights zooms to, in radians.
+  float ads_field_of_view = 1.0F;
+  /// The kick of each round of a burst, in order, at most
+  /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
+  std::vector<RecoilKick> recoil_pattern;
+  /// How many rounds a full magazine holds, 1 or more.
+  std::uint8_t magazine_capacity = 1;
+
+  bool operator==(const Rifle&) const = default;
+};
+
+/// The rifle's ammunition: how its rounds fly (US-10) and what they do (US-12).
+struct Ammo {
+  /// How a round flies. A range of 1, not BulletConfig's 0, so a default
+  /// Parameters is one the simulation can run on.
+  ballistics::BulletConfig flight{.gravity = 0.0F, .max_range = 1.0F};
+  body_part::Damage damage{};
+
+  bool operator==(const Ammo&) const = default;
+};
 
 /// How far a rifle points off its player's view (CONTEXT.md's Recoil offset),
 /// in radians: a positive pitch up, a positive yaw left, as command::Command's
@@ -51,7 +100,7 @@ struct State {
 
 /// rifle with a full magazine, ready to fire along the view: what a player
 /// starts a Match with.
-[[nodiscard]] State Loaded(const parameters::Rifle& rifle);
+[[nodiscard]] State Loaded(const Rifle& rifle);
 
 /// What one tick did to a rifle.
 struct Result {
@@ -91,8 +140,7 @@ struct Result {
 /// reload under way. On a tick it is not, the next round is a Burst's first
 /// again, and the offset shrinks toward zero by recoil_recovery_per_second. The
 /// offset is the rifle's alone: command's yaw and pitch are never changed.
-[[nodiscard]] Result Step(const parameters::Rifle& rifle, const State& state, const command::Command& command,
-                          float delta_time);
+[[nodiscard]] Result Step(const Rifle& rifle, const State& state, const command::Command& command, float delta_time);
 
 }  // namespace augusta::weapon
 

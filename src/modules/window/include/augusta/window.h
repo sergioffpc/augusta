@@ -8,18 +8,15 @@
 
 #include "augusta/window_events.h"
 
-// GLFW's own window type, which Window::Glfw hands the Renderer without this
-// header including GLFW.
-struct GLFWwindow;
-
 /// \file
-/// augusta::window is the client's single OS window, a GLFW one, and its device
-/// events (ADR-0059). It knows no GPU API and no input: the Renderer creates and
-/// owns it and makes its Vulkan surface from Glfw(), and the client Runtime
-/// drains its events with Poll() on the Main/Render thread and hands them to
-/// input. Poll() only drains, apart from presenting a frame, so the Runtime
-/// decides when each happens. Every call is from the thread that constructed
-/// the Window, GLFW's own rule.
+/// augusta::window is the client's single OS window and its device events
+/// (ADR-0059); the windowing library it opens them with stays inside the
+/// module. Of GPU APIs it knows only Vulkan's handles, to make the surface the
+/// Renderer presents to (window_vulkan.h), and it knows no input: the client
+/// Runtime owns it and lends it to the Renderer, and drains its events with
+/// Poll() on the Main/Render thread and hands them to input. Poll() only drains, apart from presenting a
+/// frame, so the Runtime decides when each happens. Every call is from the
+/// thread that constructed the Window, the windowing library's own rule.
 namespace augusta::window {
 
 /// Default initial client-area size, in pixels (see Config::width/height).
@@ -47,8 +44,8 @@ struct Size {
 /// made from it. The client makes exactly one.
 class Window {
  public:
-  /// Opens the window per config. Throws std::runtime_error if GLFW cannot
-  /// start or cannot make it.
+  /// Opens the window per config. Throws std::runtime_error if the windowing
+  /// library cannot start or cannot make it.
   explicit Window(const Config& config);
   ~Window();
 
@@ -73,19 +70,15 @@ class Window {
   [[nodiscard]] Size GetSize() const;
 
   /// Hides the OS cursor and captures it for continuous mouselook: cursor moves
-  /// keep reporting a position that never stops at the window's edge. GLFW's
-  /// disabled cursor, with raw mouse motion where the system has it; GLFW
-  /// releases the capture while the window is out of focus and takes it again
-  /// when it regains it. Idempotent.
+  /// keep reporting a position that never stops at the window's edge, with raw
+  /// mouse motion where the system has it. The capture is released while the
+  /// window is out of focus and taken again when it regains it. Idempotent.
   void SetCursorLocked(bool locked);
 
-  /// The GLFW window, for what only GLFW's own API does with it: the
-  /// Renderer's Vulkan surface and its debug HUD's ImGui binding. Its key,
-  /// mouse button and cursor callbacks are this Window's; a binding may chain
-  /// to them, never replace them.
-  [[nodiscard]] GLFWwindow& Glfw() const;
-
  private:
+  // The module's private access to what the window is made with
+  // (internals.h), for its tests.
+  friend struct Internals;
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

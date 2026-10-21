@@ -71,6 +71,7 @@ target_link_libraries(
     augusta_physics
     augusta_simulation
     augusta_scenario
+    augusta_policy_loader
     augusta_host_commands
     augusta_host_match
     augusta_host_misbehaviour
@@ -89,5 +90,6 @@ augusta_set_module_scope(augusta_host SERVER_ONLY)
 # Host's own log, metrics and peer gate, so it moves with the Host; splitting it
 # out is a later decision.
 add_library(augusta_host_replay STATIC replay_server.cpp)
+target_include_directories(augusta_host_replay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_version)
 augusta_set_module_scope(augusta_host_replay SERVER_ONLY)

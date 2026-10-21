@@ -212,7 +212,7 @@ ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metri
                                                   faults)) {}
 
 ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port,
-                             scenario::Scenario scenario, scenario::PolicyMaker policy, failure::Faults* faults)
+                             scenario::Scenario scenario, policy::PolicyMaker policy, failure::Faults* faults)
     : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
                                                           faults)) {}
 

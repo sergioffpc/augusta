@@ -121,9 +121,11 @@ targets at its resolution and compares the sum with the GPU's local memory,
 refusing a pack that does not fit with an error stating both. No scenario is
 refused for its size.
 
-**Debug views.** An option in the client config, absent from release builds,
-shows one channel instead of the image: albedo, normals, roughness, indirect
-light, shadows or motion.
+**Debug views.** A key of the client config's `debug` section, absent from
+Shipping builds (ADR-0074) and also switched while the game runs from the
+Rendering Debug panel (ADR-0075), shows one channel instead of the image:
+albedo, normals, roughness, indirect light, shadows, motion, the local lights
+each screen tile traces, or the probes left invalid or inside geometry.
 
 **Tested on lavapipe.** Mesa's lavapipe supports acceleration structures and ray
 queries, so the smoke test (ADR-0059) drives every pass on CI's runners and

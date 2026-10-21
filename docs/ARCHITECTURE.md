@@ -168,7 +168,8 @@ policy (ADR-0060).
       each client's PresentationWorld draws every announced Shot's tracer and
       Map impact with it, a visual only. Deciding a bullet's outcome (hit
       detection, damage) stays server-side (ADR-0024, ADR-0044).
-- Networking Protocol — message definitions + custom binary serialization
+- Networking Protocol — message definitions, serialized as Protocol Buffers
+  (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
   game's state and messages, carried over the networking transport (ADR-0038);
   it replaces the wire module and the Harness's and the Host's own conversions
@@ -184,6 +185,9 @@ policy (ADR-0060).
   SimulationWorld collide against the same map
 - Supervisor — the runtime supervisor both Runtimes and the Harness run their
   threads under (augusta_supervisor, ADR-0005)
+- Hardware — the machine a process runs on, its OS, CPU and memory, which each
+  Runtime logs as it starts (augusta_hardware); the GPU, display and audio
+  device are logged by the modules that open them
 - Application — the application boundary each executable's `main` runs behind
   (augusta_application, ADR-0033). The failure model both report in is a module
   of its own (augusta_failure), so any module names a failure without linking
@@ -204,17 +208,19 @@ policy (ADR-0060).
     - PredictionWorld (ECS) — consumes commands + authoritative server state;
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
-    - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-      smooths for display; emits presentation state each render frame. One
-      module (augusta_presentation) holds it and its phases, including the
-      animation engine behind its Animation phase. Cosmetic bodies and Props'
-      kinematic poses, which are not gameplay, get a client-only dynamics module
-      with the first of them (ADR-0045)
-- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; creates and
-  owns the client's single Window with its GPU device and swapchain, consumes
-  presentation state and draws text lines. It pumps no window events: the client
-  Runtime drains the Window's `Poll()` itself, so the Main/Render thread can
-  drain events at a different cadence than it presents frames
+    - PresentationWorld (ECS) — consumes the prediction state and every
+      Authoritative State update since its last frame; interpolates/smooths for
+      display; emits presentation state each render frame. One module
+      (augusta_presentation) holds it and its phases, including the animation
+      engine behind its Animation phase. Cosmetic bodies and Props' kinematic
+      poses, which are not gameplay, get a client-only dynamics module with the
+      first of them (ADR-0045)
+- Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; draws into the
+  client's single Window, which the client Runtime owns and lends it, with the
+  GPU device and swapchain it owns, consumes presentation state and draws text
+  lines. It pumps no window events: the client Runtime drains the Window's
+  `Poll()` itself, so the Main/Render thread can drain events at a different
+  cadence than it presents frames
 - Audio — Steam Audio; consumes presentation state
 - HUD — what the DebugHud shows, system metrics only, as text lines the client
   Runtime hands the Renderer (augusta_hud, ADR-0059)
@@ -397,7 +403,7 @@ after the tick.
 1. Client predicts local fire feedback (muzzle flash, sound, recoil) immediately
 2. Client sends the fire command to server via GameNetworkingSockets, with the
    Authoritative State tick it was showing and the interpolation fraction
-3. Server fixes the Shooter's delay (capped at 250 ms) and announces the Shot
+3. Server fixes the Shooter's delay (capped at 300 ms) and announces the Shot
    (shooter, server tick, origin, direction) reliably to every client
 4. Server simulates bullet trajectory (custom ballistics: gravity, travel time),
    testing each tick's segment against the Map and against player hitboxes as
@@ -592,6 +598,8 @@ How each piece reaches the node or the player:
   no `io`, `os`, `package`, `require`, or filesystem/ network access — an
   instruction limit per hook call and a memory limit per Lua state, upholding
   "no I/O inside ECS worlds" structurally, not just by convention (ADR-0022).
+  Scripts cannot install finalizers (`__gc`): Lua runs them with debug hooks
+  off, so neither limit would bound one.
 - **Asset packaging & integrity:** runtime assets ship as a single signed pack
   file per target (client/server), never as loose files. Content is hashed with
   BLAKE3 and signed with Ed25519; both the client and server take the pack path
@@ -660,6 +668,12 @@ not affect numbering.
   fill of the Map's free space, drawn as a volume alike on every client
 - [ADR-0073](./adr/0073-effects.md) — Effects: one catalogue of particles,
   decals and brief lights, with fixed bounds and no setting
+- [ADR-0074](./adr/0074-debug-tools-compiled-out-of-shipping-builds.md) — Debug
+  tools: one CMake option, compiled out of Shipping builds, started from the
+  config's `debug` section
+- [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
+  overlays and panels: values each area builds and the Renderer draws, ImGui
+  inside the Renderer
 
 ### Tooling & Build
 

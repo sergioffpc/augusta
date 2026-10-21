@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <expected>
 #include <string_view>
-#include <vector>
 
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 /// \file
 /// augusta::parameters is the type of the simulation's data-driven
@@ -15,60 +15,6 @@
 /// both sides carry the same struct and judge it with the same rules; where the
 /// values come from is the server's business and not this header's.
 namespace augusta::parameters {
-
-/// How far one round of a burst turns the aim, in radians: a positive pitch up,
-/// a positive yaw left (as command::Command's view turns).
-struct RecoilKick {
-  float pitch = 0.0F;
-  float yaw = 0.0F;
-
-  bool operator==(const RecoilKick&) const = default;
-};
-
-/// The rifle every player carries (US-06 to US-09; the only weapon).
-struct Rifle {
-  /// How many rounds per minute holding fire shoots. At most one round fires a
-  /// tick, so a rate above the tick rate fires at the tick rate.
-  float rounds_per_minute = 1.0F;
-  /// How fast a round leaves the muzzle, in meters per second.
-  float muzzle_velocity = 1.0F;
-  /// How long a reload takes, in seconds.
-  float reload_seconds = 0.0F;
-  /// How fast, in radians per second, the recoil a burst built up returns to
-  /// zero while the rifle is not firing.
-  float recoil_recovery_per_second = 0.0F;
-  /// What aiming down sights scales every recoil kick by, above 0 and at most 1.
-  float ads_recoil_scale = 1.0F;
-  /// The vertical field of view aiming down sights zooms to, in radians.
-  float ads_field_of_view = 1.0F;
-  /// The kick of each round of a burst, in order, at most
-  /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
-  std::vector<RecoilKick> recoil_pattern;
-  /// How many rounds a full magazine holds, 1 or more.
-  std::uint8_t magazine_capacity = 1;
-
-  bool operator==(const Rifle&) const = default;
-};
-
-/// The damage a round does, by the body part it hits (US-12).
-struct Damage {
-  float head = 0.0F;
-  float torso = 0.0F;
-  float limb = 0.0F;
-
-  bool operator==(const Damage&) const = default;
-};
-
-/// The rifle's ammunition: how its rounds fly (US-10) and what they do (US-12).
-struct Ammo {
-  /// Downward acceleration of a round in flight, in meters per second squared.
-  float gravity = 0.0F;
-  /// How far a round flies before it is a miss, in meters.
-  float max_range = 1.0F;
-  Damage damage{};
-
-  bool operator==(const Ammo&) const = default;
-};
 
 /// Every tunable value client and server must agree on. Plain and immutable in
 /// use: mechanism code reads it and never calls into Lua. The tick rate is not
@@ -84,9 +30,9 @@ struct Parameters {
   /// The stamina rules every player body follows (US-05).
   physics::StaminaConfig stamina{};
   /// The rifle every player carries.
-  Rifle rifle{};
+  weapon::Rifle rifle{};
   /// The rifle's ammunition.
-  Ammo ammo{};
+  weapon::Ammo ammo{};
   /// The health every player starts a Match with, above 0; it never regenerates.
   float starting_health = 1.0F;
   /// How many players a match needs to start (ADR-0043), 1 to limits::kMaxPlayers.

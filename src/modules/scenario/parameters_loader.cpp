@@ -16,9 +16,12 @@
 
 #include <sol/sol.hpp>
 
+#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/lua_sandbox.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 namespace augusta::scenario {
 namespace {
@@ -194,7 +197,7 @@ bool IsList(const sol::table& table) {
 
 // The recoil pattern at rifle.recoil_pattern: a list of {pitch, yaw} kicks. How
 // many it may hold is for parameters::Validate.
-std::expected<std::vector<parameters::RecoilKick>, ParametersLoadError> ReadRecoilPattern(const sol::table& rifle) {
+std::expected<std::vector<weapon::RecoilKick>, ParametersLoadError> ReadRecoilPattern(const sol::table& rifle) {
   const std::string path = KeyPath(kRifleKey, kRecoilPatternKey);
   const sol::object value = rifle.raw_get<sol::object>(kRecoilPatternKey);
   if (value.get_type() == sol::type::lua_nil) {
@@ -204,11 +207,11 @@ std::expected<std::vector<parameters::RecoilKick>, ParametersLoadError> ReadReco
     return Fail(ParametersLoadErrorCode::kWrongType, path);
   }
   const sol::table list = value.as<sol::table>();
-  constexpr auto kFields = std::to_array<FloatKey<parameters::RecoilKick>>({
-      {.key = "pitch", .field = &parameters::RecoilKick::pitch},
-      {.key = "yaw", .field = &parameters::RecoilKick::yaw},
+  constexpr auto kFields = std::to_array<FloatKey<weapon::RecoilKick>>({
+      {.key = "pitch", .field = &weapon::RecoilKick::pitch},
+      {.key = "yaw", .field = &weapon::RecoilKick::yaw},
   });
-  std::vector<parameters::RecoilKick> pattern;
+  std::vector<weapon::RecoilKick> pattern;
   for (std::size_t i = 1; i <= list.size(); ++i) {
     const std::string kick_path = path + "[" + std::to_string(i) + "]";
     const sol::object entry = list.raw_get<sol::object>(i);
@@ -219,7 +222,7 @@ std::expected<std::vector<parameters::RecoilKick>, ParametersLoadError> ReadReco
     if (const auto unknown = FirstUnknownKey(kick_table, kick_path, kRecoilKickKeys)) {
       return std::unexpected(*unknown);
     }
-    parameters::RecoilKick kick;
+    weapon::RecoilKick kick;
     if (const auto read = ReadFloats(kick_table, kick_path, kFields, kick); !read) {
       return std::unexpected(read.error());
     }
@@ -228,22 +231,22 @@ std::expected<std::vector<parameters::RecoilKick>, ParametersLoadError> ReadReco
   return pattern;
 }
 
-std::expected<parameters::Rifle, ParametersLoadError> ReadRifle(const sol::table& root) {
+std::expected<weapon::Rifle, ParametersLoadError> ReadRifle(const sol::table& root) {
   const auto table = ReadTable(root, {}, kRifleKey, kRifleKeys);
   if (!table) {
     return std::unexpected(table.error());
   }
-  parameters::Rifle rifle;
+  weapon::Rifle rifle;
   const auto capacity = ReadCount(*table, kRifleKey, "magazine_capacity");
   if (!capacity) {
     return std::unexpected(capacity.error());
   }
   rifle.magazine_capacity = *capacity;
-  constexpr auto kFiring = std::to_array<FloatKey<parameters::Rifle>>({
-      {.key = "rounds_per_minute", .field = &parameters::Rifle::rounds_per_minute},
-      {.key = "muzzle_velocity", .field = &parameters::Rifle::muzzle_velocity},
-      {.key = "reload_seconds", .field = &parameters::Rifle::reload_seconds},
-      {.key = "recoil_recovery_per_second", .field = &parameters::Rifle::recoil_recovery_per_second},
+  constexpr auto kFiring = std::to_array<FloatKey<weapon::Rifle>>({
+      {.key = "rounds_per_minute", .field = &weapon::Rifle::rounds_per_minute},
+      {.key = "muzzle_velocity", .field = &weapon::Rifle::muzzle_velocity},
+      {.key = "reload_seconds", .field = &weapon::Rifle::reload_seconds},
+      {.key = "recoil_recovery_per_second", .field = &weapon::Rifle::recoil_recovery_per_second},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kFiring, rifle); !read) {
     return std::unexpected(read.error());
@@ -253,9 +256,9 @@ std::expected<parameters::Rifle, ParametersLoadError> ReadRifle(const sol::table
     return std::unexpected(pattern.error());
   }
   rifle.recoil_pattern = *std::move(pattern);
-  constexpr auto kAiming = std::to_array<FloatKey<parameters::Rifle>>({
-      {.key = "ads_recoil_scale", .field = &parameters::Rifle::ads_recoil_scale},
-      {.key = "ads_field_of_view", .field = &parameters::Rifle::ads_field_of_view},
+  constexpr auto kAiming = std::to_array<FloatKey<weapon::Rifle>>({
+      {.key = "ads_recoil_scale", .field = &weapon::Rifle::ads_recoil_scale},
+      {.key = "ads_field_of_view", .field = &weapon::Rifle::ads_field_of_view},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kAiming, rifle); !read) {
     return std::unexpected(read.error());
@@ -263,17 +266,17 @@ std::expected<parameters::Rifle, ParametersLoadError> ReadRifle(const sol::table
   return rifle;
 }
 
-std::expected<parameters::Ammo, ParametersLoadError> ReadAmmo(const sol::table& root) {
+std::expected<weapon::Ammo, ParametersLoadError> ReadAmmo(const sol::table& root) {
   const auto table = ReadTable(root, {}, kAmmoKey, kAmmoKeys);
   if (!table) {
     return std::unexpected(table.error());
   }
-  parameters::Ammo ammo;
-  constexpr auto kFlight = std::to_array<FloatKey<parameters::Ammo>>({
-      {.key = "gravity", .field = &parameters::Ammo::gravity},
-      {.key = "max_range", .field = &parameters::Ammo::max_range},
+  weapon::Ammo ammo;
+  constexpr auto kFlight = std::to_array<FloatKey<ballistics::BulletConfig>>({
+      {.key = "gravity", .field = &ballistics::BulletConfig::gravity},
+      {.key = "max_range", .field = &ballistics::BulletConfig::max_range},
   });
-  if (const auto read = ReadFloats(*table, kAmmoKey, kFlight, ammo); !read) {
+  if (const auto read = ReadFloats(*table, kAmmoKey, kFlight, ammo.flight); !read) {
     return std::unexpected(read.error());
   }
   const std::string damage_path = KeyPath(kAmmoKey, kDamageKey);
@@ -281,10 +284,10 @@ std::expected<parameters::Ammo, ParametersLoadError> ReadAmmo(const sol::table& 
   if (!damage) {
     return std::unexpected(damage.error());
   }
-  constexpr auto kDamage = std::to_array<FloatKey<parameters::Damage>>({
-      {.key = "head", .field = &parameters::Damage::head},
-      {.key = "torso", .field = &parameters::Damage::torso},
-      {.key = "limb", .field = &parameters::Damage::limb},
+  constexpr auto kDamage = std::to_array<FloatKey<body_part::Damage>>({
+      {.key = "head", .field = &body_part::Damage::head},
+      {.key = "torso", .field = &body_part::Damage::torso},
+      {.key = "limb", .field = &body_part::Damage::limb},
   });
   if (const auto read = ReadFloats(*damage, damage_path, kDamage, ammo.damage); !read) {
     return std::unexpected(read.error());

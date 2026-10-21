@@ -1,4 +1,4 @@
-#include "gpu_crash_dumps.h"
+#include "vulkan_gpu_crash_dumps.h"
 
 #if AUGUSTA_HAS_AFTERMATH
 

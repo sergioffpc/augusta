@@ -1,7 +1,7 @@
 #!/bin/bash
-# Auto-formats staged C++, YAML, Lua, TOML, Python, shell and CMake
-# files. CI's format checks remain the actual gate if a local formatter is
-# missing or the hook is bypassed with --no-verify.
+# Auto-formats the staged files with the Makefile's format-files, the
+# formatters `make format` runs, and stages what they changed. CI's format
+# checks remain the actual gate if the hook is bypassed with --no-verify.
 
 # macOS has none of the formatters: they run in the dev container.
 if [[ "$(uname -s)" = Darwin ]]; then
@@ -9,99 +9,24 @@ if [[ "$(uname -s)" = Darwin ]]; then
 fi
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[[ -n "${staged}" ]] || exit 0
 
-cxx_files=$(echo "${staged}" | grep -E '^(src|tests)/.*\.(cpp|h)$' || true)
-if [[ -n "${cxx_files}" ]]; then
-  if command -v clang-format >/dev/null 2>&1; then
-    echo "${cxx_files}" | while IFS= read -r f; do
-      clang-format -i "${f}" || exit $?
-      git add "${f}" || exit $?
-    done
-  else
-    echo "pre-commit: clang-format not found on PATH - skipping C++" \
-      "formatting (CI will still catch this)." >&2
-  fi
-fi
+# The staged files' contents as hashes, one a line, to tell what the
+# formatters changed.
+hashes() {
+  echo "${staged}" | git hash-object --stdin-paths
+}
 
-yaml_files=$(echo "${staged}" \
-  | grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' \
-  | grep -vE '^charts/augustad/templates/' \
-  | grep -vE '^clusters/onprem/flux-system/gotk-components\.yaml$' || true)
-if [[ -n "${yaml_files}" ]]; then
-  if command -v yamlfmt >/dev/null 2>&1; then
-    echo "${yaml_files}" | while IFS= read -r f; do
-      yamlfmt "${f}" || exit $?
-      git add "${f}" || exit $?
-    done
-  else
-    echo "pre-commit: yamlfmt not found on PATH - skipping YAML formatting" \
-      "(CI will still catch this)." >&2
-  fi
-fi
+before=$(hashes)
+# One line, one space between files; tracked paths have no spaces.
+make -s --no-print-directory format-files \
+  FILES="$(echo "${staged}" | tr '\n' ' ')" || exit $?
 
-lua_files=$(echo "${staged}" | grep -E '\.lua$' || true)
-if [[ -n "${lua_files}" ]]; then
-  if command -v stylua >/dev/null 2>&1; then
-    echo "${lua_files}" | while IFS= read -r f; do
-      stylua "${f}" || exit $?
-      git add "${f}" || exit $?
-    done
-  else
-    echo "pre-commit: stylua not found on PATH - skipping Lua formatting" \
-      "(CI will still catch this)." >&2
-  fi
-fi
-
-toml_files=$(echo "${staged}" | grep -E '\.toml$' || true)
-if [[ -n "${toml_files}" ]]; then
-  if command -v taplo >/dev/null 2>&1; then
-    echo "${toml_files}" | while IFS= read -r f; do
-      taplo fmt "${f}" 2>/dev/null || exit $?
-      git add "${f}" || exit $?
-    done
-  else
-    echo "pre-commit: taplo not found on PATH - skipping TOML formatting" \
-      "(CI will still catch this)." >&2
-  fi
-fi
-
-# Python, shell, CMake and Markdown, by the formatters uv runs at the versions
-# CI pins.
-python_files=$(echo "${staged}" | grep -E '\.py$' || true)
-shell_files=$(echo "${staged}" | grep -E '(\.sh$|^\.githooks/)' || true)
-cmake_files=$(echo "${staged}" \
-  | grep -E '(^|/)CMakeLists\.txt$|\.cmake$' | grep -v '^third_party/' || true)
-markdown_files=$(echo "${staged}" \
-  | grep -E '\.md$' | grep -vE '^(third_party/|CHANGELOG\.md$)' || true)
-if [[ -n "${python_files}${shell_files}${cmake_files}${markdown_files}" ]]; then
-  if command -v uv >/dev/null 2>&1; then
-    # One argument per file; tracked paths have no spaces.
-    # shellcheck disable=SC2086
-    {
-      [[ -z "${python_files}" ]] \
-        || uv tool run ruff@0.16.10 format --quiet ${python_files}
-    } || exit $?
-    # shellcheck disable=SC2086
-    {
-      [[ -z "${shell_files}" ]] \
-        || uv tool run --from shfmt-py==4.2.0 shfmt -w ${shell_files}
-    } || exit $?
-    # shellcheck disable=SC2086
-    {
-      [[ -z "${cmake_files}" ]] \
-        || uv tool run gersemi@0.29.2 --quiet -i ${cmake_files}
-    } || exit $?
-    # shellcheck disable=SC2086
-    {
-      [[ -z "${markdown_files}" ]] \
-        || uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 \
-          --log-level warn --write ${markdown_files}
-    } || exit $?
-    # shellcheck disable=SC2086
-    git add ${python_files} ${shell_files} ${cmake_files} ${markdown_files} \
-      || exit $?
-  else
-    echo "pre-commit: uv not found on PATH - skipping Python, shell, CMake" \
-      "and Markdown formatting (CI will still catch this)." >&2
-  fi
+# Stages only what a formatter changed, so a file staged in part keeps its
+# unstaged changes out of the commit unless a formatter touched it.
+changed=$(paste -d ' ' <(echo "${staged}") <(echo "${before}") <(hashes) \
+  | awk '$2 != $3 { print $1 }')
+if [[ -n "${changed}" ]]; then
+  # shellcheck disable=SC2086 # one argument per file
+  git add -- ${changed} || exit $?
 fi

@@ -22,9 +22,9 @@
 #include "augusta/window.h"
 #include "debug_hud.h"
 #include "frame_regions.h"
-#include "swapchain.h"
 #include "vertices.h"
 #include "vulkan_device.h"
+#include "vulkan_swapchain.h"
 
 // The shaders' SPIR-V, compiled at build time (CMakeLists.txt).
 #include "kEffectsPs.h"
@@ -32,9 +32,9 @@
 #include "kScenePs.h"
 #include "kSceneVs.h"
 
-// The Renderer on NVRHI's Vulkan backend, in its window (ADR-0059). It draws
-// into an offscreen target, then copies that to the swapchain's image and
-// presents it (swapchain.h). It draws the scene, the remote players, the
+// The Renderer on NVRHI's Vulkan backend, in the window it is lent (ADR-0059).
+// It draws into an offscreen target, then copies that to the swapchain's image
+// and presents it (vulkan_swapchain.h). It draws the scene, the remote players, the
 // fight's effects and the overlay, and the debug HUD's lines over them.
 namespace augusta::renderer {
 
@@ -47,7 +47,7 @@ nvrhi::Color ClearColor() { return {kClearColorChannel, kClearColorChannel, kCle
 
 // How many frames the GPU may be working on at once, and so how many regions of
 // a per-frame upload buffer (FrameRegion) there are.
-constexpr std::uint32_t kFramesInFlight = Swapchain::kFramesInFlight;
+constexpr std::uint32_t kFramesInFlight = VulkanSwapchain::kFramesInFlight;
 
 constexpr nvrhi::Format kDepthFormat = nvrhi::Format::D32;
 
@@ -202,17 +202,17 @@ void SwapRedAndBlue(CapturedFrame& frame) {
 
 struct Renderer::Impl {
   // Declared in the order they are made, so they are destroyed in reverse.
-  window::Window window;
+  // window, lent by the Renderer's owner, outlives them all.
+  const window::Window& window;
   VulkanDevice vulkan;
   nvrhi::IDevice* device;
-  Swapchain swapchain;
+  VulkanSwapchain swapchain;
   // Drawn into at the swapchain's size, or at the window's while it has none.
   nvrhi::TextureHandle target;
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
-  // Made once the device is, and after the window's own GLFW callbacks: its
-  // ImGui binding chains to them.
+  // Made once the device is.
   std::unique_ptr<DebugHud> debug_hud;
   std::vector<std::string> text_lines;
 
@@ -248,15 +248,15 @@ struct Renderer::Impl {
   std::array<nvrhi::EventQueryHandle, kFramesInFlight> frame_done;
   std::uint64_t frame_index = 0;
 
-  explicit Impl(const Config& config)
-      : window(config.window),
-        vulkan(window.Glfw(), config.adapter, config.validation),
+  Impl(const window::Window& window, const Config& config)
+      : window(window),
+        vulkan(window, config.adapter, config.validation),
         device(&vulkan.Nvrhi()),
         swapchain(vulkan, window.GetSize()) {
     CreateFramebuffer(swapchain.ImageSize().value_or(window.GetSize()));
     commands = device->createCommandList();
     CreatePipelines();
-    debug_hud = std::make_unique<DebugHud>(window.Glfw(), *device);
+    debug_hud = std::make_unique<DebugHud>(*device);
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
@@ -509,11 +509,10 @@ struct Renderer::Impl {
   }
 };
 
-Renderer::Renderer(const Config& config) : impl_(std::make_unique<Impl>(config)) {}
+Renderer::Renderer(const window::Window& window, const Config& config)
+    : impl_(std::make_unique<Impl>(window, config)) {}
 
 Renderer::~Renderer() = default;
-
-window::Window& Renderer::GetWindow() { return impl_->window; }
 
 void Renderer::RenderFrame() { impl_->RenderFrame(); }
 

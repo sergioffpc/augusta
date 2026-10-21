@@ -27,7 +27,13 @@ keeps game policy separate from mechanism code.
   `debug` or `coroutine`, no `dofile`, `loadfile` or `load`, no `print` or
   `warn` (which writes to stderr, outside ADR-0029's log), no `math.random`, and
   no `pcall`/`xpcall`, so a script cannot catch the instruction limit's stop or
-  a refused allocation.
+  a refused allocation. No script installs a finalizer: `setmetatable` refuses,
+  with an error, a metatable that holds `__gc` as it is set. Lua runs a
+  finalizer with debug hooks off, at a GC step of its own choosing (in a hook,
+  in the server's work around one, or as the state closes), so neither limit
+  below would bound it and a finalizer that loops would hang the Simulation
+  thread. Lua marks an object for finalization only as its metatable is set, so
+  a `__gc` added afterwards finalizes nothing.
 - **Hooks** are global functions a script defines, called by name from
   SimulationWorld. A hook a script does not define is a no-op, and the mechanism
   decides that concern alone. The catalogue is fixed in C++ and grows only with
@@ -89,7 +95,7 @@ keeps game policy separate from mechanism code.
 - **Two modules.** The sandboxed Lua embedding is the scripting module, which
   knows nothing of Game policy. The hooks, the views built for them and the
   typed actions read from their answers are the policy module, which
-  SimulationWorld and the scenario loader call.
+  SimulationWorld calls and whose loader reads the rules from the server pack.
 - **Deterministic and server-only.** The same rules called with the same views
   return the same decisions; neither client world runs policy (ADR-0024).
 

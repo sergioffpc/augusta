@@ -4,8 +4,9 @@ Scope: the engine described in [VISION.md](./VISION.md) — multiplayer-only,
 server-authoritative, physics-based ballistics, 2–8 players per Match in two
 Teams, played with one rifle on one test map.
 
-Each requirement names the release that first met it (v1.0.0, v2.0.0), or the
-one it is planned for ("later" when that release has no version yet).
+Each requirement names the release that first met it by its version (v1, v2), or
+the one it is planned for by its theme (Teams): a planned release takes its
+version only when it is cut (ENGINEERING.md, Milestones).
 
 ---
 
@@ -433,7 +434,7 @@ test (ADR-0013, ADR-0052).
 
 ### US-24: Join a Server with Room
 
-Version: later (planned, no version yet)
+Version: Scalable (planned)
 
 As a player, I want my client to join whichever server of the scenario has room,
 so that I can play when one server's Lobby is full or its Match is under way.
@@ -452,7 +453,7 @@ Agents find a server the same way. Any other refusal - version, pack, Character
 
 ### US-25: Play in VR
 
-Version: v11 (planned)
+Version: VR (planned)
 
 As a player, I want to play a Match on a PC VR headset, with my head, hands and
 body tracked, so that I hold and aim my rifle and take cover with my own body,
@@ -470,7 +471,7 @@ My camera images never leave my PC, and the Roster shows each player's Play mode
 
 ### US-26: Play on a Team
 
-Version: v9 (planned)
+Version: Teams (planned)
 
 As a player, I want to fight on one of two Teams, each in its own Uniform, so
 that I fight beside teammates I can tell from the enemy.
@@ -487,7 +488,7 @@ The free-for-all is gone: every Match is a team match (ADR-0068).
 
 ### US-27: Talk to my Team
 
-Version: v9 (planned)
+Version: Teams (planned)
 
 As a player, I want to talk to my Team by radio and to anyone near me aloud, so
 that we coordinate, at the risk of being overheard.
@@ -732,7 +733,8 @@ Response:    The input is refused with a typed error, nothing is allocated from
              a length that was not checked, and the process keeps running
 Measure:     No crash, hang (5 s per input) or sanitizer report across every
              fuzz run (about 60 s per target per pull request, 30 min nightly);
-             every payload decoding accepts re-encodes to the same bytes
+             every payload decoding accepts encodes again and decodes to the
+             same value
 ```
 
 The fuzz targets' seeds and regressions replay under ctest on every preset
@@ -740,7 +742,7 @@ The fuzz targets' seeds and regressions replay under ctest on every preset
 
 ### NFR-13: Horizontal Scalability
 
-Version: later (planned, no version yet)
+Version: Scalable (planned)
 
 ```text
 Source:      Players of one scenario, more than one Match's Player count of them
@@ -764,7 +766,7 @@ Matches run at once, one server each.
 
 ### NFR-14: Client-side Observability Under Load
 
-Version: later (planned, no version yet)
+Version: Scalable (planned)
 
 ```text
 Source:      Developer running a load test
@@ -784,7 +786,7 @@ which is what NFR-13's "degrades none of them" is measured by.
 
 ### NFR-15: Cluster Hardening (Security)
 
-Version: v3 (planned)
+Version: v3
 
 ```text
 Source:      A malicious game client, a compromised LAN device, a revision or
@@ -810,14 +812,14 @@ Measure:     kube-bench reports no CIS k3s failure outside the recorded
              game ports and Grafana
 ```
 
-Planned for v3, and not met by v1 or v2: they run k3s on its defaults, with no
-admission policy, signature check or NetworkPolicy (ADR-0057, ADR-0056). The
-Node stays LAN-only; exposing a game port range to the internet is outside this
-requirement, but it is one firewall rule once this one is met.
+Met by v3; v1 and v2 ran k3s on its defaults, with no admission policy,
+signature check or NetworkPolicy (ADR-0057, ADR-0056). The Node stays LAN-only;
+exposing a game port range to the internet is outside this requirement, but it
+is one firewall rule once this one is met.
 
 ### NFR-16: VR Frame Rate
 
-Version: v11 (planned)
+Version: VR (planned)
 
 ```text
 Source:      A VR player
@@ -836,7 +838,7 @@ the runtime makes of it (ADR-0063).
 
 ### NFR-17: Desktop Frame Rate
 
-Version: v6 (planned)
+Version: The Drawn Body (planned)
 
 ```text
 Source:      A Desktop player

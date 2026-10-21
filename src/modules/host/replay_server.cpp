@@ -41,6 +41,7 @@
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
 #include "augusta/version.h"
+#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -65,7 +66,7 @@ std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   std::error_code error;
   if (!std::filesystem::is_directory(directory, error)) {
     throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                                                      .context = {{.key = "directory", .value = directory.string()}},
+                                                      .context = {{.key = "directory", .value = Utf8(directory)}},
                                                       .detail = "the replay captures directory is not a directory"});
   }
   return directory;
@@ -116,7 +117,7 @@ struct ReplayServer::Impl {
   // What every Replay's World is built from, unchanged for the server's life.
   const scenario::Scenario scenario;
   const std::unordered_map<std::string, simulation::Character> characters;
-  const scenario::PolicyMaker policy;
+  const policy::PolicyMaker policy;
   // Network I/O thread only, without the lock: listing reads the disk.
   ReplayCatalog catalog;
 
@@ -133,7 +134,7 @@ struct ReplayServer::Impl {
   // Simulation thread only.
   Heartbeat heartbeat{std::chrono::steady_clock::now()};
 
-  Impl(const ReplayServerConfig& config, scenario::Scenario scenario_in, scenario::PolicyMaker policy_in)
+  Impl(const ReplayServerConfig& config, scenario::Scenario scenario_in, policy::PolicyMaker policy_in)
       : metrics(config.tick_rate_hz),
         tick_rate_hz(config.tick_rate_hz),
         parameters(config.parameters),
@@ -146,7 +147,7 @@ struct ReplayServer::Impl {
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
         network(ListenOnceTheMapBuilds(config.listen), config.faults) {
-    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", config.captures.string(),
+    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
              max_viewers);
   }
 
@@ -372,7 +373,7 @@ struct ReplayServer::Impl {
   }
 };
 
-ReplayServer::ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, scenario::PolicyMaker policy)
+ReplayServer::ReplayServer(const ReplayServerConfig& config, scenario::Scenario scenario, policy::PolicyMaker policy)
     : impl_(std::make_unique<Impl>(config, std::move(scenario), std::move(policy))) {}
 
 ReplayServer::~ReplayServer() = default;

@@ -1,7 +1,6 @@
 #include "augusta/tick.h"
 
 #include <chrono>
-#include <cmath>
 #include <concepts>
 #include <cstdint>
 
@@ -15,7 +14,6 @@ namespace {
 using augusta::tick::Clock;
 using augusta::tick::FractionElapsed;
 using augusta::tick::kLateTolerance;
-using augusta::tick::kMaxPacing;
 using augusta::tick::kMaxTicksBehind;
 using augusta::tick::Measure;
 using augusta::tick::NextDeadline;
@@ -144,13 +142,38 @@ TEST(TickPacingTest, OneAndTwoCommandsHeldAreEquallyFarOnEitherSideOfNominal) {
   EXPECT_LE(std::chrono::abs(longer - shorter), std::chrono::nanoseconds{1});
 }
 
-// Requirements: NFR-01
-TEST(TickPacingTest, ATickIsNeverPacedFurtherThanItsBound) {
+// How far a Tick is paced off nominal, as a fraction of it: 0.05 is 5% longer.
+double Pacing(int queued) {
   const std::chrono::duration<double> nominal = kTick;
-  for (int queued = 0; queued <= 255; ++queued) {
-    const std::chrono::duration<double> paced = PacedTickDuration(kTick, static_cast<std::uint8_t>(queued));
+  const std::chrono::duration<double> paced = PacedTickDuration(kTick, static_cast<std::uint8_t>(queued));
+  return (paced / nominal) - 1.0;
+}
 
-    EXPECT_LE(std::abs(paced / nominal - 1.0), kMaxPacing + 1e-6) << queued;
+// Requirements: NFR-01
+TEST(TickPacingTest, ThreeOrFewerCommandsHeldLengthenATickByAtMostFivePercent) {
+  EXPECT_NEAR(Pacing(3), 0.05, 1e-6);
+  for (int queued = 0; queued <= 3; ++queued) {
+    EXPECT_LE(Pacing(queued), 0.05 + 1e-6) << queued;
+  }
+}
+
+// A backlog left by a gap in a client's commands drains by up to 25% a tick
+// rather than 5%, so 7 held drain in about 0.75 s instead of 1.8 s.
+// Requirements: NFR-01
+TEST(TickPacingTest, FourOrMoreCommandsHeldLengthenATickByUpToTwentyFivePercent) {
+  EXPECT_NEAR(Pacing(4), 0.10, 1e-6);
+  EXPECT_NEAR(Pacing(7), 0.22, 1e-6);
+  EXPECT_NEAR(Pacing(8), 0.25, 1e-6);
+  for (int queued = 4; queued <= 255; ++queued) {
+    EXPECT_LE(Pacing(queued), 0.25 + 1e-6) << queued;
+  }
+}
+
+// Requirements: NFR-01
+TEST(TickPacingTest, ATickIsNeverShortenedByMoreThanFivePercent) {
+  EXPECT_NEAR(Pacing(0), -0.05, 1e-6);
+  for (int queued = 0; queued <= 255; ++queued) {
+    EXPECT_GE(Pacing(queued), -0.05 - 1e-6) << queued;
   }
 }
 

@@ -6,20 +6,19 @@ target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOUR
 target_link_libraries(augusta_renderer_vertices PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vertices CLIENT_ONLY)
 
-# Which Vulkan device the Renderer draws with (device_choice.h), decided apart
+# Which Vulkan device the Renderer draws with (vulkan_device_choice.h), decided apart
 # from the GPU API, and private to the module the same way.
-add_library(augusta_renderer_device_choice STATIC device_choice.cpp)
-target_include_directories(augusta_renderer_device_choice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer_device_choice PUBLIC augusta_math augusta_window_events)
-augusta_set_module_scope(augusta_renderer_device_choice CLIENT_ONLY)
+add_library(augusta_renderer_vulkan_device_choice STATIC vulkan_device_choice.cpp)
+target_include_directories(augusta_renderer_vulkan_device_choice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_math augusta_window_events)
+augusta_set_module_scope(augusta_renderer_vulkan_device_choice CLIENT_ONLY)
 
 if(AUGUSTA_CLIENT)
-  # The Renderer on NVRHI's Vulkan backend and GLFW (ADR-0059), which augustac
-  # links and tests/client_renderer_smoke_test.cpp drives. NVRHI, GLFW, ImGui
-  # and the shader compiler below are the manifest's client feature, which
-  # AUGUSTA_CLIENT installs.
+  # The Renderer on NVRHI's Vulkan backend (ADR-0059), which augustac links and
+  # tests/client_renderer_smoke_test.cpp drives. NVRHI, ImGui and the shader
+  # compiler below are the manifest's client feature, which AUGUSTA_CLIENT
+  # installs.
   find_package(nvrhi CONFIG REQUIRED)
-  find_package(glfw3 CONFIG REQUIRED)
   find_package(imgui CONFIG REQUIRED)
   find_package(VulkanHeaders CONFIG REQUIRED)
 
@@ -73,8 +72,8 @@ if(AUGUSTA_CLIENT)
     STATIC
     renderer.cpp
     vulkan_device.cpp
-    swapchain.cpp
-    gpu_crash_dumps.cpp
+    vulkan_swapchain.cpp
+    vulkan_gpu_crash_dumps.cpp
     debug_hud.cpp
     imgui_renderer.cpp
     ${shader_headers}
@@ -82,29 +81,27 @@ if(AUGUSTA_CLIENT)
   )
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${shader_dir})
   # No Vulkan loader is linked: Vulkan is reached through the system's, which
-  # GLFW finds at runtime, so the client ships none (ADR-0059).
+  # the window finds at runtime, so the client ships none (ADR-0059).
   target_link_libraries(
     augusta_renderer
     PUBLIC augusta_math augusta_window
     PRIVATE
       augusta_logging
-      augusta_renderer_device_choice
+      augusta_renderer_vulkan_device_choice
       augusta_renderer_vertices
       nvrhi
       nvrhi_vk
       Vulkan::Headers
-      glfw
       imgui::imgui
   )
   # Vulkan-Hpp calls Vulkan through a dispatcher filled in at runtime, as NVRHI
-  # does (vulkan_device.cpp); GLFW declares its Vulkan functions once
-  # vulkan.h is included first. NOMINMAX: on Windows, NVRHI's Vulkan target
-  # has vulkan.h include <windows.h>, whose min/max macros would break
+  # does (vulkan_device.cpp). NOMINMAX: on Windows, NVRHI's Vulkan target has
+  # vulkan.h include <windows.h>, whose min/max macros would break
   # std::numeric_limits<>::max().
-  target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 GLFW_INCLUDE_VULKAN NOMINMAX)
+  target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
-  # GPU crash dumps (gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
+  # GPU crash dumps (vulkan_gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
   # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built
   # without its own Aftermath support, so the Renderer attaches Aftermath to
   # the Vulkan device itself. An executable linking this target stages the

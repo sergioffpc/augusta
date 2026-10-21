@@ -13,8 +13,9 @@
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
-/// every client module - Input, Audio, the harness::Session, PresentationWorld
-/// and Renderer, with the Renderer's window - and runs the Main/Render loop:
+/// every client module - Input, Audio, the harness::Session, PresentationWorld,
+/// the window and the Renderer that draws into it - and runs the Main/Render
+/// loop:
 /// it hands the window's events to Input and the HUD's lines (augusta::hud) to
 /// the Renderer (ADR-0059). augustac's entry point runs it behind the
 /// application boundary, and the end-to-end tests link it in augustac's place.

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
@@ -30,18 +30,6 @@ std::string_view EndReasonName(EndReason reason) {
       return "no players left";
     case EndReason::kEndedByTheHost:
       return "ended by the host";
-  }
-  std::unreachable();
-}
-
-std::string_view BodyPartName(ballistics::BodyPart part) {
-  switch (part) {
-    case ballistics::BodyPart::kHead:
-      return "head";
-    case ballistics::BodyPart::kTorso:
-      return "torso";
-    case ballistics::BodyPart::kLimb:
-      return "limb";
   }
   std::unreachable();
 }
@@ -73,12 +61,12 @@ void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, tic
 void LogCombat(const simulation::State& state) {
   for (const simulation::Hit& hit : state.hits) {
     LOG_INFO("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", state.tick,
-             std::to_underlying(hit.shooter), std::to_underlying(hit.target), BodyPartName(hit.part), hit.damage,
+             std::to_underlying(hit.shooter), std::to_underlying(hit.target), body_part::NameOf(hit.part), hit.damage,
              hit.health);
   }
   for (const simulation::Death& death : state.deaths) {
     LOG_INFO("subsystem=serverruntime event=death tick={} victim={} killer={} part={}", state.tick,
-             std::to_underlying(death.victim), std::to_underlying(death.killer), BodyPartName(death.part));
+             std::to_underlying(death.victim), std::to_underlying(death.killer), body_part::NameOf(death.part));
   }
 }
 

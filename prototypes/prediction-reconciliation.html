@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prediction and Reconciliation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
+  Answers: does Client-side prediction with restore-and-replay Reconciliation (ADR-0004),
+  against a SimulationWorld that consumes one Command per tick, holds the last movement
+  for 100 ms and has the client pace its ticks (ADR-0038), keep the local player responsive
+  and correct under latency, loss, clock drift and things only the server knows?
+  The <script id="netcode"> block is pure and is the part worth lifting; the page around
+  it is not.
+-->
+<style>
+  :root {
+    --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
+    --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
+    --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e; --ok-soft: #e5f2e7;
+    --btn: #ffffff; --code: #f0eee8;
+    --range: #fbfaf7; --grid: #ece9e1; --wall: #9b9a96; --crate: #b07a3f; --server: #8a7d6a;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e; --ok-soft: #1f3424;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --grid: #2a2c31; --wall: #5d5c59; --crate: #8a5f31; --server: #b5a890;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e; --ok-soft: #1f3424;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --grid: #2a2c31; --wall: #5d5c59; --crate: #8a5f31; --server: #b5a890;
+    color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .layout > div { min-width: 0; }
+  .scroll { overflow-x: auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--muted); max-width: 980px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    background: var(--bad-soft); color: var(--bad); padding: 2px 8px; border-radius: 99px;
+    margin-bottom: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 16px; margin-top: 16px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px; }
+  .wrap { width: 100%; display: flex; justify-content: center; }
+  canvas { display: block; max-width: 100%; }
+  canvas.scrub { cursor: ew-resize; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
+  button.next { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=number] { width: 84px; font: inherit; padding: 3px 6px;
+    border: 1px solid var(--line); border-radius: 5px; background: var(--btn); color: var(--ink); }
+  input[type=range] { flex: 1; min-width: 160px; }
+  select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--btn); color: var(--ink); }
+  label.check { display: inline-flex; gap: 4px; align-items: center; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+    vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .changed { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .bad { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 16px; }
+  .params label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .events td { font-size: 12.5px; }
+  tr.hl td { background: var(--accent-soft); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .watch { color: var(--muted); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  code { font-size: 12px; background: var(--code); overflow-wrap: anywhere; padding: 1px 4px; border-radius: 3px; }
+  .chips span { display: inline-block; font-size: 12px; padding: 1px 6px; margin: 0 4px 4px 0; border-radius: 4px;
+    background: var(--code); font-variant-numeric: tabular-nums; }
+  .chips span.acked { background: var(--ok-soft); color: var(--ok); }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px;
+    padding: 4px 8px; border-radius: 5px; display: none; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>Predicting your own player, and correcting it</h1>
+  <p class="lede">
+    The client moves its own player at once (Client-side prediction) and sends each tick's Command
+    to the Authoritative server, which takes in one Command per tick, holds the last movement for
+    100 ms when none has arrived, and answers with its body and the newest Command it acknowledged.
+    When that answer disagrees with what the client predicted after the same Command, the client
+    restores the server's body and replays every Command the server has not yet acknowledged; the
+    jump that makes is hidden by sliding the shown body for 47 ms (ADR-0004, ADR-0038). Does that
+    keep the player responsive, and correct, under latency, loss, a clock that runs fast, and things
+    only the server knows? Pick a walkthrough, or change a Parameter and scrub through the run.
+  </p>
+  <details>
+    <summary>What this prototype assumes that the specs do not fix</summary>
+    <ul class="assume">
+      <li>Seen from above, flat: a body is a 0.6 m square that slides along walls axis by axis. Walking is 3 m/s, sprinting 5.5 m/s, both reached at 30 m/s². Stamina drains at 0.35/s while sprinting, comes back at 0.2/s, and a body that runs out is exhausted, and walks, until it is back above 0.3. None of this is PhysX; only that the client and server step the same rules matters.</li>
+      <li>The tick rate is 60 Hz. The client's frames run at 120 Hz and show the newest Prediction State, not one interpolated between two.</li>
+      <li>Every message's latency is its link's one-way latency plus a uniform jitter; a message is lost on its own chance or inside a loss window. Nothing is quantized on a grid.</li>
+      <li>The client handles the newest Authoritative State update at the start of its next tick, before it predicts that tick's Command, as the Prediction thread does with what Network I/O published (ADR-0005).</li>
+      <li>"PhysX drift" adds a uniform random error of up to that many millimetres to the server's body after each tick, standing in for PhysX's lack of cross-platform determinism. A crate, a knock and a teleport are things the server does that the client's PredictionWorld cannot know.</li>
+      <li>"Blend" is the option ADR-0004 rejected: on a disagreement, move the body and every Command still held by a fraction of the error, with no replay.</li>
+    </ul>
+  </details>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="row">
+          <button id="play">▶ Play</button>
+          <select id="speed"><option value="1">real time</option><option value="0.25" selected>¼ speed</option><option value="0.1">1/10 speed</option></select>
+          <button id="back">− 1 tick</button><button id="fwd">+ 1 tick</button>
+          <button id="nextFix">Next correction →</button>
+          <input type="range" id="scrub" min="0" max="6000" step="1">
+          <span id="clock" class="watch"></span>
+        </div>
+        <div class="wrap" id="mapWrap"><canvas id="map"></canvas></div>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--accent)"></span>predicted (PredictionWorld)</span>
+          <span><span class="sw" style="background:var(--ink)"></span>shown (PresentationWorld)</span>
+          <span><span class="sw" style="background:var(--server)"></span>server's body (SimulationWorld, now)</span>
+          <span><span class="sw" style="background:var(--wall)"></span>wall</span>
+          <span><span class="sw" style="background:var(--crate)"></span>crate only the server has</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>The run, tick by tick</h2>
+        <p class="watch">Click or drag to move through time. The dashed line is now.</p>
+        <div class="wrap" id="timeWrap"><canvas id="time" class="scrub"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>On the wire, around now</h2>
+        <p class="watch">Commands messages rise from the client to the server; Authoritative State updates come back down. ✕ is a lost datagram.</p>
+        <div class="wrap" id="wireWrap"><canvas id="wire"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+
+      <div class="card">
+        <h2>Parameters</h2>
+        <div class="params" id="params"></div>
+        <h2 style="margin-top:14px">Add at the cursor</h2>
+        <div class="row" id="addBtns"></div>
+        <div id="eventList" class="watch"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" id="state"></div>
+      <div class="card" id="totals"></div>
+    </div>
+  </div>
+</main>
+<div id="tip"></div>
+
+<script id="netcode">
+// The client, the server and the network between them, pure: no DOM.
+// Lengths in metres, times in seconds.
+const Netcode = (() => {
+  const RADIUS = 0.3;
+
+  function random(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), s | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const blocked = (boxes, x, y, slack = 0) => boxes.find(b =>
+    x + RADIUS - slack > b.x0 && x - RADIUS + slack < b.x1 && y + RADIUS - slack > b.y0 && y - RADIUS + slack < b.y1);
+
+  // Moves to (nx, ny) one axis at a time, stopping at the face of whatever is in the way.
+  function slide(boxes, body, vx, vy, dt) {
+    let x = body.x + vx * dt, y = body.y;
+    let b = blocked(boxes, x, y);
+    if (b) { x = vx > 0 ? b.x0 - RADIUS - 1e-6 : b.x1 + RADIUS + 1e-6; vx = 0; if (blocked(boxes, x, y)) x = body.x; }
+    y = body.y + vy * dt;
+    b = blocked(boxes, x, y);
+    if (b) { y = vy > 0 ? b.y0 - RADIUS - 1e-6 : b.y1 + RADIUS + 1e-6; vy = 0; if (blocked(boxes, x, y)) y = body.y; }
+    return { x, y, vx, vy };
+  }
+
+  // One tick of Movement, the same on the client and the server.
+  function step(body, move, dt, p, boxes) {
+    const len = Math.hypot(move.dx, move.dy);
+    const sprinting = move.sprint && len > 0 && !body.exhausted;
+    const speed = sprinting ? p.sprint : p.walk;
+    const tx = len ? move.dx / len * speed : 0, ty = len ? move.dy / len * speed : 0;
+    let dvx = tx - body.vx, dvy = ty - body.vy;
+    const m = Math.hypot(dvx, dvy), cap = p.accel * dt;
+    if (m > cap) { dvx *= cap / m; dvy *= cap / m; }
+    const stamina = clamp(body.stamina + (sprinting ? -p.drain : p.regen) * dt, 0, 1);
+    const exhausted = body.exhausted ? stamina <= p.recover : stamina <= 0;
+    return { ...slide(boxes, body, body.vx + dvx, body.vy + dvy, dt), stamina, exhausted };
+  }
+
+  // ADR-0004: within the tolerance, the same exhausted flag, stamina within 0.001.
+  function agrees(server, predicted, tol) {
+    return Math.hypot(server.x - predicted.x, server.y - predicted.y) <= tol
+      && server.exhausted === predicted.exhausted && Math.abs(server.stamina - predicted.stamina) <= 0.001;
+  }
+
+  const INPUTS = {
+    strafe: t => (t < 0.3 ? null : t < 2.0 ? [1, 0] : t < 2.4 ? null : t < 4.2 ? [-1, 0] : t < 5.2 ? [0, -1] : null),
+    zigzag: t => (t < 0.3 || t > 5.5 ? null : [1, Math.floor((t - 0.3) / 0.35) % 2 ? 1 : -1]),
+    sprint: t => (t < 0.3 ? null : t < 3.3 ? [1, 0, true] : t < 5.8 ? [-1, 0, true] : null),
+    diagonal: t => (t < 0.3 || t > 5.5 ? null : [1, -0.6]),
+  };
+  const moveAt = (input, t) => {
+    const d = INPUTS[input](t);
+    return d ? { dx: d[0], dy: d[1], sprint: !!d[2] } : { dx: 0, dy: 0, sprint: false };
+  };
+
+  // Runs one client against the server for cfg.duration seconds and records everything.
+  function run(cfg) {
+    const dt = 1 / cfg.tickRate, rnd = random(cfg.seed);
+    const holdTicks = Math.ceil(cfg.holdMs / 1000 / dt - 1e-9);
+    const walls = cfg.walls;
+    const ev = cfg.events;
+    const body0 = { x: cfg.start[0], y: cfg.start[1], vx: 0, vy: 0, stamina: 1, exhausted: false };
+
+    const wire = [];
+    function transmit(dir, t, payload) {
+      const window = ev.some(e => e.kind === 'loss' && (e.dir === 'both' || e.dir === dir) && t >= e.t && t < e.t + e.len);
+      const lost = rnd() < cfg.loss / 100 || window;
+      const arrive = lost ? null : t + (dir === 'up' ? cfg.upMs : cfg.downMs) / 1000 + rnd() * cfg.jitterMs / 1000;
+      const msg = { dir, sent: t, arrive, ...payload };
+      wire.push(msg);
+      return msg;
+    }
+
+    // ---- server state
+    const S = { body: { ...body0 }, tick: 0, queue: [], lastTaken: 0, ack: 0, holdLeft: 0, lastMove: null,
+      overflow: 0, held: 0, inbox: [] };
+    // ---- client state
+    const C = { body: { ...body0 }, seq: 0, history: [], latest: null, handledTick: -1, lastAck: 0,
+      pace: 1, total: { x: 0, y: 0 }, inbox: [], sampled: new Map() };
+    // ---- presentation state
+    const P = { seen: { x: 0, y: 0 }, offset: { x: 0, y: 0 } };
+
+    const serverSnaps = [], clientSnaps = [], frames = [], acks = [];
+    const stats = { inside: 0, oldUpdates: 0, consumed: [], unackedAtSend: [] };
+    const serverBoxes = t => walls.concat(ev.filter(e => e.kind === 'crate' && t >= e.t).map(e => e.box));
+
+    function serverTick(t) {
+      for (const m of S.inbox.filter(m => m.arrive <= t).sort((a, b) => a.arrive - b.arrive))
+        for (const c of m.cmds) {
+          if (c.seq <= S.lastTaken) continue;
+          S.queue.push(c); S.lastTaken = c.seq;
+          if (S.queue.length > 16) { S.queue.shift(); S.overflow++; }
+        }
+      S.inbox = S.inbox.filter(m => m.arrive > t);
+      let move = { dx: 0, dy: 0, sprint: false }, what = 'idle', consumed = null;
+      if (S.queue.length) {
+        consumed = S.queue.shift(); move = consumed.move; S.ack = consumed.seq;
+        S.lastMove = move; S.holdLeft = holdTicks; what = 'consumed';
+        stats.consumed.push({ seq: consumed.seq, wait: t - C.sampled.get(consumed.seq) });
+      } else if (S.holdLeft > 0 && S.lastMove) {
+        move = S.lastMove; S.holdLeft--; S.held++; what = 'held';
+      }
+      for (const e of ev) {
+        if (t - dt < e.t && e.t <= t) {
+          if (e.kind === 'knock') { S.body.vx += e.vx; S.body.vy += e.vy; }
+          if (e.kind === 'teleport') S.body = { ...S.body, x: e.x, y: e.y, vx: 0, vy: 0 };
+        }
+      }
+      S.body = step(S.body, move, dt, cfg.p, serverBoxes(t));
+      if (cfg.driftMm > 0) {
+        S.body.x += (rnd() * 2 - 1) * cfg.driftMm / 1000;
+        S.body.y += (rnd() * 2 - 1) * cfg.driftMm / 1000;
+      }
+      const m = transmit('down', t, { tick: S.tick, body: { ...S.body }, ack: S.ack, queued: S.queue.length });
+      if (m.arrive !== null) C.inbox.push(m);
+      serverSnaps.push({ t, tick: S.tick, queue: S.queue.map(c => c.seq), lastTaken: S.lastTaken, ack: S.ack,
+        holdLeft: S.holdLeft, what, consumed: consumed?.seq, body: { ...S.body }, overflow: S.overflow });
+      S.tick++;
+    }
+
+    function reconcile(t, u) {
+      const rec = { t, tick: u.tick, ack: u.ack, action: 'ignored', err: null, replayed: 0, jump: 0 };
+      const i = C.history.findIndex(h => h.seq === u.ack);
+      if (u.ack === 0 || i < 0) { acks.push(rec); return; }
+      const entry = C.history[i];
+      rec.err = Math.hypot(u.body.x - entry.body.x, u.body.y - entry.body.y);
+      const rest = C.history.slice(i + 1);
+      C.history = rest;
+      C.lastAck = u.ack;
+      if (cfg.mode === 'none') { rec.action = 'none'; acks.push(rec); return; }
+      if (agrees(u.body, entry.body, cfg.tolMm / 1000)) { rec.action = 'agree'; acks.push(rec); return; }
+      const before = { x: C.body.x, y: C.body.y };
+      if (cfg.mode === 'replay') {
+        let b = { ...u.body };
+        for (const h of rest) { b = step(b, h.move, dt, cfg.p, walls); h.body = b; }
+        C.body = b;
+        rec.action = 'replay'; rec.replayed = rest.length;
+      } else {
+        const k = cfg.blend, sx = (u.body.x - entry.body.x) * k, sy = (u.body.y - entry.body.y) * k;
+        const ss = (u.body.stamina - entry.body.stamina) * k;
+        const shift = b => ({ ...b, x: b.x + sx, y: b.y + sy, stamina: clamp(b.stamina + ss, 0, 1) });
+        for (const h of rest) h.body = shift(h.body);
+        C.body = shift(C.body);
+        rec.action = 'blend';
+      }
+      const jx = C.body.x - before.x, jy = C.body.y - before.y;
+      C.total = { x: C.total.x + jx, y: C.total.y + jy };
+      rec.jump = Math.hypot(jx, jy);
+      acks.push(rec);
+    }
+
+    function clientTick(t) {
+      for (const m of C.inbox.filter(m => m.arrive <= t)) {
+        if (!C.latest || m.tick > C.latest.tick) C.latest = m; else stats.oldUpdates++;
+      }
+      C.inbox = C.inbox.filter(m => m.arrive > t);
+      if (C.latest && C.latest.tick !== C.handledTick) {
+        C.handledTick = C.latest.tick;
+        C.pace = cfg.pacing ? 1 + clamp(0.04 * (C.latest.queued - 1.5), -0.05, C.latest.queued > 3 ? cfg.drainPct / 100 : 0.05) : 1;
+        reconcile(t, C.latest);
+      }
+      const move = moveAt(cfg.input, t);
+      C.seq++;
+      C.sampled.set(C.seq, t);
+      C.body = step(C.body, move, dt, cfg.p, walls);
+      if (blocked(walls, C.body.x, C.body.y, 1e-4)) stats.inside++;
+      C.history.push({ seq: C.seq, move, body: { ...C.body } });
+      if (C.history.length > 128) C.history.shift();
+      const unacked = C.history.slice(-8).map(h => ({ seq: h.seq, move: h.move }));
+      stats.unackedAtSend.push(C.history.length);
+      const m = transmit('up', t, { cmds: unacked, first: unacked[0].seq, last: C.seq });
+      if (m.arrive !== null) S.inbox.push(m);
+      clientSnaps.push({ t, seq: C.seq, pace: C.pace, body: { ...C.body }, lastAck: C.lastAck,
+        held: C.history.map(h => [h.seq, h.body.x, h.body.y]).slice(-12), unacked: C.history.length,
+        total: { ...C.total }, latestTick: C.latest?.tick ?? null });
+    }
+
+    function frame(t, fdt) {
+      const delta = { x: C.total.x - P.seen.x, y: C.total.y - P.seen.y };
+      P.seen = { ...C.total };
+      const fade = Math.exp(-fdt / (cfg.fadeMs / 1000));
+      P.offset = { x: P.offset.x * fade, y: P.offset.y * fade };
+      if (Math.hypot(delta.x, delta.y) >= cfg.snap) P.offset = { x: 0, y: 0 };
+      else P.offset = { x: P.offset.x - delta.x, y: P.offset.y - delta.y };
+      const recv = C.latest?.body ?? body0;
+      const pred = cfg.mode === 'none' ? recv : C.body;
+      const shown = cfg.mode === 'none' ? recv : { x: pred.x + P.offset.x, y: pred.y + P.offset.y };
+      frames.push({ t, pred: { x: pred.x, y: pred.y }, shown, server: { x: S.body.x, y: S.body.y },
+        offset: Math.hypot(P.offset.x, P.offset.y), stamina: C.body.stamina, exhausted: C.body.exhausted });
+    }
+
+    let ts = 0, tc = cfg.clientPhaseMs / 1000, tf = 0;
+    const fdt = 1 / cfg.frameRate;
+    while (Math.min(ts, tc, tf) < cfg.duration) {
+      if (ts <= tc && ts <= tf) { serverTick(ts); ts += dt; }
+      else if (tc <= tf) { clientTick(tc); tc += dt * C.pace / (1 + cfg.clockPct / 100); }
+      else { frame(tf, fdt); tf += fdt; }
+    }
+
+    const replays = acks.filter(a => a.action === 'replay' || a.action === 'blend');
+    const waits = stats.consumed.map(c => c.wait);
+    return {
+      wire, serverSnaps, clientSnaps, frames, acks, dt,
+      totals: {
+        commands: C.seq, consumed: stats.consumed.length, acks: acks.length,
+        agreed: acks.filter(a => a.action === 'agree').length,
+        ignored: acks.filter(a => a.action === 'ignored').length,
+        corrections: replays.length, maxJump: Math.max(0, ...replays.map(a => a.jump)),
+        replayedAvg: replays.length ? replays.reduce((s, a) => s + a.replayed, 0) / replays.length : 0,
+        held: S.held, overflow: S.overflow, inside: stats.inside, oldUpdates: stats.oldUpdates,
+        waitAvg: waits.length ? waits.reduce((a, b) => a + b, 0) / waits.length : 0,
+        waitMax: Math.max(0, ...waits),
+        unackedAvg: stats.unackedAtSend.reduce((a, b) => a + b, 0) / stats.unackedAtSend.length,
+        lostUp: wire.filter(m => m.dir === 'up' && m.arrive === null).length,
+        lostDown: wire.filter(m => m.dir === 'down' && m.arrive === null).length,
+      },
+    };
+  }
+
+  return { run, RADIUS, INPUTS };
+})();
+</script>
+
+<script>
+// ---- The room ------------------------------------------------------------------------
+
+const box = (x0, y0, x1, y1) => ({ x0, y0, x1, y1 });
+const ROOM = { w: 18, h: 9 };
+const WALLS = [
+  box(0, 0, 18, 0.3), box(0, 8.7, 18, 9), box(0, 0, 0.3, 9), box(17.7, 0, 18, 9),
+  box(11, 1.5, 12, 4), box(5, 6.2, 9, 6.6),
+];
+const INPUT_NAMES = {
+  strafe: 'Right, stop, left, up',
+  zigzag: 'Zigzag right',
+  sprint: 'Sprint right until exhausted, then back',
+  diagonal: 'Up and to the right, into the wall',
+};
+const MODES = {
+  replay: 'Restore and replay (ADR-0004)',
+  blend: 'Blend by a fraction, no replay (rejected)',
+  none: 'No prediction: show the server\'s body',
+};
+
+const DEFAULTS = {
+  duration: 6, tickRate: 60, frameRate: 120, seed: 11, start: [3, 4.5],
+  upMs: 50, downMs: 50, jitterMs: 8, loss: 0, clockPct: 0, pacing: true,
+  holdMs: 100, tolMm: 1, fadeMs: 47, snap: 2, driftMm: 0, mode: 'replay', blend: 0.1,
+  clientPhaseMs: 4, input: 'strafe', drainPct: 5,
+  p: { walk: 3, sprint: 5.5, accel: 30, drain: 0.35, regen: 0.2, recover: 0.3 },
+};
+
+const fresh = () => ({ cfg: JSON.parse(JSON.stringify({ ...DEFAULTS, events: [] })), t: 0,
+  changed: 'Nothing yet. Pick a walkthrough, or press Play.' });
+let state = fresh();
+let result = null;
+
+const recompute = () => { result = Netcode.run({ ...state.cfg, walls: WALLS }); };
+
+// ---- Lookups ------------------------------------------------------------------------
+
+function lastAt(list, t) {
+  let lo = 0, hi = list.length - 1, best = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].t <= t) { best = list[mid]; lo = mid + 1; } else hi = mid - 1;
+  }
+  return best;
+}
+
+// ---- Drawing ------------------------------------------------------------------------
+
+const C = {};
+function readTheme() {
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['ink', 'muted', 'accent', 'accent-soft', 'bad', 'bad-soft', 'ok', 'line', 'panel',
+    'range', 'grid', 'wall', 'crate', 'server']) C[k] = css.getPropertyValue(`--${k}`).trim();
+}
+readTheme();
+
+function fit(canvas, wrapId, w, h) {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+
+const mapCanvas = document.getElementById('map');
+let mapScale = 40;
+function drawMap() {
+  const wrapW = document.getElementById('mapWrap').clientWidth;
+  mapScale = Math.max(16, Math.min(48, wrapW / ROOM.w));
+  const ctx = fit(mapCanvas, 'mapWrap', ROOM.w * mapScale, ROOM.h * mapScale);
+  const s = mapScale, t = state.t;
+  ctx.fillStyle = C.range; ctx.fillRect(0, 0, ROOM.w * s, ROOM.h * s);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let x = 0; x <= ROOM.w; x++) { ctx.beginPath(); ctx.moveTo(x * s, 0); ctx.lineTo(x * s, ROOM.h * s); ctx.stroke(); }
+  for (let y = 0; y <= ROOM.h; y++) { ctx.beginPath(); ctx.moveTo(0, y * s); ctx.lineTo(ROOM.w * s, y * s); ctx.stroke(); }
+  ctx.fillStyle = C.wall;
+  for (const b of WALLS) ctx.fillRect(b.x0 * s, b.y0 * s, (b.x1 - b.x0) * s, (b.y1 - b.y0) * s);
+  for (const e of state.cfg.events.filter(e => e.kind === 'crate')) {
+    ctx.globalAlpha = t >= e.t ? 1 : 0.25; ctx.fillStyle = C.crate;
+    ctx.fillRect(e.box.x0 * s, e.box.y0 * s, (e.box.x1 - e.box.x0) * s, (e.box.y1 - e.box.y0) * s);
+    ctx.globalAlpha = 1;
+  }
+  const upto = result.frames.filter(f => f.t <= t);
+  const trail = (key, color, width, dash) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.beginPath();
+    upto.forEach((f, i) => (i ? ctx.lineTo(f[key].x * s, f[key].y * s) : ctx.moveTo(f[key].x * s, f[key].y * s)));
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  trail('server', C.server, 2, [4, 3]);
+  trail('pred', C.accent, 1.5, []);
+  trail('shown', C.ink, 1, []);
+  const f = lastAt(result.frames, t);
+  if (!f) return;
+  const square = (p, color, fill) => {
+    const r = Netcode.RADIUS * s;
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    if (fill) { ctx.fillStyle = fill; ctx.fillRect(p.x * s - r, p.y * s - r, 2 * r, 2 * r); }
+    ctx.strokeRect(p.x * s - r, p.y * s - r, 2 * r, 2 * r);
+  };
+  square(f.server, C.server, null);
+  square(f.pred, C.accent, C['accent-soft']);
+  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(f.shown.x * s, f.shown.y * s, 4, 0, Math.PI * 2); ctx.fill();
+  // The Commands still held by the client, at the bodies it predicted after them.
+  const cs = lastAt(result.clientSnaps, t);
+  if (cs && state.cfg.mode !== 'none') {
+    ctx.fillStyle = C.accent;
+    for (const [, x, y] of cs.held) { ctx.beginPath(); ctx.arc(x * s, y * s, 1.8, 0, Math.PI * 2); ctx.fill(); }
+  }
+}
+
+// The timeline: four lanes over the whole run.
+const timeCanvas = document.getElementById('time');
+const TL = { l: 92, r: 12, lane: 58, gap: 10 };
+const LANES = ['Error per ack', 'Shown offset', 'Server queue', 'Client tick'];
+let timeModel = null;
+function drawTime() {
+  const w = Math.min(document.getElementById('timeWrap').clientWidth, 1100);
+  const h = LANES.length * (TL.lane + TL.gap) + 26;
+  const ctx = fit(timeCanvas, 'timeWrap', w, h);
+  const pw = w - TL.l - TL.r, dur = state.cfg.duration;
+  const X = t => TL.l + t / dur * pw;
+  const top = i => 6 + i * (TL.lane + TL.gap);
+  timeModel = { X, pw, w };
+  ctx.font = '11px system-ui';
+  LANES.forEach((name, i) => {
+    ctx.fillStyle = C.muted; ctx.fillText(name, 4, top(i) + 12);
+    ctx.strokeStyle = C.line; ctx.strokeRect(TL.l, top(i), pw, TL.lane);
+  });
+  for (let s = 0; s <= dur; s++) { ctx.fillStyle = C.muted; ctx.fillText(`${s} s`, X(s) - 6, h - 6); }
+
+  // Lane 0: error at each acknowledgement, log scale from 0.1 mm to 1 m.
+  const L0 = top(0), logY = mm => L0 + TL.lane - clampN((Math.log10(Math.max(mm, 0.1)) + 1) / 4, 0, 1) * TL.lane;
+  ctx.strokeStyle = C.line; ctx.setLineDash([2, 3]);
+  const tolY = logY(state.cfg.tolMm); ctx.beginPath(); ctx.moveTo(TL.l, tolY); ctx.lineTo(TL.l + pw, tolY); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.muted; ctx.fillText(`${state.cfg.tolMm} mm`, TL.l + 4, tolY - 3);
+  for (const a of result.acks) {
+    if (a.err === null) continue;
+    ctx.fillStyle = a.action === 'agree' || a.action === 'none' ? C.ok : C.bad;
+    ctx.fillRect(X(a.t) - 1, logY(a.err * 1000) - 1, 3, 3);
+  }
+  // Lane 1: offset, 0..max(0.5 m).
+  const L1 = top(1), maxOff = Math.max(0.05, ...result.frames.map(f => f.offset));
+  ctx.strokeStyle = C.ink; ctx.beginPath();
+  result.frames.forEach((f, i) => { const y = L1 + TL.lane - f.offset / maxOff * TL.lane; i ? ctx.lineTo(X(f.t), y) : ctx.moveTo(X(f.t), y); });
+  ctx.stroke();
+  ctx.fillStyle = C.muted; ctx.fillText(`${(maxOff * 100).toFixed(0)} cm`, TL.l + 4, L1 + 11);
+  // Lane 2: queue length 0..16, held ticks marked.
+  const L2 = top(2);
+  for (const s of result.serverSnaps) {
+    const q = s.queue.length;
+    ctx.fillStyle = s.what === 'held' ? C.bad : s.what === 'idle' ? C.line : C.accent;
+    const hh = s.what === 'consumed' ? Math.max(1, q / 16 * TL.lane) : TL.lane * 0.18;
+    ctx.fillRect(X(s.t), L2 + TL.lane - hh, Math.max(1, X(result.dt) - X(0)), hh);
+  }
+  ctx.fillStyle = C.muted; ctx.fillText('16 queued', TL.l + 4, L2 + 11);
+  // Lane 3: client tick length vs nominal, ±6%.
+  const L3 = top(3), mid = L3 + TL.lane / 2, Yp = p => mid - (p - 1) / 0.06 * TL.lane / 2;
+  ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(TL.l, mid); ctx.lineTo(TL.l + pw, mid); ctx.stroke();
+  ctx.strokeStyle = C.accent; ctx.beginPath();
+  result.clientSnaps.forEach((c, i) => { const real = c.pace / (1 + state.cfg.clockPct / 100); i ? ctx.lineTo(X(c.t), Yp(real)) : ctx.moveTo(X(c.t), Yp(real)); });
+  ctx.stroke();
+  ctx.fillStyle = C.muted; ctx.fillText('+6%', TL.l + 4, L3 + 11); ctx.fillText('−6%', TL.l + 4, L3 + TL.lane - 3);
+  // Loss windows and events.
+  for (const e of state.cfg.events) {
+    ctx.fillStyle = C['bad-soft'];
+    if (e.kind === 'loss') ctx.fillRect(X(e.t), 2, X(e.t + e.len) - X(e.t), h - 24);
+    else { ctx.fillStyle = C.bad; ctx.fillRect(X(e.t), 2, 2, h - 24); }
+  }
+  ctx.strokeStyle = C.ink; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(X(state.t), 0); ctx.lineTo(X(state.t), h - 20); ctx.stroke(); ctx.setLineDash([]);
+}
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+const wireCanvas = document.getElementById('wire');
+function drawWire() {
+  const w = Math.min(document.getElementById('wireWrap').clientWidth, 1100), h = 150;
+  const ctx = fit(wireCanvas, 'wireWrap', w, h);
+  const t0 = state.t - 0.35, t1 = state.t + 0.05, l = 70, pw = w - l - 10;
+  const X = t => l + (t - t0) / (t1 - t0) * pw, yC = h - 26, yS = 24;
+  ctx.font = '11px system-ui'; ctx.fillStyle = C.muted;
+  ctx.fillText('server', 4, yS + 4); ctx.fillText('client', 4, yC + 4);
+  ctx.strokeStyle = C.line;
+  for (const y of [yS, yC]) { ctx.beginPath(); ctx.moveTo(l, y); ctx.lineTo(l + pw, y); ctx.stroke(); }
+  for (const s of result.serverSnaps) if (s.t >= t0 && s.t <= t1) {
+    ctx.fillStyle = s.what === 'held' ? C.bad : s.what === 'idle' ? C.muted : C.ink;
+    ctx.fillRect(X(s.t) - 1, yS - 4, 2, 8);
+  }
+  for (const c of result.clientSnaps) if (c.t >= t0 && c.t <= t1) { ctx.fillStyle = C.accent; ctx.fillRect(X(c.t) - 1, yC - 4, 2, 8); }
+  for (const m of result.wire) {
+    const end = m.arrive ?? m.sent + 0.03;
+    if (end < t0 || m.sent > t1) continue;
+    const [ya, yb] = m.dir === 'up' ? [yC, yS] : [yS, yC];
+    const shownEnd = Math.min(end, state.t);
+    if (m.sent > state.t) continue;
+    const frac = (shownEnd - m.sent) / (end - m.sent);
+    ctx.strokeStyle = m.dir === 'up' ? C.accent : C.server; ctx.lineWidth = 1;
+    ctx.globalAlpha = m.arrive === null ? 0.5 : 0.8;
+    ctx.beginPath(); ctx.moveTo(X(m.sent), ya); ctx.lineTo(X(shownEnd), ya + (yb - ya) * frac); ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (m.arrive === null && state.t >= end) {
+      const x = X(end), y = ya + (yb - ya);
+      ctx.strokeStyle = C.bad; ctx.lineWidth = 2;
+      const yy = ya + (yb - ya) * 1;
+      ctx.beginPath(); ctx.moveTo(x - 4, yy - 4 + (yb > ya ? -8 : 8)); ctx.lineTo(x + 4, yy + 4 + (yb > ya ? -8 : 8));
+      ctx.moveTo(x + 4, yy - 4 + (yb > ya ? -8 : 8)); ctx.lineTo(x - 4, yy + 4 + (yb > ya ? -8 : 8)); ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = C.ink; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(X(state.t), 4); ctx.lineTo(X(state.t), h - 16); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.muted; ctx.fillText('−350 ms', l, h - 4); ctx.fillText('now', X(state.t) - 10, h - 4);
+}
+
+// ---- Panels -------------------------------------------------------------------------
+
+const ms = s => `${(s * 1000).toFixed(0)} ms`;
+const len = m => (m < 0.01 ? `${(m * 1000).toFixed(2)} mm` : m < 1 ? `${(m * 100).toFixed(1)} cm` : `${m.toFixed(2)} m`);
+const pos = p => `(${p.x.toFixed(2)}, ${p.y.toFixed(2)})`;
+
+function renderState() {
+  const t = state.t, cs = lastAt(result.clientSnaps, t), ss = lastAt(result.serverSnaps, t), f = lastAt(result.frames, t);
+  const lastAck = lastAt(result.acks.filter(a => a.action !== 'ignored'), t);
+  const lastFix = lastAt(result.acks.filter(a => a.action === 'replay' || a.action === 'blend'), t);
+  let html = `<h2>State at ${ms(t)}</h2><div class="changed"><strong>Just changed:</strong> ${state.changed}</div>`;
+  html += '<h2>Client</h2><dl>';
+  if (cs) {
+    html += `<dt>Newest Command</dt><dd>sequence ${cs.seq}</dd>
+      <dt>Not yet acknowledged</dt><dd>${cs.unacked} Commands (each message carries the newest ${Math.min(8, cs.unacked)})</dd>
+      <dt>Newest update handled</dt><dd>${cs.latestTick === null ? 'none yet' : `server tick ${cs.latestTick}, acknowledging ${cs.lastAck}`}</dd>
+      <dt>Tick length</dt><dd>${((cs.pace / (1 + state.cfg.clockPct / 100) - 1) * 100).toFixed(1)}% off nominal</dd>
+      <dt>Predicted</dt><dd>${pos(cs.body)}, stamina ${cs.body.stamina.toFixed(3)}${cs.body.exhausted ? ', <span class="bad">exhausted</span>' : ''}</dd>`;
+  }
+  if (f) html += `<dt>Shown</dt><dd>${pos(f.shown)}, ${len(f.offset)} from predicted</dd>`;
+  html += '</dl>';
+  if (cs && state.cfg.mode !== 'none') {
+    html += `<p class="watch" style="margin-top:8px">Commands held, newest 12:</p><div class="chips">${cs.held.map(([s]) =>
+      `<span>${s}</span>`).join('')}</div>`;
+  }
+  html += '<h2 style="margin-top:12px">Server</h2><dl>';
+  if (ss) {
+    const what = ss.what === 'consumed' ? `took in Command ${ss.consumed}`
+      : ss.what === 'held' ? `<span class="bad">no Command queued: repeated the last movement</span> (${ss.holdLeft} ticks left)`
+      : 'no Command queued: no movement';
+    html += `<dt>Tick</dt><dd>${ss.tick}: ${what}</dd>
+      <dt>Queued</dt><dd>${ss.queue.length ? ss.queue.join(', ') : 'none'}${ss.overflow ? ` <span class="bad">(${ss.overflow} dropped on overflow so far)</span>` : ''}</dd>
+      <dt>Acknowledges</dt><dd>${ss.ack || 'nothing yet'}</dd>
+      <dt>Body</dt><dd>${pos(ss.body)}, stamina ${ss.body.stamina.toFixed(3)}${ss.body.exhausted ? ', <span class="bad">exhausted</span>' : ''}</dd>`;
+  }
+  html += '</dl><h2 style="margin-top:12px">Last acknowledgement</h2>';
+  if (lastAck) {
+    const verdict = { agree: '<span class="ok">agrees: nothing done</span>', replay: `<span class="bad">disagrees: restored, replayed ${lastAck.replayed} Commands</span>`,
+      blend: '<span class="bad">disagrees: shifted by a fraction</span>', none: 'no prediction to compare' }[lastAck.action];
+    html += `<dl><dt>At</dt><dd>${ms(lastAck.t)}, server tick ${lastAck.tick}, Command ${lastAck.ack}</dd>
+      <dt>Error</dt><dd>${len(lastAck.err)} against the body predicted after it</dd><dt>Then</dt><dd>${verdict}</dd>
+      ${lastFix ? `<dt>Last jump</dt><dd>${len(lastFix.jump)} at ${ms(lastFix.t)}</dd>` : ''}</dl>`;
+  } else html += '<p class="watch">None yet.</p>';
+  document.getElementById('state').innerHTML = html;
+  document.getElementById('clock').textContent = `${ms(t)} · server tick ${ss ? ss.tick : 0}`;
+}
+
+function renderTotals() {
+  const r = result.totals;
+  document.getElementById('totals').innerHTML = `<h2>Over the whole run</h2><dl>
+    <dt>Commands sent / taken in</dt><dd>${r.commands} / ${r.consumed}</dd>
+    <dt>Datagrams lost</dt><dd>${r.lostUp} up, ${r.lostDown} down</dd>
+    <dt>Acknowledgements</dt><dd>${r.acks}: ${r.agreed} agreed, ${r.corrections} corrected, ${r.ignored} already acted on or none</dd>
+    <dt>Replayed per correction</dt><dd>${r.replayedAvg.toFixed(1)} Commands</dd>
+    <dt>Biggest jump</dt><dd class="${r.maxJump >= state.cfg.snap ? 'bad' : ''}">${len(r.maxJump)}${r.maxJump >= state.cfg.snap ? ' (shown at once)' : ''}</dd>
+    <dt>Ticks the server held</dt><dd class="${r.held ? 'bad' : ''}">${r.held}</dd>
+    <dt>Dropped on overflow</dt><dd class="${r.overflow ? 'bad' : ''}">${r.overflow}</dd>
+    <dt>Command's wait in the queue</dt><dd>${ms(r.waitAvg)} on average, ${ms(r.waitMax)} at most (from sampled to taken in)</dd>
+    <dt>Not yet acknowledged</dt><dd>${r.unackedAvg.toFixed(1)} on average</dd>
+    <dt>Predicted inside a wall</dt><dd class="${r.inside ? 'bad' : ''}">${r.inside} ticks</dd>
+    <dt>Older updates ignored</dt><dd>${r.oldUpdates}</dd></dl>`;
+}
+
+function renderParams() {
+  const c = state.cfg;
+  const num = (key, label, step) => `<label>${label} <input type="number" data-k="${key}" step="${step}" value="${c[key]}"></label>`;
+  document.getElementById('params').innerHTML =
+    num('upMs', 'Client → server latency, ms', 5) + num('downMs', 'Server → client latency, ms', 5) +
+    num('jitterMs', 'Jitter, ms', 1) + num('loss', 'Loss each way, %', 1) +
+    num('clockPct', 'Client clock fast by, %', 0.5) + num('holdMs', 'Server holds movement, ms', 10) +
+    num('tolMm', 'Agreement tolerance, mm', 0.5) + num('driftMm', 'PhysX drift per tick, mm', 0.1) +
+    num('fadeMs', 'Fade time constant, ms', 1) + num('snap', 'Shown at once from, m', 0.5) +
+    num('blend', 'Blend fraction', 0.05) + num('seed', 'Seed', 1) +
+    num('drainPct', 'Longest tick above 3 queued, %', 5) +
+    `<label><span>Client paces its ticks</span><input type="checkbox" id="pacing" ${c.pacing ? 'checked' : ''}></label>` +
+    `<label style="grid-column:1/-1">Player's input <select id="input">${Object.entries(INPUT_NAMES).map(([k, t]) =>
+      `<option value="${k}" ${k === c.input ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` +
+    `<label style="grid-column:1/-1">Reconciliation <select id="mode">${Object.entries(MODES).map(([k, t]) =>
+      `<option value="${k}" ${k === c.mode ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+  document.querySelectorAll('#params input[data-k]').forEach(i => i.addEventListener('change', () => { api.set(i.dataset.k, Number(i.value)); render(); }));
+  document.getElementById('pacing').addEventListener('change', e => { api.set('pacing', e.target.checked); render(); });
+  document.getElementById('input').addEventListener('change', e => { api.set('input', e.target.value); render(); });
+  document.getElementById('mode').addEventListener('change', e => { api.set('mode', e.target.value); render(); });
+  const ev = state.cfg.events;
+  document.getElementById('eventList').innerHTML = ev.length
+    ? ev.map((e, i) => `${describe(e)} <button data-del="${i}" style="padding:0 6px">✕</button>`).join(' · ')
+    : 'No events: the server knows nothing the client does not.';
+  document.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    state.cfg.events.splice(Number(b.dataset.del), 1); state.changed = 'Event removed.'; render();
+  }));
+}
+
+function describe(e) {
+  const at = `at ${ms(e.t)}`;
+  if (e.kind === 'loss') return `${e.dir === 'both' ? 'Both ways' : e.dir === 'up' ? 'Commands' : 'Updates'} lost for ${ms(e.len)} ${at}`;
+  if (e.kind === 'crate') return `Crate on the server only ${at}`;
+  if (e.kind === 'knock') return `Server knocks the body (${e.vx}, ${e.vy}) m/s ${at}`;
+  return `Server teleports the body to (${e.x}, ${e.y}) ${at}`;
+}
+
+// ---- Actions ------------------------------------------------------------------------
+
+const api = {
+  reset() { state = fresh(); state.changed = 'Reset: default Parameters, no events, at 0 ms.'; },
+  set(k, v) { state.cfg[k] = v; state.changed = `${k} set to ${v}.`; },
+  at(t) { state.t = clampN(t, 0, state.cfg.duration - 1e-6); },
+  add(e) { state.cfg.events.push(e); state.changed = `Added: ${describe(e)}.`; },
+  lossWindow(dir, t, l) { api.add({ kind: 'loss', dir, t, len: l }); },
+  crate(t) { api.add({ kind: 'crate', t, box: box(7.6, 3.6, 8.4, 5.4) }); },
+  knock(t, vx, vy) { api.add({ kind: 'knock', t, vx, vy }); },
+  teleport(t, x, y) { api.add({ kind: 'teleport', t, x, y }); },
+  jump(t, what) { api.at(t); state.changed = what; },
+  nextFix() {
+    const a = result.acks.find(x => (x.action === 'replay' || x.action === 'blend') && x.t > state.t + 1e-6);
+    if (a) { api.at(a.t + 0.0001); state.changed = `Moved to the next correction: ${len(a.jump)} at ${ms(a.t)}.`; }
+    else state.changed = 'No correction after now.';
+  },
+};
+
+function render() {
+  recompute();
+  document.getElementById('scrub').max = String(state.cfg.duration * 1000);
+  document.getElementById('scrub').value = String(Math.round(state.t * 1000));
+  drawAll(); renderParams(); renderTotals();
+}
+function drawAll() { drawMap(); drawTime(); drawWire(); renderState(); }
+
+document.getElementById('scrub').addEventListener('input', e => { api.at(Number(e.target.value) / 1000); state.changed = `Moved to ${ms(state.t)}.`; drawAll(); });
+document.getElementById('back').addEventListener('click', () => { api.at(state.t - result.dt); state.changed = 'One tick back.'; render(); });
+document.getElementById('fwd').addEventListener('click', () => { api.at(state.t + result.dt); state.changed = 'One tick on.'; render(); });
+document.getElementById('nextFix').addEventListener('click', () => { api.nextFix(); render(); });
+let playing = null;
+document.getElementById('play').addEventListener('click', () => {
+  const btn = document.getElementById('play');
+  if (playing) { cancelAnimationFrame(playing); playing = null; btn.textContent = '▶ Play'; return; }
+  if (state.t >= state.cfg.duration - 0.01) api.at(0);
+  btn.textContent = '❚❚ Pause';
+  let last = performance.now();
+  const tick = now => {
+    const speed = Number(document.getElementById('speed').value);
+    api.at(state.t + (now - last) / 1000 * speed); last = now;
+    state.changed = 'Playing.';
+    document.getElementById('scrub').value = String(Math.round(state.t * 1000));
+    drawAll();
+    if (state.t >= state.cfg.duration - 0.001) { playing = null; btn.textContent = '▶ Play'; return; }
+    playing = requestAnimationFrame(tick);
+  };
+  playing = requestAnimationFrame(tick);
+});
+let dragging = false;
+const scrubTo = ev => {
+  const r = timeCanvas.getBoundingClientRect();
+  api.at((ev.clientX - r.left - TL.l) / timeModel.pw * state.cfg.duration);
+  state.changed = `Moved to ${ms(state.t)}.`;
+  document.getElementById('scrub').value = String(Math.round(state.t * 1000));
+  drawAll();
+};
+timeCanvas.addEventListener('mousedown', ev => { dragging = true; scrubTo(ev); });
+window.addEventListener('mouseup', () => { dragging = false; });
+timeCanvas.addEventListener('mousemove', ev => { if (dragging) scrubTo(ev); });
+
+document.getElementById('addBtns').innerHTML = [
+  ['loss-up', 'Lose Commands for 250 ms'], ['loss-down', 'Lose updates for 250 ms'],
+  ['crate', 'A crate the client lacks'], ['knock', 'Knock the body'], ['teleport', 'Teleport the body'],
+].map(([k, t]) => `<button data-add="${k}">${t}</button>`).join('');
+document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+  const t = Math.round(state.t * 1000) / 1000;
+  ({ 'loss-up': () => api.lossWindow('up', t, 0.25), 'loss-down': () => api.lossWindow('down', t, 0.25),
+    crate: () => api.crate(t), knock: () => api.knock(t, 0, -8), teleport: () => api.teleport(t, 14, 6.5) })[b.dataset.add]();
+  render();
+}));
+
+// ---- Walkthroughs -------------------------------------------------------------------
+
+const SCENARIOS = [
+  {
+    title: 'Agreement',
+    text: 'The player strafes right, stops, goes left and up, at a 100 ms round trip with nothing the client cannot predict.',
+    watch: 'Every acknowledgement should agree (the green dots in the first lane, all below the tolerance line): no restore, no replay, the shown body exactly the predicted one. About 9 Commands are unacknowledged at any time, inside ADR-0004\'s "6 to 10". The server\'s body trails the predicted one by about half the round trip.',
+    steps: [['Mid-strafe', () => api.jump(1.2, 'At 1.2 s, mid-strafe.')], ['At the stop', () => api.jump(2.2, 'At 2.2 s, the player has stopped.')]],
+  },
+  {
+    title: 'PhysX drift',
+    text: 'The server\'s body is off by up to 0.3 mm a tick, as two PhysX builds may be.',
+    watch: 'With a 1 mm tolerance most acknowledgements should still agree, and an error never piles up, since each one is compared with the server again. Set the tolerance to 0 and every acknowledgement replays, each jump a fraction of a millimetre: invisible, but 7 Steps a tick spent for nothing.',
+    steps: [['Drift 0.3 mm', () => api.set('driftMm', 0.3)], ['Mid-strafe', () => api.jump(1.2, 'At 1.2 s.')], ['Tolerance 0 mm', () => api.set('tolMm', 0)]],
+  },
+  {
+    title: 'Lost Commands',
+    text: 'First 20% of datagrams lost each way; then every Commands message lost for 250 ms while the player strafes right and then stops.',
+    watch: 'At 20% loss no input is lost, since each Commands message repeats the 8 newest; but the server queues only 1 or 2, so two lost in a row leave it a tick with nothing, and it holds the last movement (7 ticks over the run, 3 small corrections). A 250 ms gap is longer than 8 Commands (133 ms): the queue empties, the server repeats the last movement for 100 ms (red in the third lane), then stands. The player stopped in that gap, so the server walked on, and the next acknowledgement replays 14 Commands to correct it by 14 cm. Then the third lane: the gap\'s Commands arrive at once and 7 sit queued; pacing drains them at most 5% a tick, which takes about 2 s, and every Command meanwhile waits up to 100 ms longer. Letting a tick run up to 25% longer while more than 3 are queued, and 5% nearer the target, drains them in about 0.75 s and changes nothing else.',
+    steps: [
+      ['Loss 20%', () => api.set('loss', 20)],
+      ['Loss 0%, a 250 ms gap at 1.85 s', () => { api.set('loss', 0); api.lossWindow('up', 1.85, 0.25); }],
+      ['Go to the gap', () => api.jump(2.0, 'At 2.0 s, inside the gap.')],
+      ['Next correction', () => api.nextFix()],
+      ['The backlog', () => api.jump(2.5, 'At 2.5 s: 7 Commands queued.')],
+      ['Up to 25% above 3 queued', () => { api.set('drainPct', 25); api.jump(2.5, 'At 2.5 s, draining at up to 25%.'); }],
+    ],
+  },
+  {
+    title: 'Lost updates',
+    text: 'Every Authoritative State update lost for 250 ms.',
+    watch: 'The client keeps predicting and nothing is corrected, since the server is fine; the Commands not yet acknowledged pile up to about 22 and each message still carries only the newest 8. When updates come back, the first one acknowledges a Command far behind, and everything older goes at once.',
+    steps: [['Lose updates at 1 s', () => api.lossWindow('down', 1.0, 0.25)], ['In the gap', () => api.jump(1.24, 'At 1.24 s, end of the gap.')], ['Just after', () => api.jump(1.36, 'At 1.36 s, updates arriving again.')]],
+  },
+  {
+    title: 'A crate the client lacks',
+    text: 'A crate appears in the player\'s path on the server only, as a Prop the client has not been told of would.',
+    watch: 'The server stops at the crate; the client walks through it. Each acknowledgement restores the stopped body and replays about 8 Commands, which walk it forward again through the crate the client cannot see: it is pulled back every tick while the player pushes. That rubber band is what any body the PredictionWorld lacks costs.',
+    steps: [['Add the crate', () => api.crate(0.2)], ['At the crate', () => api.jump(1.6, 'At 1.6 s, pushing into the crate.')]],
+  },
+  {
+    title: 'Knocked toward a wall',
+    text: 'The player walks up and to the right; at 2 s the server knocks its body 8 m/s toward the north wall, which the client cannot know.',
+    watch: 'Restore and replay puts the client on the server\'s path at the first acknowledgement after the knock, one jump of 82 cm, which the presentation slides over about 150 ms. Switch to the rejected blend: the client creeps toward the server by 10% an acknowledgement, the server is already against the wall, and the shift moves the body into the wall, where no step would ever put it ("Predicted inside a wall"). In this prototype\'s plain sliding it then stays stuck there and never agrees again; PhysX would push it out, somewhere.',
+    steps: [
+      ['Input: into the wall', () => api.set('input', 'diagonal')], ['Knock at 2 s', () => api.knock(2.0, 0, -8)],
+      ['After the knock', () => api.jump(2.12, 'At 2.12 s, just after the knock is acknowledged.')],
+      ['Blend instead', () => api.set('mode', 'blend')], ['At the wall', () => api.jump(3.0, 'At 3.0 s, at the wall.')],
+    ],
+  },
+  {
+    title: 'Teleport',
+    text: 'The server moves the body 8 m away, as a respawn would.',
+    watch: 'The jump is 2 m or more, so the shown body goes there at once instead of sliding across the room. Set "Shown at once from" to 20 m and watch it slide for 150 ms through walls.',
+    steps: [['Teleport at 1 s', () => api.teleport(1.0, 14, 6.5)], ['Just after', () => api.jump(1.14, 'At 1.14 s.')], ['Snap from 20 m', () => api.set('snap', 20)], ['Just after', () => api.jump(1.14, 'At 1.14 s.')]],
+  },
+  {
+    title: 'A fast clock',
+    text: 'The client\'s clock runs 2% fast, so it makes Commands slightly faster than the server takes them in.',
+    watch: 'With pacing off, the queue grows by one Command every 50 ticks, 7 by the end, and each Command waits longer before it is taken in, up to 180 ms: input latency the player feels; after about 15 s it passes 16 and Commands are dropped. With pacing on, the client lengthens its ticks (the fourth lane) and the queue stays at 1 or 2.',
+    steps: [['Clock 2% fast, no pacing', () => { api.set('clockPct', 2); api.set('pacing', false); }], ['Near the end', () => api.jump(5.8, 'At 5.8 s.')], ['Pacing on', () => api.set('pacing', true)]],
+  },
+  {
+    title: 'A slow clock',
+    text: 'The client\'s clock runs 3% slow.',
+    watch: 'With pacing off, the queue runs dry every 30 or so ticks and the server holds the last movement: harmless while the movement does not change, a correction when it does (8 over the run). With pacing on, the client shortens its ticks by up to 5%, which covers 3%: no hold, no correction. At 6% slow the cap no longer covers it, and the holds come back.',
+    steps: [['Clock 3% slow, no pacing', () => { api.set('clockPct', -3); api.set('pacing', false); }], ['Next correction', () => api.nextFix()], ['Pacing on', () => api.set('pacing', true)], ['6% slow', () => api.set('clockPct', -6)]],
+  },
+  {
+    title: 'Sprinting to exhaustion',
+    text: 'The player sprints right until the stamina runs out, then back.',
+    watch: 'Stamina and the exhausted flag are predicted with the body, so even the moment the player is forced to walk agrees. Add a 250 ms Commands gap at 3.2 s: the server holds the sprint right while the client has already turned back at 3.3 s, a 10 cm correction.',
+    steps: [['Sprint', () => api.set('input', 'sprint')], ['Exhausted', () => api.jump(3.2, 'At 3.2 s.')], ['A gap at 3.2 s', () => api.lossWindow('up', 3.2, 0.25)], ['Next correction', () => api.nextFix()]],
+  },
+  {
+    title: 'No prediction',
+    text: 'The client shows only what the server sent, as a client that does not predict would.',
+    watch: 'Every input now shows about 140 ms late, a round trip plus the wait in the server\'s queue: the shown body starts and stops visibly after the stick. That is the delay Client-side prediction exists to hide.',
+    steps: [['No prediction', () => api.set('mode', 'none')], ['Starting to move', () => api.jump(0.45, 'At 0.45 s.')]],
+  },
+];
+
+let activeTab = 0, nextStep = 0;
+function renderScenario() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button class="${i === activeTab ? 'active' : ''}" data-tab="${i}">${s.title}</button>`).join('');
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    activeTab = Number(b.dataset.tab); nextStep = 0; renderScenario();
+  }));
+  const s = SCENARIOS[activeTab];
+  const steps = [['Start: reset', () => api.reset()], ...s.steps];
+  document.getElementById('scenario').innerHTML = `<p>${s.text}</p>
+    <p class="watch"><strong>Watch for:</strong> ${s.watch}</p>
+    <div class="steps">${steps.map(([label], i) =>
+      `<button data-step="${i}" class="${i < nextStep ? 'done' : i === nextStep ? 'next' : ''}">${i + 1}. ${label}</button>`).join('')}</div>`;
+  document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+    const i = Number(b.dataset.step);
+    steps[i][1]();
+    nextStep = i + 1;
+    renderScenario();
+    render();
+  }));
+}
+
+renderScenario();
+render();
+new ResizeObserver(() => drawAll()).observe(document.getElementById('mapWrap'));
+const retheme = () => { readTheme(); drawAll(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

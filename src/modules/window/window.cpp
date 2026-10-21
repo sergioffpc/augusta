@@ -3,14 +3,19 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_core.h>
 
+#include "augusta/logging.h"
 #include "augusta/window_events.h"
+#include "augusta/window_vulkan.h"
 #include "glfw_keys.h"
+#include "internals.h"
 
 namespace augusta::window {
 
@@ -46,6 +51,27 @@ GlfwWindow Open(const Config& config) {
   }
   return window;
 }
+
+// The primary display, as the OS runs it: the window opens with no monitor of
+// its own, so the OS may place it on another.
+void LogDisplay() {
+  int count = 0;
+  glfwGetMonitors(&count);
+  GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+  const GLFWvidmode* const mode = monitor == nullptr ? nullptr : glfwGetVideoMode(monitor);
+  if (mode == nullptr) {
+    LOG_INFO("subsystem=window event=display monitors={}", count);
+    return;
+  }
+  // The scale the OS draws its own UI at, e.g. 1.5 for 150%.
+  float scale = 0.0F;
+  glfwGetMonitorContentScale(monitor, &scale, nullptr);
+  LOG_INFO("subsystem=window event=display monitors={} name=\"{}\" width={} height={} refresh_hz={} scale={}", count,
+           glfwGetMonitorName(monitor), mode->width, mode->height, mode->refreshRate, scale);
+}
+
+// Whether the mouse can drive the view unaccelerated (SetCursorLocked).
+void LogMouse() { LOG_INFO("subsystem=window event=mouse raw_motion={}", glfwRawMouseMotionSupported() == GLFW_TRUE); }
 
 Size FramebufferSize(GLFWwindow& window) {
   int width = 0;
@@ -96,6 +122,8 @@ struct Window::Impl {
   // size starts as the window's own, which Windows may have widened past
   // config's.
   explicit Impl(const Config& config) : window(Open(config)), size(FramebufferSize(*window)) {
+    LogDisplay();
+    LogMouse();
     glfwSetWindowUserPointer(window.get(), &events);
     glfwSetKeyCallback(window.get(), OnKey);
     glfwSetMouseButtonCallback(window.get(), OnMouseButton);
@@ -133,6 +161,26 @@ Size Window::GetSize() const { return impl_->size; }
 
 void Window::SetCursorLocked(bool locked) { impl_->SetCursorLocked(locked); }
 
-GLFWwindow& Window::Glfw() const { return *impl_->window; }
+GLFWwindow& Internals::Glfw(const Window& window) { return *window.impl_->window; }
+
+PFN_vkGetInstanceProcAddr VulkanLoader(const Window& /*window*/) {
+  if (glfwVulkanSupported() != GLFW_TRUE) {
+    return nullptr;
+  }
+  return reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
+}
+
+std::span<const char* const> VulkanInstanceExtensions(const Window& /*window*/) {
+  std::uint32_t count = 0;
+  const char** extensions = glfwGetRequiredInstanceExtensions(&count);
+  if (extensions == nullptr) {
+    return {};
+  }
+  return {extensions, count};
+}
+
+VkResult CreateVulkanSurface(const Window& window, VkInstance instance, VkSurfaceKHR& surface) {
+  return glfwCreateWindowSurface(instance, &Internals::Glfw(window), nullptr, &surface);
+}
 
 }  // namespace augusta::window

@@ -17,7 +17,6 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
-#include "augusta/parameters.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -78,6 +77,12 @@ inline constexpr std::size_t kMaxPendingDeaths = 16;
 /// than one rifle lands between two frames, by far.
 inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
 
+/// The most Authoritative State updates a Server view keeps
+/// (ServerView::recent_authoritative): as many as the interpolation keeps per
+/// body (presentation::kUpdatesKept, which ClientRuntime holds equal to this),
+/// so a frame below the tick rate still finds every update since the last.
+inline constexpr std::size_t kRecentStatesKept = 28;
+
 /// Where a Session is in the lifecycle of ADR-0043.
 enum class Phase : std::uint8_t {
   /// The server has not admitted this client: not yet, or it refused.
@@ -120,7 +125,8 @@ struct Failure {
 /// one (Session::GetServerView) and reads everything it needs from it, so what
 /// it reads is one moment, never a mix of two.
 struct ServerView {
-  /// The whole answer to a join request; nullopt until the server admits this client.
+  /// The whole answer to a join request, told once; nullopt until the server
+  /// admits this client.
   std::optional<Admission> accepted;
   /// Why the server refused this client, if it did.
   std::optional<JoinRefusal> refusal;
@@ -135,8 +141,17 @@ struct ServerView {
   bool in_match = false;
   /// How the last match ended, until the next starts.
   std::optional<MatchEnd> match_end;
-  /// The newest Authoritative State of the match in progress; only while in_match.
+  /// The newest Authoritative State of the match in progress; only while
+  /// in_match, and nullopt until the match's first arrives. One that arrives
+  /// outside a match (unreliable, it can overtake Match start or Match end) or
+  /// that names a body not in the match is dropped.
   std::optional<AuthoritativeState> authoritative;
+  /// The Authoritative State updates of the match in progress received most
+  /// recently, oldest first, the newest (authoritative) last: at most
+  /// kRecentStatesKept, and each newer than the one before it. A render frame
+  /// takes every one newer than the last it recorded, so none that arrived
+  /// between two frames is missed.
+  std::vector<AuthoritativeState> recent_authoritative;
   /// The bodies of the match in progress whose Death has been told.
   std::vector<EntityId> dead;
   /// The newest Replay view of the Replay this client watches (ADR-0051), a
@@ -145,10 +160,13 @@ struct ServerView {
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
   [[nodiscard]] Phase GetPhase() const;
-  /// The body this client's player controls, as the last Match start named it.
+  /// The body this client's player controls, as the last Match start named it:
+  /// in the match in progress, or the last one if back in the Lobby; nullopt
+  /// before the first.
   [[nodiscard]] std::optional<EntityId> OwnEntity() const;
   /// Whether this client's player is alive in the match in progress: neither
   /// told of its Death nor at zero health in the newest Authoritative State.
+  /// Death is for the rest of the match.
   [[nodiscard]] bool OwnAlive() const;
 };
 
@@ -209,7 +227,8 @@ class Session {
   void ExchangeMessages();
 
   /// What the server has told this client as of now, whole: the one way to read
-  /// several of the values below as of the same moment. Safe from any thread.
+  /// it, so what is read together is of the same moment. Published by
+  /// ExchangeMessages; safe from any thread.
   [[nodiscard]] std::shared_ptr<const ServerView> GetServerView() const;
 
   /// Whether the connection is still connecting, connected or disconnected.
@@ -243,56 +262,11 @@ class Session {
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<link::ConnectionStats> GetConnectionStats() const;
 
-  /// The session the server assigned once it admitted this client, or nullopt
-  /// until then. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<SessionId> GetSessionId() const;
-
-  /// Whether this client is waiting to be admitted, in the Lobby, or in a
-  /// match. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] Phase GetPhase() const;
-
-  /// Who is in the Lobby, as of the newest Roster the server sent, or nullopt
-  /// until one arrives. Kept through a match, whose players are in
-  /// GetMatchStart. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<Lobby> GetLobby() const;
-
-  /// What the server said at the start of the match in progress, or of the last
-  /// one if back in the Lobby; nullopt before the first. Set by
-  /// ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<MatchStart> GetMatchStart() const;
-
-  /// What the server said when the match this client was last in ended, with
-  /// its winner; nullopt before the first ends and while one is in progress.
-  /// Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<MatchEnd> GetMatchEnd() const;
-
   /// Tells the server this client has loaded what it needs to draw everyone in
   /// the Roster of version, which makes it Ready. Sends nothing unless version
   /// is that of the newest Roster received: the server would not count an older
   /// one. The caller decides when loading is done; safe to call from any thread.
   void ReportReady(std::uint32_t version);
-
-  /// The rate, in Hz, at which the server ticks and this client must: nullopt
-  /// until the server admits this client. The server's startup setting, fixed for
-  /// the life of its process, so it is told once, in Join accepted. This client
-  /// has no rate of its own. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<std::uint8_t> GetTickRate() const;
-
-  /// The parameters the server sent when it admitted this client, or nullopt
-  /// until it does. What this client predicts with, for the whole run; it has
-  /// none of its own. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<parameters::Parameters> GetParameters() const;
-
-  /// Why the server refused this client, or nullopt if it has not. Set by
-  /// ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<JoinRefusal> GetRefusal() const;
-
-  /// The newest Authoritative State of the match in progress, or nullopt until
-  /// one arrives and again once the match ends. One that arrives outside a match
-  /// (unreliable, it can overtake Match start or Match end) or that names a
-  /// body not in the match is dropped. Set by ExchangeMessages; safe to read
-  /// from any thread.
-  [[nodiscard]] std::optional<AuthoritativeState> GetAuthoritativeState() const;
 
   /// The Shots of the match view is of (ServerView::matches_started): the
   /// match in progress, or the last one if back in the Lobby. Those received
@@ -304,38 +278,15 @@ class Session {
   /// match or names a body not in it is dropped. Received by ExchangeMessages;
   /// safe to call from any thread.
   [[nodiscard]] std::vector<Shot> TakeShots(const ServerView& view);
-  /// TakeShots for the newest Server view (GetServerView).
-  [[nodiscard]] std::vector<Shot> TakeShots();
 
   /// The Hit confirmations of the match view is of, as TakeShots hands out
   /// Shots; the newest kMaxPendingHitConfirmations of them if more arrived.
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(const ServerView& view);
-  /// TakeHitConfirmations for the newest Server view (GetServerView).
-  [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations();
 
   /// The Deaths of the match view is of (those that ended it among them), as
   /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
   /// arrived.
   [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
-  /// TakeDeaths for the newest Server view (GetServerView).
-  [[nodiscard]] std::vector<Death> TakeDeaths();
-
-  /// Whether this client's own player is alive: in a match, and neither told
-  /// of its Death nor at zero health in the newest Authoritative State. Death
-  /// is for the rest of the match. Set by ExchangeMessages; safe to read from
-  /// any thread.
-  [[nodiscard]] bool IsAlive() const;
-
-  /// This client's own player's health, as the newest Authoritative State of
-  /// the match in progress told it; nullopt outside a match and until the
-  /// match's first state arrives. Set by ExchangeMessages; safe to read from
-  /// any thread.
-  [[nodiscard]] std::optional<float> GetHealth() const;
-
-  /// The body this client's player controls, as Match start named it: in the
-  /// match in progress, or the last one if back in the Lobby; nullopt before
-  /// the first. Set by ExchangeMessages; safe to read from any thread.
-  [[nodiscard]] std::optional<EntityId> GetEntityId() const;
 
   /// The sequence the command of the next Tick in a match goes under: what a
   /// caller that paces its commands to the server's ticks counts from (the
@@ -354,9 +305,10 @@ class Session {
   /// recent commands the server has not yet acknowledged, and the prediction is
   /// reconciled against what the server last said about this client's player:
   /// its body and its rifle, when the server's state still has its body. Once
-  /// this client's player is dead (IsAlive), nothing more is predicted and the
-  /// state is the last one predicted; the command still goes to the server,
-  /// which acknowledges it and does nothing with it, but never with fire held.
+  /// this client's player is dead (ServerView::OwnAlive), nothing more is
+  /// predicted and the state is the last one predicted; the command still goes
+  /// to the server, which acknowledges it and does nothing with it, but never
+  /// with fire held.
   /// A Replay viewer predicts and sends nothing, ever: its state is the one a
   /// PredictionWorld starts with.
   prediction::State Tick(const command::Command& command, float delta_time);

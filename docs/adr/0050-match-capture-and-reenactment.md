@@ -12,9 +12,9 @@ Reenactment can and cannot promise.
 **A Match capture is one Match, from its Match start to its Match end.** Not the
 server's run: the Lobby, the joins and Readies before the Match, and everything
 between two Matches are left out, since a Reenactment brings its own Lobby
-(below) and a Replay needs none (ADR-0051). A capture opens with a header: a
-magic and the format's version, the engine version that made it, the server pack
-the Match ran on and the client pack its players joined with (their BLAKE3
+(below) and a Replay needs none (ADR-0051). A capture opens with a magic and the
+format's version, then a header: the engine version that made it, the server
+pack the Match ran on and the client pack its players joined with (their BLAKE3
 hashes), the tick rate and when the Match started, in UTC. Then one ordered
 stream of events, each at its offset in ticks from the Match's first tick, so
 the capture names no tick of the server that made it:
@@ -53,13 +53,25 @@ Leave. The markers say how a run compares with the playtest; they do not drive
 it.
 
 **In the protocol's encoding, one record per event.** A record is one payload
-the way a message is (ADR-0007, ADR-0038): a one-byte type and its fields, a
-Command in the very bytes a Commands message carries it in. They are
-`augusta_protocol`'s, next to the messages, but never messages: neither decoder
-yields the other's. A file is the header, then the records in order, each after
-its length in one byte, so none is longer than 255 bytes: the longest, the
-header with its engine version and a Join with its Character's name, are about
-110 and 85, and a Command about 20, so a wider length would only add zeros.
+the way a message is (ADR-0007, ADR-0038): one `augusta.CaptureRecord`, whose
+`oneof record` names the header or the event, a Command the same
+`augusta.Command` a Commands message carries. They are `augusta_protocol`'s, in
+the messages' one schema, but never messages: neither decoder yields the
+other's. A file is the magic, the format's version in one byte, then the header
+and the records in order, each after its length in one byte, so none is longer
+than 255 bytes: the longest, the header with its engine version and a Join with
+its Character's name, are about 110 and 85, and a Command about 20, so a wider
+length would only add zeros.
+
+**The format's version comes before any record.** A reader checks it before it
+parses anything, so a capture of another format is refused by its version, with
+a clear error, and never misread; no reader of an older format is kept. The
+version goes up whenever a record changes what it means or loses a field, never
+for a field only added, which an older reader ignores (ADR-0007). Version 3 is
+the first in Protocol Buffers: a capture of the custom format before it held its
+version inside the header record, and the byte after its magic is that record's
+length, never as small as 3, so it is refused the same way. The magic is
+unchanged, so the server still counts and retains those older captures.
 
 **The disk is written on a thread of the capture's own.** The Simulation thread
 encodes each record as the tick produces it and hands it to the capture's writer
@@ -174,12 +186,13 @@ request at its spawn, and asks `assign_spawns` only for the others. The Join
 request is untouched: a person's client never names a spawn.
 
 **augustad takes Reenact requests only when asked.** A spawn a client names is
-taken on trust, so `simulation.reenactments` in `augustad.yaml` (ADR-0034), off
-by default, turns them on; with it off, a Reenact request is refused with a new
+taken on trust, so `debug.reenactments` in `augustad.yaml` (ADR-0034), off by
+default, turns them on; with it off, a Reenact request is refused with a new
 Join refused reason, _reenactments not accepted_, before any of the Join
 request's checks: whether it may name a spawn at all comes before its version,
-pack or Character. It is a debugging setting, never on for a server open to
-players, as capturing is.
+pack or Character. It is a debug tool, never on for a server open to players, as
+capturing is: a Shipping build has no such key and refuses every Reenact request
+with the same reason (ADR-0074).
 
 A Reenactment need not have every player captured: the other places can be
 anyone's, a person's included, joining with a Join request as always.
@@ -211,10 +224,10 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
 - **Captured players run only where augustac does**, on Windows with a GPU, one
   window each: a Reenactment is for bringing back a playtest's problem, not for
   load tests or CI, which stay with Agents (ADR-0013, ADR-0052).
-- **A capture is valid only with its packs and protocol.** A change to a
-  Command's encoding, to the Map or to the scenario's Characters leaves older
-  captures unplayable: a spawn is a position, not a Spawn point by name, and a
-  changed Map can put it inside a wall.
+- **A capture is valid only with its packs and its format.** A change to what a
+  record means, to the Map or to the scenario's Characters leaves older captures
+  unplayable: the first is a new format version, a spawn is a position, not a
+  Spawn point by name, and a changed Map can put it inside a wall.
 - **A crash in decoding is out of reach.** A capture holds Commands the server
   took in, in its own encoding, never the bytes that reached it; malformed input
   is the protocol fuzzers' to find (ADR-0013).
@@ -272,8 +285,10 @@ nothing checks it. Seeing the Match as it was played is a Replay's job
 - **Each length in 4 bytes, up to 64 KiB, as the Match recording's**: rejected
   (#463) - no record comes near 256 bytes, so three of every record's four
   length bytes were zeros, about a tenth of a capture made mostly of Commands. A
-  record type that ever needs more is a new format version, which the header
-  carries.
-- **Each length as a varint**: rejected - one byte for every record a capture
-  holds, as a plain byte is, for a decoder of its own and a longer record no
+  record type that ever needs more is a new format version.
+- **Each length as a varint**, protobuf's delimited framing: rejected - one byte
+  for every record a capture holds, as a plain byte is, for a longer record no
   capture has.
+- **The format's version inside the header record**: rejected - a reader would
+  have to parse a record before it knows the format the record is in, so a
+  capture of another format could be misread instead of refused.

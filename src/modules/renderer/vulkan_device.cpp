@@ -12,15 +12,16 @@
 #include <string_view>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <nvrhi/nvrhi.h>
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/logging.h"
 #include "augusta/renderer.h"
-#include "device_choice.h"
-#include "gpu_crash_dumps.h"
+#include "augusta/window.h"
+#include "augusta/window_vulkan.h"
+#include "vulkan_device_choice.h"
+#include "vulkan_gpu_crash_dumps.h"
 
 // Vulkan-Hpp's dispatcher, which this module and NVRHI's Vulkan backend both
 // call Vulkan through, once LoadVulkan has pointed it at the system's loader.
@@ -36,13 +37,13 @@ constexpr std::uint32_t kVulkanVersion = VK_API_VERSION_1_3;
 
 constexpr std::string_view kValidationLayer = "VK_LAYER_KHRONOS_validation";
 
-// Points the dispatcher at the loader GLFW found, the system's.
-void LoadVulkan() {
-  if (glfwVulkanSupported() != GLFW_TRUE) {
+// Points the dispatcher at the loader the window found, the system's.
+void LoadVulkan(const window::Window& window) {
+  const PFN_vkGetInstanceProcAddr loader = window::VulkanLoader(window);
+  if (loader == nullptr) {
     throw std::runtime_error("No Vulkan loader found: the client needs a GPU driver with Vulkan 1.3");
   }
-  VULKAN_HPP_DEFAULT_DISPATCHER.init(
-      reinterpret_cast<PFN_vkGetInstanceProcAddr>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr")));
+  VULKAN_HPP_DEFAULT_DISPATCHER.init(loader);
   // Vulkan 1.0's loader has no vkEnumerateInstanceVersion.
   if (VULKAN_HPP_DEFAULT_DISPATCHER.vkEnumerateInstanceVersion == nullptr ||
       vk::enumerateInstanceVersion() < kVulkanVersion) {
@@ -115,6 +116,71 @@ DeviceCandidate CandidateOf(vk::PhysicalDevice device, vk::SurfaceKHR surface) {
           .presents = GraphicsQueueFamily(device, surface).has_value()};
 }
 
+std::string VulkanVersion(std::uint32_t version) {
+  return std::format("{}.{}.{}", VK_API_VERSION_MAJOR(version), VK_API_VERSION_MINOR(version),
+                     VK_API_VERSION_PATCH(version));
+}
+
+// Every device Vulkan lists, chosen or not, so a log shows why one was passed
+// over. Release builds compile LOG_DEBUG away (logging.h), leaving what it
+// would print unused.
+void LogCandidate([[maybe_unused]] std::size_t index, vk::PhysicalDevice device,
+                  [[maybe_unused]] const DeviceCandidate& candidate) {
+  [[maybe_unused]] const vk::PhysicalDeviceProperties properties = device.getProperties();
+  LOG_DEBUG(
+      "subsystem=renderer event=vulkan_device_candidate index={} name=\"{}\" type={} vulkan={} presents={} usable={}",
+      index, properties.deviceName.data(), vk::to_string(properties.deviceType), VulkanVersion(properties.apiVersion),
+      candidate.presents, Usable(candidate));
+}
+
+// The PCI vendor IDs of the GPUs a player is likely to have.
+constexpr std::uint32_t kNvidiaVendorId = 0x10DE;
+constexpr std::uint32_t kAmdVendorId = 0x1002;
+constexpr std::uint32_t kIntelVendorId = 0x8086;
+
+std::string_view VendorName(std::uint32_t vendor_id) {
+  switch (vendor_id) {
+    case kNvidiaVendorId:
+      return "nvidia";
+    case kAmdVendorId:
+      return "amd";
+    case kIntelVendorId:
+      return "intel";
+    case VK_VENDOR_ID_MESA:
+      return "mesa";
+    default:
+      return "other";
+  }
+}
+
+constexpr vk::DeviceSize kBytesPerMib = vk::DeviceSize{1024} * 1024;
+
+// The largest device-local heap: a discrete GPU's own memory, or the share of
+// system memory an integrated one draws from.
+vk::DeviceSize DeviceLocalBytes(vk::PhysicalDevice device) {
+  const vk::PhysicalDeviceMemoryProperties memory = device.getMemoryProperties();
+  vk::DeviceSize largest = 0;
+  for (std::uint32_t i = 0; i < memory.memoryHeapCount; ++i) {
+    if (memory.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+      largest = std::max(largest, memory.memoryHeaps[i].size);
+    }
+  }
+  return largest;
+}
+
+// What the Renderer draws with, for a bug report: which GPU, and which driver.
+void LogChosen(std::size_t index, vk::PhysicalDevice device) {
+  const auto chain = device.getProperties2<vk::PhysicalDeviceProperties2, vk::PhysicalDeviceVulkan12Properties>();
+  const vk::PhysicalDeviceProperties& properties = chain.get<vk::PhysicalDeviceProperties2>().properties;
+  const auto& driver = chain.get<vk::PhysicalDeviceVulkan12Properties>();
+  LOG_INFO(
+      "subsystem=renderer event=vulkan_device index={} name=\"{}\" type={} vendor={} vendor_id={:#06x} "
+      "device_id={:#06x} driver=\"{}\" driver_version=\"{}\" vulkan={} vram_mib={}",
+      index, properties.deviceName.data(), vk::to_string(properties.deviceType), VendorName(properties.vendorID),
+      properties.vendorID, properties.deviceID, driver.driverName.data(), driver.driverInfo.data(),
+      VulkanVersion(properties.apiVersion), DeviceLocalBytes(device) / kBytesPerMib);
+}
+
 // Each device's name, type and Vulkan version, for an error saying none would
 // do.
 std::string Describe(std::span<const vk::PhysicalDevice> devices) {
@@ -131,7 +197,7 @@ std::string Describe(std::span<const vk::PhysicalDevice> devices) {
   return described;
 }
 
-// The extensions device is made with (device_choice.h), of those it has.
+// The extensions device is made with (vulkan_device_choice.h), of those it has.
 std::vector<const char*> ExtensionsFor(vk::PhysicalDevice device, bool gpu_crash_dumps) {
   const std::vector<vk::ExtensionProperties> properties = device.enumerateDeviceExtensionProperties();
   std::vector<std::string_view> available;
@@ -160,13 +226,13 @@ std::string_view Describe(Adapter adapter) {
 
 }  // namespace
 
-VulkanDevice::VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation) {
+VulkanDevice::VulkanDevice(const window::Window& window, Adapter adapter, Validation validation) {
   // Aftermath watches only the devices made after it starts.
   const bool gpu_crash_dumps = EnableGpuCrashDumps();
-  LoadVulkan();
-  CreateInstance(validation);
+  LoadVulkan(window);
+  CreateInstance(window, validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
-  if (const VkResult result = glfwCreateWindowSurface(*instance_, &window, nullptr, &surface); result != VK_SUCCESS) {
+  if (const VkResult result = window::CreateVulkanSurface(window, *instance_, surface); result != VK_SUCCESS) {
     throw std::runtime_error(
         std::format("Creating the window's Vulkan surface failed: {}", nvrhi::vulkan::resultToString(result)));
   }
@@ -225,13 +291,12 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL VulkanDevice::OnValidationMessage(vk::DebugUtil
   return vk::False;
 }
 
-void VulkanDevice::CreateInstance(Validation requested) {
-  std::uint32_t window_extension_count = 0;
-  const char** window_extensions = glfwGetRequiredInstanceExtensions(&window_extension_count);
-  if (window_extensions == nullptr) {
+void VulkanDevice::CreateInstance(const window::Window& window, Validation requested) {
+  const std::span<const char* const> window_extensions = window::VulkanInstanceExtensions(window);
+  if (window_extensions.empty()) {
     throw std::runtime_error("The system's Vulkan loader can't present to a window");
   }
-  instance_extensions_.assign(window_extensions, window_extensions + window_extension_count);
+  instance_extensions_.assign(window_extensions.begin(), window_extensions.end());
   const bool validation = LoadsValidationLayer(requested, requested != Validation::kOff && HasValidationLayer());
   std::vector<const char*> layers;
   if (validation) {
@@ -270,8 +335,9 @@ void VulkanDevice::ChoosePhysicalDevice(Adapter adapter) {
   const std::vector<vk::PhysicalDevice> devices = instance_->enumeratePhysicalDevices();
   std::vector<DeviceCandidate> candidates;
   candidates.reserve(devices.size());
-  for (const vk::PhysicalDevice device : devices) {
-    candidates.push_back(CandidateOf(device, *surface_));
+  for (std::size_t i = 0; i < devices.size(); ++i) {
+    candidates.push_back(CandidateOf(devices[i], *surface_));
+    LogCandidate(i, devices[i], candidates.back());
   }
   const std::optional<std::size_t> chosen = ChooseDevice(candidates, adapter);
   if (!chosen) {
@@ -280,7 +346,7 @@ void VulkanDevice::ChoosePhysicalDevice(Adapter adapter) {
   }
   physical_device_ = devices[*chosen];
   queue_family_ = GraphicsQueueFamily(physical_device_, *surface_).value();
-  LOG_INFO("subsystem=renderer event=vulkan_device name=\"{}\"", physical_device_.getProperties().deviceName.data());
+  LogChosen(*chosen, physical_device_);
 }
 
 void VulkanDevice::CreateDevice(bool gpu_crash_dumps) {

@@ -51,8 +51,8 @@ inline parameters::Parameters MatchParameters() {
   parameters.rifle.muzzle_velocity = kMuzzleVelocity;
   parameters.rifle.reload_seconds = 2.5F;
   parameters.rifle.magazine_capacity = 30;
-  parameters.ammo.gravity = 9.81F;
-  parameters.ammo.max_range = 1000.0F;
+  parameters.ammo.flight.gravity = 9.81F;
+  parameters.ammo.flight.max_range = 1000.0F;
   parameters.ammo.damage = {.head = 1.0F, .torso = 1.0F, .limb = 1.0F};
   parameters.starting_health = 1'000'000.0F;
   parameters.player_count = kPlayers;
@@ -79,7 +79,7 @@ inline std::optional<policy::Policy> ExamplePolicy() {
   if (!pack.has_value()) {
     return std::nullopt;
   }
-  auto policy = scenario::LoadPolicy(*pack);
+  auto policy = policy::LoadPolicy(*pack);
   if (!policy.has_value()) {
     return std::nullopt;
   }

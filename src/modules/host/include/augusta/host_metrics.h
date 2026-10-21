@@ -12,7 +12,7 @@
 #include <prometheus/collectable.h>
 #include <prometheus/metric_family.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/capture_retention.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -57,7 +57,7 @@ using MisbehaviourCounters =
 using MessageCounters = metrics::EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReenactRequest>;
 using RejectionCounters = metrics::EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
 using BodyPartCounters =
-    metrics::EnumCounters<ballistics::BodyPart, ballistics::BodyPart::kHead, ballistics::BodyPart::kLimb>;
+    metrics::EnumCounters<body_part::BodyPart, body_part::BodyPart::kHead, body_part::BodyPart::kLimb>;
 using CaptureStopCounters =
     metrics::EnumCounters<CaptureStop, CaptureStop::kRecordTooLong, CaptureStop::kRetentionBudget>;
 

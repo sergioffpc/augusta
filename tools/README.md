@@ -354,7 +354,7 @@ and exits `1`:
 | `failed its integrity check (content hash mismatch)`     | The pack was corrupted or modified after it was signed.                     |
 | `failed signature verification`                          | The pack was signed by a different key, or the signature was tampered with. |
 | `is not an augusta pack file (bad magic)`                | The file isn't an Augusta pack.                                             |
-| `was written by an incompatible pack format version`     | The pack is of a format version this build doesn't read.                    |
+| `is pack format N; this build reads format M`            | The pack is of format version `N`; this build reads `M` alone.              |
 | `is truncated, or exceeds this build's pack size limits` | The file is shorter than its header and index say, or too large.            |
 | `has a corrupt index`                                    | An index entry has an unknown type, or two entries share a path.            |
 

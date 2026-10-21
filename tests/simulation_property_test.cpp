@@ -16,6 +16,7 @@
 #include <rapidcheck/gtest.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/input.h"
 #include "augusta/logging.h"
@@ -27,6 +28,7 @@
 #include "augusta/prediction.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "augusta/weapon.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
@@ -163,8 +165,8 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
 
 // A rifle a scenario could give: a magazine of 1 to 30 rounds, from one round a
 // second to more than one a tick, and a reload of no time up to a second.
-rc::Gen<augusta::parameters::Rifle> Rifle() {
-  using augusta::parameters::Rifle;
+rc::Gen<augusta::weapon::Rifle> Rifle() {
+  using augusta::weapon::Rifle;
   return rc::gen::apply(
       [](int capacity, int rounds_per_minute, int reload_milliseconds) {
         Rifle rifle;
@@ -185,7 +187,7 @@ rc::Gen<augusta::parameters::Rifle> Rifle() {
 RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWindowOutpacesTheFireRate, ()) {
   augusta::parameters::Parameters parameters;
   parameters.rifle = *Rifle();
-  parameters.ammo.max_range = 50.0F;
+  parameters.ammo.flight.max_range = 50.0F;
   const std::vector<Command> commands = *Commands(1);
 
   augusta::simulation::World world(parameters, kTickRate);
@@ -228,7 +230,7 @@ augusta::simulation::Character WideTarget() {
   }
   return augusta::simulation::Character{
       .eye = Vec3(0.0F, 1.7F, 0.0F),
-      .hitboxes = {{.part = augusta::ballistics::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
 }
 
 // commands with every view brought to within a fifth of a turn of yaw toward
@@ -253,7 +255,7 @@ RC_GTEST_PROP(SimulationPropertyTest, HealthNeverRisesNeverGoesBelowZeroAndReach
   parameters.rifle.rounds_per_minute = 3600.0F;
   parameters.rifle.magazine_capacity = 255;
   parameters.rifle.muzzle_velocity = 600.0F;
-  parameters.ammo.max_range = 50.0F;
+  parameters.ammo.flight.max_range = 50.0F;
   const auto damage = rc::gen::map(rc::gen::inRange(0, 41), [](int points) { return static_cast<float>(points); });
   parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
   parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 201));
@@ -309,7 +311,7 @@ RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ())
   parameters.rifle.rounds_per_minute = 3600.0F;
   parameters.rifle.magazine_capacity = 255;
   parameters.rifle.muzzle_velocity = 600.0F;
-  parameters.ammo.max_range = 50.0F;
+  parameters.ammo.flight.max_range = 50.0F;
   const auto damage = rc::gen::map(rc::gen::inRange(1, 41), [](int points) { return static_cast<float>(points); });
   parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
   parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 201));
@@ -380,7 +382,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
   parameters.rifle.rounds_per_minute = 3600.0F;
   parameters.rifle.magazine_capacity = 255;
   parameters.rifle.muzzle_velocity = 600.0F;
-  parameters.ammo.max_range = 50.0F;
+  parameters.ammo.flight.max_range = 50.0F;
   const auto damage = rc::gen::map(rc::gen::inRange(1, 41), [](int points) { return static_cast<float>(points); });
   parameters.ammo.damage = {.head = *damage, .torso = *damage, .limb = *damage};
   parameters.starting_health = static_cast<float>(*rc::gen::inRange(1, 101));
@@ -439,7 +441,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   augusta::parameters::Parameters parameters;
   parameters.stamina = *Stamina();
   parameters.rifle = *Rifle();
-  parameters.ammo.max_range = 50.0F;
+  parameters.ammo.flight.max_range = 50.0F;
   const auto delay = *rc::gen::inRange<std::size_t>(1, 7);  // A round trip of up to 100 ms.
   const std::vector<Command> commands = *Commands(delay + 1);
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));

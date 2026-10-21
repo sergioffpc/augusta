@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 
@@ -26,15 +27,15 @@ inline physics::CollisionMesh Floor() {
 // One body part: a square half_size wide each side of its center, height
 // meters above the feet.
 struct BodySquare {
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
   float height = 0.0F;
   float half_size = 0.0F;
 };
 
 inline constexpr std::array kBodySquares{
-    BodySquare{.part = ballistics::BodyPart::kHead, .height = 1.6F, .half_size = 0.15F},
-    BodySquare{.part = ballistics::BodyPart::kTorso, .height = 1.1F, .half_size = 0.3F},
-    BodySquare{.part = ballistics::BodyPart::kLimb, .height = 0.4F, .half_size = 0.4F},
+    BodySquare{.part = body_part::BodyPart::kHead, .height = 1.6F, .half_size = 0.15F},
+    BodySquare{.part = body_part::BodyPart::kTorso, .height = 1.1F, .half_size = 0.3F},
+    BodySquare{.part = body_part::BodyPart::kLimb, .height = 0.4F, .half_size = 0.4F},
 };
 
 // The two triangles of square, for a body whose feet stand at feet.

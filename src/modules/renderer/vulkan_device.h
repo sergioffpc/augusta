@@ -7,21 +7,21 @@
 #include <string>
 #include <vector>
 
-#include <GLFW/glfw3.h>
 #include <nvrhi/nvrhi.h>
 #include <nvrhi/vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/renderer.h"
+#include "augusta/window.h"
 
 /// \file
 /// The Renderer's Vulkan device (ADR-0059), private to the module: Vulkan
 /// reached through the system's loader, which the client never links or ships,
 /// a Vulkan 1.3 instance with or without the validation layer, the window's
 /// surface, the physical device the Config's Adapter asks for (decided by
-/// device_choice.h) with its graphics queue, watched for GPU crash dumps
-/// (gpu_crash_dumps.h), and the NVRHI device over them.
-/// renderer.cpp draws through it, and swapchain.h presents with it. Made and
+/// vulkan_device_choice.h) with its graphics queue, watched for GPU crash dumps
+/// (vulkan_gpu_crash_dumps.h), and the NVRHI device over them.
+/// renderer.cpp draws through it, and vulkan_swapchain.h presents with it. Made and
 /// used on the Main/Render thread.
 namespace augusta::renderer {
 
@@ -30,7 +30,7 @@ class VulkanDevice final {
   /// Throws std::runtime_error if there is no Vulkan 1.3 loader, if validation
   /// requires the validation layer and the loader finds none, or if no device
   /// is the one adapter asks for. window must outlive this device.
-  VulkanDevice(GLFWwindow& window, Adapter adapter, Validation validation);
+  VulkanDevice(const window::Window& window, Adapter adapter, Validation validation);
 
   /// Waits for the GPU to finish all it was given.
   ~VulkanDevice();
@@ -66,7 +66,7 @@ class VulkanDevice final {
                                                               const vk::DebugUtilsMessengerCallbackDataEXT* data,
                                                               void* user_data);
 
-  void CreateInstance(Validation requested);
+  void CreateInstance(const window::Window& window, Validation requested);
   void ChoosePhysicalDevice(Adapter adapter);
   // gpu_crash_dumps: whether Aftermath is watching, so the device turns on what
   // it reads.

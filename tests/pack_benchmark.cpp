@@ -24,7 +24,7 @@ void BM_PackLoad(benchmark::State& state, const std::string& stem) {
   for (auto _ : state) {
     auto loaded = Pack::Load(path, *public_key);
     if (!loaded.has_value()) {
-      state.SkipWithError(std::string(augusta::assets::DescribeLoadError(loaded.error())));
+      state.SkipWithError(augusta::assets::DescribeLoadError(loaded.error()));
       return;
     }
     benchmark::DoNotOptimize(loaded);

@@ -65,7 +65,7 @@ class TracersTest : public ::testing::Test {
 
 // Requirements: US-10, US-19
 TEST_F(TracersTest, ATracerIsDrawnAlongTheShotsTrajectoryTickByTick) {
-  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(60.0F)).has_value());
+  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(60.0F), augusta::physics::SurfaceId{1}).has_value());
   const std::vector<StepResult> trajectory = Trajectory(map_);
   ASSERT_GT(trajectory.size(), 3U);
   Tracers tracers(map_);
@@ -97,9 +97,9 @@ TEST_F(TracersTest, BetweenTwoTicksATracerIsPartWayAlongTheTicksPath) {
 
 // Requirements: US-10, US-19
 TEST_F(TracersTest, ATracerThatMeetsTheMapEndsInAnImpactWhereItStruck) {
-  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F)).has_value());
+  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F), augusta::physics::SurfaceId{1}).has_value());
   const std::vector<StepResult> trajectory = Trajectory(map_);
-  ASSERT_EQ(trajectory.back().outcome, Outcome::kHitMap);
+  ASSERT_EQ(trajectory.back().outcome, Outcome::kStruck);
   Tracers tracers(map_);
   tracers.Fire(kEye, kAim, kRules);
 
@@ -115,7 +115,7 @@ TEST_F(TracersTest, ATracerThatMeetsTheMapEndsInAnImpactWhereItStruck) {
 
 // Requirements: US-10, US-19
 TEST_F(TracersTest, AnImpactFadesOnceItsTimeIsUp) {
-  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F)).has_value());
+  ASSERT_TRUE(map_.AddCollisionMesh(WallAt(20.0F), augusta::physics::SurfaceId{1}).has_value());
   Tracers tracers(map_);
   tracers.Fire(kEye, kAim, kRules);
   while (tracers.Impacts().empty()) {

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/math.h"
@@ -27,7 +27,7 @@
 // the commands of each tick.
 namespace {
 
-using augusta::ballistics::BodyPart;
+using augusta::body_part::BodyPart;
 using augusta::command::Command;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
@@ -237,8 +237,8 @@ Parameters WithTheTestRifle() {
   parameters.rifle.rounds_per_minute = 600.0F;
   parameters.rifle.magazine_capacity = 200;
   parameters.rifle.muzzle_velocity = 600.0F;
-  parameters.ammo.gravity = 0.0F;
-  parameters.ammo.max_range = 1000.0F;
+  parameters.ammo.flight.gravity = 0.0F;
+  parameters.ammo.flight.max_range = 1000.0F;
   return parameters;
 }
 
@@ -453,7 +453,7 @@ class ShortRangeFireTest : public FireTest {
  protected:
   static Parameters WithARangeOfTwentyFiveMeters() {
     Parameters parameters = WithTheTestRifle();
-    parameters.ammo.max_range = 25.0F;
+    parameters.ammo.flight.max_range = 25.0F;
     return parameters;
   }
 
@@ -487,8 +487,8 @@ class ExtremeFireTest : public ::testing::Test {
     parameters.rifle.rounds_per_minute = std::numeric_limits<float>::max();
     parameters.rifle.magazine_capacity = std::numeric_limits<std::uint8_t>::max();
     parameters.rifle.muzzle_velocity = 1.0F;
-    parameters.ammo.gravity = 0.0F;
-    parameters.ammo.max_range = std::numeric_limits<float>::max();
+    parameters.ammo.flight.gravity = 0.0F;
+    parameters.ammo.flight.max_range = std::numeric_limits<float>::max();
     return parameters;
   }
 
@@ -1323,6 +1323,37 @@ TEST_F(HitTest, ATargetBehindAWallIsNotHitAndTheWallIs) {
   EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
 }
 
+// A round aimed a metre beside Bob strikes Carol, standing there just short of
+// him, on the tick it is fired: her Hitboxes are posed for that Step. With a
+// wall just short of her, the same round strikes the wall on that tick instead,
+// and the Map it strikes is never read as one of the Hitboxes posed beside it.
+// Requirements: US-10, US-11
+TEST_F(HitTest, ARoundStrikingTheMapWhileHitboxesArePosedForItsStepHitsNoOne) {
+  constexpr EntityId kCarol = static_cast<EntityId>(3);
+  world_.AddPlayer(kCarol, Vec3(1.0F, 0.5F, -9.5F), Target());
+  Wait(kSettleTicks);
+  const Vec3 beside_bob(1.0F, kTorsoHeight, 0.0F);
+  const State unwalled = Tick(FiringAt(beside_bob));
+  ASSERT_EQ(unwalled.hits.size(), 1U);
+  ASSERT_EQ(unwalled.hits[0].target, kCarol);
+  const float carols_health = Entity(unwalled, kCarol).health;
+  Wait(6);
+  constexpr float kWallZ = -9.0F;
+  ASSERT_TRUE(world_
+                  .AddCollisionMesh(CollisionMesh{.points = {Vec3(-20.0F, 0.0F, kWallZ), Vec3(-20.0F, 5.0F, kWallZ),
+                                                             Vec3(20.0F, 5.0F, kWallZ), Vec3(20.0F, 0.0F, kWallZ)},
+                                                  .indices = {0, 1, 2, 0, 2, 3}})
+                  .has_value());
+
+  const State state = Tick(FiringAt(beside_bob));
+
+  EXPECT_TRUE(state.hits.empty());
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  EXPECT_NEAR(state.map_impacts[0].z, kWallZ, 0.01F);
+  EXPECT_EQ(Entity(state, kBob).health, kStartingHealth);
+  EXPECT_EQ(Entity(state, kCarol).health, carols_health);
+}
+
 // Alice and Bob fire at each other on one tick, from the same Seen time: each
 // round is judged against the other, never against its own shooter.
 // Requirements: US-11
@@ -1360,13 +1391,14 @@ TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
 }
 
-// What the Shooter's delay's cap of 250 ms needs, and no more (ADR-0044).
+// What the Shooter's delay's cap of 300 ms needs, and no more (ADR-0044).
 // Requirements: NFR-02
 TEST(HitboxHistoryTest, TheHistoryHoldsTheCapsWorthOfTicksAtTheTickRate) {
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(60), 15U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(60), 18U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(30), 9U);
   // A cap that is not a whole number of ticks takes the tick that covers it.
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(30), 8U);
-  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(255), 64U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(255), 77U);
+  EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(25), 8U);
   EXPECT_EQ(augusta::simulation::HitboxHistoryTicks(1), 1U);
 }
 
@@ -1385,8 +1417,8 @@ Character Sliver() {
 class LagCompensationTest : public ::testing::Test {
  protected:
   static constexpr float kAimHeight = 1.2F;
-  // The Shooter's delay's cap, 250 ms, in ticks of kTick.
-  static constexpr std::uint32_t kCapTicks = 15;
+  // The Shooter's delay's cap, 300 ms, in ticks of kTick.
+  static constexpr std::uint32_t kCapTicks = 18;
 
   explicit LagCompensationTest(float distance = 8.0F) : world_(WithTheTestRifle(), kTickRate) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
@@ -1496,6 +1528,14 @@ TEST_F(LagCompensationTest, ASeenTimeAsOldAsTheCapIsJudgedWhereTheTargetWasThen)
   EXPECT_EQ(Shoot(BobAt(seen), seen, 0.0F).size(), 1U);
 }
 
+// 280 ms is 16.8 ticks, short of the cap: judged where it reports, not at the cap.
+// Requirements: NFR-02
+TEST_F(LagCompensationTest, ASeenTimeShortOfTheCapIsJudgedWhereItReports) {
+  const augusta::tick::Tick seen = Next() - 17;
+
+  EXPECT_EQ(Shoot(BobAt(seen, 0.2F), seen, 0.2F).size(), 1U);
+}
+
 // A shooter with a delay past the cap still fires, and is judged against the
 // oldest Seen time the cap allows, not against the one it reports.
 // Requirements: NFR-02, US-15
@@ -1541,7 +1581,19 @@ TEST_F(LagCompensationTest, ARoundHeldAtTheCapReportsExactlyTheCap) {
   const std::vector<float> delays = TickWith(command).shooters_delays;
 
   ASSERT_EQ(delays.size(), 1U);
-  EXPECT_EQ(delays[0], std::chrono::duration<float>(augusta::simulation::kMaxShootersDelay).count());
+  EXPECT_EQ(delays[0], 0.3F);
+}
+
+// Requirements: NFR-02
+TEST_F(LagCompensationTest, ARoundShortOfTheCapReportsItsOwnDelay) {
+  Command command = Firing();
+  command.seen_tick = Next() - 17;
+  command.seen_fraction = 0.2F;
+
+  const std::vector<float> delays = TickWith(command).shooters_delays;
+
+  ASSERT_EQ(delays.size(), 1U);
+  EXPECT_NEAR(delays[0], 0.28F, 1e-5F);
 }
 
 // Requirements: NFR-02

@@ -1,6 +1,6 @@
 {
   "name": "augusta",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "dependencies": [
     "abseil",
     "benchmark",
@@ -44,12 +44,7 @@
             }
           ]
         },
-        {
-          "name": "imgui",
-          "features": [
-            "glfw-binding"
-          ]
-        },
+        "imgui",
         "miniaudio",
         "nvrhi",
         {

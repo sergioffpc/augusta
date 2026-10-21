@@ -8,7 +8,6 @@
 #include "augusta/command.h"
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
-#include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/weapon.h"
@@ -123,7 +122,7 @@ TEST(LocalCameraTest, TheCameraTurnsByTheViewHandedToTheFrame) {
 // The view shows where the next round goes: a rifle climbing by its recoil
 // takes the camera with it, off the view the player holds.
 TEST(LocalCameraTest, TheCameraLooksWhereTheNextRoundLeaves) {
-  augusta::parameters::Rifle rifle;
+  augusta::weapon::Rifle rifle;
   rifle.magazine_capacity = 30;
   rifle.rounds_per_minute = 600.0F;
   rifle.recoil_pattern = {{.pitch = 0.03F, .yaw = 0.01F}, {.pitch = 0.02F, .yaw = -0.02F}};

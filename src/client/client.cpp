@@ -49,12 +49,17 @@ namespace augusta::client {
 
 namespace {
 
-// The window the client opens, titled as the game; a Debug build runs under
-// Vulkan's validation layer (ADR-0059) wherever the loader finds it through
-// VK_ADD_LAYER_PATH.
+// The window the client opens, titled as the game.
+window::Config WindowConfig() {
+  window::Config config;
+  config.title = "augusta";
+  return config;
+}
+
+// A Debug build runs under Vulkan's validation layer (ADR-0059) wherever the
+// loader finds it through VK_ADD_LAYER_PATH.
 renderer::Config RendererConfig() {
   renderer::Config config;
-  config.window.title = "augusta";
 #ifndef NDEBUG
   config.validation = renderer::Validation::kIfAvailable;
 #endif
@@ -85,6 +90,9 @@ struct ClientRuntime::Impl {
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
+  // Main/Render thread only. The window is declared first so that it outlives
+  // the Renderer, which draws into it.
+  window::Window window;
   renderer::Renderer renderer;
 
   // A Captured player's run (ADR-0050), if this client is one: NextCommand is
@@ -120,7 +128,7 @@ struct ClientRuntime::Impl {
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
 
-  // Main/Render thread only: the Server view's Authoritative State and Match
+  // Main/Render thread only: the Server view's recent Authoritative State updates and Match
   // start as presentation's types, converted when they change and lent to
   // every render frame in between (NextFrameInput); a Replay viewer's views
   // of the newest tick, lent to the frame they are converted for; and the
@@ -157,8 +165,9 @@ struct ClientRuntime::Impl {
 
   void SampleNetworkStats() {
     const std::optional<link::ConnectionStats> stats = session->GetConnectionStats();
-    if (const std::optional<std::uint8_t> rate = session->GetTickRate(); stats.has_value() && rate.has_value()) {
-      round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, *rate));
+    if (const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+        stats.has_value() && view->accepted.has_value()) {
+      round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, view->accepted->tick_rate_hz));
     }
     net_stats_counters.Sample(stats);
     const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
@@ -172,7 +181,8 @@ struct ClientRuntime::Impl {
         load_character(std::move(loader)),
         input(cfg.input),
         presentation(audio, cue_sounds, eye),
-        renderer(RendererConfig()) {
+        window(WindowConfig()),
+        renderer(window, RendererConfig()) {
     if (cfg.reenactment.has_value()) {
       reenactment.emplace(*cfg.reenactment);
     }
@@ -373,7 +383,7 @@ struct ClientRuntime::Impl {
   // first. Main/Render thread only.
   std::optional<failure::Failure> WaitForAdmission() {
     constexpr auto kPollInterval = std::chrono::milliseconds(10);
-    while (!renderer.GetWindow().ShouldClose()) {
+    while (!window.ShouldClose()) {
       if (auto failure = GetRunFailure(); failure.has_value()) {
         return failure;
       }
@@ -387,7 +397,7 @@ struct ClientRuntime::Impl {
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
         return std::nullopt;
       }
-      input.Handle(renderer.GetWindow().Poll());
+      input.Handle(window.Poll());
       std::this_thread::sleep_for(kPollInterval);
     }
     return std::nullopt;
@@ -402,7 +412,7 @@ struct ClientRuntime::Impl {
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
   // (ADR-0005), however the Network I/O thread interleaves with this one; the
-  // events taken are of that view's match too. The snapshot and characters
+  // events taken are of that view's match too. The updates and characters
   // are lent from converted_view, so the frame must run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
@@ -418,7 +428,7 @@ struct ClientRuntime::Impl {
         .aim = aim,
         .fire = fire,
         .local_entity = std::nullopt,
-        .snapshot = converted_view.Snapshot(),
+        .updates = converted_view.Updates(),
         .characters = converted_view.Characters(),
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),
@@ -503,7 +513,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     return failure;
   }
 
-  window::Window& window = impl_->renderer.GetWindow();
+  window::Window& window = impl_->window;
   bool cursor_locked = impl_->input.CursorCaptured();
   window.SetCursorLocked(cursor_locked);
   LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");

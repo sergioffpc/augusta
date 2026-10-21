@@ -17,7 +17,7 @@
 #include <prometheus/metric_family.h>
 #include <prometheus/metric_type.h>
 
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/capture_retention.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -46,9 +46,10 @@ constexpr std::initializer_list<double> kTickBuckets = {0.001,  0.002, 0.004, 0.
 constexpr std::initializer_list<double> kMatchBuckets = {30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600};
 // Around a datagram's size, up to a few.
 constexpr std::initializer_list<double> kUpdateBuckets = {64, 128, 256, 512, 1024, 1200, 1500, 2048, 4096};
-// Up to the 250 ms cap (simulation::kMaxShootersDelay), which a capped round falls in.
-constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100,
-                                                                 0.125, 0.150, 0.200, 0.250};
+// Up to the 300 ms cap (simulation::kMaxShootersDelay), the bucket a capped round
+// falls in (CountCombat observes it at the cap).
+constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100, 0.125,
+                                                                 0.150, 0.200, 0.250, 0.300};
 
 // Each label below is empty for a value no counter has, which
 // LabelledExactly checks.
@@ -123,18 +124,6 @@ constexpr std::string_view RejectionLabel(Rejection rejection) {
   return {};
 }
 
-constexpr std::string_view BodyPartLabel(ballistics::BodyPart part) {
-  switch (part) {
-    case ballistics::BodyPart::kHead:
-      return "head";
-    case ballistics::BodyPart::kTorso:
-      return "torso";
-    case ballistics::BodyPart::kLimb:
-      return "limb";
-  }
-  return {};
-}
-
 constexpr std::string_view CaptureStopLabel(CaptureStop stop) {
   switch (stop) {
     case CaptureStop::kRecordTooLong:
@@ -170,7 +159,7 @@ static_assert(metrics::LabelledExactly<LeavingCounters>(LeavingLabel));
 static_assert(metrics::LabelledExactly<MisbehaviourCounters>(MisbehaviourLabel));
 static_assert(metrics::LabelledExactly<MessageCounters>(link::NameOf));
 static_assert(metrics::LabelledExactly<RejectionCounters>(RejectionLabel));
-static_assert(metrics::LabelledExactly<BodyPartCounters>(BodyPartLabel));
+static_assert(metrics::LabelledExactly<BodyPartCounters>(body_part::NameOf));
 static_assert(metrics::LabelledExactly<CaptureStopCounters>(CaptureStopLabel));
 
 // What Judge counts as misbehaviour is what MisbehaviourCounters has a counter for.
@@ -300,11 +289,11 @@ void AppendNetwork(std::vector<MetricFamily>& families, const HostMetrics& metri
 void AppendCombat(std::vector<MetricFamily>& families, const HostMetrics& metrics) {
   families.push_back(CounterFamily("augustad_shots_total", "Rounds fired.", metrics.shots));
   families.push_back(LabelledFamily("augustad_hit_confirmations_total", "Hits on players, by body part.",
-                                    metrics.hit_confirmations, "body_part", BodyPartLabel));
+                                    metrics.hit_confirmations, "body_part", body_part::NameOf));
   families.push_back(HistogramFamily("augustad_shooters_delay_seconds", "The Shooter's delay of each round fired.",
                                      metrics.shooters_delay));
   families.push_back(CounterFamily("augustad_shooters_delay_capped_total",
-                                   "Rounds whose Shooter's delay was held at the 250 ms cap.",
+                                   "Rounds whose Shooter's delay was held at the 300 ms cap.",
                                    metrics.shooters_delay_capped));
   families.push_back(GaugeFamily("augustad_bullets_in_flight", "Bullets still flying after the last tick.",
                                  metrics.bullets_in_flight));

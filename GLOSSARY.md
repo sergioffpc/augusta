@@ -85,9 +85,16 @@ presence it carries), connection, netcode
 **Session ID**: The Authoritative server's name for one connected player
 (harness::SessionId on the client, host::SessionId and policy::SessionId on the
 server, link::SessionId as the Link's own name for it, protocol::SessionIdWire
-on the wire), assigned when it admits the join. Distinct from the transport's
-own handle for the connection, and not a credential — the server tells senders
-apart by connection, not by this ID. _Avoid_: Player ID, connection ID
+on the wire), assigned when it admits the join. Unique across every server and
+every restart, so it names one Session wherever its lines end up. Distinct from
+the transport's own handle for the connection, and not a credential — the server
+tells senders apart by connection, not by this ID. _Avoid_: Player ID (a player
+has no identity beyond its Session yet), connection ID
+
+**Match ID**: The Authoritative server's name for one Match, assigned at its
+Match start and unique across every server and every restart: what ties a
+Match's lines, its Match capture and the Sessions that played it together.
+_Avoid_: Match number, round ID
 
 **Entity ID**: The Authoritative server's name for one dynamic body
 (host::EntityId and simulation::EntityId on the server, harness::EntityId and
@@ -310,7 +317,8 @@ actions taken on it (ADR-0023).
 **Server view**: Everything the server has told one client, as of one moment
 (harness::ServerView): published whole by the client's Network I/O thread for
 every message that changes it and never changed after, so a reader on another
-thread sees one moment (ADR-0005). _Avoid_: Snapshot (an Authoritative State
+thread sees one moment (ADR-0005). It holds the newest Authoritative State
+update and the recent ones before it. _Avoid_: Snapshot (an Authoritative State
 update is not one), network state
 
 **SimulationWorld**: The Authoritative server's one world: every player and
@@ -328,9 +336,9 @@ to PresentationWorld and never changed after (ADR-0005). _Avoid_: Predicted
 snapshot, client state
 
 **PresentationWorld**: The client's world run once per render frame: it turns
-the Prediction State and the Authoritative State updates into what the frame
-shows, showing the other players an Interpolation delay behind and smoothing
-Reconciliation's jumps. _Avoid_: Render world, scene
+the Prediction State and every Authoritative State update since the last frame
+into what the frame shows, showing the other players an Interpolation delay
+behind and smoothing Reconciliation's jumps. _Avoid_: Render world, scene
 
 **Data-driven configuration**: Tunable values (e.g. weapon/ammo damage, stamina
 rules) written as a Lua table script rather than expressed as mechanism code or
@@ -402,7 +410,56 @@ spawn, sends that player's Commands at their ticks, leaves when that player did
 and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
 (it watches, it does not play), bot, ghost
 
+### Debugging
+
+**Run**: One execution of a client, from its launch until its process ends. It
+holds at most one Session, since a client never reconnects, and may end before
+it is admitted. _Avoid_: Session (the presence on the server), launch
+
+**Run ID**: The client's own name for one Run, taken at launch and unique across
+every machine: it marks everything the Run leaves behind, and the server learns
+it on the join, which ties it to the Session ID it admits. _Avoid_: Session ID,
+process ID
+
+**Crash dump**: What a crash leaves to be read in a debugger beside the build's
+symbols: a client's minidump or core, or a GPU crash's Aftermath dump. _Avoid_:
+Crash report (a crash leaves log lines too), core (one kind of it)
+
+**Debug HUD**: Lines of text over the frame's corner showing the client's system
+metrics. _Avoid_: Overlay, stats panel
+
+**Debug overlay**: Shapes drawn into the 3D world to show state the game itself
+does not show, such as collision shapes, Hitboxes or a Smoke screen's voxels.
+_Avoid_: Debug view (it replaces the frame), gizmo, wireframe
+
+**Debug view**: The frame replaced by one of the images it is made from, such as
+albedo, normals or shadows. _Avoid_: Debug overlay (drawn over the world),
+render mode
+
+**Debug panel**: A window over the frame with numbers and controls about one
+part of the game, such as the network or the physics. _Avoid_: Debug menu,
+inspector, debug HUD (text lines only)
+
+**Debug index**: The Debug panel listing the debug tools a client carries, each
+switched on or off from it. _Avoid_: Debug menu, console
+
+**Debug interaction**: The state in which the Debug panels take the mouse and
+keyboard and the game gets neither. _Avoid_: Debug mode, edit mode
+
+**Development build**: A build of the game with its debug tools in, whatever its
+optimisation: what developers run, and what the `develop` Environment serves.
+_Avoid_: Debug build (one kind of Development build, unoptimised)
+
+**Shipping build**: The build of the game players get, with every debug tool
+left out of it, not merely switched off: what a release publishes and what the
+`staging` Environment serves. _Avoid_: Release build (Release is also how a
+Development build is optimised), ship build, retail build
+
 ### Combat
+
+**Surface**: Anything a round can strike: a collider of the Map, a Prop, or one
+of a player's Hitboxes. Ballistics knows a Surface only by the id its caller
+gave it. _Avoid_: Target; collider, when the Surface is a Hitbox
 
 **Hitbox**: A volume of a player's body that stands for one body part (head,
 torso or limb), used server-side to resolve where a bullet impacts. Authored
@@ -420,6 +477,24 @@ locomotion, stance, aim and how the weapon is held. Client and server arrive at
 the same one from the same state, so a shooter hits where it sees a body; what
 the client draws on top of it (Cosmetic layers) never moves a Hitbox. _Avoid_:
 Server pose, physics pose, hit pose
+
+**Skeleton**: The jointed frame of a Character, authored with it and the same
+for every player who plays that Character: what a Hitbox hangs from and what a
+Hitbox pose moves. Each Character has its own; a Clip plays on several only when
+their Skeletons share its Joints. _Avoid_: Rig (a rig is the authoring apparatus
+around a skeleton, including what never ships), armature, bones (a Joint is the
+unit, and "bone" names the gap between two)
+
+**Joint**: One articulation of a Skeleton, named by its place in it, carrying
+the Hitboxes authored under it. Every Hitbox belongs to exactly one; a Joint may
+carry none. _Avoid_: Bone, node, transform (a Joint has a transform; it is not
+one)
+
+**Rest pose**: The Hitbox pose a Character is in when nothing animates it — the
+pose it was authored in. What the engine poses a player by until a Character has
+Clips, and what a Skeleton's Joint transforms describe as authored. _Avoid_:
+Bind pose (that names the pose a mesh was skinned in, a client concern), T-pose,
+default pose, idle (an idle is a Clip, not the absence of one)
 
 **Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
 without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:
@@ -461,13 +536,13 @@ punch
 
 **Shooter's delay**: How far in the past the shooter saw other players when it
 fired: from the Seen time its fire Command reports to the tick the server takes
-that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for
+that Command in, capped at 300 ms. Fixed when the Shot is fired, it holds for
 the bullet's whole flight (ADR-0044). _Avoid_: Ping, lag, latency, rewind time
 (the RTT is only part of it, next to the Interpolation delay)
 
 **Hitbox history**: Every player's pose (position, stance and facing) on each of
 the Authoritative server's recent ticks, as that tick's Authoritative State
-reported it: enough ticks to cover the Shooter's delay's cap, 15 at 60 Hz. What
+reported it: enough ticks to cover the Shooter's delay's cap, 18 at 60 Hz. What
 Lag compensation places a player's Hitboxes by. _Avoid_: Rewind buffer, position
 history, snapshot history
 
@@ -481,6 +556,12 @@ hit a player: the target, the body part and the damage. The only source of the
 shooter's hit marker; a client never predicts a hit. _Avoid_: Hit marker (the
 marker is how the client shows a Hit confirmation), hit prediction, hit
 registration
+
+**Shot judgement**: How the Authoritative server judged one of a shooter's
+rounds, told to that shooter in a Development build: the Hitboxes each tick of
+its flight was tested against, as they were the Shooter's delay ago, and what
+the round struck. _Avoid_: Impacts, hit report, Hit confirmation (only a hit,
+and in every build)
 
 **Death**: A player's health reaching zero in a Match, as the Authoritative
 server resolves it: who died, who killed it and on which tick. The player stays

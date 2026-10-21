@@ -8,6 +8,12 @@ add_executable(augusta_logging_tests logging_test.cpp)
 target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_logging_tests)
 
+# proc_files.h is private to the module, hence its directory.
+add_executable(augusta_hardware_tests hardware_test.cpp)
+target_include_directories(augusta_hardware_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/hardware)
+target_link_libraries(augusta_hardware_tests PRIVATE augusta_hardware GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_hardware_tests)
+
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 
@@ -40,7 +46,7 @@ target_link_libraries(
     augusta_simulation
     augusta_version
     augusta_host_replay
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     benchmark::benchmark
     benchmark::benchmark_main
 )
@@ -239,6 +245,16 @@ target_link_libraries(augusta_simulation_tests PRIVATE augusta_simulation GTest:
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 
+# The Shooter's delay's cap held to a real client's budget: simulation's cap
+# against presentation's Interpolation delay (ADR-0044).
+add_executable(augusta_shooters_delay_budget_tests shooters_delay_budget_test.cpp)
+target_link_libraries(
+  augusta_shooters_delay_budget_tests
+  PRIVATE augusta_simulation augusta_presentation GTest::gtest GTest::gtest_main
+)
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_shooters_delay_budget_tests DISCOVERY_TIMEOUT 30)
+
 # SimulationWorld with a Game policy script the test chooses (ADR-0022).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(
@@ -247,7 +263,7 @@ target_link_libraries(
     augusta_simulation
     augusta_policy
     augusta_scenario_parameters_loader
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -279,7 +295,7 @@ gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
   augusta_example_rules_tests
-  PRIVATE augusta_simulation augusta_scenario_policy_loader augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE augusta_simulation augusta_policy_loader augusta_logging GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_example_rules_tests
@@ -331,6 +347,11 @@ target_link_libraries(augusta_physics_tests PRIVATE augusta_physics GTest::gtest
 # DISCOVERY_TIMEOUT above the 5s default, same reason as the networking tests
 # above: the PhysX DLLs make a fresh build's first launch slow under Windows Defender.
 gtest_discover_tests(augusta_physics_tests DISCOVERY_TIMEOUT 30)
+
+add_executable(augusta_body_part_tests body_part_test.cpp)
+target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
@@ -417,7 +438,7 @@ target_link_libraries(augusta_map_tests PRIVATE augusta_physics GTest::gtest GTe
 gtest_discover_tests(augusta_map_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
-target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_scenario_policy_loader GTest::gtest GTest::gtest_main)
+target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_policy_loader GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_session_tests session_test.cpp)
@@ -432,7 +453,7 @@ target_link_libraries(
     augusta_link_messages
     augusta_protocol
     augusta_scenario_parameters_loader
-    augusta_scenario_policy_loader
+    augusta_policy_loader
     augusta_logging
     GTest::gtest
     GTest::gtest_main
@@ -650,7 +671,7 @@ add_executable(augusta_cooked_pack_tests cooked_pack_test.cpp)
 # and every cue's sound as the client does.
 target_link_libraries(
   augusta_cooked_pack_tests
-  PRIVATE augusta_assets augusta_cues augusta_scenario_policy_loader GTest::gtest GTest::gtest_main
+  PRIVATE augusta_assets augusta_cues augusta_policy_loader GTest::gtest GTest::gtest_main
 )
 target_compile_definitions(
   augusta_cooked_pack_tests
@@ -692,14 +713,14 @@ target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURC
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_renderer_vertices_tests)
 
-# And which Vulkan device it draws with (device_choice.h).
-add_executable(augusta_renderer_device_choice_tests renderer_device_choice_test.cpp)
-target_include_directories(augusta_renderer_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+# And which Vulkan device it draws with (vulkan_device_choice.h).
+add_executable(augusta_renderer_vulkan_device_choice_tests renderer_vulkan_device_choice_test.cpp)
+target_include_directories(augusta_renderer_vulkan_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(
-  augusta_renderer_device_choice_tests
-  PRIVATE augusta_renderer_device_choice GTest::gtest GTest::gtest_main
+  augusta_renderer_vulkan_device_choice_tests
+  PRIVATE augusta_renderer_vulkan_device_choice GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_renderer_device_choice_tests)
+gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests)
 
 if(AUGUSTA_CLIENT)
   # The client Runtime's internal targets build with the client, on Windows
@@ -847,8 +868,10 @@ if(AUGUSTA_CLIENT)
 
   # The window itself, hidden, which needs a display: on Linux CI's runner gives
   # it a virtual X server, as the renderer smoke test's (nightly-jobs.yml). It
-  # calls the window's GLFW callbacks as the OS's events would.
+  # calls the window's GLFW callbacks as the OS's events would, on the GLFW
+  # window internals.h, private to the module, gives it.
   add_executable(augusta_client_window_tests client_window_test.cpp)
+  target_include_directories(augusta_client_window_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/window)
   target_link_libraries(augusta_client_window_tests PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_window_tests)
 endif()

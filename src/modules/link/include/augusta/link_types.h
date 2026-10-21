@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -91,7 +91,7 @@ struct HitConfirmation {
   /// The damage the hit did.
   float damage = 0.0F;
   /// Where on the body it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 /// Where one player of a Replay looked on one tick, from the Command the
@@ -123,7 +123,7 @@ struct Death {
   float yaw = 0.0F;
   float pitch = 0.0F;
   /// Where on the victim it struck.
-  ballistics::BodyPart part = ballistics::BodyPart::kTorso;
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
 
 /// One player in the Lobby.
@@ -190,9 +190,12 @@ enum class JoinRefusal : std::uint8_t {
 struct Admission {
   /// The session the server assigned to the client.
   SessionId session{};
-  /// The rate, in Hz, at which the server ticks and the client must.
+  /// The rate, in Hz, at which the server ticks and the client must: the
+  /// server's startup setting, fixed for the life of its process. The client
+  /// has no rate of its own.
   std::uint8_t tick_rate_hz = 0;
-  /// The parameters the client must predict with.
+  /// The parameters the client must predict with, for the whole run; it has
+  /// none of its own.
   parameters::Parameters parameters{};
   /// The client's own character (see RosterEntry::character).
   std::string character;
