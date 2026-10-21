@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <istream>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -40,7 +41,7 @@ inline constexpr std::string_view kExtension = ".acap";
 
 /// Why a capture does not read, wherever it is read: Replay and the Replay
 /// catalog, and a Captured player's harness::ReadScript, report the same errors.
-enum class ReadError : std::uint8_t {
+enum class ReadErrorCode : std::uint8_t {
   /// The stream could not be read, or was never opened.
   kUnreadable,
   /// It does not start with a capture's magic.
@@ -51,8 +52,21 @@ enum class ReadError : std::uint8_t {
   kMalformed,
 };
 
-/// What to tell whoever runs the process about error.
-[[nodiscard]] std::string_view DescribeReadError(ReadError error);
+/// Why a capture does not read: its code, and what a message about it names
+/// beyond the code.
+struct ReadError {
+  ReadErrorCode code = ReadErrorCode::kUnreadable;
+  /// The format version the file names, for kUnsupported when it names one
+  /// this engine does not read: a file of format 2, which has no version byte,
+  /// names its header record's length. nullopt when its header is missing.
+  std::optional<std::uint8_t> format_version = std::nullopt;
+
+  bool operator==(const ReadError&) const = default;
+};
+
+/// What to tell whoever runs the process about error, naming the format
+/// version it refuses, if any, beside the one this engine reads.
+[[nodiscard]] std::string DescribeReadError(const ReadError& error);
 
 /// Whether in starts with a capture's magic. Reads as far as the magic goes.
 [[nodiscard]] bool StartsWithMagic(std::istream& in);

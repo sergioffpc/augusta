@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <ios>
 #include <istream>
 #include <optional>
@@ -33,6 +34,7 @@ namespace {
 using augusta::capture::AtOffset;
 using augusta::capture::Capture;
 using augusta::capture::Death;
+using augusta::capture::DescribeReadError;
 using augusta::capture::Encoded;
 using augusta::capture::EncodeError;
 using augusta::capture::EncodeEvent;
@@ -45,6 +47,7 @@ using augusta::capture::Leave;
 using augusta::capture::MatchEnd;
 using augusta::capture::ReadCapture;
 using augusta::capture::ReadError;
+using augusta::capture::ReadErrorCode;
 using augusta::capture::RecordTooLong;
 using augusta::capture::StartsWithMagic;
 using augusta::capture::Write;
@@ -158,9 +161,9 @@ TEST(CaptureFormatTest, ACaptureStoppedBeforeItsMatchEndReadsBackEqual) {
 TEST(CaptureFormatTest, AFileWithoutTheMagicIsNoCapture) {
   std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
   bytes[0] = 'P';
-  EXPECT_EQ(Read(bytes).error(), ReadError::kNotACapture);
-  EXPECT_EQ(Read("AUG").error(), ReadError::kNotACapture);
-  EXPECT_EQ(Read("").error(), ReadError::kNotACapture);
+  EXPECT_EQ(Read(bytes).error().code, ReadErrorCode::kNotACapture);
+  EXPECT_EQ(Read("AUG").error().code, ReadErrorCode::kNotACapture);
+  EXPECT_EQ(Read("").error().code, ReadErrorCode::kNotACapture);
 }
 
 // A file is the magic, then its format version as one raw byte, then its
@@ -174,12 +177,17 @@ TEST(CaptureFormatTest, AFileStartsWithTheMagicThenItsFormatVersion) {
   EXPECT_EQ(static_cast<std::uint8_t>(bytes[magic.size()]), 3);
 }
 
+// Another format version is refused by name, so whoever runs the process is
+// told which version the file is.
 // Requirements: NFR-12
-TEST(CaptureFormatTest, AnotherFormatVersionIsRefused) {
-  for (const int version : {0, 2, 4, 255}) {
+TEST(CaptureFormatTest, AnotherFormatVersionIsRefusedNamingIt) {
+  for (const std::uint8_t version : {0, 2, 4, 255}) {
     std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
     bytes[augusta::protocol::kCaptureMagic.size()] = static_cast<char>(version);
-    EXPECT_EQ(Read(bytes).error(), ReadError::kUnsupported) << version;
+    const ReadError error = Read(bytes).error();
+    EXPECT_EQ(error, (ReadError{.code = ReadErrorCode::kUnsupported, .format_version = version}));
+    EXPECT_TRUE(DescribeReadError(error).contains(std::format("is of format version {};", version)))
+        << DescribeReadError(error);
   }
 }
 
@@ -194,14 +202,17 @@ TEST(CaptureFormatTest, AVersion2FileIsRefused) {
   // "0.4.0" after its length, two pack hashes, a tick rate and a start time).
   const std::string record = std::string{1, 2} + std::string(79, 'x');
   const std::string v2 = written.substr(0, magic) + static_cast<char>(record.size()) + record;
-  EXPECT_EQ(Read(v2).error(), ReadError::kUnsupported);
+  EXPECT_EQ(Read(v2).error(), (ReadError{.code = ReadErrorCode::kUnsupported,
+                                         .format_version = static_cast<std::uint8_t>(record.size())}));
 }
 
 // Requirements: NFR-12
 TEST(CaptureFormatTest, AMagicWithoutAHeaderIsRefused) {
   const std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
-  EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size())).error(), ReadError::kUnsupported);
-  EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size() + 1)).error(), ReadError::kUnsupported);
+  const ReadError unsupported{.code = ReadErrorCode::kUnsupported, .format_version = std::nullopt};
+  EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size())).error(), unsupported);
+  EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size() + 1)).error(), unsupported);
+  EXPECT_FALSE(DescribeReadError(unsupported).contains("is of format version"));
 }
 
 // Each way a file's records may come out of the format's order (ADR-0050).
@@ -226,7 +237,7 @@ TEST(CaptureFormatTest, RecordsOutOfOrderAreRefused) {
       {"a second header", Bytes({header, first}) + header_again},
   };
   for (const auto& [name, bytes] : cases) {
-    EXPECT_EQ(Read(bytes).error(), ReadError::kMalformed) << name;
+    EXPECT_EQ(Read(bytes).error().code, ReadErrorCode::kMalformed) << name;
   }
 }
 
@@ -235,7 +246,7 @@ TEST(CaptureFormatTest, ARecordThatDoesNotDecodeIsRefused) {
   std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
   // A frame of one byte, a tag of a wire type protobuf lacks.
   bytes += std::string{'\x01', '\x7F'};
-  EXPECT_EQ(Read(bytes).error(), ReadError::kMalformed);
+  EXPECT_EQ(Read(bytes).error().code, ReadErrorCode::kMalformed);
 }
 
 // Requirements: US-21
@@ -258,14 +269,14 @@ TEST(CaptureFormatTest, AFailingStreamIsUnreadable) {
        {std::size_t{0}, std::size_t{3}, augusta::protocol::kCaptureMagic.size() + 2, bytes.size() - 1, bytes.size()}) {
     FailingBuffer buffer(bytes.substr(0, held));
     std::istream in(&buffer);
-    EXPECT_EQ(ReadCapture(in).error(), ReadError::kUnreadable) << held << " bytes before it failed";
+    EXPECT_EQ(ReadCapture(in).error().code, ReadErrorCode::kUnreadable) << held << " bytes before it failed";
   }
 }
 
 TEST(CaptureFormatTest, AStreamNeverOpenedIsUnreadable) {
   std::istringstream in;
   in.setstate(std::ios::failbit);
-  EXPECT_EQ(ReadCapture(in).error(), ReadError::kUnreadable);
+  EXPECT_EQ(ReadCapture(in).error().code, ReadErrorCode::kUnreadable);
 }
 
 // What each piece's size on disk says is what Write writes of it.
