@@ -1,6 +1,10 @@
 #include "augusta/logging.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <ios>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -9,8 +13,11 @@
 
 namespace {
 
+using augusta::logging::ClearContext;
+using augusta::logging::ContextField;
 using augusta::logging::FormatLine;
 using augusta::logging::ParseSeverity;
+using augusta::logging::SetContext;
 using augusta::logging::SetLogLevel;
 using augusta::logging::Severity;
 using augusta::logging::Throttle;
@@ -90,6 +97,122 @@ TEST(LoggingRuntimeLevel, CallsAtOrAboveItAreWrittenInTheLineFormat) {
   const auto after = std::chrono::system_clock::now();
 
   EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=written value=7", before, after)) << written;
+}
+
+// What one LOG_INFO of message writes to the console, with no context left
+// over from an earlier test unless the test sets it.
+std::string WrittenInfoLine(std::string_view message) {
+  augusta::logging::Init();
+  SetLogLevel(Severity::kInfo);
+  testing::internal::CaptureStdout();
+  LOG_INFO("{}", message);
+  return testing::internal::GetCapturedStdout();
+}
+
+void ClearEveryContextField() {
+  ClearContext(ContextField::kRun);
+  ClearContext(ContextField::kSession);
+  ClearContext(ContextField::kMatch);
+}
+
+TEST(LoggingContext, ALineWrittenWithNoContextCarriesNoField) {
+  ClearEveryContextField();
+
+  const auto before = std::chrono::system_clock::now();
+  const std::string written = WrittenInfoLine("subsystem=test event=plain");
+  const auto after = std::chrono::system_clock::now();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=plain", before, after)) << written;
+}
+
+TEST(LoggingContext, ALineCarriesTheRunOnceItIsSet) {
+  ClearEveryContextField();
+  SetContext(ContextField::kRun, "017f22e2-79b0-7cc3-98c4-dc0c0c07398f");
+
+  const auto before = std::chrono::system_clock::now();
+  const std::string written = WrittenInfoLine("subsystem=test event=run");
+  const auto after = std::chrono::system_clock::now();
+  ClearEveryContextField();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=run run=017f22e2-79b0-7cc3-98c4-dc0c0c07398f",
+                                       before, after))
+      << written;
+}
+
+TEST(LoggingContext, SessionAndMatchFollowTheRunWhileSetAndAreGoneOnceCleared) {
+  ClearEveryContextField();
+  SetContext(ContextField::kMatch, "m1");
+  SetContext(ContextField::kSession, "s1");
+  SetContext(ContextField::kRun, "r1");
+
+  auto before = std::chrono::system_clock::now();
+  const std::string during = WrittenInfoLine("subsystem=test event=match");
+  auto after = std::chrono::system_clock::now();
+  EXPECT_TRUE(IsInfoLineWrittenBetween(during, "subsystem=test event=match run=r1 session=s1 match=m1", before, after))
+      << during;
+
+  ClearContext(ContextField::kMatch);
+  ClearContext(ContextField::kSession);
+  before = std::chrono::system_clock::now();
+  const std::string cleared = WrittenInfoLine("subsystem=test event=match_end");
+  after = std::chrono::system_clock::now();
+  ClearEveryContextField();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(cleared, "subsystem=test event=match_end run=r1", before, after)) << cleared;
+}
+
+TEST(LoggingContext, SettingAFieldAgainReplacesIt) {
+  ClearEveryContextField();
+  SetContext(ContextField::kSession, "s1");
+  SetContext(ContextField::kSession, "s2");
+
+  const auto before = std::chrono::system_clock::now();
+  const std::string written = WrittenInfoLine("subsystem=test event=again");
+  const auto after = std::chrono::system_clock::now();
+  ClearEveryContextField();
+
+  EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=again session=s2", before, after)) << written;
+}
+
+std::string ReadWhole(const std::filesystem::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+TEST(LoggingFileSink, ALineReachesTheFileAsItIsWrittenAndUncolored) {
+  ClearEveryContextField();
+  const std::filesystem::path file =
+      std::filesystem::path(testing::TempDir()) / "augusta_logging_test" / "logs" / "file_sink.log";
+  std::filesystem::remove(file);
+  augusta::logging::Init();
+  ASSERT_TRUE(augusta::logging::AddFileSink(file).has_value());
+  SetContext(ContextField::kRun, "r1");
+
+  const auto before = std::chrono::system_clock::now();
+  const std::string console = WrittenInfoLine("subsystem=test event=to_file");
+  const auto after = std::chrono::system_clock::now();
+  ClearEveryContextField();
+
+  // Read while the sink still holds the file: what was written is flushed.
+  const std::string in_file = ReadWhole(file);
+  bool matched = false;
+  for (const auto time : {before, after}) {
+    matched =
+        matched || in_file == FormatLine(time, Severity::kInfo, "subsystem=test event=to_file run=r1", false) + "\n";
+  }
+  EXPECT_TRUE(matched) << in_file;
+  EXPECT_TRUE(IsInfoLineWrittenBetween(console, "subsystem=test event=to_file run=r1", before, after)) << console;
+}
+
+TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {
+  // A directory where the file would be.
+  const std::filesystem::path directory = std::filesystem::path(testing::TempDir()) / "augusta_logging_test_dir";
+  std::filesystem::create_directories(directory);
+
+  const auto added = augusta::logging::AddFileSink(directory);
+
+  ASSERT_FALSE(added.has_value());
+  EXPECT_FALSE(added.error().empty());
 }
 
 TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {

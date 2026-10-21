@@ -4,21 +4,31 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <ios>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
+#include <boost/log/core/core.hpp>
+#include <boost/log/sinks/sync_frontend.hpp>
+#include <boost/log/sinks/text_ostream_backend.hpp>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/sources/severity_logger.hpp>
 #include <boost/log/utility/manipulators/add_value.hpp>
 #include <boost/log/utility/setup/console.hpp>
+#include <boost/smart_ptr/make_shared_object.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,6 +48,56 @@ constexpr const char* kTimeAttribute = "AugustaTime";
 // lone atomic rather than a Boost.Log core filter: relaxed, since it guards no
 // other data - a thread just sees a new floor a moment later.
 std::atomic<Severity> runtime_floor{Severity::kTrace};
+
+// The context every line carries (SetContext), under its lock. suffix is what
+// its fields append to a message, kept ready so a line copies one string.
+struct Context {
+  std::mutex mutex;
+  std::array<std::optional<std::string>, 3> fields;
+  std::string suffix;
+};
+
+Context& TheContext() {
+  static Context context;
+  return context;
+}
+
+// The order the fields are appended in, and their keys.
+constexpr std::array<std::pair<ContextField, std::string_view>, 3> kContextKeys{
+    std::pair{ContextField::kRun, "run"},
+    std::pair{ContextField::kSession, "session"},
+    std::pair{ContextField::kMatch, "match"},
+};
+
+// Sets or clears field, and remakes the suffix.
+void ChangeContext(ContextField field, std::optional<std::string> value) {
+  Context& context = TheContext();
+  const std::scoped_lock lock(context.mutex);
+  context.fields.at(static_cast<std::size_t>(field)) = std::move(value);
+  context.suffix.clear();
+  for (const auto& [key_field, key] : kContextKeys) {
+    if (const auto& set = context.fields.at(static_cast<std::size_t>(key_field))) {
+      context.suffix += std::format(" {}={}", key, *set);
+    }
+  }
+}
+
+// path in UTF-8, which, unlike path.string() on Windows, never throws for a
+// character the code page lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string utf8 = path.u8string();
+  return {utf8.begin(), utf8.end()};
+}
+
+std::string WithContext(std::string_view message) {
+  Context& context = TheContext();
+  const std::scoped_lock lock(context.mutex);
+  std::string line;
+  line.reserve(message.size() + context.suffix.size());
+  line += message;
+  line += context.suffix;
+  return line;
+}
 
 std::string_view LevelName(Severity level) {
   switch (level) {
@@ -127,10 +187,37 @@ void Init() {
   });
 }
 
+std::expected<void, std::string> AddFileSink(const std::filesystem::path& file) {
+  std::error_code error;
+  std::filesystem::create_directories(file.parent_path(), error);
+  if (error) {
+    return std::unexpected(std::format("cannot create {}: {}", Utf8(file.parent_path()), error.message()));
+  }
+  // Binary, so a line ends in a bare line feed on every platform.
+  auto stream = boost::make_shared<std::ofstream>(file, std::ios::out | std::ios::app | std::ios::binary);
+  if (!stream->is_open()) {
+    return std::unexpected(std::format("cannot open {} for appending", Utf8(file)));
+  }
+  using FileSink = boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>;
+  const auto sink = boost::make_shared<FileSink>();
+  sink->locked_backend()->add_stream(stream);
+  // Flushed as written, as the console is: a crash must not eat the lines before it.
+  sink->locked_backend()->auto_flush(true);
+  sink->set_formatter([](const boost::log::record_view& record, boost::log::formatting_ostream& out) {
+    FormatRecord(record, out, false);
+  });
+  boost::log::core::get()->add_sink(sink);
+  return {};
+}
+
+void SetContext(ContextField field, std::string_view value) { ChangeContext(field, std::string(value)); }
+
+void ClearContext(ContextField field) { ChangeContext(field, std::nullopt); }
+
 void Write(Severity level, std::string_view message) {
   static boost::log::sources::severity_logger_mt<Severity> logger;
   BOOST_LOG_SEV(logger, level) << boost::log::add_value(kTimeAttribute, std::chrono::system_clock::now())
-                               << std::string(message);
+                               << WithContext(message);
 }
 
 void SetLogLevel(Severity level) { runtime_floor.store(level, std::memory_order_relaxed); }

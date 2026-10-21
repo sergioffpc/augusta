@@ -189,6 +189,8 @@ policy (ADR-0060).
 - Hardware — the machine a process runs on, its OS, CPU and memory, which each
   Runtime logs as it starts (augusta_hardware); the GPU, display and audio
   device are logged by the modules that open them
+- Identifiers — the UUIDv7 value type the Run, Session and Match IDs are
+  (augusta_uuid, ADR-0035)
 - Application — the application boundary each executable's `main` runs behind
   (augusta_application, ADR-0033). The failure model both report in is a module
   of its own (augusta_failure), so any module names a failure without linking
@@ -687,7 +689,8 @@ not affect numbering.
 - [ADR-0012](./adr/0012-coding-style.md) — Coding style
 - [ADR-0013](./adr/0013-testing-and-benchmarking.md) — Testing strategy
 - [ADR-0025](./adr/0025-dependency-manager.md) — Dependency manager: vcpkg
-- [ADR-0027](./adr/0027-logging.md) — Logging: `augusta::logging`, console-only
+- [ADR-0027](./adr/0027-logging.md) — Logging: `augusta::logging`, the console
+  and the client's Run log
 - [ADR-0029](./adr/0029-logging-policy.md) — Logging policy: level semantics and
   structured message format
 - [ADR-0034](./adr/0034-runtime-config-file.md) — Runtime configuration: a YAML

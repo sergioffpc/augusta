@@ -105,16 +105,33 @@ target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness
-  PRIVATE augusta_assets augusta_client augusta_failure augusta_hardware augusta_link augusta_logging
+  PRIVATE augusta_assets augusta_client augusta_failure augusta_link
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
+
+# The start of one Run (see client_run.h): its Run ID, its log file and its
+# first lines, before augustac reads its config.
+add_library(augusta_client_run STATIC client_run.cpp)
+target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(
+  augusta_client_run
+  PUBLIC augusta_uuid
+  PRIVATE augusta_config augusta_hardware augusta_logging augusta_version
+)
+augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 
 # augustac's entry point: it runs the client Runtime above behind the
 # application boundary (ADR-0033, ADR-0060).
 add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
-  PRIVATE augusta_application augusta_failure augusta_version augusta_logging augusta_client_application
+  PRIVATE
+    augusta_application
+    augusta_failure
+    augusta_version
+    augusta_logging
+    augusta_client_application
+    augusta_client_run
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
 # augustac is Glue: it links only the application, the client Runtime beside

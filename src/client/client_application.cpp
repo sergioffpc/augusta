@@ -16,10 +16,8 @@
 #include "augusta/client_config.h"
 #include "augusta/client_phases.h"
 #include "augusta/failure.h"
-#include "augusta/hardware.h"
 #include "augusta/harness.h"
 #include "augusta/link.h"
-#include "augusta/logging.h"
 #include "augusta/reenactment.h"
 
 namespace augusta::client {
@@ -120,11 +118,7 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
   }
   return {
       // Once, process-wide, before any ClientRuntime is constructed (link.h).
-      .initialize =
-          [] {
-            LOG_INFO("subsystem=client event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
-            return link::Init();
-          },
+      .initialize = [] { return link::Init(); },
       .construct = [played = std::move(played), reenactment = std::move(reenactment),
                     replay = std::move(replay)] { return ConstructProcess(played, reenactment, replay); },
       .run = [](ClientProcess& process) { return process.Run(); },
