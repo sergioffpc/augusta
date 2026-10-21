@@ -230,7 +230,9 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
   EXPECT_GT(network_rounds.load(), 0);
   const std::lock_guard<std::mutex> lock(mutex);
   // Paced no more than 5% shorter, and no more than 5% longer but for a
-  // backlog, which may lengthen a tick by up to 25% (ADR-0038).
+  // backlog, which may lengthen a tick by up to 25% (ADR-0038). A tick a
+  // loaded machine left too far behind is resynchronised instead of paced, and
+  // lasts however long it was held up.
   const float shortest = kFixedTick * 0.95F * 0.999F;
   const float drifting = kFixedTick * 1.05F * 1.001F;
   const float longest = kFixedTick * 1.25F * 1.001F;
@@ -238,12 +240,62 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
   for (std::size_t i = 1; i < ticks.size(); ++i) {
     // Each tick is due when the one before it said the next would be.
     EXPECT_EQ(ticks[i].due, ticks[i - 1].due + ticks[i - 1].duration);
+    if (ticks[i].resynchronised) {
+      continue;
+    }
     const float duration = std::chrono::duration<float>(ticks[i].duration).count();
     EXPECT_GE(duration, shortest);
     EXPECT_LE(duration, longest);
     drained = drained || duration > drifting;
   }
   EXPECT_TRUE(drained) << "no tick was lengthened past 5% to drain the backlog the stall left";
+}
+
+// A Tick whose work ends more than kMaxTicksBehind ticks behind its schedule
+// makes the loop start again from now (tick::NextDeadline): its hooks are told
+// it was resynchronised, and that it lasted until now, not a paced tick.
+TEST_F(RunnerTest, ATickThatFallsTooFarBehindIsReportedResynchronised) {
+  constexpr auto kStall = std::chrono::milliseconds(200);
+  std::mutex mutex;
+  std::vector<PredictedTick> ticks;
+  std::atomic<bool> stall = false;
+  const Runner runner(session_, RunnerHooks{.next_command =
+                                                [&] {
+                                                  if (stall.exchange(false)) {
+                                                    std::this_thread::sleep_for(kStall);
+                                                  }
+                                                  return std::optional<Command>{Command{}};
+                                                },
+                                            .on_tick =
+                                                [&](const PredictedTick& tick) {
+                                                  const std::lock_guard<std::mutex> lock(mutex);
+                                                  ticks.push_back(tick);
+                                                },
+                                            .on_network_round = {},
+                                            .on_failure = {}});
+  const auto ticked = [&](std::size_t count) {
+    return [&, count] {
+      const std::lock_guard<std::mutex> lock(mutex);
+      return ticks.size() >= count;
+    };
+  };
+  ASSERT_TRUE(ServeUntil(ticked(kTickRate / 2)));
+  stall = true;
+  ASSERT_TRUE(ServeUntil(ticked(kTickRate)));
+
+  const std::lock_guard<std::mutex> lock(mutex);
+  const float longest = kFixedTick * 1.25F * 1.001F;
+  bool reported_stall = false;
+  for (const PredictedTick& tick : ticks) {
+    const float duration = std::chrono::duration<float>(tick.duration).count();
+    if (tick.resynchronised) {
+      reported_stall = reported_stall || duration >= std::chrono::duration<float>(kStall).count();
+    } else {
+      // A Tick that kept to its schedule is paced, at most 25% longer.
+      EXPECT_LE(duration, longest);
+    }
+  }
+  EXPECT_TRUE(reported_stall) << "no tick that the stall left behind was reported resynchronised";
 }
 
 TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredictionThread) {
