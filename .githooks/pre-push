@@ -283,8 +283,20 @@ $(git ls-files --others --exclude-standard)"
       --with shellcheck-py==0.11.0.1 actionlint
 
   # clang-tidy, through vcenv.cmd on Windows: last, as it takes minutes where
-  # the linters above take seconds, so a push they fail fails fast.
+  # the linters above take seconds, so a push they fail fails fast. Through
+  # ctcache where scripts/bootstrap.sh installed it, into the Makefile's tidy
+  # target's results, so a file that passed there or in an earlier push is
+  # skipped.
   local tidy=(clang-tidy --quiet -p="${build_dir}")
+  if command -v clang-tidy-cache >/dev/null 2>&1; then
+    local top
+    top=$(pwd)
+    [[ "${windows}" = 1 ]] && top=$(cygpath -m "${top}")
+    CTCACHE_DIR="${top}/build/ctcache/$(clang-tidy --version | tr ' ' '\n' \
+      | grep -m1 '^[1-9]')"
+    export CTCACHE_DIR
+    tidy=(clang-tidy-cache "${tidy[@]}")
+  fi
   if [[ "${windows}" = 1 ]]; then
     tidy=(scripts/vcenv.cmd "${tidy[@]}")
   fi
@@ -301,9 +313,7 @@ $(git ls-files --others --exclude-standard)"
     fi
 
     echo "pre-push: clang-tidy on $(count "${files}") changed file(s)..." >&2
-    # One argument per file; src/ paths have no spaces.
-    # shellcheck disable=SC2086
-    "${tidy[@]}" ${files} || {
+    echo "${files}" | xargs -P "$(nproc)" -n 1 "${tidy[@]}" || {
       failed clang-tidy "fix the warnings above"
       exit 1
     }
@@ -312,10 +322,8 @@ $(git ls-files --others --exclude-standard)"
   if [[ -n "${include_files}" ]]; then
     echo "pre-push: include-cleaner on $(count "${include_files}") changed" \
       "file(s)..." >&2
-    # One argument per file; src/ and tests/ paths have no spaces.
-    # shellcheck disable=SC2086
-    "${tidy[@]}" --checks=-*,misc-include-cleaner --extra-arg=-w \
-      ${include_files} || {
+    echo "${include_files}" | xargs -P "$(nproc)" -n 1 "${tidy[@]}" \
+      --checks=-*,misc-include-cleaner --extra-arg=-w || {
       failed include-cleaner "fix the includes above (clang-tidy --fix can)"
       exit 1
     }
