@@ -126,9 +126,14 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     // The tick spans its schedule, not its wake-ups, so a reader blending
     // ticks blends them evenly.
     const tick::Clock::time_point due = deadline;
-    deadline = tick::NextDeadline(deadline, NextTickDuration(session_, nominal_tick), tick::Clock::now());
+    const tick::Clock::duration tick_duration = NextTickDuration(session_, nominal_tick);
+    const tick::Clock::time_point now = tick::Clock::now();
+    deadline = tick::NextDeadline(due, tick_duration, now);
     if (hooks_.on_tick) {
-      hooks_.on_tick({.state = state, .due = due, .duration = deadline - due});
+      hooks_.on_tick({.state = state,
+                      .due = due,
+                      .duration = deadline - due,
+                      .resynchronised = tick::Measure(due, tick_duration, tick_start, now).resynchronised});
     }
 
     std::this_thread::sleep_until(deadline);

@@ -15,6 +15,8 @@ Generated from the Conventional Commits history by git-cliff (cliff.toml).
 - **capture:** name the format version a capture is refused for
 - **checks:** read the protocol's links however the call is wrapped
 - **build:** generate the protocol's C++ before clang-tidy reads it
+- **pack:** build the cooker's native target on every bootstrap
+- **harness:** report a resynchronised Tick, and stop two tests timing the machine
 
 ### Refactoring
 
