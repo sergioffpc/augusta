@@ -24,6 +24,7 @@
     },
     "rapidcheck",
     "sol2",
+    "utf8-range",
     "yaml-cpp"
   ],
   "features": {

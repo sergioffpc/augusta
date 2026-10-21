@@ -45,7 +45,9 @@
 /// angle, a stamina or a Seen time's fraction travels as a whole count of its
 /// grid's step, as a varint (augusta/grid.h, which physics::World keeps every
 /// body on, and weapon::Step a rifle's Recoil offset); the other floats (the
-/// Parameters, a rifle's times, a hit's damage) travel as floats.
+/// Parameters, a rifle's times, a hit's damage) travel as floats. Text travels
+/// as UTF-8 in a bytes field, which the codec checks both ways, so protobuf's
+/// parse never logs a peer's bad text (NFR-05).
 /// The server's Match captures (ADR-0050) are written as records of their own
 /// (CaptureRecordWire).
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
@@ -622,7 +624,14 @@ enum class EncodeError : std::uint8_t {
   /// Encode made it: of another type, or not framed as Encode frames one. The
   /// caller's broken invariant (ADR-0033).
   kNotAnAuthoritativeState = 4,
+  /// A string field is not UTF-8.
+  kNotUtf8 = 5,
 };
+
+/// Whether text is UTF-8, as every string field must be: a sender holding text
+/// from outside the engine (a file's name) leaves out what is not, rather than
+/// have Encode refuse it as kNotUtf8.
+[[nodiscard]] bool IsUtf8(std::string_view text);
 
 /// Encodes message as one payload, or reports the first field beyond its
 /// limit (an engine version over kMaxEngineVersionLength, more than

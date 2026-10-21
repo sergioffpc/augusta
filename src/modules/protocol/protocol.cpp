@@ -19,6 +19,7 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/repeated_ptr_field.h>
+#include <utf8_range.h>
 
 #include "augusta.pb.h"
 #include "augusta/grid.h"
@@ -101,9 +102,10 @@ class Outbound {
     return flags;
   }
 
-  // text, which may be at most max_length bytes long.
+  // text, which may be at most max_length bytes long, and must be UTF-8.
   std::string_view Text(std::string_view text, std::size_t max_length) {
     Check(text.size() <= max_length, EncodeError::kFieldTooLong);
+    Check(IsUtf8(text), EncodeError::kNotUtf8);
     return text;
   }
 
@@ -425,10 +427,16 @@ class Inbound {
     return bits;
   }
 
-  // text, which may be at most max_length bytes long.
+  // text, which may be at most max_length bytes long, and must be UTF-8: the
+  // schema holds it as bytes, so protobuf's parse never checks it, and never
+  // logs a line a peer's bad text would make at will (NFR-05).
   std::string Text(std::string_view text, std::size_t max_length) {
     if (text.size() > max_length) {
       Fail(DecodeError::kFieldTooLong);
+      return {};
+    }
+    if (!IsUtf8(text)) {
+      Fail(DecodeError::kMalformed);
       return {};
     }
     return std::string(text);
@@ -1029,8 +1037,12 @@ std::string_view DescribeEncodeError(EncodeError error) {
       return "field holds a value its enumeration lacks";
     case EncodeError::kNotAnAuthoritativeState:
       return "payload to readdress is not an authoritative state's";
+    case EncodeError::kNotUtf8:
+      return "string field is not utf-8";
   }
   return "unknown encode error";
 }
+
+bool IsUtf8(std::string_view text) { return utf8_range_IsValid(text.data(), text.size()) != 0; }
 
 }  // namespace augusta::protocol

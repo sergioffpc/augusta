@@ -12,6 +12,9 @@
 //   layouts ADR-0038 gives, and the bits no field uses are 0;
 // - the Parameters, a rifle's two times, health and damage are float;
 // - a Tick and a Sequence are uint64, an entity ID and a session ID uint32;
+// - text (an engine version, a Character, a capture's name) is bytes holding
+//   UTF-8, which the codec checks itself, so a peer's bad text is refused as
+//   any other bad field is, never logged by protobuf's parse (NFR-05);
 // - a list is a repeated field, with no count;
 // - every enum's 0 is *_UNSPECIFIED, which no sender writes;
 // - a field removed from a message is reserved, never given to another.
@@ -73,18 +76,18 @@ enum BodyPart {
 
 // Client to server: the first message on a new connection.
 message JoinRequest {
-  string engine_version = 1;
+  bytes engine_version = 1;
   // The client pack's BLAKE3 hash, 32 bytes.
   bytes client_pack = 2;
-  string character = 3;
+  bytes character = 3;
 }
 
 // Client to server: a Captured player's first message, in place of a
 // JoinRequest (ADR-0050).
 message ReenactRequest {
-  string engine_version = 1;
+  bytes engine_version = 1;
   bytes client_pack = 2;
-  string character = 3;
+  bytes character = 3;
   // On the position grid.
   sint32 spawn_x = 4;
   sint32 spawn_y = 5;
@@ -135,7 +138,7 @@ message JoinAccepted {
   uint32 session = 1;
   uint32 tick_rate_hz = 2;
   Parameters parameters = 3;
-  string character = 4;
+  bytes character = 4;
 }
 
 // Server to client: the join failed.
@@ -216,7 +219,7 @@ message AuthoritativeState {
 
 message RosterEntry {
   uint32 session = 1;
-  string character = 2;
+  bytes character = 2;
 }
 
 // Server to client: who is in the Lobby.
@@ -233,7 +236,7 @@ message Ready {
 message MatchPlayer {
   uint32 session = 1;
   uint32 entity = 2;
-  string character = 3;
+  bytes character = 3;
   // On the position grid.
   sint32 spawn_x = 4;
   sint32 spawn_y = 5;
@@ -286,13 +289,13 @@ message Death {
 message ReplayListRequest {}
 
 message ReplayListing {
-  string name = 1;
+  bytes name = 1;
   // When its Match started, in milliseconds since the Unix epoch, UTC.
   int64 started_unix_ms = 2;
   // In ticks at tick_rate_hz.
   uint32 ticks = 3;
   uint32 tick_rate_hz = 4;
-  repeated string characters = 5;
+  repeated bytes characters = 5;
 }
 
 // Server to client: every capture the replay server replays.
@@ -302,9 +305,9 @@ message ReplayList {
 
 // Client to server: asks a replay server to replay one capture (ADR-0051).
 message ReplayRequest {
-  string engine_version = 1;
+  bytes engine_version = 1;
   bytes client_pack = 2;
-  string capture = 3;
+  bytes capture = 3;
 }
 
 message PlayerView {
@@ -342,7 +345,7 @@ message CaptureHeader {
   // The server and client packs' BLAKE3 hashes, 32 bytes each.
   bytes server_pack = 1;
   bytes client_pack = 2;
-  string engine_version = 3;
+  bytes engine_version = 3;
   // In milliseconds since the Unix epoch, UTC.
   int64 started_unix_ms = 4;
   uint32 tick_rate_hz = 5;
@@ -354,7 +357,7 @@ message CapturedJoin {
   // The player's number in the capture, from 1.
   uint32 player = 2;
   uint32 session = 3;
-  string character = 4;
+  bytes character = 4;
   // On the position grid.
   sint32 spawn_x = 5;
   sint32 spawn_y = 6;

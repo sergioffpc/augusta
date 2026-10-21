@@ -133,6 +133,9 @@ find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
 # GameNetworkingSockets already links, and protoc with protobuf_generate, which
 # vcpkg builds for the host, so every preset generates the protocol's C++.
 find_package(protobuf CONFIG REQUIRED)
+# utf8_range, protobuf's own UTF-8 check, with which the protocol checks the
+# text its schema holds as bytes (src/modules/protocol).
+find_package(utf8_range CONFIG REQUIRED)
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) instead. Not

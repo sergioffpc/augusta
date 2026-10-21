@@ -201,7 +201,7 @@ std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) 
       break;
     }
     // A name no Replay request could carry is no capture a viewer can watch.
-    if (listing.name.size() > protocol::kMaxCaptureNameLength) {
+    if (listing.name.size() > protocol::kMaxCaptureNameLength || !protocol::IsUtf8(listing.name)) {
       continue;
     }
     listed.push_back(listing);

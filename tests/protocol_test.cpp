@@ -81,12 +81,15 @@ using augusta::protocol::AuthoritativeStateWire;
 using augusta::protocol::BodyPartWire;
 using augusta::protocol::BodyStateWire;
 using augusta::protocol::BytesWire;
+using augusta::protocol::CaptureHeaderWire;
 using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
 using augusta::protocol::DeathWire;
 using augusta::protocol::Decode;
+using augusta::protocol::DecodeCaptureRecord;
 using augusta::protocol::DecodeError;
 using augusta::protocol::Encode;
+using augusta::protocol::EncodeCaptureRecord;
 using augusta::protocol::EncodeError;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::EntityStateWire;
@@ -1278,8 +1281,14 @@ TEST(ProtocolTest, AJoinAcceptedsOneByteNumbersWiderThanAByteAreOutOfRange) {
 // Requirements: NFR-12
 TEST(ProtocolTest, AStringThatIsNotUtf8IsMalformed) {
   const BytesWire not_utf8{std::byte{0xC3}, std::byte{0x28}};
+  const BytesWire utf8{std::byte{0xC3}, std::byte{0xA9}};
+  const BytesWire listing = LengthField(1, LengthField(5, not_utf8));
 
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kJoinRequest, LengthField(1, utf8))).has_value());
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, LengthField(1, not_utf8))).error(), DecodeError::kMalformed);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, LengthField(3, not_utf8))).error(), DecodeError::kMalformed);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReplayList, listing)).error(), DecodeError::kMalformed);
+  EXPECT_EQ(DecodeCaptureRecord(LengthField(1001, LengthField(3, not_utf8))).error(), DecodeError::kMalformed);
 }
 
 // The codec takes its counters' widths from augusta::tick, as the engine does,
@@ -1328,6 +1337,21 @@ TEST(ProtocolEncodeTest, ACharacterLongerThanAllowedIsNotEncodedInAnyMessageThat
   EXPECT_EQ(RefusalOf(LobbyWire{.version = 1, .roster = {RosterEntryWire{.character = too_long}}}),
             EncodeError::kFieldTooLong);
   EXPECT_EQ(RefusalOf(MatchStartWire{.players = {MatchPlayer(1, too_long, 0.0F)}}), EncodeError::kFieldTooLong);
+}
+
+TEST(ProtocolEncodeTest, TextThatIsNotUtf8IsNotEncoded) {
+  const std::string not_utf8 = "\xC3\x28";
+  ReplayListingWire listing;
+  listing.characters = {not_utf8};
+  CaptureHeaderWire header;
+  header.engine_version = not_utf8;
+  const ReplayListWire listed{.replays = {listing}};
+
+  EXPECT_TRUE(Encode(JoinRequestWire{.engine_version = "0.1.0", .character = "s\xC3\xA9rgio"}).has_value());
+  EXPECT_EQ(RefusalOf(JoinRequestWire{.engine_version = not_utf8, .character = "c"}), EncodeError::kNotUtf8);
+  EXPECT_EQ(RefusalOf(JoinRequestWire{.engine_version = "0.1.0", .character = not_utf8}), EncodeError::kNotUtf8);
+  EXPECT_EQ(RefusalOf(listed), EncodeError::kNotUtf8);
+  EXPECT_EQ(EncodeCaptureRecord(header).error(), EncodeError::kNotUtf8);
 }
 
 TEST(ProtocolEncodeTest, AListLongerThanItsMessageAllowsIsNotEncoded) {
@@ -1413,7 +1437,8 @@ TEST(ProtocolEncodeTest, EveryMessageIsTheEnvelopeMemberItsTypeNumbers) {
 }
 
 TEST(ProtocolEncodeTest, EveryEncodeErrorHasADescription) {
-  for (const EncodeError error : {EncodeError::kFieldTooLong, EncodeError::kReservedBits, EncodeError::kInvalidEnum}) {
+  for (const EncodeError error : {EncodeError::kFieldTooLong, EncodeError::kReservedBits, EncodeError::kInvalidEnum,
+                                  EncodeError::kNotAnAuthoritativeState, EncodeError::kNotUtf8}) {
     EXPECT_FALSE(augusta::protocol::DescribeEncodeError(error).empty());
   }
 }

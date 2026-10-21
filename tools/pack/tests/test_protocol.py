@@ -24,7 +24,7 @@ def test_a_capture_record_reads_back_as_it_was_written():
     record = augusta_pb2.CaptureRecord()
     record.header.server_pack = bytes([1]) * 32
     record.header.client_pack = bytes([2]) * 32
-    record.header.engine_version = "5.0.0"
+    record.header.engine_version = b"5.0.0"
     record.header.started_unix_ms = 1_791_281_700_123
     record.header.tick_rate_hz = 60
 
@@ -33,7 +33,7 @@ def test_a_capture_record_reads_back_as_it_was_written():
     assert read.WhichOneof("record") == "header"
     assert read.header.server_pack == bytes([1]) * 32
     assert read.header.client_pack == bytes([2]) * 32
-    assert read.header.engine_version == "5.0.0"
+    assert read.header.engine_version == b"5.0.0"
     assert read.header.started_unix_ms == 1_791_281_700_123
     assert read.header.tick_rate_hz == 60
 

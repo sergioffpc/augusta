@@ -70,6 +70,16 @@ def test_a_version_2_capture_is_refused():
         capture.read_capture(data)
 
 
+def test_text_that_is_not_utf8_is_refused():
+    header = augusta_pb2.CaptureRecord(
+        header=augusta_pb2.CaptureHeader(engine_version=b"\xc3\x28")
+    ).SerializeToString()
+    data = capture.MAGIC + bytes([capture.FORMAT_VERSION, len(header)]) + header
+
+    with pytest.raises(capture.CaptureError, match="not UTF-8"):
+        capture.read_capture(data)
+
+
 def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
     path = tmp_path / "match.acap"
     path.write_bytes(SEED.read_bytes())

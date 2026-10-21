@@ -112,6 +112,14 @@ def _parse(payload: bytes) -> augusta_pb2.CaptureRecord:
         raise CaptureError("a record does not parse") from error
 
 
+def _text(field: bytes) -> str:
+    """A text field, which the schema holds as bytes of UTF-8."""
+    try:
+        return field.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CaptureError("a record's text is not UTF-8") from error
+
+
 def _read_header(payload: bytes, format_version: int) -> CaptureHeader:
     record = _parse(payload)
     if record.WhichOneof("record") != "header":
@@ -119,7 +127,7 @@ def _read_header(payload: bytes, format_version: int) -> CaptureHeader:
     header = record.header
     return CaptureHeader(
         format_version=format_version,
-        engine_version=header.engine_version,
+        engine_version=_text(header.engine_version),
         server_pack=header.server_pack,
         client_pack=header.client_pack,
         tick_rate_hz=header.tick_rate_hz,
@@ -180,7 +188,7 @@ def read_capture(data: bytes) -> Capture:
                 CapturedPlayer(
                     number=event.player,
                     session=event.session,
-                    character=event.character,
+                    character=_text(event.character),
                     spawn=(
                         event.spawn_x * _POSITION_STEP,
                         event.spawn_y * _POSITION_STEP,
