@@ -6548,7 +6548,7 @@ class CorrectedAimTest : public AdversaryMatch {
   EntityIdWire TargetWire() { return EntityIdWire{std::to_underlying(*Target().GetServerView()->OwnEntity())}; }
 
   // The Shooter's delay's cap in ticks: 300 ms at 60 Hz.
-  static Tick Cap() { return augusta::simulation::HitboxHistoryTicks(kTestTickRate); }
+  static Tick Cap() { return 18; }
 
   // Where the update of tick the adversary was told of put entity's feet.
   Vec3 SeenOn(Tick tick, EntityIdWire entity) const {
@@ -7066,8 +7066,14 @@ TEST_F(FireCountsTest, EveryRoundIsCountedWithItsShootersDelayAndARoundAtTheCapA
   const HostMetrics& metrics = host_.Metrics();
   EXPECT_EQ(metrics.shots.Value(), 1U);
   const auto delays = metrics.shooters_delay.Read();
+  // The 300 ms bucket, the last below +Inf, holds it and the 250 ms one does not.
+  ASSERT_EQ(metrics.shooters_delay.Bounds().size(), 9U);
+  EXPECT_DOUBLE_EQ(metrics.shooters_delay.Bounds()[7], 0.250);
+  EXPECT_DOUBLE_EQ(metrics.shooters_delay.Bounds()[8], 0.300);
+  EXPECT_EQ(delays.cumulative_counts[7], 0U);
+  EXPECT_EQ(delays.cumulative_counts[8], 1U);
   EXPECT_EQ(delays.cumulative_counts.back(), 1U);
-  EXPECT_FLOAT_EQ(static_cast<float>(delays.sum), 0.3F);
+  EXPECT_DOUBLE_EQ(delays.sum, 0.300);
   EXPECT_EQ(metrics.shooters_delay_capped.Value(), 1U);
 }
 

@@ -45,10 +45,14 @@ void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
   for (const simulation::Hit& hit : result.state.hits) {
     metrics.hit_confirmations[hit.part].Increment();
   }
+  // A capped round is observed at the cap itself: its float delay, as a double,
+  // is just past the cap's bucket bound.
   const float cap = std::chrono::duration<float>(simulation::kMaxShootersDelay).count();
+  const double cap_seconds = std::chrono::duration<double>(simulation::kMaxShootersDelay).count();
   for (const float delay : result.shooters_delays) {
-    metrics.shooters_delay.Observe(delay);
-    metrics.shooters_delay_capped.Increment(delay >= cap ? 1 : 0);
+    const bool capped = delay >= cap;
+    metrics.shooters_delay.Observe(capped ? cap_seconds : delay);
+    metrics.shooters_delay_capped.Increment(capped ? 1 : 0);
   }
 }
 

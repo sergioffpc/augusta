@@ -46,7 +46,8 @@ constexpr std::initializer_list<double> kTickBuckets = {0.001,  0.002, 0.004, 0.
 constexpr std::initializer_list<double> kMatchBuckets = {30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600};
 // Around a datagram's size, up to a few.
 constexpr std::initializer_list<double> kUpdateBuckets = {64, 128, 256, 512, 1024, 1200, 1500, 2048, 4096};
-// Up to the 300 ms cap (simulation::kMaxShootersDelay), which a capped round falls in.
+// Up to the 300 ms cap (simulation::kMaxShootersDelay), the bucket a capped round
+// falls in (CountCombat observes it at the cap).
 constexpr std::initializer_list<double> kShootersDelayBuckets = {0.025, 0.050, 0.075, 0.100, 0.125,
                                                                  0.150, 0.200, 0.250, 0.300};
 
