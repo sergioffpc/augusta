@@ -33,6 +33,7 @@ PYTHON_SOURCES := "*.py" ":!:third_party/*"
 SHELL_SOURCES := "*.sh" ".githooks/*"
 CMAKE_SOURCES := "CMakeLists.txt" "*/CMakeLists.txt" "*.cmake" ":!:third_party/*"
 MARKDOWN_SOURCES := "*.md" ":!:third_party/*" ":!:CHANGELOG.md"
+PROTO_SOURCES := "*.proto" ":!:third_party/*"
 # What .yamlfmt and .yamllint cover, named file by file for format-files and
 # lint-files.
 YAML_SOURCES := "*.yaml" "*.yml" "*.yamlfmt" "*.yamllint" ":!:third_party/*" \
@@ -49,6 +50,8 @@ PYMARKDOWN := uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pyma
 YAMLLINT := uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
+# Buf too, from npm: it reads buf.yaml's workspace, every .proto at once.
+BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
 
 # What CI's Lint steps run clang-tidy's full profile on: every src .cpp and the
 # C++ tools' (tools/agent), built with them, except the audio module's silent
@@ -187,6 +190,7 @@ format:
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --write $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(BUF) format -w
 
 format-check:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
@@ -204,6 +208,8 @@ format-check:
 	$(GERSEMI) --check $(shell git ls-files -- $(CMAKE_SOURCES))
 	$(PRETTIER) --log-level warn --check $(shell git ls-files -- $(MARKDOWN_SOURCES))
 	$(PYMARKDOWN) scan $(shell git ls-files -- $(MARKDOWN_SOURCES))
+	$(BUF) format -d --exit-code
+	$(BUF) lint
 
 # Configuring first keeps
 # compile_commands.json in step with the sources (a file new on a branch has no
@@ -251,12 +257,13 @@ format-files:
 	$(if $(call covered,$(SHELL_SOURCES)),$(SHFMT) -w $(call covered,$(SHELL_SOURCES)),@:)
 	$(if $(call covered,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call covered,$(CMAKE_SOURCES)),@:)
 	$(if $(call covered,$(MARKDOWN_SOURCES)),$(PRETTIER) --log-level warn --write $(call covered,$(MARKDOWN_SOURCES)),@:)
+	$(if $(call covered,$(PROTO_SOURCES)),$(BUF) format -w,@:)
 
 # format-check's linters, then tidy's clang-tidy and include-cleaner, side by
 # side as tidy runs them. Unlike tidy it does not configure first, which would
 # make every push wait on CMake and vcpkg: the build must have been configured.
 # It generates augusta.pb.h when it lints protocol.cpp, as tidy does.
-LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint)
+LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint buf)
 LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
 lint-files:
 	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)) - on macOS through scripts/dev-container.sh)))
@@ -280,6 +287,9 @@ lint/pymarkdown:
 # against it.
 lint/actionlint:
 	$(if $(filter .github/workflows/% .github/actionlint.yaml,$(FILES)),$(ACTIONLINT),@:)
+# buf lint reads the workspace whole, as buf.yaml names it.
+lint/buf:
+	$(if $(or $(call covered,$(PROTO_SOURCES)),$(filter buf.yaml,$(FILES))),$(BUF) lint,@:)
 
 # The pre-push hook's checks, as a push of HEAD now would run them: on the
 # files of its commits the remote lacks, and of the changes not committed yet,
