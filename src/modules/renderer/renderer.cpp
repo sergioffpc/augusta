@@ -47,7 +47,7 @@ nvrhi::Color ClearColor() { return {kClearColorChannel, kClearColorChannel, kCle
 
 // How many frames the GPU may be working on at once, and so how many regions of
 // a per-frame upload buffer (FrameRegion) there are.
-constexpr std::uint32_t kFramesInFlight = Swapchain::kFramesInFlight;
+constexpr std::uint32_t kFramesInFlight = VulkanSwapchain::kFramesInFlight;
 
 constexpr nvrhi::Format kDepthFormat = nvrhi::Format::D32;
 
@@ -206,7 +206,7 @@ struct Renderer::Impl {
   const window::Window& window;
   VulkanDevice vulkan;
   nvrhi::IDevice* device;
-  Swapchain swapchain;
+  VulkanSwapchain swapchain;
   // Drawn into at the swapchain's size, or at the window's while it has none.
   nvrhi::TextureHandle target;
   nvrhi::TextureHandle depth;
