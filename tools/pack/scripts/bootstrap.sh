@@ -7,8 +7,9 @@
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
 # into it (pulling in usd-optimize/usd-validation-nvidia as its
-# own dependencies), the project's native _native extension module, built by
-# the repository's own CMake project into that same project (ADR-0030),
+# own dependencies), the project's native _native extension module and the
+# protocol's generated Python, augusta_pb2, built by the repository's own CMake
+# project into that same project (ADR-0030),
 # develop's signing keypair, and the authoring/packs/keys content
 # dirs (the cooker reads stages from authoring/, relative to it). Everything the
 # installed `augusta-pack` command needs to run lives under this one root, so
@@ -70,14 +71,21 @@ cmake_path() {
   fi
 }
 
-# Whether the native module is in the pack package. pybind11 tags the
-# actual filename with the Python ABI (e.g. _native.cp312-win_amd64.pyd,
-# _native.cpython-312-x86_64-linux-gnu.so) - Python's import machinery
-# resolves that back to the plain module name regardless, so check by glob.
+# Prints, space-separated, what the native target's build leaves out of the
+# pack package: the native module, the protocol's generated Python, or both.
+# pybind11 tags the module's filename with the Python ABI (e.g.
+# _native.cp312-win_amd64.pyd, _native.cpython-312-x86_64-linux-gnu.so) -
+# Python's import machinery resolves that back to the plain module name
+# regardless, so it is checked by glob.
 # Arguments:
 #   The pack package directory, the extension module's suffix (pyd or so).
-native_module_built() {
-  compgen -G "$1/_native*.$2" >/dev/null
+# Outputs:
+#   The missing files' names to stdout, an empty line when none is missing.
+missing_build_outputs() {
+  local missing=()
+  compgen -G "$1/_native*.$2" >/dev/null || missing+=("_native*.$2")
+  [[ -f "$1/augusta_pb2.py" ]] || missing+=(augusta_pb2.py)
+  echo "${missing[*]}"
 }
 
 main() {
@@ -190,19 +198,23 @@ main() {
   # configure installs the project's vcpkg dependencies, the runtime's among
   # them. PYTHON_EXECUTABLE (the variable pybind11's vcpkg port's legacy
   # FindPythonInterp reads) points it at this venv, so the built extension's
-  # ABI matches the interpreter that imports it.
-  local pack_package_dir="${pack_project}/src/augusta_pack"
-  if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
-    echo "Building the native module (${pack_project}/native, make" \
-      "pack-native)..."
-    make -C "$(native_path "${repo_root}")" pack-native \
-      "PYTHON_EXECUTABLE=$(cmake_path \
-        "${python_dir}/augusta-pack/${venv_python}")"
-    if ! native_module_built "${pack_package_dir}" "${module_suffix}"; then
-      echo "bootstrap: the native module build did not produce _native" \
-        "in ${pack_package_dir} - see the make output above." >&2
-      exit 1
-    fi
+  # ABI matches the interpreter that imports it. The target also generates the
+  # protocol's Python, augusta_pb2. It is built on every run, a no-op when up
+  # to date. A re-run thus brings an existing environment in step with the
+  # checkout's sources, including any output the target gained since.
+  local pack_package_dir="${pack_project}/src/augusta_pack" missing_outputs
+  echo "Building the native module and the protocol's Python" \
+    "(${pack_project}/native, make pack-native)..."
+  make -C "$(native_path "${repo_root}")" pack-native \
+    "PYTHON_EXECUTABLE=$(cmake_path \
+      "${python_dir}/augusta-pack/${venv_python}")"
+  missing_outputs="$(missing_build_outputs "${pack_package_dir}" \
+    "${module_suffix}")"
+  if [[ -n "${missing_outputs}" ]]; then
+    echo "bootstrap: make pack-native did not produce" \
+      "${missing_outputs} in ${pack_package_dir} - see the make output" \
+      "above." >&2
+    exit 1
   fi
 
   # Not regenerated on a re-run: overwriting it would silently invalidate
