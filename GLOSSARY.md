@@ -85,9 +85,16 @@ presence it carries), connection, netcode
 **Session ID**: The Authoritative server's name for one connected player
 (harness::SessionId on the client, host::SessionId and policy::SessionId on the
 server, link::SessionId as the Link's own name for it, protocol::SessionIdWire
-on the wire), assigned when it admits the join. Distinct from the transport's
-own handle for the connection, and not a credential — the server tells senders
-apart by connection, not by this ID. _Avoid_: Player ID, connection ID
+on the wire), assigned when it admits the join. Unique across every server and
+every restart, so it names one Session wherever its lines end up. Distinct from
+the transport's own handle for the connection, and not a credential — the server
+tells senders apart by connection, not by this ID. _Avoid_: Player ID (a player
+has no identity beyond its Session yet), connection ID
+
+**Match ID**: The Authoritative server's name for one Match, assigned at its
+Match start and unique across every server and every restart: what ties a
+Match's lines, its Match capture and the Sessions that played it together.
+_Avoid_: Match number, round ID
 
 **Entity ID**: The Authoritative server's name for one dynamic body
 (host::EntityId and simulation::EntityId on the server, harness::EntityId and
@@ -404,6 +411,19 @@ and shows the Match from that player's view (ADR-0050). _Avoid_: Replay viewer
 (it watches, it does not play), bot, ghost
 
 ### Debugging
+
+**Run**: One execution of a client, from its launch until its process ends. It
+holds at most one Session, since a client never reconnects, and may end before
+it is admitted. _Avoid_: Session (the presence on the server), launch
+
+**Run ID**: The client's own name for one Run, taken at launch and unique across
+every machine: it marks everything the Run leaves behind, and the server learns
+it on the join, which ties it to the Session ID it admits. _Avoid_: Session ID,
+process ID
+
+**Crash dump**: What a crash leaves to be read in a debugger beside the build's
+symbols: a client's minidump or core, or a GPU crash's Aftermath dump. _Avoid_:
+Crash report (a crash leaves log lines too), core (one kind of it)
 
 **Debug HUD**: Lines of text over the frame's corner showing the client's system
 metrics. _Avoid_: Overlay, stats panel
