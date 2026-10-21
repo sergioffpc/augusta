@@ -12,3 +12,4 @@ ADR, not here.
 | [`prediction-reconciliation.html`](prediction-reconciliation.html) | Does restore-and-replay keep the local player responsive and correct?         | ADR-0004, ADR-0038 |
 | [`replication-interpolation.html`](replication-interpolation.html) | Do clients show other players smoothly an Interpolation delay behind?         | ADR-0044, #1004    |
 | [`lag-compensation.html`](lag-compensation.html)                   | Does a round aimed at what the shooter saw hit, and what does the victim pay? | ADR-0044           |
+| [`acoustics-propagation.html`](acoustics-propagation.html)         | How does a sound travel through a Map's Acoustic geometry?                    | #802, ADR-0010     |
