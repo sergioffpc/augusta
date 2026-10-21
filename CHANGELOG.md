@@ -2,6 +2,89 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 4.1.0 - 2026-10-21
+
+### Features
+
+- **physics:** Map colliders carry a Surface id
+- **harness:** keep the recent Authoritative State updates in the Server view
+- **presentation:** record every update since the last frame
+- **simulation:** raise the Shooter's delay cap to 300 ms
+- **presentation:** slew the ServerClock at 10% when more than 50 ms off
+- **tick:** let pacing drain a queued Command backlog
+- **assets:** name both format versions when a pack is refused for its version
+- **logging:** log the machine, GPU, display and audio device at startup
+- **hardware:** log cgroup limits and address review of the hardware lines
+
+### Bug Fixes
+
+- **scripting:** refuse __gc metatables in the Lua sandbox
+- **host:** name capture paths in UTF-8 and guard the capture writer
+- **window:** keep Vulkan's header out of window.h
+- **scripts:** copy only this platform's vcpkg into a worktree
+- **host:** count a capped round in the 300 ms Shooter's delay bucket
+- **renderer:** keep the candidate log building where LOG_DEBUG compiles away
+
+### Refactoring
+
+- **harness:** read the Server view, not per-value Session getters
+- **gameplay:** give Body part its own header
+- **harness:** drop the inbox's unused string_view include
+- **gameplay:** ballistics strikes opaque Surfaces
+- address the opaque Surfaces review
+- **window:** keep GLFW private to the window module
+- **simulation:** extract lag-compensated hitbox posing from SimulationWorld
+- **simulation:** extract the Game policy bridge from SimulationWorld
+- **gameplay:** type the Parameters' sections by the concepts that own them
+- **policy:** move the policy loader into the policy module
+- **client:** the client Runtime owns the window; the Renderer borrows it
+- **harness:** keep a Server view's Authoritative States in one place
+- **assets:** fold the version message check into RejectsAVersion2Pack
+- **assets:** name the load error struct LoadError and its enum LoadErrorCode
+- **renderer:** prefix the Vulkan files with vulkan_
+- **renderer:** name the swapchain class VulkanSwapchain
+
+### Documentation
+
+- **reviews:** add the 2026-10-19 full-repository review
+- **harness:** keep what the removed getters said on the Server view
+- **glossary:** add Debugging terms for debug tooling
+- **glossary:** add Debug view, the frame replaced by one of its images
+- **adr:** compile debug tools out of Shipping builds
+- **adr:** add ADR-0075, Debug overlays and panels are values handed to the Renderer
+- index ADR-0075 in the architecture overview
+- **adr:** send the shooter its Shot judgement in Development builds
+- **adr:** share Hitbox placing between server and client
+- **adr:** open debug tools through a Debug index on F1
+- plan v5 as Debug Tooling and move planned releases on
+- plan the Protocol Buffers move in v5
+- plan the Protocol Buffers move as v5 of its own
+- **adr:** draw the line between Debug overlays and Debug views
+- **adr:** record the Skeleton format in ADR-0061
+- **adr:** state the Protocol Buffers wire in ADR-0007, ADR-0038 and ADR-0050
+- **engineering:** draw releases from issues by milestone rules
+- split the oversized releases and bring the roadmap in step with the specs
+- **gameplay:** say what weapon and body_part now hold
+- **prototypes:** add the Smoke screen fill prototype
+- **prototypes:** round the Smoke screen and draw a six-room Map
+- **prototypes:** let the Smoke screen prototype's smoke rise
+- **prototypes:** add the ballistics penetration prototype
+- **prototypes:** compare exit deviation rules and theme the ballistics page
+- **prototypes:** add the prediction, interpolation and lag compensation prototypes
+- **prototypes:** try the netcode tuning the prototypes led to
+- **adr:** state the backlog pacing decision in ADR-0038
+- record the client diagnosability terms and M18b
+
+### Tests
+
+- **replay:** wait for the capture file the Capturer's writer creates
+- **runner:** hold paced ticks to the backlog pacing bound
+
+### Build
+
+- **vscode:** build only the launched executable before F5
+- **hooks:** run the pre-push clang-tidy through ctcache, in parallel
+- **hooks:** run the Makefile's commands from the hooks
 ## 4.0.0 - 2026-10-19
 
 ### Features
