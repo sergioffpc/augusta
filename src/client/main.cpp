@@ -11,7 +11,6 @@
 #include "augusta/client_run.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
-#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 namespace {
@@ -37,19 +36,23 @@ int main(int argc, char** argv) {
     return 0;
   }
   // The Run starts here, before its config is read, so even a config that
-  // fails is named by its Run ID; a --help or --version is no Run.
-  const augusta::uuid::Uuid run_id = augusta::client::BeginRun();
+  // fails is named by its Run ID; a --help or --version is no Run. Its
+  // terminal event names its log file, for the player to send.
+  const augusta::client::Run client_run = augusta::client::BeginRun();
+  const auto conclude = [&client_run](const augusta::application::Outcome& outcome) {
+    return augusta::application::Conclude(kSubsystem, outcome, client_run.log_file);
+  };
   const auto run = command_line.and_then(augusta::config::ReadClientRun);
   const auto file_config = augusta::client::ReadClientConfig(
       run.and_then([&command_line](const augusta::config::ClientRun& /*read*/) { return command_line; }));
   if (!file_config) {
-    return augusta::application::Conclude(kSubsystem, file_config.error());
+    return conclude(file_config.error());
   }
   // ParseClientConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
 
   if (run->mode == augusta::config::ClientMode::kListReplays) {
-    return augusta::application::Conclude(kSubsystem, augusta::client::ListReplays(*file_config));
+    return conclude(augusta::client::ListReplays(*file_config));
   }
   std::optional<std::string> replay =
       run->mode == augusta::config::ClientMode::kWatchReplay ? std::optional(run->capture) : std::nullopt;
@@ -57,10 +60,9 @@ int main(int argc, char** argv) {
   // ReadClientConfig read the command line whole, so it has a value here.
   auto reenactment = augusta::client::ReadReenactment(*command_line);
   if (!reenactment) {
-    return augusta::application::Conclude(kSubsystem, reenactment.error());
+    return conclude(reenactment.error());
   }
 
-  return augusta::application::Conclude(
-      kSubsystem, augusta::application::Execute(augusta::client::ClientLifecycle(*file_config, *std::move(reenactment),
-                                                                                 std::move(replay), run_id)));
+  return conclude(augusta::application::Execute(
+      augusta::client::ClientLifecycle(*file_config, *std::move(reenactment), std::move(replay), client_run.id)));
 }

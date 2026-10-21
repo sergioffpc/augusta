@@ -37,7 +37,7 @@ the issues is ENGINEERING.md's Milestones section.
 - [v4 — Modules and Packs (4.0.0, 2026-10-19)](#v4--modules-and-packs-400-2026-10-19)
     - [M17 — One Pack Format (S)](#m17--one-pack-format-s)
 - [v4.1 — Codebase Review (4.1.0, 2026-10-21)](#v41--codebase-review-410-2026-10-21)
-- [Protocol Buffers (planned)](#protocol-buffers-planned)
+- [v5 — Protocol Buffers (5.0.0, 2026-10-21)](#v5--protocol-buffers-500-2026-10-21)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
 - [Client Diagnosability (planned)](#client-diagnosability-planned)
     - [M18b — Client Diagnosability (M)](#m18b--client-diagnosability-m)
@@ -378,12 +378,12 @@ major.
 **Exit criteria:** every refactor in it lands with the behaviour its tests pin
 unchanged
 
-## Protocol Buffers (planned)
+## v5 — Protocol Buffers (5.0.0, 2026-10-21)
 
 This release moves the Networking Protocol's wire to Protocol Buffers, so that
 one schema describes every message, for the game and for the tools that read its
-traffic. It is breaking for clients and servers of v4, so it ships as a major of
-its own, as early as it can.
+traffic. It is breaking for clients and servers of v4, so it shipped as a major
+of its own, ahead of the planned releases.
 
 ### M18 — Protocol Buffers (M)
 

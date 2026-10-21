@@ -1,5 +1,9 @@
 #include "augusta/application.h"
 
+#include <filesystem>
+#include <format>
+#include <optional>
+#include <string>
 #include <string_view>
 
 #include "augusta/failure.h"
@@ -37,13 +41,20 @@ TimerResolution::TimerResolution() = default;
 TimerResolution::~TimerResolution() = default;
 #endif
 
-int Conclude(std::string_view executable, const Outcome& outcome) {
+int Conclude(std::string_view executable, const Outcome& outcome, const std::optional<std::filesystem::path>& run_log) {
   if (!outcome.has_value()) {
     LOG_INFO("subsystem={} event=exiting exit_status={}", executable, kStoppedExitStatus);
     return kStoppedExitStatus;
   }
-  LOG_CRITICAL("subsystem={} event=terminal_failure {} exit_status={}", executable, failure::DescribeFailure(*outcome),
-               kFailedExitStatus);
+  std::string log;
+  if (run_log) {
+    // In UTF-8, which, unlike path.string() on Windows, never throws for a
+    // character the code page lacks.
+    const std::u8string utf8 = run_log->u8string();
+    log = std::format(" log=\"{}\"", std::string(utf8.begin(), utf8.end()));
+  }
+  LOG_CRITICAL("subsystem={} event=terminal_failure {} exit_status={}{}", executable,
+               failure::DescribeFailure(*outcome), kFailedExitStatus, log);
   return kFailedExitStatus;
 }
 
