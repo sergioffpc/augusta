@@ -27,9 +27,9 @@ constexpr std::int64_t kLastSecond = std::min<std::int64_t>(
 // Requirements: NFR-10
 RC_GTEST_PROP(CrashFormatProperty, TimestampMatchesTheLogSinks, ()) {
   const std::chrono::sys_seconds time{std::chrono::seconds{*rc::gen::inRange<std::int64_t>(0, kLastSecond + 1)}};
-  augusta::server::CrashLine line{};
+  augusta::crash::Line line{};
   const std::string message = "subsystem=server event=crash signal=SIGSEGV";
-  RC_ASSERT(std::string(augusta::server::FormatCrashSignalLine(line, time, SIGSEGV)) ==
+  RC_ASSERT(std::string(augusta::crash::FormatSignalLine(line, "server", time, SIGSEGV)) ==
             augusta::logging::FormatLine(time, augusta::logging::Severity::kCritical, message, false) + "\n");
 }
 
