@@ -36,7 +36,7 @@ the issues is ENGINEERING.md's Milestones section.
     - [M16 — Hardening & v3 Release (S)](#m16--hardening--v3-release-s)
 - [v4 — Modules and Packs (4.0.0, 2026-10-19)](#v4--modules-and-packs-400-2026-10-19)
     - [M17 — One Pack Format (S)](#m17--one-pack-format-s)
-- [Codebase Review (planned)](#codebase-review-planned)
+- [v4.1 — Codebase Review (4.1.0, 2026-10-21)](#v41--codebase-review-410-2026-10-21)
 - [Protocol Buffers (planned)](#protocol-buffers-planned)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
 - [Client Diagnosability (planned)](#client-diagnosability-planned)
@@ -369,12 +369,11 @@ only), and gives every cue's sound variants and a gain.
 encoded or decoded in Python, and the golden packs cook unchanged through the
 C++ encoder
 
-## Codebase Review (planned)
+## v4.1 — Codebase Review (4.1.0, 2026-10-21)
 
 A maintenance release: refactors and module boundary adjustments found by a
-review of the code, with no new behaviour. It ships as a minor once complete,
-without holding back the next major; a breaking change makes it a major of its
-own.
+review of the code, with no new behaviour, shipped as a minor ahead of the next
+major.
 
 **Exit criteria:** every refactor in it lands with the behaviour its tests pin
 unchanged
