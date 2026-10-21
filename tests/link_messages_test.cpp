@@ -400,7 +400,8 @@ TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithIts
       .players =
           {{.session = SessionId{3}, .entity = EntityId{11}, .character = "medic", .spawn = Vec3(4.0F, 0.5F, -8.0F)},
            {.session = SessionId{5}, .entity = EntityId{12}, .character = "sniper", .spawn = Vec3(-1.0F, 0.0F, 2.0F)}},
-      .first_tick = 0x1'0000'0042ULL};
+      .first_tick = 0x1'0000'0042ULL,
+      .match = {}};
 
   const augusta::link::MatchStart received = FromWire(ThroughTheWire(ToWire(sent)));
 

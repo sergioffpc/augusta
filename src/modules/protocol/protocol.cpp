@@ -126,8 +126,8 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
   return static_cast<std::uint32_t>(math::ToSteps(value, grid));
 }
 
-template <std::size_t kSize>
-std::string_view BytesOf(const std::array<std::byte, kSize>& bytes) {
+template <std::size_t Size>
+std::string_view BytesOf(const std::array<std::byte, Size>& bytes) {
   return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
@@ -471,11 +471,11 @@ class Inbound {
     }
   }
 
-  // bytes as kSize bytes: none is all zeros, and any other length is a number
+  // bytes as Size bytes: none is all zeros, and any other length is a number
   // wider than its field.
-  template <std::size_t kSize>
-  std::array<std::byte, kSize> Fixed(std::string_view bytes) {
-    std::array<std::byte, kSize> fixed{};
+  template <std::size_t Size>
+  std::array<std::byte, Size> Fixed(std::string_view bytes) {
+    std::array<std::byte, Size> fixed{};
     if (bytes.empty()) {
       return fixed;
     }

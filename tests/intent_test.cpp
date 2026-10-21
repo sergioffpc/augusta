@@ -47,7 +47,9 @@ ServerView InMatch() {
   view.accepted = augusta::harness::Admission{
       .session = SessionId{1}, .tick_rate_hz = kTickRate, .parameters = {}, .character = "soldier"};
   view.match_start = augusta::harness::MatchStart{
-      .players = {{.session = SessionId{1}, .entity = kOwn, .character = "soldier", .spawn = {}}}, .first_tick = 0};
+      .players = {{.session = SessionId{1}, .entity = kOwn, .character = "soldier", .spawn = {}}},
+      .first_tick = 0,
+      .match = {}};
   view.matches_started = 1;
   view.in_match = true;
   AuthoritativeState state;

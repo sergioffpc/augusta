@@ -286,12 +286,12 @@ rc::Gen<Id> AnyId() {
   return rc::gen::map(rc::gen::arbitrary<std::uint32_t>(), [](std::uint32_t id) { return static_cast<Id>(id); });
 }
 
-// kSize arbitrary bytes: a pack hash or a Match ID.
-template <std::size_t kSize>
-rc::Gen<std::array<std::byte, kSize>> Bytes() {
-  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kSize, rc::gen::arbitrary<std::uint8_t>()),
+// Size arbitrary bytes: a pack hash or a Match ID.
+template <std::size_t Size>
+rc::Gen<std::array<std::byte, Size>> Bytes() {
+  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(Size, rc::gen::arbitrary<std::uint8_t>()),
                       [](const std::vector<std::uint8_t>& bytes) {
-                        std::array<std::byte, kSize> fixed{};
+                        std::array<std::byte, Size> fixed{};
                         for (std::size_t i = 0; i < fixed.size(); ++i) {
                           fixed[i] = static_cast<std::byte>(bytes[i]);
                         }

@@ -33,7 +33,9 @@ constexpr float kTolerance = 1e-5F;
 
 augusta::harness::MatchStart TwoPlayerMatch() {
   return {.players = {{.session = SessionId{7}, .entity = EntityId{70}, .character = "medic"},
-                      {.session = SessionId{3}, .entity = EntityId{30}, .character = "sniper"}}};
+                      {.session = SessionId{3}, .entity = EntityId{30}, .character = "sniper"}},
+          .first_tick = 0,
+          .match = {}};
 }
 
 // Requirements: US-17

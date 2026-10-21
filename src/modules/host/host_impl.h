@@ -106,7 +106,7 @@ struct Host::Impl {
   tick::Tick match_start_tick = 0;
   // The Match ID of the match in progress, or of the last one: taken afresh at
   // each Match start, so every server's and every restart's are distinct.
-  uuid::Uuid match_id{};
+  uuid::Uuid match_id;
   // The winner of the match that ended last, nullopt for a draw: what its
   // capture's Match end names once the Simulation thread takes it out.
   std::optional<SessionId> match_winner;
