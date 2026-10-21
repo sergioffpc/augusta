@@ -148,8 +148,11 @@ std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol
   });
 }
 
-MessageType TypeOf(std::span<const std::byte> payload) {
-  switch (static_cast<protocol::MessageTypeWire>(payload.front())) {
+namespace {
+
+// type as the Link names it.
+MessageType Named(protocol::MessageTypeWire type) {
+  switch (type) {
     case protocol::MessageTypeWire::kJoinRequest:
       return MessageType::kJoinRequest;
     case protocol::MessageTypeWire::kJoinAccepted:
@@ -187,6 +190,31 @@ MessageType TypeOf(std::span<const std::byte> payload) {
   }
   std::unreachable();
 }
+
+// A protobuf tag is a varint of seven bits a byte, the high bit set on every
+// byte but its last, and holds its field's number above three bits of wire
+// type. The envelope's members number up to 17, so their tags take two bytes
+// at most.
+constexpr std::size_t kMaxEnvelopeTagBytes = 2;
+constexpr unsigned kVarintBitsPerByte = 7U;
+constexpr std::uint32_t kVarintValueMask = 0x7FU;
+constexpr unsigned kTagTypeBits = 3U;
+
+}  // namespace
+
+MessageType TypeOf(std::span<const std::byte> payload) {
+  std::uint32_t tag = 0;
+  for (std::size_t i = 0; i < std::min(payload.size(), kMaxEnvelopeTagBytes); ++i) {
+    const auto byte = std::to_integer<std::uint32_t>(payload[i]);
+    tag |= (byte & kVarintValueMask) << (kVarintBitsPerByte * i);
+    if ((byte & ~kVarintValueMask) == 0) {
+      break;
+    }
+  }
+  return Named(static_cast<protocol::MessageTypeWire>(tag >> kTagTypeBits));
+}
+
+MessageType TypeOfDecoded(const protocol::MessageWire& message) { return Named(protocol::TypeOf(message)); }
 
 protocol::SessionIdWire ToWire(SessionId session) {
   return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));

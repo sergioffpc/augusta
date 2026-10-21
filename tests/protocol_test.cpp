@@ -1,6 +1,5 @@
 #include "augusta/protocol.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <concepts>
@@ -11,6 +10,7 @@
 #include <limits>
 #include <new>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -36,16 +36,26 @@
 #define AUGUSTA_COUNTS_ALLOCATIONS 1
 #endif
 
-// Every byte operator new has handed out in this binary. Decode gives back no
-// message when it refuses one, so this is the only way to see what it
-// allocated on the way.
+// MSVC's checked iterators (a debug build's) give every vector an allocation
+// of its own beside its elements.
+#if defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL > 0
+#define AUGUSTA_VECTORS_ALLOCATE_ONLY_ELEMENTS 0
+#else
+#define AUGUSTA_VECTORS_ALLOCATE_ONLY_ELEMENTS 1
+#endif
+
+// Every byte operator new has handed out in this binary, and in how many
+// allocations. Decode gives back no message when it refuses one, so this is
+// the only way to see what it allocated on the way.
 namespace {
 std::size_t bytes_allocated = 0;
+std::size_t allocations = 0;
 }  // namespace
 
 #if AUGUSTA_COUNTS_ALLOCATIONS
 void* operator new(std::size_t size) {
   bytes_allocated += size;
+  ++allocations;
   if (void* block = std::malloc(size == 0 ? 1 : size)) {
     return block;
   }
@@ -113,32 +123,84 @@ using augusta::protocol::ShotWire;
 using augusta::protocol::StanceWire;
 using augusta::protocol::WeaponStateWire;
 
-BytesWire BytesOf(std::initializer_list<std::uint8_t> values) {
+// Payloads built by hand in protobuf's wire format (ADR-0007), field by field
+// as proto/augusta.proto numbers them, so a case says exactly what its payload
+// holds without the generated code.
+
+// Each of parts after the other.
+BytesWire Cat(std::initializer_list<BytesWire> parts) {
   BytesWire bytes;
-  for (const std::uint8_t value : values) {
-    bytes.push_back(static_cast<std::byte>(value));
+  for (const BytesWire& part : parts) {
+    bytes.insert(bytes.end(), part.begin(), part.end());
   }
   return bytes;
 }
 
-constexpr auto kJoinRequestType = static_cast<std::uint8_t>(MessageTypeWire::kJoinRequest);
-constexpr auto kJoinAcceptedType = static_cast<std::uint8_t>(MessageTypeWire::kJoinAccepted);
-constexpr auto kJoinRefusedType = static_cast<std::uint8_t>(MessageTypeWire::kJoinRefused);
-constexpr auto kCommandsType = static_cast<std::uint8_t>(MessageTypeWire::kCommands);
-constexpr auto kAuthoritativeStateType = static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState);
-constexpr auto kLobbyType = static_cast<std::uint8_t>(MessageTypeWire::kLobby);
-constexpr auto kReadyType = static_cast<std::uint8_t>(MessageTypeWire::kReady);
-constexpr auto kMatchStartType = static_cast<std::uint8_t>(MessageTypeWire::kMatchStart);
-constexpr auto kMatchEndType = static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd);
-constexpr auto kShotType = static_cast<std::uint8_t>(MessageTypeWire::kShot);
-constexpr auto kHitConfirmationType = static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation);
-constexpr auto kDeathType = static_cast<std::uint8_t>(MessageTypeWire::kDeath);
-constexpr auto kReplayListRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest);
-constexpr auto kReplayListType = static_cast<std::uint8_t>(MessageTypeWire::kReplayList);
-constexpr auto kReenactRequestType = static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest);
-// How many bytes a tick takes on the wire: as many as tick::Tick has.
-constexpr int kTickBytes = static_cast<int>(sizeof(augusta::tick::Tick));
-constexpr int kSequenceBytes = static_cast<int>(sizeof(augusta::tick::Sequence));
+// part, times times over.
+BytesWire Repeat(const BytesWire& part, std::size_t times) {
+  BytesWire bytes;
+  for (std::size_t i = 0; i < times; ++i) {
+    bytes.insert(bytes.end(), part.begin(), part.end());
+  }
+  return bytes;
+}
+
+// value in seven bits a byte, least significant first, the high bit set on
+// every byte but the last.
+BytesWire Varint(std::uint64_t value) {
+  BytesWire bytes;
+  do {
+    auto byte = static_cast<std::uint8_t>(value & 0x7FU);
+    value >>= 7U;
+    if (value != 0) {
+      byte |= 0x80U;
+    }
+    bytes.push_back(static_cast<std::byte>(byte));
+  } while (value != 0);
+  return bytes;
+}
+
+constexpr std::uint64_t kVarintType = 0;
+constexpr std::uint64_t kLengthDelimitedType = 2;
+
+BytesWire Tag(int field, std::uint64_t wire_type) {
+  return Varint((static_cast<std::uint64_t>(field) << 3U) | wire_type);
+}
+
+// An unsigned integer, an enumeration or a bitfield.
+BytesWire VarintField(int field, std::uint64_t value) { return Cat({Tag(field, kVarintType), Varint(value)}); }
+
+// A signed grid count, a sint32: zigzag-encoded, so a small negative count is
+// a small varint.
+BytesWire SignedField(int field, std::int32_t value) {
+  const auto bits = static_cast<std::uint32_t>(value);
+  return VarintField(field, (bits << 1U) ^ (value < 0 ? 0xFFFFFFFFU : 0U));
+}
+
+// A string, bytes or a message, after its length.
+BytesWire LengthField(int field, const BytesWire& contents) {
+  return Cat({Tag(field, kLengthDelimitedType), Varint(contents.size()), contents});
+}
+
+BytesWire TextField(int field, std::string_view text) {
+  BytesWire contents;
+  for (const char letter : text) {
+    contents.push_back(static_cast<std::byte>(letter));
+  }
+  return LengthField(field, contents);
+}
+
+// The payload of a message of type whose body holds fields.
+BytesWire Envelope(MessageTypeWire type, const BytesWire& fields) {
+  return LengthField(static_cast<int>(type), fields);
+}
+
+// payload followed by one zero byte, which protobuf reads as the tag of a field
+// numbered 0, which no message has.
+BytesWire WithAZeroByte(BytesWire payload) {
+  payload.push_back(std::byte{0});
+  return payload;
+}
 
 // Every refusal the protocol has.
 constexpr std::array<JoinRefusalWire, 9> kEveryRefusal = {
@@ -153,12 +215,6 @@ PackHashWire CountingPackHash() {
     hash[i] = static_cast<std::byte>(i + 1);
   }
   return hash;
-}
-
-// payload followed by the bytes of hash.
-BytesWire WithPackHash(BytesWire payload, const PackHashWire& hash) {
-  payload.insert(payload.end(), hash.begin(), hash.end());
-  return payload;
 }
 
 MessageWire RoundTrip(const MessageWire& message) {
@@ -205,11 +261,10 @@ TEST(ProtocolTest, JoinRequestWithTheLongestCharacterRoundTrips) {
 
 // Requirements: NFR-12
 TEST(ProtocolTest, ACharacterLongerThanAllowedIsTooLong) {
-  BytesWire payload = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
-  payload.push_back(static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1));
-  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
+  const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(3, too_long))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
@@ -253,19 +308,14 @@ TEST(ProtocolTest, AReenactRequestRoundTripsWithItsSpawn) {
 
 // Requirements: US-21
 TEST(ProtocolTest, AReenactRequestIsAJoinRequestsFieldsUnderItsOwnTypeThenTheSpawn) {
-  const JoinRequestWire join{.engine_version = "0.1.0", .client_pack = CountingPackHash(), .character = "soldier"};
-  const ReenactRequestWire reenact{.engine_version = join.engine_version,
-                                   .client_pack = join.client_pack,
-                                   .character = join.character,
-                                   .spawn = Vec3(1.0F, 2.0F, 3.0F)};
+  const BytesWire join_fields = Cat({TextField(1, "0.1.0"), TextField(3, "soldier")});
 
-  const BytesWire join_bytes = Encode(join).value();
-  const BytesWire reenact_bytes = Encode(reenact).value();
+  const auto decoded = Decode(
+      Envelope(MessageTypeWire::kReenactRequest, Cat({join_fields, SignedField(4, 1024), SignedField(6, -2048)})));
 
-  ASSERT_GT(reenact_bytes.size(), join_bytes.size());
-  EXPECT_EQ(kReenactRequestType, 17);
-  EXPECT_EQ(reenact_bytes.front(), static_cast<std::byte>(kReenactRequestType));
-  EXPECT_TRUE(std::equal(join_bytes.begin() + 1, join_bytes.end(), reenact_bytes.begin() + 1));
+  EXPECT_EQ(static_cast<int>(MessageTypeWire::kReenactRequest), 17);
+  EXPECT_EQ(decoded.value(), MessageWire(ReenactRequestWire{
+                                 .engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 0.0F, -2.0F)}));
 }
 
 // Requirements: NFR-12
@@ -311,21 +361,12 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   EXPECT_EQ(received.character, sent.character);
 }
 
-// The Lobby, not Join accepted, says who else is there (ADR-0043).
-TEST(ProtocolTest, JoinAcceptedCarriesNoRosterAndNoSpawnPoint) {
-  // type, session (4), tick rate (1), parameters (63: the player count, stamina 12,
-  // a rifle of 26 with no recoil kick, ammo 20, starting health 4), character (1:
-  // an empty one's length).
-  EXPECT_EQ(Encode(JoinAcceptedWire{}).value().size(), 1 + 4 + 1 + 63 + 1);
-}
-
 // Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInJoinAcceptedLongerThanTheLimitIsTooLong) {
-  BytesWire payload = Encode(JoinAcceptedWire{}).value();
-  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
-  payload.resize(payload.size() + augusta::protocol::kMaxCharacterNameLength + 1, static_cast<std::byte>('c'));
+  const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinAccepted, TextField(4, too_long))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
@@ -337,39 +378,16 @@ TEST(ProtocolTest, JoinRefusedRoundTripsEveryReason) {
   }
 }
 
-// A full Lobby is refused with the value a full match was, under its new name.
-TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull}).value(), BytesOf({kJoinRefusedType, 2}));
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress}).value(),
-            BytesOf({kJoinRefusedType, 4}));
+// The refusal a payload carries as a number.
+JoinRefusalWire RefusalNumbered(std::uint64_t number) {
+  return std::get<JoinRefusedWire>(Decode(Envelope(MessageTypeWire::kJoinRefused, VarintField(1, number))).value())
+      .reason;
 }
 
-TEST(ProtocolTest, FieldsAreFixedWidthLittleEndian) {
-  // The session, then tick rate (one byte of whole Hz), parameters and
-  // character: all zero here but the player count, which leads the
-  // parameters, and the character, a one-byte length and its bytes.
-  BytesWire accepted = BytesOf({kJoinAcceptedType, 0x01, 0x02, 0x03, 0x04});
-  accepted.resize(accepted.size() + 1, std::byte{0});
-  accepted.push_back(std::byte{0x03});
-  accepted.resize(accepted.size() + 62, std::byte{0});
-  accepted.push_back(std::byte{1});
-  accepted.push_back(static_cast<std::byte>('d'));
-  EXPECT_EQ(Encode(JoinAcceptedWire{.session = static_cast<SessionIdWire>(0x04030201U),
-                                    .parameters = {.stamina = {}, .player_count = 3},
-                                    .character = "d"})
-                .value(),
-            accepted);
-  BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 2, 'a', 'b'}), CountingPackHash());
-  request.push_back(std::byte{1});
-  request.push_back(static_cast<std::byte>('c'));
-  EXPECT_EQ(
-      Encode(JoinRequestWire{.engine_version = "ab", .client_pack = CountingPackHash(), .character = "c"}).value(),
-      request);
-  EXPECT_EQ(Encode(LobbyWire{.version = 0x0A0B0C0DU,
-                             .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(0x01020304U),
-                                                        .character = "e"}}})
-                .value(),
-            BytesOf({kLobbyType, 0x0D, 0x0C, 0x0B, 0x0A, 1, 0x04, 0x03, 0x02, 0x01, 1, 'e'}));
+// A full Lobby is refused with the value a full match was, under its new name.
+TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
+  EXPECT_EQ(RefusalNumbered(2), JoinRefusalWire::kLobbyFull);
+  EXPECT_EQ(RefusalNumbered(4), JoinRefusalWire::kMatchInProgress);
 }
 
 TEST(ProtocolTest, LobbyRoundTrips) {
@@ -401,17 +419,18 @@ TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
 
 // Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
-  // type, version (4), then the count.
-  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
+  const BytesWire entry = LengthField(2, VarintField(1, 7));
+
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kLobby, Repeat(entry, kMaxPlayers))).has_value());
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kLobby, Repeat(entry, kMaxPlayers + 1))).error(),
             DecodeError::kFieldTooLong);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
-  // type, version, count, session, then the character's length.
-  EXPECT_EQ(Decode(BytesOf({kLobbyType, 1, 0, 0, 0, 1, 7, 0, 0, 0,
-                            static_cast<std::uint8_t>(augusta::protocol::kMaxCharacterNameLength + 1)}))
-                .error(),
+  const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kLobby, LengthField(2, TextField(2, too_long)))).error(),
             DecodeError::kFieldTooLong);
 }
 
@@ -450,7 +469,7 @@ TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {
 
 // Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInAMatchStartThanAMatchHoldsIsTooLong) {
-  EXPECT_EQ(Decode(BytesOf({kMatchStartType, static_cast<std::uint8_t>(kMaxPlayers + 1)})).error(),
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchStart, Repeat(LengthField(1, {}), kMaxPlayers + 1))).error(),
             DecodeError::kFieldTooLong);
 }
 
@@ -459,7 +478,6 @@ TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
 
   ASSERT_TRUE(std::holds_alternative<ReadyWire>(decoded));
   EXPECT_EQ(std::get<ReadyWire>(decoded).version, 0xA1B2C3D4U);
-  EXPECT_EQ(Encode(ReadyWire{.version = 0x01020304U}).value(), BytesOf({kReadyType, 0x04, 0x03, 0x02, 0x01}));
 }
 
 TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
@@ -467,14 +485,15 @@ TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
 
   ASSERT_TRUE(std::holds_alternative<MatchEndWire>(decoded));
   EXPECT_EQ(std::get<MatchEndWire>(decoded).winner, static_cast<SessionIdWire>(0xA1B2C3D4U));
-  EXPECT_EQ(Encode(MatchEndWire{.winner = static_cast<SessionIdWire>(0x01020304U)}).value(),
-            BytesOf({kMatchEndType, 0x04, 0x03, 0x02, 0x01}));
 }
 
-// Session IDs start at 1, so a winner of 0 is a draw (ADR-0038).
+// Session IDs start at 1, so a winner of 0 is a draw (ADR-0038): one with no
+// winner at all, as an absent field reads as 0.
 TEST(ProtocolTest, AMatchEndThatIsADrawNamesSessionZero) {
-  EXPECT_EQ(Encode(MatchEndWire{}).value(), BytesOf({kMatchEndType, 0, 0, 0, 0}));
-  EXPECT_EQ(Encode(MatchEndWire{.winner = augusta::protocol::kDraw}).value(), BytesOf({kMatchEndType, 0, 0, 0, 0}));
+  EXPECT_EQ(std::get<MatchEndWire>(RoundTrip(MatchEndWire{.winner = augusta::protocol::kDraw})).winner,
+            augusta::protocol::kDraw);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, {})).value(), MessageWire(MatchEndWire{}));
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, VarintField(1, 0))).value(), MessageWire(MatchEndWire{}));
 }
 
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
@@ -490,27 +509,23 @@ TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
   EXPECT_EQ(std::get<ShotWire>(decoded), shot);
 }
 
-// Its origin and its direction travel on the grids a body's position and a
-// command's view do (ADR-0038): three bytes a number.
-TEST(ProtocolTest, AShotTravelsInTwentyEightBytes) {
-  const ShotWire shot{.tick = 0x0A0B0C0D0E0F1011U,
-                      .origin = Vec3(1.0F, 0.0F, -1.0F / 1024.0F),
-                      .shooter = static_cast<EntityIdWire>(0x01020304U),
-                      .yaw = 1.0F,
-                      .pitch = -1.0F / 2097152.0F};
+// Its origin and its direction travel as counts of the grids a body's position
+// and a command's view do (ADR-0038).
+TEST(ProtocolTest, AShotsOriginAndDirectionTravelAsCountsOfTheirGrids) {
+  const BytesWire shot = Cat({VarintField(1, 1200), VarintField(2, 7), SignedField(3, 1024), SignedField(5, -1),
+                              SignedField(6, 2097152), SignedField(7, -1)});
 
-  // The type, the shooter, the tick, the origin's x, y and z, the yaw and the pitch.
-  EXPECT_EQ(Encode(shot).value(),
-            BytesOf({kShotType, 0x04, 0x03, 0x02, 0x01, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x00,
-                     0x04,      0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x20, 0xFF, 0xFF, 0xFF}));
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kShot, shot)).value(),
+            MessageWire(ShotWire{.tick = 1200,
+                                 .origin = Vec3(1.0F, 0.0F, -1.0F / 1024.0F),
+                                 .shooter = static_cast<EntityIdWire>(7),
+                                 .yaw = 1.0F,
+                                 .pitch = -1.0F / 2097152.0F}));
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, BytesAfterAShotAreTrailing) {
-  BytesWire shot = Encode(ShotWire{}).value();
-  shot.push_back(std::byte{0});
-
-  EXPECT_EQ(Decode(shot).error(), DecodeError::kTrailingBytes);
+TEST(ProtocolTest, AZeroByteAfterAShotIsMalformed) {
+  EXPECT_EQ(Decode(WithAZeroByte(Encode(ShotWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 TEST(ProtocolTest, AHitConfirmationRoundTripsWithItsTargetBodyPartAndDamage) {
@@ -524,32 +539,19 @@ TEST(ProtocolTest, AHitConfirmationRoundTripsWithItsTargetBodyPartAndDamage) {
   }
 }
 
-TEST(ProtocolTest, AHitConfirmationTravelsInTenBytes) {
-  const HitConfirmationWire hit{
-      .target = static_cast<EntityIdWire>(0x01020304U), .damage = 1.0F, .part = BodyPartWire::kLimb};
-
-  // The type, the target, the body part and the damage's bits.
-  EXPECT_EQ(Encode(hit).value(), BytesOf({kHitConfirmationType, 0x04, 0x03, 0x02, 0x01, 0x03, 0x00, 0x00, 0x80, 0x3F}));
-}
-
 // Requirements: NFR-12
 TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
-  // type, target, then the body part.
-  constexpr std::size_t kBodyPartOffset = 1 + 4;
-  for (const std::uint8_t bad : {std::uint8_t{0}, std::uint8_t{4}, std::uint8_t{255}}) {
-    BytesWire payload = Encode(HitConfirmationWire{}).value();
-    payload[kBodyPartOffset] = static_cast<std::byte>(bad);
-
-    EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kHitConfirmation, VarintField(2, 3))).has_value());
+  for (const std::uint64_t bad : {0U, 4U, 255U}) {
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kHitConfirmation, VarintField(2, bad))).error(),
+              DecodeError::kInvalidEnum)
+        << bad;
   }
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, BytesAfterAHitConfirmationAreTrailing) {
-  BytesWire hit = Encode(HitConfirmationWire{}).value();
-  hit.push_back(std::byte{0});
-
-  EXPECT_EQ(Decode(hit).error(), DecodeError::kTrailingBytes);
+TEST(ProtocolTest, AZeroByteAfterAHitConfirmationIsMalformed) {
+  EXPECT_EQ(Decode(WithAZeroByte(Encode(HitConfirmationWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 TEST(ProtocolTest, ADeathRoundTripsWithItsVictimKillerBodyPartAndDirection) {
@@ -567,61 +569,52 @@ TEST(ProtocolTest, ADeathRoundTripsWithItsVictimKillerBodyPartAndDirection) {
   }
 }
 
-// Its direction travels on the grid a Shot's does (ADR-0038): three bytes an angle.
-TEST(ProtocolTest, ADeathTravelsInSixteenBytes) {
-  const DeathWire death{.victim = static_cast<EntityIdWire>(0x01020304U),
-                        .killer = static_cast<EntityIdWire>(0x05060708U),
-                        .yaw = 1.0F,
-                        .pitch = -1.0F / 2097152.0F,
-                        .part = BodyPartWire::kHead};
-
-  // The type, the victim, the killer, the body part, the yaw and the pitch.
-  EXPECT_EQ(Encode(death).value(), BytesOf({kDeathType, 0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x01, 0x00,
-                                            0x00, 0x20, 0xFF, 0xFF, 0xFF}));
-}
-
 // Requirements: NFR-12
 TEST(ProtocolTest, ADeathsBodyPartOutsideItsRangeIsInvalid) {
-  // type, victim, killer, then the body part.
-  constexpr std::size_t kBodyPartOffset = 1 + 4 + 4;
-  for (const std::uint8_t bad : {std::uint8_t{0}, std::uint8_t{4}, std::uint8_t{255}}) {
-    BytesWire payload = Encode(DeathWire{}).value();
-    payload[kBodyPartOffset] = static_cast<std::byte>(bad);
-
-    EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kDeath, VarintField(3, 1))).has_value());
+  for (const std::uint64_t bad : {0U, 4U, 255U}) {
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kDeath, VarintField(3, bad))).error(), DecodeError::kInvalidEnum) << bad;
   }
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, BytesAfterADeathAreTrailing) {
-  BytesWire death = Encode(DeathWire{}).value();
-  death.push_back(std::byte{0});
-
-  EXPECT_EQ(Decode(death).error(), DecodeError::kTrailingBytes);
+TEST(ProtocolTest, AZeroByteAfterADeathIsMalformed) {
+  EXPECT_EQ(Decode(WithAZeroByte(Encode(DeathWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, ACharacterInAMatchStartLongerThanTheLimitIsTooLong) {
-  BytesWire payload = Encode(MatchStartWire{.players = {MatchPlayer(1, "", 0.0F)}}).value();
-  // type, count, session, entity, then the character's length.
-  constexpr std::size_t kCharacterOffset = 1 + 1 + 4 + 4;
-  payload[kCharacterOffset] = static_cast<std::byte>(augusta::protocol::kMaxCharacterNameLength + 1);
+  const std::string too_long(augusta::protocol::kMaxCharacterNameLength + 1, 'c');
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchStart, LengthField(1, TextField(3, too_long)))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, AnEmptyPayloadIsEmpty) { EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kEmpty); }
+TEST(ProtocolTest, AnEmptyPayloadIsOfNoTypeThisBuildKnows) {
+  EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kUnknownType);
+}
 
+// The envelope's members number from 1 to 17: a member past them is a field
+// this build does not know, ignored, which leaves the envelope with no body.
 // Requirements: NFR-12
-TEST(ProtocolTest, AnUnknownTypeIsRejected) {
-  EXPECT_EQ(Decode(BytesOf({0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({18, 0, 0, 0, 0})).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(Decode(BytesOf({0xFF})).error(), DecodeError::kUnknownType);
+TEST(ProtocolTest, AnEnvelopeWithNoMemberThisBuildKnowsIsOfAnUnknownType) {
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kReenactRequest, {})).has_value());
+  EXPECT_EQ(Decode(LengthField(18, {})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(VarintField(1, 1)).error(), DecodeError::kUnknownType);
+}
+
+// A capture record's envelope numbers its members from 1000 (ADR-0007), so a
+// record is never a message.
+// Requirements: NFR-12
+TEST(ProtocolTest, ACaptureRecordIsOfAnUnknownType) {
+  const BytesWire leave = Cat({VarintField(1, 12), VarintField(2, 3)});
+
+  EXPECT_EQ(Decode(LengthField(1004, leave)).error(), DecodeError::kUnknownType);
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
+TEST(ProtocolTest, EveryTruncationOfEveryMessageIsMalformedNotACrash) {
   const std::array<MessageWire, 16> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
       ReenactRequestWire{.engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 2.0F, 3.0F)},
@@ -643,71 +636,70 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsTruncatedNotACrash) {
     const BytesWire whole = Encode(message).value();
     for (std::size_t length = 1; length < whole.size(); ++length) {
       const BytesWire cut(whole.begin(), whole.begin() + static_cast<std::ptrdiff_t>(length));
-      EXPECT_EQ(Decode(cut).error(), DecodeError::kTruncated)
-          << "type " << static_cast<int>(whole[0]) << " cut to " << length;
+      EXPECT_EQ(Decode(cut).error(), DecodeError::kMalformed)
+          << "type " << static_cast<int>(augusta::protocol::TypeOf(message)) << " cut to " << length;
     }
   }
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, ALengthPointingPastThePayloadIsTruncatedWithoutReadingIt) {
+TEST(ProtocolTest, ALengthPointingPastThePayloadIsMalformedWithoutReadingIt) {
   // Claims 32 bytes of version, supplies 2.
-  EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 32, 'a', 'b'})).error(), DecodeError::kTruncated);
+  const BytesWire version = Cat({Tag(1, kLengthDelimitedType), Varint(32), BytesWire{std::byte{'a'}, std::byte{'b'}}});
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, version)).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, AVersionLongerThanAllowedIsTooLongEvenWhenAllOfItIsPresent) {
-  BytesWire payload = BytesOf({kJoinRequestType, static_cast<std::uint8_t>(kMaxEngineVersionLength + 1)});
-  payload.resize(payload.size() + kMaxEngineVersionLength + 1, static_cast<std::byte>('v'));
+  const std::string longest(kMaxEngineVersionLength, 'v');
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
-}
-
-// Requirements: NFR-12
-TEST(ProtocolTest, ALengthOf255IsRejectedBeforeAnythingIsAllocatedForIt) {
-  EXPECT_EQ(Decode(BytesOf({kJoinRequestType, 255})).error(), DecodeError::kFieldTooLong);
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(1, longest))).has_value());
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(1, longest + "v"))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, ARefusalReasonOutsideTheEnumerationIsInvalid) {
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 10})).error(), DecodeError::kInvalidEnum);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 0xFF})).error(), DecodeError::kInvalidEnum);
+  for (const std::uint64_t bad : {0U, 10U, 0xFFU}) {
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRefused, VarintField(1, bad))).error(), DecodeError::kInvalidEnum)
+        << bad;
+  }
+}
+
+// A refusal that names no reason holds the enumeration's unspecified 0, which
+// no sender writes.
+// Requirements: NFR-12
+TEST(ProtocolTest, ARefusalWithNoReasonIsInvalid) {
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRefused, {})).error(), DecodeError::kInvalidEnum);
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, BytesAfterAMessageAreTrailing) {
-  BytesWire request = WithPackHash(BytesOf({kJoinRequestType, 0}), PackHashWire{});
-  request.push_back(std::byte{0});
-  request.push_back(std::byte{0});
-  EXPECT_EQ(Decode(request).error(), DecodeError::kTrailingBytes);
-  BytesWire accepted = Encode(JoinAcceptedWire{}).value();
-  accepted.push_back(std::byte{0});
-  EXPECT_EQ(Decode(accepted).error(), DecodeError::kTrailingBytes);
-  BytesWire lobby = Encode(LobbyWire{}).value();
-  lobby.push_back(std::byte{0});
-  EXPECT_EQ(Decode(lobby).error(), DecodeError::kTrailingBytes);
-  BytesWire start = Encode(MatchStartWire{}).value();
-  start.push_back(std::byte{0});
-  EXPECT_EQ(Decode(start).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kReadyType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kMatchEndType, 1, 0, 0, 0, 0})).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kJoinRefusedType, 1, 1})).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(BytesOf({kReplayListRequestType, 0})).error(), DecodeError::kTrailingBytes);
+TEST(ProtocolTest, AZeroByteAfterAMessageIsMalformed) {
+  const std::vector<MessageWire> messages = {JoinRequestWire{},
+                                             JoinAcceptedWire{},
+                                             LobbyWire{},
+                                             MatchStartWire{},
+                                             ReadyWire{.version = 1},
+                                             MatchEndWire{.winner = static_cast<SessionIdWire>(1)},
+                                             JoinRefusedWire{.reason = JoinRefusalWire::kVersionMismatch},
+                                             ReplayListRequestWire{}};
+  for (const MessageWire& message : messages) {
+    EXPECT_EQ(Decode(WithAZeroByte(Encode(message).value())).error(), DecodeError::kMalformed)
+        << static_cast<int>(augusta::protocol::TypeOf(message));
+  }
 }
 
 // The two refusals a replay server gives are appended after every older one,
 // which keep their wire values (ADR-0051).
 TEST(ProtocolTest, AReplayServersRefusalsFollowEveryOlderOne) {
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kReplayServer}).value(), BytesOf({kJoinRefusedType, 6}));
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kUnknownCapture}).value(),
-            BytesOf({kJoinRefusedType, 7}));
-  EXPECT_EQ(Encode(JoinRefusedWire{.reason = JoinRefusalWire::kNotAReplayServer}).value(),
-            BytesOf({kJoinRefusedType, 8}));
+  EXPECT_EQ(RefusalNumbered(6), JoinRefusalWire::kReplayServer);
+  EXPECT_EQ(RefusalNumbered(7), JoinRefusalWire::kUnknownCapture);
+  EXPECT_EQ(RefusalNumbered(8), JoinRefusalWire::kNotAReplayServer);
 }
 
 TEST(ProtocolTest, AReplayListRequestIsItsTypeAlone) {
-  EXPECT_EQ(Encode(ReplayListRequestWire{}).value(), BytesOf({kReplayListRequestType}));
+  EXPECT_EQ(Encode(ReplayListRequestWire{}).value(), Envelope(MessageTypeWire::kReplayListRequest, {}));
   EXPECT_TRUE(std::holds_alternative<ReplayListRequestWire>(RoundTrip(ReplayListRequestWire{})));
 }
 
@@ -750,18 +742,20 @@ std::size_t BytesDecodeAllocates(const BytesWire& payload) {
   return bytes_allocated - before;
 }
 
-// A list's count is a claim the bytes after it must back: two bytes claiming
-// 255 listings allocate no more than two claiming one.
+// A length is a claim the bytes after it must back: a payload claiming a
+// million bytes of Replay list allocates no more than one claiming one byte.
 // Requirements: NFR-12
-TEST(ProtocolTest, AListCountingPastTheEndOfThePayloadIsTruncatedWithoutAllocatingForIt) {
+TEST(ProtocolTest, ALengthPastTheEndOfThePayloadIsMalformedWithoutAllocatingForIt) {
   if (!AUGUSTA_COUNTS_ALLOCATIONS) {
     GTEST_SKIP() << "operator new is ThreadSanitizer's in this build, so allocations are not counted";
   }
-  const BytesWire claims_one = BytesOf({kReplayListType, 1});
-  const BytesWire claims_most =
-      BytesOf({kReplayListType, static_cast<std::uint8_t>(augusta::protocol::kMaxReplayListings)});
+  const auto claiming = [](std::uint64_t length) {
+    return Cat({Tag(static_cast<int>(MessageTypeWire::kReplayList), kLengthDelimitedType), Varint(length)});
+  };
+  const BytesWire claims_one = claiming(1);
+  const BytesWire claims_most = claiming(1'000'000);
 
-  EXPECT_EQ(Decode(claims_most).error(), DecodeError::kTruncated);
+  EXPECT_EQ(Decode(claims_most).error(), DecodeError::kMalformed);
   EXPECT_EQ(BytesDecodeAllocates(claims_most), BytesDecodeAllocates(claims_one));
 }
 
@@ -781,10 +775,8 @@ TEST(ProtocolTest, AReplayRequestsCaptureNameLongerThanAllowedIsTooLong) {
   EXPECT_EQ(Encode(ReplayRequestWire{.engine_version = "", .client_pack = {}, .capture = longest + "n"}).error(),
             EncodeError::kFieldTooLong);
 
-  BytesWire payload = Encode(ReplayRequestWire{}).value();
-  payload.back() = static_cast<std::byte>(augusta::protocol::kMaxCaptureNameLength + 1);
-  payload.resize(payload.size() + augusta::protocol::kMaxCaptureNameLength + 1, static_cast<std::byte>('n'));
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReplayRequest, TextField(3, longest + "n"))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 // Requirements: US-21
@@ -799,14 +791,6 @@ TEST(ProtocolTest, AReplayViewRoundTripsEveryPlayersPitchAndAds) {
   EXPECT_EQ(RoundTrip(view), MessageWire{view});
 }
 
-// A pitch on the angle grid as a Command's is, its entity and its ADS in a
-// byte: eight bytes a player.
-TEST(ProtocolTest, AReplayViewTravelsInEightBytesAPlayerAfterItsTick) {
-  const ReplayViewWire view{.tick = 1, .players = {PlayerViewWire{}, PlayerViewWire{}}};
-
-  EXPECT_EQ(Encode(view).value().size(), 1 + kTickBytes + 1 + (2 * 8));
-}
-
 // Requirements: NFR-12
 TEST(ProtocolTest, AReplayViewsUnusedFlagBitsAndExtraPlayersAreRefused) {
   EXPECT_EQ(Encode(ReplayViewWire{.players = {PlayerViewWire{.flags = 0x02}}}).error(), EncodeError::kReservedBits);
@@ -814,9 +798,9 @@ TEST(ProtocolTest, AReplayViewsUnusedFlagBitsAndExtraPlayersAreRefused) {
   crowded.players.resize(kMaxPlayers + 1);
   EXPECT_EQ(Encode(crowded).error(), EncodeError::kFieldTooLong);
 
-  BytesWire payload = Encode(ReplayViewWire{.players = {PlayerViewWire{}}}).value();
-  payload.back() = std::byte{0x02};
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kReplayView, LengthField(2, VarintField(3, 0x01)))).has_value());
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReplayView, LengthField(2, VarintField(3, 0x02)))).error(),
+            DecodeError::kReservedBits);
 }
 
 // A command with every field set to something other than its default.
@@ -876,7 +860,10 @@ TEST(ProtocolTest, CommandsCarryTheMostAMessageAllows) {
 
 // Requirements: NFR-12
 TEST(ProtocolTest, MoreCommandsThanAMessageAllowsIsTooLong) {
-  EXPECT_EQ(Decode(BytesOf({kCommandsType, static_cast<std::uint8_t>(kMaxCommandsPerMessage + 1)})).error(),
+  const BytesWire command = LengthField(1, VarintField(1, 1));
+
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kCommands, Repeat(command, kMaxCommandsPerMessage))).has_value());
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kCommands, Repeat(command, kMaxCommandsPerMessage + 1))).error(),
             DecodeError::kFieldTooLong);
 }
 
@@ -893,27 +880,24 @@ TEST(ProtocolTest, ANonFiniteNumberIsSentAsZeroOrItsNearestBound) {
   EXPECT_EQ(decoded.commands[0].command.direction.y, SnapDirection(Vec3(0.0F, -1000.0F, 0.0F)).y);
 }
 
-// type, count, then per command: sequence (4), direction (6), yaw (3), pitch
-// (3), one byte for the flags and the stance, and one each for the Seen time's
-// age and its fraction: a command is 15 bytes. Then the message's Seen tick (4).
-constexpr std::size_t kCommandYawOffset = 2 + kSequenceBytes + 6;
-constexpr std::size_t kCommandFlagsOffset = kCommandYawOffset + 3 + 3;
-constexpr std::size_t kCommandSeenOffset = kCommandFlagsOffset + 1;
-constexpr std::size_t kSeenTickOffset = kCommandSeenOffset + 2;
+// The payload of a Commands message of one command whose fields are fields.
+BytesWire OneCommand(const BytesWire& fields) {
+  return Envelope(MessageTypeWire::kCommands, LengthField(1, Cat({VarintField(1, 1), fields})));
+}
+
+// The one command of a payload OneCommand made.
+CommandWire CommandOf(const BytesWire& payload) {
+  return std::get<CommandsWire>(Decode(payload).value()).commands.at(0).command;
+}
 
 // The angle grid's step, 2^-21 rad.
 constexpr float kAngleStep = 1.0F / 2097152.0F;
 
-TEST(ProtocolTest, YawAndPitchTravelAsThreeBytesEachInStepsOfTwoToTheMinus21Radians) {
-  SequencedCommandWire sequenced{.sequence = 1};
-  sequenced.command.yaw = kAngleStep;
-  sequenced.command.pitch = -kAngleStep;
+TEST(ProtocolTest, YawAndPitchTravelAsCountsOfTwoToTheMinus21Radians) {
+  const CommandWire command = CommandOf(OneCommand(Cat({SignedField(5, 1), SignedField(6, -1)})));
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}}).value();
-
-  const auto yaw_offset = static_cast<std::ptrdiff_t>(kCommandYawOffset);
-  const BytesWire angles(payload.begin() + yaw_offset, payload.begin() + yaw_offset + 6);
-  EXPECT_EQ(angles, BytesOf({0x01, 0x00, 0x00, 0xFF, 0xFF, 0xFF}));
+  EXPECT_EQ(command.yaw, kAngleStep);
+  EXPECT_EQ(command.pitch, -kAngleStep);
 }
 
 TEST(ProtocolTest, AnAngleIsClampedWithinFourRadiansAndANaNIsZero) {
@@ -932,33 +916,26 @@ TEST(ProtocolTest, AnAnglesRoundingErrorIsAtMostHalfAStep) {
   }
 }
 
-TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneByte) {
-  SequencedCommandWire sequenced{.sequence = 1};
-  sequenced.command.flags = CommandWire::kSprint | CommandWire::kReload;
-  sequenced.command.desired_stance = augusta::protocol::StanceWire::kProne;
+// The flags in the low four bits, the stance in the two above them (ADR-0038).
+TEST(ProtocolTest, ACommandsFlagsAndStanceShareOneBitfield) {
+  const CommandWire command = CommandOf(OneCommand(VarintField(7, 0b0010'1001)));
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}}).value();
-
-  ASSERT_EQ(payload.size(), kSeenTickOffset + kTickBytes);
-  // The flags in the low four bits, the stance in the two above them.
-  EXPECT_EQ(payload[kCommandFlagsOffset], std::byte{0b0010'1001});
+  EXPECT_EQ(command.flags, CommandWire::kSprint | CommandWire::kReload);
+  EXPECT_EQ(command.desired_stance, StanceWire::kProne);
 }
 
 // What the shooter was shown (ADR-0044): the newest tick once for the whole
 // message, and each command's own as how far before it, with its fraction in
 // 256ths.
-TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionInAByteEachAndTheMessagesSeenTickAtTheEnd) {
-  SequencedCommandWire sequenced{.sequence = 1};
-  sequenced.command.seen_age = 3;
-  sequenced.command.seen_fraction = 0.75F;
+TEST(ProtocolTest, ACommandsSeenTimeTravelsAsItsAgeAndItsFractionAndTheMessagesSeenTick) {
+  const BytesWire command = LengthField(1, Cat({VarintField(1, 1), VarintField(8, 3), VarintField(9, 192)}));
 
-  const BytesWire payload = Encode(CommandsWire{.commands = {sequenced}, .seen_tick = 0x0102030405060708U}).value();
+  const auto decoded = std::get<CommandsWire>(
+      Decode(Envelope(MessageTypeWire::kCommands, Cat({command, VarintField(2, 1200)}))).value());
 
-  EXPECT_EQ(payload[kCommandSeenOffset], std::byte{3});
-  EXPECT_EQ(payload[kCommandSeenOffset + 1], std::byte{192});
-  const auto tick_offset = static_cast<std::ptrdiff_t>(kSeenTickOffset);
-  EXPECT_EQ(BytesWire(payload.begin() + tick_offset, payload.end()),
-            BytesOf({0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01}));
+  EXPECT_EQ(decoded.seen_tick, 1200U);
+  EXPECT_EQ(decoded.commands.at(0).command.seen_age, 3);
+  EXPECT_EQ(decoded.commands.at(0).command.seen_fraction, 0.75F);
 }
 
 TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
@@ -970,14 +947,33 @@ TEST(ProtocolTest, ASeenTimesFractionIsHeldBelowOneAndANaNIsZero) {
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, ACommandsStanceOrUnusedBitsOutsideTheirRangeAreInvalid) {
-  const BytesWire payload = Encode(CommandsWire{.commands = {BusyCommand(1)}}).value();
-  for (const std::uint8_t bad : {std::uint8_t{0b0011'0000}, std::uint8_t{0b0100'0000}, std::uint8_t{0b1000'0000}}) {
-    BytesWire altered = payload;
-    altered[kCommandFlagsOffset] = static_cast<std::byte>(bad);
+TEST(ProtocolTest, ACommandsStanceOutsideItsRangeIsInvalid) {
+  EXPECT_TRUE(Decode(OneCommand(VarintField(7, 0b0010'0000))).has_value());
+  EXPECT_EQ(Decode(OneCommand(VarintField(7, 0b0011'0000))).error(), DecodeError::kInvalidEnum);
+}
 
-    EXPECT_EQ(Decode(altered).error(), DecodeError::kInvalidEnum) << static_cast<int>(bad);
+// Requirements: NFR-12
+TEST(ProtocolTest, ACommandsBitsAboveItsFlagsAndStanceAreReserved) {
+  for (const std::uint64_t bad : {0b0100'0000U, 0b1000'0000U, 0x8000'0000U}) {
+    EXPECT_EQ(Decode(OneCommand(VarintField(7, bad))).error(), DecodeError::kReservedBits) << bad;
   }
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, ACommandsSeenAgeWiderThanAByteIsOutOfRange) {
+  EXPECT_EQ(CommandOf(OneCommand(VarintField(8, 255))).seen_age, 255);
+  EXPECT_EQ(Decode(OneCommand(VarintField(8, 256))).error(), DecodeError::kOutOfRange);
+}
+
+// A count one past its grid's bound is none a sender, clamping, ever writes.
+// Requirements: NFR-12
+TEST(ProtocolTest, ACommandsCountsPastTheirGridsAreOutOfRange) {
+  constexpr std::int32_t kAngleMax = (1 << 23) - 1;
+  EXPECT_TRUE(Decode(OneCommand(SignedField(5, kAngleMax))).has_value());
+  EXPECT_EQ(Decode(OneCommand(SignedField(5, kAngleMax + 1))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(OneCommand(SignedField(6, -kAngleMax - 2))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(OneCommand(SignedField(2, 32768))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(OneCommand(VarintField(9, 256))).error(), DecodeError::kOutOfRange);
 }
 
 TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
@@ -1006,17 +1002,41 @@ TEST(ProtocolTest, AuthoritativeStateRoundTrips) {
   }
 }
 
-// Where a body faces travels on the grid a command's view does (ADR-0038),
-// after the body: three bytes.
-TEST(ProtocolTest, ABodysYawTravelsAsThreeBytesAfterTheBody) {
-  EntityStateWire body;
-  body.yaw = 1.0F;
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
-  // type, tick, acknowledged sequence, count, entity, the body (18), then the yaw.
-  constexpr std::ptrdiff_t kYawOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 18;
+// The payload of an Authoritative State of one body whose fields are fields.
+BytesWire OneBody(const BytesWire& fields) {
+  return Envelope(MessageTypeWire::kAuthoritativeState, LengthField(2, Cat({VarintField(1, 1), fields})));
+}
 
-  const BytesWire yaw(payload.begin() + kYawOffset, payload.begin() + kYawOffset + 3);
-  EXPECT_EQ(yaw, BytesOf({0x00, 0x00, 0x20}));
+// The one body of a payload OneBody made.
+EntityStateWire BodyOf(const BytesWire& payload) {
+  return std::get<AuthoritativeStateWire>(Decode(payload).value()).bodies.at(0);
+}
+
+// Where a body faces travels on the grid a command's view does (ADR-0038).
+TEST(ProtocolTest, ABodysYawTravelsAsACountOfTheAngleGrid) {
+  EXPECT_EQ(BodyOf(OneBody(SignedField(10, 2097152))).yaw, 1.0F);
+}
+
+// Each Encode builds its message on an arena local to the call, whose first
+// block is on the stack, so the payload is its one allocation (ADR-0007).
+TEST(ProtocolTest, AnAuthoritativeStateOfAFullMatchIsEncodedInOneAllocation) {
+  if (!AUGUSTA_COUNTS_ALLOCATIONS) {
+    GTEST_SKIP() << "operator new is ThreadSanitizer's in this build, so allocations are not counted";
+  }
+  if (!AUGUSTA_VECTORS_ALLOCATE_ONLY_ELEMENTS) {
+    GTEST_SKIP() << "MSVC's checked iterators allocate for every vector, so the payload is more than one allocation";
+  }
+  AuthoritativeStateWire state{.tick = 9, .bodies = {}, .health = 100.0F, .acknowledged_sequence = 41};
+  for (std::uint32_t player = 1; player <= kMaxPlayers; ++player) {
+    state.bodies.push_back(BodyAt(player, static_cast<float>(player)));
+  }
+  const MessageWire message = state;
+
+  const std::size_t before = allocations;
+  const auto payload = Encode(message);
+
+  EXPECT_EQ(allocations - before, 1U);
+  EXPECT_TRUE(payload.has_value());
 }
 
 TEST(ProtocolTest, AuthoritativeStateWithAFullMatchRoundTrips) {
@@ -1097,72 +1117,91 @@ TEST(ProtocolTest, AReaddressedUpdateIsTheUpdateEncodedForItsRecipient) {
   EXPECT_EQ(payload, Encode(second).value());
 }
 
-// Only the payload of an Authoritative State, as long as Encode made it, has a
-// recipient's own fields where Readdress writes them: any other is the
-// caller's broken invariant (ADR-0033), refused with the payload left as it was.
+// A recipient whose own fields are all zero has none on the wire: the
+// readdressed update is its shared fields alone.
+TEST(ProtocolTest, AnUpdateReaddressedToARecipientWithNothingOfItsOwnIsItsSharedFieldsAlone) {
+  const AuthoritativeStateWire first{.tick = 9,
+                                     .bodies = {BodyAt(1, 1.0F), BodyAt(2, -3.5F)},
+                                     .rifle = {.cooldown = 0.25F, .rounds = 30},
+                                     .health = 100.0F,
+                                     .acknowledged_sequence = 41,
+                                     .queued_commands = 2};
+  const AuthoritativeStateWire nothing_own{.tick = first.tick, .bodies = first.bodies};
+
+  BytesWire payload = Encode(first).value();
+  ASSERT_TRUE(Readdress(payload, nothing_own).has_value());
+
+  EXPECT_EQ(payload, Encode(nothing_own).value());
+  EXPECT_EQ(Decode(payload).value(), MessageWire(nothing_own));
+}
+
+// Only the payload of an Authoritative State, framed as Encode frames it, has
+// shared fields Readdress can keep: any other is the caller's broken invariant
+// (ADR-0033), refused with the payload left as it was.
 TEST(ProtocolTest, AReaddressOfAnythingButAnUpdateIsRefused) {
   const AuthoritativeStateWire recipient{.tick = 9, .bodies = {}, .health = 1.0F, .acknowledged_sequence = 3};
   const BytesWire update = Encode(AuthoritativeStateWire{.tick = 9, .bodies = {BodyAt(1, 1.0F)}}).value();
   const BytesWire shorter(update.begin(), update.end() - 1);
   BytesWire longer = update;
   longer.push_back(std::byte{0});
-  BytesWire other_type = update;
-  other_type.front() = static_cast<std::byte>(MessageTypeWire::kShot);
+  const BytesWire shot = Encode(ShotWire{.tick = 9, .shooter = static_cast<EntityIdWire>(1)}).value();
 
-  for (BytesWire payload : {BytesWire{}, BytesWire{update.front()}, shorter, longer, other_type}) {
+  for (BytesWire payload : {BytesWire{}, BytesWire{update.front()}, shorter, longer, shot}) {
     const BytesWire before = payload;
     EXPECT_EQ(Readdress(payload, recipient).error(), EncodeError::kNotAnAuthoritativeState) << payload.size();
     EXPECT_EQ(payload, before);
   }
 }
 
-// A 32-bit float's bits, after the rifle: the last four bytes of an update.
-TEST(ProtocolTest, ARecipientsHealthTravelsInFourBytesAfterItsRifle) {
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {}, .health = 1.0F}).value();
+// Its Recoil offset travels as counts of the angle grid's step.
+TEST(ProtocolTest, ARecipientsRecoilOffsetTravelsAsCountsOfTheAngleGrid) {
+  const BytesWire own = Cat({SignedField(9, 32768), SignedField(10, -1)});
 
-  EXPECT_EQ(BytesWire(payload.end() - 4, payload.end()), BytesOf({0x00, 0x00, 0x80, 0x3F}));
-}
+  const auto received =
+      std::get<AuthoritativeStateWire>(Decode(Envelope(MessageTypeWire::kAuthoritativeState, own)).value());
 
-TEST(ProtocolTest, ARecipientsRifleTravelsInSixteenBytesAfterItsQueuedCommands) {
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {},
-                                                          .rifle = {.cooldown = 1.0F,
-                                                                    .reload_remaining = -2.0F,
-                                                                    .recoil_pitch = 1.0F / 64.0F,
-                                                                    .recoil_yaw = -1.0F / 2097152.0F,
-                                                                    .rounds = 30,
-                                                                    .burst_index = 3}})
-                                .value();
-  // type, tick, acknowledged sequence, count, the queued commands, then the rifle.
-  constexpr std::ptrdiff_t kRifleOffset = 1 + kTickBytes + kSequenceBytes + 1 + 1;
-
-  // The rounds, each time as its IEEE-754 bits, little-endian, the burst index,
-  // then the Recoil offset's pitch and yaw as counts of the angle grid's step:
-  // 32768 and -1.
-  EXPECT_EQ(BytesWire(payload.begin() + kRifleOffset, payload.begin() + kRifleOffset + 16),
-            BytesOf({30, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0xC0, 3, 0x00, 0x80, 0x00, 0xFF, 0xFF, 0xFF}));
+  EXPECT_EQ(received.rifle.recoil_pitch, 1.0F / 64.0F);
+  EXPECT_EQ(received.rifle.recoil_yaw, -kAngleStep);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersThanAMatchHoldsIsTooLong) {
-  // type, tick (8), acknowledged sequence (8), then the count.
-  const BytesWire payload = BytesOf({kAuthoritativeStateType, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                     static_cast<std::uint8_t>(kMaxPlayers + 1)});
+  const BytesWire body = LengthField(2, VarintField(1, 1));
 
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kFieldTooLong);
+  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kAuthoritativeState, Repeat(body, kMaxPlayers))).has_value());
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kAuthoritativeState, Repeat(body, kMaxPlayers + 1))).error(),
+            DecodeError::kFieldTooLong);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolTest, APlayersStanceOutsideItsRangeIsInvalid) {
-  BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value();
-  // type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then stance.
-  constexpr std::size_t kStanceOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 9 + 6;
-  payload[kStanceOffset] = static_cast<std::byte>(3);
-
-  EXPECT_EQ(Decode(payload).error(), DecodeError::kInvalidEnum);
+  EXPECT_TRUE(Decode(OneBody(VarintField(8, 2))).has_value());
+  EXPECT_EQ(Decode(OneBody(VarintField(8, 3))).error(), DecodeError::kInvalidEnum);
 }
 
-// type, tick, acknowledged sequence, count, entity, position (9), velocity (6), then the stance byte.
-constexpr std::size_t kBodyStanceOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4 + 9 + 6;
+// The one-byte counts an update carries for its recipient, carried in a wider
+// varint, are none a sender writes.
+// Requirements: NFR-12
+TEST(ProtocolTest, AnUpdatesOneByteCountsWiderThanAByteAreOutOfRange) {
+  for (const int field : {4, 5, 8}) {
+    EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kAuthoritativeState, VarintField(field, 255))).has_value()) << field;
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kAuthoritativeState, VarintField(field, 256))).error(),
+              DecodeError::kOutOfRange)
+        << field;
+  }
+}
+
+// A count one past its grid's bound is none a sender, clamping, ever writes.
+// Requirements: NFR-12
+TEST(ProtocolTest, ABodysCountsPastTheirGridsAreOutOfRange) {
+  constexpr std::int32_t kPositionMax = (1 << 23) - 1;
+  EXPECT_TRUE(Decode(OneBody(SignedField(2, kPositionMax))).has_value());
+  EXPECT_EQ(Decode(OneBody(SignedField(2, kPositionMax + 1))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(OneBody(SignedField(4, -kPositionMax - 2))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(OneBody(SignedField(5, 32768))).error(), DecodeError::kOutOfRange);
+  EXPECT_TRUE(Decode(OneBody(VarintField(9, 65535))).has_value());
+  EXPECT_EQ(Decode(OneBody(VarintField(9, 65536))).error(), DecodeError::kOutOfRange);
+}
 
 TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
   AuthoritativeStateWire sent;
@@ -1181,52 +1220,29 @@ TEST(ProtocolTest, AnExhaustedBodyRoundTripsInEveryStance) {
   }
 }
 
-TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceByte) {
-  EntityStateWire body{};
-  body.body.stance = augusta::protocol::StanceWire::kProne;
-  body.body.flags = BodyStateWire::kExhausted;
+// The stance in the low two bits, the exhausted flag in the one above them
+// (ADR-0038).
+TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceBitfield) {
+  const EntityStateWire exhausted = BodyOf(OneBody(VarintField(8, 0b110)));
+  const EntityStateWire rested = BodyOf(OneBody(VarintField(8, 0b010)));
 
-  const BytesWire exhausted = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
-  body.body.flags = 0;
-  const BytesWire rested = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
-
-  // The stance in the low two bits, the flag in the one above them, the rest 0.
-  EXPECT_EQ(exhausted[kBodyStanceOffset], std::byte{0b0000'0110});
-  EXPECT_EQ(rested[kBodyStanceOffset], std::byte{0b0000'0010});
-  EXPECT_EQ(exhausted.size(), rested.size());
+  EXPECT_EQ(exhausted.body.stance, StanceWire::kProne);
+  EXPECT_EQ(exhausted.body.flags, BodyStateWire::kExhausted);
+  EXPECT_EQ(rested.body.stance, StanceWire::kProne);
+  EXPECT_EQ(rested.body.flags, 0);
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, ABodysUnusedStanceByteBitsSetAreInvalid) {
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value();
-  for (unsigned bit = 3; bit < 8; ++bit) {
-    BytesWire altered = payload;
-    altered[kBodyStanceOffset] = static_cast<std::byte>(1U << bit);
-
-    EXPECT_EQ(Decode(altered).error(), DecodeError::kInvalidEnum) << bit;
+TEST(ProtocolTest, ABodysBitsAboveItsStanceAndFlagAreReserved) {
+  for (unsigned bit = 3; bit < 32; ++bit) {
+    EXPECT_EQ(Decode(OneBody(VarintField(8, 1ULL << bit))).error(), DecodeError::kReservedBits) << bit;
   }
 }
 
-// Every number of a body or a command travels as a whole count of its grid's
-// step (ADR-0038), in the fewest bytes its range needs.
-TEST(ProtocolTest, ABodyTravelsInEighteenBytesAndACommandInFifteen) {
-  // type, tick, acknowledged sequence, count, entity, the body, its yaw, the
-  // queued commands, then the recipient's rifle and health.
-  EXPECT_EQ(Encode(AuthoritativeStateWire{.bodies = {EntityStateWire{}}}).value().size(),
-            1 + kTickBytes + kSequenceBytes + 1 + 4 + 18 + 3 + 1 + 16 + 4);
-  EXPECT_EQ(Encode(CommandsWire{.commands = {SequencedCommandWire{}}}).value().size(),
-            2 + kSequenceBytes + 15 + kTickBytes);
-}
+TEST(ProtocolTest, APositionTravelsAsCountsOfMillimeterSteps) {
+  const EntityStateWire body = BodyOf(OneBody(Cat({SignedField(2, 1024), SignedField(3, -1)})));
 
-TEST(ProtocolTest, APositionTravelsAsThreeBytesPerAxisInMillimeterSteps) {
-  EntityStateWire body;
-  body.body.position = Vec3(1.0F, -1.0F / 1024.0F, 0.0F);
-  const BytesWire payload = Encode(AuthoritativeStateWire{.bodies = {body}}).value();
-  // type, tick, acknowledged sequence, count, entity, then x, y and z.
-  constexpr std::ptrdiff_t kPositionOffset = 1 + kTickBytes + kSequenceBytes + 1 + 4;
-
-  const BytesWire position(payload.begin() + kPositionOffset, payload.begin() + kPositionOffset + 9);
-  EXPECT_EQ(position, BytesOf({0x00, 0x04, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00}));
+  EXPECT_EQ(body.body.position, Vec3(1.0F, -1.0F / 1024.0F, 0.0F));
 }
 
 TEST(ProtocolTest, ASnappedValueIsOnItsGridAndSnapsToItself) {
@@ -1258,14 +1274,70 @@ TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, BytesAfterCommandsAndStateAreTrailing) {
-  BytesWire commands = Encode(CommandsWire{}).value();
-  commands.push_back(std::byte{0});
-  BytesWire state = Encode(AuthoritativeStateWire{}).value();
-  state.push_back(std::byte{0});
+TEST(ProtocolTest, AZeroByteAfterCommandsOrStateIsMalformed) {
+  EXPECT_EQ(Decode(WithAZeroByte(Encode(CommandsWire{}).value())).error(), DecodeError::kMalformed);
+  EXPECT_EQ(Decode(WithAZeroByte(Encode(AuthoritativeStateWire{}).value())).error(), DecodeError::kMalformed);
+}
 
-  EXPECT_EQ(Decode(commands).error(), DecodeError::kTrailingBytes);
-  EXPECT_EQ(Decode(state).error(), DecodeError::kTrailingBytes);
+// A message has one meaning, not one encoding (ADR-0007): a field this build
+// does not know is ignored, at every level.
+// Requirements: NFR-12
+TEST(ProtocolTest, AnUnknownFieldAtTheTopLevelOrInsideABodyDecodesToTheSameMessage) {
+  const BytesWire ready = Envelope(MessageTypeWire::kReady, VarintField(1, 7));
+
+  EXPECT_EQ(Decode(Cat({ready, VarintField(99, 5)})).value(), MessageWire(ReadyWire{.version = 7}));
+  EXPECT_EQ(Decode(Cat({TextField(99, "later"), ready})).value(), MessageWire(ReadyWire{.version = 7}));
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReady, Cat({VarintField(1, 7), VarintField(9, 1)}))).value(),
+            MessageWire(ReadyWire{.version = 7}));
+  EXPECT_EQ(BodyOf(OneBody(Cat({SignedField(10, 2097152), LengthField(42, VarintField(1, 1))}))).yaw, 1.0F);
+}
+
+// An absent field or sub-message reads as its default (ADR-0007).
+// Requirements: NFR-12
+TEST(ProtocolTest, AnAbsentSubMessageDecodesToItsDefault) {
+  EXPECT_EQ(
+      Decode(Envelope(MessageTypeWire::kJoinAccepted, VarintField(1, 7))).value(),
+      MessageWire(JoinAcceptedWire{
+          .session = static_cast<SessionIdWire>(7), .parameters = ParametersWire{.player_count = 0}, .character = ""}));
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReady, {})).value(), MessageWire(ReadyWire{}));
+}
+
+// A later build's Join request decodes, to be refused for its engine version,
+// not dropped as a payload that does not decode (ADR-0038).
+// Requirements: NFR-12
+TEST(ProtocolTest, AJoinRequestWithAFieldThisBuildDoesNotKnowDecodes) {
+  const BytesWire request = Cat({TextField(1, "9.0.0"), TextField(3, "soldier"), TextField(4, "a later field")});
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, request)).value(),
+            MessageWire(JoinRequestWire{.engine_version = "9.0.0", .character = "soldier"}));
+}
+
+// A pack hash is a hash's 32 bytes, or none at all, which reads as the all-zero
+// one as an absent field does.
+// Requirements: NFR-12
+TEST(ProtocolTest, APackHashOfAnyOtherLengthIsOutOfRange) {
+  const auto hash_of = [](std::size_t length) {
+    return Envelope(MessageTypeWire::kJoinRequest, LengthField(2, BytesWire(length, std::byte{1})));
+  };
+
+  EXPECT_TRUE(Decode(hash_of(augusta::protocol::kPackHashSize)).has_value());
+  EXPECT_EQ(std::get<JoinRequestWire>(Decode(hash_of(0)).value()).client_pack, PackHashWire{});
+  EXPECT_EQ(Decode(hash_of(augusta::protocol::kPackHashSize - 1)).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(hash_of(augusta::protocol::kPackHashSize + 1)).error(), DecodeError::kOutOfRange);
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, AJoinAcceptedsOneByteNumbersWiderThanAByteAreOutOfRange) {
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinAccepted, VarintField(2, 256))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinAccepted, LengthField(3, VarintField(5, 256)))).error(),
+            DecodeError::kOutOfRange);
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, AStringThatIsNotUtf8IsMalformed) {
+  const BytesWire not_utf8{std::byte{0xC3}, std::byte{0x28}};
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, LengthField(1, not_utf8))).error(), DecodeError::kMalformed);
 }
 
 // The codec takes its counters' widths from augusta::tick, as the engine does,
@@ -1282,8 +1354,8 @@ TEST(ProtocolTickTest, TheCodecsCountersAreTheTicks) {
 TEST(ProtocolTest, ACommandsMessageCarriesAtLeastOneCommand) { EXPECT_GE(kMaxCommandsPerMessage, 1U); }
 
 TEST(ProtocolTest, EveryErrorHasADescription) {
-  for (const DecodeError error : {DecodeError::kEmpty, DecodeError::kUnknownType, DecodeError::kTruncated,
-                                  DecodeError::kTrailingBytes, DecodeError::kInvalidEnum, DecodeError::kFieldTooLong}) {
+  for (const DecodeError error : {DecodeError::kMalformed, DecodeError::kUnknownType, DecodeError::kInvalidEnum,
+                                  DecodeError::kReservedBits, DecodeError::kOutOfRange, DecodeError::kFieldTooLong}) {
     EXPECT_FALSE(augusta::protocol::DescribeDecodeError(error).empty());
   }
 }
@@ -1362,7 +1434,20 @@ TEST(ProtocolEncodeTest, AnEnumeratedValueTheEnumerationLacksIsNotEncoded) {
   EXPECT_EQ(RefusalOf(DeathWire{.part = kNoPart}), EncodeError::kInvalidEnum);
 }
 
-TEST(ProtocolEncodeTest, EveryMessageNamesItsTypeAsItsFirstByteWould) {
+// The number of the field payload's first tag names.
+int FirstFieldOf(const BytesWire& payload) {
+  std::uint64_t tag = 0;
+  for (std::size_t i = 0; i < payload.size(); ++i) {
+    const auto byte = std::to_integer<std::uint64_t>(payload[i]);
+    tag |= (byte & 0x7FU) << (7U * i);
+    if ((byte & 0x80U) == 0) {
+      break;
+    }
+  }
+  return static_cast<int>(tag >> 3U);
+}
+
+TEST(ProtocolEncodeTest, EveryMessageIsTheEnvelopeMemberItsTypeNumbers) {
   const std::vector<MessageWire> every = {JoinRequestWire{},
                                           JoinAcceptedWire{},
                                           JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
@@ -1378,9 +1463,10 @@ TEST(ProtocolEncodeTest, EveryMessageNamesItsTypeAsItsFirstByteWould) {
                                           ReplayListRequestWire{},
                                           ReplayListWire{},
                                           ReplayRequestWire{},
-                                          ReplayViewWire{}};
+                                          ReplayViewWire{},
+                                          ReenactRequestWire{}};
   for (const MessageWire& message : every) {
-    EXPECT_EQ(static_cast<std::byte>(augusta::protocol::TypeOf(message)), Encode(message).value().front());
+    EXPECT_EQ(static_cast<int>(augusta::protocol::TypeOf(message)), FirstFieldOf(Encode(message).value()));
   }
 }
 

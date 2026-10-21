@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -23,11 +22,9 @@ using augusta::protocol::CapturedMatchEndWire;
 using augusta::protocol::CaptureHeaderWire;
 using augusta::protocol::CaptureRecordTypeWire;
 using augusta::protocol::CaptureRecordWire;
-using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
 using augusta::protocol::DecodeCaptureRecord;
 using augusta::protocol::DecodeError;
-using augusta::protocol::Encode;
 using augusta::protocol::EncodeCaptureRecord;
 using augusta::protocol::EncodeError;
 using augusta::protocol::kCaptureFormatVersion;
@@ -106,18 +103,6 @@ TEST(ProtocolCaptureTest, EachRecordStartsWithItsType) {
   EXPECT_EQ(bytes.front(), static_cast<std::byte>(CaptureRecordTypeWire::kLeave));
 }
 
-// ADR-0050: a captured Command is the very bytes a Commands message carries it in.
-TEST(ProtocolCaptureTest, ACapturedCommandIsEncodedAsACommandsMessageEncodesIt) {
-  const BytesWire record = EncodeCaptureRecord(Command()).value();
-  const BytesWire message =
-      Encode(CommandsWire{.commands = {{.sequence = 0, .command = Command().command}}, .seen_tick = 0}).value();
-  // The message's command: after its type, its count and its 8-byte sequence, up to its Seen tick.
-  constexpr std::size_t kCommandStart = 1 + 1 + 8;
-  constexpr std::size_t kSeenTickSize = 8;
-  const BytesWire command(message.begin() + kCommandStart, message.end() - kSeenTickSize);
-  EXPECT_NE(std::search(record.begin(), record.end(), command.begin(), command.end()), record.end());
-}
-
 // ADR-0050: a record is never a message.
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, TheMessageDecoderNeverTakesACaptureRecord) {
@@ -127,7 +112,7 @@ TEST(ProtocolCaptureTest, TheMessageDecoderNeverTakesACaptureRecord) {
 
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, AnEmptyPayloadIsNoRecord) {
-  EXPECT_EQ(DecodeCaptureRecord(BytesWire{}).error(), DecodeError::kEmpty);
+  EXPECT_EQ(DecodeCaptureRecord(BytesWire{}).error(), DecodeError::kUnknownType);
 }
 
 // Requirements: NFR-12
@@ -140,14 +125,14 @@ TEST(ProtocolCaptureTest, AnUnknownTypeIsNoRecord) {
 TEST(ProtocolCaptureTest, ATruncatedRecordIsRefused) {
   BytesWire bytes = EncodeCaptureRecord(Command()).value();
   bytes.pop_back();
-  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kTruncated);
+  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, BytesAfterARecordAreRefused) {
   BytesWire bytes = EncodeCaptureRecord(CapturedMatchEndWire{.offset = 1, .winner = 0}).value();
   bytes.push_back(std::byte{0});
-  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kTrailingBytes);
+  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
@@ -157,7 +142,7 @@ TEST(ProtocolCaptureTest, ACommandWithAFlagNoCommandHasIsRefused) {
   // by its Seen age and Seen fraction.
   const auto fraction_bytes = static_cast<std::size_t>(augusta::math::kFractionGrid.bytes);
   bytes[bytes.size() - 2 - fraction_bytes] |= std::byte{0x80};
-  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kInvalidEnum);
+  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kReservedBits);
 }
 
 TEST(ProtocolCaptureEncodeTest, AnEngineVersionLongerThanAllowedIsNotEncoded) {

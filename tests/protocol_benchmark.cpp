@@ -56,10 +56,12 @@ CommandsWire FullCommands() {
   return message;
 }
 
+// Also reports the payload's size in bytes, what one recipient is sent.
 void BM_ProtocolEncode(benchmark::State& state, const MessageWire& message) {
   for (auto _ : state) {
     benchmark::DoNotOptimize(augusta::protocol::Encode(message).value());
   }
+  state.counters["bytes"] = static_cast<double>(augusta::protocol::Encode(message).value().size());
 }
 BENCHMARK_CAPTURE(BM_ProtocolEncode, authoritative_state, MessageWire{FullAuthoritativeState()});
 BENCHMARK_CAPTURE(BM_ProtocolEncode, commands, MessageWire{FullCommands()});
