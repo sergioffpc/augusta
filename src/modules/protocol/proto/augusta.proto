@@ -14,6 +14,7 @@
 // - a Tick and a Sequence are uint64, an entity ID uint32;
 // - a session ID is bytes holding its UUIDv7's 16 bytes in RFC 9562's order,
 //   an empty or all-zero one the nil UUID, which names no Session;
+// - a Run ID is bytes holding its 16 bytes, in RFC 9562's order;
 // - text (an engine version, a Character, a capture's name) is bytes holding
 //   UTF-8, which the codec checks itself, so a peer's bad text is refused as
 //   any other bad field is, never logged by protobuf's parse (NFR-05);
@@ -82,6 +83,8 @@ message JoinRequest {
   // The client pack's BLAKE3 hash, 32 bytes.
   bytes client_pack = 2;
   bytes character = 3;
+  // The client's Run ID, which the server logs at admission.
+  bytes run = 4;
 }
 
 // Client to server: a Captured player's first message, in place of a
@@ -94,6 +97,7 @@ message ReenactRequest {
   sint32 spawn_x = 4;
   sint32 spawn_y = 5;
   sint32 spawn_z = 6;
+  bytes run = 7;
 }
 
 message Stamina {
@@ -314,6 +318,8 @@ message ReplayRequest {
   bytes engine_version = 1;
   bytes client_pack = 2;
   bytes capture = 3;
+  // The Replay viewer's Run ID, as a JoinRequest's.
+  bytes run = 4;
 }
 
 message PlayerView {

@@ -42,6 +42,7 @@
 #include "augusta/protocol.h"
 #include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
@@ -526,7 +527,7 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_EQ(capture.joins.size(), 2U);
   for (std::size_t i = 0; i < 2; ++i) {
     const augusta::capture::Join& join = capture.joins[i];
-    EXPECT_EQ(starts[0].players[i].session, protocol::SessionIdWire{.bytes = join.session.Bytes()});
+    EXPECT_EQ(starts[0].players[i].session, join.session);
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }
@@ -655,10 +656,11 @@ TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefus
 // The client's side of a Replay (ADR-0051): a harness::Session that watches.
 class ReplayViewerTest : public ReplayServerTest {
  protected:
-  std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture) {
+  std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture,
+                                                    const augusta::uuid::Uuid& run = {}) {
     auto viewer = std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{
-            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture},
+            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture, .run = run},
         augusta::prediction::World());
     viewer->Connect();
     return viewer;
@@ -683,6 +685,26 @@ class ReplayViewerTest : public ReplayServerTest {
     return false;
   }
 };
+
+// The replay server logs a Replay's start with the Run ID its viewer sent
+// (ADR-0038), as a live server logs an admission.
+TEST_F(ReplayViewerTest, AReplaysStartIsLoggedWithTheRunIdItsViewerSent) {
+  const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
+  const std::unique_ptr<ReplayServer> server = Serve();
+  const augusta::uuid::Uuid run = augusta::uuid::Generate();
+
+  testing::internal::CaptureStdout();
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, name, run);
+  const bool started = RunUntil(*server, *viewer, [&] { return viewer->GetServerView()->match_start.has_value(); });
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(started);
+  EXPECT_NE(log.find("event=replay_started peer="), std::string::npos) << log;
+  EXPECT_NE(log.find(" run=" + run.ToString() + " capture=" + name), std::string::npos) << log;
+}
 
 // A viewer is a Spectator from the first tick: in the Match, with no body of
 // its own, shown every player's pitch and ADS, until the Match end, after

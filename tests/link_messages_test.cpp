@@ -23,6 +23,7 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 // The Link converts between the engine's types and the protocol's plain ones
 // (ADR-0038) and nowhere else: what one peer sends must reach the other's
@@ -363,7 +364,7 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
   parameters.player_count = 4;
 
   const augusta::protocol::JoinAcceptedWire received = ThroughTheWire(augusta::protocol::JoinAcceptedWire{
-      .session = ToWire(Session(1)), .parameters = ToWire(parameters), .character = "soldier"});
+      .session = Session(1), .parameters = ToWire(parameters), .character = "soldier"});
 
   // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = FromWire(received.parameters);
@@ -414,7 +415,8 @@ TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.front() = std::byte{0xAB};
   client_pack.back() = std::byte{0x01};
-  const augusta::link::JoinRequest sent{.engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier"};
+  const augusta::link::JoinRequest sent{
+      .engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier", .run = augusta::uuid::Generate()};
 
   const augusta::link::JoinRequest received =
       FromWire(ThroughTheWire(std::get<augusta::protocol::JoinRequestWire>(ToWire(sent))));
@@ -423,6 +425,7 @@ TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.character, sent.character);
   EXPECT_FALSE(received.spawn.has_value());
+  EXPECT_EQ(received.run, sent.run);
 }
 
 // Requirements: US-21
@@ -432,7 +435,8 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
   const augusta::link::JoinRequest sent{.engine_version = "1.2.3",
                                         .client_pack = client_pack,
                                         .character = "soldier",
-                                        .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F))};
+                                        .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F)),
+                                        .run = augusta::uuid::Generate()};
 
   const augusta::protocol::MessageWire wire = ToWire(sent);
   ASSERT_TRUE(std::holds_alternative<augusta::protocol::ReenactRequestWire>(wire));
@@ -443,19 +447,21 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.character, sent.character);
   EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.run, sent.run);
 }
 
 TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.back() = std::byte{0x7F};
   const augusta::link::ReplayRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.acap"};
+      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.acap", .run = augusta::uuid::Generate()};
 
   const augusta::link::ReplayRequest received = FromWire(ThroughTheWire(ToWire(sent)));
 
   EXPECT_EQ(received.engine_version, sent.engine_version);
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.capture, sent.capture);
+  EXPECT_EQ(received.run, sent.run);
 }
 
 TEST(LinkMessagesTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {

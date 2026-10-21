@@ -13,6 +13,7 @@
 
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -230,23 +231,16 @@ struct ParametersWire {
   bool operator==(const ParametersWire&) const = default;
 };
 
-/// The size of a Session ID, in bytes: a UUIDv7's (ADR-0038).
-inline constexpr std::size_t kSessionIdSize = 16;
-
 /// The server's name for one connected player, distinct from the transport's
 /// handle for the connection: a UUIDv7, unique across every server and every
-/// restart, as its 16 bytes in RFC 9562's order. Identifies a player inside
-/// messages; it is not a credential, since the server tells senders apart by
-/// connection.
-struct SessionIdWire {
-  std::array<std::uint8_t, kSessionIdSize> bytes{};
-
-  bool operator==(const SessionIdWire&) const = default;
-};
+/// restart, carried as its 16 bytes in RFC 9562's order (ADR-0038). Identifies
+/// a player inside messages; it is not a credential, since the server tells
+/// senders apart by connection.
+using SessionIdWire = uuid::Uuid;
 
 /// The session a Match end names as its winner when it is a draw: the nil
-/// UUID, all zeros, which no Session ID is (ADR-0038).
-inline constexpr SessionIdWire kDraw{};
+/// UUID, which no Session ID is (ADR-0038).
+inline constexpr SessionIdWire kDraw = uuid::kNil;
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -284,6 +278,9 @@ struct JoinRequestWire {
   /// The character the player chose, by its name in the scenario's manifest
   /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
+  /// The client's Run ID, which the server logs at admission (ADR-0038); the
+  /// nil ID when the field is absent.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -300,6 +297,8 @@ struct ReenactRequestWire {
   std::string character;
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
+  /// As JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -559,6 +558,8 @@ struct ReplayRequestWire {
   /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
   /// its listing.
   std::string capture;
+  /// The Replay viewer's Run ID, as JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReplayRequestWire&) const = default;
 };

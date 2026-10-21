@@ -120,9 +120,6 @@ std::optional<Code> CodeThrownBy(const std::function<void()>& construct) {
 }
 
 // The session the server admitted view's client as, or nullopt until it has.
-// A raw client's Session ID as the harness names it.
-SessionId Named(const SessionIdWire& session) { return SessionId::FromBytes(session.bytes); }
-
 std::optional<SessionId> AdmittedSession(const ServerView& view) {
   return view.accepted.has_value() ? std::optional<SessionId>(view.accepted->session) : std::nullopt;
 }
@@ -516,13 +513,16 @@ class JoinTest : public ::testing::Test {
 
   // Starts connecting a new client that presents engine_version, asks to play
   // character and has loaded client_pack (by default the one the host's was cooked with).
+  // Its join carries run.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
-                     const augusta::assets::PackHash& client_pack = ClientPack(1)) {
+                     const augusta::assets::PackHash& client_pack = ClientPack(1),
+                     const augusta::uuid::Uuid& run = {}) {
     sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
-                                                                .character = character},
+                                                                .character = character,
+                                                                .run = run},
                                                   EmptyWorld()));
     sessions_.back()->Connect();
     return *sessions_.back();
@@ -597,6 +597,26 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
 
   ASSERT_TRUE(here.GetServerView()->accepted.has_value());
   EXPECT_NE(here.GetServerView()->accepted->session, there.GetServerView()->accepted->session);
+}
+
+// The admission line ties the client's Run ID to the Session it is admitted
+// as (ADR-0038).
+TEST_F(JoinTest, AnAdmittedClientIsLoggedWithTheRunIdItSentAndItsSession) {
+  augusta::logging::Init();
+  const augusta::uuid::Uuid run = augusta::uuid::Generate();
+
+  testing::internal::CaptureStdout();
+  Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(1), run);
+  const bool answered = WaitForAnswers();
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(answered);
+  ASSERT_TRUE(client.GetServerView()->accepted.has_value());
+  EXPECT_NE(log.find("event=lobby_joined peer="), std::string::npos) << log;
+  EXPECT_NE(
+      log.find(" run=" + run.ToString() + " session=" + client.GetServerView()->accepted->session.ToString() + " "),
+      std::string::npos)
+      << log;
 }
 
 // Requirements: US-01
@@ -2355,6 +2375,32 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
   EXPECT_NE(ReadPlayer(playtest_, 1).leave.has_value(), ReadPlayer(playtest_, 2).leave.has_value());
 }
 
+// A Captured player's Reenact request carries its Run ID as a Join request
+// does, which the admission line logs (ADR-0038).
+// Requirements: US-21
+TEST_F(ReenactmentHostTest, ACapturedPlayerIsLoggedWithTheRunIdItSent) {
+  augusta::logging::Init();
+  const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
+  const augusta::uuid::Uuid run = augusta::uuid::Generate();
+  std::vector<std::unique_ptr<Session>> sessions;
+  sessions.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host->ListenEndpoint().address},
+                                                             .character = kCharacter,
+                                                             .spawn = Vec3(7, kFloorY, 7),
+                                                             .run = run},
+                                               WorldWithFloorAt(kFloorY)));
+  sessions.back()->Connect();
+
+  testing::internal::CaptureStdout();
+  const bool admitted =
+      ExchangeUntil(*host, Pointers(sessions), [&] { return sessions.back()->GetServerView()->accepted.has_value(); });
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(admitted);
+  EXPECT_NE(log.find("event=lobby_joined peer="), std::string::npos) << log;
+  EXPECT_NE(log.find(" run=" + run.ToString() + " session="), std::string::npos) << log;
+  EXPECT_NE(log.find("event=reenactment_joined"), std::string::npos) << log;
+}
+
 // Requirements: US-21
 TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWhereGamePolicyPlacesIt) {
   const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
@@ -2575,14 +2621,14 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersS
 }
 
 // The session a ScriptedServer admits its client under.
-constexpr SessionIdWire kScriptedSession{
-    .bytes = {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}};
+constexpr SessionIdWire kScriptedSession = SessionIdWire::FromBytes(
+    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
 
 // Another session than kScriptedSession, told apart by its last byte.
 constexpr SessionIdWire OtherScriptedSession(std::uint8_t last) {
-  SessionIdWire session = kScriptedSession;
-  session.bytes.back() = last;
-  return session;
+  SessionIdWire::ByteArray bytes = kScriptedSession.Bytes();
+  bytes.back() = last;
+  return SessionIdWire::FromBytes(bytes);
 }
 
 // The body a ScriptedServer gives its client in Match start: not its session's number.
@@ -3723,7 +3769,7 @@ TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePla
   EXPECT_EQ(lobby.version, *version);
   ASSERT_EQ(lobby.roster.size(), 2U);
   for (const auto& entry : lobby.roster) {
-    if (entry.session == Named(admitted.front().session)) {
+    if (entry.session == admitted.front().session) {
       EXPECT_EQ(entry.character, admitted.front().character);
     }
   }
@@ -3741,7 +3787,7 @@ TEST_F(ImpossibleRejoinTest, ASecondJoinFromAnAdmittedPlayerChangesNeitherThePla
   std::set<SessionId> players;
   for (const auto& player : start->players) {
     players.insert(player.session);
-    if (player.session == Named(admitted.front().session)) {
+    if (player.session == admitted.front().session) {
       EXPECT_EQ(player.character, admitted.front().character);
     }
   }
@@ -3865,7 +3911,7 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
   EXPECT_GT(BodySeenBy(honest, *honest.GetServerView()->OwnEntity())->position.x, SpawnPoints()[0].x + 1.0F);
   EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
   EXPECT_NE(log.find("WARN subsystem=serverruntime event=misbehaving_disconnected peer="), std::string::npos) << log;
-  EXPECT_NE(log.find("session=" + Named(raw.GetSessionId().value()).ToString() + " reason=\"undecodable message\""),
+  EXPECT_NE(log.find("session=" + raw.GetSessionId().value().ToString() + " reason=\"undecodable message\""),
             std::string::npos)
       << log;
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
@@ -6258,7 +6304,7 @@ class AdversaryMatch : public LoopbackMatch {
     std::vector<augusta::host::SessionId> sending;
     if (!message.commands.empty()) {
       adversary_.Send(message);
-      sending.push_back(Named(*adversary_.GetSessionId()));
+      sending.push_back(*adversary_.GetSessionId());
     }
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       Session& session = *sessions_[i];

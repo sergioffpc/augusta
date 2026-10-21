@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +16,7 @@
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -51,18 +51,14 @@ void showValue(const MessageWire& message, std::ostream& out) {
   struct Printer {
     std::ostream& out;
 
-    void Print(const SessionIdWire& session) const {
-      for (const std::uint8_t byte : session.bytes) {
-        out << " " << +byte;
-      }
-    }
+    void Print(const SessionIdWire& session) const { out << " " << session.ToString(); }
 
     void operator()(const JoinRequestWire& request) const {
       out << "JoinRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", character " << rc::toString(request.character) << "}";
+      out << ", character " << rc::toString(request.character) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const JoinAcceptedWire& accepted) const {
       out << "JoinAccepted{session";
@@ -165,7 +161,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", capture " << rc::toString(request.capture) << "}";
+      out << ", capture " << rc::toString(request.capture) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const ReplayViewWire& view) const {
       out << "ReplayView{tick " << view.tick << ", ";
@@ -182,7 +178,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << ", character " << rc::toString(request.character) << ", spawn ";
       showValue(request.spawn, out);
-      out << "}";
+      out << ", run " << request.run.ToString() << "}";
     }
   };
   std::visit(Printer{.out = out}, message);
@@ -293,17 +289,6 @@ rc::Gen<Id> AnyId() {
   return rc::gen::map(rc::gen::arbitrary<std::uint32_t>(), [](std::uint32_t id) { return static_cast<Id>(id); });
 }
 
-// Any 16 bytes: the codec carries a Session ID's bytes as they are.
-rc::Gen<SessionIdWire> AnySession() {
-  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(augusta::protocol::kSessionIdSize,
-                                                                    rc::gen::arbitrary<std::uint8_t>()),
-                      [](const std::vector<std::uint8_t>& bytes) {
-                        SessionIdWire session{};
-                        std::ranges::copy(bytes, session.bytes.begin());
-                        return session;
-                      });
-}
-
 rc::Gen<PackHashWire> PackHash() {
   return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kPackHashSize, rc::gen::arbitrary<std::uint8_t>()),
                       [](const std::vector<std::uint8_t>& bytes) {
@@ -313,6 +298,13 @@ rc::Gen<PackHashWire> PackHash() {
                         }
                         return hash;
                       });
+}
+
+// Any 16 bytes, the nil one among them: a Run ID, or a Session ID.
+rc::Gen<augusta::uuid::Uuid> RunId() {
+  return rc::gen::map(
+      rc::gen::arbitrary<augusta::uuid::Uuid::ByteArray>(),
+      [](const augusta::uuid::Uuid::ByteArray& bytes) { return augusta::uuid::Uuid::FromBytes(bytes); });
 }
 
 rc::Gen<CommandWire> Command() {
@@ -337,7 +329,8 @@ rc::Gen<BodyStateWire> Body() {
 rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
-      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
+      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()),
+      rc::gen::set(&JoinRequestWire::run, RunId()));
 }
 
 rc::Gen<ReenactRequestWire> ReenactRequest() {
@@ -345,7 +338,8 @@ rc::Gen<ReenactRequestWire> ReenactRequest() {
       rc::gen::set(&ReenactRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReenactRequestWire::character, Character()),
-      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
+      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)),
+      rc::gen::set(&ReenactRequestWire::run, RunId()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
@@ -371,7 +365,7 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
       rc::gen::set(&ParametersWire::ammo, ammo), rc::gen::set(&ParametersWire::starting_health, FiniteFloat()),
       rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<JoinAcceptedWire>(
-      rc::gen::set(&JoinAcceptedWire::session, AnySession()),
+      rc::gen::set(&JoinAcceptedWire::session, RunId()),
       rc::gen::set(&JoinAcceptedWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()),
       rc::gen::set(&JoinAcceptedWire::parameters, parameters), rc::gen::set(&JoinAcceptedWire::character, Character()));
 }
@@ -414,7 +408,7 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
 }
 
 rc::Gen<LobbyWire> Lobby() {
-  const auto entry = rc::gen::build<RosterEntryWire>(rc::gen::set(&RosterEntryWire::session, AnySession()),
+  const auto entry = rc::gen::build<RosterEntryWire>(rc::gen::set(&RosterEntryWire::session, RunId()),
                                                      rc::gen::set(&RosterEntryWire::character, Character()));
   return rc::gen::build<LobbyWire>(
       rc::gen::set(&LobbyWire::version, rc::gen::arbitrary<std::uint32_t>()),
@@ -427,7 +421,7 @@ rc::Gen<ReadyWire> Ready() {
 
 rc::Gen<MatchStartWire> MatchStart() {
   const auto player = rc::gen::build<MatchPlayerWire>(rc::gen::set(&MatchPlayerWire::spawn, Vec3OnGrid(kPositionGrid)),
-                                                      rc::gen::set(&MatchPlayerWire::session, AnySession()),
+                                                      rc::gen::set(&MatchPlayerWire::session, RunId()),
                                                       rc::gen::set(&MatchPlayerWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
@@ -435,9 +429,7 @@ rc::Gen<MatchStartWire> MatchStart() {
       rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()));
 }
 
-rc::Gen<MatchEndWire> MatchEnd() {
-  return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, AnySession()));
-}
+rc::Gen<MatchEndWire> MatchEnd() { return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, RunId())); }
 
 rc::Gen<ShotWire> Shot() {
   return rc::gen::build<ShotWire>(rc::gen::set(&ShotWire::origin, Vec3OnGrid(kPositionGrid)),
@@ -482,7 +474,7 @@ rc::Gen<ReplayRequestWire> ReplayRequest() {
   return rc::gen::build<ReplayRequestWire>(
       rc::gen::set(&ReplayRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
-      rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, RunId()));
 }
 
 rc::Gen<ReplayViewWire> ReplayView() {

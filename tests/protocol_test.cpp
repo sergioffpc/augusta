@@ -19,6 +19,7 @@
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 #include "protobuf_bytes.h"
 
 // ThreadSanitizer's runtime defines operator new and delete itself, so a build
@@ -137,16 +138,14 @@ using augusta::protobuf_bytes::VarintField;
 
 // A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
 SessionIdWire Session(std::uint8_t last) {
-  SessionIdWire session{
-      .bytes = {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
-  session.bytes.back() = last;
-  return session;
+  return SessionIdWire::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // session's 16 bytes, as a bytes field carries them.
 BytesWire BytesOf(const SessionIdWire& session) {
   BytesWire bytes;
-  for (const std::uint8_t byte : session.bytes) {
+  for (const std::uint8_t byte : session.Bytes()) {
     bytes.push_back(static_cast<std::byte>(byte));
   }
   return bytes;
@@ -177,6 +176,21 @@ PackHashWire CountingPackHash() {
     hash[i] = static_cast<std::byte>(i + 1);
   }
   return hash;
+}
+
+// A Run ID of 0x11, 0x12 ... 0x20, so its bytes are told apart on the wire.
+augusta::uuid::Uuid CountingRunId() {
+  augusta::uuid::Uuid::ByteArray bytes{};
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<std::uint8_t>(0x11U + i);
+  }
+  return augusta::uuid::Uuid::FromBytes(bytes);
+}
+
+// CountingRunId's 16 bytes, as a length-delimited field's payload.
+std::string CountingRunIdBytes() {
+  const auto& bytes = CountingRunId().Bytes();
+  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
 // One message of every type, each one Encode encodes.
@@ -256,6 +270,35 @@ TEST(ProtocolTest, JoinRequestWithAnEmptyVersionRoundTrips) {
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).engine_version, "");
 }
 
+// The client's Run ID, which the server logs at admission (ADR-0038).
+TEST(ProtocolTest, AJoinRequestCarriesItsRunId) {
+  const auto decoded = RoundTrip(JoinRequestWire{.engine_version = "0.1.0", .character = "", .run = CountingRunId()});
+
+  EXPECT_EQ(std::get<JoinRequestWire>(decoded).run, CountingRunId());
+}
+
+TEST(ProtocolTest, AJoinRequestsRunIdIsItsFourthFieldsSixteenBytes) {
+  const auto decoded = Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(4, CountingRunIdBytes())));
+
+  EXPECT_EQ(decoded.value(),
+            MessageWire(JoinRequestWire{.engine_version = "", .character = "", .run = CountingRunId()}));
+}
+
+TEST(ProtocolTest, AJoinRequestWithNoRunIdReadsAsTheNilOne) {
+  const auto decoded = Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(1, "0.1.0")));
+
+  EXPECT_EQ(std::get<JoinRequestWire>(decoded.value()).run, augusta::uuid::Uuid{});
+}
+
+TEST(ProtocolTest, ARunIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {
+  const std::string bytes = CountingRunIdBytes();
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(4, bytes.substr(1)))).error(),
+            DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(4, bytes + "x"))).error(),
+            DecodeError::kOutOfRange);
+}
+
 // actual is what Decode gave back for expected: its numbers on their grids.
 void ExpectSnappedBody(const BodyStateWire& actual, const BodyStateWire& expected) {
   EXPECT_EQ(actual.position, SnapPosition(expected.position));
@@ -281,7 +324,8 @@ TEST(ProtocolTest, AReenactRequestRoundTripsWithItsSpawn) {
   const ReenactRequestWire request{.engine_version = "0.1.0",
                                    .client_pack = CountingPackHash(),
                                    .character = "soldier",
-                                   .spawn = Vec3(10.0F, 0.5F, -20.0F)};
+                                   .spawn = Vec3(10.0F, 0.5F, -20.0F),
+                                   .run = CountingRunId()};
 
   const auto decoded = RoundTrip(request);
 
@@ -299,6 +343,14 @@ TEST(ProtocolTest, AReenactRequestIsAJoinRequestsFieldsUnderItsOwnTypeThenTheSpa
   EXPECT_EQ(static_cast<int>(MessageTypeWire::kReenactRequest), 17);
   EXPECT_EQ(decoded.value(), MessageWire(ReenactRequestWire{
                                  .engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 0.0F, -2.0F)}));
+}
+
+// Requirements: US-21
+TEST(ProtocolTest, AReenactRequestsRunIdIsItsSeventhField) {
+  const auto decoded = Decode(Envelope(MessageTypeWire::kReenactRequest, TextField(7, CountingRunIdBytes())));
+
+  EXPECT_EQ(decoded.value(),
+            MessageWire(ReenactRequestWire{.engine_version = "", .character = "", .run = CountingRunId()}));
 }
 
 // Requirements: NFR-12
@@ -738,11 +790,21 @@ TEST(ProtocolTest, ALengthPastTheEndOfThePayloadIsMalformedWithoutAllocatingForI
   EXPECT_EQ(BytesDecodeAllocates(claims_most), BytesDecodeAllocates(claims_one));
 }
 
-TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackAndCapture) {
-  const ReplayRequestWire request{
-      .engine_version = "0.1.0", .client_pack = CountingPackHash(), .capture = "20261009T120000123Z-0001.acap"};
+TEST(ProtocolTest, AReplayRequestRoundTripsItsVersionPackCaptureAndRunId) {
+  const ReplayRequestWire request{.engine_version = "0.1.0",
+                                  .client_pack = CountingPackHash(),
+                                  .capture = "20261009T120000123Z-0001.acap",
+                                  .run = CountingRunId()};
 
   EXPECT_EQ(RoundTrip(request), MessageWire{request});
+}
+
+// A Replay viewer's Run ID, as a Join request's (ADR-0051).
+TEST(ProtocolTest, AReplayRequestsRunIdIsItsFourthField) {
+  const auto decoded = Decode(Envelope(MessageTypeWire::kReplayRequest, TextField(4, CountingRunIdBytes())));
+
+  EXPECT_EQ(decoded.value(),
+            MessageWire(ReplayRequestWire{.engine_version = "", .capture = "", .run = CountingRunId()}));
 }
 
 // A capture is named, never pathed: the codec carries any name up to its
@@ -1278,7 +1340,7 @@ TEST(ProtocolTest, AnAbsentSubMessageDecodesToItsDefault) {
 // not dropped as a payload that does not decode (ADR-0038).
 // Requirements: NFR-12
 TEST(ProtocolTest, AJoinRequestWithAFieldThisBuildDoesNotKnowDecodes) {
-  const BytesWire request = Cat({TextField(1, "9.0.0"), TextField(3, "soldier"), TextField(4, "a later field")});
+  const BytesWire request = Cat({TextField(1, "9.0.0"), TextField(3, "soldier"), TextField(5, "a later field")});
 
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinRequest, request)).value(),
             MessageWire(JoinRequestWire{.engine_version = "9.0.0", .character = "soldier"}));
