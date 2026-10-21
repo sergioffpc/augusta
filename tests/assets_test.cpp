@@ -934,7 +934,9 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
 }
 
 // Requirements: NFR-08, NFR-12
-// A version-2 pack holds DDS textures (ADR-0031): refused, not misread.
+// A version-2 pack holds DDS textures (ADR-0031): refused, not misread, and
+// named by both versions, so whoever reads it can tell whether the pack or the
+// build is the stale one.
 TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   auto bytes = valid_bytes_;
   bytes[4] = std::byte{2};
@@ -944,19 +946,6 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kUnsupportedVersion);
-}
-
-// Requirements: NFR-08, NFR-12
-// Both versions, so whoever reads it can tell whether the pack or the build is
-// the stale one.
-TEST_F(PackLoadNegativeTest, DescribesAnUnsupportedVersionByBothVersions) {
-  auto bytes = valid_bytes_;
-  bytes[4] = std::byte{2};
-  const auto path = MakePackPath("augusta_assets_test_version_2_described");
-  WriteFileBytes(path, bytes);
-
-  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
-  ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 3");
 }
 

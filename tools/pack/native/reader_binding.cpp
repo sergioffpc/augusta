@@ -22,7 +22,7 @@ namespace {
 
 namespace py = pybind11;
 
-Failure<assets::LoadError> LoadFailureOf(const assets::LoadFailure& failure, const std::filesystem::path& path) {
+Failure<assets::LoadError> FailureOf(const assets::LoadFailure& failure, const std::filesystem::path& path) {
   return {failure.reason, std::format("{} {}", path.string(), assets::DescribeLoadError(failure))};
 }
 
@@ -36,7 +36,7 @@ std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& cli
 assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
   auto layout = assets::ReadPackLayout(path);
   if (!layout) {
-    throw LoadFailureOf(layout.error(), path);
+    throw FailureOf(layout.error(), path);
   }
   return *std::move(layout);
 }
@@ -44,7 +44,7 @@ assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
 std::unique_ptr<assets::Pack> LoadPack(const std::filesystem::path& path, const py::bytes& public_key) {
   auto pack = assets::Pack::Load(path, FixedBytesOf<assets::kEd25519PublicKeySize>(public_key, "public_key"));
   if (!pack) {
-    throw LoadFailureOf(pack.error(), path);
+    throw FailureOf(pack.error(), path);
   }
   return std::make_unique<assets::Pack>(*std::move(pack));
 }
