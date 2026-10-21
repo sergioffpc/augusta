@@ -650,7 +650,7 @@ enum class EncodeError : std::uint8_t {
 /// payload is not such a state, and leaves payload as it was.
 [[nodiscard]] std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient);
 
-/// Which message message is.
+/// The type of message: the envelope member Encode puts it under.
 [[nodiscard]] MessageTypeWire TypeOf(const MessageWire& message);
 
 /// The type of payload, a message Encode or Readdress made, without decoding
@@ -779,7 +779,8 @@ using CaptureRecordWire = std::variant<CaptureHeaderWire, CapturedJoinWire, Capt
 /// and gives no payload at all, as Encode does a message.
 [[nodiscard]] std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record);
 
-/// Which record record is.
+/// The type of record: its envelope member, less 1000, that EncodeCaptureRecord
+/// puts it under.
 [[nodiscard]] CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record);
 
 /// Decodes one capture record's payload, or reports what is wrong with it, as Decode does a message's.
