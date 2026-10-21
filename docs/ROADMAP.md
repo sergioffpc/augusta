@@ -39,6 +39,8 @@ the issues is ENGINEERING.md's Milestones section.
 - [Codebase Review (planned)](#codebase-review-planned)
 - [Protocol Buffers (planned)](#protocol-buffers-planned)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
+- [Client Diagnosability (planned)](#client-diagnosability-planned)
+    - [M18b — Client Diagnosability (M)](#m18b--client-diagnosability-m)
 - [Debug Tooling (planned)](#debug-tooling-planned)
     - [M19a — Debug Tooling (L)](#m19a--debug-tooling-l)
 - [Network Tooling (planned)](#network-tooling-planned)
@@ -394,6 +396,27 @@ its own, as early as it can.
 
 **Exercises:** ADR-0007, ADR-0038, ADR-0050 **Exit criteria:** every message
 crosses the wire as Protocol Buffers, through the codec the build generates
+
+## Client Diagnosability (planned)
+
+A client that dies in a playtest leaves what explains it on the player's
+machine, and one Run ID leads from it to what the server saw. It changes the
+join, the Match start and the Session ID on the wire, so it ships as a major of
+its own, after Protocol Buffers.
+
+### M18b — Client Diagnosability (M)
+
+- Each Run's log in a file beside the client, and its Crash dumps in `dumps/`,
+  both named by its Run ID; the last 10 Runs kept
+- One crash handler for client and server; a Windows client writes its own
+  minidump
+- Run, Session and Match IDs unique across every server and restart, carried by
+  the log lines, the join, the Match start and the Match capture
+
+**Exercises:** ADR-0027, ADR-0029, ADR-0038, ADR-0043, ADR-0047, ADR-0050,
+ADR-0055, NFR-10 **Exit criteria:** a client that crashes in a playtest leaves a
+log and a Crash dump under its Run ID, and that Run ID leads, through the
+server's lines, to the Matches it played and the Session IDs it played against
 
 ## Debug Tooling (planned)
 
