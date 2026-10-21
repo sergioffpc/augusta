@@ -22,8 +22,8 @@ namespace {
 
 namespace py = pybind11;
 
-Failure<assets::LoadError> LoadFailureOf(assets::LoadError reason, const std::filesystem::path& path) {
-  return {reason, std::format("{} {}", path.string(), assets::DescribeLoadError(reason))};
+Failure<assets::LoadError> LoadFailureOf(const assets::LoadFailure& failure, const std::filesystem::path& path) {
+  return {failure.reason, std::format("{} {}", path.string(), assets::DescribeLoadError(failure))};
 }
 
 std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& client_pack) {

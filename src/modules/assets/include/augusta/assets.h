@@ -321,12 +321,22 @@ enum class LoadError {
   kSignatureInvalid,
 };
 
-/// A human-readable phrase for error (e.g. "failed signature verification")
-/// - every caller of Pack::Load outside a test needs to turn a LoadError
+/// Why Pack::Load or ReadPackLayout refused a pack, with what a message about
+/// it names beyond the reason.
+struct LoadFailure {
+  LoadError reason{};
+  /// The format version the pack's header names; only meaningful for
+  /// kUnsupportedVersion.
+  std::uint32_t pack_version = 0;
+};
+
+/// A human-readable phrase for failure (e.g. "failed signature verification")
+/// - every caller of Pack::Load outside a test needs to turn a LoadFailure
 /// into an actionable message for whoever's running the process (the
 /// client/server executables, ADR-0019), so it lives here rather than
-/// being duplicated per executable.
-std::string_view DescribeLoadError(LoadError error);
+/// being duplicated per executable. A version mismatch names both versions,
+/// so the reader can tell whether the pack or the build is the stale one.
+std::string DescribeLoadError(const LoadFailure& failure);
 
 /// The size of an Ed25519 signature, in bytes.
 inline constexpr std::size_t kEd25519SignatureSize = 64;
@@ -369,8 +379,8 @@ struct PackLayout {
 /// Reads the header, index and trailer of the pack at path without a key, for a
 /// tool to show what a pack holds (augusta-inspect): neither its hash nor its
 /// signature is verified, so nothing in it is to be trusted. Refuses a malformed
-/// layout with the LoadError Pack::Load gives it, through the same parser.
-std::expected<PackLayout, LoadError> ReadPackLayout(const std::filesystem::path& path);
+/// layout with the LoadFailure Pack::Load gives it, through the same parser.
+std::expected<PackLayout, LoadFailure> ReadPackLayout(const std::filesystem::path& path);
 
 /// Why a Pack::Resolve* call found no usable asset at a path.
 enum class ResolveError {
@@ -399,7 +409,7 @@ class Pack {
   /// magic, unsupported version, hash/signature mismatch, or offsets/sizes
   /// reaching past the file's actual length) is reported here rather than
   /// deferred to a later Resolve call.
-  static std::expected<Pack, LoadError> Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key);
+  static std::expected<Pack, LoadFailure> Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key);
 
   Pack(const Pack&) = delete;
   Pack& operator=(const Pack&) = delete;
@@ -498,7 +508,7 @@ enum class VerifiedPackFailure {
 struct VerifiedPackError {
   VerifiedPackFailure failure;
   /// Why Pack::Load refused the pack; only meaningful for kPackRejected.
-  LoadError load_error{};
+  LoadFailure load_failure{};
 };
 
 /// Reads the Ed25519 public key at public_key_path and loads the pack at

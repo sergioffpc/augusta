@@ -103,51 +103,56 @@ std::expected<std::optional<PackHash>, LoadError> ParseClientPack(ByteReader& he
   return client_pack;
 }
 
+// pack_version is the one the header names, for kUnsupportedVersion alone.
+std::unexpected<LoadFailure> Refuse(LoadError reason, std::uint32_t pack_version = 0) {
+  return std::unexpected(LoadFailure{.reason = reason, .pack_version = pack_version});
+}
+
 // hashed_length is the file's length minus the trailer (kTrailerSize) -
 // everything the trailer's hash/signature actually covers, and therefore
 // the upper bound both the index and every blob it points into must fit
 // within.
-std::expected<PackHeader, LoadError> ParsePackHeader(std::span<const std::byte> header_bytes,
-                                                     std::uint64_t hashed_length) {
+std::expected<PackHeader, LoadFailure> ParsePackHeader(std::span<const std::byte> header_bytes,
+                                                       std::uint64_t hashed_length) {
   ByteReader header_reader(header_bytes);
   const auto magic = header_reader.ReadBytes(kPackMagic.size());
   if (!magic || std::memcmp(magic->data(), kPackMagic.data(), kPackMagic.size()) != 0) {
-    return std::unexpected(LoadError::kBadMagic);
+    return Refuse(LoadError::kBadMagic);
   }
 
   const auto version = header_reader.ReadU32();
   if (!version) {
-    return std::unexpected(LoadError::kTruncated);
+    return Refuse(LoadError::kTruncated);
   }
   if (*version != kFormatVersion) {
-    return std::unexpected(LoadError::kUnsupportedVersion);
+    return Refuse(LoadError::kUnsupportedVersion, *version);
   }
 
   const auto data_offset = header_reader.ReadU64();
   const auto index_offset = header_reader.ReadU64();
   const auto index_count = header_reader.ReadU32();
   if (!data_offset || !index_offset || !index_count) {
-    return std::unexpected(LoadError::kTruncated);
+    return Refuse(LoadError::kTruncated);
   }
   // The data section always starts immediately after the header
   // (WritePack never writes it anywhere else) - a header claiming
   // otherwise is internally inconsistent, not just short.
   if (*data_offset != kHeaderSize) {
-    return std::unexpected(LoadError::kTruncated);
+    return Refuse(LoadError::kTruncated);
   }
   // The index must start at or after the data section and end at or
   // before hashed_length (i.e. entirely within the hashed/signed
   // content, never reaching into the trailer).
   if (*index_offset < kHeaderSize || *index_offset > hashed_length) {
-    return std::unexpected(LoadError::kTruncated);
+    return Refuse(LoadError::kTruncated);
   }
   if (*index_count > kMaxEntries) {
-    return std::unexpected(LoadError::kTruncated);
+    return Refuse(LoadError::kTruncated);
   }
 
   auto client_pack = ParseClientPack(header_reader);
   if (!client_pack) {
-    return std::unexpected(client_pack.error());
+    return Refuse(client_pack.error());
   }
 
   return PackHeader{.version = *version,
@@ -449,10 +454,10 @@ struct OpenedPack {
   std::uint64_t hashed_length = 0;
 };
 
-std::expected<OpenedPack, LoadError> OpenPack(const std::filesystem::path& path) {
+std::expected<OpenedPack, LoadFailure> OpenPack(const std::filesystem::path& path) {
   auto mapping = OpenValidatedMapping(path);
   if (!mapping) {
-    return std::unexpected(mapping.error());
+    return Refuse(mapping.error());
   }
   const std::span<const std::byte> mapped = MappedBytes(*mapping);
   const std::uint64_t hashed_length = mapped.size() - kTrailerSize;
@@ -603,14 +608,14 @@ struct Pack::Impl {
   std::filesystem::path path;
 };
 
-std::string_view DescribeLoadError(LoadError error) {
-  switch (error) {
+std::string DescribeLoadError(const LoadFailure& failure) {
+  switch (failure.reason) {
     case LoadError::kIoError:
       return "could not be opened or read";
     case LoadError::kBadMagic:
       return "is not an augusta pack file (bad magic)";
     case LoadError::kUnsupportedVersion:
-      return "was written by an incompatible pack format version";
+      return std::format("is pack format {}; this build reads format {}", failure.pack_version, kFormatVersion);
     case LoadError::kTruncated:
       return "is truncated, or exceeds this build's pack size limits";
     case LoadError::kInvalidIndex:
@@ -640,7 +645,7 @@ Pack::Pack(Pack&&) noexcept = default;
 Pack& Pack::operator=(Pack&&) noexcept = default;
 Pack::~Pack() = default;
 
-std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key) {
+std::expected<Pack, LoadFailure> Pack::Load(const std::filesystem::path& path, const Ed25519PublicKey& public_key) {
   EnsureSodiumInitialized();
 
   auto opened = OpenPack(path);
@@ -654,17 +659,17 @@ std::expected<Pack, LoadError> Pack::Load(const std::filesystem::path& path, con
   // clearer error to the caller - both checks are on untrusted data
   // either way, and neither is trusted until both pass.
   if (HashContent(mapped, opened->hashed_length) != trailer.hash) {
-    return std::unexpected(LoadError::kHashMismatch);
+    return Refuse(LoadError::kHashMismatch);
   }
   if (crypto_sign_verify_detached(reinterpret_cast<const unsigned char*>(trailer.signature.data()),
                                   reinterpret_cast<const unsigned char*>(trailer.hash.data()), trailer.hash.size(),
                                   reinterpret_cast<const unsigned char*>(public_key.data())) != 0) {
-    return std::unexpected(LoadError::kSignatureInvalid);
+    return Refuse(LoadError::kSignatureInvalid);
   }
 
   auto index = ParsePackIndexOf(*opened);
   if (!index) {
-    return std::unexpected(index.error());
+    return Refuse(index.error());
   }
 
   Pack pack;
@@ -755,14 +760,14 @@ std::uint32_t Pack::Version() const { return impl_->version; }
 
 std::uint64_t Pack::FileSize() const { return impl_->mapping.get_size(); }
 
-std::expected<PackLayout, LoadError> ReadPackLayout(const std::filesystem::path& path) {
+std::expected<PackLayout, LoadFailure> ReadPackLayout(const std::filesystem::path& path) {
   auto opened = OpenPack(path);
   if (!opened) {
     return std::unexpected(opened.error());
   }
   auto index = ParsePackIndexOf(*opened);
   if (!index) {
-    return std::unexpected(index.error());
+    return Refuse(index.error());
   }
   const std::span<const std::byte> mapped = MappedBytes(opened->mapping);
   const PackTrailer trailer = ReadTrailer(mapped, opened->hashed_length);
@@ -783,8 +788,8 @@ std::expected<Pack, VerifiedPackError> LoadVerifiedPack(const std::filesystem::p
   if (!public_key) {
     return std::unexpected(VerifiedPackError{.failure = VerifiedPackFailure::kPublicKeyUnreadable});
   }
-  return Pack::Load(pack_path, *public_key).transform_error([](LoadError error) {
-    return VerifiedPackError{.failure = VerifiedPackFailure::kPackRejected, .load_error = error};
+  return Pack::Load(pack_path, *public_key).transform_error([](const LoadFailure& failure) {
+    return VerifiedPackError{.failure = VerifiedPackFailure::kPackRejected, .load_failure = failure};
   });
 }
 
@@ -794,7 +799,7 @@ std::string DescribeVerifiedPackError(const VerifiedPackError& error, const std:
     case VerifiedPackFailure::kPublicKeyUnreadable:
       return std::format("could not read Ed25519 public key from {}", public_key_path.string());
     case VerifiedPackFailure::kPackRejected:
-      return std::format("pack {} {}", pack_path.string(), DescribeLoadError(error.load_error));
+      return std::format("pack {} {}", pack_path.string(), DescribeLoadError(error.load_failure));
   }
   return "unknown pack error";
 }

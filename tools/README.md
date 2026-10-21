@@ -349,14 +349,14 @@ formed (ADR-0031). On success it prints the entry count, size, hash and key used
 and exits `0`. On any failure it prints the pack's path and the reason to stderr
 and exits `1`:
 
-| Message                                                  | Meaning                                                                     |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `failed its integrity check (content hash mismatch)`     | The pack was corrupted or modified after it was signed.                     |
-| `failed signature verification`                          | The pack was signed by a different key, or the signature was tampered with. |
-| `is not an augusta pack file (bad magic)`                | The file isn't an Augusta pack.                                             |
-| `was written by an incompatible pack format version`     | The pack is of a format version this build doesn't read.                    |
-| `is truncated, or exceeds this build's pack size limits` | The file is shorter than its header and index say, or too large.            |
-| `has a corrupt index`                                    | An index entry has an unknown type, or two entries share a path.            |
+| Message                                                  | Meaning                                                                                       |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `failed its integrity check (content hash mismatch)`     | The pack was corrupted or modified after it was signed.                                       |
+| `failed signature verification`                          | The pack was signed by a different key, or the signature was tampered with.                   |
+| `is not an augusta pack file (bad magic)`                | The file isn't an Augusta pack.                                                               |
+| `is pack format N; this build reads format M`            | The pack is of format `N`, this build reads `M` alone: the lower of the two is the stale one. |
+| `is truncated, or exceeds this build's pack size limits` | The file is shorter than its header and index say, or too large.                              |
+| `has a corrupt index`                                    | An index entry has an unknown type, or two entries share a path.                              |
 
 ### Publishing a server pack
 
