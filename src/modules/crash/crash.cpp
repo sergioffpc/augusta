@@ -22,9 +22,9 @@
 #else
 #include <cerrno>
 
-// NOLINTNEXTLINE(modernize-deprecated-headers) - SIGBUS is POSIX's, which <csignal> need not declare.
+// SIGBUS is POSIX's, which <csignal> need not declare.
 #include <fcntl.h>
-#include <signal.h>
+#include <signal.h>  // NOLINT(modernize-deprecated-headers)
 #include <sys/resource.h>
 #include <unistd.h>
 #include <unwind.h>
