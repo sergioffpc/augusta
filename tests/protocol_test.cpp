@@ -489,11 +489,6 @@ TEST(ProtocolTest, AShotsOriginAndDirectionTravelAsCountsOfTheirGrids) {
                                  .pitch = -1.0F / 2097152.0F}));
 }
 
-// Requirements: NFR-12
-TEST(ProtocolTest, AZeroByteAfterAShotIsMalformed) {
-  EXPECT_EQ(Decode(WithAZeroByte(Encode(ShotWire{}).value())).error(), DecodeError::kMalformed);
-}
-
 TEST(ProtocolTest, AHitConfirmationRoundTripsWithItsTargetBodyPartAndDamage) {
   for (const BodyPartWire part : {BodyPartWire::kHead, BodyPartWire::kTorso, BodyPartWire::kLimb}) {
     const HitConfirmationWire hit{.target = static_cast<EntityIdWire>(0xA1B2C3D4U), .damage = 37.5F, .part = part};
@@ -513,11 +508,6 @@ TEST(ProtocolTest, AHitConfirmationsBodyPartOutsideItsRangeIsInvalid) {
               DecodeError::kInvalidEnum)
         << bad;
   }
-}
-
-// Requirements: NFR-12
-TEST(ProtocolTest, AZeroByteAfterAHitConfirmationIsMalformed) {
-  EXPECT_EQ(Decode(WithAZeroByte(Encode(HitConfirmationWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 TEST(ProtocolTest, ADeathRoundTripsWithItsVictimKillerBodyPartAndDirection) {
@@ -541,11 +531,6 @@ TEST(ProtocolTest, ADeathsBodyPartOutsideItsRangeIsInvalid) {
   for (const std::uint64_t bad : {0U, 4U, 255U}) {
     EXPECT_EQ(Decode(Envelope(MessageTypeWire::kDeath, VarintField(3, bad))).error(), DecodeError::kInvalidEnum) << bad;
   }
-}
-
-// Requirements: NFR-12
-TEST(ProtocolTest, AZeroByteAfterADeathIsMalformed) {
-  EXPECT_EQ(Decode(WithAZeroByte(Encode(DeathWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
@@ -641,16 +626,8 @@ TEST(ProtocolTest, ARefusalWithNoReasonIsInvalid) {
 }
 
 // Requirements: NFR-12
-TEST(ProtocolTest, AZeroByteAfterAMessageIsMalformed) {
-  const std::vector<MessageWire> messages = {JoinRequestWire{},
-                                             JoinAcceptedWire{},
-                                             LobbyWire{},
-                                             MatchStartWire{},
-                                             ReadyWire{.version = 1},
-                                             MatchEndWire{.winner = static_cast<SessionIdWire>(1)},
-                                             JoinRefusedWire{.reason = JoinRefusalWire::kVersionMismatch},
-                                             ReplayListRequestWire{}};
-  for (const MessageWire& message : messages) {
+TEST(ProtocolTest, AZeroByteAfterAnyMessageIsMalformed) {
+  for (const MessageWire& message : EveryMessage()) {
     EXPECT_EQ(Decode(WithAZeroByte(Encode(message).value())).error(), DecodeError::kMalformed)
         << static_cast<int>(augusta::protocol::TypeOf(message));
   }
@@ -1237,12 +1214,6 @@ TEST(ProtocolTest, DecodingAndEncodingAgainGivesTheSameBytes) {
 
   const BytesWire commands = Encode(CommandsWire{.commands = {BusyCommand(1)}}).value();
   EXPECT_EQ(Encode(std::get<CommandsWire>(Decode(commands).value())).value(), commands);
-}
-
-// Requirements: NFR-12
-TEST(ProtocolTest, AZeroByteAfterCommandsOrStateIsMalformed) {
-  EXPECT_EQ(Decode(WithAZeroByte(Encode(CommandsWire{}).value())).error(), DecodeError::kMalformed);
-  EXPECT_EQ(Decode(WithAZeroByte(Encode(AuthoritativeStateWire{}).value())).error(), DecodeError::kMalformed);
 }
 
 // A message has one meaning, not one encoding (ADR-0007): a field this build
