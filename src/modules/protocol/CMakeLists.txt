@@ -16,8 +16,17 @@ protobuf_generate(
   IMPORT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/proto
   PROTOC_OUT_DIR ${AUGUSTA_PROTOCOL_GENERATED_DIR}
 )
+#
+# On Windows, vcpkg builds the protobuf DLL with MSVC, for which protobuf's
+# headers make PROTOBUF_RESTRICT nothing, while under clang-cl they make it
+# __restrict, which the mangled names of the functions the generated code
+# imports (InternalSwap and memswap) then carry, and the DLL's exports lack.
+# The generated code is compiled with __restrict defined away there, so it
+# imports the names the DLL exports.
 set_source_files_properties(
   ${protocol_generated}
-  PROPERTIES COMPILE_OPTIONS $<IF:$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>,/w,-w>
+  PROPERTIES
+    COMPILE_OPTIONS $<IF:$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>,/w,-w>
+    COMPILE_DEFINITIONS $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:__restrict=>
 )
 target_include_directories(augusta_protocol SYSTEM PRIVATE ${AUGUSTA_PROTOCOL_GENERATED_DIR})
