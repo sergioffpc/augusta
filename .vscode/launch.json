@@ -1,9 +1,10 @@
 {
   "version": "0.2.0",
-  // Each config's preLaunchTask ("CMake: build") builds whichever CMake Tools
-  // preset is currently active (status bar / command palette) - switch to the
-  // matching preset (windows/windows-debug, linux/linux-debug) before F5-ing
-  // a given config, or the binary it launches may be stale.
+  // Each config's preLaunchTask (tasks.json) builds only the executable it
+  // launches, from whichever CMake Tools preset is currently active (status
+  // bar / command palette) - switch to the matching preset
+  // (windows/windows-debug, linux/linux-debug) before F5-ing a given config,
+  // or the binary it launches may be stale.
   //
   // The (MSVC) configs start from config/augustac.yaml / config/augustad.yaml
   // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
@@ -23,7 +24,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "CMake: build"
+      "preLaunchTask": "CMake: build augustad"
     },
     {
       "name": "Debug Server - Debug (lldb)",
@@ -31,7 +32,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux-debug/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "CMake: build"
+      "preLaunchTask": "CMake: build augustad"
     },
     {
       "name": "Debug Server - Release (MSVC)",
@@ -40,7 +41,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
-      "preLaunchTask": "CMake: build",
+      "preLaunchTask": "CMake: build augustad",
       "externalConsole": true
     },
     {
@@ -50,7 +51,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
-      "preLaunchTask": "CMake: build",
+      "preLaunchTask": "CMake: build augustad",
       "externalConsole": true
     },
     {
@@ -60,7 +61,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
-      "preLaunchTask": "CMake: build",
+      "preLaunchTask": "CMake: build augustac",
       "externalConsole": true
     },
     {
@@ -78,7 +79,7 @@
           "value": "${workspaceFolder}\\build\\x64-windows-debug\\vcpkg_installed\\x64-windows\\debug\\bin"
         }
       ],
-      "preLaunchTask": "CMake: build",
+      "preLaunchTask": "CMake: build augustac",
       "externalConsole": true
     }
   ]

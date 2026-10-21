@@ -37,6 +37,7 @@ CMakeUserPresets.json
 !.vscode/extensions.json
 !.vscode/settings.json
 !.vscode/launch.json
+!.vscode/tasks.json
 
 # Ninja / compile commands
 .ninja_deps
