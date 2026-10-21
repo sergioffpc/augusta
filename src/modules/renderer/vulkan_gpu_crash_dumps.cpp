@@ -4,12 +4,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <format>
-#include <fstream>
-#include <ios>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 
@@ -18,6 +17,7 @@
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/system/error_code.hpp>
 
+#include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
 #include "augusta/version.h"
 
@@ -33,8 +33,7 @@ namespace {
 constexpr std::chrono::seconds kDumpTimeout{5};
 constexpr std::chrono::milliseconds kDumpPoll{50};
 
-// Empty if the executable can't be found, which leaves dumps in the working
-// directory.
+// Empty if the executable can't be found.
 std::filesystem::path ExecutablePath() {
   boost::system::error_code error;
   const auto executable = boost::dll::program_location(error);
@@ -52,24 +51,17 @@ std::string Utf8(const std::filesystem::path& path) {
   return {utf8.begin(), utf8.end()};
 }
 
-// Writes a dump beside the executable, named after it, the time and how many
-// dumps came before: a fault can be reported more than once. Logged as a
+// Writes a dump where the process's GPU crash dumps are named
+// (gpu_crash_dump_files.h): a fault can be reported more than once. Logged as a
 // warning, not an error: the device lost is thrown, and the boundary that
 // catches it writes the one ERR or CRIT line (ADR-0033).
 void WriteDump(const void* dump, std::uint32_t size, void* /*user_data*/) {
-  static std::atomic<int> count{0};
-  const std::filesystem::path executable = ExecutablePath();
-  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-  std::filesystem::path name = executable.stem();
-  name += std::format("-{:%Y%m%dT%H%M%SZ}-{}.nv-gpudmp", now, ++count);
-  const std::filesystem::path path = executable.parent_path() / name;
-  std::ofstream file(path, std::ios::binary);
-  file.write(static_cast<const char*>(dump), size);
-  if (!file) {
-    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(path));
+  const auto written = WriteGpuCrashDump(std::span(static_cast<const std::byte*>(dump), size));
+  if (!written) {
+    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(written.error()));
     return;
   }
-  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(path));
+  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(*written));
 }
 
 void DescribeDump(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add, void* /*user_data*/) {

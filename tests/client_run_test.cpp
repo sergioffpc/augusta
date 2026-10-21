@@ -5,12 +5,15 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 
 #include <gtest/gtest.h>
 
+#include "augusta/config.h"
+#include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
 #include "augusta/uuid.h"
@@ -19,6 +22,7 @@
 // one, in one WARN line naming it and its files, and nothing otherwise.
 namespace {
 
+using augusta::client::GpuDumpPath;
 using augusta::client::LogPath;
 using augusta::client::MinidumpPath;
 using augusta::client::ReportPreviousRun;
@@ -94,6 +98,21 @@ TEST_F(ClientRunTest, ALaunchAfterAnyOtherEndWritesNothing) {
 
   EXPECT_EQ(Reported(RunId(3)), "");
   EXPECT_EQ(Reported(RunId(1)), "");
+}
+
+// BeginRun's files are beside the test's executable, as augustac's are beside
+// it; the dump it names is removed after.
+TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
+  const augusta::client::Run run = augusta::client::BeginRun();
+
+  const auto written = augusta::renderer::WriteGpuCrashDump(std::as_bytes(std::span("gpu")));
+
+  ASSERT_TRUE(written.has_value());
+  const auto executable_directory = augusta::config::ExecutableDirectory();
+  ASSERT_TRUE(executable_directory.has_value());
+  EXPECT_EQ(*written, GpuDumpPath(*executable_directory, run.id, 1));
+  std::error_code ignored;
+  std::filesystem::remove(*written, ignored);
 }
 
 }  // namespace

@@ -729,6 +729,14 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests)
 
+# And the files its GPU crash dumps are written to (gpu_crash_dump_files.h).
+add_executable(augusta_renderer_gpu_crash_dump_files_tests renderer_gpu_crash_dump_files_test.cpp)
+target_link_libraries(
+  augusta_renderer_gpu_crash_dump_files_tests
+  PRIVATE augusta_renderer_gpu_crash_dump_files GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_gpu_crash_dump_files_tests)
+
 if(AUGUSTA_CLIENT)
   # The client Runtime's internal targets build with the client, on Windows
   # and Linux - though only the smoke test below links the Renderer. Its
@@ -768,7 +776,14 @@ if(AUGUSTA_CLIENT)
   add_executable(augusta_client_run_tests client_run_test.cpp)
   target_link_libraries(
     augusta_client_run_tests
-    PRIVATE augusta_client_run augusta_client_run_files augusta_logging GTest::gtest GTest::gtest_main
+    PRIVATE
+      augusta_client_run
+      augusta_client_run_files
+      augusta_config
+      augusta_logging
+      augusta_renderer_gpu_crash_dump_files
+      GTest::gtest
+      GTest::gtest_main
   )
   gtest_discover_tests(augusta_client_run_tests)
 

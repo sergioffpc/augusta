@@ -4,8 +4,10 @@ Each release publishes `augustad-linux-x64.debug` beside the server binary
 (ADR-0047), so a core dump of any published server can be read. The client gets
 the same: each release publishes `augustac-windows-x64.pdb` beside
 `augustac-windows-x64.zip`, the PDB of the `augustac.exe` in it, from that same
-build. A crash of a released client, or the Aftermath `.nv-gpudmp` that
-`renderer.cpp` writes on a GPU crash/TDR, is read with it.
+build. A crash of a released client, or the Aftermath `.nv-gpudmp` the Renderer
+writes on a GPU crash/TDR, is read with it. A GPU crash's dumps are the Run's
+(GLOSSARY.md), `dumps/augustac-<run-id>-<n>.nv-gpudmp` beside `augustac`, the
+n-th from 1, and are pruned with its log (`run_files.h`).
 
 **The build.** The Windows build (`clang-cl` and `lld-link`, ADR-0008) compiles
 every target with `/Z7` (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT` `Embedded`, set
@@ -47,8 +49,9 @@ llvm-pdbutil dump --summary augustac.pdb    # GUID and Age
 A debugger looks a PDB up by the file name the record names, `augustac.pdb`, so
 the downloaded `augustac-windows-x64.pdb` is renamed to that and put on the
 symbol path of whatever reads the dump: Visual Studio or WinDbg for a client
-crash, Nsight Graphics for a `.nv-gpudmp`. A dump records the GUID and age of
-each module it loaded, so the tag a dump came from is the one whose PDB matches.
+crash, Nsight Graphics for a `.nv-gpudmp` from `dumps/`. A dump records the GUID
+and age of each module it loaded, so the tag a dump came from is the one whose
+PDB matches.
 
 ## The Windows Client's Minidump
 

@@ -47,6 +47,10 @@ class Uuid {
   ByteArray bytes_{};
 };
 
+/// The nil UUID, Uuid{}: what an ID field holds until one is set, named so a
+/// field can default to it and still be left out of a designated initializer.
+inline constexpr Uuid kNil{};
+
 /// A new UUIDv7, from one process-wide generator: each ID taken compares
 /// greater than every one this process took before it, from any thread.
 Uuid Generate();

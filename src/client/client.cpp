@@ -208,7 +208,8 @@ struct ClientRuntime::Impl {
                                            .character = cfg.character,
                                            .replay = cfg.replay,
                                            .spawn = cfg.reenactment.transform(
-                                               [](const harness::Script& script) { return script.spawn; })},
+                                               [](const harness::Script& script) { return script.spawn; }),
+                                           .run = cfg.run},
                     std::move(world));
   }
 

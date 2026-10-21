@@ -87,5 +87,5 @@ int main(int argc, char** argv) {
   }
 
   return conclude(augusta::application::Execute(
-      augusta::client::ClientLifecycle(*file_config, *std::move(reenactment), std::move(replay))));
+      augusta::client::ClientLifecycle(*file_config, *std::move(reenactment), std::move(replay), client_run.id)));
 }

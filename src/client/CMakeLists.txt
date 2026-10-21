@@ -70,7 +70,7 @@ add_library(augusta_client STATIC client.cpp)
 target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_client
-  PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input
+  PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input augusta_uuid
   # nvtx3-cpp: client.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE
@@ -104,7 +104,7 @@ add_library(augusta_client_application STATIC client_application.cpp)
 target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_client_application
-  PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness
+  PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness augusta_uuid
   PRIVATE augusta_assets augusta_client augusta_failure augusta_link
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
@@ -123,7 +123,13 @@ target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(
   augusta_client_run
   PUBLIC augusta_uuid
-  PRIVATE augusta_client_run_files augusta_config augusta_hardware augusta_logging augusta_version
+  PRIVATE
+    augusta_client_run_files
+    augusta_config
+    augusta_hardware
+    augusta_logging
+    augusta_renderer_gpu_crash_dump_files
+    augusta_version
 )
 augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 

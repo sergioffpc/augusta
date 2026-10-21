@@ -11,6 +11,7 @@
 
 #include "augusta/math.h"
 #include "augusta/protocol.h"
+#include "augusta/uuid.h"
 
 // The protocol_decode fuzz target's seeds (tests/fuzz/README.md): one committed
 // payload per message kind, so the fuzzer starts from valid messages rather
@@ -77,9 +78,11 @@ std::vector<Seed> Seeds() {
                             .flags = CommandWire::kSprint | CommandWire::kFire,
                             .desired_stance = StanceWire::kProne,
                             .seen_age = 1};
+  // A Run ID, the same in every request that carries one.
+  const augusta::uuid::Uuid run = augusta::uuid::Parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398f").value();
   return {
       {.name = "join_request",
-       .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "soldier"}},
+       .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "soldier", .run = run}},
       {.name = "join_accepted",
        .message = JoinAcceptedWire{.session = static_cast<SessionIdWire>(7),
                                    .tick_rate_hz = 60,
@@ -148,7 +151,8 @@ std::vector<Seed> Seeds() {
                                                                .tick_rate_hz = 60}}}},
       {.name = "replay_request",
        .message =
-           ReplayRequestWire{.engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.acap"}},
+           ReplayRequestWire{
+               .engine_version = "0.1.0", .client_pack = {}, .capture = "20261009T120000123Z-0001.acap", .run = run}},
       {.name = "replay_view",
        .message = ReplayViewWire{.tick = 1200,
                                  .players = {PlayerViewWire{.pitch = -0.25F,
@@ -159,7 +163,8 @@ std::vector<Seed> Seeds() {
        .message = ReenactRequestWire{.engine_version = "0.1.0",
                                      .client_pack = {},
                                      .character = "soldier",
-                                     .spawn = Vec3(-8.0F, 0.0F, 16.5F)}},
+                                     .spawn = Vec3(-8.0F, 0.0F, 16.5F),
+                                     .run = run}},
   };
 }
 
