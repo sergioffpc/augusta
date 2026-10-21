@@ -7,6 +7,9 @@ dependencies = [
   "usd-optimize>=1.2.1",
   "usd-validation-nvidia>=1.21.0",
   "pyyaml>=6.0",
+  # The runtime of the protocol's generated module (augusta_pb2). The code
+  # vcpkg's protoc 33.4 generates needs a 6.x runtime no older than 6.33.4.
+  "protobuf>=6.33.4,<7",
 ]
 
 [project.scripts]
