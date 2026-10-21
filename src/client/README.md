@@ -2,9 +2,9 @@
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
 `augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
-`augusta_client_net_stats`, `augusta_client_phases`, `augusta_client_run`, and
-augustac, the executable that runs them. Client-only: the headless server never
-links it.
+`augusta_client_net_stats`, `augusta_client_phases`, `augusta_client_run`,
+`augusta_client_run_files`, and augustac, the executable that runs them.
+Client-only: the headless server never links it.
 
 ## Responsibility
 
@@ -18,7 +18,10 @@ collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
 types, classifies each phase's failure, and shows the connection's numbers on
 the debug HUD and to Nsight Systems. It starts each Run: takes its Run ID and
-opens its log file beside the executable, then writes its first lines.
+opens its log file beside the executable, then writes its first lines. It
+decides over the files Runs leave there: their names from the Run ID, which Runs
+are kept, and how the previous Run ended, which a launch reports when it was a
+crash.
 
 ## Not its responsibility
 

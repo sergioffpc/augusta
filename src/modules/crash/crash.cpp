@@ -6,7 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -21,6 +23,7 @@
 #include <cerrno>
 
 // NOLINTNEXTLINE(modernize-deprecated-headers) - SIGBUS is POSIX's, which <csignal> need not declare.
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -34,10 +37,21 @@ namespace {
 // Everything from here to the handler runs inside it, so it allocates nothing,
 // takes no lock and calls only async-signal-safe functions.
 
+#ifdef _WIN32
+using Descriptor = HANDLE;
+#else
+using Descriptor = int;
+#endif
+
 // What Install was given, set before any handler is: the subsystem a literal,
-// the settings never freed, so a crash during exit still reads them.
+// the settings never freed, so a crash during exit still reads them. The Run
+// ID and core location are views into them, empty where not given, and the
+// log file opened ahead of any crash, if given.
 std::string_view g_subsystem;
 const Settings* g_settings = nullptr;
+std::string_view g_run_id;
+std::string_view g_core_location;
+std::optional<Descriptor> g_log_file;
 
 #ifdef _WIN32
 constexpr std::array kFatalSignals{SIGSEGV, SIGILL, SIGFPE, SIGABRT};
@@ -93,20 +107,21 @@ class LineWriter {
   }
 
   // text in double quotes, its quotes and backslashes escaped. Cut short if the
-  // line runs out, but always closed.
-  void PutQuoted(std::string_view text) {
-    // The closing quote and the newline.
-    constexpr std::size_t kClosing = 2;
+  // line runs out, keeping room for after more characters after it, but always
+  // closed.
+  void PutQuoted(std::string_view text, std::size_t after = 0) {
+    // The closing quote, what follows it and the newline.
+    const std::size_t closing = 2 + after;
     Put('"');
     for (const char c : text) {
       const bool escaped = c == '"' || c == '\\';
-      if (!Fits(escaped ? 2 : 1, kClosing)) {
+      if (!Fits(escaped ? 2 : 1, closing)) {
         break;
       }
       if (escaped) {
-        Put('\\', kClosing);
+        Put('\\', closing);
       }
-      Put(c, kClosing);
+      Put(c, closing);
     }
     Put('"');
   }
@@ -160,6 +175,19 @@ void PutCrashPrefix(LineWriter& writer, std::string_view subsystem, std::chrono:
   writer.Put(' ');
 }
 
+constexpr std::string_view kRunKey = " run=";
+
+// How many characters PutRun writes for run_id.
+std::size_t RunLength(std::string_view run_id) { return run_id.empty() ? 0 : kRunKey.size() + run_id.size(); }
+
+// The Run's field, where logging's context puts it: last (ADR-0029).
+void PutRun(LineWriter& writer, std::string_view run_id) {
+  if (!run_id.empty()) {
+    writer.Put(kRunKey);
+    writer.Put(run_id);
+  }
+}
+
 std::string_view SignalName(int signal) {
   switch (signal) {
     case SIGSEGV:
@@ -179,13 +207,13 @@ std::string_view SignalName(int signal) {
   }
 }
 
-void WriteToStdout(std::string_view text) {
+void WriteTo(Descriptor descriptor, std::string_view text) {
 #ifdef _WIN32
   DWORD written = 0;
-  WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
+  WriteFile(descriptor, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
 #else
   while (!text.empty()) {
-    const auto written = write(STDOUT_FILENO, text.data(), text.size());
+    const auto written = write(descriptor, text.data(), text.size());
     if (written < 0 && errno == EINTR) {
       continue;
     }
@@ -194,6 +222,40 @@ void WriteToStdout(std::string_view text) {
     }
     text.remove_prefix(static_cast<std::size_t>(written));
   }
+#endif
+}
+
+// A crash line to stdout, where the log sink writes, and to the Run's log file.
+void WriteLine(std::string_view line) {
+#ifdef _WIN32
+  WriteTo(GetStdHandle(STD_OUTPUT_HANDLE), line);
+#else
+  WriteTo(STDOUT_FILENO, line);
+#endif
+  if (g_log_file) {
+    WriteTo(*g_log_file, line);
+  }
+}
+
+// The file at path opened for appending beside the log sink, which keeps it
+// open too; nullopt if it cannot be.
+std::optional<Descriptor> OpenForAppending(const std::filesystem::path& path) {
+#ifdef _WIN32
+  HANDLE file = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return std::nullopt;
+  }
+  return file;
+#else
+  // O_APPEND, so each write lands after the sink's last line, as the sink's
+  // own lines do.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) - open(2) is variadic for its mode.
+  const int file = open(path.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0644);
+  if (file < 0) {
+    return std::nullopt;
+  }
+  return file;
 #endif
 }
 
@@ -234,7 +296,7 @@ void ReportCrash(int signal) {
   // time() rather than system_clock::now(): POSIX lists it as async-signal-safe.
   const std::chrono::sys_seconds now{std::chrono::seconds{std::time(nullptr)}};
   Line line{};
-  WriteToStdout(FormatSignalLine(line, g_subsystem, now, signal));
+  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, g_run_id));
 
   std::array<void*, kMaxFrames> frames{};
   const int depth = CaptureFrames(frames);
@@ -242,8 +304,8 @@ void ReportCrash(int signal) {
   for (int index = 0; index < depth; ++index) {
     void* const pc = frames[static_cast<std::size_t>(index)];
     const bool resolved = absl::Symbolize(pc, symbol.data(), static_cast<int>(symbol.size()));
-    WriteToStdout(FormatFrameLine(line, g_subsystem, now, index, reinterpret_cast<std::uintptr_t>(pc),
-                                  resolved ? symbol.data() : nullptr));
+    WriteLine(FormatFrameLine(line, g_subsystem, now, index, reinterpret_cast<std::uintptr_t>(pc),
+                              resolved ? symbol.data() : nullptr, g_run_id));
   }
 }
 
@@ -275,7 +337,8 @@ void RaiseCoreLimit() {
 
 }  // namespace
 
-std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal) {
+std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal,
+                                  std::string_view core, std::string_view run_id) {
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash signal=");
@@ -284,11 +347,16 @@ std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::c
   } else {
     writer.PutDigits(static_cast<std::uint64_t>(signal), kDecimal);
   }
+  if (!core.empty()) {
+    writer.Put(" core=");
+    writer.PutQuoted(core, RunLength(run_id));
+  }
+  PutRun(writer, run_id);
   return writer.Finish();
 }
 
 std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
-                                 std::uintptr_t pc, const char* symbol) {
+                                 std::uintptr_t pc, const char* symbol, std::string_view run_id) {
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash_frame index=");
@@ -297,14 +365,25 @@ std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::ch
   writer.PutDigits(pc, kHexadecimal);
   if (symbol != nullptr) {
     writer.Put(" symbol=");
-    writer.PutQuoted(symbol);
+    // The Run's field kept whole: a line that loses it no longer says its Run.
+    writer.PutQuoted(symbol, RunLength(run_id));
   }
+  PutRun(writer, run_id);
   return writer.Finish();
 }
 
 void Install(const char* argv0, std::string_view subsystem, Settings settings) {
   g_subsystem = subsystem;
   g_settings = new Settings(std::move(settings));
+  if (g_settings->run_id) {
+    g_run_id = *g_settings->run_id;
+  }
+  if (g_settings->core_location) {
+    g_core_location = *g_settings->core_location;
+  }
+  if (g_settings->log_file) {
+    g_log_file = OpenForAppending(*g_settings->log_file);
+  }
   absl::InitializeSymbolizer(argv0);
   // Its first call sets up what it needs (see CaptureFrames).
   std::array<void*, 1> warm_up{};

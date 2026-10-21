@@ -2,12 +2,13 @@
 
 #include <cstddef>
 #include <format>
-#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
 
 #ifdef _WIN32
+#include <iterator>
+
 #include <windows.h>
 #else
 #include <elf.h>
@@ -116,7 +117,7 @@ std::string DescribeBuildId() {
 
 }  // namespace
 
-std::string_view EngineVersion() { return "4.1.0"; }
+std::string_view EngineVersion() { return "5.0.0"; }
 
 std::string DescribeBuild() {
 #ifdef _WIN32

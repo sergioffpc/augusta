@@ -29,6 +29,16 @@ itself, meets the default action and ends the process at once. It also raises
 `RLIMIT_CORE`'s soft limit to the hard limit, since a limit of 0 writes no core.
 The log names functions; file and line come from the core.
 
+**The client's lines.** `augustac` installs the same handler as soon as its Run
+starts (ADR-0027), with its Run ID and the Run's log file. Its crash lines then
+end in the Run's `run=<id>`, where the log's context puts it on every other line
+(ADR-0029), and reach the Run's log file as well as stdout, through a descriptor
+`Install` opens ahead of any crash with `O_APPEND`, since the handler cannot
+open one. On Linux its crash line also says where the core is,
+`core="coredumpctl dump augustac"`: the player's `systemd-coredump` keeps it
+(ADR-0055). The Run's log therefore ends in the crash's lines, which is how the
+next launch knows the Run crashed.
+
 **The core.** Where the kernel writes a core is the node's
 `kernel.core_pattern`, which no container can set. The k3s node must run
 `systemd-coredump` as that handler: the kernel pipes a container's core to it in

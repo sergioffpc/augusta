@@ -110,6 +110,13 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 
+# The files a Run leaves beside the executable (see run_files.h): their names
+# from the Run ID, which Runs are kept, and how the previous one ended.
+add_library(augusta_client_run_files STATIC run_files.cpp)
+target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_client_run_files PUBLIC augusta_uuid)
+augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
+
 # The start of one Run (see client_run.h): its Run ID, its log file and its
 # first lines, before augustac reads its config.
 add_library(augusta_client_run STATIC client_run.cpp)
@@ -117,7 +124,7 @@ target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(
   augusta_client_run
   PUBLIC augusta_uuid
-  PRIVATE augusta_config augusta_hardware augusta_logging augusta_version
+  PRIVATE augusta_client_run_files augusta_config augusta_hardware augusta_logging augusta_version
 )
 augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 
@@ -128,6 +135,7 @@ target_link_libraries(
   augustac
   PRIVATE
     augusta_application
+    augusta_crash
     augusta_failure
     augusta_version
     augusta_logging
@@ -185,8 +193,9 @@ if(WIN32)
   )
 else()
   # Release's debug info split off into augustac.debug, as augustad's is
-  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). No
-  # crash handler: a player's systemd-coredump keeps the core.
+  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). The
+  # symbol table stays, for the crash handler's frame lines; a player's
+  # systemd-coredump keeps the core.
   augusta_split_debug_info(augustac)
   # The shared libraries the folder bundles are found beside augustac, wherever
   # it is extracted, with no launcher script setting a library path. In the
