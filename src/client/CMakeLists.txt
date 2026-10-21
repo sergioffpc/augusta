@@ -127,6 +127,7 @@ target_link_libraries(
   augustac
   PRIVATE
     augusta_application
+    augusta_crash
     augusta_failure
     augusta_version
     augusta_logging
@@ -184,8 +185,9 @@ if(WIN32)
   )
 else()
   # Release's debug info split off into augustac.debug, as augustad's is
-  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). No
-  # crash handler: a player's systemd-coredump keeps the core.
+  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). The
+  # symbol table stays, for the crash handler's frame lines; a player's
+  # systemd-coredump keeps the core.
   augusta_split_debug_info(augustac)
   # The shared libraries the folder bundles are found beside augustac, wherever
   # it is extracted, with no launcher script setting a library path. In the
