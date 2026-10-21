@@ -756,6 +756,19 @@ if(AUGUSTA_CLIENT)
   target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
 
+  # The files a Run leaves (see run_files.h), over a temporary directory.
+  add_executable(augusta_client_run_files_tests client_run_files_test.cpp)
+  target_link_libraries(augusta_client_run_files_tests PRIVATE augusta_client_run_files GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_run_files_tests)
+
+  # What a launch tells the player of the Run before it (see client_run.h).
+  add_executable(augusta_client_run_tests client_run_test.cpp)
+  target_link_libraries(
+    augusta_client_run_tests
+    PRIVATE augusta_client_run augusta_client_run_files augusta_logging GTest::gtest GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_client_run_tests)
+
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(
     augusta_client_phases_tests
