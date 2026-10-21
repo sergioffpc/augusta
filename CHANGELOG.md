@@ -2,6 +2,46 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 5.0.0 - 2026-10-21
+
+### Features
+
+- **protocol:** **BREAKING** carry the messages over Protocol Buffers
+- **capture:** **BREAKING** carry a capture's records over Protocol Buffers, as format v3
+
+### Bug Fixes
+
+- **protocol:** check text as UTF-8 in the codec, not in protobuf's parse
+- **capture:** name the format version a capture is refused for
+- **checks:** read the protocol's links however the call is wrapped
+- **build:** generate the protocol's C++ before clang-tidy reads it
+- **pack:** build the cooker's native target on every bootstrap
+- **harness:** report a resynchronised Tick, and stop two tests timing the machine
+
+### Refactoring
+
+- **link:** read a payload's type through the protocol
+- **capture:** check augusta-inspect's format version without returning it
+
+### Documentation
+
+- **protocol:** say what TypeOf maps to, not that it maps
+- **protocol:** keep the README to what the module owns
+- **agents:** watch a PR's checks after each push, and test new build artefacts
+- **prototypes:** add the acoustics propagation prototype
+- **prototypes:** put the acoustics prototype in English and the shared theme
+
+### Tests
+
+- **protocol:** share the hand-built protobuf payloads between the tests
+- **protocol:** check a zero byte after every message in one test
+
+### Build
+
+- **protocol:** generate the protocol's C++ from one .proto
+- **protocol:** link the generated code against the Windows protobuf DLL
+- **pack:** generate the protocol's Python from its one schema
+- **lint:** format and lint the protocol schema with Buf
 ## 4.1.0 - 2026-10-21
 
 ### Features
