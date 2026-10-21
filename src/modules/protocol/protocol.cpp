@@ -308,6 +308,7 @@ struct Encoder {
       }
     }
     start.set_first_tick(wire.first_tick);
+    start.set_match(BytesOf(wire.match));
   }
 
   void operator()(const MatchEndWire& wire) const {
@@ -465,7 +466,7 @@ class Inbound {
     return hash;
   }
 
-  // bytes as a UUID (a Run ID): none is the nil one an absent field reads as,
+  // bytes as a UUID (a Run ID, a Match ID): none is the nil one an absent field reads as,
   // and any other length than a UUID's is a number wider than its field.
   uuid::Uuid Uuid(std::string_view bytes) {
     uuid::Uuid::ByteArray id{};
@@ -641,7 +642,8 @@ MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
                                                   .entity = static_cast<EntityIdWire>(player.entity()),
                                                   .character = in.Text(player.character(), kMaxCharacterNameLength)};
                                             }),
-                        .first_tick = start.first_tick()};
+                        .first_tick = start.first_tick(),
+                        .match = in.Uuid(start.match())};
 }
 
 ShotWire Read(const pb::Shot& shot, Inbound& in) {

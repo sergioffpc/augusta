@@ -13,6 +13,7 @@
 #include "augusta/match.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 namespace augusta::host {
 
@@ -52,20 +53,20 @@ std::string_view LeavingName(Leaving how) {
   std::unreachable();
 }
 
-void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, tick::Tick ticks, std::size_t players,
-                   std::uint32_t roster_version) {
-  LOG_INFO("subsystem=serverruntime event=match_ended reason=\"{}\" winner={} ticks={} players={} version={}",
-           EndReasonName(reason), WinnerName(winner), ticks, players, roster_version);
+void LogMatchEnded(const uuid::Uuid& match, EndReason reason, const std::optional<SessionId>& winner, tick::Tick ticks,
+                   std::size_t players, std::uint32_t roster_version) {
+  LOG_INFO("subsystem=serverruntime event=match_ended match={} reason=\"{}\" winner={} ticks={} players={} version={}",
+           match, EndReasonName(reason), WinnerName(winner), ticks, players, roster_version);
 }
 
-void LogCombat(const simulation::State& state) {
+void LogCombat(const uuid::Uuid& match, const simulation::State& state) {
   for (const simulation::Hit& hit : state.hits) {
-    LOG_INFO("subsystem=serverruntime event=hit tick={} shooter={} target={} part={} damage={} health={}", state.tick,
-             std::to_underlying(hit.shooter), std::to_underlying(hit.target), body_part::NameOf(hit.part), hit.damage,
-             hit.health);
+    LOG_INFO("subsystem=serverruntime event=hit match={} tick={} shooter={} target={} part={} damage={} health={}",
+             match, state.tick, std::to_underlying(hit.shooter), std::to_underlying(hit.target),
+             body_part::NameOf(hit.part), hit.damage, hit.health);
   }
   for (const simulation::Death& death : state.deaths) {
-    LOG_INFO("subsystem=serverruntime event=death tick={} victim={} killer={} part={}", state.tick,
+    LOG_INFO("subsystem=serverruntime event=death match={} tick={} victim={} killer={} part={}", match, state.tick,
              std::to_underlying(death.victim), std::to_underlying(death.killer), body_part::NameOf(death.part));
   }
 }

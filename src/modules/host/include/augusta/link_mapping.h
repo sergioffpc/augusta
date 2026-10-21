@@ -12,6 +12,7 @@
 #include "augusta/replay.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// The conversions Host makes at the Link's edge (ADR-0038), the way
@@ -39,9 +40,9 @@ namespace augusta::host {
 
 /// start's players spawned where SimulationWorld put them: each of
 /// start.players at the spawns entry of the same index; first_tick is the
-/// Match's first tick.
+/// Match's first tick, and match its Match ID.
 [[nodiscard]] link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spawns,
-                                      tick::Tick first_tick);
+                                      tick::Tick first_tick, const uuid::Uuid& match);
 
 [[nodiscard]] link::MatchEnd ToLink(const MatchEnd& end);
 

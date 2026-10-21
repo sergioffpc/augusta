@@ -386,6 +386,15 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
+  const augusta::uuid::Uuid match = augusta::uuid::Generate();
+
+  const augusta::link::MatchStart received =
+      FromWire(ThroughTheWire(ToWire(augusta::link::MatchStart{.players = {}, .first_tick = 0, .match = match})));
+
+  EXPECT_EQ(received.match, match);
+}
+
 TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {
   const augusta::link::MatchStart sent{
       .players =

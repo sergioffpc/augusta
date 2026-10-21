@@ -116,7 +116,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "first tick " << start.first_tick << "}";
+      out << "first tick " << start.first_tick << ", match " << start.match.ToString() << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
@@ -292,8 +292,8 @@ rc::Gen<PackHashWire> PackHash() {
                       });
 }
 
-// Any 16 bytes, the nil Run ID among them.
-rc::Gen<augusta::uuid::Uuid> RunId() {
+// Any 16 bytes, the nil ID among them: a Run ID or a Match ID.
+rc::Gen<augusta::uuid::Uuid> AnyUuid() {
   return rc::gen::map(
       rc::gen::arbitrary<augusta::uuid::Uuid::ByteArray>(),
       [](const augusta::uuid::Uuid::ByteArray& bytes) { return augusta::uuid::Uuid::FromBytes(bytes); });
@@ -322,7 +322,7 @@ rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()),
-      rc::gen::set(&JoinRequestWire::run, RunId()));
+      rc::gen::set(&JoinRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<ReenactRequestWire> ReenactRequest() {
@@ -331,7 +331,7 @@ rc::Gen<ReenactRequestWire> ReenactRequest() {
       rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReenactRequestWire::character, Character()),
       rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)),
-      rc::gen::set(&ReenactRequestWire::run, RunId()));
+      rc::gen::set(&ReenactRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
@@ -418,7 +418,8 @@ rc::Gen<MatchStartWire> MatchStart() {
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)),
-      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()));
+      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()),
+      rc::gen::set(&MatchStartWire::match, AnyUuid()));
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {
@@ -468,7 +469,7 @@ rc::Gen<ReplayRequestWire> ReplayRequest() {
   return rc::gen::build<ReplayRequestWire>(
       rc::gen::set(&ReplayRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
-      rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, RunId()));
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<ReplayViewWire> ReplayView() {

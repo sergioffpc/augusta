@@ -483,6 +483,7 @@ Lobby FromWire(const protocol::LobbyWire& lobby) {
 protocol::MatchStartWire ToWire(const MatchStart& start) {
   protocol::MatchStartWire result;
   result.first_tick = start.first_tick;
+  result.match = start.match;
   result.players.reserve(start.players.size());
   for (const MatchPlayer& player : start.players) {
     result.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
@@ -503,6 +504,7 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
                                          .spawn = player.spawn});
   }
   result.first_tick = start.first_tick;
+  result.match = start.match;
   return result;
 }
 

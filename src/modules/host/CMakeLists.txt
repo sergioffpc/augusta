@@ -80,6 +80,7 @@ target_link_libraries(
     augusta_assets
     augusta_capture
     augusta_metrics
+    augusta_uuid
     prometheus-cpp::core
   PRIVATE augusta_logging augusta_version
 )

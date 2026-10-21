@@ -157,6 +157,9 @@ struct MatchStart {
   std::vector<MatchPlayer> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
+  /// The Match's Match ID (GLOSSARY.md), the same in every player's Match
+  /// start; the nil UUID where the server names none.
+  uuid::Uuid match = uuid::kNil;
 };
 
 /// What the server said when a match ended (US-14).

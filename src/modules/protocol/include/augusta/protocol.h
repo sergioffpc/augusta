@@ -450,6 +450,9 @@ struct MatchStartWire {
   std::vector<MatchPlayerWire> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
+  /// The Match's Match ID, the same in every player's Match start (ADR-0043);
+  /// nil where the server names none.
+  uuid::Uuid match = uuid::kNil;
 
   bool operator==(const MatchStartWire&) const = default;
 };

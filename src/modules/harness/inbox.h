@@ -18,7 +18,9 @@
 /// out, or a state of a body not in the match, is dropped as a malformed message
 /// is), and kept, either in the ServerView it publishes or, for what is handed
 /// out once, until it is taken. No connection of its own: Session hands it each
-/// message the Link received. Private to the harness module.
+/// message the Link received. It holds the Match in progress in the logging
+/// context (ADR-0029) from its Match start to its Match end, or until the Inbox
+/// goes. Private to the harness module.
 namespace augusta::harness {
 
 /// The server's messages, as a Session reads them.
@@ -34,7 +36,7 @@ class Inbox {
   Inbox& operator=(const Inbox&) = delete;
   Inbox(Inbox&&) = delete;
   Inbox& operator=(Inbox&&) = delete;
-  ~Inbox() = default;
+  ~Inbox();
 
   /// Takes in one message the server sent. Network I/O thread only: it alone
   /// publishes the view.
@@ -73,6 +75,8 @@ class Inbox {
   }
 
   const bool viewer_;
+  // Whether the logging context holds this Inbox's Match. Network I/O thread only.
+  bool match_in_context_ = false;
   // The published view, swapped whole under view_mutex_ and copied out under it:
   // libc++ has no std::atomic<std::shared_ptr>.
   mutable std::mutex view_mutex_;
