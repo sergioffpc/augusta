@@ -26,7 +26,6 @@
 #include "augusta/prediction.h"
 #include "augusta/protocol.h"
 #include "augusta/supervisor.h"
-#include "augusta/tick.h"
 
 // A harness::Runner running a real client session in real time against a real
 // server host, in one process over loopback: the test runs the host on its
@@ -212,20 +211,39 @@ TEST_F(RunnerTest, TellsItsHooksOfEveryTickAtTheServersPacedRateAndOfEveryNetwor
                                             .on_network_round = [&] { ++network_rounds; },
                                             .on_failure = {}});
 
-  ASSERT_TRUE(ServeUntil([&] {
-    const std::lock_guard<std::mutex> lock(mutex);
-    return ticks.size() >= kTickRate;
-  }));
+  const auto ticked = [&](std::size_t count) {
+    return [&, count] {
+      const std::lock_guard<std::mutex> lock(mutex);
+      return ticks.size() >= count;
+    };
+  };
+  ASSERT_TRUE(ServeUntil(ticked(kTickRate / 2)));
+  // The server stalls a dozen ticks, taking the client's commands in but
+  // consuming none, so a backlog of them is queued when it ticks again.
+  const auto stall_end = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+  while (std::chrono::steady_clock::now() < stall_end) {
+    host_.PumpNetwork(std::chrono::steady_clock::now());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_TRUE(ServeUntil(ticked(2 * kTickRate)));
 
   EXPECT_GT(network_rounds.load(), 0);
   const std::lock_guard<std::mutex> lock(mutex);
-  const auto nominal = std::chrono::duration<float>(kFixedTick);
+  // Paced no more than 5% shorter, and no more than 5% longer but for a
+  // backlog, which may lengthen a tick by up to 25% (ADR-0038).
+  const float shortest = kFixedTick * 0.95F * 0.999F;
+  const float drifting = kFixedTick * 1.05F * 1.001F;
+  const float longest = kFixedTick * 1.25F * 1.001F;
+  bool drained = false;
   for (std::size_t i = 1; i < ticks.size(); ++i) {
     // Each tick is due when the one before it said the next would be.
     EXPECT_EQ(ticks[i].due, ticks[i - 1].due + ticks[i - 1].duration);
-    const auto duration = std::chrono::duration<float>(ticks[i].duration);
-    EXPECT_NEAR(duration.count(), nominal.count(), nominal.count() * augusta::tick::kMaxPacing * 1.01F);
+    const float duration = std::chrono::duration<float>(ticks[i].duration).count();
+    EXPECT_GE(duration, shortest);
+    EXPECT_LE(duration, longest);
+    drained = drained || duration > drifting;
   }
+  EXPECT_TRUE(drained) << "no tick was lengthened past 5% to drain the backlog the stall left";
 }
 
 TEST_F(RunnerTest, ACommandSourceThatThrowsStopsTheRunnerWithAFailureOfThePredictionThread) {
