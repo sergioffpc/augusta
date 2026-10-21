@@ -233,7 +233,8 @@ protocol::ReplayRequestWire RequestFor(const std::string& capture) {
 
 // Plays a Match of TwoInALine on a live Host capturing into directory: the
 // first player fires at the second's head until the second dies and Game
-// policy ends the Match. Returns the name of its capture.
+// policy ends the Match. Returns the name of its capture, or empty when none
+// appears.
 std::string CaptureAKill(const std::filesystem::path& directory) {
   HostConfig config{.tick_rate_hz = kTickRate,
                     .parameters = Rules(),
@@ -311,9 +312,19 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   EXPECT_TRUE(ended);
   // The tick after takes the ended Match out, and its capture ends.
   host.Tick(kFixedTick);
-  const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory), {});
-  EXPECT_EQ(files.size(), 1U);
-  return files.empty() ? std::string() : files.front().filename().string();
+  // The Capturer's writer thread creates the file, so it may not be there yet.
+  const auto file_deadline = std::chrono::steady_clock::now() + kPollDeadline;
+  while (true) {
+    const std::vector<std::filesystem::path> files(std::filesystem::directory_iterator(directory), {});
+    if (files.size() == 1) {
+      return files.front().filename().string();
+    }
+    if (std::chrono::steady_clock::now() >= file_deadline) {
+      ADD_FAILURE() << "no capture of the Match appeared in " << directory << "; it holds " << files.size() << " files";
+      return {};
+    }
+    std::this_thread::sleep_for(kPollInterval);
+  }
 }
 
 // The capture name names in directory, read once its writer has written it whole.
@@ -434,6 +445,9 @@ TEST_F(ReplayServerTest, AReenactRequestIsRefusedAsAReplayServerRefusesAnyReques
 // Requirements: US-21
 TEST_F(ReplayServerTest, AReplayListRequestIsAnsweredWithEveryCaptureItReplaysThenClosed) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   const std::unique_ptr<ReplayServer> server = Serve();
   RawClient asker(server->ListenEndpoint());
   asker.Send(protocol::ReplayListRequestWire{});
@@ -455,6 +469,9 @@ TEST_F(ReplayServerTest, AReplayListRequestIsAnsweredWithEveryCaptureItReplaysTh
 // Requirements: US-21
 TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   std::filesystem::create_directories(directory_.Path() / "inner");
   std::filesystem::copy_file(directory_.Path() / name, directory_.Path() / "inner" / name);
   const std::unique_ptr<ReplayServer> server = Serve();
@@ -489,6 +506,9 @@ TEST_F(ReplayServerTest, AReplayRequestFromAnotherVersionOrPackIsRefusedForItBef
 // Requirements: US-21
 TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   const augusta::capture::Capture capture = ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
 
@@ -540,6 +560,9 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
 // Requirements: US-21, NFR-09
 TEST_F(ReplayServerTest, OnTheCapturingBuildAReplayLogsNoDifference) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
 
@@ -556,6 +579,9 @@ TEST_F(ReplayServerTest, OnTheCapturingBuildAReplayLogsNoDifference) {
 // Requirements: US-21, NFR-09
 TEST_F(ReplayServerTest, ADoctoredCapturesReplayLogsTheFirstDifference) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   augusta::capture::Capture capture = ReadWhole(directory_.Path() / name);
   std::uint32_t death_offset = 0;
   for (augusta::capture::AtOffset<augusta::capture::Event>& event : capture.events) {
@@ -586,6 +612,9 @@ TEST_F(ReplayServerTest, ADoctoredCapturesReplayLogsTheFirstDifference) {
 // Requirements: US-21
 TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefused) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve(2);
   RawClient first(server->ListenEndpoint());
@@ -662,6 +691,9 @@ class ReplayViewerTest : public ReplayServerTest {
 // Requirements: US-21
 TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEveryPlayersView) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
   const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, name);
@@ -750,6 +782,9 @@ TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAn
 // Requirements: US-21
 TEST_F(ReplayViewerTest, AReplayListQueryGetsTheServersList) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::ReplayListQuery query({.address = server->ListenEndpoint().address});
@@ -814,6 +849,9 @@ TEST(DescribeReplayListTest, ItNamesEachCaptureWithItsStartLengthAndCharacters) 
 // Requirements: US-21
 TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
   RawClient viewer(server->ListenEndpoint());
@@ -842,6 +880,9 @@ TEST_F(ReplayServerTest, AViewersLaterRequestsAreDroppedAndItsReplayGoesOn) {
 // Requirements: US-21
 TEST_F(ReplayServerTest, EachReplaysTickIsTimedIntoTheMetrics) {
   const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
   ReadWhole(directory_.Path() / name);
   const std::unique_ptr<ReplayServer> server = Serve();
   RawClient first(server->ListenEndpoint());
