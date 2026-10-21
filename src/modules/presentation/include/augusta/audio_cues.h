@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "augusta/audio.h"
@@ -49,8 +50,8 @@ class CueSelector {
  private:
   // Whether health is lower than the previous frame's; remembers it.
   [[nodiscard]] bool HitTaken(const std::optional<float>& health);
-  // Remembers where snapshot, if any, reports each body.
-  void RememberPositions(const WorldSnapshot* snapshot);
+  // Remembers where updates, oldest first, last report each body.
+  void RememberPositions(std::span<const WorldSnapshot> updates);
   // The stinger to play if match_end arrived since the previous frame.
   [[nodiscard]] std::optional<audio::Cue> MatchEndStinger(const std::optional<MatchEnd>& match_end,
                                                           const std::optional<EntityId>& local_entity);

@@ -128,7 +128,7 @@ struct ClientRuntime::Impl {
   std::mutex latest_tick_mutex;
   LatestTick latest_tick;
 
-  // Main/Render thread only: the Server view's Authoritative State and Match
+  // Main/Render thread only: the Server view's recent Authoritative State updates and Match
   // start as presentation's types, converted when they change and lent to
   // every render frame in between (NextFrameInput); a Replay viewer's views
   // of the newest tick, lent to the frame they are converted for; and the
@@ -412,7 +412,7 @@ struct ClientRuntime::Impl {
   // Everything the server has said is read from one Server view, so the
   // state, the bodies it names and the match it belongs to are of one moment
   // (ADR-0005), however the Network I/O thread interleaves with this one; the
-  // events taken are of that view's match too. The snapshot and characters
+  // events taken are of that view's match too. The updates and characters
   // are lent from converted_view, so the frame must run before the next call.
   presentation::FrameInput NextFrameInput() {
     const LatestTick latest = GetLatestTick();
@@ -428,7 +428,7 @@ struct ClientRuntime::Impl {
         .aim = aim,
         .fire = fire,
         .local_entity = std::nullopt,
-        .snapshot = converted_view.Snapshot(),
+        .updates = converted_view.Updates(),
         .characters = converted_view.Characters(),
         .shots = {},
         .hit_confirmations = static_cast<std::uint32_t>(session->TakeHitConfirmations(*view).size()),

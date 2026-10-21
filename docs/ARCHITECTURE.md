@@ -205,12 +205,13 @@ policy (ADR-0060).
     - PredictionWorld (ECS) — consumes commands + authoritative server state;
       runs client-side prediction and reconciliation (ADR-0004); emits an
       immutable prediction state each simulation tick
-    - PresentationWorld (ECS) — consumes the prediction state; interpolates/
-      smooths for display; emits presentation state each render frame. One
-      module (augusta_presentation) holds it and its phases, including the
-      animation engine behind its Animation phase. Cosmetic bodies and Props'
-      kinematic poses, which are not gameplay, get a client-only dynamics module
-      with the first of them (ADR-0045)
+    - PresentationWorld (ECS) — consumes the prediction state and every
+      Authoritative State update since its last frame; interpolates/smooths for
+      display; emits presentation state each render frame. One module
+      (augusta_presentation) holds it and its phases, including the animation
+      engine behind its Animation phase. Cosmetic bodies and Props' kinematic
+      poses, which are not gameplay, get a client-only dynamics module with the
+      first of them (ADR-0045)
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; draws into the
   client's single Window, which the client Runtime owns and lends it, with the
   GPU device and swapchain it owns, consumes presentation state and draws text
@@ -399,7 +400,7 @@ after the tick.
 1. Client predicts local fire feedback (muzzle flash, sound, recoil) immediately
 2. Client sends the fire command to server via GameNetworkingSockets, with the
    Authoritative State tick it was showing and the interpolation fraction
-3. Server fixes the Shooter's delay (capped at 250 ms) and announces the Shot
+3. Server fixes the Shooter's delay (capped at 300 ms) and announces the Shot
    (shooter, server tick, origin, direction) reliably to every client
 4. Server simulates bullet trajectory (custom ballistics: gravity, travel time),
    testing each tick's segment against the Map and against player hitboxes as

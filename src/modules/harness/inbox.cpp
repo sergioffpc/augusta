@@ -19,6 +19,29 @@
 
 namespace augusta::harness {
 
+namespace {
+
+// The two below are the only writers of the view's Authoritative States, so
+// authoritative is always the last of recent_authoritative.
+
+// Forgets the newest Authoritative State and the recent ones.
+void ForgetStates(ServerView& view) {
+  view.authoritative.reset();
+  view.recent_authoritative.clear();
+}
+
+// Keeps state as the newest, and the last of the recent ones, the oldest of
+// which goes once kRecentStatesKept are held.
+void KeepState(ServerView& view, AuthoritativeState state) {
+  if (view.recent_authoritative.size() == kRecentStatesKept) {
+    view.recent_authoritative.erase(view.recent_authoritative.begin());
+  }
+  view.recent_authoritative.push_back(state);
+  view.authoritative = std::move(state);
+}
+
+}  // namespace
+
 void Inbox::Receive(link::ServerMessage message) {
   std::visit(
       [this]<typename Message>(Message&& said) {
@@ -107,7 +130,7 @@ void Inbox::OnMatchStart(MatchStart start) {
     ++next.matches_started;
     next.in_match = true;
     next.match_end.reset();
-    next.authoritative.reset();
+    ForgetStates(next);
     next.dead.clear();
     next.replay_view.reset();
   });
@@ -117,7 +140,7 @@ void Inbox::OnMatchStart(MatchStart start) {
 void Inbox::OnMatchEnd(const MatchEnd& end) {
   Publish([&](ServerView& next) {
     next.in_match = false;
-    next.authoritative.reset();
+    ForgetStates(next);
     next.replay_view.reset();
     next.match_end = end;
   });
@@ -203,7 +226,7 @@ void Inbox::OnAuthoritativeState(AuthoritativeState state) {
   if (current->authoritative.has_value() && state.tick <= current->authoritative->tick) {
     return;
   }
-  Publish([&](ServerView& next) { next.authoritative = std::move(state); });
+  Publish([&](ServerView& next) { KeepState(next, std::move(state)); });
 }
 
 // Keeps view if it is newer than the one held and of the Replay in progress,

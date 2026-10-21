@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "augusta/audio.h"
@@ -38,7 +39,7 @@ std::vector<CuePlay> CueSelector::Select(const FrameInput& input, std::uint32_t 
   if (HitTaken(input.health)) {
     cues.push_back(CuePlay{.cue = audio::Cue::kHitTaken, .position = std::nullopt});
   }
-  RememberPositions(input.snapshot);
+  RememberPositions(input.updates);
   // Heard from where the body was, the local player's own included; one never
   // reported has nowhere to be heard from.
   for (const EntityId victim : input.deaths) {
@@ -61,9 +62,9 @@ bool CueSelector::HitTaken(const std::optional<float>& health) {
   return dropped;
 }
 
-void CueSelector::RememberPositions(const WorldSnapshot* snapshot) {
-  if (snapshot != nullptr) {
-    for (const DynamicBody& body : snapshot->bodies) {
+void CueSelector::RememberPositions(std::span<const WorldSnapshot> updates) {
+  for (const WorldSnapshot& update : updates) {
+    for (const DynamicBody& body : update.bodies) {
       last_positions_.insert_or_assign(body.entity, body.state.position);
     }
   }

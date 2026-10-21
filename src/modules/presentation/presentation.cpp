@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -123,9 +124,9 @@ struct World::Impl {
   // Every other player's buffered updates, on the server's timeline, and the
   // render side's estimate of that timeline's current time, which render frame
   // deltas advance (see interpolation.h). The ticks of the first and the last
-  // snapshot recorded into remote_interpolator in the match: the last, so a
-  // repeated snapshot (the network thread hasn't received a new tick since the
-  // last RunFrame call) is not recorded again, and both for the frame's Seen time,
+  // update recorded into remote_interpolator in the match: the last, so an
+  // update a previous frame recorded (the frame's updates reach back past the
+  // previous frame) is not recorded again, and both for the frame's Seen time,
   // which is of nothing outside what there is to show.
   RemoteInterpolator remote_interpolator;
   ServerClock server_clock;
@@ -182,24 +183,27 @@ struct World::Impl {
     local_offset = correction.Update(shown.total_correction, delta_time);
 
     server_clock.Advance(delta_time);
-    const WorldSnapshot* snapshot = input->snapshot;
+    const std::span<const WorldSnapshot> updates = input->updates;
     // Outside a match there is no one to show (ADR-0043).
-    if (snapshot == nullptr) {
+    if (updates.empty()) {
       remote_interpolator.Sync({});
       server_clock.Reset();
       first_recorded_tick.reset();
       last_recorded_tick.reset();
       dead.clear();
       spectator = Spectator{};
-    } else if (!last_recorded_tick.has_value() || snapshot->tick > *last_recorded_tick) {
-      RecordSnapshot(*snapshot);
+    }
+    for (const WorldSnapshot& update : updates) {
+      if (!last_recorded_tick.has_value() || update.tick > *last_recorded_tick) {
+        RecordUpdate(update);
+      }
     }
     remote_players.clear();
     seen_time.reset();
-    if (const std::optional<double> now = server_clock.Now(); now.has_value() && snapshot != nullptr) {
+    if (const std::optional<double> now = server_clock.Now(); now.has_value() && !updates.empty()) {
       const double sample_time = *now - kInterpolationDelay;
       remote_players = remote_interpolator.Sample(sample_time);
-      seen_time = SeenTimeAt(sample_time, snapshot->tick_duration, *first_recorded_tick, *last_recorded_tick);
+      seen_time = SeenTimeAt(sample_time, updates.back().tick_duration, *first_recorded_tick, *last_recorded_tick);
     }
     // A Death is reliable and can overtake the update that no longer lists its body.
     dead.insert(dead.end(), input->deaths.begin(), input->deaths.end());
@@ -231,7 +235,7 @@ struct World::Impl {
 
   // Records every body in world but the local player's at world's time on the
   // server's timeline, and forgets whoever it no longer holds.
-  void RecordSnapshot(const WorldSnapshot& world) {
+  void RecordUpdate(const WorldSnapshot& world) {
     const double server_time = static_cast<double>(world.tick) * world.tick_duration;
     server_clock.Observe(server_time);
     std::vector<EntityId> present;

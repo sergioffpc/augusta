@@ -239,6 +239,16 @@ target_link_libraries(augusta_simulation_tests PRIVATE augusta_simulation GTest:
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 
+# The Shooter's delay's cap held to a real client's budget: simulation's cap
+# against presentation's Interpolation delay (ADR-0044).
+add_executable(augusta_shooters_delay_budget_tests shooters_delay_budget_test.cpp)
+target_link_libraries(
+  augusta_shooters_delay_budget_tests
+  PRIVATE augusta_simulation augusta_presentation GTest::gtest GTest::gtest_main
+)
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_shooters_delay_budget_tests DISCOVERY_TIMEOUT 30)
+
 # SimulationWorld with a Game policy script the test chooses (ADR-0022).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(

@@ -121,16 +121,20 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
     | NFR-02     | 50 ms   | 10 / 30 ms          | 5%   | 2% (20 ms)              |
     | Worst case | 75 ms   | 10 / 30 ms          | 10%  | 5% (20 ms)              |
 
-    The worst case is the most this netcode is held to: an Agent's Shooter's
-    delay (about a round trip, the jitter both ways and the ticks its commands
-    wait queued) stays within lag compensation's 250 ms cap. At every profile,
-    every player must see every Match end with no disconnect; no single
-    correction may reach the 2 m that the presentation shows at once instead of
-    sliding (ADR-0004), and corrections may happen on at most 5% of the players'
-    Match ticks; and at least 40% of the rounds fired must come back as Hit
-    confirmations, so a shot fired within the compensation window is confirmed.
-    The bounds are several times what a working netcode shows at every profile:
-    room for a noisy runner, with a regression still well past them.
+    The worst case is the most this netcode is held to: its 150 ms round trip is
+    the one lag compensation's 300 ms cap is set to cover (ADR-0044). An Agent
+    reports the newest update as its Seen time, so its Shooter's delay (about a
+    round trip, the jitter both ways and the ticks its commands wait queued)
+    leaves out the Interpolation delay a real client adds; a real client's
+    budget is held by the budget test, pure arithmetic over the cap and the
+    Interpolation delay, instead. At every profile, every player must see every
+    Match end with no disconnect; no single correction may reach the 2 m that
+    the presentation shows at once instead of sliding (ADR-0004), and
+    corrections may happen on at most 5% of the players' Match ticks; and at
+    least 40% of the rounds fired must come back as Hit confirmations, so a shot
+    fired within the compensation window is confirmed. The bounds are several
+    times what a working netcode shows at every profile: room for a noisy
+    runner, with a regression still well past them.
 
 - **NFR-03 through a golden file.** Reference trajectories live in the
   repository, and the test, on both the Windows and Linux runners, compares what

@@ -77,15 +77,25 @@ inline constexpr float kTargetQueuedCommands = 1.5F;
 inline constexpr float kPacingPerCommand = 0.04F;
 
 /// The most a client's Tick may be lengthened or shortened, as a fraction of
-/// its nominal duration. It must exceed the drift between a client's clock and
-/// the server's that pacing is to absorb.
+/// its nominal duration, while no more than kBacklogCommands are held. It must
+/// exceed the drift between a client's clock and the server's that pacing is to
+/// absorb.
 inline constexpr float kMaxPacing = 0.05F;
+
+/// More of a client's commands held than this is a backlog, such as a gap in
+/// its commands leaves once they arrive, not drift.
+inline constexpr std::uint8_t kBacklogCommands = 3;
+
+/// The most a client's Tick may be lengthened while a backlog is held, as a
+/// fraction of its nominal duration: enough that 7 held drain in about 0.75 s.
+inline constexpr float kMaxBacklogPacing = 0.25F;
 
 /// How long a client's next Tick lasts, nominal being the server's tick
 /// duration, when the server last said it held queued_commands of its commands
 /// (ADR-0038): longer when there are more than kTargetQueuedCommands (the client
-/// runs ahead), shorter when there are fewer, and never more than kMaxPacing off
-/// nominal. Only when the client's Ticks happen changes: each still simulates a
+/// runs ahead), shorter when there are fewer, never more than kMaxPacing shorter,
+/// and no more than kMaxPacing longer, or kMaxBacklogPacing while more than
+/// kBacklogCommands are held. Only when the client's Ticks happen changes: each still simulates a
 /// nominal tick, and the server still consumes one command per Tick.
 [[nodiscard]] Clock::duration PacedTickDuration(Clock::duration nominal, std::uint8_t queued_commands);
 

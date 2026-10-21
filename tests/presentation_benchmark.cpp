@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <filesystem>
+#include <span>
 #include <vector>
 
 #include <benchmark/benchmark.h>
@@ -69,7 +70,7 @@ std::vector<PlayerCharacter> FullMatchCharacters() {
 FrameInput FrameInputFor(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
   FrameInput frame;
   frame.local_entity = kLocal;
-  frame.snapshot = &snapshot;
+  frame.updates = std::span(&snapshot, 1);
   frame.characters = characters;
   return frame;
 }

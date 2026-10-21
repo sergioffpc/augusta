@@ -310,7 +310,8 @@ actions taken on it (ADR-0023).
 **Server view**: Everything the server has told one client, as of one moment
 (harness::ServerView): published whole by the client's Network I/O thread for
 every message that changes it and never changed after, so a reader on another
-thread sees one moment (ADR-0005). _Avoid_: Snapshot (an Authoritative State
+thread sees one moment (ADR-0005). It holds the newest Authoritative State
+update and the recent ones before it. _Avoid_: Snapshot (an Authoritative State
 update is not one), network state
 
 **SimulationWorld**: The Authoritative server's one world: every player and
@@ -328,9 +329,9 @@ to PresentationWorld and never changed after (ADR-0005). _Avoid_: Predicted
 snapshot, client state
 
 **PresentationWorld**: The client's world run once per render frame: it turns
-the Prediction State and the Authoritative State updates into what the frame
-shows, showing the other players an Interpolation delay behind and smoothing
-Reconciliation's jumps. _Avoid_: Render world, scene
+the Prediction State and every Authoritative State update since the last frame
+into what the frame shows, showing the other players an Interpolation delay
+behind and smoothing Reconciliation's jumps. _Avoid_: Render world, scene
 
 **Data-driven configuration**: Tunable values (e.g. weapon/ammo damage, stamina
 rules) written as a Lua table script rather than expressed as mechanism code or
@@ -515,13 +516,13 @@ punch
 
 **Shooter's delay**: How far in the past the shooter saw other players when it
 fired: from the Seen time its fire Command reports to the tick the server takes
-that Command in, capped at 250 ms. Fixed when the Shot is fired, it holds for
+that Command in, capped at 300 ms. Fixed when the Shot is fired, it holds for
 the bullet's whole flight (ADR-0044). _Avoid_: Ping, lag, latency, rewind time
 (the RTT is only part of it, next to the Interpolation delay)
 
 **Hitbox history**: Every player's pose (position, stance and facing) on each of
 the Authoritative server's recent ticks, as that tick's Authoritative State
-reported it: enough ticks to cover the Shooter's delay's cap, 15 at 60 Hz. What
+reported it: enough ticks to cover the Shooter's delay's cap, 18 at 60 Hz. What
 Lag compensation places a player's Hitboxes by. _Avoid_: Rewind buffer, position
 history, snapshot history
 

@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -22,7 +23,6 @@ using augusta::client::CharactersOf;
 using augusta::client::CombatEffectsOf;
 using augusta::client::ConvertedServerView;
 using augusta::client::MatchEndOf;
-using augusta::client::SnapshotOf;
 using augusta::client::ViewsOf;
 using augusta::client::WithSeenTime;
 using augusta::harness::EntityId;
@@ -34,30 +34,6 @@ constexpr float kTolerance = 1e-5F;
 augusta::harness::MatchStart TwoPlayerMatch() {
   return {.players = {{.session = SessionId{7}, .entity = EntityId{70}, .character = "medic"},
                       {.session = SessionId{3}, .entity = EntityId{30}, .character = "sniper"}}};
-}
-
-TEST(SnapshotOfTest, IsNoneOutsideAMatch) {
-  augusta::harness::ServerView view;
-  view.accepted = augusta::harness::Admission{.tick_rate_hz = 60, .character = ""};
-
-  EXPECT_FALSE(SnapshotOf(view).has_value());
-}
-
-TEST(SnapshotOfTest, CarriesEveryBodyAtTheServersTickDuration) {
-  augusta::harness::ServerView view;
-  view.accepted = augusta::harness::Admission{.tick_rate_hz = 50, .character = ""};
-  view.authoritative = augusta::harness::AuthoritativeState{
-      .tick = 12, .bodies = {{.entity = EntityId{4}, .yaw = 1.5F}, {.entity = EntityId{9}}}};
-
-  const auto snapshot = SnapshotOf(view);
-
-  ASSERT_TRUE(snapshot.has_value());
-  EXPECT_EQ(snapshot->tick, 12U);
-  EXPECT_DOUBLE_EQ(snapshot->tick_duration, 0.02);
-  ASSERT_EQ(snapshot->bodies.size(), 2U);
-  EXPECT_EQ(snapshot->bodies[0].entity, augusta::presentation::EntityId{4});
-  EXPECT_FLOAT_EQ(snapshot->bodies[0].yaw, 1.5F);
-  EXPECT_EQ(snapshot->bodies[1].entity, augusta::presentation::EntityId{9});
 }
 
 // Requirements: US-17
@@ -157,22 +133,49 @@ TEST(WithSeenTimeTest, ReportsNoneWithoutASeenTime) {
 
 // A Server view in the matches_started-th match, at its Authoritative State of
 // tick naming bodies.
-augusta::harness::ServerView InMatch(std::uint32_t matches_started, augusta::tick::Tick tick,
-                                     std::vector<augusta::harness::EntityBody> bodies) {
+// A view of match matches_started whose recent Authoritative State updates
+// are recent, oldest first, the newest also its authoritative one.
+augusta::harness::ServerView InMatch(std::uint32_t matches_started,
+                                     std::vector<augusta::harness::AuthoritativeState> recent) {
   augusta::harness::ServerView view;
   view.accepted = augusta::harness::Admission{.tick_rate_hz = 50, .character = ""};
   view.match_start = TwoPlayerMatch();
   view.matches_started = matches_started;
   view.in_match = true;
-  view.authoritative = augusta::harness::AuthoritativeState{.tick = tick, .bodies = std::move(bodies)};
+  if (!recent.empty()) {
+    view.authoritative = recent.back();
+  }
+  view.recent_authoritative = std::move(recent);
   return view;
+}
+
+// A view of match matches_started whose only update is of tick, with bodies.
+augusta::harness::ServerView InMatch(std::uint32_t matches_started, augusta::tick::Tick tick,
+                                     std::vector<augusta::harness::EntityBody> bodies) {
+  return InMatch(matches_started, {{.tick = tick, .bodies = std::move(bodies)}});
+}
+
+std::vector<augusta::tick::Tick> TicksOf(std::span<const augusta::presentation::WorldSnapshot> updates) {
+  std::vector<augusta::tick::Tick> ticks;
+  for (const augusta::presentation::WorldSnapshot& update : updates) {
+    ticks.push_back(update.tick);
+  }
+  return ticks;
 }
 
 TEST(ConvertedServerViewTest, IsNothingBeforeTheFirstView) {
   const ConvertedServerView converted;
 
-  EXPECT_EQ(converted.Snapshot(), nullptr);
+  EXPECT_TRUE(converted.Updates().empty());
   EXPECT_TRUE(converted.Characters().empty());
+}
+
+TEST(ConvertedServerViewTest, IsNoUpdateBeforeTheFirstAuthoritativeState) {
+  ConvertedServerView converted;
+
+  converted.Update(InMatch(1, {}));
+
+  EXPECT_TRUE(converted.Updates().empty());
 }
 
 TEST(ConvertedServerViewTest, CarriesTheNewestAuthoritativeStateAtTheServersTickDuration) {
@@ -180,30 +183,56 @@ TEST(ConvertedServerViewTest, CarriesTheNewestAuthoritativeStateAtTheServersTick
 
   converted.Update(InMatch(1, 12, {{.entity = EntityId{4}, .yaw = 1.5F}, {.entity = EntityId{9}}}));
 
-  const augusta::presentation::WorldSnapshot* snapshot = converted.Snapshot();
-  ASSERT_NE(snapshot, nullptr);
-  EXPECT_EQ(snapshot->tick, 12U);
-  EXPECT_DOUBLE_EQ(snapshot->tick_duration, 0.02);
-  ASSERT_EQ(snapshot->bodies.size(), 2U);
-  EXPECT_EQ(snapshot->bodies[0].entity, augusta::presentation::EntityId{4});
-  EXPECT_FLOAT_EQ(snapshot->bodies[0].yaw, 1.5F);
+  ASSERT_EQ(converted.Updates().size(), 1U);
+  const augusta::presentation::WorldSnapshot& update = converted.Updates()[0];
+  EXPECT_EQ(update.tick, 12U);
+  EXPECT_DOUBLE_EQ(update.tick_duration, 0.02);
+  ASSERT_EQ(update.bodies.size(), 2U);
+  EXPECT_EQ(update.bodies[0].entity, augusta::presentation::EntityId{4});
+  EXPECT_FLOAT_EQ(update.bodies[0].yaw, 1.5F);
+}
+
+// A render frame below the tick rate is handed every update that arrived since
+// the last, not the newest alone.
+// Requirements: US-17
+TEST(ConvertedServerViewTest, CarriesEveryRecentUpdateOfTheServerViewOldestFirst) {
+  ConvertedServerView converted;
+  converted.Update(InMatch(1, {{.tick = 10, .bodies = {}}}));
+
+  converted.Update(InMatch(1, {{.tick = 10, .bodies = {}},
+                               {.tick = 11, .bodies = {}},
+                               {.tick = 12, .bodies = {}},
+                               {.tick = 13, .bodies = {}}}));
+
+  EXPECT_EQ(TicksOf(converted.Updates()), (std::vector<augusta::tick::Tick>{10, 11, 12, 13}));
+}
+
+TEST(ConvertedServerViewTest, DropsTheUpdatesTheServerViewNoLongerKeeps) {
+  ConvertedServerView converted;
+  converted.Update(InMatch(1, {{.tick = 10, .bodies = {}}, {.tick = 11, .bodies = {}}}));
+
+  converted.Update(InMatch(1, {{.tick = 11, .bodies = {}}, {.tick = 12, .bodies = {}}}));
+
+  EXPECT_EQ(TicksOf(converted.Updates()), (std::vector<augusta::tick::Tick>{11, 12}));
 }
 
 // The Inbox publishes an Authoritative State only newer than the one it holds,
-// so a view of the same match at the same tick holds the same state: render
-// frames in between reuse what the first converted.
-TEST(ConvertedServerViewTest, ConvertsAnAuthoritativeStateOnlyOnceForEveryRenderFrameItIsNewest) {
+// so a view of the same match holds the same state at a tick already converted:
+// render frames in between reuse what the first converted.
+TEST(ConvertedServerViewTest, ConvertsAnAuthoritativeStateOnlyOnceForEveryRenderFrameItIsRecent) {
   ConvertedServerView converted;
   converted.Update(InMatch(1, 12, {{.entity = EntityId{4}}}));
 
   converted.Update(InMatch(1, 12, {{.entity = EntityId{4}}, {.entity = EntityId{9}}}));
-  ASSERT_NE(converted.Snapshot(), nullptr);
-  EXPECT_EQ(converted.Snapshot()->bodies.size(), 1U);
+  ASSERT_EQ(converted.Updates().size(), 1U);
+  EXPECT_EQ(converted.Updates()[0].bodies.size(), 1U);
 
-  converted.Update(InMatch(1, 13, {{.entity = EntityId{4}}, {.entity = EntityId{9}}}));
-  ASSERT_NE(converted.Snapshot(), nullptr);
-  EXPECT_EQ(converted.Snapshot()->tick, 13U);
-  EXPECT_EQ(converted.Snapshot()->bodies.size(), 2U);
+  converted.Update(InMatch(1, {{.tick = 12, .bodies = {{.entity = EntityId{4}}, {.entity = EntityId{9}}}},
+                               {.tick = 13, .bodies = {{.entity = EntityId{4}}, {.entity = EntityId{9}}}}}));
+  ASSERT_EQ(converted.Updates().size(), 2U);
+  EXPECT_EQ(converted.Updates()[0].bodies.size(), 1U);
+  EXPECT_EQ(converted.Updates()[1].tick, 13U);
+  EXPECT_EQ(converted.Updates()[1].bodies.size(), 2U);
 }
 
 TEST(ConvertedServerViewTest, ConvertsTheNextMatchsStateEvenAtATickAlreadySeen) {
@@ -212,22 +241,23 @@ TEST(ConvertedServerViewTest, ConvertsTheNextMatchsStateEvenAtATickAlreadySeen) 
 
   converted.Update(InMatch(2, 12, {{.entity = EntityId{5}}}));
 
-  ASSERT_NE(converted.Snapshot(), nullptr);
-  ASSERT_EQ(converted.Snapshot()->bodies.size(), 1U);
-  EXPECT_EQ(converted.Snapshot()->bodies[0].entity, augusta::presentation::EntityId{5});
+  ASSERT_EQ(converted.Updates().size(), 1U);
+  ASSERT_EQ(converted.Updates()[0].bodies.size(), 1U);
+  EXPECT_EQ(converted.Updates()[0].bodies[0].entity, augusta::presentation::EntityId{5});
 }
 
-TEST(ConvertedServerViewTest, IsNoSnapshotOnceTheMatchEnds) {
+TEST(ConvertedServerViewTest, IsNoUpdateOnceTheMatchEnds) {
   ConvertedServerView converted;
   augusta::harness::ServerView view = InMatch(1, 12, {{.entity = EntityId{4}}});
   converted.Update(view);
 
   view.in_match = false;
   view.authoritative.reset();
+  view.recent_authoritative.clear();
   view.match_end = augusta::harness::MatchEnd{};
   converted.Update(view);
 
-  EXPECT_EQ(converted.Snapshot(), nullptr);
+  EXPECT_TRUE(converted.Updates().empty());
 }
 
 TEST(ConvertedServerViewTest, NamesEveryPlayersCharacterInSessionOrder) {
