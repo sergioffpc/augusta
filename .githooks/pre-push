@@ -1,33 +1,9 @@
 #!/bin/bash
-# Runs yamllint on changed YAML files, luacheck on changed Lua files, taplo on
-# changed TOML files, ruff on changed Python, shellcheck on changed shell
-# scripts, pymarkdown on changed Markdown, actionlint on changed workflows and,
-# last, clang-tidy on changed C++ files before pushing. Git LFS uploads still
-# run after the checks pass.
+# Runs the Makefile's lint-files on the files the push changes before pushing:
+# format-check's linters, then clang-tidy and include-cleaner as tidy runs
+# them. Git LFS uploads still run after the checks pass.
 
 readonly ZERO_SHA=0000000000000000000000000000000000000000
-
-# Prints the files read from stdin that exist, once each.
-existing() {
-  sort -u | while IFS= read -r f; do [[ -f "${f}" ]] && echo "${f}"; done
-}
-
-# Prints the changed files one linter checks: if its config changed, the whole
-# tree it covers.
-# Arguments:
-#   The changed files, one per line.
-#   A regex matching the linter's config file.
-#   A regex matching the files it checks.
-#   The git ls-files pathspecs of the whole tree it covers.
-changed_of() {
-  local changed="$1" config="$2" pattern="$3"
-  shift 3
-  if printf '%s\n' "${changed}" | grep -qE "${config}"; then
-    git ls-files -- "$@"
-  else
-    printf '%s\n' "${changed}" | grep -E "${pattern}" | existing
-  fi
-}
 
 # Hands the push to Git LFS, unless this run is the checks alone: macOS runs
 # those in the dev container and LFS on the host, with the host's credentials.
@@ -36,30 +12,6 @@ changed_of() {
 lfs_pre_push() {
   [[ -n "${PRE_PUSH_CHECKS_ONLY:-}" ]] && return
   printf '%s\n' "$1" | git lfs pre-push "${@:2}"
-}
-
-# Prints the message that stops a push on a failed check, to stderr.
-# Arguments:
-#   The check, then what to do about its findings.
-failed() {
-  echo "pre-push: $1 failed - $2, or push with --no-verify to skip." >&2
-}
-
-# Runs a linter, stopping the push if it fails.
-# Arguments:
-#   The linter's name, then its command and arguments.
-lint() {
-  local name="$1"
-  shift
-  "$@" || {
-    failed "${name}" "fix the findings above"
-    exit 1
-  }
-}
-
-# Prints how many lines its argument has.
-count() {
-  echo "$1" | wc -l | tr -d ' '
 }
 
 main() {
@@ -86,17 +38,16 @@ main() {
     exit $?
   fi
 
-  local windows build_dir
+  # The debug build's compile commands, or the release build's in a checkout
+  # that only ran `make test`, so the push needs no second build.
+  local preset
   case "$(uname -s)" in
-    MINGW* | MSYS* | CYGWIN*) windows=1 build_dir=build/x64-windows-debug ;;
-    *) windows=0 build_dir=build/x64-linux-debug ;;
+    MINGW* | MSYS* | CYGWIN*) preset=windows-debug ;;
+    *) preset=linux-debug ;;
   esac
-  # A checkout that only ran `make test` has the release build alone: its
-  # compile commands serve clang-tidy as well, so the push needs no second
-  # build.
-  if [[ ! -f "${build_dir}/compile_commands.json" &&
-    -f "${build_dir%-debug}/compile_commands.json" ]]; then
-    build_dir=${build_dir%-debug}
+  if [[ ! -f "build/x64-${preset}/compile_commands.json" &&
+    -f "build/x64-${preset%-debug}/compile_commands.json" ]]; then
+    preset=${preset%-debug}
   fi
 
   # The files touched by the pushed commits the remote does not have yet: for
@@ -119,212 +70,17 @@ EOF
 $(git diff --name-only --diff-filter=ACMR HEAD)
 $(git ls-files --others --exclude-standard)"
   fi
-
-  # Lint YAML/config files changed by the commits being pushed. If the shared
-  # lint/ignore rules change, lint the whole tree. Helm templates and the
-  # generated Flux bundle are excluded by .yamllint.
-  local yaml_files
-  if printf '%s\n' "${files}" \
-    | grep -qE '^\.(yamlfmt|yamllint|yamlignore|gitignore)$'; then
-    yaml_files=.
-  else
-    yaml_files=$(printf '%s\n' "${files}" \
-      | grep -E '(^\.yamlfmt$|^\.yamllint$|\.(yaml|yml)$)' \
-      | grep -vE '^charts/augustad/templates/' \
-      | grep -vE '^clusters/onprem/flux-system/gotk-components\.yaml$' \
-      | existing)
-  fi
-
-  # Lint Lua scripts changed by the commits being pushed. If luacheck's rules
-  # (the engine sandbox's standard library among them) change, lint every
-  # script.
-  local lua_files
-  lua_files=$(changed_of "${files}" '^\.luacheckrc$' '\.lua$' '*.lua')
-
-  # Lint TOML files changed by the commits being pushed (taplo's own config
-  # among them, so a change to it is checked like any other).
-  local toml_files
-  toml_files=$(printf '%s\n' "${files}" | grep -E '\.toml$' | existing)
-
-  # The changed files of every other linter's. Workflows are linted whole by
-  # actionlint, which reads them together (a workflow's calls into another are
-  # checked against it).
-  local python_files shell_files markdown_files
-  local workflows_changed
-  python_files=$(changed_of "${files}" '^ruff\.toml$' '\.py$' \
-    '*.py' ':!:third_party/*')
-  shell_files=$(changed_of "${files}" '^\.shellcheckrc$' \
-    '(\.sh$|^\.githooks/)' '*.sh' '.githooks/*')
-  markdown_files=$(changed_of "${files}" '^\.pymarkdown\.json$' '\.md$' \
-    '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
-    | grep -vxF CHANGELOG.md)
-  workflows_changed=$(printf '%s\n' "${files}" \
-    | grep -E '^\.github/(workflows/|actionlint\.yaml$)' || true)
-
-  # src/client, src/modules/renderer and the window module's
-  # GLFW half build only with the client, which CI's Linux run leaves off, so
-  # they and the client's and the Renderer's tests are held to the full profile
-  # on Windows alone, as CI's client job lints them. The audio module's output
-  # device builds from different sources with the client and without it, and a
-  # local build has the client while CI's Linux run hasn't, so each side skips
-  # what the other lints (as the Makefile's tidy target does).
-  local changed_files="${files}"
-  local other_platform tidied
-  if [[ "${windows}" = 1 ]]; then
-    other_platform='src/modules/audio/output_none\.cpp'
-    tidied='^(src/.*|tests/(client|renderer)_[^/]*)\.cpp$'
-  else
-    other_platform='src/(client|modules/renderer)/.*|src/modules/audio/'
-    other_platform+='(output_none|output_miniaudio|miniaudio)\.cpp'
-    other_platform+='|src/modules/window/(window|glfw_keys)\.cpp'
-    tidied='^src/.*\.cpp$'
-  fi
-  files=$(echo "${files}" | grep -E "${tidied}" \
-    | grep -vxE "${other_platform}" \
-    | existing)
-
-  # The rest of the changed src and tests .cpp files, which get
-  # include-cleaner alone (as the Makefile's tidy target runs it, which says
-  # why -w): the tests, except the client's and the Renderer's on Windows -
-  # those the
-  # debug build has compile commands for (its paths are absolute, with \\ for
-  # separators on Windows), so not the other platform's.
-  local include_files="" compiled
-  if [[ -f "${build_dir}/compile_commands.json" ]]; then
-    # shellcheck disable=SC1003 # a literal backslash, not an escaped quote
-    compiled=$(tr '\\' '/' <"${build_dir}/compile_commands.json" \
-      | tr -s '/' | grep '"file": ')
-    include_files=$(echo "${changed_files}" | grep -E '^(src|tests)/.*\.cpp$' \
-      | grep -vxF "$(printf '%s\n' "${files}")" \
-      | existing \
-      | while IFS= read -r f; do
-        echo "${compiled}" | grep -qF "/${f}\"" && echo "${f}"
-      done)
-  fi
-
-  if [[ -z "${files}${include_files}${yaml_files}${lua_files}${toml_files}" &&
-    -z "${python_files}${shell_files}${markdown_files}" &&
-    -z "${workflows_changed}" ]]; then
-    lfs_pre_push "${push_refs}" "$@"
-    exit $?
-  fi
-
-  if [[ -n "${yaml_files}" ]]; then
-    local yamllint
-    if command -v yamllint >/dev/null 2>&1; then
-      yamllint=(yamllint)
-    elif command -v uv >/dev/null 2>&1; then
-      yamllint=(uv tool run --from yamllint==1.37.1 yamllint)
-    else
-      echo "pre-push: yamllint (or uv) not found on PATH; install yamllint" \
-        "1.37.1 before pushing YAML changes." >&2
-      exit 2
-    fi
-    # One argument per file; YAML paths have no spaces.
-    # shellcheck disable=SC2086
-    "${yamllint[@]}" --strict -c .yamllint ${yaml_files} || {
-      failed yamllint "fix the YAML errors above"
-      exit 1
-    }
-  fi
-
-  if [[ -n "${lua_files}" ]]; then
-    command -v luacheck >/dev/null 2>&1 || {
-      echo "pre-push: luacheck not found on PATH; install luacheck 1.2.0" \
-        "before pushing Lua changes." >&2
-      exit 2
-    }
-    # One argument per file; script paths have no spaces.
-    # shellcheck disable=SC2086
-    luacheck --quiet ${lua_files} || {
-      failed luacheck "fix the Lua warnings above"
-      exit 1
-    }
-  fi
-
-  if [[ -n "${toml_files}" ]]; then
-    command -v taplo >/dev/null 2>&1 || {
-      echo "pre-push: taplo not found on PATH; install taplo 0.10.0 before" \
-        "pushing TOML changes." >&2
-      exit 2
-    }
-    # One argument per file; TOML paths have no spaces.
-    # shellcheck disable=SC2086
-    taplo lint ${toml_files} 2>/dev/null || {
-      failed "taplo lint" "run it again to see why"
-      exit 1
-    }
-  fi
-
-  # The linters uv runs, at the versions CI pins (as the Makefile's
-  # format-check).
-  if [[ -n "${python_files}${shell_files}${markdown_files}" ||
-    -n "${workflows_changed}" ]]; then
-    command -v uv >/dev/null 2>&1 || {
-      echo "pre-push: uv not found on PATH; install uv before pushing" \
-        "Python, shell, Markdown or workflow changes." >&2
-      exit 2
-    }
-  fi
-  local shellcheck=(--from shellcheck-py==0.11.0.1 shellcheck)
-  # One argument per file; tracked paths have no spaces.
-  # shellcheck disable=SC2086
-  [[ -z "${python_files}" ]] \
-    || lint ruff uv tool run ruff@0.16.10 check ${python_files}
-  # shellcheck disable=SC2086
-  [[ -z "${shell_files}" ]] \
-    || lint shellcheck uv tool run "${shellcheck[@]}" ${shell_files}
-  # shellcheck disable=SC2086
-  [[ -z "${markdown_files}" ]] \
-    || lint pymarkdown uv tool run --from pymarkdownlnt==0.9.40 \
-      pymarkdown --config .pymarkdown.json scan ${markdown_files}
-  [[ -z "${workflows_changed}" ]] \
-    || lint actionlint uv tool run --from actionlint-py==1.7.12.25 \
-      --with shellcheck-py==0.11.0.1 actionlint
-
-  # clang-tidy, through vcenv.cmd on Windows: last, as it takes minutes where
-  # the linters above take seconds, so a push they fail fails fast. Through
-  # ctcache where scripts/bootstrap.sh installed it, into the Makefile's tidy
-  # target's results, so a file that passed there or in an earlier push is
-  # skipped.
-  local tidy=(clang-tidy --quiet -p="${build_dir}")
-  if command -v clang-tidy-cache >/dev/null 2>&1; then
-    local top
-    top=$(pwd)
-    [[ "${windows}" = 1 ]] && top=$(cygpath -m "${top}")
-    CTCACHE_DIR="${top}/build/ctcache/$(clang-tidy --version | tr ' ' '\n' \
-      | grep -m1 '^[1-9]')"
-    export CTCACHE_DIR
-    tidy=(clang-tidy-cache "${tidy[@]}")
-  fi
-  if [[ "${windows}" = 1 ]]; then
-    tidy=(scripts/vcenv.cmd "${tidy[@]}")
-  fi
+  files=$(printf '%s\n' "${files}" | sort -u \
+    | while IFS= read -r f; do [[ -f "${f}" ]] && echo "${f}"; done)
 
   if [[ -n "${files}" ]]; then
-    if [[ ! -f "${build_dir}/compile_commands.json" ]]; then
-      local preset
-      preset=$(basename "${build_dir}" | sed 's/^x64-//')
-      echo "pre-push: ${build_dir}/compile_commands.json not found -" \
-        "configure a build first (make configure PRESET=${preset};" \
-        "on macOS, through scripts/dev-container.sh)," \
-        "or push with --no-verify to skip clang-tidy." >&2
-      exit 1
-    fi
-
-    echo "pre-push: clang-tidy on $(count "${files}") changed file(s)..." >&2
-    echo "${files}" | xargs -P "$(nproc)" -n 1 "${tidy[@]}" || {
-      failed clang-tidy "fix the warnings above"
-      exit 1
-    }
-  fi
-
-  if [[ -n "${include_files}" ]]; then
-    echo "pre-push: include-cleaner on $(count "${include_files}") changed" \
-      "file(s)..." >&2
-    echo "${include_files}" | xargs -P "$(nproc)" -n 1 "${tidy[@]}" \
-      --checks=-*,misc-include-cleaner --extra-arg=-w || {
-      failed include-cleaner "fix the includes above (clang-tidy --fix can)"
+    echo "pre-push: linting $(echo "${files}" | wc -l | tr -d ' ')" \
+      "changed file(s)..." >&2
+    # One line, one space between files; tracked paths have no spaces.
+    make -s --no-print-directory lint-files PRESET="${preset}" \
+      FILES="$(echo "${files}" | tr '\n' ' ')" || {
+      echo "pre-push: lint-files failed - fix the findings above, or push" \
+        "with --no-verify to skip." >&2
       exit 1
     }
   fi
