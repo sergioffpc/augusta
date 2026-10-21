@@ -448,9 +448,10 @@ it prints the reason to stderr and exits `1`.
 
 ### Rebuilding the native module
 
-The bootstrap builds it once and skips the step if the `.pyd` (Windows) or `.so`
-(Linux) file exists. To rebuild after changing `native/`, delete it from
-`src/augusta_pack/` and re-run the bootstrap, or build it directly from the
+The bootstrap builds it and the protocol's generated `augusta_pb2.py` on every
+run, which is a no-op when both are up to date. It fails, naming the file, when
+the build leaves either one out. To rebuild after changing `native/` or the
+protocol's schema, re-run the bootstrap, or build it directly from the
 repository's root, as the bootstrap does:
 
 ```bash
