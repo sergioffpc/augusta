@@ -10,13 +10,32 @@
 #include "augusta/client_phases.h"
 #include "augusta/client_run.h"
 #include "augusta/config.h"
+#include "augusta/crash.h"
 #include "augusta/logging.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 namespace {
 
-// The subsystem augustac's terminal event names (ADR-0029).
+// The subsystem augustac's terminal event and crash lines name (ADR-0029).
 constexpr std::string_view kSubsystem = "client";
+
+// What the crash handler is given of run: its lines carry the Run ID and reach
+// the Run's log too, and on Linux, where the kernel's core of the crash stays
+// in the player's systemd-coredump, the crash line says how to get it out
+// (ADR-0047, ADR-0055).
+augusta::crash::Settings CrashSettings(const augusta::client::Run& run) {
+  return {
+      .dumps_directory = std::nullopt,
+      .run_id = run.id.ToString(),
+      .log_file = run.log_file,
+#ifdef _WIN32
+      .core_location = std::nullopt,
+#else
+      .core_location = "coredumpctl dump augustac",
+#endif
+  };
+}
 
 }  // namespace
 
@@ -36,9 +55,12 @@ int main(int argc, char** argv) {
     return 0;
   }
   // The Run starts here, before its config is read, so even a config that
-  // fails is named by its Run ID; a --help or --version is no Run. Its
-  // terminal event names its log file, for the player to send.
+  // fails is named by its Run ID; a --help or --version is no Run. The crash
+  // handler follows at once, as soon as there is a Run to name and a log file
+  // to write the crash into. Its terminal event names its log file, for the
+  // player to send.
   const augusta::client::Run client_run = augusta::client::BeginRun();
+  augusta::crash::Install(argv[0], kSubsystem, CrashSettings(client_run));
   const auto conclude = [&client_run](const augusta::application::Outcome& outcome) {
     return augusta::application::Conclude(kSubsystem, outcome, client_run.log_file);
   };
