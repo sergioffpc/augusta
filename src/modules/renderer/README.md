@@ -1,7 +1,8 @@
 # renderer
 
 `augusta_renderer`, `augusta_renderer_vertices`,
-`augusta_renderer_vulkan_device_choice`. Client-only: the headless server never
+`augusta_renderer_vulkan_device_choice`,
+`augusta_renderer_gpu_crash_dump_files`. Client-only: the headless server never
 links it.
 
 ## Responsibility
@@ -20,6 +21,7 @@ them, rendering a frame apart from when the window's events are drained.
 - What the debug HUD's lines say: hud.
 - What is shown and where the camera is: presentation.
 - How often each call runs: the client runtime.
+- What its GPU crash dumps are named: the client's Run (client_run.h).
 
 ## Decisions
 

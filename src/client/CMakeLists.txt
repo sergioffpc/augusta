@@ -123,7 +123,13 @@ target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(
   augusta_client_run
   PUBLIC augusta_uuid
-  PRIVATE augusta_client_run_files augusta_config augusta_hardware augusta_logging augusta_version
+  PRIVATE
+    augusta_client_run_files
+    augusta_config
+    augusta_hardware
+    augusta_logging
+    augusta_renderer_gpu_crash_dump_files
+    augusta_version
 )
 augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 

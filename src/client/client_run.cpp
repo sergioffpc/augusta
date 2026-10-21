@@ -1,12 +1,14 @@
 #include "augusta/client_run.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "augusta/config.h"
+#include "augusta/gpu_crash_dump_files.h"
 #include "augusta/hardware.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
@@ -51,6 +53,8 @@ Run BeginRun() {
   const auto directory = config::ExecutableDirectory();
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
+    renderer::NameGpuCrashDumps(
+        [directory = *directory, id = run.id](std::uint32_t n) { return GpuDumpPath(directory, id, n); });
   } else {
     LOG_WARN("subsystem=client event=log_file_unavailable reason=\"executable directory unknown\"");
   }
