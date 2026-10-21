@@ -1,7 +1,6 @@
 #include "augusta/uuid.h"
 
-#include <array>
-#include <cstdint>
+#include <cstddef>
 #include <format>
 #include <functional>
 #include <optional>

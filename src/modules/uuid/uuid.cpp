@@ -22,6 +22,15 @@ constexpr std::string_view kHexDigits = "0123456789abcdef";
 constexpr std::size_t kTextLength = 36;
 constexpr std::array<std::size_t, 4> kHyphens{8, 13, 18, 23};
 
+// A hex digit's value past 9 counts from 10, and a byte's low digit is its low
+// four bits.
+constexpr std::uint8_t kFirstLetterValue = 10;
+constexpr unsigned kLowNibble = 0x0FU;
+
+// FNV-1a's 64-bit offset basis and prime.
+constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
+constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+
 bool IsHyphenAt(std::size_t index) { return std::ranges::find(kHyphens, index) != kHyphens.end(); }
 
 std::optional<std::uint8_t> HexValue(char digit) {
@@ -29,7 +38,7 @@ std::optional<std::uint8_t> HexValue(char digit) {
     return static_cast<std::uint8_t>(digit - '0');
   }
   if (digit >= 'a' && digit <= 'f') {
-    return static_cast<std::uint8_t>(digit - 'a' + 10);
+    return static_cast<std::uint8_t>(digit - 'a' + kFirstLetterValue);
   }
   return std::nullopt;
 }
@@ -39,12 +48,12 @@ std::optional<std::uint8_t> HexValue(char digit) {
 std::string Uuid::ToString() const {
   std::string text;
   text.reserve(kTextLength);
-  for (std::size_t i = 0; i < bytes_.size(); ++i) {
+  for (const std::uint8_t byte : bytes_) {
     if (IsHyphenAt(text.size())) {
       text.push_back('-');
     }
-    text.push_back(kHexDigits[bytes_[i] >> 4U]);
-    text.push_back(kHexDigits[bytes_[i] & 0x0FU]);
+    text.push_back(kHexDigits[byte >> 4U]);
+    text.push_back(kHexDigits[byte & kLowNibble]);
   }
   return text;
 }
@@ -88,14 +97,14 @@ std::optional<Uuid> Parse(std::string_view text) {
   return Uuid::FromBytes(bytes);
 }
 
-}  // namespace augusta::uuid
-
-std::size_t std::hash<augusta::uuid::Uuid>::operator()(const augusta::uuid::Uuid& id) const noexcept {
+std::size_t Hash(const Uuid& id) noexcept {
   // FNV-1a over the 16 bytes: a UUIDv7's leading bytes are its time, so every
   // byte has to reach the hash.
-  std::uint64_t hash = 14695981039346656037ULL;
+  std::uint64_t hash = kFnvOffsetBasis;
   for (const std::uint8_t byte : id.Bytes()) {
-    hash = (hash ^ byte) * 1099511628211ULL;
+    hash = (hash ^ byte) * kFnvPrime;
   }
   return static_cast<std::size_t>(hash);
 }
+
+}  // namespace augusta::uuid

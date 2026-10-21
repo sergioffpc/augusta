@@ -55,11 +55,14 @@ Uuid Generate();
 /// upper case, braces or a missing hyphen are nullopt.
 std::optional<Uuid> Parse(std::string_view text);
 
+/// What std::hash<Uuid> gives: every byte reaches it.
+std::size_t Hash(const Uuid& id) noexcept;
+
 }  // namespace augusta::uuid
 
 template <>
 struct std::hash<augusta::uuid::Uuid> {
-  std::size_t operator()(const augusta::uuid::Uuid& id) const noexcept;
+  std::size_t operator()(const augusta::uuid::Uuid& id) const noexcept { return augusta::uuid::Hash(id); }
 };
 
 /// Formats as Uuid::ToString, so a line can write `run={}` with the ID itself.
