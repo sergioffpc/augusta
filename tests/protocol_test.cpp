@@ -102,6 +102,7 @@ using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::LobbyWire;
 using augusta::protocol::MatchEndWire;
+using augusta::protocol::MatchIdWire;
 using augusta::protocol::MatchPlayerWire;
 using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageTypeWire;
@@ -160,6 +161,15 @@ PackHashWire CountingPackHash() {
     hash[i] = static_cast<std::byte>(i + 1);
   }
   return hash;
+}
+
+// A Match ID of 1, 2, 3 ... 16, so its bytes are told apart on the wire.
+MatchIdWire CountingMatchId() {
+  MatchIdWire id{};
+  for (std::size_t i = 0; i < id.size(); ++i) {
+    id[i] = static_cast<std::byte>(i + 1);
+  }
+  return id;
 }
 
 // One message of every type, each one Encode encodes.
@@ -424,6 +434,22 @@ TEST(ProtocolTest, MatchStartRoundTripsWithEveryPlayersCharacterAndSpawnPoint) {
     EXPECT_EQ(received.players[i].spawn, SnapPosition(sent.players[i].spawn));
   }
   EXPECT_EQ(received.first_tick, sent.first_tick);
+}
+
+TEST(ProtocolTest, MatchStartRoundTripsWithItsMatchId) {
+  const auto decoded = RoundTrip(MatchStartWire{.players = {}, .first_tick = 0, .match = CountingMatchId()});
+
+  EXPECT_EQ(std::get<MatchStartWire>(decoded).match, CountingMatchId());
+}
+
+// A Match ID is 16 bytes, or absent; any other length is none a server writes.
+TEST(ProtocolTest, AMatchIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {
+  const BytesWire fifteen(15, std::byte{1});
+  const BytesWire seventeen(17, std::byte{1});
+
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchStart, LengthField(3, fifteen))).error(), DecodeError::kOutOfRange);
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchStart, LengthField(3, seventeen))).error(),
+            DecodeError::kOutOfRange);
 }
 
 TEST(ProtocolTest, AMatchStartOfAFullMatchRoundTrips) {

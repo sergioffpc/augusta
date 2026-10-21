@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -115,7 +116,11 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "first tick " << start.first_tick << "}";
+      out << "first tick " << start.first_tick << ", match";
+      for (const std::byte byte : start.match) {
+        out << ' ' << std::to_integer<int>(byte);
+      }
+      out << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
@@ -206,6 +211,7 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
+using augusta::protocol::kMatchIdSize;
 using augusta::protocol::kMaxCharacterNameLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
@@ -280,16 +286,20 @@ rc::Gen<Id> AnyId() {
   return rc::gen::map(rc::gen::arbitrary<std::uint32_t>(), [](std::uint32_t id) { return static_cast<Id>(id); });
 }
 
-rc::Gen<PackHashWire> PackHash() {
-  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kPackHashSize, rc::gen::arbitrary<std::uint8_t>()),
+// kSize arbitrary bytes: a pack hash or a Match ID.
+template <std::size_t kSize>
+rc::Gen<std::array<std::byte, kSize>> Bytes() {
+  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kSize, rc::gen::arbitrary<std::uint8_t>()),
                       [](const std::vector<std::uint8_t>& bytes) {
-                        PackHashWire hash{};
-                        for (std::size_t i = 0; i < hash.size(); ++i) {
-                          hash[i] = static_cast<std::byte>(bytes[i]);
+                        std::array<std::byte, kSize> fixed{};
+                        for (std::size_t i = 0; i < fixed.size(); ++i) {
+                          fixed[i] = static_cast<std::byte>(bytes[i]);
                         }
-                        return hash;
+                        return fixed;
                       });
 }
+
+rc::Gen<PackHashWire> PackHash() { return Bytes<kPackHashSize>(); }
 
 rc::Gen<CommandWire> Command() {
   return rc::gen::build<CommandWire>(
@@ -408,7 +418,8 @@ rc::Gen<MatchStartWire> MatchStart() {
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)),
-      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()));
+      rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()),
+      rc::gen::set(&MatchStartWire::match, Bytes<kMatchIdSize>()));
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {

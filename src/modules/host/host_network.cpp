@@ -217,16 +217,16 @@ void Host::Impl::HandleDisconnect(link::PeerId peer, Leaving how) {
       break;
     case Departure::kFromMatch:
       metrics.disconnects_from_match[how].Increment();
-      LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing={}", PeerNumber(peer),
-               SessionNumber(*session), LeavingName(how), match.Playing().size());
+      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing={}", match_id,
+               PeerNumber(peer), SessionNumber(*session), LeavingName(how), match.Playing().size());
       break;
     case Departure::kEndedMatch:
       // Nobody won a match its last player left, whoever won the one before.
       match_winner = std::nullopt;
       metrics.disconnects_from_match[how].Increment();
       CountMatchEnded(EndReason::kNoPlayersLeft, std::nullopt);
-      LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
-               SessionNumber(*session), LeavingName(how));
+      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing=0", match_id,
+               PeerNumber(peer), SessionNumber(*session), LeavingName(how));
       LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
       break;
   }

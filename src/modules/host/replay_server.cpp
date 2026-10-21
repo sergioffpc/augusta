@@ -40,6 +40,7 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 #include "utf8_path.h"
 
@@ -294,7 +295,9 @@ struct ReplayServer::Impl {
     lock.lock();
     gate.Admitted(peer);
     Send(peer, link::Encode(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)));
-    Send(peer, link::Encode(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick())));
+    // A capture carries no Match ID, so the Replay's Match start names none.
+    Send(peer, link::Encode(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick(),
+                                   uuid::Uuid{})));
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
     SetGauges();

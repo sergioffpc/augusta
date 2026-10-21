@@ -117,6 +117,13 @@ inline constexpr std::size_t kPackHashSize = 32;
 /// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
 using PackHashWire = std::array<std::byte, kPackHashSize>;
 
+/// The size of a Match ID, a UUID, in bytes.
+inline constexpr std::size_t kMatchIdSize = 16;
+
+/// A Match ID (GLOSSARY.md): the UUIDv7 the server names one Match by, its
+/// bytes in RFC 9562 order. All zeros is the nil UUID, which names no Match.
+using MatchIdWire = std::array<std::byte, kMatchIdSize>;
+
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
   kStanding = 0,
@@ -444,6 +451,8 @@ struct MatchStartWire {
   std::vector<MatchPlayerWire> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
+  /// The Match's Match ID, the same in every player's Match start (ADR-0043).
+  MatchIdWire match{};
 
   bool operator==(const MatchStartWire&) const = default;
 };

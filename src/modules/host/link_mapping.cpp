@@ -14,6 +14,7 @@
 #include "augusta/replication.h"
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 namespace augusta::host {
 
@@ -64,8 +65,9 @@ link::Lobby ToLink(const Roster& roster) {
   return lobby;
 }
 
-link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spawns, tick::Tick first_tick) {
-  link::MatchStart result{.players = {}, .first_tick = first_tick};
+link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spawns, tick::Tick first_tick,
+                        const uuid::Uuid& match) {
+  link::MatchStart result{.players = {}, .first_tick = first_tick, .match = match};
   result.players.reserve(start.players.size());
   for (std::size_t i = 0; i < start.players.size(); ++i) {
     const MatchPlayer& player = start.players[i];

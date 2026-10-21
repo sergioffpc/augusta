@@ -23,6 +23,7 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 // The Link converts between the engine's types and the protocol's plain ones
 // (ADR-0038) and nowhere else: what one peer sends must reach the other's
@@ -383,6 +384,15 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
     EXPECT_EQ(received.roster[i].session, sent.roster[i].session);
     EXPECT_EQ(received.roster[i].character, sent.roster[i].character);
   }
+}
+
+TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
+  const augusta::uuid::Uuid match = augusta::uuid::Generate();
+
+  const augusta::link::MatchStart received =
+      FromWire(ThroughTheWire(ToWire(augusta::link::MatchStart{.players = {}, .first_tick = 0, .match = match})));
+
+  EXPECT_EQ(received.match, match);
 }
 
 TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {

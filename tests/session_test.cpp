@@ -63,6 +63,7 @@
 #include "augusta/reenactment.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 #include "connection_health.h"
@@ -1870,6 +1871,79 @@ TEST_F(MatchCycleTest, PlayersKeepTheirSessionAndCharacterAndTheNextMatchHandsOu
   // Each client's prediction starts over where the new match put it.
   EXPECT_NEAR(states_.at(&first).local_body.position.x, SpawnPoints()[0].x, 0.1F);
   EXPECT_NEAR(states_.at(&second).local_body.position.x, SpawnPoints()[1].x, 0.1F);
+}
+
+// Ends the match in progress and runs the network until every client is back in the Lobby.
+bool EndMatchIntoTheLobby(Host& host, const std::vector<Session*>& sessions) {
+  host.EndMatch();
+  return ExchangeUntil(host, sessions, [&] {
+    return std::ranges::all_of(sessions,
+                               [](const Session* s) { return s->GetServerView()->GetPhase() == Phase::kLobby; });
+  });
+}
+
+// A Match ID names one Match on every client of it, and each Match afresh (ADR-0043).
+TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsNamedByANewOne) {
+  Session& first = Join();
+  Session& second = Join();
+  ASSERT_TRUE(StartMatch());
+  const augusta::uuid::Uuid match = first.GetServerView()->match_start->match;
+  ASSERT_TRUE(EndMatchIntoTheLobby(host_, All()));
+
+  ASSERT_TRUE(StartMatch());
+
+  EXPECT_NE(match, augusta::uuid::Uuid{});
+  EXPECT_EQ(second.GetServerView()->match_start->match, first.GetServerView()->match_start->match);
+  EXPECT_NE(first.GetServerView()->match_start->match, match);
+  EXPECT_NE(first.GetServerView()->match_start->match, augusta::uuid::Uuid{});
+}
+
+// Who played with whom is read off the server's Match start line (ADR-0029).
+TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPlayersSession) {
+  augusta::logging::Init();
+  Session& first = Join();
+  Session& second = Join();
+
+  testing::internal::CaptureStdout();
+  const bool started = StartMatch();
+  const bool ended = EndMatchIntoTheLobby(host_, All());
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(started);
+  ASSERT_TRUE(ended);
+  const std::string match = first.GetServerView()->match_start->match.ToString();
+  const std::size_t start_at = log.find("subsystem=serverruntime event=match_started match=" + match);
+  ASSERT_NE(start_at, std::string::npos) << log;
+  const std::string start_line = log.substr(start_at, log.find('\n', start_at) - start_at);
+  for (const Session* session : {&first, &second}) {
+    EXPECT_NE(
+        start_line.find(" session=" + std::to_string(std::to_underlying(session->GetServerView()->accepted->session))),
+        std::string::npos)
+        << start_line;
+  }
+  EXPECT_NE(log.find("subsystem=serverruntime event=match_ended match=" + match), std::string::npos) << log;
+}
+
+// The client's logging context holds the Match while it is on (ADR-0029).
+TEST_F(MatchCycleTest, DuringAMatchEveryLineTheClientWritesCarriesItsMatchIdAndAfterMatchEndNoneDoes) {
+  augusta::logging::Init();
+  Session& client = Join();
+  Join();
+  ASSERT_TRUE(StartMatch());
+  const std::string match = client.GetServerView()->match_start->match.ToString();
+
+  testing::internal::CaptureStdout();
+  LOG_INFO("subsystem=test event=in_match");
+  const std::string in_match = testing::internal::GetCapturedStdout();
+  const bool ended = EndMatchIntoTheLobby(host_, All());
+  testing::internal::CaptureStdout();
+  LOG_INFO("subsystem=test event=in_lobby");
+  const std::string in_lobby = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(ended);
+  EXPECT_NE(in_match.find("event=in_match match=" + match), std::string::npos) << in_match;
+  EXPECT_NE(in_lobby.find("event=in_lobby"), std::string::npos) << in_lobby;
+  EXPECT_EQ(in_lobby.find("match="), std::string::npos) << in_lobby;
 }
 
 // Requirements: US-14
@@ -5882,7 +5956,8 @@ TEST_F(LastStandingDuelTest, EveryMatchEndIsLoggedWithItsWinnerItsDurationAndIts
   const std::string log = testing::internal::GetCapturedStdout();
 
   ASSERT_EQ(match_ends_.size(), 1U);
-  EXPECT_NE(log.find("event=match_ended reason=\"win condition\" winner=" +
+  EXPECT_NE(log.find("event=match_ended match=" + shooter.GetServerView()->match_start->match.ToString() +
+                     " reason=\"win condition\" winner=" +
                      std::to_string(std::to_underlying(shooter.GetServerView()->accepted->session)) + " ticks="),
             std::string::npos)
       << log;

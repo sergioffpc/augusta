@@ -34,6 +34,14 @@ every player in the match with their character, the Entity ID of the body they
 control (ADR-0038) and its Spawn point, which Game policy assigns (ADR-0023).
 After that, the set of players can only shrink.
 
+**Each match is named by a Match ID.** The server takes a new UUIDv7 (ADR-0035)
+at every Match start, so a Match ID is unique across every server and every
+restart, and Match start gives the same one to every player in the match. The
+server's lines about the match carry it as `match=`, and its Match start line
+also gives every player's `session=`, which is where who played with whom is
+read (ADR-0029). The client holds it in its logging context from Match start to
+Match end, so each of its lines in between carries it too.
+
 **No one joins a match in progress.** A join that arrives while a match runs is
 refused with a new Join refused reason, _match in progress_.
 

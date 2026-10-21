@@ -126,7 +126,10 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
   return static_cast<std::uint32_t>(math::ToSteps(value, grid));
 }
 
-std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
+template <std::size_t kSize>
+std::string_view BytesOf(const std::array<std::byte, kSize>& bytes) {
+  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
 
 void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
   command.set_direction_x(Steps(wire.direction.x, math::kDirectionGrid));
@@ -302,6 +305,7 @@ struct Encoder {
       }
     }
     start.set_first_tick(wire.first_tick);
+    start.set_match(BytesOf(wire.match));
   }
 
   void operator()(const MatchEndWire& wire) const {
@@ -444,18 +448,10 @@ class Inbound {
 
   // bytes as a pack hash: none is the all-zero one an absent field reads as,
   // and any other length than a hash's is a number wider than its field.
-  PackHashWire PackHash(std::string_view bytes) {
-    PackHashWire hash{};
-    if (bytes.empty()) {
-      return hash;
-    }
-    if (bytes.size() != hash.size()) {
-      Fail(DecodeError::kOutOfRange);
-      return hash;
-    }
-    std::ranges::transform(bytes, hash.begin(), [](char byte) { return static_cast<std::byte>(byte); });
-    return hash;
-  }
+  PackHashWire PackHash(std::string_view bytes) { return Fixed<kPackHashSize>(bytes); }
+
+  // bytes as a Match ID, as PackHash reads a hash: none is the nil UUID.
+  MatchIdWire MatchId(std::string_view bytes) { return Fixed<kMatchIdSize>(bytes); }
 
   // Whether a list of size elements is at most max long.
   bool Fits(int size, std::size_t max) {
@@ -473,6 +469,22 @@ class Inbound {
     if (!error_.has_value()) {
       error_ = error;
     }
+  }
+
+  // bytes as kSize bytes: none is all zeros, and any other length is a number
+  // wider than its field.
+  template <std::size_t kSize>
+  std::array<std::byte, kSize> Fixed(std::string_view bytes) {
+    std::array<std::byte, kSize> fixed{};
+    if (bytes.empty()) {
+      return fixed;
+    }
+    if (bytes.size() != fixed.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return fixed;
+    }
+    std::ranges::transform(bytes, fixed.begin(), [](char byte) { return static_cast<std::byte>(byte); });
+    return fixed;
   }
 
   std::optional<DecodeError> error_;
@@ -616,7 +628,8 @@ MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
                                                   .entity = static_cast<EntityIdWire>(player.entity()),
                                                   .character = in.Text(player.character(), kMaxCharacterNameLength)};
                                             }),
-                        .first_tick = start.first_tick()};
+                        .first_tick = start.first_tick(),
+                        .match = in.MatchId(start.match())};
 }
 
 ShotWire Read(const pb::Shot& shot, Inbound& in) {

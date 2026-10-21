@@ -247,6 +247,8 @@ message MatchPlayer {
 message MatchStart {
   repeated MatchPlayer players = 1;
   uint64 first_tick = 2;
+  // The Match ID: a UUID's 16 bytes, in RFC 9562 order.
+  bytes match = 3;
 }
 
 // Server to client: the match is over.

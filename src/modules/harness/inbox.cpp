@@ -15,6 +15,7 @@
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/parameters.h"
+#include "augusta/uuid.h"
 #include "match_players.h"
 
 namespace augusta::harness {
@@ -74,6 +75,12 @@ void Inbox::Receive(link::ServerMessage message) {
       std::move(message));
 }
 
+Inbox::~Inbox() {
+  if (match_in_context_) {
+    logging::ClearContext(logging::ContextField::kMatch);
+  }
+}
+
 std::shared_ptr<const ServerView> Inbox::View() const {
   const std::scoped_lock lock(view_mutex_);
   return view_;
@@ -125,6 +132,14 @@ void Inbox::OnMatchStart(MatchStart start) {
     return;
   }
   const std::size_t players = start.players.size();
+  // A Match start that names no Match (a Replay's) puts none in the context.
+  if (start.match != uuid::Uuid{}) {
+    logging::SetContext(logging::ContextField::kMatch, start.match.ToString());
+    match_in_context_ = true;
+  } else if (match_in_context_) {
+    logging::ClearContext(logging::ContextField::kMatch);
+    match_in_context_ = false;
+  }
   Publish([&](ServerView& next) {
     next.match_start = std::move(start);
     ++next.matches_started;
@@ -151,6 +166,11 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
     LOG_INFO("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
   } else {
     LOG_INFO("subsystem=harness event=match_ended winner=draw");
+  }
+  // After the line above, which is still the Match's.
+  if (match_in_context_) {
+    logging::ClearContext(logging::ContextField::kMatch);
+    match_in_context_ = false;
   }
 }
 
