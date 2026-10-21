@@ -122,9 +122,11 @@ std::string VulkanVersion(std::uint32_t version) {
 }
 
 // Every device Vulkan lists, chosen or not, so a log shows why one was passed
-// over.
-void LogCandidate(std::size_t index, vk::PhysicalDevice device, const DeviceCandidate& candidate) {
-  const vk::PhysicalDeviceProperties properties = device.getProperties();
+// over. Release builds compile LOG_DEBUG away (logging.h), leaving what it
+// would print unused.
+void LogCandidate([[maybe_unused]] std::size_t index, vk::PhysicalDevice device,
+                  [[maybe_unused]] const DeviceCandidate& candidate) {
+  [[maybe_unused]] const vk::PhysicalDeviceProperties properties = device.getProperties();
   LOG_DEBUG(
       "subsystem=renderer event=vulkan_device_candidate index={} name=\"{}\" type={} vulkan={} presents={} usable={}",
       index, properties.deviceName.data(), vk::to_string(properties.deviceType), VulkanVersion(properties.apiVersion),
