@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_RENDERER_SWAPCHAIN_H_
-#define AUGUSTA_RENDERER_SWAPCHAIN_H_
+#ifndef AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_
+#define AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_
 
 #include <array>
 #include <cstdint>
@@ -59,7 +59,7 @@ class Swapchain final {
   /// Presents the image Acquire last gave, once the command list executed
   /// after it is done. Throws std::runtime_error if presenting fails, the
   /// device lost included, once its GPU crash dump is written
-  /// (gpu_crash_dumps.h).
+  /// (vulkan_gpu_crash_dumps.h).
   void Present();
 
  private:
@@ -87,4 +87,4 @@ class Swapchain final {
 
 }  // namespace augusta::renderer
 
-#endif  // AUGUSTA_RENDERER_SWAPCHAIN_H_
+#endif  // AUGUSTA_RENDERER_VULKAN_SWAPCHAIN_H_

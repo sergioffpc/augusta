@@ -6,12 +6,12 @@ target_include_directories(augusta_renderer_vertices PUBLIC ${CMAKE_CURRENT_SOUR
 target_link_libraries(augusta_renderer_vertices PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vertices CLIENT_ONLY)
 
-# Which Vulkan device the Renderer draws with (device_choice.h), decided apart
+# Which Vulkan device the Renderer draws with (vulkan_device_choice.h), decided apart
 # from the GPU API, and private to the module the same way.
-add_library(augusta_renderer_device_choice STATIC device_choice.cpp)
-target_include_directories(augusta_renderer_device_choice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_renderer_device_choice PUBLIC augusta_math augusta_window_events)
-augusta_set_module_scope(augusta_renderer_device_choice CLIENT_ONLY)
+add_library(augusta_renderer_vulkan_device_choice STATIC vulkan_device_choice.cpp)
+target_include_directories(augusta_renderer_vulkan_device_choice PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_math augusta_window_events)
+augusta_set_module_scope(augusta_renderer_vulkan_device_choice CLIENT_ONLY)
 
 if(AUGUSTA_CLIENT)
   # The Renderer on NVRHI's Vulkan backend (ADR-0059), which augustac links and
@@ -72,8 +72,8 @@ if(AUGUSTA_CLIENT)
     STATIC
     renderer.cpp
     vulkan_device.cpp
-    swapchain.cpp
-    gpu_crash_dumps.cpp
+    vulkan_swapchain.cpp
+    vulkan_gpu_crash_dumps.cpp
     debug_hud.cpp
     imgui_renderer.cpp
     ${shader_headers}
@@ -87,7 +87,7 @@ if(AUGUSTA_CLIENT)
     PUBLIC augusta_math augusta_window
     PRIVATE
       augusta_logging
-      augusta_renderer_device_choice
+      augusta_renderer_vulkan_device_choice
       augusta_renderer_vertices
       nvrhi
       nvrhi_vk
@@ -101,7 +101,7 @@ if(AUGUSTA_CLIENT)
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
-  # GPU crash dumps (gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
+  # GPU crash dumps (vulkan_gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
   # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built
   # without its own Aftermath support, so the Renderer attaches Aftermath to
   # the Vulkan device itself. An executable linking this target stages the

@@ -26,7 +26,7 @@ layer reports is logged as `event=vulkan_validation_error` and stops the client.
 GPU crash dumps are Nsight Aftermath's on the Vulkan device (ADR-0059), from the
 Aftermath SDK inside Nsight Graphics, which `cmake/Aftermath.cmake` finds on
 Windows and Linux; a build with it stages the SDK's shared libraries beside
-`augustac`. The renderer (`gpu_crash_dumps.h`) logs
+`augustac`. The renderer (`vulkan_gpu_crash_dumps.h`) logs
 `event=gpu_crash_dumps_enabled` once Aftermath watches, and
 `event=gpu_crash_dumps_attached` once its device has
 `VK_NV_device_diagnostics_config` (an NVIDIA GPU, not lavapipe). On a GPU

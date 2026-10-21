@@ -1,8 +1,8 @@
 # renderer
 
 `augusta_renderer`, `augusta_renderer_vertices`,
-`augusta_renderer_device_choice`. Client-only: the headless server never links
-it.
+`augusta_renderer_vulkan_device_choice`. Client-only: the headless server never
+links it.
 
 ## Responsibility
 

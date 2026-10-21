@@ -20,8 +20,8 @@
 #include "augusta/renderer.h"
 #include "augusta/window.h"
 #include "augusta/window_vulkan.h"
-#include "device_choice.h"
-#include "gpu_crash_dumps.h"
+#include "vulkan_device_choice.h"
+#include "vulkan_gpu_crash_dumps.h"
 
 // Vulkan-Hpp's dispatcher, which this module and NVRHI's Vulkan backend both
 // call Vulkan through, once LoadVulkan has pointed it at the system's loader.
@@ -197,7 +197,7 @@ std::string Describe(std::span<const vk::PhysicalDevice> devices) {
   return described;
 }
 
-// The extensions device is made with (device_choice.h), of those it has.
+// The extensions device is made with (vulkan_device_choice.h), of those it has.
 std::vector<const char*> ExtensionsFor(vk::PhysicalDevice device, bool gpu_crash_dumps) {
   const std::vector<vk::ExtensionProperties> properties = device.enumerateDeviceExtensionProperties();
   std::vector<std::string_view> available;

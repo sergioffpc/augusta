@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/renderer.h"
-#include "device_choice.h"
+#include "vulkan_device_choice.h"
 
 namespace augusta::renderer {
 namespace {
@@ -79,7 +79,7 @@ TEST(DeviceChoiceTest, ChoosesNothingFromNoDevices) {
 }
 
 // What Vulkan names the device extensions the Renderer may ask for, spelt out
-// rather than taken from device_choice.h, so a misspelling there fails.
+// rather than taken from vulkan_device_choice.h, so a misspelling there fails.
 constexpr std::string_view kSwapchain = "VK_KHR_swapchain";
 constexpr std::string_view kDiagnosticsConfig = "VK_NV_device_diagnostics_config";
 constexpr std::string_view kDiagnosticCheckpoints = "VK_NV_device_diagnostic_checkpoints";

@@ -19,9 +19,9 @@
 /// reached through the system's loader, which the client never links or ships,
 /// a Vulkan 1.3 instance with or without the validation layer, the window's
 /// surface, the physical device the Config's Adapter asks for (decided by
-/// device_choice.h) with its graphics queue, watched for GPU crash dumps
-/// (gpu_crash_dumps.h), and the NVRHI device over them.
-/// renderer.cpp draws through it, and swapchain.h presents with it. Made and
+/// vulkan_device_choice.h) with its graphics queue, watched for GPU crash dumps
+/// (vulkan_gpu_crash_dumps.h), and the NVRHI device over them.
+/// renderer.cpp draws through it, and vulkan_swapchain.h presents with it. Made and
 /// used on the Main/Render thread.
 namespace augusta::renderer {
 

@@ -713,14 +713,14 @@ target_include_directories(augusta_renderer_vertices_tests PRIVATE ${CMAKE_SOURC
 target_link_libraries(augusta_renderer_vertices_tests PRIVATE augusta_renderer_vertices GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_renderer_vertices_tests)
 
-# And which Vulkan device it draws with (device_choice.h).
-add_executable(augusta_renderer_device_choice_tests renderer_device_choice_test.cpp)
-target_include_directories(augusta_renderer_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
+# And which Vulkan device it draws with (vulkan_device_choice.h).
+add_executable(augusta_renderer_vulkan_device_choice_tests renderer_vulkan_device_choice_test.cpp)
+target_include_directories(augusta_renderer_vulkan_device_choice_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/renderer)
 target_link_libraries(
-  augusta_renderer_device_choice_tests
-  PRIVATE augusta_renderer_device_choice GTest::gtest GTest::gtest_main
+  augusta_renderer_vulkan_device_choice_tests
+  PRIVATE augusta_renderer_vulkan_device_choice GTest::gtest GTest::gtest_main
 )
-gtest_discover_tests(augusta_renderer_device_choice_tests)
+gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests)
 
 if(AUGUSTA_CLIENT)
   # The client Runtime's internal targets build with the client, on Windows

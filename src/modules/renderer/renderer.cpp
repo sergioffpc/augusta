@@ -22,9 +22,9 @@
 #include "augusta/window.h"
 #include "debug_hud.h"
 #include "frame_regions.h"
-#include "swapchain.h"
 #include "vertices.h"
 #include "vulkan_device.h"
+#include "vulkan_swapchain.h"
 
 // The shaders' SPIR-V, compiled at build time (CMakeLists.txt).
 #include "kEffectsPs.h"
@@ -34,7 +34,7 @@
 
 // The Renderer on NVRHI's Vulkan backend, in the window it is lent (ADR-0059).
 // It draws into an offscreen target, then copies that to the swapchain's image
-// and presents it (swapchain.h). It draws the scene, the remote players, the
+// and presents it (vulkan_swapchain.h). It draws the scene, the remote players, the
 // fight's effects and the overlay, and the debug HUD's lines over them.
 namespace augusta::renderer {
 

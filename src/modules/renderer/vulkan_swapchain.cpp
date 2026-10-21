@@ -1,4 +1,4 @@
-#include "swapchain.h"
+#include "vulkan_swapchain.h"
 
 #include <algorithm>
 #include <array>
@@ -17,8 +17,8 @@
 #include <vulkan/vulkan.hpp>
 
 #include "augusta/window.h"
-#include "gpu_crash_dumps.h"
 #include "vulkan_device.h"
+#include "vulkan_gpu_crash_dumps.h"
 
 namespace augusta::renderer {
 
