@@ -713,7 +713,8 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
 }
 
 // Readdress's framing (ADR-0038): protobuf's own tags and varints, around the
-// generated messages, so a tick's bodies are serialized once.
+// generated messages, so a tick's bodies are serialized once; and the envelope
+// tag a payload's type is read from without decoding it.
 
 // The tag before a field: its number, shifted past three bits of wire type.
 constexpr unsigned kTagTypeBits = 3U;
@@ -724,6 +725,8 @@ constexpr std::uint32_t kLengthDelimitedType = 2;
 constexpr std::uint32_t kFixed32Type = 5;
 constexpr int kFixed64Size = 8;
 constexpr int kFixed32Size = 4;
+// A tag is a varint of at most 32 bits: five bytes of seven bits each.
+constexpr std::size_t kMaxTagBytes = 5;
 
 constexpr std::uint32_t kAuthoritativeStateTag =
     (static_cast<std::uint32_t>(pb::Message::kAuthoritativeStateFieldNumber) << kTagTypeBits) | kLengthDelimitedType;
@@ -972,6 +975,12 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
   };
   return std::visit(Type{}, message);
+}
+
+MessageTypeWire TypeOf(std::span<const std::byte> payload) {
+  google::protobuf::io::CodedInputStream input(reinterpret_cast<const std::uint8_t*>(payload.data()),
+                                               static_cast<int>(std::min(payload.size(), kMaxTagBytes)));
+  return static_cast<MessageTypeWire>(input.ReadTag() >> kTagTypeBits);
 }
 
 std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload) {

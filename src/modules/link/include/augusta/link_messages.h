@@ -39,14 +39,11 @@ namespace augusta::link {
 /// (`message_type=`): what a peer never sends.
 [[nodiscard]] std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol::MessageWire& message);
 
-/// The type of payload, an encoded message: the member of its envelope its
-/// first tag names (ADR-0007). payload must be one Encode made; one Decode took
-/// may carry fields this build does not know before it, so its type is the
-/// decoded message's.
+/// The type of payload, a message Encode made, as protocol::TypeOf reads it
+/// from its bytes. One Decode took may carry fields this build does not know
+/// before its member, so its type is its decoded message's, the overload below.
 [[nodiscard]] MessageType TypeOf(std::span<const std::byte> payload);
-
-/// The type of message, decoded.
-[[nodiscard]] MessageType TypeOfDecoded(const protocol::MessageWire& message);
+[[nodiscard]] MessageType TypeOf(const protocol::MessageWire& message);
 
 [[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
 [[nodiscard]] SessionId FromWire(protocol::SessionIdWire session);

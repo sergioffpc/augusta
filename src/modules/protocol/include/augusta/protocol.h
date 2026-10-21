@@ -653,6 +653,12 @@ enum class EncodeError : std::uint8_t {
 /// Which message message is.
 [[nodiscard]] MessageTypeWire TypeOf(const MessageWire& message);
 
+/// The type of payload, a message Encode or Readdress made, without decoding
+/// it: the envelope member its first tag names. One a peer sent may carry,
+/// before its member, fields this build does not know, so its type is its
+/// decoded message's instead.
+[[nodiscard]] MessageTypeWire TypeOf(std::span<const std::byte> payload);
+
 /// Decodes one payload, or reports why it cannot be a valid message of this
 /// build.
 [[nodiscard]] std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload);

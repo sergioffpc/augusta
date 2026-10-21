@@ -217,7 +217,7 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
     message.type = std::unexpected(std::string(protocol::DescribeDecodeError(decoded.error())));
     return message;
   }
-  message.type = TypeOfDecoded(*decoded);
+  message.type = link::TypeOf(*decoded);
   message.message = ClientMessageFromWire(*decoded);
   return message;
 }

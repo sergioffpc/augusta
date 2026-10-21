@@ -162,6 +162,27 @@ PackHashWire CountingPackHash() {
   return hash;
 }
 
+// One message of every type, each one Encode encodes.
+std::vector<MessageWire> EveryMessage() {
+  return {JoinRequestWire{},
+          JoinAcceptedWire{},
+          JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
+          CommandsWire{},
+          AuthoritativeStateWire{},
+          LobbyWire{},
+          ReadyWire{},
+          MatchStartWire{},
+          MatchEndWire{},
+          ShotWire{},
+          HitConfirmationWire{},
+          DeathWire{},
+          ReplayListRequestWire{},
+          ReplayListWire{},
+          ReplayRequestWire{},
+          ReplayViewWire{},
+          ReenactRequestWire{}};
+}
+
 MessageWire RoundTrip(const MessageWire& message) {
   const auto decoded = Decode(Encode(message).value());
   EXPECT_TRUE(decoded.has_value());
@@ -1414,26 +1435,22 @@ int FirstFieldOf(const BytesWire& payload) {
 }
 
 TEST(ProtocolEncodeTest, EveryMessageIsTheEnvelopeMemberItsTypeNumbers) {
-  const std::vector<MessageWire> every = {JoinRequestWire{},
-                                          JoinAcceptedWire{},
-                                          JoinRefusedWire{.reason = JoinRefusalWire::kLobbyFull},
-                                          CommandsWire{},
-                                          AuthoritativeStateWire{},
-                                          LobbyWire{},
-                                          ReadyWire{},
-                                          MatchStartWire{},
-                                          MatchEndWire{},
-                                          ShotWire{},
-                                          HitConfirmationWire{},
-                                          DeathWire{},
-                                          ReplayListRequestWire{},
-                                          ReplayListWire{},
-                                          ReplayRequestWire{},
-                                          ReplayViewWire{},
-                                          ReenactRequestWire{}};
-  for (const MessageWire& message : every) {
+  for (const MessageWire& message : EveryMessage()) {
     EXPECT_EQ(static_cast<int>(augusta::protocol::TypeOf(message)), FirstFieldOf(Encode(message).value()));
   }
+}
+
+TEST(ProtocolEncodeTest, AnEncodedMessageIsOfTheTypeItsEnvelopeMemberNames) {
+  for (const MessageWire& message : EveryMessage()) {
+    EXPECT_EQ(augusta::protocol::TypeOf(Encode(message).value()), augusta::protocol::TypeOf(message));
+  }
+  BytesWire state =
+      Encode(AuthoritativeStateWire{.tick = 1, .bodies = {BodyAt(1, 0.5F)}, .health = 1.0F, .acknowledged_sequence = 0})
+          .value();
+  ASSERT_TRUE(
+      Readdress(state, AuthoritativeStateWire{.tick = 1, .bodies = {}, .health = 1.0F, .acknowledged_sequence = 3})
+          .has_value());
+  EXPECT_EQ(augusta::protocol::TypeOf(state), MessageTypeWire::kAuthoritativeState);
 }
 
 TEST(ProtocolEncodeTest, EveryEncodeErrorHasADescription) {
