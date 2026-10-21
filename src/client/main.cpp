@@ -8,6 +8,7 @@
 #include "augusta/client_application.h"
 #include "augusta/client_config.h"
 #include "augusta/client_phases.h"
+#include "augusta/client_run.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
 #include "augusta/version.h"
@@ -34,6 +35,9 @@ int main(int argc, char** argv) {
     std::println("{}", command_line->message);
     return 0;
   }
+  // The Run starts here, before its config is read, so even a config that
+  // fails is named by its Run ID; a --help or --version is no Run.
+  augusta::client::BeginRun();
   const auto run = command_line.and_then(augusta::config::ReadClientRun);
   const auto file_config = augusta::client::ReadClientConfig(
       run.and_then([&command_line](const augusta::config::ClientRun& /*read*/) { return command_line; }));
@@ -42,7 +46,6 @@ int main(int argc, char** argv) {
   }
   // ParseClientConfig already validated log_level, so this is never nullopt.
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
-  LOG_INFO("subsystem=client event=starting version={}", augusta::EngineVersion());
 
   if (run->mode == augusta::config::ClientMode::kListReplays) {
     return augusta::application::Conclude(kSubsystem, augusta::client::ListReplays(*file_config));

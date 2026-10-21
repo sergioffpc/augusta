@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_VERSION_H_
 #define AUGUSTA_VERSION_H_
 
+#include <string>
 #include <string_view>
 
 /// \file
@@ -12,6 +13,14 @@ namespace augusta {
 /// The engine's semantic version, tracked by hand until releases exist (see
 /// docs/ROADMAP.md).
 std::string_view EngineVersion();
+
+/// Which build of it is running, as logfmt fields (ADR-0029) for the client's
+/// first line: what matches a Crash dump of this executable to its symbols
+/// (ADR-0055). On Windows its PDB's GUID, uppercase and hyphenated as WinDbg and
+/// dumpbin write it, and age: `pdb_guid=<guid> pdb_age=<n>`. On Linux its GNU
+/// build ID, lowercase hex: `build_id=<hex>`. A value the executable was linked
+/// without is `unknown`.
+std::string DescribeBuild();
 
 }  // namespace augusta
 

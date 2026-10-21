@@ -2,9 +2,9 @@
 
 `augusta::logging` writes through Boost.Log instead of spdlog, as part of using
 Boost wherever it covers a need (ADR-0035). ADR-0027's other decisions stand:
-one process-wide, thread-safe, console-only sink (no file sink; the platform
-captures stdout), and a compile-time level tied to the build type. ADR-0029's
-line format and levels are unchanged.
+one process-wide, thread-safe logger writing to the console, and for the client
+also to its Run's log file, and a compile-time level tied to the build type.
+ADR-0029's line format and levels are unchanged.
 
 What changes underneath:
 

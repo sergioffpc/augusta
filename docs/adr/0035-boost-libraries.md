@@ -6,7 +6,7 @@ adopted when the standard library or an existing dependency has nothing that
 does the job, and each adoption pays only for that library's own dependency
 closure (ADR-0025).
 
-Four libraries are adopted now:
+Five libraries are adopted now:
 
 - **Boost.DLL** finds the running executable's directory
   (`boost::dll::program_location()`), which is where `augustac.yaml` /
@@ -28,6 +28,14 @@ Four libraries are adopted now:
   (ADR-0049), on Boost.Asio. It is header-only, and its HTTP parsing and
   responses leave the endpoint only its routing to write; prometheus-cpp's own
   HTTP server cannot answer `/livez`'s `503`.
+- **Boost.Uuid** takes the Run, Session and Match IDs (GLOSSARY.md) in
+  `augusta_uuid`, each a UUIDv7 (RFC 9562) from its `time_generator_v7`, which
+  needs Boost 1.86 or newer. A UUIDv7 is unique across every machine with no
+  coordination, and starts with its time, so IDs, and the files and lines named
+  by them, sort by when they were taken. One generator serves the process under
+  a lock, so each ID it takes sorts after the one before. The module's own type
+  holds the 16 bytes and writes the canonical lowercase hyphenated form, so no
+  other translation unit includes Boost.Uuid. It is header-only.
 
 Boost.DLL pulls in Boost.Filesystem and Boost.System, which are compiled
 libraries; they ship as DLLs next to each executable on Windows like every other
@@ -47,3 +55,8 @@ vcpkg dependency.
   dependency; Boost.Iostreams is a compiled library with a much larger
   dependency closure than Interprocess for the same read-only mapping.
 - **Boost.Log instead of spdlog** (ADR-0027): adopted separately, see ADR-0036.
+- **A random UUIDv4, or a hand-written UUIDv7**, for the IDs: a UUIDv4 is as
+  unique but sorts by nothing, so a folder of Runs or a page of lines would not
+  sort by time; a hand-written UUIDv7 is a few dozen lines, but its monotonic
+  counter and its randomness source are where it would go wrong, and Boost.Uuid
+  has both, under this ADR's one-library-at-a-time rule.

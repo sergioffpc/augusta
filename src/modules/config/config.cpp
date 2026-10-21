@@ -36,16 +36,6 @@ std::unexpected<ConfigError> Fail(ConfigErrorCode code, std::string subject = {}
   return std::unexpected(ConfigError{.code = code, .subject = std::move(subject), .reason = {}, .file = {}});
 }
 
-std::optional<std::filesystem::path> ExecutableDirectory() {
-  boost::system::error_code error;
-  const auto executable = boost::dll::program_location(error);
-  if (error) {
-    return std::nullopt;
-  }
-  // native(): a std::wstring on Windows, so non-ASCII directories survive.
-  return std::filesystem::path(executable.native()).parent_path();
-}
-
 std::string Child(std::string_view parent, std::string_view name) {
   return parent.empty() ? std::string(name) : std::format("{}.{}", parent, name);
 }
@@ -176,6 +166,16 @@ std::string Usage(std::string_view program, std::string_view default_file_name,
 }
 
 }  // namespace
+
+std::optional<std::filesystem::path> ExecutableDirectory() {
+  boost::system::error_code error;
+  const auto executable = boost::dll::program_location(error);
+  if (error) {
+    return std::nullopt;
+  }
+  // native(): a std::wstring on Windows, so non-ASCII directories survive.
+  return std::filesystem::path(executable.native()).parent_path();
+}
 
 // Mechanism: reads text as a YAML mapping, its sections flattened into dotted
 // paths. Which keys exist, and which are required, is the schema's business

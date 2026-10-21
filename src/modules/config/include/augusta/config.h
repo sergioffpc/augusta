@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -122,6 +123,11 @@ struct ConfigSchema {
 /// every scalar must be a key or open-section entry of schema and every
 /// mapping one of its sections. Which keys are required is the caller's.
 std::expected<ConfigValues, ConfigError> ReadConfigValues(std::string_view yaml_text, const ConfigSchema& schema);
+
+/// The directory the running executable is in, where its config file, and the
+/// client's logs/ and dumps/, live (ADR-0034, ADR-0027); nullopt if the OS
+/// can't say.
+std::optional<std::filesystem::path> ExecutableDirectory();
 
 /// The text of file; kCannotOpenFile, with file set, if it can't be read.
 std::expected<std::string, ConfigError> ReadConfigFile(const std::filesystem::path& file);
