@@ -95,7 +95,11 @@ void ConvertedServerView::Update(const harness::ServerView& view) {
     characters_ = CharactersOf(view.match_start);
     characters_match_ = view.matches_started;
   }
-  if (view.matches_started != updates_match_ || !view.accepted.has_value()) {
+  if (!view.accepted.has_value()) {
+    updates_.clear();
+    return;
+  }
+  if (view.matches_started != updates_match_) {
     updates_.clear();
     updates_match_ = view.matches_started;
   }
@@ -103,9 +107,6 @@ void ConvertedServerView::Update(const harness::ServerView& view) {
   std::erase_if(updates_, [&](const presentation::WorldSnapshot& update) {
     return recent.empty() || update.tick < recent.front().tick;
   });
-  if (!view.accepted.has_value()) {
-    return;
-  }
   for (const harness::AuthoritativeState& state : recent) {
     if (updates_.empty() || state.tick > updates_.back().tick) {
       updates_.push_back(ToPresentation(state, view.accepted->tick_rate_hz));
