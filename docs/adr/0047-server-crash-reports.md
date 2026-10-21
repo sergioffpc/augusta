@@ -5,9 +5,13 @@ crashing thread's symbolized stack, a kernel core dump, and, kept for every
 published build, the debug info that reads that dump.
 
 **The log.** `augustad` installs a handler for the fatal signals (`SIGSEGV`,
-`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main` (the server
-module's `augusta/crash.h`). It writes one
-`CRITICAL subsystem=server event=crash signal=<name>` line, then one
+`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main`. The handler is
+the crash module's (`augusta_crash`, `augusta/crash.h`), shared between client
+and server so the two never drift in format or in how they unwind; each
+executable installs it with its own subsystem, and with the directory its Crash
+dumps go to and its Run ID where it has them, which the server does not. It
+writes one `CRITICAL subsystem=<subsystem> event=crash signal=<name>` line
+(`subsystem=server` for `augustad`), then one
 `event=crash_frame index=<n> pc=0x<address> symbol="<function>"` line per frame,
 in the console pattern of ADR-0029, to stdout. It runs in a signal handler, so
 it writes past `augusta::logging`'s sink (which allocates and locks) with

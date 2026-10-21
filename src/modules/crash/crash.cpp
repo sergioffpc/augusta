@@ -9,6 +9,7 @@
 #include <limits>
 #include <span>
 #include <string_view>
+#include <utility>
 
 #include "absl/debugging/symbolize.h"
 
@@ -26,12 +27,17 @@
 #include <unwind.h>
 #endif
 
-namespace augusta::server {
+namespace augusta::crash {
 
 namespace {
 
 // Everything from here to the handler runs inside it, so it allocates nothing,
 // takes no lock and calls only async-signal-safe functions.
+
+// What Install was given, set before any handler is: the subsystem a literal,
+// the settings never freed, so a crash during exit still reads them.
+std::string_view g_subsystem;
+const Settings* g_settings = nullptr;
 
 #ifdef _WIN32
 constexpr std::array kFatalSignals{SIGSEGV, SIGILL, SIGFPE, SIGABRT};
@@ -40,8 +46,8 @@ constexpr std::array kFatalSignals{SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
 #endif
 
 constexpr int kMaxFrames = 64;
-// Room for a demangled name; CrashLine cuts a longer one anyway.
-constexpr std::size_t kSymbolCapacity = sizeof(CrashLine);
+// Room for a demangled name; Line cuts a longer one anyway.
+constexpr std::size_t kSymbolCapacity = sizeof(Line);
 
 constexpr std::int64_t kSecondsPerMinute = 60;
 constexpr std::int64_t kSecondsPerHour = 60 * kSecondsPerMinute;
@@ -50,11 +56,11 @@ constexpr std::int64_t kSecondsPerDay = 24 * kSecondsPerHour;
 constexpr std::uint64_t kDecimal = 10;
 constexpr std::uint64_t kHexadecimal = 16;
 
-// Appends to a CrashLine, always keeping room for the newline Finish ends it
+// Appends to a Line, always keeping room for the newline Finish ends it
 // with, so a line too long is cut rather than overrun.
 class LineWriter {
  public:
-  explicit LineWriter(CrashLine& line) : line_(line) {}
+  explicit LineWriter(Line& line) : line_(line) {}
 
   // Whether n characters still fit with reserve kept after them.
   [[nodiscard]] bool Fits(std::size_t n, std::size_t reserve) const { return size_ + n + reserve <= line_.size(); }
@@ -111,7 +117,7 @@ class LineWriter {
   }
 
  private:
-  CrashLine& line_;
+  Line& line_;
   std::size_t size_ = 0;
 };
 
@@ -147,9 +153,11 @@ void PutTimestamp(LineWriter& writer, std::chrono::sys_seconds time) {
   writer.Put('Z');
 }
 
-void PutCrashPrefix(LineWriter& writer, std::chrono::sys_seconds time) {
+void PutCrashPrefix(LineWriter& writer, std::string_view subsystem, std::chrono::sys_seconds time) {
   PutTimestamp(writer, time);
-  writer.Put(" CRITICAL subsystem=server ");
+  writer.Put(" CRITICAL subsystem=");
+  writer.Put(subsystem);
+  writer.Put(' ');
 }
 
 std::string_view SignalName(int signal) {
@@ -210,7 +218,7 @@ _Unwind_Reason_Code CollectFrame(_Unwind_Context* context, void* sink_arg) {
 // The crashing thread's return addresses, innermost first, this handler's own
 // frames included. On Linux the statically linked libunwind (ADR-0008) unwinds
 // by the binary's unwind tables, so frames compiled without frame pointers are
-// not lost. It is not listed as async-signal-safe, so InstallCrashHandler walks
+// not lost. It is not listed as async-signal-safe, so Install walks
 // once ahead of any crash: what it sets up lazily is then already done.
 int CaptureFrames(std::span<void*> frames) {
 #ifdef _WIN32
@@ -225,8 +233,8 @@ int CaptureFrames(std::span<void*> frames) {
 void ReportCrash(int signal) {
   // time() rather than system_clock::now(): POSIX lists it as async-signal-safe.
   const std::chrono::sys_seconds now{std::chrono::seconds{std::time(nullptr)}};
-  CrashLine line{};
-  WriteToStdout(FormatCrashSignalLine(line, now, signal));
+  Line line{};
+  WriteToStdout(FormatSignalLine(line, g_subsystem, now, signal));
 
   std::array<void*, kMaxFrames> frames{};
   const int depth = CaptureFrames(frames);
@@ -234,8 +242,8 @@ void ReportCrash(int signal) {
   for (int index = 0; index < depth; ++index) {
     void* const pc = frames[static_cast<std::size_t>(index)];
     const bool resolved = absl::Symbolize(pc, symbol.data(), static_cast<int>(symbol.size()));
-    WriteToStdout(FormatCrashFrameLine(line, now, index, reinterpret_cast<std::uintptr_t>(pc),
-                                       resolved ? symbol.data() : nullptr));
+    WriteToStdout(FormatFrameLine(line, g_subsystem, now, index, reinterpret_cast<std::uintptr_t>(pc),
+                                  resolved ? symbol.data() : nullptr));
   }
 }
 
@@ -267,9 +275,9 @@ void RaiseCoreLimit() {
 
 }  // namespace
 
-std::string_view FormatCrashSignalLine(CrashLine& line, std::chrono::sys_seconds time, int signal) {
+std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, time);
+  PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash signal=");
   if (const std::string_view name = SignalName(signal); !name.empty()) {
     writer.Put(name);
@@ -279,10 +287,10 @@ std::string_view FormatCrashSignalLine(CrashLine& line, std::chrono::sys_seconds
   return writer.Finish();
 }
 
-std::string_view FormatCrashFrameLine(CrashLine& line, std::chrono::sys_seconds time, int index, std::uintptr_t pc,
-                                      const char* symbol) {
+std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
+                                 std::uintptr_t pc, const char* symbol) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, time);
+  PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash_frame index=");
   writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
   writer.Put(" pc=0x");
@@ -294,7 +302,9 @@ std::string_view FormatCrashFrameLine(CrashLine& line, std::chrono::sys_seconds 
   return writer.Finish();
 }
 
-void InstallCrashHandler(const char* argv0) {
+void Install(const char* argv0, std::string_view subsystem, Settings settings) {
+  g_subsystem = subsystem;
+  g_settings = new Settings(std::move(settings));
   absl::InitializeSymbolizer(argv0);
   // Its first call sets up what it needs (see CaptureFrames).
   std::array<void*, 1> warm_up{};
@@ -307,4 +317,4 @@ void InstallCrashHandler(const char* argv0) {
   }
 }
 
-}  // namespace augusta::server
+}  // namespace augusta::crash

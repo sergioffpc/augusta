@@ -17,9 +17,12 @@
 
 namespace {
 
-using augusta::server::CrashLine;
-using augusta::server::FormatCrashFrameLine;
-using augusta::server::FormatCrashSignalLine;
+using augusta::crash::FormatFrameLine;
+using augusta::crash::FormatSignalLine;
+using augusta::crash::Line;
+
+// The subsystem augustad's crash lines name.
+constexpr std::string_view kServer = "server";
 
 // 2024-02-01T12:00:00Z
 constexpr std::chrono::sys_seconds kFixedTime{std::chrono::seconds{1706788800}};
@@ -32,22 +35,31 @@ std::string LoggedLine(std::chrono::sys_seconds time, std::string_view message) 
 
 // Requirements: NFR-10
 TEST(CrashFormat, SignalLineIsACriticalLogLine) {
-  CrashLine line{};
-  EXPECT_EQ(FormatCrashSignalLine(line, kFixedTime, SIGSEGV),
+  Line line{};
+  EXPECT_EQ(FormatSignalLine(line, kServer, kFixedTime, SIGSEGV),
             LoggedLine(kFixedTime, "subsystem=server event=crash signal=SIGSEGV"));
 }
 
 // Requirements: NFR-10
 TEST(CrashFormat, SignalWithoutANameIsWrittenAsItsNumber) {
-  CrashLine line{};
-  EXPECT_EQ(FormatCrashSignalLine(line, kFixedTime, 77),
+  Line line{};
+  EXPECT_EQ(FormatSignalLine(line, kServer, kFixedTime, 77),
             LoggedLine(kFixedTime, "subsystem=server event=crash signal=77"));
 }
 
 // Requirements: NFR-10
+TEST(CrashFormat, LinesNameTheSubsystemTheyAreGiven) {
+  Line line{};
+  EXPECT_EQ(FormatSignalLine(line, "client", kFixedTime, SIGABRT),
+            LoggedLine(kFixedTime, "subsystem=client event=crash signal=SIGABRT"));
+  EXPECT_EQ(FormatFrameLine(line, "client", kFixedTime, 1, 0x20U, nullptr),
+            LoggedLine(kFixedTime, "subsystem=client event=crash_frame index=1 pc=0x20"));
+}
+
+// Requirements: NFR-10
 TEST(CrashFormat, FrameLineNamesIndexAddressAndQuotedSymbol) {
-  CrashLine line{};
-  EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 3, 0x7f00deadbeefU, "augusta::host::Host::Step(int)"),
+  Line line{};
+  EXPECT_EQ(FormatFrameLine(line, kServer, kFixedTime, 3, 0x7f00deadbeefU, "augusta::host::Host::Step(int)"),
             LoggedLine(kFixedTime,
                        "subsystem=server event=crash_frame index=3 pc=0x7f00deadbeef "
                        "symbol=\"augusta::host::Host::Step(int)\""));
@@ -55,24 +67,24 @@ TEST(CrashFormat, FrameLineNamesIndexAddressAndQuotedSymbol) {
 
 // Requirements: NFR-10
 TEST(CrashFormat, UnresolvedFrameHasNoSymbol) {
-  CrashLine line{};
-  EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 0, 0x10U, nullptr),
+  Line line{};
+  EXPECT_EQ(FormatFrameLine(line, kServer, kFixedTime, 0, 0x10U, nullptr),
             LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10"));
 }
 
 // Requirements: NFR-10
 TEST(CrashFormat, QuotesAndBackslashesInASymbolAreEscaped) {
-  CrashLine line{};
+  Line line{};
   // The symbol f("\") is written "f(\"\\\")".
-  EXPECT_EQ(FormatCrashFrameLine(line, kFixedTime, 0, 0x10U, "f(\"\\\")"),
+  EXPECT_EQ(FormatFrameLine(line, kServer, kFixedTime, 0, 0x10U, "f(\"\\\")"),
             LoggedLine(kFixedTime, "subsystem=server event=crash_frame index=0 pc=0x10 symbol=\"f(\\\"\\\\\\\")\""));
 }
 
 // Requirements: NFR-10
 TEST(CrashFormat, SymbolTooLongForTheLineIsCutButStillClosed) {
-  CrashLine line{};
+  Line line{};
   const std::string symbol(line.size() * 2, 'x');
-  const std::string_view written = FormatCrashFrameLine(line, kFixedTime, 0, 0x10U, symbol.c_str());
+  const std::string_view written = FormatFrameLine(line, kServer, kFixedTime, 0, 0x10U, symbol.c_str());
   EXPECT_EQ(written.size(), line.size());
   EXPECT_TRUE(written.ends_with("xx\"\n"));
 }
@@ -85,7 +97,7 @@ void CrashWithStdoutOnStderr() {
 #else
   dup2(STDERR_FILENO, STDOUT_FILENO);
 #endif
-  augusta::server::InstallCrashHandler("augusta_crash_tests");
+  augusta::crash::Install("augusta_crash_tests", kServer);
   std::raise(SIGSEGV);
 }
 
