@@ -33,6 +33,9 @@ struct PredictedTick {
   prediction::State state;
   tick::Clock::time_point due;
   tick::Clock::duration duration{};
+  /// Its work ended so far behind the schedule that the next is due at once
+  /// (tick::NextDeadline): duration is how far behind, not a paced tick.
+  bool resynchronised = false;
 };
 
 /// What the caller of a Runner supplies, and what it is told, each on the

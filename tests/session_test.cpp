@@ -2666,6 +2666,24 @@ class ScriptedServerTest : public ::testing::Test {
     }
   }
 
+  // Lets the client take in what was sent until until() holds or kPollDeadline
+  // passes, and reports whether it held: for what a loaded machine may take
+  // longer than Settle's wait to deliver.
+  template <typename Condition>
+  bool SettleUntil(Condition until) {
+    const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
+    while (std::chrono::steady_clock::now() < deadline) {
+      server_.Pump();
+      session_.PumpEvents();
+      session_.ExchangeMessages();
+      if (until()) {
+        return true;
+      }
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return false;
+  }
+
   // The stamina the client predicts after sprinting for ticks ticks.
   float PredictedStaminaAfterSprinting(int ticks) {
     Command sprint;
@@ -5338,7 +5356,11 @@ TEST_F(ScriptedServerTest, AClientThatIsNeverAskedKeepsOnlyTheNewestShots) {
     shot.tick = tick;
     server_.Send(shot);
   }
-  Settle();
+  // Behind them on the one reliable, ordered channel: once it is in, so are
+  // they, and a view back in the Lobby still takes the match's Shots.
+  server_.Send(augusta::protocol::MatchEndWire{});
+  ASSERT_TRUE(SettleUntil([&] { return session_.GetServerView()->match_end.has_value(); }))
+      << "the Match end sent behind the Shots never arrived";
 
   const std::vector<Shot> shots = session_.TakeShots(*session_.GetServerView());
 
