@@ -60,17 +60,21 @@ std::size_t Hash(const Uuid& id) noexcept;
 
 }  // namespace augusta::uuid
 
+// Doxygen cannot resolve the std:: scope of these specialisations, so they stay
+// out of the docs.
+/// \cond
 template <>
 struct std::hash<augusta::uuid::Uuid> {
   std::size_t operator()(const augusta::uuid::Uuid& id) const noexcept { return augusta::uuid::Hash(id); }
 };
 
-/// Formats as Uuid::ToString, so a line can write `run={}` with the ID itself.
+// Formats as Uuid::ToString, so a line can write `run={}` with the ID itself.
 template <>
 struct std::formatter<augusta::uuid::Uuid> : std::formatter<std::string_view> {
   auto format(const augusta::uuid::Uuid& id, std::format_context& context) const {
     return std::formatter<std::string_view>::format(id.ToString(), context);
   }
 };
+/// \endcond
 
 #endif  // AUGUSTA_UUID_H_
