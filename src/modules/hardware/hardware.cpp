@@ -10,6 +10,8 @@
 #include <system_error>
 #include <thread>
 
+#include "proc_files.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -18,8 +20,6 @@
 
 #include <sys/utsname.h>
 #endif
-
-#include "proc_files.h"
 
 namespace augusta::hardware {
 
@@ -71,6 +71,20 @@ std::string Quoted(std::string_view text) { return text.empty() ? "unknown" : st
 
 std::string Mib(std::uint64_t bytes) { return bytes == 0 ? "unknown" : std::to_string(bytes / kBytesPerMib); }
 
+std::string LimitMib(std::optional<std::uint64_t> bytes) {
+  return bytes ? std::to_string(*bytes / kBytesPerMib) : "none";
+}
+
+std::optional<std::uint64_t> Number(std::string_view text) {
+  std::uint64_t number = 0;
+  const char* const end = text.data() + text.size();
+  const auto [last, error] = std::from_chars(text.data(), end, number);
+  if (error != std::errc{} || last != end) {
+    return std::nullopt;
+  }
+  return number;
+}
+
 #ifdef _WIN32
 
 // A string under HKEY_LOCAL_MACHINE; empty if there is none.
@@ -118,6 +132,8 @@ std::string QueryCpuModel() {
   return std::string(Trim(RegistryString(R"(HARDWARE\DESCRIPTION\System\CentralProcessor\0)", "ProcessorNameString")));
 }
 
+Limits QueryLimits() { return {}; }
+
 Memory QueryMemory() {
   MEMORYSTATUSEX status{};
   status.dwLength = sizeof(status);
@@ -149,6 +165,13 @@ std::string QueryCpuModel() { return CpuModelFromCpuinfo(ReadFile("/proc/cpuinfo
 
 Memory QueryMemory() { return MemoryFromMeminfo(ReadFile("/proc/meminfo")); }
 
+// The process's own cgroup, which a container sees at the root of its cgroup
+// namespace.
+Limits QueryLimits() {
+  return {.cpus = CpusFromCpuMax(ReadFile("/sys/fs/cgroup/cpu.max")),
+          .memory_bytes = BytesFromMemoryMax(ReadFile("/sys/fs/cgroup/memory.max"))};
+}
+
 #endif
 
 }  // namespace
@@ -162,6 +185,22 @@ Memory MemoryFromMeminfo(std::string_view meminfo) {
           .available_bytes = KibInBytes(ValueOf(meminfo, "MemAvailable", ':'))};
 }
 
+std::optional<double> CpusFromCpuMax(std::string_view cpu_max) {
+  cpu_max = Trim(cpu_max);
+  const std::size_t space = cpu_max.find(' ');
+  if (space == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::optional<std::uint64_t> quota = Number(cpu_max.substr(0, space));
+  const std::optional<std::uint64_t> period = Number(Trim(cpu_max.substr(space + 1)));
+  if (!quota || !period || *period == 0) {
+    return std::nullopt;
+  }
+  return static_cast<double>(*quota) / static_cast<double>(*period);
+}
+
+std::optional<std::uint64_t> BytesFromMemoryMax(std::string_view memory_max) { return Number(Trim(memory_max)); }
+
 std::string PrettyNameFromOsRelease(std::string_view os_release) {
   std::string_view name = ValueOf(os_release, "PRETTY_NAME", '=').value_or("");
   if (name.size() >= 2 && (name.front() == '"' || name.front() == '\'') && name.back() == name.front()) {
@@ -173,14 +212,17 @@ std::string PrettyNameFromOsRelease(std::string_view os_release) {
 Machine QueryMachine() {
   return {.os = QueryOs(),
           .cpu = {.model = QueryCpuModel(), .logical_cores = std::thread::hardware_concurrency()},
-          .memory = QueryMemory()};
+          .memory = QueryMemory(),
+          .limits = QueryLimits()};
 }
 
 std::string DescribeMachine(const Machine& machine) {
-  return std::format("os={} cpu={} logical_cores={} memory_mib={} memory_available_mib={}", Quoted(machine.os),
-                     Quoted(machine.cpu.model),
-                     machine.cpu.logical_cores == 0 ? "unknown" : std::to_string(machine.cpu.logical_cores),
-                     Mib(machine.memory.total_bytes), Mib(machine.memory.available_bytes));
+  return std::format(
+      "os={} cpu={} logical_cores={} memory_mib={} memory_available_mib={} cpu_limit={} memory_limit_mib={}",
+      Quoted(machine.os), Quoted(machine.cpu.model),
+      machine.cpu.logical_cores == 0 ? "unknown" : std::to_string(machine.cpu.logical_cores),
+      Mib(machine.memory.total_bytes), Mib(machine.memory.available_bytes),
+      machine.limits.cpus ? std::format("{}", *machine.limits.cpus) : "none", LimitMib(machine.limits.memory_bytes));
 }
 
 }  // namespace augusta::hardware

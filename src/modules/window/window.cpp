@@ -52,7 +52,8 @@ GlfwWindow Open(const Config& config) {
   return window;
 }
 
-// The display the window opens on, GLFW's primary monitor, as the OS runs it.
+// The primary display, as the OS runs it: the window opens with no monitor of
+// its own, so the OS may place it on another.
 void LogDisplay() {
   int count = 0;
   glfwGetMonitors(&count);
@@ -68,6 +69,9 @@ void LogDisplay() {
   LOG_INFO("subsystem=window event=display monitors={} name=\"{}\" width={} height={} refresh_hz={} scale={}", count,
            glfwGetMonitorName(monitor), mode->width, mode->height, mode->refreshRate, scale);
 }
+
+// Whether the mouse can drive the view unaccelerated (SetCursorLocked).
+void LogMouse() { LOG_INFO("subsystem=window event=mouse raw_motion={}", glfwRawMouseMotionSupported() == GLFW_TRUE); }
 
 Size FramebufferSize(GLFWwindow& window) {
   int width = 0;
@@ -119,6 +123,7 @@ struct Window::Impl {
   // config's.
   explicit Impl(const Config& config) : window(Open(config)), size(FramebufferSize(*window)) {
     LogDisplay();
+    LogMouse();
     glfwSetWindowUserPointer(window.get(), &events);
     glfwSetKeyCallback(window.get(), OnKey);
     glfwSetMouseButtonCallback(window.get(), OnMouseButton);
