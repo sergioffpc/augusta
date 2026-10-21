@@ -47,7 +47,6 @@ class CapturedPlayer:
 class CaptureHeader:
     """What a captured Match ran on and when it started."""
 
-    format_version: int
     engine_version: str
     server_pack: bytes
     client_pack: bytes
@@ -75,8 +74,8 @@ def is_capture(data: bytes) -> bool:
     return data.startswith(MAGIC)
 
 
-def _read_format_version(data: bytes) -> int:
-    """The byte after the magic, refused unless it is this reader's version.
+def _check_format_version(data: bytes) -> None:
+    """Refuses data unless the byte after its magic is this reader's version.
 
     A capture before version 3 holds its version inside its header record, so
     the byte after its magic is that record's length, and it is refused here.
@@ -89,7 +88,6 @@ def _read_format_version(data: bytes) -> int:
             f"capture format version {version}, this reader reads "
             f"{FORMAT_VERSION}"
         )
-    return version
 
 
 def _frames(data: bytes) -> tuple[list[bytes], bool]:
@@ -120,13 +118,12 @@ def _text(field: bytes) -> str:
         raise CaptureError("a record's text is not UTF-8") from error
 
 
-def _read_header(payload: bytes, format_version: int) -> CaptureHeader:
+def _read_header(payload: bytes) -> CaptureHeader:
     record = _parse(payload)
     if record.WhichOneof("record") != "header":
         raise CaptureError("the capture does not start with its header")
     header = record.header
     return CaptureHeader(
-        format_version=format_version,
         engine_version=_text(header.engine_version),
         server_pack=header.server_pack,
         client_pack=header.client_pack,
@@ -146,12 +143,12 @@ def read_capture(data: bytes) -> Capture:
     """
     if not is_capture(data):
         raise CaptureError("the file does not start with a capture's magic")
-    format_version = _read_format_version(data)
+    _check_format_version(data)
     records, torn = _frames(data)
     if not records:
         raise CaptureError("the capture has no header")
     capture = Capture(
-        header=_read_header(records[0], format_version),
+        header=_read_header(records[0]),
         players=[],
         last_offset=0,
         ended=False,
@@ -209,6 +206,8 @@ def read_capture(data: bytes) -> Capture:
             capture.winner = (
                 player(event.winner).number if event.winner else None
             )
+        else:
+            raise CaptureError(f"this reader does not read a {kind} record")
     return capture
 
 
@@ -219,7 +218,7 @@ def format_capture(capture: Capture) -> list[str]:
     seconds = ticks / header.tick_rate_hz if header.tick_rate_hz else 0.0
     lines = [
         "Match capture",
-        f"  format version  {header.format_version}",
+        f"  format version  {FORMAT_VERSION}",
         f"  engine version  {header.engine_version}",
         f"  server pack     {header.server_pack.hex()}",
         f"  client pack     {header.client_pack.hex()}",

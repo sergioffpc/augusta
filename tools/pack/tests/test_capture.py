@@ -24,7 +24,6 @@ SEED = (
 def test_a_capture_the_server_wrote_reads_as_it_was_played():
     read = capture.read_capture(SEED.read_bytes())
 
-    assert read.header.format_version == 3
     assert read.header.engine_version == "2.0.1"
     assert read.header.server_pack == bytes([1]) * 32
     assert read.header.client_pack == bytes([2]) * 32
@@ -41,6 +40,24 @@ def test_a_capture_the_server_wrote_reads_as_it_was_played():
     assert read.ended and read.winner == 1
     assert read.last_offset == 6
     assert not read.torn
+
+
+def test_the_seed_holds_every_record_kind_the_schema_has():
+    # So the test above reads every kind, and the reader, which refuses a
+    # kind it does not name, still names every member of the oneof.
+    data = SEED.read_bytes()
+    kinds = set()
+    at = len(capture.MAGIC) + 1
+    while at < len(data):
+        length = data[at]
+        record = augusta_pb2.CaptureRecord.FromString(
+            data[at + 1 : at + 1 + length]
+        )
+        kinds.add(record.WhichOneof("record"))
+        at += 1 + length
+    oneof = augusta_pb2.CaptureRecord.DESCRIPTOR.oneofs_by_name["record"]
+
+    assert kinds == {field.name for field in oneof.fields}
 
 
 def test_a_capture_cut_short_drops_and_reports_its_last_record():
@@ -89,6 +106,7 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
     out = capsys.readouterr().out
     assert status == 0
     assert "Match capture" in out
+    assert "format version  3" in out
     assert "length          7 ticks, 0.12 s" in out
     assert (
         "  2  session 8  sniper  spawn (-3, 0, 4)  1 commands  "
