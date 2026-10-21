@@ -231,7 +231,7 @@ struct JoinRequest {
   /// Reenact request names; nullopt for anyone else.
   std::optional<math::Vec3> spawn = std::nullopt;
   /// The client's Run ID, which the server logs at admission (ADR-0038).
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// What a client asks when it watches a Replay (ADR-0051).
@@ -243,7 +243,7 @@ struct ReplayRequest {
   /// The capture to watch, by its name in the replay server's Replay list.
   std::string capture;
   /// The Replay viewer's Run ID, as a JoinRequest's.
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and

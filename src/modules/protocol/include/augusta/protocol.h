@@ -278,7 +278,7 @@ struct JoinRequestWire {
   std::string character;
   /// The client's Run ID, which the server logs at admission (ADR-0038); the
   /// nil ID when the field is absent.
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -296,7 +296,7 @@ struct ReenactRequestWire {
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
   /// As JoinRequestWire::run.
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -557,7 +557,7 @@ struct ReplayRequestWire {
   /// its listing.
   std::string capture;
   /// The Replay viewer's Run ID, as JoinRequestWire::run.
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReplayRequestWire&) const = default;
 };

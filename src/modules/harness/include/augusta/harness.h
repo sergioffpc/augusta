@@ -197,7 +197,7 @@ struct SessionConfig {
   std::optional<math::Vec3> spawn = std::nullopt;
   /// The Run ID of the executable this Session is for, which its Join, Reenact
   /// or Replay request carries and the server logs at admission (ADR-0038).
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.

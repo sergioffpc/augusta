@@ -52,7 +52,7 @@ struct RuntimeConfig {
   /// and its run ends, as the window closing ends it, once the Replay has.
   std::optional<std::string> replay;
   /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
-  uuid::Uuid run{};
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render
