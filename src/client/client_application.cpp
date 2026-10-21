@@ -19,6 +19,7 @@
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
+#include "augusta/uuid.h"
 
 namespace augusta::client {
 
@@ -70,7 +71,7 @@ namespace {
 // Loads what the runtime is made from and constructs it (ClientLifecycle).
 std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess(
     const config::ClientConfig& file_config, const std::optional<harness::Script>& reenactment,
-    const std::optional<std::string>& replay) {
+    const std::optional<std::string>& replay, uuid::Uuid run) {
   auto loaded = LoadClient(file_config);
   if (!loaded) {
     return std::unexpected(std::move(loaded.error()));
@@ -88,6 +89,7 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .client_pack = loaded->pack->Hash(),
       .reenactment = reenactment,
       .replay = replay,
+      .run = run,
   };
   auto parts = std::make_unique<ClientProcess::Parts>();
   parts->pack = std::move(loaded->pack);
@@ -110,7 +112,7 @@ application::Outcome ListReplays(const config::ClientConfig& file_config) {
 
 application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
                                                       std::optional<harness::Script> reenactment,
-                                                      std::optional<std::string> replay) {
+                                                      std::optional<std::string> replay, uuid::Uuid run) {
   config::ClientConfig played = file_config;
   // A Captured player plays its capture's Character, not the config's.
   if (reenactment.has_value()) {
@@ -119,8 +121,8 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
   return {
       // Once, process-wide, before any ClientRuntime is constructed (link.h).
       .initialize = [] { return link::Init(); },
-      .construct = [played = std::move(played), reenactment = std::move(reenactment),
-                    replay = std::move(replay)] { return ConstructProcess(played, reenactment, replay); },
+      .construct = [played = std::move(played), reenactment = std::move(reenactment), replay = std::move(replay),
+                    run] { return ConstructProcess(played, reenactment, replay, run); },
       .run = [](ClientProcess& process) { return process.Run(); },
   };
 }

@@ -1,4 +1,3 @@
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +16,7 @@
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -56,7 +56,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", character " << rc::toString(request.character) << "}";
+      out << ", character " << rc::toString(request.character) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const JoinAcceptedWire& accepted) const {
       out << "JoinAccepted{session " << static_cast<std::uint32_t>(accepted.session) << ", tick_rate_hz "
@@ -116,11 +116,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "first tick " << start.first_tick << ", match";
-      for (const std::byte byte : start.match) {
-        out << ' ' << std::to_integer<int>(byte);
-      }
-      out << "}";
+      out << "first tick " << start.first_tick << ", match " << start.match.ToString() << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
@@ -157,7 +153,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", capture " << rc::toString(request.capture) << "}";
+      out << ", capture " << rc::toString(request.capture) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const ReplayViewWire& view) const {
       out << "ReplayView{tick " << view.tick << ", ";
@@ -174,7 +170,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << ", character " << rc::toString(request.character) << ", spawn ";
       showValue(request.spawn, out);
-      out << "}";
+      out << ", run " << request.run.ToString() << "}";
     }
   };
   std::visit(Printer{.out = out}, message);
@@ -211,7 +207,6 @@ using augusta::protocol::JoinAcceptedWire;
 using augusta::protocol::JoinRefusalWire;
 using augusta::protocol::JoinRefusedWire;
 using augusta::protocol::JoinRequestWire;
-using augusta::protocol::kMatchIdSize;
 using augusta::protocol::kMaxCharacterNameLength;
 using augusta::protocol::kMaxCommandsPerMessage;
 using augusta::protocol::kMaxEngineVersionLength;
@@ -286,20 +281,23 @@ rc::Gen<Id> AnyId() {
   return rc::gen::map(rc::gen::arbitrary<std::uint32_t>(), [](std::uint32_t id) { return static_cast<Id>(id); });
 }
 
-// Size arbitrary bytes: a pack hash or a Match ID.
-template <std::size_t Size>
-rc::Gen<std::array<std::byte, Size>> Bytes() {
-  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(Size, rc::gen::arbitrary<std::uint8_t>()),
+rc::Gen<PackHashWire> PackHash() {
+  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kPackHashSize, rc::gen::arbitrary<std::uint8_t>()),
                       [](const std::vector<std::uint8_t>& bytes) {
-                        std::array<std::byte, Size> fixed{};
-                        for (std::size_t i = 0; i < fixed.size(); ++i) {
-                          fixed[i] = static_cast<std::byte>(bytes[i]);
+                        PackHashWire hash{};
+                        for (std::size_t i = 0; i < hash.size(); ++i) {
+                          hash[i] = static_cast<std::byte>(bytes[i]);
                         }
-                        return fixed;
+                        return hash;
                       });
 }
 
-rc::Gen<PackHashWire> PackHash() { return Bytes<kPackHashSize>(); }
+// Any 16 bytes, the nil ID among them: a Run ID or a Match ID.
+rc::Gen<augusta::uuid::Uuid> AnyUuid() {
+  return rc::gen::map(
+      rc::gen::arbitrary<augusta::uuid::Uuid::ByteArray>(),
+      [](const augusta::uuid::Uuid::ByteArray& bytes) { return augusta::uuid::Uuid::FromBytes(bytes); });
+}
 
 rc::Gen<CommandWire> Command() {
   return rc::gen::build<CommandWire>(
@@ -323,7 +321,8 @@ rc::Gen<BodyStateWire> Body() {
 rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
-      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
+      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()),
+      rc::gen::set(&JoinRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<ReenactRequestWire> ReenactRequest() {
@@ -331,7 +330,8 @@ rc::Gen<ReenactRequestWire> ReenactRequest() {
       rc::gen::set(&ReenactRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReenactRequestWire::character, Character()),
-      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
+      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)),
+      rc::gen::set(&ReenactRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
@@ -419,7 +419,7 @@ rc::Gen<MatchStartWire> MatchStart() {
   return rc::gen::build<MatchStartWire>(
       rc::gen::set(&MatchStartWire::players, UpTo<std::vector<MatchPlayerWire>>(kMaxPlayers, player)),
       rc::gen::set(&MatchStartWire::first_tick, rc::gen::arbitrary<std::uint64_t>()),
-      rc::gen::set(&MatchStartWire::match, Bytes<kMatchIdSize>()));
+      rc::gen::set(&MatchStartWire::match, AnyUuid()));
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {
@@ -469,7 +469,7 @@ rc::Gen<ReplayRequestWire> ReplayRequest() {
   return rc::gen::build<ReplayRequestWire>(
       rc::gen::set(&ReplayRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
-      rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, AnyUuid()));
 }
 
 rc::Gen<ReplayViewWire> ReplayView() {

@@ -159,7 +159,7 @@ struct MatchStart {
   tick::Tick first_tick = 0;
   /// The Match's Match ID (GLOSSARY.md), the same in every player's Match
   /// start; the nil UUID where the server names none.
-  uuid::Uuid match;
+  uuid::Uuid match = uuid::kNil;
 };
 
 /// What the server said when a match ended (US-14).
@@ -233,6 +233,8 @@ struct JoinRequest {
   /// Where it asks to spawn, as a Captured player (ADR-0050), which only a
   /// Reenact request names; nullopt for anyone else.
   std::optional<math::Vec3> spawn = std::nullopt;
+  /// The client's Run ID, which the server logs at admission (ADR-0038).
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// What a client asks when it watches a Replay (ADR-0051).
@@ -243,6 +245,8 @@ struct ReplayRequest {
   assets::PackHash client_pack{};
   /// The capture to watch, by its name in the replay server's Replay list.
   std::string capture;
+  /// The Replay viewer's Run ID, as a JoinRequest's.
+  uuid::Uuid run = uuid::kNil;
 };
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and

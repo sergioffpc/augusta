@@ -22,7 +22,6 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 #include "augusta/weapon.h"
 #include "shared_core.h"
 
@@ -484,8 +483,7 @@ Lobby FromWire(const protocol::LobbyWire& lobby) {
 protocol::MatchStartWire ToWire(const MatchStart& start) {
   protocol::MatchStartWire result;
   result.first_tick = start.first_tick;
-  std::ranges::transform(start.match.Bytes(), result.match.begin(),
-                         [](std::uint8_t byte) { return static_cast<std::byte>(byte); });
+  result.match = start.match;
   result.players.reserve(start.players.size());
   for (const MatchPlayer& player : start.players) {
     result.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
@@ -506,10 +504,7 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
                                          .spawn = player.spawn});
   }
   result.first_tick = start.first_tick;
-  uuid::Uuid::ByteArray match{};
-  std::ranges::transform(start.match, match.begin(),
-                         [](std::byte byte) { return std::to_integer<std::uint8_t>(byte); });
-  result.match = uuid::Uuid::FromBytes(match);
+  result.match = start.match;
   return result;
 }
 
@@ -584,6 +579,7 @@ protocol::ReplayRequestWire ToWire(const ReplayRequest& request) {
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),
       .capture = request.capture,
+      .run = request.run,
   };
 }
 
@@ -592,6 +588,7 @@ ReplayRequest FromWire(const protocol::ReplayRequestWire& request) {
       .engine_version = request.engine_version,
       .client_pack = FromWire(request.client_pack),
       .capture = request.capture,
+      .run = request.run,
   };
 }
 
@@ -602,12 +599,14 @@ protocol::MessageWire ToWire(const JoinRequest& request) {
         .client_pack = ToWire(request.client_pack),
         .character = request.character,
         .spawn = *request.spawn,
+        .run = request.run,
     };
   }
   return protocol::JoinRequestWire{
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),
       .character = request.character,
+      .run = request.run,
   };
 }
 
@@ -616,6 +615,7 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
       .engine_version = request.engine_version,
       .client_pack = FromWire(request.client_pack),
       .character = request.character,
+      .run = request.run,
   };
 }
 
@@ -625,6 +625,7 @@ JoinRequest FromWire(const protocol::ReenactRequestWire& request) {
       .client_pack = FromWire(request.client_pack),
       .character = request.character,
       .spawn = request.spawn,
+      .run = request.run,
   };
 }
 

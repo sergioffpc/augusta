@@ -13,6 +13,7 @@
 
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -116,13 +117,6 @@ inline constexpr std::size_t kPackHashSize = 32;
 
 /// A pack's BLAKE3 hash, the one its trailer signs (ADR-0031): names one cook of it.
 using PackHashWire = std::array<std::byte, kPackHashSize>;
-
-/// The size of a Match ID, a UUID, in bytes.
-inline constexpr std::size_t kMatchIdSize = 16;
-
-/// A Match ID (GLOSSARY.md): the UUIDv7 the server names one Match by, its
-/// bytes in RFC 9562 order. All zeros is the nil UUID, which names no Match.
-using MatchIdWire = std::array<std::byte, kMatchIdSize>;
 
 /// A body's stance.
 enum class StanceWire : std::uint8_t {
@@ -282,6 +276,9 @@ struct JoinRequestWire {
   /// The character the player chose, by its name in the scenario's manifest
   /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
+  /// The client's Run ID, which the server logs at admission (ADR-0038); the
+  /// nil ID when the field is absent.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -298,6 +295,8 @@ struct ReenactRequestWire {
   std::string character;
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
+  /// As JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -451,8 +450,9 @@ struct MatchStartWire {
   std::vector<MatchPlayerWire> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
-  /// The Match's Match ID, the same in every player's Match start (ADR-0043).
-  MatchIdWire match{};
+  /// The Match's Match ID, the same in every player's Match start (ADR-0043);
+  /// nil where the server names none.
+  uuid::Uuid match = uuid::kNil;
 
   bool operator==(const MatchStartWire&) const = default;
 };
@@ -559,6 +559,8 @@ struct ReplayRequestWire {
   /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
   /// its listing.
   std::string capture;
+  /// The Replay viewer's Run ID, as JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReplayRequestWire&) const = default;
 };

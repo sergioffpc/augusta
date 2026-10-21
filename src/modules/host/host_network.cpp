@@ -57,9 +57,11 @@ void Host::Impl::HandleJoinRequest(link::PeerId peer, const JoinRequest& request
   if (players.try_emplace(admission->session, Player{.peer = peer, .commands = CommandQueue{tick_rate_hz}}).second) {
     metrics.joins_admitted.Increment();
     SetLobbyGauges();
-    LOG_INFO("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
-             PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
-             match.GetRoster().version);
+    // The client's Run ID beside the Session it is admitted as: what ties a
+    // client's own log to the server's (ADR-0038).
+    LOG_INFO("subsystem=serverruntime event=lobby_joined peer={} run={} session={} character={} players={} version={}",
+             PeerNumber(peer), request.run, SessionNumber(admission->session), admission->character,
+             match.PlayerCount(), match.GetRoster().version);
     if (request.spawn.has_value()) {
       LOG_INFO("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
                SessionNumber(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);

@@ -343,7 +343,7 @@ ServerView InMatch(std::optional<Tick> tick, augusta::tick::Sequence acknowledge
   ServerView view;
   view.matches_started = 1;
   view.in_match = true;
-  MatchStart start{.players = {}, .first_tick = kFirstTick, .match = {}};
+  MatchStart start{.players = {}, .first_tick = kFirstTick};
   for (std::uint32_t i = 0; i < 3; ++i) {
     start.players.push_back(MatchPlayer{.session = SessionId{11 + i},
                                         .entity = EntityId{21 + i},

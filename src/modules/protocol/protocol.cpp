@@ -25,6 +25,7 @@
 #include "augusta/grid.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
+#include "augusta/uuid.h"
 
 namespace augusta::protocol {
 
@@ -126,9 +127,10 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
   return static_cast<std::uint32_t>(math::ToSteps(value, grid));
 }
 
-template <std::size_t Size>
-std::string_view BytesOf(const std::array<std::byte, Size>& bytes) {
-  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
+
+std::string_view BytesOf(const uuid::Uuid& id) {
+  return {reinterpret_cast<const char*>(id.Bytes().data()), id.Bytes().size()};
 }
 
 void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
@@ -250,6 +252,7 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const JoinAcceptedWire& wire) const {
@@ -357,6 +360,7 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_capture(out.Text(wire.capture, kMaxCaptureNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const ReplayViewWire& wire) const {
@@ -380,6 +384,7 @@ struct Encoder {
     request.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
     request.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
     request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
+    request.set_run(BytesOf(wire.run));
   }
 };
 
@@ -448,10 +453,33 @@ class Inbound {
 
   // bytes as a pack hash: none is the all-zero one an absent field reads as,
   // and any other length than a hash's is a number wider than its field.
-  PackHashWire PackHash(std::string_view bytes) { return Fixed<kPackHashSize>(bytes); }
+  PackHashWire PackHash(std::string_view bytes) {
+    PackHashWire hash{};
+    if (bytes.empty()) {
+      return hash;
+    }
+    if (bytes.size() != hash.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return hash;
+    }
+    std::ranges::transform(bytes, hash.begin(), [](char byte) { return static_cast<std::byte>(byte); });
+    return hash;
+  }
 
-  // bytes as a Match ID, as PackHash reads a hash: none is the nil UUID.
-  MatchIdWire MatchId(std::string_view bytes) { return Fixed<kMatchIdSize>(bytes); }
+  // bytes as a UUID (a Run ID, a Match ID): none is the nil one an absent field reads as,
+  // and any other length than a UUID's is a number wider than its field.
+  uuid::Uuid Uuid(std::string_view bytes) {
+    uuid::Uuid::ByteArray id{};
+    if (bytes.empty()) {
+      return {};
+    }
+    if (bytes.size() != id.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return {};
+    }
+    std::ranges::transform(bytes, id.begin(), [](char byte) { return static_cast<std::uint8_t>(byte); });
+    return uuid::Uuid::FromBytes(id);
+  }
 
   // Whether a list of size elements is at most max long.
   bool Fits(int size, std::size_t max) {
@@ -469,22 +497,6 @@ class Inbound {
     if (!error_.has_value()) {
       error_ = error;
     }
-  }
-
-  // bytes as Size bytes: none is all zeros, and any other length is a number
-  // wider than its field.
-  template <std::size_t Size>
-  std::array<std::byte, Size> Fixed(std::string_view bytes) {
-    std::array<std::byte, Size> fixed{};
-    if (bytes.empty()) {
-      return fixed;
-    }
-    if (bytes.size() != fixed.size()) {
-      Fail(DecodeError::kOutOfRange);
-      return fixed;
-    }
-    std::ranges::transform(bytes, fixed.begin(), [](char byte) { return static_cast<std::byte>(byte); });
-    return fixed;
   }
 
   std::optional<DecodeError> error_;
@@ -533,7 +545,8 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
 JoinRequestWire Read(const pb::JoinRequest& request, Inbound& in) {
   return JoinRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                          .client_pack = in.PackHash(request.client_pack()),
-                         .character = in.Text(request.character(), kMaxCharacterNameLength)};
+                         .character = in.Text(request.character(), kMaxCharacterNameLength),
+                         .run = in.Uuid(request.run())};
 }
 
 ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
@@ -541,7 +554,8 @@ ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
       .engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
       .client_pack = in.PackHash(request.client_pack()),
       .character = in.Text(request.character(), kMaxCharacterNameLength),
-      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid)};
+      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid),
+      .run = in.Uuid(request.run())};
 }
 
 RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
@@ -629,7 +643,7 @@ MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
                                                   .character = in.Text(player.character(), kMaxCharacterNameLength)};
                                             }),
                         .first_tick = start.first_tick(),
-                        .match = in.MatchId(start.match())};
+                        .match = in.Uuid(start.match())};
 }
 
 ShotWire Read(const pb::Shot& shot, Inbound& in) {
@@ -668,7 +682,8 @@ ReplayListingWire Read(const pb::ReplayListing& listing, Inbound& in) {
 ReplayRequestWire Read(const pb::ReplayRequest& request, Inbound& in) {
   return ReplayRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                            .client_pack = in.PackHash(request.client_pack()),
-                           .capture = in.Text(request.capture(), kMaxCaptureNameLength)};
+                           .capture = in.Text(request.capture(), kMaxCaptureNameLength),
+                           .run = in.Uuid(request.run())};
 }
 
 ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {

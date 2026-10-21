@@ -301,8 +301,8 @@ struct ReplayServer::Impl {
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
     SetGauges();
-    LOG_INFO("subsystem=replay event=replay_started peer={} capture={} viewers={}", PeerNumber(peer), request.capture,
-             viewers.size());
+    LOG_INFO("subsystem=replay event=replay_started peer={} run={} capture={} viewers={}", PeerNumber(peer),
+             request.run, request.capture, viewers.size());
   }
 
   // Drops what message brought and judges its peer, for reason. With mutex held.
