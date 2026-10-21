@@ -609,7 +609,7 @@ TEST(LinkMessagesTest, ACorruptedRefusalIsNotEncoded) {
   EXPECT_EQ(encoded.error().code, augusta::failure::Code::kInvariantViolated);
 }
 
-TEST(LinkMessagesTest, AnEncodedMessageIsOfTheTypeItsFirstByteSays) {
+TEST(LinkMessagesTest, AnEncodedMessageIsOfTheTypeItsEnvelopeSays) {
   EXPECT_EQ(augusta::link::TypeOf(augusta::link::EncodeToSend(augusta::protocol::ReadyWire{.version = 1}).value()),
             augusta::link::MessageType::kReady);
   EXPECT_EQ(augusta::link::TypeOf(augusta::link::EncodeToSend(ToWire(augusta::link::Shot{})).value()),

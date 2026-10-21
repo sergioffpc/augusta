@@ -175,7 +175,7 @@ TEST(TickMessagesTest, ALiveTickSendsItsPlayersNoReplayView) {
 
   ASSERT_FALSE(sent.empty());
   for (const Sent& message : sent) {
-    EXPECT_NE(message.payload.front(), static_cast<std::byte>(augusta::protocol::MessageTypeWire::kReplayView));
+    EXPECT_NE(message.type, MessageType::kReplayView);
   }
 }
 

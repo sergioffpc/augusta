@@ -71,6 +71,12 @@ copy. The repository's root CMake project builds it, as it builds the Agents'
 module, with `AUGUSTA_TOOLS` and the tools environment's Python. It has no USD
 dependency on purpose; see ADR-0030 for why.
 
+The same build generates `augusta_pack.augusta_pb2` beside it with vcpkg's
+`protoc`, from the protocol's one schema,
+[augusta.proto](../src/modules/protocol/proto/augusta.proto) (ADR-0007), so a
+Match capture reads through the `protobuf` runtime with no hand-written copy of
+its format. Neither module is checked in.
+
 ### Setup
 
 The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
@@ -319,7 +325,8 @@ UTC), how long the Match lasted in ticks and seconds, one line per player (its
 number, which `augustac --reenact --player` takes, Session, Character, spawn,
 how many Commands it sent, and when it died and who killed it or when it left),
 then the Match end's winner or a Draw, and whether the file ends partway through
-a record. A Command's contents are counted, not decoded.
+a record. It reads each record through `augusta_pack.augusta_pb2`, generated
+from the protocol's one schema, and reports a Command only by count.
 
 It reads the pack through `augusta_assets`, with the same header and index
 parser the client and server load packs with, and refuses a malformed one with

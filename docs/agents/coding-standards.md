@@ -115,6 +115,10 @@ that it does happen without what prevents it: a control case. A setup that only
 a comment claims proves nothing, and a test without its control passes
 vacuously.
 
+A change that brings in a build artefact (generated code, a new third-party
+library) brings a test that links and calls it, even when the code that will use
+it lands later, so a link failure shows on the change that caused it.
+
 A bug found by the fuzzer or by a shrunk RapidCheck case gets a regression test
 in the pull request that fixes it: the minimized input as a fixture, the case as
 an example-based test.

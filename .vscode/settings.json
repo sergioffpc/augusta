@@ -10,6 +10,7 @@
   "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode", "editor.rulers": [80] },
   "[python]": { "editor.defaultFormatter": "charliermarsh.ruff", "editor.rulers": [80] },
   "[shellscript]": { "editor.defaultFormatter": "mkhl.shfmt", "editor.rulers": [80] },
+  "[proto]": { "editor.defaultFormatter": "bufbuild.vscode-buf", "editor.rulers": [80] },
 
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.detectIndentation": false,

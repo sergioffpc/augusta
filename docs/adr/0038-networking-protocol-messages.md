@@ -178,7 +178,10 @@ correctly never corrects for rounding.
 when it cannot be a valid message of this build. The error is:
 
 - `kMalformed`: protobuf's parse fails (a payload cut short, a wrong wire type,
-  a broken varint, a string that is not UTF-8);
+  a broken varint), or a string is not UTF-8. The schema holds text as `bytes`
+  and the codec checks it, since protobuf's own check of a `string` field logs a
+  line for each one that fails, which a peer could make the server write at will
+  (NFR-05);
 - `kUnknownType`: no body this build knows (an empty payload, no `oneof` member
   set, a member this build lacks, or a Development build's message in a Shipping
   build);
@@ -200,10 +203,10 @@ logs and tests.
 **Outbound invariants.** `Encode` and `EncodeCaptureRecord` check their own side
 as strictly, in every build, as they map each `*Wire` to its generated message:
 they return `std::expected<BytesWire, EncodeError>` (ADR-0033), where the error
-is `kFieldTooLong`, `kReservedBits` or `kInvalidEnum`, and give no payload at
-all for a message or record a field of which the protocol cannot carry, so
-nothing cut off or misframed is ever sent or captured. Such a field is the
-sender's bug, never a peer's input: the Link, and the capture module for a
+is `kFieldTooLong`, `kReservedBits`, `kInvalidEnum` or `kNotUtf8`, and give no
+payload at all for a message or record a field of which the protocol cannot
+carry, so nothing cut off or misframed is ever sent or captured. Such a field is
+the sender's bug, never a peer's input: the Link, and the capture module for a
 record, turns the error into a `kInvariantViolated` failure naming the message
 or record type, and the runtime that sent it stops (ADR-0033).
 

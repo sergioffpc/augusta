@@ -16,8 +16,8 @@
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
-/// messages client and server exchange and their custom binary encoding. It is
-/// a pure codec - bytes in, a message or a typed error out, bytes out - with no
+/// messages client and server exchange and their Protocol Buffers encoding. It
+/// is a pure codec - bytes in, a message or a typed error out, bytes out - with no
 /// socket, no clock and no state, so it is tested without a network and shared
 /// by both sides (ADR-0006). Which peer may send what, and what a message
 /// means for the match, is the receiver's business.
@@ -37,33 +37,37 @@
 /// and nowhere else, so no module past that edge (Match, replication,
 /// harness::Session's API, presentation) names a Wire type.
 ///
-/// Every message is one payload: a one-byte MessageTypeWire followed by that
-/// type's fields, fixed-width and little-endian, with a string or a list as a
-/// one-byte length and its elements. A position, a velocity, a direction, an
-/// angle, a stamina or a Seen time's fraction travels as a whole count of its grid's
-/// step, in the fewest bytes its range needs (augusta/grid.h, which
-/// physics::World keeps every body on, and weapon::Step a rifle's Recoil
-/// offset); the other floats (the Parameters, a rifle's times, a hit's damage)
-/// travel as their IEEE-754 bits.
-/// The server's Match captures (ADR-0050) are written in the same encoding,
-/// as records of their own (CaptureRecordWire), so a capture carries a command
-/// exactly as a Commands message does.
+/// Every message is one payload: one augusta.Message of the protocol's one
+/// schema (proto/augusta.proto, ADR-0007), its oneof member the message's
+/// MessageTypeWire. The classes protobuf generates from it are private to the
+/// codec, which maps each *Wire type to its generated message and back, so no
+/// protobuf type reaches this header. A position, a velocity, a direction, an
+/// angle, a stamina or a Seen time's fraction travels as a whole count of its
+/// grid's step, as a varint (augusta/grid.h, which physics::World keeps every
+/// body on, and weapon::Step a rifle's Recoil offset); the other floats (the
+/// Parameters, a rifle's times, a hit's damage) travel as floats. Text travels
+/// as UTF-8 in a bytes field, which the codec checks both ways, so protobuf's
+/// parse never logs a peer's bad text (NFR-05).
+/// The server's Match captures (ADR-0050) are written as records of their own
+/// (CaptureRecordWire).
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
 /// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
 /// there, and if it carries an outcome (a position, a hit, an ammo count), a
 /// check at the server's boundary and a test.
 /// Every field takes the smallest type that holds what it says: flags are bits
-/// of one byte, shared with a small enumeration where one fits. Decode treats
-/// its input as untrusted: it never throws, never reads past the end, and never
-/// allocates more than the input itself holds.
+/// of one bitfield, shared with a small enumeration where one fits. Decode
+/// treats its input as untrusted: it never throws, never reads past the end,
+/// and never allocates more than the input itself holds. It refuses only what
+/// cannot be a valid message of this build: a field this build does not know
+/// is ignored, at every level, and an absent one reads as its default.
 ///
 /// The structs order their fields widest first, so none carries padding between
-/// fields; the order on the wire is the codec's and need not follow it.
+/// fields; the order on the wire is the schema's and need not follow it.
 /// They compare equal field by field, so a message that survives Encode and
 /// Decode compares equal to itself, whatever fields it gains.
 namespace augusta::protocol {
 
-/// The first byte of every payload; which message the rest of it is.
+/// Which message a payload is: the number of its augusta.Message member.
 enum class MessageTypeWire : std::uint8_t {
   /// Client to server: asks to join the Lobby.
   kJoinRequest = 1,
@@ -501,7 +505,7 @@ struct DeathWire {
 /// capture's file name (host::CaptureFileName's) is about half of it.
 inline constexpr std::size_t kMaxCaptureNameLength = 64;
 
-/// The most captures a Replay list names: as many as its one-byte count holds.
+/// The most captures a Replay list names.
 inline constexpr std::size_t kMaxReplayListings = 255;
 
 /// Client to server: the first message on a connection that asks a replay
@@ -585,18 +589,23 @@ using MessageWire =
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;
 
-/// Why a payload is not a message.
+/// Why a payload is not a message, or not a capture record (ADR-0038,
+/// Untrusted input).
 enum class DecodeError : std::uint8_t {
-  /// The payload has no bytes, not even a message type.
-  kEmpty,
-  /// The first byte is not a MessageTypeWire of this protocol.
+  /// The payload does not parse: cut short, a wrong wire type, a broken varint,
+  /// or a string that is not UTF-8.
+  kMalformed,
+  /// It holds no body this build knows: no bytes at all, no member of its
+  /// envelope set, or a member this build lacks.
   kUnknownType,
-  /// The payload ends before the message's fields do.
-  kTruncated,
-  /// The message is complete and bytes remain.
-  kTrailingBytes,
-  /// An enumerated field holds a value the enumeration does not have.
+  /// An enumerated field holds a value the enumeration does not have, its
+  /// unspecified 0 included.
   kInvalidEnum,
+  /// A bitfield has a bit set that is none of its flags.
+  kReservedBits,
+  /// A count lies outside its grid's range, or a number is wider than its
+  /// *Wire field: neither of which a sender, clamping, ever writes.
+  kOutOfRange,
   /// A string or list field is longer than the protocol allows.
   kFieldTooLong,
 };
@@ -612,10 +621,17 @@ enum class EncodeError : std::uint8_t {
   /// An enumerated field holds a value the enumeration does not have.
   kInvalidEnum = 3,
   /// The payload Readdress was handed is not an Authoritative State's as
-  /// Encode made it: of another type, or of another length than its bodies
-  /// give it. The caller's broken invariant (ADR-0033).
+  /// Encode made it: of another type, or not framed as Encode frames one. The
+  /// caller's broken invariant (ADR-0033).
   kNotAnAuthoritativeState = 4,
+  /// A string field is not UTF-8.
+  kNotUtf8 = 5,
 };
+
+/// Whether text is UTF-8, as every string field must be: a sender holding text
+/// from outside the engine (a file's name) leaves out what is not, rather than
+/// have Encode refuse it as kNotUtf8.
+[[nodiscard]] bool IsUtf8(std::string_view text);
 
 /// Encodes message as one payload, or reports the first field beyond its
 /// limit (an engine version over kMaxEngineVersionLength, more than
@@ -628,15 +644,23 @@ enum class EncodeError : std::uint8_t {
 /// fields (acknowledged_sequence, queued_commands, rifle and health), its tick
 /// and bodies left as they were: the bytes Encode makes of that state addressed
 /// to recipient, without encoding its bodies again, so a tick's bodies are
-/// encoded once for every recipient. Reports the first of recipient's fields
-/// beyond its limit, as Encode does, or kNotAnAuthoritativeState if payload is
-/// not such a state, and leaves payload as it was.
+/// encoded once for every recipient. It keeps the bytes of the shared fields,
+/// which number first, and splices recipient's own after them under a fresh
+/// envelope tag and length (ADR-0038). Reports kNotAnAuthoritativeState if
+/// payload is not such a state, and leaves payload as it was.
 [[nodiscard]] std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient);
 
-/// The type message's payload starts with.
+/// The type of message: the envelope member Encode puts it under.
 [[nodiscard]] MessageTypeWire TypeOf(const MessageWire& message);
 
-/// Decodes one payload, or reports what is wrong with it.
+/// The type of payload, a message Encode or Readdress made, without decoding
+/// it: the envelope member its first tag names. One a peer sent may carry,
+/// before its member, fields this build does not know, so its type is its
+/// decoded message's instead.
+[[nodiscard]] MessageTypeWire TypeOf(std::span<const std::byte> payload);
+
+/// Decodes one payload, or reports why it cannot be a valid message of this
+/// build.
 [[nodiscard]] std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload);
 
 /// A short lowercase description of error, for logs.
@@ -649,20 +673,25 @@ enum class EncodeError : std::uint8_t {
 // Match start to its Match end, each at its offset in ticks from the Match's
 // first tick, in this protocol's encoding. Not a message: Decode never yields
 // one, nor DecodeCaptureRecord a message. A record is one payload as a message
-// is, a one-byte CaptureRecordTypeWire followed by its fields, read under the
-// same untrusted-input rules. A player is named by its number in the capture,
-// from 1, in its Join's order.
+// is, one augusta.CaptureRecord of the same schema, its oneof member the
+// record's CaptureRecordTypeWire plus 1000, read under the same untrusted-input
+// rules. A captured Command's command is the augusta.Command a Commands message
+// carries. A player is named by its number in the capture, from 1, in its
+// Join's order.
 
-/// The bytes a capture file starts with, before its first record, so a reader
-/// tells it from a pack (ADR-0031) by them alone.
+/// The bytes a capture file starts with, before its format version, so a
+/// reader tells it from a pack (ADR-0031) by them alone.
 inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::byte{'U'}, std::byte{'G'},
                                                         std::byte{'C'},  std::byte{'A'}, std::byte{'P'},
                                                         std::byte{'\r'}, std::byte{'\n'}};
 
-/// The capture format this engine writes, in CaptureHeaderWire::format_version.
-inline constexpr std::uint8_t kCaptureFormatVersion = 2;
+/// The capture format this engine writes: the one raw byte a capture file holds
+/// after its magic and before its first record, so a reader refuses another
+/// format before it parses any record.
+inline constexpr std::uint8_t kCaptureFormatVersion = 3;
 
-/// The first byte of every record of a capture.
+/// Which record a payload is: the number of its augusta.CaptureRecord member,
+/// less 1000.
 enum class CaptureRecordTypeWire : std::uint8_t {
   /// What the Match ran on: a capture's first record, and its only one of this type.
   kHeader = 1,
@@ -684,8 +713,6 @@ struct CaptureHeaderWire {
   std::string engine_version;
   /// When the Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
-  /// kCaptureFormatVersion of the engine that wrote it.
-  std::uint8_t format_version = 0;
   std::uint8_t tick_rate_hz = 0;
 
   bool operator==(const CaptureHeaderWire&) const = default;
@@ -752,7 +779,8 @@ using CaptureRecordWire = std::variant<CaptureHeaderWire, CapturedJoinWire, Capt
 /// and gives no payload at all, as Encode does a message.
 [[nodiscard]] std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record);
 
-/// The type record's payload starts with.
+/// The type of record: its envelope member, less 1000, that EncodeCaptureRecord
+/// puts it under.
 [[nodiscard]] CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record);
 
 /// Decodes one capture record's payload, or reports what is wrong with it, as Decode does a message's.

@@ -41,7 +41,7 @@ struct ScriptBuilder {
 }  // namespace
 
 std::string DescribeScriptError(const ScriptError& error) {
-  return error.capture.has_value() ? std::string(capture::DescribeReadError(*error.capture))
+  return error.capture.has_value() ? capture::DescribeReadError(*error.capture)
                                    : std::string("the capture has no player of that number");
 }
 

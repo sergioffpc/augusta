@@ -45,3 +45,12 @@ YAML is formatted by yamlfmt (2-space indentation, LF line endings, a final
 newline) and linted by yamllint. yamlfmt keeps a folded scalar's (`>`) line
 breaks, so what no tool checks is written by hand: prose too long for one line,
 such as a `description:`, goes in a folded scalar wrapped at 80 columns.
+
+The Protocol Buffers schema follows the
+[Protocol Buffers style guide](https://protobuf.dev/programming-guides/style/).
+`buf format` formats it and `buf lint` lints it with Buf's `STANDARD` rules
+(`buf.yaml`), save the two on the package's layout: its package is `augusta`,
+unversioned and in the module's root, since renaming it would rename the
+generated C++ namespace, and the engine version versions the protocol. What no
+tool checks is written by hand: 80 columns, and a comment on every message and
+field whose meaning is not obvious from its name.

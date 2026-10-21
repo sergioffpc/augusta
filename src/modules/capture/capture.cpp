@@ -6,13 +6,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <initializer_list>
 #include <ios>
 #include <istream>
 #include <optional>
 #include <ostream>
 #include <span>
-#include <string_view>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -60,12 +61,31 @@ std::expected<void, ReadError> ReadMagic(std::istream& in) {
   std::array<char, link::kCaptureMagic.size()> magic{};
   in.read(magic.data(), magic.size());
   if (in.bad()) {
-    return std::unexpected(ReadError::kUnreadable);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnreadable});
   }
   if (static_cast<std::size_t>(in.gcount()) != magic.size() ||
       !std::ranges::equal(magic, link::kCaptureMagic,
                           [](char read, std::byte expected) { return static_cast<std::byte>(read) == expected; })) {
-    return std::unexpected(ReadError::kNotACapture);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kNotACapture});
+  }
+  return {};
+}
+
+// The format version, one raw byte after the magic: a file of another, or of
+// none (a v2 file's header record follows its magic), is refused before any
+// record is parsed.
+std::expected<void, ReadError> ReadFormatVersion(std::istream& in) {
+  char version = 0;
+  in.read(&version, 1);
+  if (in.bad()) {
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnreadable});
+  }
+  if (in.gcount() != 1) {
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnsupported});
+  }
+  if (static_cast<std::uint8_t>(version) != link::kCaptureFormatVersion) {
+    return std::unexpected(
+        ReadError{.code = ReadErrorCode::kUnsupported, .format_version = static_cast<std::uint8_t>(version)});
   }
   return {};
 }
@@ -74,16 +94,15 @@ std::expected<Header, ReadError> ReadHeader(std::istream& in) {
   std::vector<std::byte> payload;
   const Frame frame = ReadFrame(in, payload);
   if (frame == Frame::kUnreadable) {
-    return std::unexpected(ReadError::kUnreadable);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnreadable});
   }
   if (frame != Frame::kRead) {
-    return std::unexpected(ReadError::kUnsupported);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnsupported});
   }
-  // A header of another format version does not decode.
   const auto record = link::DecodeCaptureRecord(payload);
   const auto* header = record.has_value() ? std::get_if<Header>(&*record) : nullptr;
   if (header == nullptr) {
-    return std::unexpected(ReadError::kUnsupported);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnsupported});
   }
   return *header;
 }
@@ -161,10 +180,13 @@ struct CaptureFile {
 // that fails, wherever it does, is kUnreadable, never a whole or torn capture.
 std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
   if (!in) {
-    return std::unexpected(ReadError::kUnreadable);
+    return std::unexpected(ReadError{.code = ReadErrorCode::kUnreadable});
   }
   if (auto magic = ReadMagic(in); !magic.has_value()) {
     return std::unexpected(magic.error());
+  }
+  if (auto version = ReadFormatVersion(in); !version.has_value()) {
+    return std::unexpected(version.error());
   }
   auto header = ReadHeader(in);
   if (!header.has_value()) {
@@ -175,7 +197,7 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
   std::vector<std::byte> payload;
   for (Frame frame = ReadFrame(in, payload); frame != Frame::kEnd; frame = ReadFrame(in, payload)) {
     if (frame == Frame::kUnreadable) {
-      return std::unexpected(ReadError::kUnreadable);
+      return std::unexpected(ReadError{.code = ReadErrorCode::kUnreadable});
     }
     if (frame == Frame::kTorn) {
       file.torn = true;
@@ -183,7 +205,7 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
     }
     auto record = link::DecodeCaptureRecord(payload);
     if (!record.has_value() || !order.Admits(*record)) {
-      return std::unexpected(ReadError::kMalformed);
+      return std::unexpected(ReadError{.code = ReadErrorCode::kMalformed});
     }
     file.records.push_back(*std::move(record));
   }
@@ -192,15 +214,19 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
 
 }  // namespace
 
-std::string_view DescribeReadError(ReadError error) {
-  switch (error) {
-    case ReadError::kUnreadable:
+std::string DescribeReadError(const ReadError& error) {
+  switch (error.code) {
+    case ReadErrorCode::kUnreadable:
       return "the capture could not be read";
-    case ReadError::kNotACapture:
+    case ReadErrorCode::kNotACapture:
       return "the file does not start with a capture's magic";
-    case ReadError::kUnsupported:
-      return "the capture's header is missing or of a format version this engine does not read";
-    case ReadError::kMalformed:
+    case ReadErrorCode::kUnsupported:
+      if (error.format_version.has_value()) {
+        return std::format("the capture is of format version {}; this engine reads format version {}",
+                           *error.format_version, link::kCaptureFormatVersion);
+      }
+      return "the capture has no format version or no header";
+    case ReadErrorCode::kMalformed:
       return "a record of the capture does not decode or is out of order";
   }
   return "unknown capture error";
@@ -248,6 +274,7 @@ std::expected<Encoded, EncodeError> EncodeHeader(const Header& header) {
     return std::unexpected(std::move(frame.error()));
   }
   std::vector<std::byte> bytes(link::kCaptureMagic.begin(), link::kCaptureMagic.end());
+  bytes.push_back(static_cast<std::byte>(link::kCaptureFormatVersion));
   bytes.insert(bytes.end(), frame->begin(), frame->end());
   return Encoded(std::move(bytes));
 }

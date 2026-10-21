@@ -74,7 +74,6 @@ protocol::CaptureHeaderWire HeaderToWire(const capture::Header& header) {
                                      .client_pack = ToWire(header.client_pack),
                                      .engine_version = header.engine_version,
                                      .started_unix_ms = header.started.time_since_epoch().count(),
-                                     .format_version = protocol::kCaptureFormatVersion,
                                      .tick_rate_hz = header.tick_rate_hz};
 }
 
@@ -87,23 +86,17 @@ capture::Header HeaderFromWire(const protocol::CaptureHeaderWire& header) {
       .started = std::chrono::sys_time<std::chrono::milliseconds>(std::chrono::milliseconds(header.started_unix_ms))};
 }
 
-// What a record's payload decodes to in the engine's types: nullopt for a
-// header of another format version, which this engine does not read.
+// What a record's payload decodes to in the engine's types.
 struct RecordFromWire {
-  std::optional<CaptureRecord> operator()(const protocol::CaptureHeaderWire& header) const {
-    if (header.format_version != protocol::kCaptureFormatVersion) {
-      return std::nullopt;
-    }
-    return HeaderFromWire(header);
-  }
-  std::optional<CaptureRecord> operator()(const protocol::CapturedJoinWire& join) const {
+  CaptureRecord operator()(const protocol::CaptureHeaderWire& header) const { return HeaderFromWire(header); }
+  CaptureRecord operator()(const protocol::CapturedJoinWire& join) const {
     return CapturedJoin{
         .offset = join.offset,
         .player = join.player,
         .join = {.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn}};
   }
   template <typename EventWire>
-  std::optional<CaptureRecord> operator()(const EventWire& event) const {
+  CaptureRecord operator()(const EventWire& event) const {
     return CaptureRecord{EventFromRecord{}(event)};
   }
 };

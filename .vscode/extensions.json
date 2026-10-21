@@ -1,6 +1,9 @@
 {
   // VS Code reads this file as JSONC, so comments are allowed.
   "recommendations": [
+    // Protocol Buffers: language server, buf format and buf lint against
+    // buf.yaml.
+    "bufbuild.vscode-buf",
     // Python: lint and format against ruff.toml.
     "charliermarsh.ruff",
     // Lua: lint Composer scripts against .luacheckrc.

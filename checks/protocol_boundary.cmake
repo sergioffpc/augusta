@@ -13,7 +13,13 @@
 # no augusta header but its own, the math's (augusta/math.h, augusta/grid.h),
 # the tick's (augusta/tick.h) and the limits' (augusta/limits.h), and its target
 # links nothing else, so a gameplay module (the Command, the Parameters) never
-# becomes what the wire depends on.
+# becomes what the wire depends on. Its links beyond them are the full
+# protobuf runtime, never the lite one, and protobuf's utf8_range, both
+# PRIVATE (ADR-0007).
+#
+# Keeps protobuf inside the protocol: no header outside src/modules/protocol
+# includes a protobuf header, utf8_range's or the generated augusta.pb.h, so
+# protobuf never reaches the engine's vocabulary (ADR-0007).
 #
 # Run by ctest as `cmake -DSOURCE_DIR=<repo root> -P protocol_boundary.cmake`.
 if(NOT DEFINED SOURCE_DIR)
@@ -82,17 +88,56 @@ foreach(source ${protocol_sources})
     list(APPEND dependency_violations "  ${relative}: ${line}")
   endforeach()
 endforeach()
-# The protocol's own target_link_libraries call, whatever its scope keywords;
-# every augusta target it names must be one of the allowed three.
+# The protocol's own target_link_libraries calls: every target they name must
+# be one of the allowed three, or the full protobuf runtime or utf8_range under
+# PRIVATE.
 file(READ "${SOURCE_DIR}/src/modules/protocol/CMakeLists.txt" protocol_cmake)
 string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" link_calls "${protocol_cmake}")
 foreach(call ${link_calls})
-  string(REGEX MATCHALL "augusta_[A-Za-z0-9_]+" linked "${call}")
-  list(REMOVE_ITEM linked augusta_protocol)
-  foreach(target ${linked})
-    if(NOT target MATCHES "^${allowed_link}$")
+  string(REGEX REPLACE "^target_link_libraries\\(|\\)$" "" arguments "${call}")
+  # One argument a word, however the call is wrapped across lines.
+  separate_arguments(arguments UNIX_COMMAND "${arguments}")
+  list(POP_FRONT arguments)
+  set(scope "")
+  foreach(target ${arguments})
+    if(target MATCHES "^(PUBLIC|PRIVATE|INTERFACE)$")
+      set(scope "${target}")
+    elseif(target MATCHES "^(protobuf::libprotobuf|utf8_range::utf8_range)$")
+      if(NOT scope STREQUAL "PRIVATE")
+        list(
+          APPEND dependency_violations
+          "  src/modules/protocol/CMakeLists.txt: links ${target} ${scope}, not PRIVATE"
+        )
+      endif()
+    elseif(NOT target MATCHES "^${allowed_link}$")
       list(APPEND dependency_violations "  src/modules/protocol/CMakeLists.txt: links ${target}")
     endif()
+  endforeach()
+endforeach()
+
+# Every C++ header outside the protocol module, in the engine, its tests and the
+# tools, skipping hidden directories (a tool's virtual environment).
+file(
+  GLOB_RECURSE engine_headers
+  "${SOURCE_DIR}/src/*.h"
+  "${SOURCE_DIR}/src/*.hpp"
+  "${SOURCE_DIR}/tests/*.h"
+  "${SOURCE_DIR}/tests/*.hpp"
+  "${SOURCE_DIR}/tools/*.h"
+  "${SOURCE_DIR}/tools/*.hpp"
+)
+list(FILTER engine_headers EXCLUDE REGEX "^${SOURCE_DIR}/src/modules/protocol/|/\\.[^/]+/")
+set(protobuf_violations "")
+foreach(header ${engine_headers})
+  file(
+    STRINGS "${header}"
+    lines
+    REGEX "#[ \t]*include[ \t]*[\"<](google/protobuf/|utf8_range\\.h|([^\">]*/)?augusta\\.pb\\.h)"
+  )
+  foreach(line ${lines})
+    file(RELATIVE_PATH relative "${SOURCE_DIR}" "${header}")
+    string(STRIP "${line}" line)
+    list(APPEND protobuf_violations "  ${relative}: ${line}")
   endforeach()
 endforeach()
 
@@ -115,7 +160,14 @@ if(dependency_violations)
   list(JOIN dependency_violations "\n" dependency_report)
   string(
     APPEND report
-    "The protocol depends on a module above it - take the shared counter or bound from augusta/tick.h or augusta/limits.h instead:\n${dependency_report}\n"
+    "The protocol depends on a module above it, or on protobuf other than its full runtime and utf8_range linked PRIVATE - take the shared counter or bound from augusta/tick.h or augusta/limits.h instead:\n${dependency_report}\n"
+  )
+endif()
+if(protobuf_violations)
+  list(JOIN protobuf_violations "\n" protobuf_report)
+  string(
+    APPEND report
+    "protobuf leaks past the protocol (ADR-0007) - include it, and the generated augusta.pb.h, in src/modules/protocol alone:\n${protobuf_report}\n"
   )
 endif()
 if(report)
@@ -124,7 +176,8 @@ if(report)
 endif()
 list(LENGTH headers count)
 list(LENGTH presentation_headers presentation_count)
+list(LENGTH engine_headers engine_count)
 message(
   STATUS
-  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick and limits only"
+  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick, limits, the protobuf runtime and utf8_range only, ${engine_count} headers free of protobuf"
 )

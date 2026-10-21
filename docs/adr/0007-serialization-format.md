@@ -47,8 +47,14 @@ format did:
 - the numbers that must arrive exactly (the Parameters, a rifle's two times, a
   player's health) are `float`;
 - a Tick and a Sequence are `uint64`;
-- every proto enum's 0 is `*_UNSPECIFIED`, which no sender writes, and a
-  `oneof`'s members number from 1.
+- text is `bytes` holding UTF-8, which the codec checks itself, not `string`,
+  whose check in protobuf's parse logs every failure (ADR-0038);
+- every proto enum's 0 is `*_UNSPECIFIED`, which no sender writes;
+- the two envelopes' `oneof` members number from disjoint ranges,
+  `augusta.Message`'s from 1, each numbered as its message type, and
+  `augusta.CaptureRecord`'s from 1000, each 1000 plus its record type: an
+  unknown field is ignored, so a payload of one envelope sets no member of the
+  other, and each decoder refuses it as a body it does not know.
 
 An Authoritative State is 229 bytes typical against the custom format's 239, and
 up to 415 with every number at its grid's bound, about 25 KB/s per client at 60

@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acoustics Propagation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
+  Answers one question for spec #802 (M30, ADR-0010): how does a sound travel
+  through a Map's Acoustic geometry - direct path, occlusion and transmission,
+  air absorption, directivity, baked pathing and baked reflections?
+  The <script id="acoustics"> block is pure and is the part worth lifting into
+  the acoustics module; the page around it is not.
+-->
+<style>
+  :root {
+    --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
+    --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
+    --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e;
+    --btn: #ffffff; --code: #f0eee8;
+    --range: #fbfaf7; --room: #eef1f8; --open: #eef4e9; --probe: #c4c8d4;
+    --path: #d9821a; --reflect: #8a5cc7;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --room: #20242f; --open: #1f2820; --probe: #4a4e5a;
+    --path: #f0a54a; --reflect: #b48ce8;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --room: #20242f; --open: #1f2820; --probe: #4a4e5a;
+    --path: #f0a54a; --reflect: #b48ce8;
+    color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .layout > div { min-width: 0; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--muted); max-width: 980px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    background: var(--bad-soft); color: var(--bad); padding: 2px 8px; border-radius: 99px;
+    margin-bottom: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 16px;
+    margin-top: 16px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px; }
+  #mapWrap { width: 100%; display: flex; justify-content: center; }
+  canvas#map { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
+  button.next { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; }
+  label.radio { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
+  .params label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; }
+  .changed { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .verdict { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+  .verdict.warn { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-soft); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num { text-align: right; }
+  tr.diff td { background: var(--accent-soft); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .watch { color: var(--muted); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  ul.open-q { margin: 0; padding-left: 18px; }
+  ul.open-q li { margin-bottom: 6px; }
+  .hint { font-size: 12px; color: var(--muted); }
+  code { font-size: 12px; background: var(--code); overflow-wrap: anywhere; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>How a sound travels through a Map</h1>
+  <p class="lede">
+    With spec #802's model (M30, ADR-0010), what happens to a gunshot between the shooter and
+    whoever hears it? How much it loses to distance and to the air, how much a wall lets through
+    depending on its Surface material, when it is heard around a corner (pathing) and how the
+    space it is fired in sounds (reflections). Click the map to place the shooter or yourself, use
+    the buttons, and press <strong>Hear the shot</strong>.
+  </p>
+  <details>
+    <summary>What this prototype approximates that Steam Audio computes</summary>
+    <ul class="assume">
+      <li>The materials, the air absorption and the three bands are Steam Audio's presets, and the rule for what occludes, reflects and has a path is the spec's.</li>
+      <li>The geometry is 2D, seen from above. Reflections are image sources up to the 2nd order; Steam Audio ray-traces them.</li>
+      <li>Paths run through a grid of probes 2 m apart, linked where they see each other within 6 m.</li>
+      <li>The reverberation time is Sabine's, with a 3 m ceiling height; the yard has open sky above it.</li>
+      <li>It shows the behaviour, not the exact values Steam Audio would compute.</li>
+    </ul>
+  </details>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="row">
+          <span>Clicking the map places:</span>
+          <label class="radio"><input type="radio" name="clickmode" value="shooter" checked> the shooter</label>
+          <label class="radio"><input type="radio" name="clickmode" value="listener"> me</label>
+          <button class="primary" id="play">▶ Hear the shot</button>
+          <span class="hint">(headphones help: direction comes from the left/right pan)</span>
+        </div>
+        <div id="mapWrap"><canvas id="map"></canvas></div>
+        <div class="legend">
+          <span><i style="background:var(--ok)"></i>direct sound, in sight</span>
+          <span><i style="background:var(--bad)"></i>direct sound, occluded</span>
+          <span><i style="background:var(--path)"></i>path (pathing)</span>
+          <span><i style="background:var(--reflect)"></i>strongest reflections</span>
+          <span>▲ shooter (points where it fires) · ● you (looking along the arrow)</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+
+      <div class="card">
+        <h2>Free play</h2>
+        <div class="row">
+          <button data-act='{"type":"aimShooterAtListener"}'>Shooter aims at me</button>
+          <button data-act='{"type":"aimShooterAway"}'>Shooter aims away</button>
+          <button data-act='{"type":"rotateShooter","deg":-45}'>Shooter turns ⟲ 45°</button>
+          <button data-act='{"type":"rotateShooter","deg":45}'>Shooter turns ⟳ 45°</button>
+        </div>
+        <div class="row">
+          <button data-act='{"type":"rotateListener","deg":-45}'>I turn ⟲ 45°</button>
+          <button data-act='{"type":"rotateListener","deg":45}'>I turn ⟳ 45°</button>
+          <button data-act='{"type":"toggleDoor"}'>Open/close the door (Prop)</button>
+        </div>
+        <div class="row">
+          <button data-act='{"type":"toggleProbeVolumes"}'>Probe volumes on/off</button>
+          <button data-act='{"type":"toggleDirectivity"}'>Shot directivity on/off</button>
+          <button data-act='{"type":"togglePathValidation"}'>Path validation on/off</button>
+          <button data-act='{"type":"reset"}'>Reset</button>
+        </div>
+        <h2 style="margin-top:14px">Surface materials</h2>
+        <div class="params" id="materials"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" id="state"></div>
+      <div class="card">
+        <h2>Questions the prototype raises</h2>
+        <ul class="open-q">
+          <li><strong>Door closed, path open.</strong> Paths are baked against the static Map and
+            Props are left out (spec #802: "Props only occlude and transmit"). With the door
+            closed, the baked path goes through the doorway and the sound arrives almost as if it
+            were open. Steam Audio can validate paths at run time against the current scene, but
+            the spec does not ask for it. See the walkthrough "The door is a Prop".</li>
+          <li><strong>Direct and path at once.</strong> In line of sight the path coincides with
+            the direct sound; playing both adds the same sound twice. Here the path plays only
+            when the direct sound is occluded; the Engine has to decide the same.</li>
+          <li><strong>Whose reflections?</strong> Here the reflections and the reverberation time
+            are those of the Probe volume the shooter is in. When the shooter and the listener are
+            in different spaces, which is heard? The spec says "a sound inside a Probe volume
+            carries that space's reflections".</li>
+          <li><strong>Concrete is almost deaf.</strong> Concrete's transmission presets (0.015 /
+            0.002 / 0.001) take about 36 dB off the lows and 54 dB off the mids: behind a concrete
+            wall, what is heard is almost only the path around it.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script id="acoustics">
+// The simulation, pure: no DOM. Map data, the reducer, the bake and the
+// simulation. Lengths in metres.
+const Acoustics = (() => {
+  // Steam Audio's three bands: below 800 Hz, 800 Hz to 8 kHz, above 8 kHz.
+  const BANDS = ['low (<800 Hz)', 'mid (0.8–8 kHz)', 'high (>8 kHz)'];
+  const SPEED_OF_SOUND = 343;  // m/s
+  // Steam Audio's default air absorption, per metre, per band: gain = exp(-c·d).
+  const AIR = [0.0002, 0.0017, 0.0182];
+  // Steam Audio's material presets: absorption and transmission per band,
+  // scattering. What spec #802 seeds the Surface material catalogue with.
+  const MATERIALS = {
+    generic:  { label: 'generic',  absorption: [0.10, 0.20, 0.30], scattering: 0.05, transmission: [0.100, 0.050, 0.030] },
+    brick:    { label: 'brick',    absorption: [0.03, 0.04, 0.07], scattering: 0.05, transmission: [0.015, 0.015, 0.015] },
+    concrete: { label: 'concrete', absorption: [0.05, 0.07, 0.08], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
+    ceramic:  { label: 'ceramic',  absorption: [0.01, 0.02, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
+    gravel:   { label: 'gravel',   absorption: [0.60, 0.70, 0.80], scattering: 0.05, transmission: [0.031, 0.012, 0.008] },
+    carpet:   { label: 'carpet',   absorption: [0.24, 0.69, 0.73], scattering: 0.05, transmission: [0.020, 0.005, 0.003] },
+    glass:    { label: 'glass',    absorption: [0.06, 0.03, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
+    plaster:  { label: 'plaster',  absorption: [0.12, 0.06, 0.04], scattering: 0.05, transmission: [0.056, 0.056, 0.004] },
+    wood:     { label: 'wood',     absorption: [0.11, 0.07, 0.06], scattering: 0.05, transmission: [0.070, 0.014, 0.005] },
+    metal:    { label: 'metal',    absorption: [0.20, 0.07, 0.06], scattering: 0.05, transmission: [0.200, 0.025, 0.010] },
+    rock:     { label: 'rock',     absorption: [0.13, 0.20, 0.24], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
+  };
+
+  // The example Map, top-down, in metres: a yard, two rooms and a corridor.
+  // Each wall is Acoustic geometry in a group whose Surface material can be
+  // changed from the page.
+  const WALL_GROUPS = {
+    facade:    'Outer facade',
+    window:    'Room A window',
+    interior:  'Corridor walls',
+    partition: 'Room A / Room B partition',
+    door:      'Room A door (Prop)',
+  };
+  const STATIC_WALLS = [
+    { id: 'w1',  group: 'facade',    a: [14, 0],  b: [14, 4] },
+    { id: 'w2',  group: 'window',    a: [14, 4],  b: [14, 7] },
+    { id: 'w3',  group: 'facade',    a: [14, 7],  b: [14, 12] },
+    { id: 'w4',  group: 'facade',    a: [14, 0],  b: [40, 0] },
+    { id: 'w5',  group: 'interior',  a: [14, 12], b: [18, 12] },
+    { id: 'w6',  group: 'interior',  a: [20, 12], b: [26, 12] },
+    { id: 'w7',  group: 'partition', a: [26, 0],  b: [26, 12] },
+    { id: 'w8',  group: 'facade',    a: [40, 0],  b: [40, 12] },
+    { id: 'w9',  group: 'interior',  a: [26, 12], b: [36, 12] },
+    { id: 'w10', group: 'interior',  a: [38, 12], b: [40, 12] },
+    { id: 'w11', group: 'facade',    a: [40, 12], b: [40, 16] },
+    { id: 'w12', group: 'facade',    a: [14, 16], b: [40, 16] },
+    { id: 'w13', group: 'facade',    a: [14, 16], b: [14, 24] },
+  ];
+  // The door is a placed Prop: it occludes and transmits where it stands, and
+  // it never reflects and is never baked (spec #802).
+  const DOOR = {
+    closed: { a: [18, 12], b: [20, 12] },
+    open:   { a: [18, 12], b: [18, 10] },
+  };
+  // Probe volumes, with what their floor and ceiling are made of (for the
+  // reverberation estimate). The yard has sky above it.
+  const PROBE_VOLUMES = [
+    { id: 'yard',     label: 'Yard',     x0: 0,  y0: 0,  x1: 14, y1: 24, floor: 'gravel',   ceiling: null },
+    { id: 'roomA',    label: 'Room A',   x0: 14, y0: 0,  x1: 26, y1: 12, floor: 'concrete', ceiling: 'plaster' },
+    { id: 'roomB',    label: 'Room B',   x0: 26, y0: 0,  x1: 40, y1: 12, floor: 'concrete', ceiling: 'plaster' },
+    { id: 'corridor', label: 'Corridor', x0: 14, y0: 12, x1: 40, y1: 16, floor: 'concrete', ceiling: 'plaster' },
+  ];
+  const PROBE_SPACING = 2;      // m, the spec's default
+  const ROOM_HEIGHT = 3;        // m, for the 2D reverberation estimate
+  const PROBE_LINK_RADIUS = 6;  // m, how far apart two probes may be linked
+  const MAP_SIZE = { w: 40, h: 24 };
+  // A gunshot's directivity: a dipole, as spec #802's `directivity`.
+  const GUNSHOT_DIRECTIVITY = { dipoleWeight: 0.4, dipolePower: 1 };
+
+  const initialState = () => ({
+    shooter: { x: 20, y: 5.5, facing: Math.PI },
+    listener: { x: 8, y: 5.5, facing: 0 },
+    door: 'closed',
+    materials: { facade: 'concrete', window: 'glass', interior: 'concrete',
+                 partition: 'wood', door: 'wood' },
+    probeVolumes: true,
+    directivity: true,
+    pathValidation: false,
+    lastAction: 'Start',
+  });
+
+  const DEG = Math.PI / 180;
+  const clampToMap = (x, y) => [Math.min(MAP_SIZE.w - 0.2, Math.max(0.2, x)),
+                                Math.min(MAP_SIZE.h - 0.2, Math.max(0.2, y))];
+  const angleTo = (from, to) => Math.atan2(to.y - from.y, to.x - from.x);
+  const probeVolumesAction = (on) => on ? 'Probe volumes on' : 'Probe volumes off (the Map has Acoustic geometry only)';
+  const pathValidationAction = (on) => on ? 'Paths validated against the current scene (Props included)' : 'Paths baked only (Props ignored)';
+
+  function reduce(state, action) {
+    const s = structuredClone(state);
+    switch (action.type) {
+      case 'reset': return initialState();
+      case 'placeShooter': {
+        const [x, y] = clampToMap(action.x, action.y);
+        s.shooter.x = x; s.shooter.y = y;
+        if (action.facingDeg !== undefined) s.shooter.facing = action.facingDeg * DEG;
+        s.lastAction = `Shooter placed at (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
+        break;
+      }
+      case 'placeListener': {
+        const [x, y] = clampToMap(action.x, action.y);
+        s.listener.x = x; s.listener.y = y;
+        if (action.facingDeg !== undefined) s.listener.facing = action.facingDeg * DEG;
+        s.lastAction = `You at (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
+        break;
+      }
+      case 'aimShooterAtListener':
+        s.shooter.facing = angleTo(s.shooter, s.listener);
+        s.lastAction = 'Shooter aims at you';
+        break;
+      case 'aimShooterAway':
+        s.shooter.facing = angleTo(s.shooter, s.listener) + Math.PI;
+        s.lastAction = 'Shooter aims the opposite way';
+        break;
+      case 'rotateShooter':
+        s.shooter.facing += action.deg * DEG;
+        s.lastAction = `Shooter turned ${action.deg}°`;
+        break;
+      case 'rotateListener':
+        s.listener.facing += action.deg * DEG;
+        s.lastAction = `You turned ${action.deg}°`;
+        break;
+      case 'toggleDoor':
+        s.door = s.door === 'closed' ? 'open' : 'closed';
+        s.lastAction = s.door === 'closed' ? 'Door closed' : 'Door open';
+        break;
+      case 'setDoor':
+        s.door = action.door;
+        s.lastAction = s.door === 'closed' ? 'Door closed' : 'Door open';
+        break;
+      case 'setMaterial':
+        s.materials[action.group] = action.material;
+        s.lastAction = `${WALL_GROUPS[action.group]}: ${MATERIALS[action.material].label}`;
+        break;
+      case 'toggleProbeVolumes':
+        s.probeVolumes = !s.probeVolumes;
+        s.lastAction = probeVolumesAction(s.probeVolumes);
+        break;
+      case 'setProbeVolumes':
+        s.probeVolumes = action.on;
+        s.lastAction = probeVolumesAction(s.probeVolumes);
+        break;
+      case 'toggleDirectivity':
+        s.directivity = !s.directivity;
+        s.lastAction = s.directivity ? 'Directional shot (dipole)' : 'Shot equal in every direction';
+        break;
+      case 'togglePathValidation':
+        s.pathValidation = !s.pathValidation;
+        s.lastAction = pathValidationAction(s.pathValidation);
+        break;
+      case 'setPathValidation':
+        s.pathValidation = action.on;
+        s.lastAction = pathValidationAction(s.pathValidation);
+        break;
+      default: throw new Error('unknown action ' + action.type);
+    }
+    return s;
+  }
+
+  // --- geometry ------------------------------------------------------------
+  const sub = (p, q) => [p[0] - q[0], p[1] - q[1]];
+  const cross = (p, q) => p[0] * q[1] - p[1] * q[0];
+  const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const pt = (o) => [o.x, o.y];
+
+  // Where segment p→q crosses segment a→b, as the fraction t along p→q, or null.
+  function crossing(p, q, a, b) {
+    const r = sub(q, p), s = sub(b, a);
+    const denom = cross(r, s);
+    if (Math.abs(denom) < 1e-12) return null;
+    const ap = sub(a, p);
+    const t = cross(ap, s) / denom, u = cross(ap, r) / denom;
+    if (t > 1e-6 && t < 1 - 1e-6 && u >= -1e-9 && u <= 1 + 1e-9) return t;
+    return null;
+  }
+
+  function reflectAcross(P, wall) {
+    const d = sub(wall.b, wall.a), len = Math.hypot(d[0], d[1]);
+    const n = [d[0] / len, d[1] / len];
+    const v = sub(P, wall.a), k = v[0] * n[0] + v[1] * n[1];
+    const proj = [wall.a[0] + n[0] * k, wall.a[1] + n[1] * k];
+    return [2 * proj[0] - P[0], 2 * proj[1] - P[1]];
+  }
+
+  function wallsWithMaterials(state) {
+    return STATIC_WALLS.map(w => ({ ...w, material: state.materials[w.group], prop: false }));
+  }
+  function doorWall(state) {
+    const pose = DOOR[state.door];
+    return { id: 'door', group: 'door', a: pose.a, b: pose.b, material: state.materials.door, prop: true };
+  }
+  // What sound is blocked by now: the static Acoustic geometry and the Prop.
+  const occluders = (state) => [...wallsWithMaterials(state), doorWall(state)];
+
+  const crossedBy = (p, q, walls, except = []) =>
+    walls.filter(w => !except.includes(w.id) && crossing(p, q, w.a, w.b) !== null);
+
+  function volumeAt(state, p) {
+    if (!state.probeVolumes) return null;
+    return PROBE_VOLUMES.find(v => p[0] >= v.x0 && p[0] <= v.x1 && p[1] >= v.y0 && p[1] <= v.y1) || null;
+  }
+
+  // --- the bake ------------------------------------------------------------
+  // What augusta-pack would bake: probes in each Probe volume, linked where
+  // they see each other through the static Acoustic geometry only (no Props).
+  function bake(probeVolumesOn) {
+    if (!probeVolumesOn) return { probes: [], links: [] };
+    const probes = [];
+    for (const v of PROBE_VOLUMES) {
+      for (let x = v.x0 + PROBE_SPACING / 2; x < v.x1; x += PROBE_SPACING)
+        for (let y = v.y0 + PROBE_SPACING / 2; y < v.y1; y += PROBE_SPACING)
+          probes.push({ p: [x, y], volume: v.id });
+    }
+    const links = probes.map(() => []);
+    for (let i = 0; i < probes.length; i++)
+      for (let j = i + 1; j < probes.length; j++) {
+        const d = dist(probes[i].p, probes[j].p);
+        if (d > PROBE_LINK_RADIUS) continue;
+        if (crossedBy(probes[i].p, probes[j].p, STATIC_WALLS).length) continue;
+        links[i].push({ j, d }); links[j].push({ j: i, d });
+      }
+    return { probes, links };
+  }
+
+  // --- the simulation ------------------------------------------------------
+  const distanceGain = (d) => 1 / Math.max(d, 1);  // inverse distance, 1 m minimum
+  const airGain = (d) => AIR.map(c => Math.exp(-c * d));
+  function directivityGain(state, towards) {
+    if (!state.directivity) return 1;
+    const { dipoleWeight: w, dipolePower: k } = GUNSHOT_DIRECTIVITY;
+    const cos = Math.cos(towards - state.shooter.facing);
+    return Math.pow(Math.abs((1 - w) + w * cos), k);
+  }
+  // Where a point is around the listener: positive is to the right.
+  function relativeAzimuth(state, p) {
+    let a = Math.atan2(p[1] - state.listener.y, p[0] - state.listener.x) - state.listener.facing;
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a <= -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
+  function simulateDirect(state) {
+    const S = pt(state.shooter), L = pt(state.listener);
+    const d = dist(S, L);
+    const crossed = crossedBy(S, L, occluders(state));
+    const transmission = [0, 1, 2].map(b =>
+      crossed.reduce((g, w) => g * MATERIALS[w.material].transmission[b], 1));
+    const dg = distanceGain(d), air = airGain(d);
+    const dir = directivityGain(state, Math.atan2(L[1] - S[1], L[0] - S[0]));
+    const total = [0, 1, 2].map(b => dg * air[b] * dir * transmission[b]);
+    return { distance: d, occluded: crossed.length > 0, crossed, distanceGain: dg,
+             air, directivity: dir, transmission, total,
+             azimuth: relativeAzimuth(state, S) };
+  }
+
+  // Baked pathing: the shortest way through the probes from the listener to
+  // the source. Without validation it trusts the bake, which never saw Props.
+  function simulatePath(state, baked) {
+    const S = pt(state.shooter), L = pt(state.listener);
+    if (!state.probeVolumes) return { available: false, reason: 'No Probe volumes: there are no baked paths.' };
+    if (!volumeAt(state, S)) return { available: false, reason: 'The shooter is outside every Probe volume.' };
+    if (!volumeAt(state, L)) return { available: false, reason: 'You are outside every Probe volume.' };
+    const door = doorWall(state);
+    const blockedNow = (p, q) => state.pathValidation && state.door === 'closed' &&
+                                 crossing(p, q, door.a, door.b) !== null;
+    const sees = (p, q) => !crossedBy(p, q, STATIC_WALLS).length && !blockedNow(p, q);
+    const { probes, links } = baked;
+    const n = probes.length;
+    const best = new Array(n).fill(Infinity), prev = new Array(n).fill(-1), done = new Array(n).fill(false);
+    for (let i = 0; i < n; i++) {
+      const d = dist(L, probes[i].p);
+      if (d <= PROBE_LINK_RADIUS && sees(L, probes[i].p)) best[i] = d;
+    }
+    for (;;) {
+      let u = -1;
+      for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u])) u = i;
+      if (u < 0) break;
+      done[u] = true;
+      for (const { j, d } of links[u]) {
+        if (blockedNow(probes[u].p, probes[j].p)) continue;
+        if (best[u] + d < best[j]) { best[j] = best[u] + d; prev[j] = u; }
+      }
+    }
+    let end = -1, length = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (best[i] === Infinity) continue;
+      const d = dist(probes[i].p, S);
+      if (d <= PROBE_LINK_RADIUS && sees(probes[i].p, S) && best[i] + d < length) { length = best[i] + d; end = i; }
+    }
+    if (end < 0) return { available: false, reason: state.pathValidation
+      ? 'No path: validation cut the ones through the closed door.'
+      : 'No path between the probes.' };
+    const chain = [];
+    for (let i = end; i >= 0; i = prev[i]) chain.push(probes[i].p);
+    const nodes = [L, ...chain.reverse(), S];
+    const throughClosedDoor = state.door === 'closed' &&
+      nodes.some((p, i) => i > 0 && crossing(nodes[i - 1], p, door.a, door.b) !== null);
+    const dg = distanceGain(length), air = airGain(length);
+    const lastLeg = nodes[nodes.length - 2];
+    const dir = directivityGain(state, Math.atan2(lastLeg[1] - S[1], lastLeg[0] - S[0]));
+    const total = [0, 1, 2].map(b => dg * air[b] * dir);
+    return { available: true, nodes, length, distanceGain: dg, air, directivity: dir, total,
+             throughClosedDoor, azimuth: relativeAzimuth(state, nodes[1]) };
+  }
+
+  // Baked reflections: early reflections off the static Acoustic geometry
+  // (image sources to the 2nd order) and the reverberation time of the space.
+  function reverberationTime(state, v) {
+    const perimeter = 2 * ((v.x1 - v.x0) + (v.y1 - v.y0));
+    const area = (v.x1 - v.x0) * (v.y1 - v.y0);
+    const onEdge = (w) => {
+      const [ax, ay] = w.a, [bx, by] = w.b;
+      if (ax === bx && (ax === v.x0 || ax === v.x1))
+        return Math.max(0, Math.min(Math.max(ay, by), v.y1) - Math.max(Math.min(ay, by), v.y0));
+      if (ay === by && (ay === v.y0 || ay === v.y1))
+        return Math.max(0, Math.min(Math.max(ax, bx), v.x1) - Math.max(Math.min(ax, bx), v.x0));
+      return 0;
+    };
+    return [0, 1, 2].map(b => {
+      let covered = 0, absorption = 0;
+      for (const w of wallsWithMaterials(state)) {
+        const len = onEdge(w);
+        covered += len;
+        absorption += len * ROOM_HEIGHT * MATERIALS[w.material].absorption[b];
+      }
+      absorption += Math.max(0, perimeter - covered) * ROOM_HEIGHT;  // open sides
+      absorption += area * MATERIALS[v.floor].absorption[b];
+      absorption += area * (v.ceiling ? MATERIALS[v.ceiling].absorption[b] : 1);
+      return 0.161 * area * ROOM_HEIGHT / absorption;  // Sabine
+    });
+  }
+
+  function simulateReflections(state, direct) {
+    const S = pt(state.shooter), L = pt(state.listener);
+    if (!state.probeVolumes) return { available: false, reason: 'No Probe volumes: nothing is reflected (occlusion still applies).' };
+    const v = volumeAt(state, S);
+    if (!v) return { available: false, reason: 'The shooter is outside every Probe volume: the shot comes out dry.' };
+    const walls = wallsWithMaterials(state), occ = occluders(state);
+    const clear = (p, q, except) => !crossedBy(p, q, occ, except).length;
+    const bounce = (ws, b) => ws.reduce((g, w) => {
+      const m = MATERIALS[w.material];
+      return g * Math.sqrt((1 - m.absorption[b]) * (1 - m.scattering));
+    }, 1);
+    const found = [];
+    const add = (order, len, points, ws) => {
+      const dg = distanceGain(len), air = airGain(len);
+      const first = points[1];
+      const dir = directivityGain(state, Math.atan2(first[1] - S[1], first[0] - S[0]));
+      const total = [0, 1, 2].map(b => dg * air[b] * dir * bounce(ws, b));
+      found.push({ order, length: len, delayMs: (len - direct.distance) / SPEED_OF_SOUND * 1000,
+                   points, walls: ws.map(w => MATERIALS[w.material].label), total });
+    };
+    for (const w of walls) {
+      const S1 = reflectAcross(S, w);
+      const t = crossing(L, S1, w.a, w.b);
+      if (t === null) continue;
+      const P = [L[0] + (S1[0] - L[0]) * t, L[1] + (S1[1] - L[1]) * t];
+      if (clear(L, P, [w.id]) && clear(P, S, [w.id])) add(1, dist(L, S1), [S, P, L], [w]);
+    }
+    for (const w1 of walls) for (const w2 of walls) {
+      if (w1 === w2) continue;
+      const S1 = reflectAcross(S, w1), S2 = reflectAcross(S1, w2);
+      const t2 = crossing(L, S2, w2.a, w2.b);
+      if (t2 === null) continue;
+      const P2 = [L[0] + (S2[0] - L[0]) * t2, L[1] + (S2[1] - L[1]) * t2];
+      const t1 = crossing(P2, S1, w1.a, w1.b);
+      if (t1 === null) continue;
+      const P1 = [P2[0] + (S1[0] - P2[0]) * t1, P2[1] + (S1[1] - P2[1]) * t1];
+      if (clear(L, P2, [w2.id]) && clear(P2, P1, [w1.id, w2.id]) && clear(P1, S, [w1.id]))
+        add(2, dist(L, S2), [S, P1, P2, L], [w1, w2]);
+    }
+    found.sort((a, b) => b.total[1] - a.total[1]);
+    return { available: true, volume: v.label, reverberation: reverberationTime(state, v),
+             early: found, count: found.length };
+  }
+
+  function simulate(state, baked) {
+    const direct = simulateDirect(state);
+    return {
+      shooterVolume: volumeAt(state, pt(state.shooter)),
+      listenerVolume: volumeAt(state, pt(state.listener)),
+      direct,
+      path: simulatePath(state, baked),
+      reflections: simulateReflections(state, direct),
+    };
+  }
+
+  return { BANDS, MATERIALS, WALL_GROUPS, STATIC_WALLS, DOOR, PROBE_VOLUMES, MAP_SIZE,
+           SPEED_OF_SOUND, initialState, reduce, bake, simulate, occluders };
+})();
+</script>
+
+<script>
+// The throwaway page: drawing, the state panel, the walkthroughs, the sound.
+const A = Acoustics;
+let state = A.initialState();
+let bakedFor = null, baked = null;
+let previousRows = new Map();
+
+function currentBake() {
+  if (bakedFor !== state.probeVolumes) { baked = A.bake(state.probeVolumes); bakedFor = state.probeVolumes; }
+  return baked;
+}
+
+const dB = (g) => g <= 1e-9 ? '−∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`;
+const bandsDb = (gs) => gs.map(dB).join(' · ');
+function directionLabel(a) {
+  const deg = a * 180 / Math.PI, abs = Math.abs(deg), side = deg > 0 ? 'right' : 'left';
+  if (abs < 22.5) return 'from ahead';
+  if (abs < 67.5) return `from ahead, to the ${side}`;
+  if (abs < 112.5) return `from the ${side}`;
+  if (abs < 157.5) return `from behind, to the ${side}`;
+  return 'from behind';
+}
+
+function dispatch(action) {
+  state = A.reduce(state, action);
+  render();
+}
+
+// ---- Drawing ------------------------------------------------------------------------
+
+// Canvas colours come from the page's tokens, read again whenever the theme changes.
+const C = {};
+function readTheme() {
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['ink', 'muted', 'accent', 'bad', 'ok', 'range', 'room', 'open', 'probe', 'path', 'reflect'])
+    C[k] = css.getPropertyValue(`--${k}`).trim();
+}
+readTheme();
+
+const MATERIAL_COLOURS = { concrete: '#77777d', glass: '#5fb3d9', wood: '#a0703c', metal: '#4a5a6c',
+  brick: '#a5513b', plaster: '#c9c2b4', ceramic: '#8fb3a5', gravel: '#9b9488', carpet: '#7d5a8a',
+  rock: '#6a6256', generic: '#888' };
+
+const canvas = document.getElementById('map'), ctx = canvas.getContext('2d');
+const PAD = 10;
+let scale = 20;
+function fitCanvas() {
+  const w = document.getElementById('mapWrap').clientWidth;
+  scale = Math.max(8, Math.min(24, (w - 2 * PAD) / A.MAP_SIZE.w));
+  const cw = A.MAP_SIZE.w * scale + 2 * PAD, ch = A.MAP_SIZE.h * scale + 2 * PAD;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = cw * dpr; canvas.height = ch * dpr;
+  canvas.style.width = `${cw}px`; canvas.style.height = `${ch}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+const toPx = (p) => [PAD + p[0] * scale, PAD + p[1] * scale];
+
+function line(a, b, colour, width, dash = []) {
+  ctx.save(); ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(...toPx(a)); ctx.lineTo(...toPx(b)); ctx.stroke(); ctx.restore();
+}
+
+function draw(result) {
+  const cw = A.MAP_SIZE.w * scale + 2 * PAD, ch = A.MAP_SIZE.h * scale + 2 * PAD;
+  ctx.fillStyle = C.range; ctx.fillRect(0, 0, cw, ch);
+  ctx.font = '12px system-ui, sans-serif';
+  if (state.probeVolumes) {
+    for (const v of A.PROBE_VOLUMES) {
+      const [x, y] = toPx([v.x0, v.y0]);
+      ctx.fillStyle = v.ceiling ? C.room : C.open;
+      ctx.fillRect(x, y, (v.x1 - v.x0) * scale, (v.y1 - v.y0) * scale);
+      ctx.fillStyle = C.muted;
+      ctx.fillText(`${v.label} (Probe volume)`, x + 6, y + 15);
+    }
+    ctx.fillStyle = C.probe;
+    for (const p of currentBake().probes) { const [x, y] = toPx(p.p); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  } else {
+    ctx.fillStyle = C.muted; ctx.fillText('No Probe volumes', PAD + 6, PAD + 15);
+  }
+  for (const w of A.occluders(state)) {
+    line(w.a, w.b, MATERIAL_COLOURS[w.material], w.prop ? 5 : 6, w.prop ? [4, 3] : []);
+  }
+  const { direct, path, reflections } = result;
+  if (reflections.available) {
+    for (const r of reflections.early.slice(0, 4))
+      for (let i = 1; i < r.points.length; i++) line(r.points[i - 1], r.points[i], C.reflect + 'aa', 1.2);
+  }
+  if (path.available && direct.occluded) {
+    for (let i = 1; i < path.nodes.length; i++) line(path.nodes[i - 1], path.nodes[i], C.path, 2.5);
+  }
+  const S = [state.shooter.x, state.shooter.y], L = [state.listener.x, state.listener.y];
+  line(S, L, direct.occluded ? C.bad : C.ok, 2, direct.occluded ? [6, 4] : []);
+  // shooter: a triangle pointing where it fires
+  const [sx, sy] = toPx(S), f = state.shooter.facing;
+  ctx.fillStyle = C.bad; ctx.beginPath();
+  ctx.moveTo(sx + Math.cos(f) * 13, sy + Math.sin(f) * 13);
+  ctx.lineTo(sx + Math.cos(f + 2.5) * 9, sy + Math.sin(f + 2.5) * 9);
+  ctx.lineTo(sx + Math.cos(f - 2.5) * 9, sy + Math.sin(f - 2.5) * 9);
+  ctx.closePath(); ctx.fill();
+  // listener: a dot with an arrow where it looks
+  const [lx, ly] = toPx(L), g = state.listener.facing;
+  ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(lx, ly, 7, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(lx, ly); ctx.lineTo(lx + Math.cos(g) * 18, ly + Math.sin(g) * 18); ctx.stroke();
+}
+
+// ---- The state panel ----------------------------------------------------------------
+function rowsFor(result) {
+  const { direct, path, reflections } = result;
+  const rows = [];
+  const add = (section, key, label, value) => rows.push({ section, key, label, value });
+  const bands = 'low · mid · high';
+  add('Where', 'where.shooter', 'Shooter', result.shooterVolume ? result.shooterVolume.label : 'outside the Probe volumes');
+  add('Where', 'where.listener', 'You', result.listenerVolume ? result.listenerVolume.label : 'outside the Probe volumes');
+  add('Where', 'where.door', 'Door (Prop)', state.door);
+  add('Direct sound', 'd.dist', 'Distance', `${direct.distance.toFixed(1)} m (arrives in ${(direct.distance / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
+  add('Direct sound', 'd.att', 'Distance attenuation', dB(direct.distanceGain));
+  add('Direct sound', 'd.air', `Air absorption (${bands})`, bandsDb(direct.air));
+  add('Direct sound', 'd.dir', 'Shot directivity', state.directivity ? dB(direct.directivity) : 'off (equal in every direction)');
+  add('Direct sound', 'd.occ', 'Occluded?', direct.occluded
+    ? `yes: through ${direct.crossed.map(w => `${A.MATERIALS[w.material].label}${w.prop ? ' (door)' : ''}`).join(' + ')}`
+    : 'no: in line of sight');
+  add('Direct sound', 'd.trans', `Transmission (${bands})`, bandsDb(direct.transmission));
+  add('Direct sound', 'd.total', `Total arriving (${bands})`, bandsDb(direct.total));
+  add('Direct sound', 'd.from', 'Comes', directionLabel(direct.azimuth));
+  if (path.available) {
+    add('Path (pathing)', 'p.len', 'Length', `${path.length.toFixed(1)} m (+${(path.length - direct.distance).toFixed(1)} m over the direct, +${((path.length - direct.distance) / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
+    add('Path (pathing)', 'p.total', `Total arriving (${bands})`, bandsDb(path.total));
+    add('Path (pathing)', 'p.from', 'Comes', directionLabel(path.azimuth));
+    add('Path (pathing)', 'p.door', 'Through the closed door?', path.throughClosedDoor ? 'YES: the bake never saw the door' : 'no');
+    add('Path (pathing)', 'p.play', 'Plays?', direct.occluded ? 'yes (the direct sound is occluded)' : 'no (in line of sight it coincides with the direct)');
+  } else {
+    add('Path (pathing)', 'p.none', 'Path', path.reason);
+  }
+  if (reflections.available) {
+    add('Reflections', 'r.vol', "Space (the shooter's Probe volume)", reflections.volume);
+    add('Reflections', 'r.rt', `Reverberation time RT60 (${bands})`, reflections.reverberation.map(t => `${t.toFixed(2)} s`).join(' · '));
+    add('Reflections', 'r.count', 'Early reflections found (1st and 2nd order)', `${reflections.count}`);
+    const ordinal = ['Strongest', '2nd strongest', '3rd strongest'];
+    reflections.early.slice(0, 3).forEach((r, i) =>
+      add('Reflections', `r.e${i}`, ordinal[i], `order ${r.order}, off ${r.walls.join(' → ')}, +${r.delayMs.toFixed(0)} ms, ${bandsDb(r.total)}`));
+  } else {
+    add('Reflections', 'r.none', 'Reflections', reflections.reason);
+  }
+  return rows;
+}
+
+function verdict(result) {
+  const { direct, path } = result;
+  if (!direct.occluded) return { text: 'Line of sight: you hear the shot directly, with only distance, air and directivity.', warn: false };
+  if (path.available && path.throughClosedDoor)
+    return { text: 'Occluded, but the baked path goes through the closed door: you hear it almost as if the door were open.', warn: true };
+  if (path.available)
+    return { text: `Occluded: little gets through the wall; the main sound comes along the path, ${directionLabel(path.azimuth)}.`, warn: false };
+  return { text: 'Occluded with no path: you hear only what the wall lets through.', warn: false };
+}
+
+function renderPanel(result) {
+  const rows = rowsFor(result);
+  const v = verdict(result);
+  let html = `<h2>What the simulator decides</h2>
+    <div class="changed"><strong>Just changed:</strong> ${state.lastAction}</div>
+    <div class="verdict${v.warn ? ' warn' : ''}">${v.text}</div>`;
+  let section = null;
+  const nextRows = new Map();
+  for (const r of rows) {
+    if (r.section !== section) {
+      if (section) html += '</table>';
+      section = r.section; html += `<h3>${section}</h3><table>`;
+    }
+    const changed = previousRows.size && previousRows.get(r.key) !== r.value;
+    html += `<tr class="${changed ? 'diff' : ''}"><td>${r.label}</td><td class="num">${r.value}</td></tr>`;
+    nextRows.set(r.key, r.value);
+  }
+  html += '</table>';
+  html += `<p class="hint" style="margin-top:8px">Highlighted: what the last action changed.</p>`;
+  document.getElementById('state').innerHTML = html;
+  previousRows = nextRows;
+}
+
+function renderMaterials() {
+  const box = document.getElementById('materials');
+  box.innerHTML = Object.entries(A.WALL_GROUPS).map(([group, label]) =>
+    `<label>${label} <select data-group="${group}">${
+      Object.entries(A.MATERIALS).map(([id, m]) =>
+        `<option value="${id}"${state.materials[group] === id ? ' selected' : ''}>${m.label}</option>`).join('')
+    }</select></label>`).join('');
+  box.querySelectorAll('select').forEach(sel => sel.addEventListener('change', () =>
+    dispatch({ type: 'setMaterial', group: sel.dataset.group, material: sel.value })));
+}
+
+let lastResult = null;
+function render() {
+  lastResult = A.simulate(state, currentBake());
+  draw(lastResult);
+  renderPanel(lastResult);
+  renderMaterials();
+}
+
+// ---- Free play wiring ---------------------------------------------------------------
+document.querySelectorAll('button[data-act]').forEach(b =>
+  b.addEventListener('click', () => dispatch(JSON.parse(b.dataset.act))));
+canvas.addEventListener('click', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left - PAD) / scale;
+  const y = (e.clientY - r.top - PAD) / scale;
+  const mode = document.querySelector('input[name="clickmode"]:checked').value;
+  dispatch({ type: mode === 'shooter' ? 'placeShooter' : 'placeListener', x, y });
+});
+
+// ---- Walkthroughs -------------------------------------------------------------------
+const SCENARIOS = [
+  {
+    title: 'Behind a wall',
+    text: 'You are in the yard, looking at Room A. The shooter is on the other side of the facade: first behind the glass window, then behind concrete, then the concrete becomes wood. Hear each step. Path validation starts on: Room A opens only through its door, and without validation the baked path would go through the closed door and hide what the wall does (see the walkthrough "The door is a Prop").',
+    watch: 'The transmission per band: glass lets through more than concrete, and every material cuts the highs more than the lows.',
+    setup: [{ type: 'placeListener', x: 8, y: 5.5, facingDeg: 0 }, { type: 'placeShooter', x: 20, y: 5.5, facingDeg: 180 },
+            { type: 'setPathValidation', on: true }],
+    steps: [
+      { label: 'Shooter behind the window (glass)', actions: [{ type: 'placeShooter', x: 20, y: 5.5 }] },
+      { label: 'Shooter behind the concrete facade', actions: [{ type: 'placeShooter', x: 20, y: 2 }] },
+      { label: 'The same facade, now wood', actions: [{ type: 'setMaterial', group: 'facade', material: 'wood' }] },
+      { label: 'Shooter steps out into the yard, in sight', actions: [{ type: 'placeShooter', x: 11, y: 2 }] },
+    ],
+  },
+  {
+    title: 'Around the corner',
+    text: 'You are in the corridor, looking east. The shooter is in Room B, which opens onto the corridor only through a doorless doorway at the far end. Almost nothing gets through the wall; the sound that counts comes along the path, from the opening.',
+    watch: 'Where the sound "Comes" from at each step, and what happens without Probe volumes.',
+    setup: [{ type: 'placeListener', x: 17, y: 14, facingDeg: 0 }, { type: 'placeShooter', x: 33, y: 5, facingDeg: 90 }],
+    steps: [
+      { label: 'Shooter in the middle of Room B', actions: [{ type: 'placeShooter', x: 33, y: 5 }] },
+      { label: 'Shooter by the opening, still inside', actions: [{ type: 'placeShooter', x: 37, y: 9 }] },
+      { label: 'Shooter steps out into the corridor', actions: [{ type: 'placeShooter', x: 37, y: 13.5 }] },
+      { label: 'Back to the middle of Room B, no Probe volumes', actions: [{ type: 'placeShooter', x: 33, y: 5 }, { type: 'setProbeVolumes', on: false }] },
+    ],
+  },
+  {
+    title: 'The door is a Prop',
+    text: 'You are in the corridor, at Room A\'s door; the shooter is inside the room. The door is a Prop: it occludes where it stands, but the path bake never saw it.',
+    watch: 'With the door closed, the baked path goes through its doorway and the shot arrives almost whole. Turn path validation on and see the difference; then open the door.',
+    setup: [{ type: 'placeListener', x: 19, y: 14.5, facingDeg: -90 }, { type: 'placeShooter', x: 19, y: 6, facingDeg: 90 },
+            { type: 'setDoor', door: 'closed' }, { type: 'setPathValidation', on: false }],
+    steps: [
+      { label: 'Door closed, paths baked only', actions: [{ type: 'setDoor', door: 'closed' }] },
+      { label: 'Validate paths against the current scene', actions: [{ type: 'setPathValidation', on: true }] },
+      { label: 'Open the door', actions: [{ type: 'setDoor', door: 'open' }] },
+      { label: 'Close the door again', actions: [{ type: 'setDoor', door: 'closed' }] },
+    ],
+  },
+  {
+    title: 'What space is this?',
+    text: 'The same shot, 5 m away, in line of sight, in four spaces. The direct sound is almost the same; what changes is the RT60 and the reflections.',
+    watch: 'The yard, with no ceiling and gravel underfoot, is dry; Room A, hard and closed all round, rings; the corridor sits in between. Hear each one.',
+    setup: [{ type: 'placeShooter', x: 5, y: 12, facingDeg: 0 }, { type: 'placeListener', x: 10, y: 12, facingDeg: 180 }],
+    steps: [
+      { label: 'In the yard', actions: [{ type: 'placeShooter', x: 5, y: 12, facingDeg: 0 }, { type: 'placeListener', x: 10, y: 12, facingDeg: 180 }] },
+      { label: 'In Room A', actions: [{ type: 'placeShooter', x: 16, y: 9, facingDeg: 0 }, { type: 'placeListener', x: 21, y: 9, facingDeg: 180 }] },
+      { label: 'In the corridor', actions: [{ type: 'placeShooter', x: 22, y: 14, facingDeg: 0 }, { type: 'placeListener', x: 27, y: 14, facingDeg: 180 }] },
+      { label: 'In Room B', actions: [{ type: 'placeShooter', x: 29, y: 6, facingDeg: 0 }, { type: 'placeListener', x: 34, y: 6, facingDeg: 180 }] },
+    ],
+  },
+  {
+    title: 'Far and near',
+    text: 'In the yard, in sight. The shooter moves away from you.',
+    watch: 'Distance lowers every band alike; the air eats the highs much faster than the lows. Compare the air absorption at 3 m and at 22 m.',
+    setup: [{ type: 'placeListener', x: 2, y: 23, facingDeg: -90 }, { type: 'placeShooter', x: 2, y: 20, facingDeg: 90 }],
+    steps: [
+      { label: 'At 3 m', actions: [{ type: 'placeShooter', x: 2, y: 20, facingDeg: 90 }] },
+      { label: 'At 10 m', actions: [{ type: 'placeShooter', x: 2, y: 13, facingDeg: 90 }] },
+      { label: 'At 22 m', actions: [{ type: 'placeShooter', x: 2, y: 1, facingDeg: 90 }] },
+    ],
+  },
+  {
+    title: 'Where the rifle points',
+    text: 'In the yard, 8 m away, in sight. The shot is louder in front of the muzzle (spec #802: dipole directivity).',
+    watch: 'The directivity as the shooter turns; at the end, turn it off.',
+    setup: [{ type: 'placeListener', x: 7, y: 14, facingDeg: -90 }, { type: 'placeShooter', x: 7, y: 6, facingDeg: 90 }],
+    steps: [
+      { label: 'Aim at me', actions: [{ type: 'aimShooterAtListener' }] },
+      { label: 'Turn 90°', actions: [{ type: 'rotateShooter', deg: 90 }] },
+      { label: 'Aim away', actions: [{ type: 'aimShooterAway' }] },
+      { label: 'Turn directivity off', actions: [{ type: 'toggleDirectivity' }] },
+    ],
+  },
+];
+
+let activeScenario = 0, nextStep = 0;
+function startScenario(i) {
+  activeScenario = i; nextStep = 0;
+  state = A.initialState();
+  for (const a of SCENARIOS[i].setup) state = A.reduce(state, a);
+  state.lastAction = `Walkthrough "${SCENARIOS[i].title}" started`;
+  previousRows = new Map();
+  render(); renderScenario();
+}
+function renderScenario() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button class="${i === activeScenario ? 'active' : ''}" data-tab="${i}">${s.title}</button>`).join('');
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => startScenario(+b.dataset.tab)));
+  const s = SCENARIOS[activeScenario];
+  document.getElementById('scenario').innerHTML = `<p>${s.text}</p>
+    <p class="watch"><strong>Watch for:</strong> ${s.watch}</p>
+    <div class="steps">${s.steps.map((st, i) =>
+      `<button data-step="${i}" class="${i < nextStep ? 'done' : i === nextStep ? 'next' : ''}">${i + 1}. ${st.label}</button>`).join('')}
+      <button data-restart>↺ Restart this walkthrough</button></div>`;
+  document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+    const i = +b.dataset.step;
+    for (const a of s.steps[i].actions) state = A.reduce(state, a);
+    state.lastAction = `${i + 1}. ${s.steps[i].label}`;
+    nextStep = i + 1;
+    render(); renderScenario();
+  }));
+  document.querySelector('[data-restart]').addEventListener('click', () => startScenario(activeScenario));
+}
+
+// ---- The sound ----------------------------------------------------------------------
+// A synthetic gunshot split into the three bands, each scaled by what the
+// simulator decided, panned from where it arrives, plus a reverberant tail
+// per band from the RT60.
+let audio = null;
+function gunshotBuffer(ac) {
+  const n = Math.floor(ac.sampleRate * 0.45), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    const t = i / ac.sampleRate;
+    d[i] = (Math.random() * 2 - 1) * Math.exp(-t / 0.045) + 0.8 * Math.sin(2 * Math.PI * 70 * t) * Math.exp(-t / 0.07);
+  }
+  return buf;
+}
+function bandFilters(ac, input) {
+  const mk = (type, f) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = 0.707; return b; };
+  const low = [mk('lowpass', 800), mk('lowpass', 800)];
+  const mid = [mk('highpass', 800), mk('lowpass', 8000)];
+  const high = [mk('highpass', 8000), mk('highpass', 8000)];
+  return [low, mid, high].map(chain => { input.connect(chain[0]); chain[0].connect(chain[1]); return chain[1]; });
+}
+function tailBuffer(ac, rt60) {
+  const len = Math.max(0.05, Math.min(rt60 * 1.2, 3)), n = Math.floor(ac.sampleRate * len);
+  const buf = ac.createBuffer(2, n, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-6.9 * (i / ac.sampleRate) / rt60) * 0.08;
+  }
+  return buf;
+}
+function play() {
+  if (!audio) audio = new AudioContext();
+  const ac = audio, r = lastResult, now = ac.currentTime + 0.05;
+  const master = ac.createGain(); master.gain.value = 2.2; master.connect(ac.destination);
+  const shot = gunshotBuffer(ac);
+  const contributions = [{ total: r.direct.total, azimuth: r.direct.azimuth, delay: r.direct.distance / A.SPEED_OF_SOUND }];
+  if (r.path.available && r.direct.occluded)
+    contributions.push({ total: r.path.total, azimuth: r.path.azimuth, delay: r.path.length / A.SPEED_OF_SOUND });
+  const firstDelay = Math.min(...contributions.map(c => c.delay));
+  for (const c of contributions) {
+    const src = ac.createBufferSource(); src.buffer = shot;
+    const sum = ac.createGain(), delay = ac.createDelay(2), pan = ac.createStereoPanner();
+    delay.delayTime.value = Math.min(1.9, c.delay - firstDelay);
+    pan.pan.value = Math.sin(c.azimuth);
+    bandFilters(ac, src).forEach((out, b) => { const g = ac.createGain(); g.gain.value = c.total[b]; out.connect(g); g.connect(sum); });
+    sum.connect(delay); delay.connect(pan); pan.connect(master);
+    src.start(now);
+  }
+  if (r.reflections.available) {
+    const src = ac.createBufferSource(); src.buffer = shot;
+    bandFilters(ac, src).forEach((out, b) => {
+      const energy = Math.sqrt(r.reflections.early.reduce((e, x) => e + x.total[b] ** 2, 0));
+      const conv = ac.createConvolver(); conv.normalize = false; conv.buffer = tailBuffer(ac, r.reflections.reverberation[b]);
+      const g = ac.createGain(); g.gain.value = Math.min(1, Math.max(energy, 0.01) * 0.9);
+      out.connect(conv); conv.connect(g); g.connect(master);
+    });
+    src.start(now);
+  }
+}
+document.getElementById('play').addEventListener('click', play);
+
+fitCanvas();
+startScenario(0);
+new ResizeObserver(() => { fitCanvas(); draw(lastResult); }).observe(document.getElementById('mapWrap'));
+const retheme = () => { readTheme(); draw(lastResult); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

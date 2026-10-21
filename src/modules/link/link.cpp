@@ -201,7 +201,7 @@ std::vector<ReplayListing> ListedOf(const std::vector<ReplayListing>& listings) 
       break;
     }
     // A name no Replay request could carry is no capture a viewer can watch.
-    if (listing.name.size() > protocol::kMaxCaptureNameLength) {
+    if (listing.name.size() > protocol::kMaxCaptureNameLength || !protocol::IsUtf8(listing.name)) {
       continue;
     }
     listed.push_back(listing);
@@ -217,7 +217,7 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
     message.type = std::unexpected(std::string(protocol::DescribeDecodeError(decoded.error())));
     return message;
   }
-  message.type = TypeOf(payload);
+  message.type = link::TypeOf(*decoded);
   message.message = ClientMessageFromWire(*decoded);
   return message;
 }

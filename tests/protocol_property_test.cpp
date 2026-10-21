@@ -268,8 +268,12 @@ rc::Gen<StanceWire> Stance() {
   return rc::gen::element(StanceWire::kStanding, StanceWire::kCrouching, StanceWire::kProne);
 }
 
-// A character, by its path: any bytes up to the longest a message may carry (ADR-0042).
-rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterNameLength, rc::gen::arbitrary<char>()); }
+// A letter of a string: printable ASCII, so every string is the UTF-8 a
+// protobuf string must be (ADR-0038).
+rc::Gen<char> Letter() { return rc::gen::inRange<char>(' ', '~' + 1); }
+
+// A character, by its path: any letters up to the longest a message may carry (ADR-0042).
+rc::Gen<std::string> Character() { return UpTo<std::string>(kMaxCharacterNameLength, Letter()); }
 
 template <typename Id>
 rc::Gen<Id> AnyId() {
@@ -308,15 +312,13 @@ rc::Gen<BodyStateWire> Body() {
 
 rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
-      rc::gen::set(&JoinRequestWire::engine_version,
-                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&JoinRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
 }
 
 rc::Gen<ReenactRequestWire> ReenactRequest() {
   return rc::gen::build<ReenactRequestWire>(
-      rc::gen::set(&ReenactRequestWire::engine_version,
-                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReenactRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReenactRequestWire::character, Character()),
       rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
@@ -437,9 +439,7 @@ rc::Gen<DeathWire> Death() {
 }
 
 // A capture's name: any bytes up to the longest a message may carry.
-rc::Gen<std::string> CaptureName() {
-  return UpTo<std::string>(augusta::protocol::kMaxCaptureNameLength, rc::gen::arbitrary<char>());
-}
+rc::Gen<std::string> CaptureName() { return UpTo<std::string>(augusta::protocol::kMaxCaptureNameLength, Letter()); }
 
 rc::Gen<ReplayListWire> ReplayList() {
   const auto listing = rc::gen::build<ReplayListingWire>(
@@ -456,8 +456,7 @@ rc::Gen<ReplayListWire> ReplayList() {
 
 rc::Gen<ReplayRequestWire> ReplayRequest() {
   return rc::gen::build<ReplayRequestWire>(
-      rc::gen::set(&ReplayRequestWire::engine_version,
-                   UpTo<std::string>(kMaxEngineVersionLength, rc::gen::arbitrary<char>())),
+      rc::gen::set(&ReplayRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
 }
