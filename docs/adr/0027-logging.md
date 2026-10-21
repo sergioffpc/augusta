@@ -23,6 +23,16 @@ machine: nothing is uploaded. If the file cannot be opened, the client logs a
 warning and carries on with the console alone. The folder is beside the
 executable, which ADR-0058 makes writable, not a per-user state folder.
 
+**The client keeps its last 10 Runs.** At startup it deletes the files of every
+older Run, its logs in `logs/` and its Crash dumps in `dumps/` (ADR-0055)
+together, by Run ID, so a Run counts once whichever of its files are left; a
+file not named as a Run's is never touched. A crashed window closes before the
+player reads it, so the next launch tells them: when the previous Run's log ends
+in a crash line (ADR-0047), the client writes one `WARN` line,
+`event=previous_run_crashed`, naming that Run and its files. When a terminal
+failure ends a Run, its one terminal event (ADR-0033) also gives the path of the
+Run's log. Everything goes to the terminal; there are no dialogs.
+
 Compiled-in log level is tied to build type (`AUGUSTA_LOG_ACTIVE_LEVEL`): Debug
 keeps `trace` and above, Release strips everything below `info` at compile time.
 Every record is flushed to every sink as written, so nothing logged is lost in a
@@ -33,7 +43,7 @@ crash.
 - Running the server outside k8s (e.g. a developer running it directly) means
   logs only exist in that terminal for that run — there is no local log file to
   tail afterwards.
-- A client folder gains a file per Run; how many Runs are kept is the client's
-  to decide at startup, not the logger's.
+- A client folder holds the files of at most 10 Runs; the pruning is the
+  client's, at startup, not the logger's.
 - The console output format (pattern string) is fixed by ADR-0029, which also
   sets the context fields the client's lines carry.
