@@ -551,7 +551,7 @@ void Capturer::StartMatch(const std::vector<CaptureEntrant>& players, tick::Tick
     const auto player = static_cast<capture::Player>(players_.size() + 1);
     players_.emplace(entrant.entity, player);
     sessions_.emplace(entrant.session, player);
-    Queue(capture::EncodeJoin(player, capture::Join{.session = std::to_underlying(entrant.session),
+    Queue(capture::EncodeJoin(player, capture::Join{.session = entrant.session,
                                                     .character = entrant.character,
                                                     .spawn = math::SnapPosition(entrant.spawn)}));
   }

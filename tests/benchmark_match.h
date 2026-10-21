@@ -19,6 +19,7 @@
 #include "augusta/policy_actions.h"
 #include "augusta/policy_loader.h"
 #include "augusta/simulation.h"
+#include "augusta/uuid.h"
 #include "benchmark_scene.h"
 
 // The full Match the server-side benchmarks run (ADR-0023): the players stand
@@ -142,10 +143,9 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
   }
   // In a file along -Z, far enough apart that no one walks into another.
   for (std::uint32_t player = 0; player < kPlayers; ++player) {
-    world.AddPlayer(
-        static_cast<simulation::EntityId>(player + 1), math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)),
-        SquaresCharacter(),
-        simulation::PlayerIdentity{.session = static_cast<policy::SessionId>(player + 1), .character = std::string()});
+    world.AddPlayer(static_cast<simulation::EntityId>(player + 1),
+                    math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)), SquaresCharacter(),
+                    simulation::PlayerIdentity{.session = uuid::Generate(), .character = std::string()});
   }
 
   simulation::State previous = world.Tick({}, kTick).state;

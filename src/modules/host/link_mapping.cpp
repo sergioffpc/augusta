@@ -17,8 +17,6 @@
 
 namespace augusta::host {
 
-link::SessionId ToLink(SessionId session) { return static_cast<link::SessionId>(std::to_underlying(session)); }
-
 link::EntityId ToLink(EntityId entity) { return static_cast<link::EntityId>(std::to_underlying(entity)); }
 
 link::JoinRefusal ToLink(JoinRefusal reason) {
@@ -49,7 +47,7 @@ link::JoinRefusal ToLink(JoinRefusal reason) {
 
 link::Admission ToLink(const Admission& admission, std::uint8_t tick_rate_hz,
                        const parameters::Parameters& parameters) {
-  return link::Admission{.session = ToLink(admission.session),
+  return link::Admission{.session = admission.session,
                          .tick_rate_hz = tick_rate_hz,
                          .parameters = parameters,
                          .character = admission.character};
@@ -59,7 +57,7 @@ link::Lobby ToLink(const Roster& roster) {
   link::Lobby lobby{.version = roster.version, .roster = {}};
   lobby.roster.reserve(roster.players.size());
   for (const RosterEntry& entry : roster.players) {
-    lobby.roster.push_back(link::RosterEntry{.session = ToLink(entry.session), .character = entry.character});
+    lobby.roster.push_back(link::RosterEntry{.session = entry.session, .character = entry.character});
   }
   return lobby;
 }
@@ -69,17 +67,13 @@ link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spa
   result.players.reserve(start.players.size());
   for (std::size_t i = 0; i < start.players.size(); ++i) {
     const MatchPlayer& player = start.players[i];
-    result.players.push_back(link::MatchPlayer{.session = ToLink(player.session),
-                                               .entity = ToLink(player.entity),
-                                               .character = player.character,
-                                               .spawn = spawns[i]});
+    result.players.push_back(link::MatchPlayer{
+        .session = player.session, .entity = ToLink(player.entity), .character = player.character, .spawn = spawns[i]});
   }
   return result;
 }
 
-link::MatchEnd ToLink(const MatchEnd& end) {
-  return link::MatchEnd{.winner = end.winner.transform([](SessionId winner) { return ToLink(winner); })};
-}
+link::MatchEnd ToLink(const MatchEnd& end) { return link::MatchEnd{.winner = end.winner}; }
 
 link::AuthoritativeState ToLink(const replication::Updates& updates) {
   link::AuthoritativeState state{.tick = updates.tick, .bodies = {}};

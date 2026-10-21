@@ -93,7 +93,7 @@ struct RecordFromWire {
     return CapturedJoin{
         .offset = join.offset,
         .player = join.player,
-        .join = {.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn}};
+        .join = {.session = link::FromWire(join.session), .character = join.character, .spawn = join.spawn}};
   }
   template <typename EventWire>
   CaptureRecord operator()(const EventWire& event) const {
@@ -121,7 +121,7 @@ std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureJoin(captur
                                                                           const capture::Join& join) {
   return EncodeRecord(protocol::CapturedJoinWire{.spawn = join.spawn,
                                                  .offset = 0,
-                                                 .session = static_cast<protocol::SessionIdWire>(join.session),
+                                                 .session = link::ToWire(join.session),
                                                  .character = join.character,
                                                  .player = player});
 }

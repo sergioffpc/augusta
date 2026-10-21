@@ -10,6 +10,7 @@ counted.
 
 import dataclasses
 import datetime
+import uuid
 
 from google.protobuf import message as protobuf_message
 
@@ -33,7 +34,8 @@ class CapturedPlayer:
     """One player of the Match start and what it did."""
 
     number: int
-    session: int
+    # Its Session ID in the canonical form the server logs it in.
+    session: str
     character: str
     spawn: tuple[float, float, float]
     commands: int = 0
@@ -118,6 +120,13 @@ def _text(field: bytes) -> str:
         raise CaptureError("a record's text is not UTF-8") from error
 
 
+def _session(data: bytes) -> str:
+    """A Session ID's 16 bytes as its canonical lowercase hyphenated form."""
+    if len(data) != 16:
+        raise CaptureError("a Session ID is not 16 bytes")
+    return str(uuid.UUID(bytes=data))
+
+
 def _read_header(payload: bytes) -> CaptureHeader:
     record = _parse(payload)
     if record.WhichOneof("record") != "header":
@@ -184,7 +193,7 @@ def read_capture(data: bytes) -> Capture:
             capture.players.append(
                 CapturedPlayer(
                     number=event.player,
-                    session=event.session,
+                    session=_session(event.session),
                     character=_text(event.character),
                     spawn=(
                         event.spawn_x * _POSITION_STEP,

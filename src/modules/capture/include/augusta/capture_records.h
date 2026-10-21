@@ -10,6 +10,7 @@
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// What a Match capture's records say (ADR-0050), in the engine's types: its
@@ -38,8 +39,8 @@ using Player = std::uint8_t;
 
 /// A player of the Match start, where it spawned on the position grid.
 struct Join {
-  /// Its Session's id on the server that captured it.
-  std::uint32_t session = 0;
+  /// Its Session's ID (a UUIDv7, unique across every server).
+  uuid::Uuid session{};
   /// Its Character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   math::Vec3 spawn{};

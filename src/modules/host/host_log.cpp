@@ -19,7 +19,7 @@ namespace augusta::host {
 namespace {
 
 std::string WinnerName(const std::optional<SessionId>& winner) {
-  return winner.has_value() ? std::to_string(SessionNumber(*winner)) : "draw";
+  return winner.has_value() ? winner->ToString() : "draw";
 }
 
 std::string_view EndReasonName(EndReason reason) {
@@ -37,8 +37,6 @@ std::string_view EndReasonName(EndReason reason) {
 }  // namespace
 
 std::uint32_t PeerNumber(link::PeerId peer) { return static_cast<std::uint32_t>(peer); }
-
-std::uint32_t SessionNumber(SessionId session) { return static_cast<std::uint32_t>(session); }
 
 std::string_view LeavingName(Leaving how) {
   switch (how) {

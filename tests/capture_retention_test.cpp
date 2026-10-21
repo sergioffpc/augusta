@@ -50,6 +50,12 @@ using augusta::host::SessionId;
 
 using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 // 2026-10-09 10:15:00.123 UTC.
 const Milliseconds kStarted{std::chrono::milliseconds{1'791'540'900'123}};
 constexpr std::uint64_t kFirstTick = 1000;
@@ -158,8 +164,8 @@ augusta::capture::Header Header() {
 }
 
 std::vector<CaptureEntrant> TwoPlayers() {
-  return {CaptureEntrant{.session = SessionId{7}, .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
-          CaptureEntrant{.session = SessionId{8}, .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
+  return {CaptureEntrant{.session = Session(7), .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
+          CaptureEntrant{.session = Session(8), .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
 }
 
 Command Walk() {

@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <ios>
 #include <iterator>
@@ -64,6 +65,14 @@ struct Seed {
 
 // One message of each kind, with every list non-empty and every flag in use
 // somewhere, so each field's encoding is in the corpus.
+// A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
+SessionIdWire Session(std::uint8_t last) {
+  SessionIdWire session{
+      .bytes = {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+  session.bytes.back() = last;
+  return session;
+}
+
 std::vector<Seed> Seeds() {
   const BodyStateWire body{.position = Vec3(12.5F, 1.75F, -40.0F),
                            .velocity = Vec3(3.0F, -0.5F, 4.25F),
@@ -81,7 +90,7 @@ std::vector<Seed> Seeds() {
       {.name = "join_request",
        .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "soldier"}},
       {.name = "join_accepted",
-       .message = JoinAcceptedWire{.session = static_cast<SessionIdWire>(7),
+       .message = JoinAcceptedWire{.session = Session(7),
                                    .tick_rate_hz = 60,
                                    .parameters = ParametersWire{.stamina = StaminaWire{.deplete_per_second = 0.2F,
                                                                                        .regen_per_second = 0.1F,
@@ -109,21 +118,20 @@ std::vector<Seed> Seeds() {
                .acknowledged_sequence = 42,
                .queued_commands = 2}},
       {.name = "lobby",
-       .message =
-           LobbyWire{.version = 3,
-                     .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
-                                RosterEntryWire{.session = static_cast<SessionIdWire>(9), .character = "sniper"}}}},
+       .message = LobbyWire{.version = 3,
+                            .roster = {RosterEntryWire{.session = Session(7), .character = "soldier"},
+                                       RosterEntryWire{.session = Session(9), .character = "sniper"}}}},
       {.name = "ready", .message = ReadyWire{.version = 3}},
       {.name = "match_start",
        .message = MatchStartWire{.players = {MatchPlayerWire{.spawn = Vec3(-8.0F, 0.0F, 16.5F),
-                                                             .session = static_cast<SessionIdWire>(7),
+                                                             .session = Session(7),
                                                              .entity = static_cast<EntityIdWire>(1),
                                                              .character = "soldier"},
                                              MatchPlayerWire{.spawn = Vec3(8.0F, 0.0F, -16.5F),
-                                                             .session = static_cast<SessionIdWire>(9),
+                                                             .session = Session(9),
                                                              .entity = static_cast<EntityIdWire>(2),
                                                              .character = "sniper"}}}},
-      {.name = "match_end", .message = MatchEndWire{.winner = static_cast<SessionIdWire>(3)}},
+      {.name = "match_end", .message = MatchEndWire{.winner = Session(3)}},
       {.name = "shot",
        .message = ShotWire{.tick = 1200,
                            .origin = Vec3(12.5F, 1.75F, -40.0F),

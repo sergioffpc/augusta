@@ -748,6 +748,13 @@ if(AUGUSTA_CLIENT)
   # cost applies as above.
   gtest_discover_tests(augusta_client_frame_mapping_tests DISCOVERY_TIMEOUT 30)
 
+  add_executable(augusta_client_run_tests client_run_test.cpp)
+  target_link_libraries(
+    augusta_client_run_tests
+    PRIVATE augusta_client_run augusta_logging GTest::gtest GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_client_run_tests)
+
   add_executable(augusta_client_lobby_readiness_tests client_lobby_readiness_test.cpp)
   target_link_libraries(
     augusta_client_lobby_readiness_tests

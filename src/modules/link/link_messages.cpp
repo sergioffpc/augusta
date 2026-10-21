@@ -197,13 +197,9 @@ MessageType TypeOf(std::span<const std::byte> payload) { return Named(protocol::
 
 MessageType TypeOf(const protocol::MessageWire& message) { return Named(protocol::TypeOf(message)); }
 
-protocol::SessionIdWire ToWire(SessionId session) {
-  return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
-}
+protocol::SessionIdWire ToWire(SessionId session) { return protocol::SessionIdWire{.bytes = session.Bytes()}; }
 
-SessionId FromWire(protocol::SessionIdWire session) {
-  return static_cast<SessionId>(static_cast<std::uint32_t>(session));
-}
+SessionId FromWire(protocol::SessionIdWire session) { return SessionId::FromBytes(session.bytes); }
 
 protocol::EntityIdWire ToWire(EntityId entity) {
   return static_cast<protocol::EntityIdWire>(static_cast<std::uint32_t>(entity));

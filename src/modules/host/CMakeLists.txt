@@ -8,7 +8,10 @@
 # Who is in the match and whether a join is admitted (see augusta/match.h).
 add_library(augusta_host_match STATIC match.cpp)
 target_include_directories(augusta_host_match PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_host_match PUBLIC augusta_assets augusta_link augusta_math augusta_physics)
+target_link_libraries(
+  augusta_host_match
+  PUBLIC augusta_assets augusta_link augusta_math augusta_physics augusta_uuid
+)
 augusta_set_module_scope(augusta_host_match SERVER_ONLY)
 
 # The sanity gate and per-player queue for what clients send to move (see

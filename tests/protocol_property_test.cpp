@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -50,6 +51,12 @@ void showValue(const MessageWire& message, std::ostream& out) {
   struct Printer {
     std::ostream& out;
 
+    void Print(const SessionIdWire& session) const {
+      for (const std::uint8_t byte : session.bytes) {
+        out << " " << +byte;
+      }
+    }
+
     void operator()(const JoinRequestWire& request) const {
       out << "JoinRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
       for (const std::byte byte : request.client_pack) {
@@ -58,8 +65,10 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << ", character " << rc::toString(request.character) << "}";
     }
     void operator()(const JoinAcceptedWire& accepted) const {
-      out << "JoinAccepted{session " << static_cast<std::uint32_t>(accepted.session) << ", tick_rate_hz "
-          << +accepted.tick_rate_hz << ", deplete " << accepted.parameters.stamina.deplete_per_second << ", regen "
+      out << "JoinAccepted{session";
+      Print(accepted.session);
+      out << ", tick_rate_hz " << +accepted.tick_rate_hz << ", deplete "
+          << accepted.parameters.stamina.deplete_per_second << ", regen "
           << accepted.parameters.stamina.regen_per_second << ", forced_walk_below "
           << accepted.parameters.stamina.forced_walk_below << ", player_count " << +accepted.parameters.player_count;
       const RifleWire& rifle = accepted.parameters.rifle;
@@ -102,7 +111,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
     void operator()(const LobbyWire& lobby) const {
       out << "Lobby{version " << lobby.version << ", ";
       for (const RosterEntryWire& entry : lobby.roster) {
-        out << static_cast<std::uint32_t>(entry.session) << ": " << rc::toString(entry.character) << "; ";
+        Print(entry.session);
+        out << ": " << rc::toString(entry.character) << "; ";
       }
       out << "}";
     }
@@ -110,15 +120,18 @@ void showValue(const MessageWire& message, std::ostream& out) {
     void operator()(const MatchStartWire& start) const {
       out << "MatchStart{";
       for (const MatchPlayerWire& player : start.players) {
-        out << static_cast<std::uint32_t>(player.session) << ": entity " << static_cast<std::uint32_t>(player.entity)
-            << ", character " << rc::toString(player.character) << ", spawn ";
+        Print(player.session);
+        out << ": entity " << static_cast<std::uint32_t>(player.entity) << ", character "
+            << rc::toString(player.character) << ", spawn ";
         showValue(player.spawn, out);
         out << "; ";
       }
       out << "first tick " << start.first_tick << "}";
     }
     void operator()(const MatchEndWire& end) const {
-      out << "MatchEnd{winner " << static_cast<std::uint32_t>(end.winner) << "}";
+      out << "MatchEnd{winner";
+      Print(end.winner);
+      out << "}";
     }
     void operator()(const ShotWire& shot) const {
       out << "Shot{shooter " << static_cast<std::uint32_t>(shot.shooter) << ", tick " << shot.tick << ", origin ";
@@ -280,6 +293,17 @@ rc::Gen<Id> AnyId() {
   return rc::gen::map(rc::gen::arbitrary<std::uint32_t>(), [](std::uint32_t id) { return static_cast<Id>(id); });
 }
 
+// Any 16 bytes: the codec carries a Session ID's bytes as they are.
+rc::Gen<SessionIdWire> AnySession() {
+  return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(augusta::protocol::kSessionIdSize,
+                                                                    rc::gen::arbitrary<std::uint8_t>()),
+                      [](const std::vector<std::uint8_t>& bytes) {
+                        SessionIdWire session{};
+                        std::ranges::copy(bytes, session.bytes.begin());
+                        return session;
+                      });
+}
+
 rc::Gen<PackHashWire> PackHash() {
   return rc::gen::map(rc::gen::container<std::vector<std::uint8_t>>(kPackHashSize, rc::gen::arbitrary<std::uint8_t>()),
                       [](const std::vector<std::uint8_t>& bytes) {
@@ -347,7 +371,7 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
       rc::gen::set(&ParametersWire::ammo, ammo), rc::gen::set(&ParametersWire::starting_health, FiniteFloat()),
       rc::gen::set(&ParametersWire::player_count, rc::gen::arbitrary<std::uint8_t>()));
   return rc::gen::build<JoinAcceptedWire>(
-      rc::gen::set(&JoinAcceptedWire::session, AnyId<SessionIdWire>()),
+      rc::gen::set(&JoinAcceptedWire::session, AnySession()),
       rc::gen::set(&JoinAcceptedWire::tick_rate_hz, rc::gen::arbitrary<std::uint8_t>()),
       rc::gen::set(&JoinAcceptedWire::parameters, parameters), rc::gen::set(&JoinAcceptedWire::character, Character()));
 }
@@ -390,7 +414,7 @@ rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
 }
 
 rc::Gen<LobbyWire> Lobby() {
-  const auto entry = rc::gen::build<RosterEntryWire>(rc::gen::set(&RosterEntryWire::session, AnyId<SessionIdWire>()),
+  const auto entry = rc::gen::build<RosterEntryWire>(rc::gen::set(&RosterEntryWire::session, AnySession()),
                                                      rc::gen::set(&RosterEntryWire::character, Character()));
   return rc::gen::build<LobbyWire>(
       rc::gen::set(&LobbyWire::version, rc::gen::arbitrary<std::uint32_t>()),
@@ -403,7 +427,7 @@ rc::Gen<ReadyWire> Ready() {
 
 rc::Gen<MatchStartWire> MatchStart() {
   const auto player = rc::gen::build<MatchPlayerWire>(rc::gen::set(&MatchPlayerWire::spawn, Vec3OnGrid(kPositionGrid)),
-                                                      rc::gen::set(&MatchPlayerWire::session, AnyId<SessionIdWire>()),
+                                                      rc::gen::set(&MatchPlayerWire::session, AnySession()),
                                                       rc::gen::set(&MatchPlayerWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&MatchPlayerWire::character, Character()));
   return rc::gen::build<MatchStartWire>(
@@ -412,7 +436,7 @@ rc::Gen<MatchStartWire> MatchStart() {
 }
 
 rc::Gen<MatchEndWire> MatchEnd() {
-  return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, AnyId<SessionIdWire>()));
+  return rc::gen::build<MatchEndWire>(rc::gen::set(&MatchEndWire::winner, AnySession()));
 }
 
 rc::Gen<ShotWire> Shot() {

@@ -45,4 +45,10 @@ uuid::Uuid BeginRun() {
   return run_id;
 }
 
+SessionLogContext::SessionLogContext(const uuid::Uuid& session) {
+  logging::SetContext(logging::ContextField::kSession, session.ToString());
+}
+
+SessionLogContext::~SessionLogContext() { logging::ClearContext(logging::ContextField::kSession); }
+
 }  // namespace augusta::client

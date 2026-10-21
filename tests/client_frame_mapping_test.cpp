@@ -29,11 +29,17 @@ using augusta::harness::EntityId;
 using augusta::harness::SessionId;
 using augusta::math::Vec3;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr float kTolerance = 1e-5F;
 
 augusta::harness::MatchStart TwoPlayerMatch() {
-  return {.players = {{.session = SessionId{7}, .entity = EntityId{70}, .character = "medic"},
-                      {.session = SessionId{3}, .entity = EntityId{30}, .character = "sniper"}}};
+  return {.players = {{.session = Session(7), .entity = EntityId{70}, .character = "medic"},
+                      {.session = Session(3), .entity = EntityId{30}, .character = "sniper"}}};
 }
 
 // Requirements: US-17
@@ -52,7 +58,7 @@ TEST(CharactersOfTest, AreNoneBeforeTheFirstMatch) { EXPECT_TRUE(CharactersOf(st
 TEST(MatchEndOfTest, NamesTheWinnerByTheBodyItPlayed) {
   augusta::harness::ServerView view;
   view.match_start = TwoPlayerMatch();
-  view.match_end = augusta::harness::MatchEnd{.winner = SessionId{7}};
+  view.match_end = augusta::harness::MatchEnd{.winner = Session(7)};
 
   const auto end = MatchEndOf(view);
 
@@ -63,7 +69,7 @@ TEST(MatchEndOfTest, NamesTheWinnerByTheBodyItPlayed) {
 TEST(MatchEndOfTest, AWinnerMissingFromMatchStartIsNone) {
   augusta::harness::ServerView view;
   view.match_start = TwoPlayerMatch();
-  view.match_end = augusta::harness::MatchEnd{.winner = SessionId{99}};
+  view.match_end = augusta::harness::MatchEnd{.winner = Session(99)};
 
   const auto end = MatchEndOf(view);
 

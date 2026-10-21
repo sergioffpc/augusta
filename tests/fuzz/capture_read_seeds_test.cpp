@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -29,6 +30,12 @@ using augusta::host::Capturer;
 using augusta::host::EntityId;
 using augusta::host::SessionId;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 const std::string kSeedPath = std::string(AUGUSTA_CAPTURE_READ_CORPUS) + "/match";
 
 // The bytes of a short Match a Capturer captured: two players, a Command
@@ -43,8 +50,8 @@ std::string Captured() {
     header.client_pack.fill(std::byte{2});
     Capturer capturer(directory, header);
     capturer.StartMatch(
-        {CaptureEntrant{.session = SessionId{7}, .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
-         CaptureEntrant{.session = SessionId{8}, .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}},
+        {CaptureEntrant{.session = Session(7), .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
+         CaptureEntrant{.session = Session(8), .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}},
         1000, std::chrono::system_clock::time_point{std::chrono::milliseconds{1'791'540'900'123}});
     augusta::command::Command command;
     command.movement.direction = augusta::math::Vec3{0.6F, 0.0F, -0.8F};
@@ -57,7 +64,7 @@ std::string Captured() {
     capturer.Command(1001, EntityId{80}, command);
     capturer.Death(1005, EntityId{80}, EntityId{70});
     capturer.Leave(1006, EntityId{80});
-    capturer.EndMatch(1006, SessionId{7});
+    capturer.EndMatch(1006, Session(7));
   }
   const std::filesystem::path file = *std::filesystem::directory_iterator(directory);
   std::ifstream in(file, std::ios::binary);

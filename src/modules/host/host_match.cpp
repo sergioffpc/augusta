@@ -96,8 +96,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
 // Acts on Game policy's Match end, after the tick it was decided on.
 void Host::Impl::Act(const policy::MatchEnd& end) {
   const std::lock_guard<std::mutex> lock(mutex);
-  EndMatch(end.winner.transform([](policy::SessionId winner) { return FromSimulation(winner); }),
-           EndReason::kWinCondition);
+  EndMatch(end.winner, EndReason::kWinCondition);
 }
 
 // Starts a match if one can start: its players' bodies enter the simulation
@@ -113,11 +112,10 @@ void Host::Impl::StartMatchIfReady() {
   entrants.reserve(start->players.size());
   std::vector<SessionId> sessions;
   for (const MatchPlayer& player : start->players) {
-    entrants.push_back(
-        simulation::MatchPlayer{.entity = ToSimulation(player.entity),
-                                .identity = {.session = ToSimulation(player.session), .character = player.character},
-                                .character = characters.at(player.character),
-                                .spawn = player.spawn});
+    entrants.push_back(simulation::MatchPlayer{.entity = ToSimulation(player.entity),
+                                               .identity = {.session = player.session, .character = player.character},
+                                               .character = characters.at(player.character),
+                                               .spawn = player.spawn});
     bodies.emplace(player.session, player.entity);
     players.at(player.session).commands = CommandQueue{tick_rate_hz};
     sessions.push_back(player.session);

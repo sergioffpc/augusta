@@ -58,11 +58,11 @@ void Host::Impl::HandleJoinRequest(link::PeerId peer, const JoinRequest& request
     metrics.joins_admitted.Increment();
     SetLobbyGauges();
     LOG_INFO("subsystem=serverruntime event=lobby_joined peer={} session={} character={} players={} version={}",
-             PeerNumber(peer), SessionNumber(admission->session), admission->character, match.PlayerCount(),
+             PeerNumber(peer), admission->session, admission->character, match.PlayerCount(),
              match.GetRoster().version);
     if (request.spawn.has_value()) {
       LOG_INFO("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
-               SessionNumber(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);
+               admission->session, request.spawn->x, request.spawn->y, request.spawn->z);
     }
     SendRoster();
   }
@@ -184,7 +184,7 @@ Verdict Host::Impl::Judge(link::PeerId peer, PeerRejection rejection, std::chron
 void Host::Impl::Expel(link::PeerId peer, std::string_view reason) {
   if (const std::optional<SessionId> session = match.SessionOf(peer); session.has_value()) {
     LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"",
-             PeerNumber(peer), SessionNumber(*session), reason);
+             PeerNumber(peer), *session, reason);
   } else {
     LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
   }
@@ -211,14 +211,13 @@ void Host::Impl::HandleDisconnect(link::PeerId peer, Leaving how) {
     case Departure::kFromLobby:
       metrics.disconnects_from_lobby[how].Increment();
       LOG_INFO("subsystem=serverruntime event=lobby_left peer={} session={} how={} players={} version={}",
-               PeerNumber(peer), SessionNumber(*session), LeavingName(how), match.PlayerCount(),
-               match.GetRoster().version);
+               PeerNumber(peer), *session, LeavingName(how), match.PlayerCount(), match.GetRoster().version);
       SendRoster();
       break;
     case Departure::kFromMatch:
       metrics.disconnects_from_match[how].Increment();
       LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing={}", PeerNumber(peer),
-               SessionNumber(*session), LeavingName(how), match.Playing().size());
+               *session, LeavingName(how), match.Playing().size());
       break;
     case Departure::kEndedMatch:
       // Nobody won a match its last player left, whoever won the one before.
@@ -226,7 +225,7 @@ void Host::Impl::HandleDisconnect(link::PeerId peer, Leaving how) {
       metrics.disconnects_from_match[how].Increment();
       CountMatchEnded(EndReason::kNoPlayersLeft, std::nullopt);
       LOG_INFO("subsystem=serverruntime event=match_left peer={} session={} how={} playing=0", PeerNumber(peer),
-               SessionNumber(*session), LeavingName(how));
+               *session, LeavingName(how));
       LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
       break;
   }

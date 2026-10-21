@@ -30,8 +30,8 @@ def test_a_capture_the_server_wrote_reads_as_it_was_played():
     assert read.header.tick_rate_hz == 60
     assert read.header.started.isoformat() == "2026-10-09T10:15:00.123000+00:00"
     assert [(p.number, p.session, p.character) for p in read.players] == [
-        (1, 7, "soldier"),
-        (2, 8, "sniper"),
+        (1, "0190a1b2-c3d4-7000-8000-000000000007", "soldier"),
+        (2, "0190a1b2-c3d4-7000-8000-000000000008", "sniper"),
     ]
     assert read.players[1].spawn == (-3.0, 0.0, 4.0)
     assert [p.commands for p in read.players] == [1, 1]
@@ -109,7 +109,8 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
     assert "format version  3" in out
     assert "length          7 ticks, 0.12 s" in out
     assert (
-        "  2  session 8  sniper  spawn (-3, 0, 4)  1 commands  "
+        "  2  session 0190a1b2-c3d4-7000-8000-000000000008  sniper  "
+        "spawn (-3, 0, 4)  1 commands  "
         "died at 5, killed by 1  left at 6" in out
     )
     assert "Match end  at 6, won by 1" in out

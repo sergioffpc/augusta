@@ -5,7 +5,8 @@
 
 /// \file
 /// The start of one Run of augustac (GLOSSARY.md): its Run ID, and the log it
-/// leaves beside the executable (ADR-0027).
+/// leaves beside the executable (ADR-0027); and its Session's ID in that log
+/// once it is admitted.
 namespace augusta::client {
 
 /// Takes the Run's ID and starts its log: every line from now on carries `run=`
@@ -17,6 +18,20 @@ namespace augusta::client {
 /// logging::Init and before the config is read, so a config failure is named by
 /// the Run too.
 uuid::Uuid BeginRun();
+
+/// While it lives, every line carries `session=<session>` (ADR-0029): held by
+/// ClientRuntime from the admission it sees to the Session's end, so the
+/// client's lines map to the server's about the same Session.
+class SessionLogContext {
+ public:
+  explicit SessionLogContext(const uuid::Uuid& session);
+  ~SessionLogContext();
+
+  SessionLogContext(const SessionLogContext&) = delete;
+  SessionLogContext& operator=(const SessionLogContext&) = delete;
+  SessionLogContext(SessionLogContext&&) = delete;
+  SessionLogContext& operator=(SessionLogContext&&) = delete;
+};
 
 }  // namespace augusta::client
 

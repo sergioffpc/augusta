@@ -131,7 +131,10 @@ class Arena {
   }
 
   static EntityId Entity(std::size_t player) { return static_cast<EntityId>(player + 1); }
-  static SessionId Session(std::size_t player) { return static_cast<SessionId>(100 + player); }
+  static SessionId Session(std::size_t player) {
+    return SessionId::FromBytes({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                 0x00, static_cast<std::uint8_t>(100 + player)});
+  }
 
   // Puts player at position: one who is not in the Match yet, for a test that
   // brings one in.

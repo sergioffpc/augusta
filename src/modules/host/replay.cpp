@@ -144,15 +144,14 @@ Replay::Replay(capture::Capture capture, simulation::World world,
   for (std::size_t i = 0; i < capture_.joins.size(); ++i) {
     const capture::Join& join = capture_.joins[i];
     const auto number = static_cast<capture::Player>(i + 1);
-    const auto session = static_cast<SessionId>(join.session);
     start_.players.push_back(
-        MatchPlayer{.session = session, .entity = static_cast<EntityId>(number), .character = join.character});
+        MatchPlayer{.session = join.session, .entity = static_cast<EntityId>(number), .character = join.character});
     spawns_.push_back(join.spawn);
     players_.push_back(Player{.number = number, .commands = CommandQueue{tick_rate_hz}});
     // As World::StartMatch adds them, but where the capture has them: Game
     // policy is not asked for spawns (ADR-0051).
     world_.AddPlayer(BodyOf(number), join.spawn, characters.at(join.character),
-                     simulation::PlayerIdentity{.session = ToSimulation(session), .character = join.character});
+                     simulation::PlayerIdentity{.session = join.session, .character = join.character});
   }
 }
 
@@ -200,8 +199,7 @@ std::vector<simulation::PlayerCommand> Replay::TakeCommands(std::vector<PlayerVi
 std::optional<ReplayEnd> Replay::EndOf(std::uint32_t offset, const simulation::TickResult& result) const {
   for (const policy::PolicyAction& action : result.actions) {
     if (const auto* end = std::get_if<policy::MatchEnd>(&action)) {
-      return ReplayEnd{.winner =
-                           end->winner.transform([](policy::SessionId winner) { return FromSimulation(winner); })};
+      return ReplayEnd{.winner = end->winner};
     }
   }
   if (offset < last_offset_) {
@@ -235,8 +233,7 @@ ReplayTick Replay::Step() {
     if (const auto* end = std::get_if<policy::MatchEnd>(&action)) {
       capture::MatchEnd captured;
       if (end->winner.has_value()) {
-        const SessionId winner = FromSimulation(*end->winner);
-        const auto found = std::ranges::find(start_.players, winner, &MatchPlayer::session);
+        const auto found = std::ranges::find(start_.players, *end->winner, &MatchPlayer::session);
         if (found != start_.players.end()) {
           captured.winner = static_cast<capture::Player>(found->entity);
         }

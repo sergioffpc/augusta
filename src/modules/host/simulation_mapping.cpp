@@ -31,12 +31,6 @@ EntityId FromSimulation(simulation::EntityId entity) {
   return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
 }
 
-policy::SessionId ToSimulation(SessionId session) {
-  return static_cast<policy::SessionId>(std::to_underlying(session));
-}
-
-SessionId FromSimulation(policy::SessionId session) { return static_cast<SessionId>(std::to_underlying(session)); }
-
 body_part::BodyPart FromBlob(assets::BodyPart part) {
   switch (part) {
     case assets::BodyPart::kHead:

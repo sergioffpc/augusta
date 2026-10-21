@@ -135,6 +135,23 @@ using augusta::protobuf_bytes::TextField;
 using augusta::protobuf_bytes::Varint;
 using augusta::protobuf_bytes::VarintField;
 
+// A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
+SessionIdWire Session(std::uint8_t last) {
+  SessionIdWire session{
+      .bytes = {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+  session.bytes.back() = last;
+  return session;
+}
+
+// session's 16 bytes, as a bytes field carries them.
+BytesWire BytesOf(const SessionIdWire& session) {
+  BytesWire bytes;
+  for (const std::uint8_t byte : session.bytes) {
+    bytes.push_back(static_cast<std::byte>(byte));
+  }
+  return bytes;
+}
+
 // The payload of a message of type whose body holds fields.
 BytesWire Envelope(MessageTypeWire type, const BytesWire& fields) {
   return LengthField(static_cast<int>(type), fields);
@@ -297,7 +314,7 @@ TEST(ProtocolTest, AReenactRequestsVersionAndCharacterAreBoundAsAJoinRequestsAre
 
 TEST(ProtocolTest, JoinAcceptedRoundTrips) {
   JoinAcceptedWire sent{
-      .session = static_cast<SessionIdWire>(0xA1B2C3D4U),
+      .session = Session(0xD4),
       .tick_rate_hz = 30,
       .parameters = {.stamina = {.deplete_per_second = 0.2F, .regen_per_second = 0.1F, .forced_walk_below = 0.05F},
                      .rifle = {.rounds_per_minute = 600.0F,
@@ -359,8 +376,8 @@ TEST(ProtocolTest, ALobbyFullRefusalKeepsTheWireValueOfAFullMatch) {
 TEST(ProtocolTest, LobbyRoundTrips) {
   const LobbyWire sent{
       .version = 42,
-      .roster = {RosterEntryWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
-                 RosterEntryWire{.session = static_cast<SessionIdWire>(9),
+      .roster = {RosterEntryWire{.session = Session(7), .character = "soldier"},
+                 RosterEntryWire{.session = Session(9),
                                  .character = std::string(augusta::protocol::kMaxCharacterNameLength, 'c')}}};
 
   const auto decoded = RoundTrip(sent);
@@ -385,7 +402,7 @@ TEST(ProtocolTest, AnEmptyLobbyAndAFullOneRoundTrip) {
 
 // Requirements: NFR-12
 TEST(ProtocolTest, MorePlayersInALobbyThanItHoldsIsTooLong) {
-  const BytesWire entry = LengthField(2, VarintField(1, 7));
+  const BytesWire entry = LengthField(2, LengthField(3, BytesOf(Session(7))));
 
   EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kLobby, Repeat(entry, kMaxPlayers))).has_value());
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kLobby, Repeat(entry, kMaxPlayers + 1))).error(),
@@ -401,10 +418,10 @@ TEST(ProtocolTest, ACharacterInALobbyLongerThanTheLimitIsTooLong) {
 }
 
 // A player whose body is entity 100 more than its session, so the two never pass for each other.
-MatchPlayerWire MatchPlayer(std::uint32_t session, std::string character, float x) {
+MatchPlayerWire MatchPlayer(std::uint8_t session, std::string character, float x) {
   return MatchPlayerWire{.spawn = Vec3(x, 0.5F, -8.0F),
-                         .session = static_cast<SessionIdWire>(session),
-                         .entity = static_cast<EntityIdWire>(session + 100),
+                         .session = Session(session),
+                         .entity = static_cast<EntityIdWire>(session + 100U),
                          .character = std::move(character)};
 }
 
@@ -447,19 +464,38 @@ TEST(ProtocolTest, ReadyRoundTripsTheVersionItWasLoadedFor) {
 }
 
 TEST(ProtocolTest, MatchEndRoundTripsItsWinnersSession) {
-  const auto decoded = RoundTrip(MatchEndWire{.winner = static_cast<SessionIdWire>(0xA1B2C3D4U)});
+  const auto decoded = RoundTrip(MatchEndWire{.winner = Session(0xD4)});
 
   ASSERT_TRUE(std::holds_alternative<MatchEndWire>(decoded));
-  EXPECT_EQ(std::get<MatchEndWire>(decoded).winner, static_cast<SessionIdWire>(0xA1B2C3D4U));
+  EXPECT_EQ(std::get<MatchEndWire>(decoded).winner, Session(0xD4));
 }
 
-// Session IDs start at 1, so a winner of 0 is a draw (ADR-0038): one with no
-// winner at all, as an absent field reads as 0.
-TEST(ProtocolTest, AMatchEndThatIsADrawNamesSessionZero) {
+// No Session ID is the nil UUID, so a winner of all zeros is a draw
+// (ADR-0038): one with no winner at all, as an absent field reads as nil.
+TEST(ProtocolTest, AMatchEndThatIsADrawNamesTheNilSession) {
   EXPECT_EQ(std::get<MatchEndWire>(RoundTrip(MatchEndWire{.winner = augusta::protocol::kDraw})).winner,
             augusta::protocol::kDraw);
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, {})).value(), MessageWire(MatchEndWire{}));
-  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, VarintField(1, 0))).value(), MessageWire(MatchEndWire{}));
+}
+
+// A Session ID travels as its 16 bytes, in RFC 9562's order (ADR-0038).
+TEST(ProtocolTest, ASessionIdTravelsAsItsSixteenBytes) {
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, LengthField(2, BytesOf(Session(0x2A))))).value(),
+            MessageWire(MatchEndWire{.winner = Session(0x2A)}));
+  EXPECT_EQ(Encode(MessageWire(MatchEndWire{.winner = Session(0x2A)})).value(),
+            Envelope(MessageTypeWire::kMatchEnd, LengthField(2, BytesOf(Session(0x2A)))));
+}
+
+// Requirements: NFR-12
+TEST(ProtocolTest, ASessionIdOfAnyLengthButSixteenBytesIsOutOfRange) {
+  for (const std::size_t length : {1U, 15U, 17U}) {
+    const BytesWire session(length, std::byte{0x7F});
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinAccepted, LengthField(5, session))).error(),
+              DecodeError::kOutOfRange)
+        << length;
+    EXPECT_EQ(Decode(Envelope(MessageTypeWire::kMatchEnd, LengthField(2, session))).error(), DecodeError::kOutOfRange)
+        << length;
+  }
 }
 
 TEST(ProtocolTest, AShotRoundTripsWithItsShooterTickOriginAndDirection) {
@@ -569,7 +605,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsMalformedNotACrash) {
   const std::array<MessageWire, 16> messages = {
       JoinRequestWire{.engine_version = "0.1.0", .character = "soldier"},
       ReenactRequestWire{.engine_version = "0.1.0", .character = "soldier", .spawn = Vec3(1.0F, 2.0F, 3.0F)},
-      JoinAcceptedWire{.session = static_cast<SessionIdWire>(7), .character = "soldier"},
+      JoinAcceptedWire{.session = Session(7), .character = "soldier"},
       JoinRefusedWire{.reason = JoinRefusalWire::kMatchInProgress},
       CommandsWire{.commands = {SequencedCommandWire{.sequence = 1}, {.sequence = 2}}},
       AuthoritativeStateWire{.tick = 3, .bodies = {EntityStateWire{}, {}}, .queued_commands = 2},
@@ -579,7 +615,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsMalformedNotACrash) {
       ShotWire{.tick = 9, .origin = Vec3(1.0F, 2.0F, 3.0F), .shooter = static_cast<EntityIdWire>(7)},
       HitConfirmationWire{.target = static_cast<EntityIdWire>(7), .damage = 20.0F, .part = BodyPartWire::kHead},
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
-      MatchEndWire{.winner = static_cast<SessionIdWire>(3)},
+      MatchEndWire{.winner = Session(3)},
       ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.acap", .ticks = 9}}},
       ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.acap"},
       ReplayViewWire{.tick = 4, .players = {PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(1)}}}};
@@ -1232,10 +1268,9 @@ TEST(ProtocolTest, AnUnknownFieldAtTheTopLevelOrInsideABodyDecodesToTheSameMessa
 // An absent field or sub-message reads as its default (ADR-0007).
 // Requirements: NFR-12
 TEST(ProtocolTest, AnAbsentSubMessageDecodesToItsDefault) {
-  EXPECT_EQ(
-      Decode(Envelope(MessageTypeWire::kJoinAccepted, VarintField(1, 7))).value(),
-      MessageWire(JoinAcceptedWire{
-          .session = static_cast<SessionIdWire>(7), .parameters = ParametersWire{.player_count = 0}, .character = ""}));
+  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kJoinAccepted, LengthField(5, BytesOf(Session(7))))).value(),
+            MessageWire(JoinAcceptedWire{
+                .session = Session(7), .parameters = ParametersWire{.player_count = 0}, .character = ""}));
   EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReady, {})).value(), MessageWire(ReadyWire{}));
 }
 

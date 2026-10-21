@@ -120,6 +120,12 @@ def test_two_agents_are_admitted_and_reach_the_match(client_pack):
                 await next_event_of_type(agent, augusta_agent.MatchStart)
 
             sessions = {agent.view().session for agent in agents}
+            # A Session ID reaches a script as its canonical string.
+            assert all(
+                isinstance(session, str) and len(session) == 36
+                for session in sessions
+            )
+            assert len(sessions) == len(agents)
             for agent in agents:
                 view = agent.view()
                 assert view.phase == augusta_agent.Phase.MATCH

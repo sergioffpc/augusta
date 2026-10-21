@@ -18,12 +18,11 @@
 /// augusta/simulation_mapping.h makes them at SimulationWorld's: what Match,
 /// replication and a Replay decide to send, which name players and bodies by
 /// the server's own IDs, as the Link's messages (augusta/link_types.h), which
-/// name them by the same numbers. The Link alone turns those into the
+/// name them by the same numbers. A Session ID is one uuid::Uuid on both sides,
+/// so it needs no conversion. The Link alone turns those into the
 /// protocol's. What a client sends needs none: a join, a Replay request and a
 /// command are the Link's own types on the server too.
 namespace augusta::host {
-
-[[nodiscard]] link::SessionId ToLink(SessionId session);
 
 [[nodiscard]] link::EntityId ToLink(EntityId entity);
 

@@ -13,6 +13,7 @@
 #include "augusta/replay.h"
 #include "augusta/replay_server.h"
 #include "augusta/simulation.h"
+#include "augusta/uuid.h"
 #include "benchmark_match.h"
 #include "benchmark_scene.h"
 
@@ -41,7 +42,7 @@ Capture FullMatchCapture() {
   capture.header.tick_rate_hz = augusta::benchmarks::kTickRate;
   for (std::uint8_t player = 1; player <= kPlayers; ++player) {
     capture.joins.push_back(
-        augusta::capture::Join{.session = player,
+        augusta::capture::Join{.session = augusta::uuid::Generate(),
                                .character = kCharacter,
                                .spawn = augusta::math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player - 1))});
   }

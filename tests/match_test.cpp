@@ -142,7 +142,23 @@ TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
 
   ASSERT_TRUE(first.has_value() && second.has_value());
   EXPECT_NE(first->session, second->session);
-  EXPECT_NE(static_cast<std::uint32_t>(first->session), 500U);
+  // A UUIDv7 (RFC 9562): version 7, variant 0b10, whatever the peer's handle.
+  EXPECT_EQ(first->session.Bytes()[6] >> 4U, 7U);
+  EXPECT_EQ(first->session.Bytes()[8] >> 6U, 2U);
+}
+
+// Each server takes its Session IDs apart from every other's, so two that
+// admit the same transport handles never name two players alike.
+// Requirements: US-01
+TEST(MatchTest, TwoServersNeverAdmitUnderTheSameSessionId) {
+  Match one(Config());
+  Match other(Config());
+
+  const auto first = one.Join(Peer(1), Request(kVersion, kCharacter));
+  const auto second = other.Join(Peer(1), Request(kVersion, kCharacter));
+
+  ASSERT_TRUE(first.has_value() && second.has_value());
+  EXPECT_NE(first->session, second->session);
 }
 
 // Requirements: US-02

@@ -21,6 +21,7 @@
 #include "augusta/client_character_loader.h"
 #include "augusta/client_content.h"
 #include "augusta/client_phases.h"
+#include "augusta/client_run.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -506,11 +507,17 @@ std::optional<failure::Failure> ClientRuntime::Run() {
                           .on_network_round = [&impl] { impl.SampleNetworkStats(); },
                           .on_failure = {},
                       });
+  // Ends after the joiner, so the Network I/O thread's last lines carry it too.
+  std::optional<SessionLogContext> session_context;
   const RunnerJoiner joiner{.runner = impl.runner};
 
   std::optional<failure::Failure> failure = impl.WaitForAdmission();
   if (failure.has_value()) {
     return failure;
+  }
+  if (const std::shared_ptr<const harness::ServerView> admitted = impl.session->GetServerView();
+      admitted->accepted.has_value()) {
+    session_context.emplace(admitted->accepted->session);
   }
 
   window::Window& window = impl_->window;

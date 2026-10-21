@@ -230,13 +230,22 @@ struct ParametersWire {
   bool operator==(const ParametersWire&) const = default;
 };
 
-/// The server's name for one connected player, distinct from the transport's
-/// handle for the connection. Identifies a player inside messages; it is not a
-/// credential, since the server tells senders apart by connection.
-enum class SessionIdWire : std::uint32_t {};
+/// The size of a Session ID, in bytes: a UUIDv7's (ADR-0038).
+inline constexpr std::size_t kSessionIdSize = 16;
 
-/// The session a Match end names as its winner when it is a draw: Session IDs
-/// start at 1, so none is ever 0 (ADR-0038).
+/// The server's name for one connected player, distinct from the transport's
+/// handle for the connection: a UUIDv7, unique across every server and every
+/// restart, as its 16 bytes in RFC 9562's order. Identifies a player inside
+/// messages; it is not a credential, since the server tells senders apart by
+/// connection.
+struct SessionIdWire {
+  std::array<std::uint8_t, kSessionIdSize> bytes{};
+
+  bool operator==(const SessionIdWire&) const = default;
+};
+
+/// The session a Match end names as its winner when it is a draw: the nil
+/// UUID, all zeros, which no Session ID is (ADR-0038).
 inline constexpr SessionIdWire kDraw{};
 
 /// The server's name for one dynamic body - today a player's, later any that

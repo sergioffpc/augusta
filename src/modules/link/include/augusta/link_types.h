@@ -17,6 +17,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 #include "augusta/weapon.h"
 
 /// \file
@@ -31,9 +32,10 @@
 namespace augusta::link {
 
 /// The server's name for one connected player (GLOSSARY.md, "Session ID"), as
-/// a message carries it: assigned when the server admits the join. Distinct
-/// from the transport's handle for the connection, and not a credential.
-enum class SessionId : std::uint32_t {};
+/// a message carries it: a UUIDv7 assigned when the server admits the join,
+/// unique across every server and every restart. Distinct from the transport's
+/// handle for the connection, and not a credential.
+using SessionId = uuid::Uuid;
 
 /// The server's name for one dynamic body (GLOSSARY.md, "Entity ID"), as a
 /// message carries it: a player's is given in Match start. It names the body,
