@@ -34,3 +34,6 @@ set_source_files_properties(
     COMPILE_DEFINITIONS $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>:__restrict=>
 )
 target_include_directories(augusta_protocol SYSTEM PRIVATE ${AUGUSTA_PROTOCOL_GENERATED_DIR})
+# The generated code alone, for clang-tidy, which reads protocol.cpp against
+# augusta.pb.h before anything is built (the Makefile's tidy, CI's Lint).
+add_custom_target(augusta_protocol_generated DEPENDS ${protocol_generated})
