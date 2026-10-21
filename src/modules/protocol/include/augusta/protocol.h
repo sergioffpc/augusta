@@ -13,6 +13,7 @@
 
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -275,6 +276,9 @@ struct JoinRequestWire {
   /// The character the player chose, by its name in the scenario's manifest
   /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
+  /// The client's Run ID, which the server logs at admission (ADR-0038); the
+  /// nil ID when the field is absent.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -291,6 +295,8 @@ struct ReenactRequestWire {
   std::string character;
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
+  /// As JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -550,6 +556,8 @@ struct ReplayRequestWire {
   /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
   /// its listing.
   std::string capture;
+  /// The Replay viewer's Run ID, as JoinRequestWire::run.
+  uuid::Uuid run = uuid::kNil;
 
   bool operator==(const ReplayRequestWire&) const = default;
 };

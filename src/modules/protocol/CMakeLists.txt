@@ -2,7 +2,7 @@ add_library(augusta_protocol STATIC protocol.cpp proto/augusta.proto)
 target_include_directories(augusta_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_protocol
-  PUBLIC augusta_math augusta_tick
+  PUBLIC augusta_math augusta_tick augusta_uuid
   PRIVATE augusta_limits protobuf::libprotobuf utf8_range::utf8_range
 )
 augusta_set_module_scope(augusta_protocol SHARED)

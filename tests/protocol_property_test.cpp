@@ -16,6 +16,7 @@
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -55,7 +56,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", character " << rc::toString(request.character) << "}";
+      out << ", character " << rc::toString(request.character) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const JoinAcceptedWire& accepted) const {
       out << "JoinAccepted{session " << static_cast<std::uint32_t>(accepted.session) << ", tick_rate_hz "
@@ -152,7 +153,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", capture " << rc::toString(request.capture) << "}";
+      out << ", capture " << rc::toString(request.capture) << ", run " << request.run.ToString() << "}";
     }
     void operator()(const ReplayViewWire& view) const {
       out << "ReplayView{tick " << view.tick << ", ";
@@ -169,7 +170,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << ", character " << rc::toString(request.character) << ", spawn ";
       showValue(request.spawn, out);
-      out << "}";
+      out << ", run " << request.run.ToString() << "}";
     }
   };
   std::visit(Printer{.out = out}, message);
@@ -291,6 +292,13 @@ rc::Gen<PackHashWire> PackHash() {
                       });
 }
 
+// Any 16 bytes, the nil Run ID among them.
+rc::Gen<augusta::uuid::Uuid> RunId() {
+  return rc::gen::map(
+      rc::gen::arbitrary<augusta::uuid::Uuid::ByteArray>(),
+      [](const augusta::uuid::Uuid::ByteArray& bytes) { return augusta::uuid::Uuid::FromBytes(bytes); });
+}
+
 rc::Gen<CommandWire> Command() {
   return rc::gen::build<CommandWire>(
       rc::gen::set(&CommandWire::direction, Vec3OnGrid(kDirectionGrid)),
@@ -313,7 +321,8 @@ rc::Gen<BodyStateWire> Body() {
 rc::Gen<JoinRequestWire> JoinRequest() {
   return rc::gen::build<JoinRequestWire>(
       rc::gen::set(&JoinRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
-      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()));
+      rc::gen::set(&JoinRequestWire::client_pack, PackHash()), rc::gen::set(&JoinRequestWire::character, Character()),
+      rc::gen::set(&JoinRequestWire::run, RunId()));
 }
 
 rc::Gen<ReenactRequestWire> ReenactRequest() {
@@ -321,7 +330,8 @@ rc::Gen<ReenactRequestWire> ReenactRequest() {
       rc::gen::set(&ReenactRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReenactRequestWire::client_pack, PackHash()),
       rc::gen::set(&ReenactRequestWire::character, Character()),
-      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)));
+      rc::gen::set(&ReenactRequestWire::spawn, Vec3OnGrid(kPositionGrid)),
+      rc::gen::set(&ReenactRequestWire::run, RunId()));
 }
 
 rc::Gen<JoinAcceptedWire> JoinAccepted() {
@@ -458,7 +468,7 @@ rc::Gen<ReplayRequestWire> ReplayRequest() {
   return rc::gen::build<ReplayRequestWire>(
       rc::gen::set(&ReplayRequestWire::engine_version, UpTo<std::string>(kMaxEngineVersionLength, Letter())),
       rc::gen::set(&ReplayRequestWire::client_pack, PackHash()),
-      rc::gen::set(&ReplayRequestWire::capture, CaptureName()));
+      rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, RunId()));
 }
 
 rc::Gen<ReplayViewWire> ReplayView() {
