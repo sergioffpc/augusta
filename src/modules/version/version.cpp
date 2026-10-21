@@ -2,12 +2,13 @@
 
 #include <cstddef>
 #include <format>
-#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
 
 #ifdef _WIN32
+#include <iterator>
+
 #include <windows.h>
 #else
 #include <elf.h>
