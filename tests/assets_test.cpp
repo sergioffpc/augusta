@@ -755,7 +755,7 @@ TEST_F(PackTest, LoadVerifiedPackRefusesAPackSignedByAnotherKey) {
 
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().failure, augusta::assets::VerifiedPackFailure::kPackRejected);
-  EXPECT_EQ(pack.error().load_failure.reason, augusta::assets::LoadError::kSignatureInvalid);
+  EXPECT_EQ(pack.error().load_error.code, augusta::assets::LoadErrorCode::kSignatureInvalid);
 }
 
 // Requirements: NFR-08
@@ -930,7 +930,7 @@ TEST_F(PackLoadNegativeTest, RejectsBadMagic) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kBadMagic);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kBadMagic);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -945,7 +945,7 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kUnsupportedVersion);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
   EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 3");
 }
 
@@ -959,7 +959,7 @@ TEST_F(PackLoadNegativeTest, RejectsUnsupportedVersion) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kUnsupportedVersion);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -970,7 +970,7 @@ TEST_F(PackLoadNegativeTest, RejectsFileTooShortForHeaderAndTrailer) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kTruncated);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kTruncated);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -983,7 +983,7 @@ TEST_F(PackLoadNegativeTest, RejectsIndexOffsetPastTruncatedContent) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kTruncated);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kTruncated);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -999,7 +999,7 @@ TEST_F(PackLoadNegativeTest, RejectsCorruptedContentAsHashMismatch) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kHashMismatch);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kHashMismatch);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -1012,7 +1012,7 @@ TEST_F(PackLoadNegativeTest, RejectsAClientPackHashItsHeaderDoesNotFlag) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kTruncated);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kTruncated);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -1024,7 +1024,7 @@ TEST_F(PackLoadNegativeTest, RejectsAHeaderFlagNoWriterSets) {
 
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kTruncated);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kTruncated);
 }
 
 // Requirements: NFR-08, NFR-12
@@ -1035,13 +1035,13 @@ TEST_F(PackLoadNegativeTest, RejectsWrongPublicKeyAsSignatureInvalid) {
   const auto other_keys = GenerateEd25519KeyPair();
   const auto pack = augusta::assets::Pack::Load(path, other_keys.public_key);
   ASSERT_FALSE(pack.has_value());
-  EXPECT_EQ(pack.error().reason, augusta::assets::LoadError::kSignatureInvalid);
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kSignatureInvalid);
 }
 
-// The layout read refuses what Pack::Load refuses, with the same LoadFailure.
+// The layout read refuses what Pack::Load refuses, with the same LoadError.
 class PackLayoutNegativeTest : public PackLoadNegativeTest {
  protected:
-  std::expected<augusta::assets::PackLayout, augusta::assets::LoadFailure> ReadLayoutOf(
+  std::expected<augusta::assets::PackLayout, augusta::assets::LoadError> ReadLayoutOf(
       std::span<const std::byte> bytes) {
     const auto path = MakePackPath("augusta_assets_test_layout_negative");
     WriteFileBytes(path, bytes);
@@ -1057,7 +1057,7 @@ TEST_F(PackLayoutNegativeTest, RejectsBadMagic) {
   const auto layout = ReadLayoutOf(bytes);
 
   ASSERT_FALSE(layout.has_value());
-  EXPECT_EQ(layout.error().reason, augusta::assets::LoadError::kBadMagic);
+  EXPECT_EQ(layout.error().code, augusta::assets::LoadErrorCode::kBadMagic);
 }
 
 // Requirements: NFR-12
@@ -1068,7 +1068,7 @@ TEST_F(PackLayoutNegativeTest, RejectsUnsupportedVersion) {
   const auto layout = ReadLayoutOf(bytes);
 
   ASSERT_FALSE(layout.has_value());
-  EXPECT_EQ(layout.error().reason, augusta::assets::LoadError::kUnsupportedVersion);
+  EXPECT_EQ(layout.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
 }
 
 // Requirements: NFR-12
@@ -1078,7 +1078,7 @@ TEST_F(PackLayoutNegativeTest, RejectsATruncatedFile) {
   const auto layout = ReadLayoutOf(bytes);
 
   ASSERT_FALSE(layout.has_value());
-  EXPECT_EQ(layout.error().reason, augusta::assets::LoadError::kTruncated);
+  EXPECT_EQ(layout.error().code, augusta::assets::LoadErrorCode::kTruncated);
 }
 
 // Requirements: NFR-12
@@ -1090,7 +1090,7 @@ TEST_F(PackLayoutNegativeTest, RejectsAnIndexEntryOfAnUnknownType) {
   const auto layout = ReadLayoutOf(bytes);
 
   ASSERT_FALSE(layout.has_value());
-  EXPECT_EQ(layout.error().reason, augusta::assets::LoadError::kInvalidIndex);
+  EXPECT_EQ(layout.error().code, augusta::assets::LoadErrorCode::kInvalidIndex);
 }
 
 // No key, no verification: a pack modified after signing still shows its

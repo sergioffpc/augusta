@@ -22,8 +22,8 @@ namespace {
 
 namespace py = pybind11;
 
-Failure<assets::LoadError> FailureOf(const assets::LoadFailure& failure, const std::filesystem::path& path) {
-  return {failure.reason, std::format("{} {}", path.string(), assets::DescribeLoadError(failure))};
+Failure<assets::LoadErrorCode> FailureOf(const assets::LoadError& error, const std::filesystem::path& path) {
+  return {error.code, std::format("{} {}", path.string(), assets::DescribeLoadError(error))};
 }
 
 std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& client_pack) {
@@ -50,16 +50,16 @@ std::unique_ptr<assets::Pack> LoadPack(const std::filesystem::path& path, const 
 }
 
 void BindLoadError(py::module_& module) {
-  py::enum_<assets::LoadError>(module, "LoadErrorReason", "Why a pack was refused: a LoadError's reason.")
-      .value("IO_ERROR", assets::LoadError::kIoError)
-      .value("BAD_MAGIC", assets::LoadError::kBadMagic)
-      .value("UNSUPPORTED_VERSION", assets::LoadError::kUnsupportedVersion)
-      .value("TRUNCATED", assets::LoadError::kTruncated)
-      .value("INVALID_INDEX", assets::LoadError::kInvalidIndex)
-      .value("HASH_MISMATCH", assets::LoadError::kHashMismatch)
-      .value("SIGNATURE_INVALID", assets::LoadError::kSignatureInvalid);
+  py::enum_<assets::LoadErrorCode>(module, "LoadErrorReason", "Why a pack was refused: a LoadError's reason.")
+      .value("IO_ERROR", assets::LoadErrorCode::kIoError)
+      .value("BAD_MAGIC", assets::LoadErrorCode::kBadMagic)
+      .value("UNSUPPORTED_VERSION", assets::LoadErrorCode::kUnsupportedVersion)
+      .value("TRUNCATED", assets::LoadErrorCode::kTruncated)
+      .value("INVALID_INDEX", assets::LoadErrorCode::kInvalidIndex)
+      .value("HASH_MISMATCH", assets::LoadErrorCode::kHashMismatch)
+      .value("SIGNATURE_INVALID", assets::LoadErrorCode::kSignatureInvalid);
   // PyExc_ValueError: Python.h's, which pybind11.h includes for its users.
-  RegisterFailure<assets::LoadError>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
+  RegisterFailure<assets::LoadErrorCode>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
 }
 
 void BindLayout(py::module_& module) {
