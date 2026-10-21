@@ -22,8 +22,8 @@ namespace {
 
 namespace py = pybind11;
 
-Failure<assets::LoadError> LoadFailureOf(assets::LoadError reason, const std::filesystem::path& path) {
-  return {reason, std::format("{} {}", path.string(), assets::DescribeLoadError(reason))};
+Failure<assets::LoadErrorCode> FailureOf(const assets::LoadError& error, const std::filesystem::path& path) {
+  return {error.code, std::format("{} {}", path.string(), assets::DescribeLoadError(error))};
 }
 
 std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& client_pack) {
@@ -36,7 +36,7 @@ std::optional<py::bytes> ClientPackOf(const std::optional<assets::PackHash>& cli
 assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
   auto layout = assets::ReadPackLayout(path);
   if (!layout) {
-    throw LoadFailureOf(layout.error(), path);
+    throw FailureOf(layout.error(), path);
   }
   return *std::move(layout);
 }
@@ -44,22 +44,22 @@ assets::PackLayout ReadPackLayout(const std::filesystem::path& path) {
 std::unique_ptr<assets::Pack> LoadPack(const std::filesystem::path& path, const py::bytes& public_key) {
   auto pack = assets::Pack::Load(path, FixedBytesOf<assets::kEd25519PublicKeySize>(public_key, "public_key"));
   if (!pack) {
-    throw LoadFailureOf(pack.error(), path);
+    throw FailureOf(pack.error(), path);
   }
   return std::make_unique<assets::Pack>(*std::move(pack));
 }
 
 void BindLoadError(py::module_& module) {
-  py::enum_<assets::LoadError>(module, "LoadErrorReason", "Why a pack was refused: a LoadError's reason.")
-      .value("IO_ERROR", assets::LoadError::kIoError)
-      .value("BAD_MAGIC", assets::LoadError::kBadMagic)
-      .value("UNSUPPORTED_VERSION", assets::LoadError::kUnsupportedVersion)
-      .value("TRUNCATED", assets::LoadError::kTruncated)
-      .value("INVALID_INDEX", assets::LoadError::kInvalidIndex)
-      .value("HASH_MISMATCH", assets::LoadError::kHashMismatch)
-      .value("SIGNATURE_INVALID", assets::LoadError::kSignatureInvalid);
+  py::enum_<assets::LoadErrorCode>(module, "LoadErrorReason", "Why a pack was refused: a LoadError's reason.")
+      .value("IO_ERROR", assets::LoadErrorCode::kIoError)
+      .value("BAD_MAGIC", assets::LoadErrorCode::kBadMagic)
+      .value("UNSUPPORTED_VERSION", assets::LoadErrorCode::kUnsupportedVersion)
+      .value("TRUNCATED", assets::LoadErrorCode::kTruncated)
+      .value("INVALID_INDEX", assets::LoadErrorCode::kInvalidIndex)
+      .value("HASH_MISMATCH", assets::LoadErrorCode::kHashMismatch)
+      .value("SIGNATURE_INVALID", assets::LoadErrorCode::kSignatureInvalid);
   // PyExc_ValueError: Python.h's, which pybind11.h includes for its users.
-  RegisterFailure<assets::LoadError>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
+  RegisterFailure<assets::LoadErrorCode>(module, "LoadError", PyExc_ValueError);  // NOLINT(misc-include-cleaner)
 }
 
 void BindLayout(py::module_& module) {

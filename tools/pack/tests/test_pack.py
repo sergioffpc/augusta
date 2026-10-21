@@ -74,6 +74,21 @@ def test_a_refused_pack_raises_load_error_with_its_reason(tmp_path, key_pair):
     assert refused.value.reason == _native.LoadErrorReason.SIGNATURE_INVALID
 
 
+def test_a_pack_of_another_format_names_both_versions(tmp_path, key_pair):
+    path = tmp_path / "test.apak"
+    _native.write_pack(path, ENTRIES, key_pair.private_key)
+    pack = bytearray(path.read_bytes())
+    # The format version: the little-endian u32 after the 4-byte magic.
+    pack[4] = 2
+    path.write_bytes(pack)
+
+    with pytest.raises(
+        _native.LoadError, match="is pack format 2; this build reads format 3$"
+    ) as refused:
+        _native.load_pack(path, key_pair.public_key)
+    assert refused.value.reason == _native.LoadErrorReason.UNSUPPORTED_VERSION
+
+
 def test_two_entries_with_the_same_path_are_refused(tmp_path, key_pair):
     duplicate = [ENTRIES[0], ENTRIES[0]]
 
