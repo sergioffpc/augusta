@@ -37,6 +37,10 @@ struct DeviceCandidate {
   bool presents = false;
 };
 
+/// Whether candidate could be drawn with at all: it has Vulkan 1.3 and presents
+/// to the window.
+bool Usable(const DeviceCandidate& candidate);
+
 /// The index in candidates of the device adapter asks for, or nullopt if none
 /// is one: for kHardware the first discrete GPU, else the first integrated one;
 /// for kSoftware the first CPU device. A device without Vulkan 1.3, or which

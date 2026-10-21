@@ -105,7 +105,7 @@ target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness
-  PRIVATE augusta_assets augusta_client augusta_failure augusta_link augusta_logging
+  PRIVATE augusta_assets augusta_client augusta_failure augusta_hardware augusta_link augusta_logging
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 

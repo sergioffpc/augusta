@@ -14,7 +14,7 @@ if(AUGUSTA_CLIENT)
   find_package(VulkanHeaders CONFIG REQUIRED)
   add_library(augusta_window STATIC window.cpp glfw_keys.cpp)
   target_include_directories(augusta_window PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(augusta_window PUBLIC augusta_window_events Vulkan::Headers PRIVATE glfw)
+  target_link_libraries(augusta_window PUBLIC augusta_window_events Vulkan::Headers PRIVATE augusta_logging glfw)
   # GLFW declares its Vulkan functions (window_vulkan.h's) only with Vulkan's
   # header, which this has it include.
   target_compile_definitions(augusta_window PRIVATE GLFW_INCLUDE_VULKAN)

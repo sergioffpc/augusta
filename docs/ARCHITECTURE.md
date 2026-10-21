@@ -185,6 +185,9 @@ policy (ADR-0060).
   SimulationWorld collide against the same map
 - Supervisor — the runtime supervisor both Runtimes and the Harness run their
   threads under (augusta_supervisor, ADR-0005)
+- Hardware — the machine a process runs on, its OS, CPU and memory, which each
+  Runtime logs as it starts (augusta_hardware); the GPU, display and audio
+  device are logged by the modules that open them
 - Application — the application boundary each executable's `main` runs behind
   (augusta_application, ADR-0033). The failure model both report in is a module
   of its own (augusta_failure), so any module names a failure without linking
