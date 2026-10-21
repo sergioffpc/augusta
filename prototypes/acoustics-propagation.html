@@ -1,230 +1,244 @@
 <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acoustics Propagation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
 <!--
   PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
   Answers one question for spec #802 (M30, ADR-0010): how does a sound travel
   through a Map's Acoustic geometry - direct path, occlusion and transmission,
   air absorption, directivity, baked pathing and baked reflections?
+  The <script id="acoustics"> block is pure and is the part worth lifting into
+  the acoustics module; the page around it is not.
 -->
-<html lang="pt">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Acústica: protótipo</title>
 <style>
   :root {
-    --bg: #fbfaf8; --fg: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
-    --panel: #ffffff; --accent: #2f5bd3; --changed: #fff3c4;
+    --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
+    --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
+    --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e;
+    --btn: #ffffff; --code: #f0eee8;
+    --range: #fbfaf7; --room: #eef1f8; --open: #eef4e9; --probe: #c4c8d4;
+    --path: #d9821a; --reflect: #8a5cc7;
   }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --room: #20242f; --open: #1f2820; --probe: #4a4e5a;
+    --path: #f0a54a; --reflect: #b48ce8;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --room: #20242f; --open: #1f2820; --probe: #4a4e5a;
+    --path: #f0a54a; --reflect: #b48ce8;
+    color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 1320px; margin: 0 auto; padding: 24px 20px 64px; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  h2 { font-size: 17px; margin: 0 0 10px; }
-  h3 { font-size: 14px; margin: 14px 0 6px; text-transform: uppercase;
-       letter-spacing: .04em; color: var(--muted); }
-  p { margin: 0 0 10px; }
-  .intro { color: var(--muted); max-width: 980px; }
-  .intro strong { color: var(--fg); }
-  .grid { display: grid; grid-template-columns: minmax(0, 820px) minmax(0, 1fr);
-          gap: 20px; margin-top: 18px; align-items: start; }
-  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--line);
-          border-radius: 10px; padding: 16px; }
-  canvas { width: 100%; height: auto; border-radius: 6px; display: block;
-           border: 1px solid var(--line); cursor: crosshair; background: #fff; }
-  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px;
-            color: var(--muted); margin-top: 8px; }
-  .legend i { display: inline-block; width: 18px; height: 3px;
-              vertical-align: middle; margin-right: 5px; }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-         margin: 6px 0; }
-  button { font: inherit; font-size: 14px; padding: 6px 11px; border-radius: 7px;
-           border: 1px solid var(--line); background: #fff; color: var(--fg);
-           cursor: pointer; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .layout > div { min-width: 0; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--muted); max-width: 980px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    background: var(--bad-soft); color: var(--bad); padding: 2px 8px; border-radius: 99px;
+    margin-bottom: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 16px;
+    margin-top: 16px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px; }
+  #mapWrap { width: 100%; display: flex; justify-content: center; }
+  canvas#map { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
   button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent);
-                   color: #fff; }
-  button.done { opacity: .45; }
-  button.next { border-color: var(--accent); box-shadow: 0 0 0 2px #2f5bd333; }
-  select { font: inherit; font-size: 14px; padding: 4px 6px; border-radius: 6px;
-           border: 1px solid var(--line); background: #fff; }
-  label.inline { font-size: 14px; display: inline-flex; gap: 6px;
-                 align-items: center; }
-  table { border-collapse: collapse; width: 100%; font-size: 14px; }
-  td, th { padding: 3px 6px; text-align: left; border-bottom: 1px solid #f0eee9;
-           vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums;
-                   white-space: nowrap; }
-  tr.changed td { background: var(--changed); }
-  .verdict { font-size: 14px; padding: 8px 10px; border-radius: 7px;
-             background: #f3f5fb; margin: 4px 0 8px; }
-  .verdict.warn { background: #fdf0ec; }
-  .last { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-  .tabs button.active { background: var(--fg); color: #fff; border-color: var(--fg); }
-  .steps { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-  .open-q li { margin-bottom: 6px; }
-  .hint { font-size: 13px; color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
+  button.next { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; }
+  label.radio { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
+  .params label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; }
+  .changed { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .verdict { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+  .verdict.warn { background: var(--bad-soft); color: var(--bad); border-color: var(--bad-soft); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num { text-align: right; }
+  tr.diff td { background: var(--accent-soft); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .watch { color: var(--muted); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  ul.open-q { margin: 0; padding-left: 18px; }
+  ul.open-q li { margin-bottom: 6px; }
+  .hint { font-size: 12px; color: var(--muted); }
+  code { font-size: 12px; background: var(--code); overflow-wrap: anywhere; padding: 1px 4px; border-radius: 3px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Como o som se propaga num Map: protótipo de acústica</h1>
-  <p class="intro">
-    <strong>A pergunta:</strong> com o modelo do spec #802 (M30, ADR-0010), o que
-    acontece a um tiro entre o atirador e quem ouve? Quanto perde pela distância
-    e pelo ar, quanto uma parede deixa passar conforme o Surface material, quando
-    se ouve à volta da esquina (pathing) e como o espaço onde se dispara soa
-    (reflexões). Clica no mapa para pôr o atirador ou para te pores a ti, usa os
-    botões, e carrega em <strong>Ouvir o tiro</strong>.
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>How a sound travels through a Map</h1>
+  <p class="lede">
+    With spec #802's model (M30, ADR-0010), what happens to a gunshot between the shooter and
+    whoever hears it? How much it loses to distance and to the air, how much a wall lets through
+    depending on its Surface material, when it is heard around a corner (pathing) and how the
+    space it is fired in sounds (reflections). Click the map to place the shooter or yourself, use
+    the buttons, and press <strong>Hear the shot</strong>.
   </p>
-  <p class="intro">
-    <strong>Aproximação, não o Steam Audio:</strong> os materiais, a absorção do
-    ar e as bandas são os presets do Steam Audio, e a regra de quem oclui,
-    reflete e tem caminho é a do spec. Mas a geometria é 2D, as reflexões são
-    fontes-imagem até à 2.ª ordem, os caminhos usam uma grelha de probes de 2 m
-    e o tempo de reverberação é Sabine com 3 m de pé-direito. Serve para perceber
-    o comportamento, não para tirar os valores exatos que o Steam Audio calcula
-    por ray tracing.
-  </p>
+  <details>
+    <summary>What this prototype approximates that Steam Audio computes</summary>
+    <ul class="assume">
+      <li>The materials, the air absorption and the three bands are Steam Audio's presets, and the rule for what occludes, reflects and has a path is the spec's.</li>
+      <li>The geometry is 2D, seen from above. Reflections are image sources up to the 2nd order; Steam Audio ray-traces them.</li>
+      <li>Paths run through a grid of probes 2 m apart, linked where they see each other within 6 m.</li>
+      <li>The reverberation time is Sabine's, with a 3 m ceiling height; the yard has open sky above it.</li>
+      <li>It shows the behaviour, not the exact values Steam Audio would compute.</li>
+    </ul>
+  </details>
 
-  <div class="grid">
+  <div class="layout">
     <div>
       <div class="card">
-        <canvas id="map" width="820" height="500"></canvas>
+        <div class="row">
+          <span>Clicking the map places:</span>
+          <label class="radio"><input type="radio" name="clickmode" value="shooter" checked> the shooter</label>
+          <label class="radio"><input type="radio" name="clickmode" value="listener"> me</label>
+          <button class="primary" id="play">▶ Hear the shot</button>
+          <span class="hint">(headphones help: direction comes from the left/right pan)</span>
+        </div>
+        <div id="mapWrap"><canvas id="map"></canvas></div>
         <div class="legend">
-          <span><i style="background:#2e9d5a"></i>som direto à vista</span>
-          <span><i style="background:#d2463a"></i>som direto ocluído</span>
-          <span><i style="background:#e08a1e"></i>caminho (pathing)</span>
-          <span><i style="background:#8a5cc7"></i>reflexões mais fortes</span>
-          <span>▲ atirador (vermelho, aponta para onde dispara) · ● tu (azul, olhas para a seta)</span>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <span class="hint">Clicar no mapa põe:</span>
-          <label class="inline"><input type="radio" name="clickmode" value="shooter" checked> o atirador</label>
-          <label class="inline"><input type="radio" name="clickmode" value="listener"> me a mim</label>
-          <button class="primary" id="play">▶ Ouvir o tiro</button>
-          <span class="hint">(auscultadores ajudam: a direção vem do pan esquerda/direita)</span>
+          <span><i style="background:var(--ok)"></i>direct sound, in sight</span>
+          <span><i style="background:var(--bad)"></i>direct sound, occluded</span>
+          <span><i style="background:var(--path)"></i>path (pathing)</span>
+          <span><i style="background:var(--reflect)"></i>strongest reflections</span>
+          <span>▲ shooter (points where it fires) · ● you (looking along the arrow)</span>
         </div>
       </div>
 
-      <div class="card" style="margin-top:16px">
-        <h2>Livre</h2>
-        <div class="row">
-          <button data-act='{"type":"aimShooterAtListener"}'>Atirador aponta para mim</button>
-          <button data-act='{"type":"aimShooterAway"}'>Atirador aponta para longe</button>
-          <button data-act='{"type":"rotateShooter","deg":-45}'>Atirador roda ⟲ 45°</button>
-          <button data-act='{"type":"rotateShooter","deg":45}'>Atirador roda ⟳ 45°</button>
-        </div>
-        <div class="row">
-          <button data-act='{"type":"rotateListener","deg":-45}'>Eu rodo ⟲ 45°</button>
-          <button data-act='{"type":"rotateListener","deg":45}'>Eu rodo ⟳ 45°</button>
-          <button data-act='{"type":"toggleDoor"}'>Abrir/fechar a porta (Prop)</button>
-        </div>
-        <div class="row">
-          <button data-act='{"type":"toggleProbeVolumes"}'>Ligar/desligar os Probe volumes</button>
-          <button data-act='{"type":"toggleDirectivity"}'>Diretividade do tiro: ligar/desligar</button>
-          <button data-act='{"type":"togglePathValidation"}'>Validação dos caminhos: ligar/desligar</button>
-        </div>
-        <div class="row" id="materials"></div>
-        <div class="row"><button data-act='{"type":"reset"}'>Repor o início</button></div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <h2>Passeios guiados</h2>
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
         <div class="tabs" id="tabs"></div>
         <div id="scenario"></div>
+      </div>
+
+      <div class="card">
+        <h2>Free play</h2>
+        <div class="row">
+          <button data-act='{"type":"aimShooterAtListener"}'>Shooter aims at me</button>
+          <button data-act='{"type":"aimShooterAway"}'>Shooter aims away</button>
+          <button data-act='{"type":"rotateShooter","deg":-45}'>Shooter turns ⟲ 45°</button>
+          <button data-act='{"type":"rotateShooter","deg":45}'>Shooter turns ⟳ 45°</button>
+        </div>
+        <div class="row">
+          <button data-act='{"type":"rotateListener","deg":-45}'>I turn ⟲ 45°</button>
+          <button data-act='{"type":"rotateListener","deg":45}'>I turn ⟳ 45°</button>
+          <button data-act='{"type":"toggleDoor"}'>Open/close the door (Prop)</button>
+        </div>
+        <div class="row">
+          <button data-act='{"type":"toggleProbeVolumes"}'>Probe volumes on/off</button>
+          <button data-act='{"type":"toggleDirectivity"}'>Shot directivity on/off</button>
+          <button data-act='{"type":"togglePathValidation"}'>Path validation on/off</button>
+          <button data-act='{"type":"reset"}'>Reset</button>
+        </div>
+        <h2 style="margin-top:14px">Surface materials</h2>
+        <div class="params" id="materials"></div>
       </div>
     </div>
 
     <div>
+      <div class="card" id="state"></div>
       <div class="card">
-        <h2>O que o simulador decide</h2>
-        <div class="last" id="last"></div>
-        <div id="state"></div>
-      </div>
-      <div class="card" style="margin-top:16px">
-        <h2>Perguntas que o protótipo levanta</h2>
+        <h2>Questions the prototype raises</h2>
         <ul class="open-q">
-          <li><strong>Porta fechada, caminho aberto.</strong> Os caminhos são
-            pré-calculados contra o Map estático e os Props não entram (spec #802:
-            "Props only occlude and transmit"). Com a porta fechada, o caminho
-            pré-calculado passa pela abertura da porta e o som chega quase como se
-            ela estivesse aberta. O Steam Audio pode validar os caminhos em tempo
-            real contra a cena atual, mas o spec não o pede. Vê o passeio
-            "A porta é um Prop".</li>
-          <li><strong>Direto e caminho ao mesmo tempo.</strong> Com linha de vista,
-            o caminho coincide com o som direto. Tocar os dois soma o mesmo som
-            duas vezes. Neste protótipo o caminho só toca quando o direto está
-            ocluído; o Engine tem de decidir o mesmo.</li>
-          <li><strong>As reflexões de que espaço?</strong> Aqui as reflexões e o
-            tempo de reverberação são os do Probe volume onde o atirador está.
-            Quando o atirador e quem ouve estão em espaços diferentes, qual se
-            ouve? O spec diz "a sound inside a Probe volume carries that space's
-            reflections".</li>
-          <li><strong>Betão é quase surdo.</strong> Os presets de transmissão do
-            betão (0,015 / 0,002 / 0,001) tiram cerca de 36 dB aos graves e 54 dB
-            aos médios: atrás de uma parede de betão, o que se ouve é quase só o
-            caminho à volta.</li>
+          <li><strong>Door closed, path open.</strong> Paths are baked against the static Map and
+            Props are left out (spec #802: "Props only occlude and transmit"). With the door
+            closed, the baked path goes through the doorway and the sound arrives almost as if it
+            were open. Steam Audio can validate paths at run time against the current scene, but
+            the spec does not ask for it. See the walkthrough "The door is a Prop".</li>
+          <li><strong>Direct and path at once.</strong> In line of sight the path coincides with
+            the direct sound; playing both adds the same sound twice. Here the path plays only
+            when the direct sound is occluded; the Engine has to decide the same.</li>
+          <li><strong>Whose reflections?</strong> Here the reflections and the reverberation time
+            are those of the Probe volume the shooter is in. When the shooter and the listener are
+            in different spaces, which is heard? The spec says "a sound inside a Probe volume
+            carries that space's reflections".</li>
+          <li><strong>Concrete is almost deaf.</strong> Concrete's transmission presets (0.015 /
+            0.002 / 0.001) take about 36 dB off the lows and 54 dB off the mids: behind a concrete
+            wall, what is heard is almost only the path around it.</li>
         </ul>
       </div>
     </div>
   </div>
 </main>
 
-<script>
-// ---------------------------------------------------------------------------
-// The portable module: pure, no DOM. Map data, the reducer, the bake and the
-// simulation. Everything below this block is the throwaway page.
-// ---------------------------------------------------------------------------
+<script id="acoustics">
+// The simulation, pure: no DOM. Map data, the reducer, the bake and the
+// simulation. Lengths in metres.
 const Acoustics = (() => {
   // Steam Audio's three bands: below 800 Hz, 800 Hz to 8 kHz, above 8 kHz.
-  const BANDS = ['graves (<800 Hz)', 'médios (0,8–8 kHz)', 'agudos (>8 kHz)'];
+  const BANDS = ['low (<800 Hz)', 'mid (0.8–8 kHz)', 'high (>8 kHz)'];
   const SPEED_OF_SOUND = 343;  // m/s
   // Steam Audio's default air absorption, per metre, per band: gain = exp(-c·d).
   const AIR = [0.0002, 0.0017, 0.0182];
   // Steam Audio's material presets: absorption and transmission per band,
   // scattering. What spec #802 seeds the Surface material catalogue with.
   const MATERIALS = {
-    generic:  { label: 'genérico', absorption: [0.10, 0.20, 0.30], scattering: 0.05, transmission: [0.100, 0.050, 0.030] },
-    brick:    { label: 'tijolo',   absorption: [0.03, 0.04, 0.07], scattering: 0.05, transmission: [0.015, 0.015, 0.015] },
-    concrete: { label: 'betão',    absorption: [0.05, 0.07, 0.08], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
-    ceramic:  { label: 'cerâmica', absorption: [0.01, 0.02, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
-    gravel:   { label: 'gravilha', absorption: [0.60, 0.70, 0.80], scattering: 0.05, transmission: [0.031, 0.012, 0.008] },
-    carpet:   { label: 'alcatifa', absorption: [0.24, 0.69, 0.73], scattering: 0.05, transmission: [0.020, 0.005, 0.003] },
-    glass:    { label: 'vidro',    absorption: [0.06, 0.03, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
-    plaster:  { label: 'estuque',  absorption: [0.12, 0.06, 0.04], scattering: 0.05, transmission: [0.056, 0.056, 0.004] },
-    wood:     { label: 'madeira',  absorption: [0.11, 0.07, 0.06], scattering: 0.05, transmission: [0.070, 0.014, 0.005] },
+    generic:  { label: 'generic',  absorption: [0.10, 0.20, 0.30], scattering: 0.05, transmission: [0.100, 0.050, 0.030] },
+    brick:    { label: 'brick',    absorption: [0.03, 0.04, 0.07], scattering: 0.05, transmission: [0.015, 0.015, 0.015] },
+    concrete: { label: 'concrete', absorption: [0.05, 0.07, 0.08], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
+    ceramic:  { label: 'ceramic',  absorption: [0.01, 0.02, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
+    gravel:   { label: 'gravel',   absorption: [0.60, 0.70, 0.80], scattering: 0.05, transmission: [0.031, 0.012, 0.008] },
+    carpet:   { label: 'carpet',   absorption: [0.24, 0.69, 0.73], scattering: 0.05, transmission: [0.020, 0.005, 0.003] },
+    glass:    { label: 'glass',    absorption: [0.06, 0.03, 0.02], scattering: 0.05, transmission: [0.060, 0.044, 0.011] },
+    plaster:  { label: 'plaster',  absorption: [0.12, 0.06, 0.04], scattering: 0.05, transmission: [0.056, 0.056, 0.004] },
+    wood:     { label: 'wood',     absorption: [0.11, 0.07, 0.06], scattering: 0.05, transmission: [0.070, 0.014, 0.005] },
     metal:    { label: 'metal',    absorption: [0.20, 0.07, 0.06], scattering: 0.05, transmission: [0.200, 0.025, 0.010] },
-    rock:     { label: 'rocha',    absorption: [0.13, 0.20, 0.24], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
+    rock:     { label: 'rock',     absorption: [0.13, 0.20, 0.24], scattering: 0.05, transmission: [0.015, 0.002, 0.001] },
   };
 
   // The example Map, top-down, in metres: a yard, two rooms and a corridor.
   // Each wall is Acoustic geometry in a group whose Surface material can be
   // changed from the page.
   const WALL_GROUPS = {
-    fachada:   'Fachada exterior',
-    janela:    'Janela da Sala A',
-    interior:  'Paredes do corredor',
-    divisoria: 'Divisória Sala A / Sala B',
-    porta:     'Porta da Sala A (Prop)',
+    facade:    'Outer facade',
+    window:    'Room A window',
+    interior:  'Corridor walls',
+    partition: 'Room A / Room B partition',
+    door:      'Room A door (Prop)',
   };
   const STATIC_WALLS = [
-    { id: 'w1',  group: 'fachada',   a: [14, 0],  b: [14, 4] },
-    { id: 'w2',  group: 'janela',    a: [14, 4],  b: [14, 7] },
-    { id: 'w3',  group: 'fachada',   a: [14, 7],  b: [14, 12] },
-    { id: 'w4',  group: 'fachada',   a: [14, 0],  b: [40, 0] },
+    { id: 'w1',  group: 'facade',    a: [14, 0],  b: [14, 4] },
+    { id: 'w2',  group: 'window',    a: [14, 4],  b: [14, 7] },
+    { id: 'w3',  group: 'facade',    a: [14, 7],  b: [14, 12] },
+    { id: 'w4',  group: 'facade',    a: [14, 0],  b: [40, 0] },
     { id: 'w5',  group: 'interior',  a: [14, 12], b: [18, 12] },
     { id: 'w6',  group: 'interior',  a: [20, 12], b: [26, 12] },
-    { id: 'w7',  group: 'divisoria', a: [26, 0],  b: [26, 12] },
-    { id: 'w8',  group: 'fachada',   a: [40, 0],  b: [40, 12] },
+    { id: 'w7',  group: 'partition', a: [26, 0],  b: [26, 12] },
+    { id: 'w8',  group: 'facade',    a: [40, 0],  b: [40, 12] },
     { id: 'w9',  group: 'interior',  a: [26, 12], b: [36, 12] },
     { id: 'w10', group: 'interior',  a: [38, 12], b: [40, 12] },
-    { id: 'w11', group: 'fachada',   a: [40, 12], b: [40, 16] },
-    { id: 'w12', group: 'fachada',   a: [14, 16], b: [40, 16] },
-    { id: 'w13', group: 'fachada',   a: [14, 16], b: [14, 24] },
+    { id: 'w11', group: 'facade',    a: [40, 12], b: [40, 16] },
+    { id: 'w12', group: 'facade',    a: [14, 16], b: [40, 16] },
+    { id: 'w13', group: 'facade',    a: [14, 16], b: [14, 24] },
   ];
   // The door is a placed Prop: it occludes and transmits where it stands, and
   // it never reflects and is never baked (spec #802).
@@ -235,10 +249,10 @@ const Acoustics = (() => {
   // Probe volumes, with what their floor and ceiling are made of (for the
   // reverberation estimate). The yard has sky above it.
   const PROBE_VOLUMES = [
-    { id: 'patio',    label: 'Pátio',    x0: 0,  y0: 0,  x1: 14, y1: 24, floor: 'gravel',   ceiling: null },
-    { id: 'salaA',    label: 'Sala A',   x0: 14, y0: 0,  x1: 26, y1: 12, floor: 'concrete', ceiling: 'plaster' },
-    { id: 'salaB',    label: 'Sala B',   x0: 26, y0: 0,  x1: 40, y1: 12, floor: 'concrete', ceiling: 'plaster' },
-    { id: 'corredor', label: 'Corredor', x0: 14, y0: 12, x1: 40, y1: 16, floor: 'concrete', ceiling: 'plaster' },
+    { id: 'yard',     label: 'Yard',     x0: 0,  y0: 0,  x1: 14, y1: 24, floor: 'gravel',   ceiling: null },
+    { id: 'roomA',    label: 'Room A',   x0: 14, y0: 0,  x1: 26, y1: 12, floor: 'concrete', ceiling: 'plaster' },
+    { id: 'roomB',    label: 'Room B',   x0: 26, y0: 0,  x1: 40, y1: 12, floor: 'concrete', ceiling: 'plaster' },
+    { id: 'corridor', label: 'Corridor', x0: 14, y0: 12, x1: 40, y1: 16, floor: 'concrete', ceiling: 'plaster' },
   ];
   const PROBE_SPACING = 2;      // m, the spec's default
   const ROOM_HEIGHT = 3;        // m, for the 2D reverberation estimate
@@ -251,18 +265,20 @@ const Acoustics = (() => {
     shooter: { x: 20, y: 5.5, facing: Math.PI },
     listener: { x: 8, y: 5.5, facing: 0 },
     door: 'closed',
-    materials: { fachada: 'concrete', janela: 'glass', interior: 'concrete',
-                 divisoria: 'wood', porta: 'wood' },
+    materials: { facade: 'concrete', window: 'glass', interior: 'concrete',
+                 partition: 'wood', door: 'wood' },
     probeVolumes: true,
     directivity: true,
     pathValidation: false,
-    lastAction: 'Início',
+    lastAction: 'Start',
   });
 
   const DEG = Math.PI / 180;
   const clampToMap = (x, y) => [Math.min(MAP_SIZE.w - 0.2, Math.max(0.2, x)),
                                 Math.min(MAP_SIZE.h - 0.2, Math.max(0.2, y))];
   const angleTo = (from, to) => Math.atan2(to.y - from.y, to.x - from.x);
+  const probeVolumesAction = (on) => on ? 'Probe volumes on' : 'Probe volumes off (the Map has Acoustic geometry only)';
+  const pathValidationAction = (on) => on ? 'Paths validated against the current scene (Props included)' : 'Paths baked only (Props ignored)';
 
   function reduce(state, action) {
     const s = structuredClone(state);
@@ -272,39 +288,39 @@ const Acoustics = (() => {
         const [x, y] = clampToMap(action.x, action.y);
         s.shooter.x = x; s.shooter.y = y;
         if (action.facingDeg !== undefined) s.shooter.facing = action.facingDeg * DEG;
-        s.lastAction = `Atirador posto em (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
+        s.lastAction = `Shooter placed at (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
         break;
       }
       case 'placeListener': {
         const [x, y] = clampToMap(action.x, action.y);
         s.listener.x = x; s.listener.y = y;
         if (action.facingDeg !== undefined) s.listener.facing = action.facingDeg * DEG;
-        s.lastAction = `Tu em (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
+        s.lastAction = `You at (${x.toFixed(1)}, ${y.toFixed(1)}) m`;
         break;
       }
       case 'aimShooterAtListener':
         s.shooter.facing = angleTo(s.shooter, s.listener);
-        s.lastAction = 'Atirador aponta para ti';
+        s.lastAction = 'Shooter aims at you';
         break;
       case 'aimShooterAway':
         s.shooter.facing = angleTo(s.shooter, s.listener) + Math.PI;
-        s.lastAction = 'Atirador aponta para o lado oposto';
+        s.lastAction = 'Shooter aims the opposite way';
         break;
       case 'rotateShooter':
         s.shooter.facing += action.deg * DEG;
-        s.lastAction = `Atirador rodou ${action.deg}°`;
+        s.lastAction = `Shooter turned ${action.deg}°`;
         break;
       case 'rotateListener':
         s.listener.facing += action.deg * DEG;
-        s.lastAction = `Rodaste ${action.deg}°`;
+        s.lastAction = `You turned ${action.deg}°`;
         break;
       case 'toggleDoor':
         s.door = s.door === 'closed' ? 'open' : 'closed';
-        s.lastAction = s.door === 'closed' ? 'Porta fechada' : 'Porta aberta';
+        s.lastAction = s.door === 'closed' ? 'Door closed' : 'Door open';
         break;
       case 'setDoor':
         s.door = action.door;
-        s.lastAction = s.door === 'closed' ? 'Porta fechada' : 'Porta aberta';
+        s.lastAction = s.door === 'closed' ? 'Door closed' : 'Door open';
         break;
       case 'setMaterial':
         s.materials[action.group] = action.material;
@@ -312,25 +328,25 @@ const Acoustics = (() => {
         break;
       case 'toggleProbeVolumes':
         s.probeVolumes = !s.probeVolumes;
-        s.lastAction = s.probeVolumes ? 'Probe volumes ligados' : 'Probe volumes desligados (Map só com Acoustic geometry)';
+        s.lastAction = probeVolumesAction(s.probeVolumes);
         break;
       case 'setProbeVolumes':
         s.probeVolumes = action.on;
-        s.lastAction = s.probeVolumes ? 'Probe volumes ligados' : 'Probe volumes desligados (Map só com Acoustic geometry)';
+        s.lastAction = probeVolumesAction(s.probeVolumes);
         break;
       case 'toggleDirectivity':
         s.directivity = !s.directivity;
-        s.lastAction = s.directivity ? 'Tiro direcional (dipolo)' : 'Tiro igual para todos os lados';
+        s.lastAction = s.directivity ? 'Directional shot (dipole)' : 'Shot equal in every direction';
         break;
       case 'togglePathValidation':
         s.pathValidation = !s.pathValidation;
-        s.lastAction = s.pathValidation ? 'Caminhos validados contra a cena atual (Props incluídos)' : 'Caminhos só pré-calculados (Props ignorados)';
+        s.lastAction = pathValidationAction(s.pathValidation);
         break;
       case 'setPathValidation':
         s.pathValidation = action.on;
-        s.lastAction = s.pathValidation ? 'Caminhos validados contra a cena atual (Props incluídos)' : 'Caminhos só pré-calculados (Props ignorados)';
+        s.lastAction = pathValidationAction(s.pathValidation);
         break;
-      default: throw new Error('acção desconhecida ' + action.type);
+      default: throw new Error('unknown action ' + action.type);
     }
     return s;
   }
@@ -365,7 +381,7 @@ const Acoustics = (() => {
   }
   function doorWall(state) {
     const pose = DOOR[state.door];
-    return { id: 'door', group: 'porta', a: pose.a, b: pose.b, material: state.materials.porta, prop: true };
+    return { id: 'door', group: 'door', a: pose.a, b: pose.b, material: state.materials.door, prop: true };
   }
   // What sound is blocked by now: the static Acoustic geometry and the Prop.
   const occluders = (state) => [...wallsWithMaterials(state), doorWall(state)];
@@ -435,9 +451,9 @@ const Acoustics = (() => {
   // the source. Without validation it trusts the bake, which never saw Props.
   function simulatePath(state, baked) {
     const S = pt(state.shooter), L = pt(state.listener);
-    if (!state.probeVolumes) return { available: false, reason: 'Sem Probe volumes: não há caminhos pré-calculados.' };
-    if (!volumeAt(state, S)) return { available: false, reason: 'O atirador está fora de todos os Probe volumes.' };
-    if (!volumeAt(state, L)) return { available: false, reason: 'Estás fora de todos os Probe volumes.' };
+    if (!state.probeVolumes) return { available: false, reason: 'No Probe volumes: there are no baked paths.' };
+    if (!volumeAt(state, S)) return { available: false, reason: 'The shooter is outside every Probe volume.' };
+    if (!volumeAt(state, L)) return { available: false, reason: 'You are outside every Probe volume.' };
     const door = doorWall(state);
     const blockedNow = (p, q) => state.pathValidation && state.door === 'closed' &&
                                  crossing(p, q, door.a, door.b) !== null;
@@ -466,8 +482,8 @@ const Acoustics = (() => {
       if (d <= PROBE_LINK_RADIUS && sees(probes[i].p, S) && best[i] + d < length) { length = best[i] + d; end = i; }
     }
     if (end < 0) return { available: false, reason: state.pathValidation
-      ? 'Nenhum caminho: a validação cortou os que passavam pela porta fechada.'
-      : 'Nenhum caminho entre os probes.' };
+      ? 'No path: validation cut the ones through the closed door.'
+      : 'No path between the probes.' };
     const chain = [];
     for (let i = end; i >= 0; i = prev[i]) chain.push(probes[i].p);
     const nodes = [L, ...chain.reverse(), S];
@@ -510,9 +526,9 @@ const Acoustics = (() => {
 
   function simulateReflections(state, direct) {
     const S = pt(state.shooter), L = pt(state.listener);
-    if (!state.probeVolumes) return { available: false, reason: 'Sem Probe volumes: nada é refletido (a oclusão continua).' };
+    if (!state.probeVolumes) return { available: false, reason: 'No Probe volumes: nothing is reflected (occlusion still applies).' };
     const v = volumeAt(state, S);
-    if (!v) return { available: false, reason: 'O atirador está fora de todos os Probe volumes: o tiro sai seco.' };
+    if (!v) return { available: false, reason: 'The shooter is outside every Probe volume: the shot comes out dry.' };
     const walls = wallsWithMaterials(state), occ = occluders(state);
     const clear = (p, q, except) => !crossedBy(p, q, occ, except).length;
     const bounce = (ws, b) => ws.reduce((g, w) => {
@@ -566,10 +582,10 @@ const Acoustics = (() => {
   return { BANDS, MATERIALS, WALL_GROUPS, STATIC_WALLS, DOOR, PROBE_VOLUMES, MAP_SIZE,
            SPEED_OF_SOUND, initialState, reduce, bake, simulate, occluders };
 })();
+</script>
 
-// ---------------------------------------------------------------------------
+<script>
 // The throwaway page: drawing, the state panel, the walkthroughs, the sound.
-// ---------------------------------------------------------------------------
 const A = Acoustics;
 let state = A.initialState();
 let bakedFor = null, baked = null;
@@ -583,12 +599,12 @@ function currentBake() {
 const dB = (g) => g <= 1e-9 ? '−∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`;
 const bandsDb = (gs) => gs.map(dB).join(' · ');
 function directionLabel(a) {
-  const deg = a * 180 / Math.PI, abs = Math.abs(deg), side = deg > 0 ? 'direita' : 'esquerda';
-  if (abs < 22.5) return 'da frente';
-  if (abs < 67.5) return `da frente, à ${side}`;
-  if (abs < 112.5) return `da ${side}`;
-  if (abs < 157.5) return `de trás, à ${side}`;
-  return 'de trás';
+  const deg = a * 180 / Math.PI, abs = Math.abs(deg), side = deg > 0 ? 'right' : 'left';
+  if (abs < 22.5) return 'from ahead';
+  if (abs < 67.5) return `from ahead, to the ${side}`;
+  if (abs < 112.5) return `from the ${side}`;
+  if (abs < 157.5) return `from behind, to the ${side}`;
+  return 'from behind';
 }
 
 function dispatch(action) {
@@ -596,14 +612,34 @@ function dispatch(action) {
   render();
 }
 
-// --- drawing -----------------------------------------------------------------
-const canvas = document.getElementById('map');
-const ctx = canvas.getContext('2d');
-const SCALE = 20, PAD = 10;
-const toPx = (p) => [PAD + p[0] * SCALE, PAD + p[1] * SCALE];
-const MATERIAL_COLOURS = { concrete: '#6d6d72', glass: '#5fb3d9', wood: '#a0703c', metal: '#3b4a5a',
+// ---- Drawing ------------------------------------------------------------------------
+
+// Canvas colours come from the page's tokens, read again whenever the theme changes.
+const C = {};
+function readTheme() {
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['ink', 'muted', 'accent', 'bad', 'ok', 'range', 'room', 'open', 'probe', 'path', 'reflect'])
+    C[k] = css.getPropertyValue(`--${k}`).trim();
+}
+readTheme();
+
+const MATERIAL_COLOURS = { concrete: '#77777d', glass: '#5fb3d9', wood: '#a0703c', metal: '#4a5a6c',
   brick: '#a5513b', plaster: '#c9c2b4', ceramic: '#8fb3a5', gravel: '#9b9488', carpet: '#7d5a8a',
-  rock: '#5a5246', generic: '#888' };
+  rock: '#6a6256', generic: '#888' };
+
+const canvas = document.getElementById('map'), ctx = canvas.getContext('2d');
+const PAD = 10;
+let scale = 20;
+function fitCanvas() {
+  const w = document.getElementById('mapWrap').clientWidth;
+  scale = Math.max(8, Math.min(24, (w - 2 * PAD) / A.MAP_SIZE.w));
+  const cw = A.MAP_SIZE.w * scale + 2 * PAD, ch = A.MAP_SIZE.h * scale + 2 * PAD;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = cw * dpr; canvas.height = ch * dpr;
+  canvas.style.width = `${cw}px`; canvas.style.height = `${ch}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+const toPx = (p) => [PAD + p[0] * scale, PAD + p[1] * scale];
 
 function line(a, b, colour, width, dash = []) {
   ctx.save(); ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.setLineDash(dash);
@@ -611,20 +647,21 @@ function line(a, b, colour, width, dash = []) {
 }
 
 function draw(result) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cw = A.MAP_SIZE.w * scale + 2 * PAD, ch = A.MAP_SIZE.h * scale + 2 * PAD;
+  ctx.fillStyle = C.range; ctx.fillRect(0, 0, cw, ch);
   ctx.font = '12px system-ui, sans-serif';
   if (state.probeVolumes) {
     for (const v of A.PROBE_VOLUMES) {
       const [x, y] = toPx([v.x0, v.y0]);
-      ctx.fillStyle = v.ceiling ? '#f4f6fb' : '#f3f8ef';
-      ctx.fillRect(x, y, (v.x1 - v.x0) * SCALE, (v.y1 - v.y0) * SCALE);
-      ctx.fillStyle = '#9a9aa0';
+      ctx.fillStyle = v.ceiling ? C.room : C.open;
+      ctx.fillRect(x, y, (v.x1 - v.x0) * scale, (v.y1 - v.y0) * scale);
+      ctx.fillStyle = C.muted;
       ctx.fillText(`${v.label} (Probe volume)`, x + 6, y + 15);
     }
-    ctx.fillStyle = '#c9ccd6';
+    ctx.fillStyle = C.probe;
     for (const p of currentBake().probes) { const [x, y] = toPx(p.p); ctx.fillRect(x - 1, y - 1, 2, 2); }
   } else {
-    ctx.fillStyle = '#9a9aa0'; ctx.fillText('Sem Probe volumes', PAD + 6, PAD + 15);
+    ctx.fillStyle = C.muted; ctx.fillText('No Probe volumes', PAD + 6, PAD + 15);
   }
   for (const w of A.occluders(state)) {
     line(w.a, w.b, MATERIAL_COLOURS[w.material], w.prop ? 5 : 6, w.prop ? [4, 3] : []);
@@ -632,81 +669,84 @@ function draw(result) {
   const { direct, path, reflections } = result;
   if (reflections.available) {
     for (const r of reflections.early.slice(0, 4))
-      for (let i = 1; i < r.points.length; i++) line(r.points[i - 1], r.points[i], '#8a5cc7aa', 1.2);
+      for (let i = 1; i < r.points.length; i++) line(r.points[i - 1], r.points[i], C.reflect + 'aa', 1.2);
   }
   if (path.available && direct.occluded) {
-    for (let i = 1; i < path.nodes.length; i++) line(path.nodes[i - 1], path.nodes[i], '#e08a1e', 2.5);
+    for (let i = 1; i < path.nodes.length; i++) line(path.nodes[i - 1], path.nodes[i], C.path, 2.5);
   }
   const S = [state.shooter.x, state.shooter.y], L = [state.listener.x, state.listener.y];
-  line(S, L, direct.occluded ? '#d2463a' : '#2e9d5a', 2, direct.occluded ? [6, 4] : []);
+  line(S, L, direct.occluded ? C.bad : C.ok, 2, direct.occluded ? [6, 4] : []);
   // shooter: a triangle pointing where it fires
   const [sx, sy] = toPx(S), f = state.shooter.facing;
-  ctx.fillStyle = '#d2463a'; ctx.beginPath();
+  ctx.fillStyle = C.bad; ctx.beginPath();
   ctx.moveTo(sx + Math.cos(f) * 13, sy + Math.sin(f) * 13);
   ctx.lineTo(sx + Math.cos(f + 2.5) * 9, sy + Math.sin(f + 2.5) * 9);
   ctx.lineTo(sx + Math.cos(f - 2.5) * 9, sy + Math.sin(f - 2.5) * 9);
   ctx.closePath(); ctx.fill();
   // listener: a dot with an arrow where it looks
   const [lx, ly] = toPx(L), g = state.listener.facing;
-  ctx.fillStyle = '#2f5bd3'; ctx.beginPath(); ctx.arc(lx, ly, 7, 0, 2 * Math.PI); ctx.fill();
-  ctx.strokeStyle = '#2f5bd3'; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(lx, ly, 7, 0, 2 * Math.PI); ctx.fill();
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath();
   ctx.moveTo(lx, ly); ctx.lineTo(lx + Math.cos(g) * 18, ly + Math.sin(g) * 18); ctx.stroke();
 }
 
-// --- the state panel -----------------------------------------------------------
+// ---- The state panel ----------------------------------------------------------------
 function rowsFor(result) {
   const { direct, path, reflections } = result;
   const rows = [];
   const add = (section, key, label, value) => rows.push({ section, key, label, value });
-  add('Onde', 'where.shooter', 'Atirador', `${result.shooterVolume ? result.shooterVolume.label : 'fora de Probe volumes'}`);
-  add('Onde', 'where.listener', 'Tu', `${result.listenerVolume ? result.listenerVolume.label : 'fora de Probe volumes'}`);
-  add('Onde', 'where.door', 'Porta (Prop)', state.door === 'closed' ? 'fechada' : 'aberta');
-  add('Som direto', 'd.dist', 'Distância', `${direct.distance.toFixed(1)} m (chega em ${(direct.distance / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
-  add('Som direto', 'd.att', 'Atenuação pela distância', dB(direct.distanceGain));
-  add('Som direto', 'd.air', 'Absorção do ar (graves · médios · agudos)', bandsDb(direct.air));
-  add('Som direto', 'd.dir', 'Diretividade do tiro', state.directivity ? dB(direct.directivity) : 'desligada (igual para todos os lados)');
-  add('Som direto', 'd.occ', 'Ocluído?', direct.occluded
-    ? `sim: atravessa ${direct.crossed.map(w => `${A.MATERIALS[w.material].label}${w.prop ? ' (porta)' : ''}`).join(' + ')}`
-    : 'não: há linha de vista');
-  add('Som direto', 'd.trans', 'Transmissão (graves · médios · agudos)', bandsDb(direct.transmission));
-  add('Som direto', 'd.total', 'Total que chega (graves · médios · agudos)', bandsDb(direct.total));
-  add('Som direto', 'd.from', 'Vem', directionLabel(direct.azimuth));
+  const bands = 'low · mid · high';
+  add('Where', 'where.shooter', 'Shooter', result.shooterVolume ? result.shooterVolume.label : 'outside the Probe volumes');
+  add('Where', 'where.listener', 'You', result.listenerVolume ? result.listenerVolume.label : 'outside the Probe volumes');
+  add('Where', 'where.door', 'Door (Prop)', state.door);
+  add('Direct sound', 'd.dist', 'Distance', `${direct.distance.toFixed(1)} m (arrives in ${(direct.distance / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
+  add('Direct sound', 'd.att', 'Distance attenuation', dB(direct.distanceGain));
+  add('Direct sound', 'd.air', `Air absorption (${bands})`, bandsDb(direct.air));
+  add('Direct sound', 'd.dir', 'Shot directivity', state.directivity ? dB(direct.directivity) : 'off (equal in every direction)');
+  add('Direct sound', 'd.occ', 'Occluded?', direct.occluded
+    ? `yes: through ${direct.crossed.map(w => `${A.MATERIALS[w.material].label}${w.prop ? ' (door)' : ''}`).join(' + ')}`
+    : 'no: in line of sight');
+  add('Direct sound', 'd.trans', `Transmission (${bands})`, bandsDb(direct.transmission));
+  add('Direct sound', 'd.total', `Total arriving (${bands})`, bandsDb(direct.total));
+  add('Direct sound', 'd.from', 'Comes', directionLabel(direct.azimuth));
   if (path.available) {
-    add('Caminho (pathing)', 'p.len', 'Comprimento', `${path.length.toFixed(1)} m (+${(path.length - direct.distance).toFixed(1)} m que o direto, +${((path.length - direct.distance) / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
-    add('Caminho (pathing)', 'p.total', 'Total que chega (graves · médios · agudos)', bandsDb(path.total));
-    add('Caminho (pathing)', 'p.from', 'Vem', directionLabel(path.azimuth));
-    add('Caminho (pathing)', 'p.door', 'Passa pela porta fechada?', path.throughClosedDoor ? 'SIM: o bake não viu a porta' : 'não');
-    add('Caminho (pathing)', 'p.play', 'Toca?', direct.occluded ? 'sim (o direto está ocluído)' : 'não (com linha de vista coincide com o direto)');
+    add('Path (pathing)', 'p.len', 'Length', `${path.length.toFixed(1)} m (+${(path.length - direct.distance).toFixed(1)} m over the direct, +${((path.length - direct.distance) / A.SPEED_OF_SOUND * 1000).toFixed(0)} ms)`);
+    add('Path (pathing)', 'p.total', `Total arriving (${bands})`, bandsDb(path.total));
+    add('Path (pathing)', 'p.from', 'Comes', directionLabel(path.azimuth));
+    add('Path (pathing)', 'p.door', 'Through the closed door?', path.throughClosedDoor ? 'YES: the bake never saw the door' : 'no');
+    add('Path (pathing)', 'p.play', 'Plays?', direct.occluded ? 'yes (the direct sound is occluded)' : 'no (in line of sight it coincides with the direct)');
   } else {
-    add('Caminho (pathing)', 'p.none', 'Caminho', path.reason);
+    add('Path (pathing)', 'p.none', 'Path', path.reason);
   }
   if (reflections.available) {
-    add('Reflexões', 'r.vol', 'Espaço (Probe volume do atirador)', reflections.volume);
-    add('Reflexões', 'r.rt', 'Tempo de reverberação RT60 (graves · médios · agudos)', reflections.reverberation.map(t => `${t.toFixed(2)} s`).join(' · '));
-    add('Reflexões', 'r.count', 'Reflexões cedo encontradas (1.ª e 2.ª ordem)', `${reflections.count}`);
+    add('Reflections', 'r.vol', "Space (the shooter's Probe volume)", reflections.volume);
+    add('Reflections', 'r.rt', `Reverberation time RT60 (${bands})`, reflections.reverberation.map(t => `${t.toFixed(2)} s`).join(' · '));
+    add('Reflections', 'r.count', 'Early reflections found (1st and 2nd order)', `${reflections.count}`);
+    const ordinal = ['Strongest', '2nd strongest', '3rd strongest'];
     reflections.early.slice(0, 3).forEach((r, i) =>
-      add('Reflexões', `r.e${i}`, `${i + 1}.ª mais forte`, `ordem ${r.order}, em ${r.walls.join(' → ')}, +${r.delayMs.toFixed(0)} ms, ${bandsDb(r.total)}`));
+      add('Reflections', `r.e${i}`, ordinal[i], `order ${r.order}, off ${r.walls.join(' → ')}, +${r.delayMs.toFixed(0)} ms, ${bandsDb(r.total)}`));
   } else {
-    add('Reflexões', 'r.none', 'Reflexões', reflections.reason);
+    add('Reflections', 'r.none', 'Reflections', reflections.reason);
   }
   return rows;
 }
 
 function verdict(result) {
   const { direct, path } = result;
-  if (!direct.occluded) return { text: 'Linha de vista: ouves o tiro direto, só com distância, ar e diretividade.', warn: false };
+  if (!direct.occluded) return { text: 'Line of sight: you hear the shot directly, with only distance, air and directivity.', warn: false };
   if (path.available && path.throughClosedDoor)
-    return { text: 'Ocluído, mas o caminho pré-calculado passa pela porta fechada: ouves-o quase como se a porta estivesse aberta.', warn: true };
+    return { text: 'Occluded, but the baked path goes through the closed door: you hear it almost as if the door were open.', warn: true };
   if (path.available)
-    return { text: `Ocluído: através da parede chega pouco; o som principal vem pelo caminho, ${directionLabel(path.azimuth)}.`, warn: false };
-  return { text: 'Ocluído e sem caminho: só ouves o que a parede deixa passar.', warn: false };
+    return { text: `Occluded: little gets through the wall; the main sound comes along the path, ${directionLabel(path.azimuth)}.`, warn: false };
+  return { text: 'Occluded with no path: you hear only what the wall lets through.', warn: false };
 }
 
 function renderPanel(result) {
-  document.getElementById('last').textContent = `Última ação: ${state.lastAction}`;
   const rows = rowsFor(result);
   const v = verdict(result);
-  let html = `<div class="verdict${v.warn ? ' warn' : ''}">${v.text}</div>`;
+  let html = `<h2>What the simulator decides</h2>
+    <div class="changed"><strong>Just changed:</strong> ${state.lastAction}</div>
+    <div class="verdict${v.warn ? ' warn' : ''}">${v.text}</div>`;
   let section = null;
   const nextRows = new Map();
   for (const r of rows) {
@@ -715,11 +755,11 @@ function renderPanel(result) {
       section = r.section; html += `<h3>${section}</h3><table>`;
     }
     const changed = previousRows.size && previousRows.get(r.key) !== r.value;
-    html += `<tr class="${changed ? 'changed' : ''}"><td>${r.label}</td><td class="num">${r.value}</td></tr>`;
+    html += `<tr class="${changed ? 'diff' : ''}"><td>${r.label}</td><td class="num">${r.value}</td></tr>`;
     nextRows.set(r.key, r.value);
   }
   html += '</table>';
-  html += `<p class="hint" style="margin-top:8px">Amarelo: o que mudou com a última ação.</p>`;
+  html += `<p class="hint" style="margin-top:8px">Highlighted: what the last action changed.</p>`;
   document.getElementById('state').innerHTML = html;
   previousRows = nextRows;
 }
@@ -727,7 +767,7 @@ function renderPanel(result) {
 function renderMaterials() {
   const box = document.getElementById('materials');
   box.innerHTML = Object.entries(A.WALL_GROUPS).map(([group, label]) =>
-    `<label class="inline">${label}: <select data-group="${group}">${
+    `<label>${label} <select data-group="${group}">${
       Object.entries(A.MATERIALS).map(([id, m]) =>
         `<option value="${id}"${state.materials[group] === id ? ' selected' : ''}>${m.label}</option>`).join('')
     }</select></label>`).join('');
@@ -743,84 +783,90 @@ function render() {
   renderMaterials();
 }
 
-// --- free play wiring ----------------------------------------------------------
+// ---- Free play wiring ---------------------------------------------------------------
 document.querySelectorAll('button[data-act]').forEach(b =>
   b.addEventListener('click', () => dispatch(JSON.parse(b.dataset.act))));
 canvas.addEventListener('click', (e) => {
   const r = canvas.getBoundingClientRect();
-  const x = ((e.clientX - r.left) * canvas.width / r.width - PAD) / SCALE;
-  const y = ((e.clientY - r.top) * canvas.height / r.height - PAD) / SCALE;
+  const x = (e.clientX - r.left - PAD) / scale;
+  const y = (e.clientY - r.top - PAD) / scale;
   const mode = document.querySelector('input[name="clickmode"]:checked').value;
   dispatch({ type: mode === 'shooter' ? 'placeShooter' : 'placeListener', x, y });
 });
 
-// --- walkthroughs ----------------------------------------------------------------
+// ---- Walkthroughs -------------------------------------------------------------------
 const SCENARIOS = [
   {
-    title: 'Atrás de uma parede',
-    text: 'Tu estás no pátio a olhar para a Sala A. O atirador fica do outro lado da fachada: primeiro atrás da janela de vidro, depois atrás do betão, depois o betão passa a madeira. Vê a transmissão por banda: o vidro deixa passar mais do que o betão, e todos cortam mais os agudos do que os graves. Ouve cada passo. A validação dos caminhos começa ligada: a Sala A só abre pela porta, e sem validação o caminho pré-calculado passaria pela porta fechada e taparia o que a parede faz (vê o passeio "A porta é um Prop").',
+    title: 'Behind a wall',
+    text: 'You are in the yard, looking at Room A. The shooter is on the other side of the facade: first behind the glass window, then behind concrete, then the concrete becomes wood. Hear each step. Path validation starts on: Room A opens only through its door, and without validation the baked path would go through the closed door and hide what the wall does (see the walkthrough "The door is a Prop").',
+    watch: 'The transmission per band: glass lets through more than concrete, and every material cuts the highs more than the lows.',
     setup: [{ type: 'placeListener', x: 8, y: 5.5, facingDeg: 0 }, { type: 'placeShooter', x: 20, y: 5.5, facingDeg: 180 },
             { type: 'setPathValidation', on: true }],
     steps: [
-      { label: 'Atirador atrás da janela (vidro)', actions: [{ type: 'placeShooter', x: 20, y: 5.5 }] },
-      { label: 'Atirador atrás da fachada de betão', actions: [{ type: 'placeShooter', x: 20, y: 2 }] },
-      { label: 'A mesma fachada, agora de madeira', actions: [{ type: 'setMaterial', group: 'fachada', material: 'wood' }] },
-      { label: 'Atirador sai para o pátio, à vista', actions: [{ type: 'placeShooter', x: 11, y: 2 }] },
+      { label: 'Shooter behind the window (glass)', actions: [{ type: 'placeShooter', x: 20, y: 5.5 }] },
+      { label: 'Shooter behind the concrete facade', actions: [{ type: 'placeShooter', x: 20, y: 2 }] },
+      { label: 'The same facade, now wood', actions: [{ type: 'setMaterial', group: 'facade', material: 'wood' }] },
+      { label: 'Shooter steps out into the yard, in sight', actions: [{ type: 'placeShooter', x: 11, y: 2 }] },
     ],
   },
   {
-    title: 'À volta da esquina',
-    text: 'Tu estás no corredor, a olhar para leste. O atirador está na Sala B, que só abre para o corredor por uma porta sem porta, ao fundo. Pela parede chega quase nada; o som que conta vem pelo caminho, da abertura. Vê de onde "Vem" o som em cada passo, e o que acontece sem Probe volumes.',
+    title: 'Around the corner',
+    text: 'You are in the corridor, looking east. The shooter is in Room B, which opens onto the corridor only through a doorless doorway at the far end. Almost nothing gets through the wall; the sound that counts comes along the path, from the opening.',
+    watch: 'Where the sound "Comes" from at each step, and what happens without Probe volumes.',
     setup: [{ type: 'placeListener', x: 17, y: 14, facingDeg: 0 }, { type: 'placeShooter', x: 33, y: 5, facingDeg: 90 }],
     steps: [
-      { label: 'Atirador no meio da Sala B', actions: [{ type: 'placeShooter', x: 33, y: 5 }] },
-      { label: 'Atirador junto à abertura, ainda dentro', actions: [{ type: 'placeShooter', x: 37, y: 9 }] },
-      { label: 'Atirador sai para o corredor', actions: [{ type: 'placeShooter', x: 37, y: 13.5 }] },
-      { label: 'De volta ao meio da Sala B, sem Probe volumes', actions: [{ type: 'placeShooter', x: 33, y: 5 }, { type: 'setProbeVolumes', on: false }] },
+      { label: 'Shooter in the middle of Room B', actions: [{ type: 'placeShooter', x: 33, y: 5 }] },
+      { label: 'Shooter by the opening, still inside', actions: [{ type: 'placeShooter', x: 37, y: 9 }] },
+      { label: 'Shooter steps out into the corridor', actions: [{ type: 'placeShooter', x: 37, y: 13.5 }] },
+      { label: 'Back to the middle of Room B, no Probe volumes', actions: [{ type: 'placeShooter', x: 33, y: 5 }, { type: 'setProbeVolumes', on: false }] },
     ],
   },
   {
-    title: 'A porta é um Prop',
-    text: 'Tu estás no corredor, à porta da Sala A; o atirador está dentro da sala. A porta é um Prop: oclui onde está, mas o bake dos caminhos nunca a viu. Com a porta fechada, o caminho pré-calculado passa pela abertura dela e o tiro chega quase inteiro. Liga a validação dos caminhos e vê a diferença; depois abre a porta.',
+    title: 'The door is a Prop',
+    text: 'You are in the corridor, at Room A\'s door; the shooter is inside the room. The door is a Prop: it occludes where it stands, but the path bake never saw it.',
+    watch: 'With the door closed, the baked path goes through its doorway and the shot arrives almost whole. Turn path validation on and see the difference; then open the door.',
     setup: [{ type: 'placeListener', x: 19, y: 14.5, facingDeg: -90 }, { type: 'placeShooter', x: 19, y: 6, facingDeg: 90 },
             { type: 'setDoor', door: 'closed' }, { type: 'setPathValidation', on: false }],
     steps: [
-      { label: 'Porta fechada, caminhos só pré-calculados', actions: [{ type: 'setDoor', door: 'closed' }] },
-      { label: 'Validar os caminhos contra a cena atual', actions: [{ type: 'setPathValidation', on: true }] },
-      { label: 'Abrir a porta', actions: [{ type: 'setDoor', door: 'open' }] },
-      { label: 'Fechar a porta outra vez', actions: [{ type: 'setDoor', door: 'closed' }] },
+      { label: 'Door closed, paths baked only', actions: [{ type: 'setDoor', door: 'closed' }] },
+      { label: 'Validate paths against the current scene', actions: [{ type: 'setPathValidation', on: true }] },
+      { label: 'Open the door', actions: [{ type: 'setDoor', door: 'open' }] },
+      { label: 'Close the door again', actions: [{ type: 'setDoor', door: 'closed' }] },
     ],
   },
   {
-    title: 'Que espaço é este?',
-    text: 'O mesmo tiro, a 5 m, com linha de vista, em quatro espaços. O som direto é quase igual; o que muda é o RT60 e as reflexões. O pátio, sem teto e com gravilha, é seco; a Sala A, toda dura e fechada, ressoa; o corredor fica no meio. Ouve cada um.',
+    title: 'What space is this?',
+    text: 'The same shot, 5 m away, in line of sight, in four spaces. The direct sound is almost the same; what changes is the RT60 and the reflections.',
+    watch: 'The yard, with no ceiling and gravel underfoot, is dry; Room A, hard and closed all round, rings; the corridor sits in between. Hear each one.',
     setup: [{ type: 'placeShooter', x: 5, y: 12, facingDeg: 0 }, { type: 'placeListener', x: 10, y: 12, facingDeg: 180 }],
     steps: [
-      { label: 'No pátio', actions: [{ type: 'placeShooter', x: 5, y: 12, facingDeg: 0 }, { type: 'placeListener', x: 10, y: 12, facingDeg: 180 }] },
-      { label: 'Na Sala A', actions: [{ type: 'placeShooter', x: 16, y: 9, facingDeg: 0 }, { type: 'placeListener', x: 21, y: 9, facingDeg: 180 }] },
-      { label: 'No corredor', actions: [{ type: 'placeShooter', x: 22, y: 14, facingDeg: 0 }, { type: 'placeListener', x: 27, y: 14, facingDeg: 180 }] },
-      { label: 'Na Sala B', actions: [{ type: 'placeShooter', x: 29, y: 6, facingDeg: 0 }, { type: 'placeListener', x: 34, y: 6, facingDeg: 180 }] },
+      { label: 'In the yard', actions: [{ type: 'placeShooter', x: 5, y: 12, facingDeg: 0 }, { type: 'placeListener', x: 10, y: 12, facingDeg: 180 }] },
+      { label: 'In Room A', actions: [{ type: 'placeShooter', x: 16, y: 9, facingDeg: 0 }, { type: 'placeListener', x: 21, y: 9, facingDeg: 180 }] },
+      { label: 'In the corridor', actions: [{ type: 'placeShooter', x: 22, y: 14, facingDeg: 0 }, { type: 'placeListener', x: 27, y: 14, facingDeg: 180 }] },
+      { label: 'In Room B', actions: [{ type: 'placeShooter', x: 29, y: 6, facingDeg: 0 }, { type: 'placeListener', x: 34, y: 6, facingDeg: 180 }] },
     ],
   },
   {
-    title: 'Longe e perto',
-    text: 'No pátio, à vista. O atirador afasta-se de ti. A distância baixa tudo por igual; o ar come os agudos muito mais depressa do que os graves. Compara a absorção do ar a 3 m e a 22 m.',
+    title: 'Far and near',
+    text: 'In the yard, in sight. The shooter moves away from you.',
+    watch: 'Distance lowers every band alike; the air eats the highs much faster than the lows. Compare the air absorption at 3 m and at 22 m.',
     setup: [{ type: 'placeListener', x: 2, y: 23, facingDeg: -90 }, { type: 'placeShooter', x: 2, y: 20, facingDeg: 90 }],
     steps: [
-      { label: 'A 3 m', actions: [{ type: 'placeShooter', x: 2, y: 20, facingDeg: 90 }] },
-      { label: 'A 10 m', actions: [{ type: 'placeShooter', x: 2, y: 13, facingDeg: 90 }] },
-      { label: 'A 22 m', actions: [{ type: 'placeShooter', x: 2, y: 1, facingDeg: 90 }] },
+      { label: 'At 3 m', actions: [{ type: 'placeShooter', x: 2, y: 20, facingDeg: 90 }] },
+      { label: 'At 10 m', actions: [{ type: 'placeShooter', x: 2, y: 13, facingDeg: 90 }] },
+      { label: 'At 22 m', actions: [{ type: 'placeShooter', x: 2, y: 1, facingDeg: 90 }] },
     ],
   },
   {
-    title: 'Para onde aponta a espingarda',
-    text: 'No pátio, a 8 m, à vista. O tiro é mais forte à frente do cano (spec #802: diretividade em dipolo). Roda o atirador e vê a diretividade; no fim desliga-a.',
+    title: 'Where the rifle points',
+    text: 'In the yard, 8 m away, in sight. The shot is louder in front of the muzzle (spec #802: dipole directivity).',
+    watch: 'The directivity as the shooter turns; at the end, turn it off.',
     setup: [{ type: 'placeListener', x: 7, y: 14, facingDeg: -90 }, { type: 'placeShooter', x: 7, y: 6, facingDeg: 90 }],
     steps: [
-      { label: 'Aponta para mim', actions: [{ type: 'aimShooterAtListener' }] },
-      { label: 'Roda 90°', actions: [{ type: 'rotateShooter', deg: 90 }] },
-      { label: 'Aponta para longe', actions: [{ type: 'aimShooterAway' }] },
-      { label: 'Desligar a diretividade', actions: [{ type: 'toggleDirectivity' }] },
+      { label: 'Aim at me', actions: [{ type: 'aimShooterAtListener' }] },
+      { label: 'Turn 90°', actions: [{ type: 'rotateShooter', deg: 90 }] },
+      { label: 'Aim away', actions: [{ type: 'aimShooterAway' }] },
+      { label: 'Turn directivity off', actions: [{ type: 'toggleDirectivity' }] },
     ],
   },
 ];
@@ -830,7 +876,7 @@ function startScenario(i) {
   activeScenario = i; nextStep = 0;
   state = A.initialState();
   for (const a of SCENARIOS[i].setup) state = A.reduce(state, a);
-  state.lastAction = `Passeio "${SCENARIOS[i].title}" começou`;
+  state.lastAction = `Walkthrough "${SCENARIOS[i].title}" started`;
   previousRows = new Map();
   render(); renderScenario();
 }
@@ -839,10 +885,11 @@ function renderScenario() {
     `<button class="${i === activeScenario ? 'active' : ''}" data-tab="${i}">${s.title}</button>`).join('');
   document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => startScenario(+b.dataset.tab)));
   const s = SCENARIOS[activeScenario];
-  document.getElementById('scenario').innerHTML =
-    `<p>${s.text}</p><div class="steps">${s.steps.map((st, i) =>
+  document.getElementById('scenario').innerHTML = `<p>${s.text}</p>
+    <p class="watch"><strong>Watch for:</strong> ${s.watch}</p>
+    <div class="steps">${s.steps.map((st, i) =>
       `<button data-step="${i}" class="${i < nextStep ? 'done' : i === nextStep ? 'next' : ''}">${i + 1}. ${st.label}</button>`).join('')}
-      <button data-restart>↺ Recomeçar este passeio</button></div>`;
+      <button data-restart>↺ Restart this walkthrough</button></div>`;
   document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
     const i = +b.dataset.step;
     for (const a of s.steps[i].actions) state = A.reduce(state, a);
@@ -853,7 +900,7 @@ function renderScenario() {
   document.querySelector('[data-restart]').addEventListener('click', () => startScenario(activeScenario));
 }
 
-// --- the sound ---------------------------------------------------------------------
+// ---- The sound ----------------------------------------------------------------------
 // A synthetic gunshot split into the three bands, each scaled by what the
 // simulator decided, panned from where it arrives, plus a reverberant tail
 // per band from the RT60.
@@ -913,7 +960,12 @@ function play() {
 }
 document.getElementById('play').addEventListener('click', play);
 
+fitCanvas();
 startScenario(0);
+new ResizeObserver(() => { fitCanvas(); draw(lastResult); }).observe(document.getElementById('mapWrap'));
+const retheme = () => { readTheme(); draw(lastResult); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 </script>
 </body>
 </html>
