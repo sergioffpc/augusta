@@ -577,6 +577,7 @@ protocol::ReplayRequestWire ToWire(const ReplayRequest& request) {
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),
       .capture = request.capture,
+      .run = request.run,
   };
 }
 
@@ -585,6 +586,7 @@ ReplayRequest FromWire(const protocol::ReplayRequestWire& request) {
       .engine_version = request.engine_version,
       .client_pack = FromWire(request.client_pack),
       .capture = request.capture,
+      .run = request.run,
   };
 }
 
@@ -595,12 +597,14 @@ protocol::MessageWire ToWire(const JoinRequest& request) {
         .client_pack = ToWire(request.client_pack),
         .character = request.character,
         .spawn = *request.spawn,
+        .run = request.run,
     };
   }
   return protocol::JoinRequestWire{
       .engine_version = request.engine_version,
       .client_pack = ToWire(request.client_pack),
       .character = request.character,
+      .run = request.run,
   };
 }
 
@@ -609,6 +613,7 @@ JoinRequest FromWire(const protocol::JoinRequestWire& request) {
       .engine_version = request.engine_version,
       .client_pack = FromWire(request.client_pack),
       .character = request.character,
+      .run = request.run,
   };
 }
 
@@ -618,6 +623,7 @@ JoinRequest FromWire(const protocol::ReenactRequestWire& request) {
       .client_pack = FromWire(request.client_pack),
       .character = request.character,
       .spawn = request.spawn,
+      .run = request.run,
   };
 }
 

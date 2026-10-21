@@ -25,6 +25,7 @@
 #include "augusta/grid.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
+#include "augusta/uuid.h"
 
 namespace augusta::protocol {
 
@@ -127,6 +128,10 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
 }
 
 std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
+
+std::string_view BytesOf(const uuid::Uuid& id) {
+  return {reinterpret_cast<const char*>(id.Bytes().data()), id.Bytes().size()};
+}
 
 void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
   command.set_direction_x(Steps(wire.direction.x, math::kDirectionGrid));
@@ -247,6 +252,7 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const JoinAcceptedWire& wire) const {
@@ -353,6 +359,7 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_capture(out.Text(wire.capture, kMaxCaptureNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const ReplayViewWire& wire) const {
@@ -376,6 +383,7 @@ struct Encoder {
     request.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
     request.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
     request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
+    request.set_run(BytesOf(wire.run));
   }
 };
 
@@ -457,6 +465,21 @@ class Inbound {
     return hash;
   }
 
+  // bytes as a UUID (a Run ID): none is the nil one an absent field reads as,
+  // and any other length than a UUID's is a number wider than its field.
+  uuid::Uuid Uuid(std::string_view bytes) {
+    uuid::Uuid::ByteArray id{};
+    if (bytes.empty()) {
+      return {};
+    }
+    if (bytes.size() != id.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return {};
+    }
+    std::ranges::transform(bytes, id.begin(), [](char byte) { return static_cast<std::uint8_t>(byte); });
+    return uuid::Uuid::FromBytes(id);
+  }
+
   // Whether a list of size elements is at most max long.
   bool Fits(int size, std::size_t max) {
     if (std::cmp_greater(size, max)) {
@@ -521,7 +544,8 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
 JoinRequestWire Read(const pb::JoinRequest& request, Inbound& in) {
   return JoinRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                          .client_pack = in.PackHash(request.client_pack()),
-                         .character = in.Text(request.character(), kMaxCharacterNameLength)};
+                         .character = in.Text(request.character(), kMaxCharacterNameLength),
+                         .run = in.Uuid(request.run())};
 }
 
 ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
@@ -529,7 +553,8 @@ ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
       .engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
       .client_pack = in.PackHash(request.client_pack()),
       .character = in.Text(request.character(), kMaxCharacterNameLength),
-      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid)};
+      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid),
+      .run = in.Uuid(request.run())};
 }
 
 RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
@@ -655,7 +680,8 @@ ReplayListingWire Read(const pb::ReplayListing& listing, Inbound& in) {
 ReplayRequestWire Read(const pb::ReplayRequest& request, Inbound& in) {
   return ReplayRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                            .client_pack = in.PackHash(request.client_pack()),
-                           .capture = in.Text(request.capture(), kMaxCaptureNameLength)};
+                           .capture = in.Text(request.capture(), kMaxCaptureNameLength),
+                           .run = in.Uuid(request.run())};
 }
 
 ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {

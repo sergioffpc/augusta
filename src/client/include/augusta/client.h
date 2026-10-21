@@ -10,6 +10,7 @@
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
@@ -50,6 +51,8 @@ struct RuntimeConfig {
   /// watches the capture of this name on a replay server instead of playing,
   /// and its run ends, as the window closing ends it, once the Replay has.
   std::optional<std::string> replay;
+  /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
+  uuid::Uuid run{};
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render

@@ -11,6 +11,7 @@
 #include "augusta/client_run.h"
 #include "augusta/config.h"
 #include "augusta/logging.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 namespace {
@@ -37,7 +38,7 @@ int main(int argc, char** argv) {
   }
   // The Run starts here, before its config is read, so even a config that
   // fails is named by its Run ID; a --help or --version is no Run.
-  augusta::client::BeginRun();
+  const augusta::uuid::Uuid run_id = augusta::client::BeginRun();
   const auto run = command_line.and_then(augusta::config::ReadClientRun);
   const auto file_config = augusta::client::ReadClientConfig(
       run.and_then([&command_line](const augusta::config::ClientRun& /*read*/) { return command_line; }));
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
     return augusta::application::Conclude(kSubsystem, reenactment.error());
   }
 
-  return augusta::application::Conclude(kSubsystem, augusta::application::Execute(augusta::client::ClientLifecycle(
-                                                        *file_config, *std::move(reenactment), std::move(replay))));
+  return augusta::application::Conclude(
+      kSubsystem, augusta::application::Execute(augusta::client::ClientLifecycle(*file_config, *std::move(reenactment),
+                                                                                 std::move(replay), run_id)));
 }

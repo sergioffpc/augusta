@@ -19,6 +19,7 @@
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 /// \file
@@ -194,6 +195,9 @@ struct SessionConfig {
   /// Reenact request naming it in place of a Join request. nullopt, the
   /// default, for anyone else, whom Game policy places.
   std::optional<math::Vec3> spawn = std::nullopt;
+  /// The Run ID of the executable this Session is for, which its Join, Reenact
+  /// or Replay request carries and the server logs at admission (ADR-0038).
+  uuid::Uuid run{};
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.
