@@ -1,0 +1,15 @@
+# Buf's workspace: the protocol's one schema (ADR-0007), which buf format
+# formats and buf lint lints (ADR-0012).
+version: v2
+modules:
+  - path: src/modules/protocol/proto
+lint:
+  use:
+    - STANDARD
+  # The schema's package is augusta, in the module's root: renaming it would
+  # rename the generated C++ namespace and what Wireshark's dissector shows,
+  # and the engine version, which Join checks (ADR-0038), versions the
+  # protocol, not the package.
+  except:
+    - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_VERSION_SUFFIX
