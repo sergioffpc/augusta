@@ -93,7 +93,7 @@ def _read_format_version(data: bytes) -> int:
 
 
 def _frames(data: bytes) -> tuple[list[bytes], bool]:
-    """Every whole record after the version, and whether the last was cut off."""
+    """Every whole record after the version, and whether the last is torn."""
     records = []
     at = len(MAGIC) + 1
     while at < len(data):
