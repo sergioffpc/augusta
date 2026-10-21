@@ -1,6 +1,7 @@
 #include "augusta/intent.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>

@@ -21,6 +21,7 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 
 /// \file
 /// A Match capture (ADR-0050): one file per Match, from its Match start to its
@@ -182,7 +183,7 @@ inline constexpr std::size_t kCaptureQueueCapacity = 4096;
 
 /// One player of a Match start, as Host hands it to a Capturer.
 struct CaptureEntrant {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The body its Commands move, which the Simulation's events name it by.
   EntityId entity{};
   std::string character;

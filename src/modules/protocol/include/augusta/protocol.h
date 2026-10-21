@@ -316,7 +316,7 @@ struct EntityStateWire {
 /// Server to client: the join succeeded, and the client waits in the Lobby.
 struct JoinAcceptedWire {
   /// The session the server assigned to this client.
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
@@ -408,7 +408,7 @@ struct AuthoritativeStateWire {
 
 /// One player in the Lobby.
 struct RosterEntryWire {
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The player's character (see JoinAcceptedWire::character).
   std::string character;
 
@@ -437,7 +437,7 @@ struct ReadyWire {
 /// One player in a match, the body it controls, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
   /// The player's character (see JoinAcceptedWire::character).
@@ -733,7 +733,7 @@ struct CapturedJoinWire {
   /// Where the Match start spawned it, on the position grid.
   math::Vec3 spawn{};
   std::uint32_t offset = 0;
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// Its Character, by its name in the scenario's manifest (ADR-0042); at most
   /// kMaxCharacterNameLength bytes.
   std::string character;

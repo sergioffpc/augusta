@@ -18,7 +18,6 @@
 #include "augusta/match.h"
 #include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
-#include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
 namespace augusta::host {

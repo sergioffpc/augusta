@@ -50,7 +50,7 @@ enum class EntityId : std::uint32_t {};
 
 /// One player in the Lobby.
 struct RosterEntry {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// Its character, by its name in the scenario's manifest: one of the scenario's (ADR-0042).
   std::string character;
 };
@@ -65,7 +65,7 @@ struct Roster {
 
 /// One player in a match and the body it controls.
 struct MatchPlayer {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The body the player's commands move for the whole match.
   EntityId entity{};
   /// Its character (see RosterEntry::character).
@@ -92,7 +92,7 @@ struct MatchEnd {
 /// What a peer is told when it is admitted to the Lobby.
 struct Admission {
   /// The name the server gave the peer's player.
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The character it plays (see RosterEntry::character).
   std::string character;
 };

@@ -88,6 +88,9 @@ struct ClientRuntime::Impl {
   LobbyReadiness lobby_readiness;
   input::Input input;
   audio::Engine audio;
+  // `session=` on every line from the admission WaitForAdmission sees: declared
+  // before the Session, so it ends after it, its last lines included.
+  std::optional<SessionLogContext> session_log;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
@@ -379,6 +382,7 @@ struct ClientRuntime::Impl {
   }
 
   // Keeps the window responsive until the server admits this client, then
+  // has every line carry its Session ID (session_log), and
   // hands PresentationWorld the parameters it sent and its tick: what tracers
   // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
   // why the run failed first, if it did; returns nothing if the window closed
@@ -391,6 +395,7 @@ struct ClientRuntime::Impl {
       }
       const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
       if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
+        session_log.emplace(accepted->session);
         if (reenactment.has_value()) {
           if (const std::optional<std::string> mismatch = reenactment->PlayerCountMismatch(*accepted)) {
             LOG_WARN("subsystem=reenactment {}", *mismatch);
@@ -508,17 +513,11 @@ std::optional<failure::Failure> ClientRuntime::Run() {
                           .on_network_round = [&impl] { impl.SampleNetworkStats(); },
                           .on_failure = {},
                       });
-  // Ends after the joiner, so the Network I/O thread's last lines carry it too.
-  std::optional<SessionLogContext> session_context;
   const RunnerJoiner joiner{.runner = impl.runner};
 
   std::optional<failure::Failure> failure = impl.WaitForAdmission();
   if (failure.has_value()) {
     return failure;
-  }
-  if (const std::shared_ptr<const harness::ServerView> admitted = impl.session->GetServerView();
-      admitted->accepted.has_value()) {
-    session_context.emplace(admitted->accepted->session);
   }
 
   window::Window& window = impl_->window;

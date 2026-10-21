@@ -130,7 +130,7 @@ struct Death {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// Its character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
@@ -145,7 +145,7 @@ struct Lobby {
 
 /// One player in a match, the body it controls, and where the server spawned it.
 struct MatchPlayer {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The body this player's commands move for the whole match.
   EntityId entity{};
   /// Its character (see RosterEntry::character).
@@ -191,7 +191,7 @@ enum class JoinRefusal : std::uint8_t {
 /// What the server said when it admitted a client.
 struct Admission {
   /// The session the server assigned to the client.
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The rate, in Hz, at which the server ticks and the client must: the
   /// server's startup setting, fixed for the life of its process. The client
   /// has no rate of its own.

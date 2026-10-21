@@ -40,7 +40,7 @@ using Player = std::uint8_t;
 /// A player of the Match start, where it spawned on the position grid.
 struct Join {
   /// Its Session's ID (a UUIDv7, unique across every server).
-  uuid::Uuid session{};
+  uuid::Uuid session = uuid::kNil;
   /// Its Character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   math::Vec3 spawn{};

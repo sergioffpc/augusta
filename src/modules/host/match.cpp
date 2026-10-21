@@ -11,6 +11,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/link.h"
+#include "augusta/uuid.h"
 
 namespace augusta::host {
 

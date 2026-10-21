@@ -18,7 +18,6 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
-#include "augusta/policy_actions.h"
 #include "augusta/simulation.h"
 
 namespace augusta::host {

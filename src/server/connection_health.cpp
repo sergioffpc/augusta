@@ -81,7 +81,7 @@ enum SessionValue : std::uint8_t {
 
 // One Session's gauges, each kNotMeasured until first measured.
 struct SessionGauges {
-  host::SessionId session{};
+  host::SessionId session = uuid::kNil;
   std::array<double, kSessionValueCount> values{};
 };
 
