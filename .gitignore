@@ -74,6 +74,9 @@ tools/pack/src/augusta_pack/*.so
 tools/pack/src/augusta_pack/*.dll
 tools/pack/src/augusta_pack/*.pdb
 tools/pack/src/augusta_pack/*.ilk
+# The protocol's Python module, which the root build generates into the same
+# package from src/modules/protocol/proto (tools/pack/native).
+tools/pack/src/augusta_pack/*_pb2.py
 # Likewise the Agents' _native module (tools/agent/native), which the root
 # build writes into its package with the DLLs it needs on Windows.
 tools/agent/src/augusta_agent/*.pyd

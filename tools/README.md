@@ -71,6 +71,12 @@ copy. The repository's root CMake project builds it, as it builds the Agents'
 module, with `AUGUSTA_TOOLS` and the tools environment's Python. It has no USD
 dependency on purpose; see ADR-0030 for why.
 
+The same build generates `augusta_pack.augusta_pb2` beside it with vcpkg's
+`protoc`, from the protocol's one schema,
+[augusta.proto](../src/modules/protocol/proto/augusta.proto) (ADR-0007), so a
+Match capture reads through the `protobuf` runtime with no hand-written copy of
+its format. Neither module is checked in.
+
 ### Setup
 
 The pack bootstrap creates the cooker's **assets root** (a uv-managed Python
