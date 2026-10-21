@@ -1,0 +1,393 @@
+// The Networking Protocol's one schema (ADR-0007, ADR-0038): every message
+// under the augusta.Message envelope, and every Match capture record
+// (ADR-0050) under the augusta.CaptureRecord envelope. The build generates the
+// protocol module's C++ from it, and augusta-inspect's Python; neither is
+// checked in. It is the one schema Wireshark's protobuf dissector reads too.
+//
+// The flat layout (ADR-0007):
+// - a grid's axes are inline fields, sint32 for a signed count and uint32 for
+//   an unsigned one, each a whole count of the grid's step (augusta/grid.h),
+//   never a nested vector;
+// - flags and a small enumeration share one uint32 bitfield, with the bit
+//   layouts ADR-0038 gives, and the bits no field uses are 0;
+// - the Parameters, a rifle's two times, health and damage are float;
+// - a Tick and a Sequence are uint64, an entity ID and a session ID uint32;
+// - a list is a repeated field, with no count;
+// - every enum's 0 is *_UNSPECIFIED, which no sender writes;
+// - a field removed from a message is reserved, never given to another.
+//
+// A Stance travels as a number in a bitfield, not as an enum: 0 standing, 1
+// crouching, 2 prone.
+
+syntax = "proto3";
+
+package augusta;
+
+// One message of the protocol: one transport payload.
+message Message {
+  // Numbered from 1, each as its protocol::MessageTypeWire, disjoint from
+  // augusta.CaptureRecord's members (1000 onward), so a payload of one
+  // envelope sets no member of the other.
+  oneof body {
+    JoinRequest join_request = 1;
+    JoinAccepted join_accepted = 2;
+    JoinRefused join_refused = 3;
+    Commands commands = 4;
+    AuthoritativeState authoritative_state = 5;
+    Lobby lobby = 6;
+    Ready ready = 7;
+    MatchStart match_start = 8;
+    MatchEnd match_end = 9;
+    Shot shot = 10;
+    HitConfirmation hit_confirmation = 11;
+    Death death = 12;
+    ReplayListRequest replay_list_request = 13;
+    ReplayList replay_list = 14;
+    ReplayRequest replay_request = 15;
+    ReplayView replay_view = 16;
+    ReenactRequest reenact_request = 17;
+  }
+}
+
+// Why the server refused a join.
+enum JoinRefusal {
+  JOIN_REFUSAL_UNSPECIFIED = 0;
+  JOIN_REFUSAL_VERSION_MISMATCH = 1;
+  JOIN_REFUSAL_LOBBY_FULL = 2;
+  JOIN_REFUSAL_UNKNOWN_CHARACTER = 3;
+  JOIN_REFUSAL_MATCH_IN_PROGRESS = 4;
+  JOIN_REFUSAL_PACK_MISMATCH = 5;
+  JOIN_REFUSAL_REPLAY_SERVER = 6;
+  JOIN_REFUSAL_UNKNOWN_CAPTURE = 7;
+  JOIN_REFUSAL_NOT_A_REPLAY_SERVER = 8;
+  JOIN_REFUSAL_REENACTMENTS_NOT_ACCEPTED = 9;
+}
+
+// Where on a player's body a round struck.
+enum BodyPart {
+  BODY_PART_UNSPECIFIED = 0;
+  BODY_PART_HEAD = 1;
+  BODY_PART_TORSO = 2;
+  BODY_PART_LIMB = 3;
+}
+
+// Client to server: the first message on a new connection.
+message JoinRequest {
+  string engine_version = 1;
+  // The client pack's BLAKE3 hash, 32 bytes.
+  bytes client_pack = 2;
+  string character = 3;
+}
+
+// Client to server: a Captured player's first message, in place of a
+// JoinRequest (ADR-0050).
+message ReenactRequest {
+  string engine_version = 1;
+  bytes client_pack = 2;
+  string character = 3;
+  // On the position grid.
+  sint32 spawn_x = 4;
+  sint32 spawn_y = 5;
+  sint32 spawn_z = 6;
+}
+
+message Stamina {
+  float deplete_per_second = 1;
+  float regen_per_second = 2;
+  float forced_walk_below = 3;
+}
+
+message RecoilKick {
+  float pitch = 1;
+  float yaw = 2;
+}
+
+message Rifle {
+  float rounds_per_minute = 1;
+  float muzzle_velocity = 2;
+  float reload_seconds = 3;
+  float recoil_recovery_per_second = 4;
+  float ads_recoil_scale = 5;
+  float ads_field_of_view = 6;
+  repeated RecoilKick recoil_pattern = 7;
+  uint32 magazine_capacity = 8;
+}
+
+message Ammo {
+  float gravity = 1;
+  float max_range = 2;
+  float head_damage = 3;
+  float torso_damage = 4;
+  float limb_damage = 5;
+}
+
+// The Parameters (ADR-0039) a client predicts with.
+message Parameters {
+  Stamina stamina = 1;
+  Rifle rifle = 2;
+  Ammo ammo = 3;
+  float starting_health = 4;
+  uint32 player_count = 5;
+}
+
+// Server to client: the join succeeded, and the client waits in the Lobby.
+message JoinAccepted {
+  uint32 session = 1;
+  uint32 tick_rate_hz = 2;
+  Parameters parameters = 3;
+  string character = 4;
+}
+
+// Server to client: the join failed.
+message JoinRefused {
+  JoinRefusal reason = 1;
+}
+
+// What a player asked to do for one tick: in a Commands message, and as a
+// Match capture's Command record.
+message Command {
+  // From 1, one per client tick; 0 in a capture, which carries none.
+  uint64 sequence = 1;
+  // The movement direction, on the direction grid.
+  sint32 direction_x = 2;
+  sint32 direction_y = 3;
+  sint32 direction_z = 4;
+  // The view, on the angle grid.
+  sint32 yaw = 5;
+  sint32 pitch = 6;
+  // Bits 0-3: sprint, ADS, fire, reload; bits 4-5: the desired stance.
+  uint32 bits = 7;
+  // Its Seen time's tick, as how many ticks before the Commands message's
+  // seen_tick it is (0 to 255); 0 in a capture.
+  uint32 seen_age = 8;
+  // Its Seen time's fraction, on the Seen fraction grid.
+  uint32 seen_fraction = 9;
+}
+
+// Client to server: the newest commands the server has not acknowledged,
+// oldest first.
+message Commands {
+  repeated Command commands = 1;
+  uint64 seen_tick = 2;
+}
+
+// One dynamic body in an Authoritative State.
+message Body {
+  uint32 entity = 1;
+  // On the position grid.
+  sint32 position_x = 2;
+  sint32 position_y = 3;
+  sint32 position_z = 4;
+  // On the velocity grid.
+  sint32 velocity_x = 5;
+  sint32 velocity_y = 6;
+  sint32 velocity_z = 7;
+  // Bits 0-1: the stance; bit 2: exhausted.
+  uint32 bits = 8;
+  // On the stamina grid.
+  uint32 stamina = 9;
+  // Where it faces, on the angle grid.
+  sint32 yaw = 10;
+}
+
+// Server to client: the Authoritative State of one server tick.
+//
+// Every field the recipients share numbers below every field that is a
+// recipient's own: tick and bodies are 1 and 2, the recipient's own fields 3
+// onward. Readdress keeps the shared fields' bytes and serializes only the
+// recipient's own after them, which is byte for byte a whole encode only
+// because of this order (ADR-0038). A new shared field breaks the splice; a
+// new own field takes the next number.
+message AuthoritativeState {
+  uint64 tick = 1;
+  repeated Body bodies = 2;
+  uint64 acknowledged_sequence = 3;
+  uint32 queued_commands = 4;
+  // The recipient's own rifle as of the tick.
+  uint32 rifle_rounds = 5;
+  float rifle_cooldown = 6;
+  float rifle_reload_remaining = 7;
+  uint32 rifle_burst_index = 8;
+  // Its Recoil offset, on the angle grid.
+  sint32 rifle_recoil_pitch = 9;
+  sint32 rifle_recoil_yaw = 10;
+  float health = 11;
+}
+
+message RosterEntry {
+  uint32 session = 1;
+  string character = 2;
+}
+
+// Server to client: who is in the Lobby.
+message Lobby {
+  uint32 version = 1;
+  repeated RosterEntry roster = 2;
+}
+
+// Client to server: it has loaded what one version of the Lobby's Roster needs.
+message Ready {
+  uint32 version = 1;
+}
+
+message MatchPlayer {
+  uint32 session = 1;
+  uint32 entity = 2;
+  string character = 3;
+  // On the position grid.
+  sint32 spawn_x = 4;
+  sint32 spawn_y = 5;
+  sint32 spawn_z = 6;
+}
+
+// Server to client: the match has started.
+message MatchStart {
+  repeated MatchPlayer players = 1;
+  uint64 first_tick = 2;
+}
+
+// Server to client: the match is over.
+message MatchEnd {
+  // The winner's session, or 0 for a draw.
+  uint32 winner = 1;
+}
+
+// Server to client: one round a player fired (ADR-0044).
+message Shot {
+  uint64 tick = 1;
+  uint32 shooter = 2;
+  // On the position grid.
+  sint32 origin_x = 3;
+  sint32 origin_y = 4;
+  sint32 origin_z = 5;
+  // On the angle grid.
+  sint32 yaw = 6;
+  sint32 pitch = 7;
+}
+
+// Server to client: a round the recipient fired hit a player (ADR-0044).
+message HitConfirmation {
+  uint32 target = 1;
+  BodyPart part = 2;
+  float damage = 3;
+}
+
+// Server to client: a player in the match died (US-13, ADR-0045).
+message Death {
+  uint32 victim = 1;
+  uint32 killer = 2;
+  BodyPart part = 3;
+  // Where the killing round was fired for, on the angle grid.
+  sint32 yaw = 4;
+  sint32 pitch = 5;
+}
+
+// Client to server: asks a replay server which captures it replays (ADR-0051).
+message ReplayListRequest {}
+
+message ReplayListing {
+  string name = 1;
+  // When its Match started, in milliseconds since the Unix epoch, UTC.
+  int64 started_unix_ms = 2;
+  // In ticks at tick_rate_hz.
+  uint32 ticks = 3;
+  uint32 tick_rate_hz = 4;
+  repeated string characters = 5;
+}
+
+// Server to client: every capture the replay server replays.
+message ReplayList {
+  repeated ReplayListing replays = 1;
+}
+
+// Client to server: asks a replay server to replay one capture (ADR-0051).
+message ReplayRequest {
+  string engine_version = 1;
+  bytes client_pack = 2;
+  string capture = 3;
+}
+
+message PlayerView {
+  uint32 entity = 1;
+  // On the angle grid.
+  sint32 pitch = 2;
+  // Bit 0: ADS.
+  uint32 bits = 3;
+}
+
+// Server to client: what each player saw on one tick of a Replay.
+message ReplayView {
+  uint64 tick = 1;
+  repeated PlayerView players = 2;
+}
+
+// One record of a Match capture (ADR-0050): never a Message.
+message CaptureRecord {
+  // Numbered from 1000, each as 1000 plus its protocol::CaptureRecordTypeWire,
+  // disjoint from augusta.Message's members (1 onward), so a payload of one
+  // envelope sets no member of the other.
+  oneof record {
+    CaptureHeader header = 1001;
+    CapturedJoin join = 1002;
+    CapturedCommand command = 1003;
+    CapturedLeave leave = 1004;
+    CapturedDeath death = 1005;
+    CapturedMatchEnd match_end = 1006;
+  }
+}
+
+// What a captured Match ran on and when it started: a capture's first record.
+// The format's version is the raw byte before it, never a field.
+message CaptureHeader {
+  // The server and client packs' BLAKE3 hashes, 32 bytes each.
+  bytes server_pack = 1;
+  bytes client_pack = 2;
+  string engine_version = 3;
+  // In milliseconds since the Unix epoch, UTC.
+  int64 started_unix_ms = 4;
+  uint32 tick_rate_hz = 5;
+}
+
+// A player of the Match start, in its order: always at offset 0.
+message CapturedJoin {
+  uint32 offset = 1;
+  // The player's number in the capture, from 1.
+  uint32 player = 2;
+  uint32 session = 3;
+  string character = 4;
+  // On the position grid.
+  sint32 spawn_x = 5;
+  sint32 spawn_y = 6;
+  sint32 spawn_z = 7;
+}
+
+// A Command a player sent, at the offset of the tick it was handed to the
+// simulation.
+message CapturedCommand {
+  uint32 offset = 1;
+  uint32 player = 2;
+  // Its Seen time's tick, as an offset from the Match's first tick.
+  sint32 seen_offset = 3;
+  // As a Commands message carries it.
+  Command command = 4;
+}
+
+// A player whose connection ended mid-Match.
+message CapturedLeave {
+  uint32 offset = 1;
+  uint32 player = 2;
+}
+
+// A player who died, and who killed them.
+message CapturedDeath {
+  uint32 offset = 1;
+  uint32 victim = 2;
+  uint32 killer = 3;
+}
+
+// The Match's end, at the offset of its last tick.
+message CapturedMatchEnd {
+  uint32 offset = 1;
+  // The winner's number, or 0 for a draw.
+  uint32 winner = 2;
+}

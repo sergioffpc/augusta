@@ -17,6 +17,7 @@
     "libsodium",
     "lua",
     "physx",
+    "protobuf",
     {
       "name": "prometheus-cpp",
       "default-features": false

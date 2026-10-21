@@ -10,6 +10,12 @@ message or a typed error out - that treats its input as untrusted, and whose
 messages hold only its own plain `*Wire` types. An Authoritative State encoded
 once is readdressed to each recipient by rewriting only its own fields' bytes.
 
+`proto/augusta.proto`, alone in its directory, is the protocol's one Protocol
+Buffers schema: every message under `augusta.Message` and every capture record
+under `augusta.CaptureRecord`. The build generates its C++ (`augusta.pb.h`) into
+the build tree, private to this module, which links the full protobuf runtime
+`PRIVATE`.
+
 ## Not its responsibility
 
 - Sockets and delivery: networking.
