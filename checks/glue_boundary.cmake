@@ -1,5 +1,5 @@
 # Executables are Glue (ADR-0060): an executable links only the application,
-# its Runtime, failure, logging and version, and no target links an
+# its Runtime, crash, failure, logging and version, and no target links an
 # executable. The Glue check (cmake/AugustaModule.cmake) turns each into a
 # configure-time error, and this script proves it fires both ways by
 # configuring a fixture build graph (checks/glue_fixture) once per shape.
@@ -41,7 +41,7 @@ function(configure_fixture case out_failed out_output)
 endfunction()
 
 # An executable linking all it may - the application, every target of its
-# Runtime, failure, logging, version, the build infrastructure every
+# Runtime, crash, failure, logging, version, the build infrastructure every
 # binary links and a system library - and a test linking that Runtime
 # configure.
 configure_fixture(GLUE failed output)
@@ -50,8 +50,8 @@ if(failed)
 endif()
 
 # An executable linking a module that is not its Runtime - defined outside its
-# directory, whatever it is called - nor the application, failure, logging or
-# version, is refused, and the refusal names the link.
+# directory, whatever it is called - nor the application, crash, failure,
+# logging or version, is refused, and the refusal names the link.
 configure_fixture(LINK_REFUSED failed output)
 if(NOT failed)
   string(APPEND report "the Glue check lets an executable link a module it may not:\n${output}\n")

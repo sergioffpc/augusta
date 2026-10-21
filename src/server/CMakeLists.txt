@@ -41,18 +41,6 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_server_connection_health SERVER_ONLY)
 
-# What a crash leaves in the log: the fatal signal and a symbolized stack
-# (ADR-0047). Abseil symbolizes, being async-signal-safe where the
-# alternatives (std::stacktrace, Boost.Stacktrace) allocate.
-find_package(absl CONFIG REQUIRED)
-add_library(augusta_server_crash STATIC crash.cpp)
-target_include_directories(augusta_server_crash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_server_crash PRIVATE absl::stacktrace absl::symbolize)
-# crash.cpp writes through <windows.h> there; keep its min/max macros out of the
-# way of the standard library.
-target_compile_definitions(augusta_server_crash PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-augusta_set_module_scope(augusta_server_crash SERVER_ONLY)
-
 # The server Runtime itself (see server.h): the Network I/O and Simulation
 # threads around the Host, its clock, and the metrics endpoint beside them.
 add_library(augusta_server STATIC server.cpp)
@@ -89,19 +77,13 @@ augusta_set_module_scope(augusta_server_application SERVER_ONLY)
 add_executable(augustad main.cpp)
 target_link_libraries(
   augustad
-  PRIVATE
-    augusta_application
-    augusta_server_application
-    augusta_server_crash
-    augusta_version
-    augusta_logging
-    augusta_server
+  PRIVATE augusta_application augusta_server_application augusta_crash augusta_version augusta_logging augusta_server
 )
 # The headless server itself, not only its libraries: a client-only module
 # linked straight into it fails the configure (checks/server_boundary.cmake).
 augusta_set_module_scope(augustad SERVER_ONLY)
 # augustad is Glue: it links only the application, the server Runtime beside
-# it, failure, logging and version - anything else fails the configure
+# it, crash, failure, logging and version - anything else fails the configure
 # (ADR-0060, cmake/AugustaModule.cmake).
 augusta_set_executable_glue(augustad)
 

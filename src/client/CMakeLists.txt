@@ -118,7 +118,7 @@ target_link_libraries(
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
 # augustac is Glue: it links only the application, the client Runtime beside
-# it, failure, logging and version - anything else fails the configure
+# it, crash, failure, logging and version - anything else fails the configure
 # (ADR-0060, cmake/AugustaModule.cmake).
 augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the

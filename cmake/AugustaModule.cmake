@@ -108,8 +108,8 @@ function(augusta_check_module_scopes)
 endfunction()
 
 # Executables are Glue (ADR-0060): an executable links only the application,
-# its Runtime - the targets defined beside it, in its own directory - failure,
-# logging and version; and no target links it, so Glue is tested only end to
+# its Runtime - the targets defined beside it, in its own directory - crash,
+# failure, logging and version; and no target links it, so Glue is tested only end to
 # end, through the Runtime it runs. Mechanism that is worth a test of its own
 # belongs to the Runtime or to a module under src/modules/, where a test can
 # link it without linking an executable. The same kind of check as the
@@ -163,6 +163,7 @@ function(augusta_check_executable_glue)
   set(
     allowed
     augusta_application
+    augusta_crash
     augusta_failure
     augusta_logging
     augusta_version
@@ -206,7 +207,8 @@ function(augusta_check_executable_glue)
     list(JOIN links "\n" joined)
     string(
       APPEND report
-      "An executable links only the application, its Runtime, failure, logging and version. These links reach "
+      "An executable links only the application, its Runtime, crash, failure, logging and version. These links "
+      "reach "
       "past them - let its Runtime wire the module instead:\n${joined}\n"
     )
   endif()

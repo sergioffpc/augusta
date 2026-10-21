@@ -39,7 +39,7 @@ add_test(
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
 )
 
-# The headless server has no client Input dependency (ARCHITECTURE.md §5):
+# The headless server has no client Input dependency (ARCHITECTURE.md Â§5):
 # augusta_input stays client-only so the configure-time scope check covers it,
 # that check rejects a fixture build graph where a server-only target reaches a
 # client-only one, and no server source or server config header names Input.
@@ -53,9 +53,9 @@ add_test(
 
 # Executables are Glue (ADR-0060): the Glue check refuses a second target
 # inside an executable's own directory, an executable that links more than the
-# application, its Runtime, failure, logging and version, and a test that links
-# an executable, and allows an executable linking all of those and a test
-# linking its Runtime. It only configures a fixture build graph, with no
+# application, its Runtime, crash, failure, logging and version, and a test
+# that links an executable, and allows an executable linking all of those and a
+# test linking its Runtime. It only configures a fixture build graph, with no
 # compiler, so it builds nothing.
 add_test(
   NAME augusta_glue_boundary
