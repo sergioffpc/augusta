@@ -7,8 +7,8 @@
 /// each of these does nothing. vulkan_device.cpp enables them before it makes
 /// the device, and then turns on the device extensions Aftermath reads
 /// (vulkan_device_choice.h); vulkan_swapchain.cpp waits for a dump once the device is lost. A
-/// dump is a .nv-gpudmp, which Nsight Graphics opens, written beside the
-/// executable. Aftermath that fails to start (no NVIDIA driver) is logged and
+/// dump is a .nv-gpudmp, which Nsight Graphics opens, written where
+/// gpu_crash_dump_files.h names it. Aftermath that fails to start (no NVIDIA driver) is logged and
 /// left off: rendering never depends on it.
 namespace augusta::renderer {
 

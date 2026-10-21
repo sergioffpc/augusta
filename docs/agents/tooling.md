@@ -30,8 +30,8 @@ Windows and Linux; a build with it stages the SDK's shared libraries beside
 `event=gpu_crash_dumps_enabled` once Aftermath watches, and
 `event=gpu_crash_dumps_attached` once its device has
 `VK_NV_device_diagnostics_config` (an NVIDIA GPU, not lavapipe). On a GPU
-crash/TDR, seen as `VK_ERROR_DEVICE_LOST`, it writes
-`<executable>-<UTC time>-<n>.nv-gpudmp` next to the executable, logged as
+crash/TDR, seen as `VK_ERROR_DEVICE_LOST`, it writes the Run's
+`dumps/augustac-<run-id>-<n>.nv-gpudmp` beside the executable, logged as
 `event=gpu_crash_dump`, which Nsight Graphics opens and 'C:\Program Files\NVIDIA
 Corporation\Nsight Graphics
 2026.3.1\host\windows-desktop-nomad-x64\nv-aftermath-format.exe' decodes.
