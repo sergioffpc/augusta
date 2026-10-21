@@ -15,6 +15,7 @@
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
+#include "augusta/hardware.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
@@ -120,7 +121,11 @@ application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig
   return {
       // link::Init() must run once, process-wide, before any Server is
       // constructed - see link.h.
-      .initialize = [faults] { return link::Init(faults); },
+      .initialize =
+          [faults] {
+            LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+            return link::Init(faults);
+          },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };

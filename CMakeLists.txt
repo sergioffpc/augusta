@@ -150,6 +150,7 @@ find_package(rapidcheck CONFIG REQUIRED)
 
 add_subdirectory(src/modules/version)
 add_subdirectory(src/modules/logging)
+add_subdirectory(src/modules/hardware)
 add_subdirectory(src/modules/config)
 add_subdirectory(src/modules/math)
 add_subdirectory(src/modules/tick)

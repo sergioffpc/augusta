@@ -178,6 +178,14 @@ std::optional<OutputError> MiniaudioOutput::Open() {
     return OutputError{.step = OutputStep::kDevice, .code = static_cast<std::int32_t>(result)};
   }
   device_open_ = true;
+  // What the OS's default output device runs at, which miniaudio converts to
+  // from the format asked for above.
+  LOG_INFO(
+      "subsystem=audio event=output_device name=\"{}\" backend={} sample_rate={} channels={} format=\"{}\" "
+      "period_frames={}",
+      device_.playback.name, ma_get_backend_name(device_.pContext->backend), device_.playback.internalSampleRate,
+      device_.playback.internalChannels, ma_get_format_name(device_.playback.internalFormat),
+      device_.playback.internalPeriodSizeInFrames);
   if (const ma_result result = ma_device_start(&device_); result != MA_SUCCESS) {
     return OutputError{.step = OutputStep::kDeviceStart, .code = static_cast<std::int32_t>(result)};
   }

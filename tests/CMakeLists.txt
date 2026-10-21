@@ -8,6 +8,12 @@ add_executable(augusta_logging_tests logging_test.cpp)
 target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_logging_tests)
 
+# proc_files.h is private to the module, hence its directory.
+add_executable(augusta_hardware_tests hardware_test.cpp)
+target_include_directories(augusta_hardware_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/hardware)
+target_link_libraries(augusta_hardware_tests PRIVATE augusta_hardware GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_hardware_tests)
+
 add_executable(augusta_version_benchmarks version_benchmark.cpp)
 target_link_libraries(augusta_version_benchmarks PRIVATE augusta_version benchmark::benchmark benchmark::benchmark_main)
 

@@ -18,7 +18,7 @@ namespace {
 std::optional<std::size_t> FirstOf(std::span<const DeviceCandidate> candidates, DeviceType type) {
   for (std::size_t i = 0; i < candidates.size(); ++i) {
     const DeviceCandidate& candidate = candidates[i];
-    if (candidate.type == type && candidate.supports_vulkan_1_3 && candidate.presents) {
+    if (candidate.type == type && Usable(candidate)) {
       return i;
     }
   }
@@ -26,6 +26,8 @@ std::optional<std::size_t> FirstOf(std::span<const DeviceCandidate> candidates, 
 }
 
 }  // namespace
+
+bool Usable(const DeviceCandidate& candidate) { return candidate.supports_vulkan_1_3 && candidate.presents; }
 
 std::optional<std::size_t> ChooseDevice(std::span<const DeviceCandidate> candidates, Adapter adapter) {
   if (adapter == Adapter::kSoftware) {

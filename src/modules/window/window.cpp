@@ -11,6 +11,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
+#include "augusta/logging.h"
 #include "augusta/window_events.h"
 #include "augusta/window_vulkan.h"
 #include "glfw_keys.h"
@@ -49,6 +50,23 @@ GlfwWindow Open(const Config& config) {
     throw std::runtime_error("GLFW failed to create the window");
   }
   return window;
+}
+
+// The display the window opens on, GLFW's primary monitor, as the OS runs it.
+void LogDisplay() {
+  int count = 0;
+  glfwGetMonitors(&count);
+  GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+  const GLFWvidmode* const mode = monitor == nullptr ? nullptr : glfwGetVideoMode(monitor);
+  if (mode == nullptr) {
+    LOG_INFO("subsystem=window event=display monitors={}", count);
+    return;
+  }
+  // The scale the OS draws its own UI at, e.g. 1.5 for 150%.
+  float scale = 0.0F;
+  glfwGetMonitorContentScale(monitor, &scale, nullptr);
+  LOG_INFO("subsystem=window event=display monitors={} name=\"{}\" width={} height={} refresh_hz={} scale={}", count,
+           glfwGetMonitorName(monitor), mode->width, mode->height, mode->refreshRate, scale);
 }
 
 Size FramebufferSize(GLFWwindow& window) {
@@ -100,6 +118,7 @@ struct Window::Impl {
   // size starts as the window's own, which Windows may have widened past
   // config's.
   explicit Impl(const Config& config) : window(Open(config)), size(FramebufferSize(*window)) {
+    LogDisplay();
     glfwSetWindowUserPointer(window.get(), &events);
     glfwSetKeyCallback(window.get(), OnKey);
     glfwSetMouseButtonCallback(window.get(), OnMouseButton);
