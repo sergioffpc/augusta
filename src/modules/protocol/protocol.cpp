@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -53,7 +51,7 @@ constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsM
 // payload. A larger message (a Replay list) grows the arena there.
 constexpr std::size_t kArenaBlockSize = 4096;
 
-// An arena local to one Encode, Decode or Readdress (ADR-0007): the messages the
+// An arena local to one call of the codec (ADR-0007): the messages the
 // call builds or parses live on it and go with it, and none reaches the API.
 class CallArena {
  public:
@@ -779,370 +777,132 @@ std::optional<std::span<const std::byte>> SharedFieldsOf(std::span<const std::by
   return payload.subspan(start, own_start.value_or(payload.size()) - start);
 }
 
-// The capture records' codec: one CaptureRecordTypeWire byte, then the
-// record's fields, fixed-width and little-endian, with a string as a one-byte
-// length and its bytes.
+// A Match capture's records (ADR-0050), each its augusta.CaptureRecord member,
+// mapped as the messages are: a captured Command's command is a Commands
+// message's augusta.Command, its sequence left 0.
 
-constexpr int kBitsPerByte = 8;
+// One overload per record: the envelope's member, then its fields.
+struct RecordEncoder {
+  pb::CaptureRecord& record;
+  Outbound& out;
 
-// Builds a record front to back. The first field it is handed that the format
-// cannot carry is remembered, and Finish then gives that error and no record,
-// so an encoder writes all of a record's fields and asks once at the end: the
-// write side of Reader.
-class Writer {
- public:
-  void Put(std::uint8_t value) { bytes_.push_back(static_cast<std::byte>(value)); }
-
-  void Put(std::span<const std::byte> bytes) { bytes_.insert(bytes_.end(), bytes.begin(), bytes.end()); }
-
-  // Whether holds, remembering error if it does not.
-  bool Check(bool holds, EncodeError error) {
-    if (!holds && !error_.has_value()) {
-      error_ = error;
-    }
-    return holds;
+  void operator()(const CaptureHeaderWire& wire) const {
+    pb::CaptureHeader& header = *record.mutable_header();
+    header.set_server_pack(BytesOf(wire.server_pack));
+    header.set_client_pack(BytesOf(wire.client_pack));
+    header.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
+    header.set_started_unix_ms(wire.started_unix_ms);
+    header.set_tick_rate_hz(wire.tick_rate_hz);
   }
 
-  // value, an enumerator that must lie between first and last, as its byte.
-  template <typename Enum>
-  std::uint8_t FromEnum(Enum value, Enum first, Enum last) {
-    const auto byte = static_cast<std::uint8_t>(value);
-    Check(byte >= static_cast<std::uint8_t>(first) && byte <= static_cast<std::uint8_t>(last),
-          EncodeError::kInvalidEnum);
-    return byte;
+  void operator()(const CapturedJoinWire& wire) const {
+    pb::CapturedJoin& join = *record.mutable_join();
+    join.set_offset(wire.offset);
+    join.set_player(wire.player);
+    join.set_session(static_cast<std::uint32_t>(wire.session));
+    join.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    join.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
+    join.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
+    join.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
   }
 
-  // flags, of which only the bits of mask may be set.
-  std::uint8_t FromFlags(std::uint8_t flags, std::uint8_t mask) {
-    Check((flags & ~mask) == 0, EncodeError::kReservedBits);
-    return flags;
+  void operator()(const CapturedCommandWire& wire) const {
+    pb::CapturedCommand& command = *record.mutable_command();
+    command.set_offset(wire.offset);
+    command.set_player(wire.player);
+    command.set_seen_offset(wire.seen_offset);
+    Write(wire.command, *command.mutable_command(), out);
   }
 
-  std::expected<BytesWire, EncodeError> Finish() && {
-    if (error_.has_value()) {
-      return std::unexpected(*error_);
-    }
-    return std::move(bytes_);
+  void operator()(const CapturedLeaveWire& wire) const {
+    pb::CapturedLeave& leave = *record.mutable_leave();
+    leave.set_offset(wire.offset);
+    leave.set_player(wire.player);
   }
 
- private:
-  BytesWire bytes_;
-  std::optional<EncodeError> error_;
+  void operator()(const CapturedDeathWire& wire) const {
+    pb::CapturedDeath& death = *record.mutable_death();
+    death.set_offset(wire.offset);
+    death.set_victim(wire.victim);
+    death.set_killer(wire.killer);
+  }
+
+  void operator()(const CapturedMatchEndWire& wire) const {
+    pb::CapturedMatchEnd& end = *record.mutable_match_end();
+    end.set_offset(wire.offset);
+    end.set_winner(wire.winner);
+  }
 };
 
-void WriteU8(Writer& out, std::uint8_t value) { out.Put(value); }
-
-// value's bytes, least significant first.
-template <std::unsigned_integral Unsigned>
-void WriteUnsigned(Writer& out, Unsigned value) {
-  for (int shift = 0; shift < std::numeric_limits<Unsigned>::digits; shift += kBitsPerByte) {
-    WriteU8(out, static_cast<std::uint8_t>(value >> shift));
-  }
+CaptureHeaderWire Read(const pb::CaptureHeader& header, Inbound& in) {
+  return CaptureHeaderWire{.server_pack = in.PackHash(header.server_pack()),
+                           .client_pack = in.PackHash(header.client_pack()),
+                           .engine_version = in.Text(header.engine_version(), kMaxEngineVersionLength),
+                           .started_unix_ms = header.started_unix_ms(),
+                           .tick_rate_hz = in.Narrow(header.tick_rate_hz())};
 }
 
-void WriteU32(Writer& out, std::uint32_t value) { WriteUnsigned(out, value); }
-
-void WriteU64(Writer& out, std::uint64_t value) { WriteUnsigned(out, value); }
-
-// value as a whole count of grid's step (ADR-0038), in the grid's bytes.
-void WriteSteps(Writer& out, float value, const math::Grid& grid) {
-  const auto bits = static_cast<std::uint32_t>(math::ToSteps(value, grid));
-  for (int i = 0; i < grid.bytes; ++i) {
-    WriteU8(out, static_cast<std::uint8_t>(bits >> (kBitsPerByte * i)));
-  }
+CapturedJoinWire Read(const pb::CapturedJoin& join, Inbound& in) {
+  return CapturedJoinWire{.spawn = in.FromSteps(join.spawn_x(), join.spawn_y(), join.spawn_z(), math::kPositionGrid),
+                          .offset = join.offset(),
+                          .session = static_cast<SessionIdWire>(join.session()),
+                          .character = in.Text(join.character(), kMaxCharacterNameLength),
+                          .player = in.Narrow(join.player())};
 }
 
-void WriteVec3(Writer& out, const math::Vec3& value, const math::Grid& grid) {
-  WriteSteps(out, value.x, grid);
-  WriteSteps(out, value.y, grid);
-  WriteSteps(out, value.z, grid);
+CapturedCommandWire Read(const pb::CapturedCommand& command, Inbound& in) {
+  return CapturedCommandWire{.command = Read(command.command(), in),
+                             .offset = command.offset(),
+                             .seen_offset = command.seen_offset(),
+                             .player = in.Narrow(command.player())};
 }
 
-// A one-byte length and the bytes, at most max_length of them: the write side
-// of Reader::ReadString.
-void WriteString(Writer& out, std::string_view text, std::size_t max_length) {
-  if (!out.Check(text.size() <= max_length, EncodeError::kFieldTooLong)) {
-    return;
-  }
-  WriteU8(out, static_cast<std::uint8_t>(text.size()));
-  for (const char letter : text) {
-    WriteU8(out, static_cast<std::uint8_t>(letter));
-  }
-}
-
-// A command, its flags and stance in one byte as its bitfield holds them.
-void WriteCommand(Writer& out, const CommandWire& command) {
-  WriteVec3(out, command.direction, math::kDirectionGrid);
-  WriteSteps(out, command.yaw, math::kAngleGrid);
-  WriteSteps(out, command.pitch, math::kAngleGrid);
-  const std::uint8_t flags = out.FromFlags(command.flags, kCommandFlagsMask);
-  const std::uint8_t stance = out.FromEnum(command.desired_stance, StanceWire::kStanding, StanceWire::kProne);
-  WriteU8(out, static_cast<std::uint8_t>(flags | (stance << kCommandStanceShift)));
-  WriteU8(out, command.seen_age);
-  WriteSteps(out, command.seen_fraction, math::kFractionGrid);
-}
-
-// Walks a record front to back. The first problem it meets is remembered and
-// every read after it returns a zero value, so a decoder can read all of a
-// record's fields and ask once at the end whether they were all there.
-class Reader {
- public:
-  explicit Reader(std::span<const std::byte> bytes) : bytes_(bytes) {}
-
-  std::uint8_t ReadU8() {
-    if (bytes_.empty()) {
-      Fail(DecodeError::kMalformed);
-      return 0;
-    }
-    const auto value = static_cast<std::uint8_t>(bytes_.front());
-    bytes_ = bytes_.subspan(1);
-    return value;
-  }
-
-  std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
-
-  std::uint64_t ReadU64() { return ReadUnsigned<std::uint64_t>(); }
-
-  // value as an enumerator between first and last, which must be consecutive.
-  template <typename Enum>
-  Enum ToEnum(std::uint8_t value, Enum first, Enum last) {
-    if (value < static_cast<std::uint8_t>(first) || value > static_cast<std::uint8_t>(last)) {
-      Fail(DecodeError::kInvalidEnum);
-      return first;
-    }
-    return static_cast<Enum>(value);
-  }
-
-  // value as bits of which only those of mask may be set.
-  std::uint8_t ToBits(std::uint8_t value, std::uint32_t mask) {
-    if ((value & ~mask) != 0) {
-      Fail(DecodeError::kReservedBits);
-      return 0;
-    }
-    return value;
-  }
-
-  // A count of grid's step, as the value it stands for. Every count a grid's
-  // bytes can hold is in its range, so there is nothing to refuse.
-  float ReadSteps(const math::Grid& grid) {
-    std::uint32_t bits = 0;
-    for (int i = 0; i < grid.bytes; ++i) {
-      bits |= static_cast<std::uint32_t>(ReadU8()) << (kBitsPerByte * i);
-    }
-    const int width = kBitsPerByte * grid.bytes;
-    if (grid.min < 0 && width < std::numeric_limits<std::uint32_t>::digits) {
-      const std::uint32_t sign = 1U << (width - 1);
-      bits = (bits ^ sign) - sign;
-    }
-    return math::FromSteps(static_cast<std::int32_t>(bits), grid);
-  }
-
-  math::Vec3 ReadVec3(const math::Grid& grid) {
-    const float x = ReadSteps(grid);
-    const float y = ReadSteps(grid);
-    const float z = ReadSteps(grid);
-    return {x, y, z};
-  }
-
-  PackHashWire ReadPackHash() {
-    PackHashWire hash{};
-    if (bytes_.size() < hash.size()) {
-      Fail(DecodeError::kMalformed);
-      return hash;
-    }
-    std::ranges::copy(bytes_.first(hash.size()), hash.begin());
-    bytes_ = bytes_.subspan(hash.size());
-    return hash;
-  }
-
-  // A string of at most max_length bytes, checked before anything is
-  // allocated for it.
-  std::string ReadString(std::size_t max_length) {
-    const std::size_t length = ReadU8();
-    if (length > max_length) {
-      Fail(DecodeError::kFieldTooLong);
-      return {};
-    }
-    if (bytes_.size() < length) {
-      Fail(DecodeError::kMalformed);
-      return {};
-    }
-    std::string value(length, '\0');
-    for (std::size_t i = 0; i < length; ++i) {
-      value[i] = static_cast<char>(bytes_[i]);
-    }
-    bytes_ = bytes_.subspan(length);
-    return value;
-  }
-
-  [[nodiscard]] std::optional<DecodeError> Error() const { return error_; }
-  [[nodiscard]] bool AtEnd() const { return bytes_.empty(); }
-
- private:
-  void Fail(DecodeError error) {
-    if (!error_.has_value()) {
-      error_ = error;
-    }
-  }
-
-  // The read side of WriteUnsigned.
-  template <std::unsigned_integral Unsigned>
-  Unsigned ReadUnsigned() {
-    constexpr std::size_t kSize = sizeof(Unsigned);
-    if (bytes_.size() < kSize) {
-      Fail(DecodeError::kMalformed);
-      return 0;
-    }
-    Unsigned value = 0;
-    for (std::size_t i = 0; i < kSize; ++i) {
-      value |= static_cast<Unsigned>(bytes_[i]) << (kBitsPerByte * i);
-    }
-    bytes_ = bytes_.subspan(kSize);
-    return value;
-  }
-
-  std::span<const std::byte> bytes_;
-  std::optional<DecodeError> error_;
-};
-
-// The read side of WriteCommand.
-CommandWire ReadCommand(Reader& reader) {
-  CommandWire command;
-  command.direction = reader.ReadVec3(math::kDirectionGrid);
-  command.yaw = reader.ReadSteps(math::kAngleGrid);
-  command.pitch = reader.ReadSteps(math::kAngleGrid);
-  const std::uint8_t packed = reader.ToBits(reader.ReadU8(), kCommandBitsMask);
-  command.flags = packed & kCommandFlagsMask;
-  command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
-                                         StanceWire::kStanding, StanceWire::kProne);
-  command.seen_age = reader.ReadU8();
-  command.seen_fraction = reader.ReadSteps(math::kFractionGrid);
-  return command;
-}
-
-CaptureHeaderWire ReadCaptureHeader(Reader& reader) {
-  CaptureHeaderWire header;
-  header.format_version = reader.ReadU8();
-  header.engine_version = reader.ReadString(kMaxEngineVersionLength);
-  header.server_pack = reader.ReadPackHash();
-  header.client_pack = reader.ReadPackHash();
-  header.tick_rate_hz = reader.ReadU8();
-  header.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadU64());
-  return header;
-}
-
-CapturedJoinWire ReadCapturedJoin(Reader& reader) {
-  CapturedJoinWire join;
-  join.offset = reader.ReadU32();
-  join.player = reader.ReadU8();
-  join.session = static_cast<SessionIdWire>(reader.ReadU32());
-  join.character = reader.ReadString(kMaxCharacterNameLength);
-  join.spawn = reader.ReadVec3(math::kPositionGrid);
-  return join;
-}
-
-// The command goes last, so a reader that only counts commands (augusta-inspect)
-// stops before it.
-CapturedCommandWire ReadCapturedCommand(Reader& reader) {
-  CapturedCommandWire command;
-  command.offset = reader.ReadU32();
-  command.player = reader.ReadU8();
-  command.seen_offset = std::bit_cast<std::int32_t>(reader.ReadU32());
-  command.command = ReadCommand(reader);
-  return command;
-}
-
-CapturedLeaveWire ReadCapturedLeave(Reader& reader) {
-  CapturedLeaveWire leave;
-  leave.offset = reader.ReadU32();
-  leave.player = reader.ReadU8();
-  return leave;
-}
-
-CapturedDeathWire ReadCapturedDeath(Reader& reader) {
-  CapturedDeathWire death;
-  death.offset = reader.ReadU32();
-  death.victim = reader.ReadU8();
-  death.killer = reader.ReadU8();
-  return death;
-}
-
-CapturedMatchEndWire ReadCapturedMatchEnd(Reader& reader) {
-  CapturedMatchEndWire end;
-  end.offset = reader.ReadU32();
-  end.winner = reader.ReadU8();
-  return end;
-}
-
-// nullopt when type is not a record of a capture.
-std::optional<CaptureRecordWire> ReadCaptureRecordBody(CaptureRecordTypeWire type, Reader& reader) {
-  switch (type) {
-    case CaptureRecordTypeWire::kHeader:
-      return ReadCaptureHeader(reader);
-    case CaptureRecordTypeWire::kJoin:
-      return ReadCapturedJoin(reader);
-    case CaptureRecordTypeWire::kCommand:
-      return ReadCapturedCommand(reader);
-    case CaptureRecordTypeWire::kLeave:
-      return ReadCapturedLeave(reader);
-    case CaptureRecordTypeWire::kDeath:
-      return ReadCapturedDeath(reader);
-    case CaptureRecordTypeWire::kMatchEnd:
-      return ReadCapturedMatchEnd(reader);
+// record's member, or nullopt when it sets none this build knows.
+std::optional<CaptureRecordWire> ReadRecord(const pb::CaptureRecord& record, Inbound& in) {
+  switch (record.record_case()) {
+    case pb::CaptureRecord::kHeader:
+      return Read(record.header(), in);
+    case pb::CaptureRecord::kJoin:
+      return Read(record.join(), in);
+    case pb::CaptureRecord::kCommand:
+      return Read(record.command(), in);
+    case pb::CaptureRecord::kLeave:
+      return CapturedLeaveWire{.offset = record.leave().offset(), .player = in.Narrow(record.leave().player())};
+    case pb::CaptureRecord::kDeath:
+      return CapturedDeathWire{.offset = record.death().offset(),
+                               .victim = in.Narrow(record.death().victim()),
+                               .killer = in.Narrow(record.death().killer())};
+    case pb::CaptureRecord::kMatchEnd:
+      return CapturedMatchEndWire{.offset = record.match_end().offset(),
+                                  .winner = in.Narrow(record.match_end().winner())};
+    case pb::CaptureRecord::RECORD_NOT_SET:
+      return std::nullopt;
   }
   return std::nullopt;
 }
 
-// One overload per record: the type tag, then the fields, an event's offset first.
-struct CaptureRecordEncoder {
-  Writer& out;
-
-  void operator()(const CaptureHeaderWire& header) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kHeader));
-    WriteU8(out, header.format_version);
-    WriteString(out, header.engine_version, kMaxEngineVersionLength);
-    out.Put(header.server_pack);
-    out.Put(header.client_pack);
-    WriteU8(out, header.tick_rate_hz);
-    WriteU64(out, std::bit_cast<std::uint64_t>(header.started_unix_ms));
+// What read maps payload's Envelope (augusta.Message or augusta.CaptureRecord)
+// to, or why it is none of this build: kMalformed if protobuf cannot parse it,
+// kUnknownType if it sets no member this build knows, else the first value the
+// mapping refused.
+template <typename Wire, typename Envelope, typename ReadEnvelope>
+std::expected<Wire, DecodeError> DecodeEnvelope(std::span<const std::byte> payload, ReadEnvelope read) {
+  CallArena arena;
+  auto& envelope = arena.Create<Envelope>();
+  if (payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      !envelope.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
+    return std::unexpected(DecodeError::kMalformed);
   }
-
-  void operator()(const CapturedJoinWire& join) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kJoin));
-    WriteU32(out, join.offset);
-    WriteU8(out, join.player);
-    WriteU32(out, static_cast<std::uint32_t>(join.session));
-    WriteString(out, join.character, kMaxCharacterNameLength);
-    WriteVec3(out, join.spawn, math::kPositionGrid);
+  Inbound in;
+  std::optional<Wire> wire = read(envelope, in);
+  if (!wire.has_value()) {
+    return std::unexpected(DecodeError::kUnknownType);
   }
-
-  void operator()(const CapturedCommandWire& command) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kCommand));
-    WriteU32(out, command.offset);
-    WriteU8(out, command.player);
-    WriteU32(out, std::bit_cast<std::uint32_t>(command.seen_offset));
-    WriteCommand(out, command.command);
+  if (in.Error().has_value()) {
+    return std::unexpected(*in.Error());
   }
-
-  void operator()(const CapturedLeaveWire& leave) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kLeave));
-    WriteU32(out, leave.offset);
-    WriteU8(out, leave.player);
-  }
-
-  void operator()(const CapturedDeathWire& death) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kDeath));
-    WriteU32(out, death.offset);
-    WriteU8(out, death.victim);
-    WriteU8(out, death.killer);
-  }
-
-  void operator()(const CapturedMatchEndWire& end) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kMatchEnd));
-    WriteU32(out, end.offset);
-    WriteU8(out, end.winner);
-  }
-};
+  return std::move(*wire);
+}
 
 }  // namespace
 
@@ -1207,30 +967,18 @@ MessageTypeWire TypeOf(const MessageWire& message) {
 }
 
 std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload) {
-  if (payload.empty()) {
-    return std::unexpected(DecodeError::kUnknownType);
-  }
-  CallArena arena;
-  auto& message = arena.Create<pb::Message>();
-  if (payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
-      !message.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
-    return std::unexpected(DecodeError::kMalformed);
-  }
-  Inbound in;
-  std::optional<MessageWire> body = ReadBody(message, in);
-  if (!body.has_value()) {
-    return std::unexpected(DecodeError::kUnknownType);
-  }
-  if (in.Error().has_value()) {
-    return std::unexpected(*in.Error());
-  }
-  return std::move(*body);
+  return DecodeEnvelope<MessageWire, pb::Message>(payload, ReadBody);
 }
 
 std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record) {
-  Writer out;
-  std::visit(CaptureRecordEncoder{.out = out}, record);
-  return std::move(out).Finish();
+  CallArena arena;
+  auto& encoded = arena.Create<pb::CaptureRecord>();
+  Outbound out;
+  std::visit(RecordEncoder{.record = encoded, .out = out}, record);
+  if (out.Error().has_value()) {
+    return std::unexpected(*out.Error());
+  }
+  return Serialize(encoded);
 }
 
 CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record) {
@@ -1250,22 +998,7 @@ CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record) {
 }
 
 std::expected<CaptureRecordWire, DecodeError> DecodeCaptureRecord(std::span<const std::byte> payload) {
-  if (payload.empty()) {
-    return std::unexpected(DecodeError::kUnknownType);
-  }
-  Reader reader(payload.subspan(1));
-  std::optional<CaptureRecordWire> record =
-      ReadCaptureRecordBody(static_cast<CaptureRecordTypeWire>(payload.front()), reader);
-  if (!record.has_value()) {
-    return std::unexpected(DecodeError::kUnknownType);
-  }
-  if (reader.Error().has_value()) {
-    return std::unexpected(*reader.Error());
-  }
-  if (!reader.AtEnd()) {
-    return std::unexpected(DecodeError::kMalformed);
-  }
-  return std::move(*record);
+  return DecodeEnvelope<CaptureRecordWire, pb::CaptureRecord>(payload, ReadRecord);
 }
 
 std::string_view DescribeDecodeError(DecodeError error) {

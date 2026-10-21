@@ -142,6 +142,10 @@ void FillRecipientFields(protocol::AuthoritativeStateWire& state, const Authorit
 /// What every capture's file starts with.
 inline constexpr std::span<const std::byte, protocol::kCaptureMagic.size()> kCaptureMagic{protocol::kCaptureMagic};
 
+/// The capture format this engine writes and reads: the one byte its file holds
+/// after the magic, before any record.
+inline constexpr std::uint8_t kCaptureFormatVersion = protocol::kCaptureFormatVersion;
+
 /// A Join as its record says it: its player's number and its offset, which the
 /// format holds to 1, 2, ... in order and to 0, with the Join itself.
 struct CapturedJoin {
@@ -157,11 +161,11 @@ struct CapturedJoin {
 using CaptureRecord = std::variant<capture::Header, CapturedJoin, capture::AtOffset<capture::Event>>;
 
 /// The payload of each record, as a capture's file holds it after its frame's
-/// length: header in this engine's format version, the Join of player at offset
-/// 0, or one event at its offset (a Command's Seen time as its seen_offset
-/// alone). If a field is beyond what the protocol carries, no payload but a
-/// failure::Code::kInvariantViolated naming the record's type
-/// (`capture_record_type=`): the writer's broken invariant.
+/// length: header, the Join of player at offset 0, or one event at its offset
+/// (a Command's Seen time as its seen_offset alone). If a field is beyond what
+/// the protocol carries, no payload but a failure::Code::kInvariantViolated
+/// naming the record's type (`capture_record_type=`): the writer's broken
+/// invariant.
 [[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureHeader(
     const capture::Header& header);
 [[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureJoin(capture::Player player,
@@ -169,8 +173,7 @@ using CaptureRecord = std::variant<capture::Header, CapturedJoin, capture::AtOff
 [[nodiscard]] std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureEvent(
     const capture::AtOffset<capture::Event>& event);
 
-/// The record payload holds, or nullopt if it does not decode or is a header of
-/// another format version than this engine's, which it does not read.
+/// The record payload holds, or nullopt if it does not decode.
 [[nodiscard]] std::optional<CaptureRecord> DecodeCaptureRecord(std::span<const std::byte> payload);
 
 }  // namespace augusta::link

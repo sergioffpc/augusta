@@ -163,19 +163,45 @@ TEST(CaptureFormatTest, AFileWithoutTheMagicIsNoCapture) {
   EXPECT_EQ(Read("").error(), ReadError::kNotACapture);
 }
 
+// A file is the magic, then its format version as one raw byte, then its
+// records, the header first.
+TEST(CaptureFormatTest, AFileStartsWithTheMagicThenItsFormatVersion) {
+  const std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
+  const std::string magic(reinterpret_cast<const char*>(augusta::protocol::kCaptureMagic.data()),
+                          augusta::protocol::kCaptureMagic.size());
+  ASSERT_GT(bytes.size(), magic.size());
+  EXPECT_EQ(bytes.substr(0, magic.size()), magic);
+  EXPECT_EQ(static_cast<std::uint8_t>(bytes[magic.size()]), 3);
+}
+
 // Requirements: NFR-12
 TEST(CaptureFormatTest, AnotherFormatVersionIsRefused) {
-  std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
-  // The header record's format version: after the magic, its 1-byte length and its type.
-  bytes[augusta::protocol::kCaptureMagic.size() + 1 + 1] =
-      static_cast<char>(augusta::protocol::kCaptureFormatVersion + 1);
-  EXPECT_EQ(Read(bytes).error(), ReadError::kUnsupported);
+  for (const int version : {0, 2, 4, 255}) {
+    std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
+    bytes[augusta::protocol::kCaptureMagic.size()] = static_cast<char>(version);
+    EXPECT_EQ(Read(bytes).error(), ReadError::kUnsupported) << version;
+  }
+}
+
+// A v2 file has no version byte: its magic is followed by its header record's
+// length, which a v3 reader takes for the version.
+// Requirements: NFR-12
+TEST(CaptureFormatTest, AVersion2FileIsRefused) {
+  const std::string written = Bytes(TwoPlayers(MatchEnd{}));
+  const std::size_t magic = augusta::protocol::kCaptureMagic.size();
+  // A v2 header record, framed by its one-byte length: its type 1, its format
+  // version 2, then the 79 bytes of the fields v3 keeps (its engine version
+  // "0.4.0" after its length, two pack hashes, a tick rate and a start time).
+  const std::string record = std::string{1, 2} + std::string(79, 'x');
+  const std::string v2 = written.substr(0, magic) + static_cast<char>(record.size()) + record;
+  EXPECT_EQ(Read(v2).error(), ReadError::kUnsupported);
 }
 
 // Requirements: NFR-12
 TEST(CaptureFormatTest, AMagicWithoutAHeaderIsRefused) {
   const std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
   EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size())).error(), ReadError::kUnsupported);
+  EXPECT_EQ(Read(bytes.substr(0, augusta::protocol::kCaptureMagic.size() + 1)).error(), ReadError::kUnsupported);
 }
 
 // Each way a file's records may come out of the format's order (ADR-0050).
@@ -185,8 +211,8 @@ TEST(CaptureFormatTest, RecordsOutOfOrderAreRefused) {
   const Encoded first = EncodeJoin(1, TwoJoins()[0]).value();
   const Encoded second = EncodeJoin(2, TwoJoins()[1]).value();
   const auto event = [](std::uint32_t offset, Event what) { return EncodeEvent(At(offset, std::move(what))).value(); };
-  // The header's frame alone, past the magic.
-  const std::string header_again = Bytes({header}).substr(augusta::protocol::kCaptureMagic.size());
+  // The header's frame alone, past the magic and the format version.
+  const std::string header_again = Bytes({header}).substr(augusta::protocol::kCaptureMagic.size() + 1);
 
   const std::vector<std::pair<std::string, std::string>> cases = {
       {"a Join after an event", Bytes({header, first, event(0, Leave{.player = 1}), second})},
@@ -207,7 +233,7 @@ TEST(CaptureFormatTest, RecordsOutOfOrderAreRefused) {
 // Requirements: NFR-12
 TEST(CaptureFormatTest, ARecordThatDoesNotDecodeIsRefused) {
   std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
-  // A frame of one byte, a record type the format lacks.
+  // A frame of one byte, a tag of a wire type protobuf lacks.
   bytes += std::string{'\x01', '\x7F'};
   EXPECT_EQ(Read(bytes).error(), ReadError::kMalformed);
 }
@@ -257,8 +283,8 @@ TEST(CaptureFormatTest, AnEncodedPiecesSizeOnDiskIsWhatIsWritten) {
     total += piece.SizeOnDisk();
   }
   EXPECT_EQ(Bytes(pieces).size(), total);
-  // The header's includes the magic.
-  EXPECT_GT(pieces.front().SizeOnDisk(), augusta::protocol::kCaptureMagic.size());
+  // The header's includes the magic and the format version.
+  EXPECT_GT(pieces.front().SizeOnDisk(), augusta::protocol::kCaptureMagic.size() + 1);
 }
 
 // A field the codec cannot carry is the writer's broken invariant, named by its

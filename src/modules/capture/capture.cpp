@@ -70,6 +70,21 @@ std::expected<void, ReadError> ReadMagic(std::istream& in) {
   return {};
 }
 
+// The format version, one raw byte after the magic: a file of another, or of
+// none (a v2 file's header record follows its magic), is refused before any
+// record is parsed.
+std::expected<void, ReadError> ReadFormatVersion(std::istream& in) {
+  char version = 0;
+  in.read(&version, 1);
+  if (in.bad()) {
+    return std::unexpected(ReadError::kUnreadable);
+  }
+  if (in.gcount() != 1 || static_cast<std::uint8_t>(version) != link::kCaptureFormatVersion) {
+    return std::unexpected(ReadError::kUnsupported);
+  }
+  return {};
+}
+
 std::expected<Header, ReadError> ReadHeader(std::istream& in) {
   std::vector<std::byte> payload;
   const Frame frame = ReadFrame(in, payload);
@@ -79,7 +94,6 @@ std::expected<Header, ReadError> ReadHeader(std::istream& in) {
   if (frame != Frame::kRead) {
     return std::unexpected(ReadError::kUnsupported);
   }
-  // A header of another format version does not decode.
   const auto record = link::DecodeCaptureRecord(payload);
   const auto* header = record.has_value() ? std::get_if<Header>(&*record) : nullptr;
   if (header == nullptr) {
@@ -166,6 +180,9 @@ std::expected<CaptureFile, ReadError> ReadCaptureFile(std::istream& in) {
   if (auto magic = ReadMagic(in); !magic.has_value()) {
     return std::unexpected(magic.error());
   }
+  if (auto version = ReadFormatVersion(in); !version.has_value()) {
+    return std::unexpected(version.error());
+  }
   auto header = ReadHeader(in);
   if (!header.has_value()) {
     return std::unexpected(header.error());
@@ -199,7 +216,7 @@ std::string_view DescribeReadError(ReadError error) {
     case ReadError::kNotACapture:
       return "the file does not start with a capture's magic";
     case ReadError::kUnsupported:
-      return "the capture's header is missing or of a format version this engine does not read";
+      return "the capture is of a format version this engine does not read, or its header is missing";
     case ReadError::kMalformed:
       return "a record of the capture does not decode or is out of order";
   }
@@ -248,6 +265,7 @@ std::expected<Encoded, EncodeError> EncodeHeader(const Header& header) {
     return std::unexpected(std::move(frame.error()));
   }
   std::vector<std::byte> bytes(link::kCaptureMagic.begin(), link::kCaptureMagic.end());
+  bytes.push_back(static_cast<std::byte>(link::kCaptureFormatVersion));
   bytes.insert(bytes.end(), frame->begin(), frame->end());
   return Encoded(std::move(bytes));
 }

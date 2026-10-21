@@ -203,8 +203,10 @@ engine version, server and client packs, tick rate, when the Match started), how
 long the Match lasted in ticks and seconds, and one line per player: its number
 for `--player`, Session, Character, spawn, how many Commands it sent, and when
 it left or died and who killed it; then the Match end's winner or a Draw, and
-whether the file ends partway through a record. It decodes every record but a
-Command's contents, which it only counts, so a capture's size does not slow it.
+whether the file ends partway through a record. It decodes every record, a
+Command's included, through a Python module generated from the protocol's one
+schema (ADR-0007), so it never copies the format by hand; a Command it reports
+only by count.
 
 **A Reenactment reproduces conditions, not outcomes.** Every client action
 reaches the server in the same order, on or within a tick or two of the same

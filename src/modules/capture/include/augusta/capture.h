@@ -24,15 +24,15 @@
 /// format's rules; EncodeHeader, EncodeJoin and EncodeEvent encode one piece of
 /// it for Write, and WriteCapture writes a whole one.
 ///
-/// A file is the capture's magic, then each record's payload after its length
-/// in one byte, the header first, in the Networking Protocol's encoding: the
-/// Link (augusta/link_messages.h) turns each record of the engine's types
-/// (augusta/capture_records.h) into its payload and back, so this module
-/// names no protocol type (ADR-0038). Reading checks the magic, the
-/// header's format version and the records' order (every Join first, numbered
-/// from 1, then the events in offset order, each naming a player a Join did,
-/// nothing after the Match end). Pure stream I/O, on whichever thread holds the
-/// stream.
+/// A file is the capture's magic, then its format version as one raw byte, then
+/// each record's payload after its length in one byte, the header first, in the
+/// Networking Protocol's encoding: the Link (augusta/link_messages.h) turns each
+/// record of the engine's types (augusta/capture_records.h) into its payload and
+/// back, so this module names no protocol type (ADR-0038). Reading checks the
+/// magic, then the format version before any record, then the records' order
+/// (every Join first, numbered from 1, then the events in offset order, each
+/// naming a player a Join did, nothing after the Match end). Pure stream I/O, on
+/// whichever thread holds the stream.
 namespace augusta::capture {
 
 /// What every capture's file name ends in.
@@ -45,7 +45,7 @@ enum class ReadError : std::uint8_t {
   kUnreadable,
   /// It does not start with a capture's magic.
   kNotACapture,
-  /// Its header is missing, or of a format version this engine does not read.
+  /// It is of a format version this engine does not read, or its header is missing.
   kUnsupported,
   /// A record does not decode, comes out of order, or names a player no Join did.
   kMalformed,
@@ -100,7 +100,7 @@ class Encoded {
   std::vector<std::byte> bytes_;
 };
 
-/// The capture's magic, then header, in this engine's format version: what a file starts with.
+/// The capture's magic, this engine's format version, then header: what a file starts with.
 [[nodiscard]] std::expected<Encoded, EncodeError> EncodeHeader(const Header& header);
 
 /// The Join of player, numbered from 1 in the Match start's order, at offset 0.

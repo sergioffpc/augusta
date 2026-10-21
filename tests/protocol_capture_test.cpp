@@ -1,12 +1,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <variant>
 
 #include <gtest/gtest.h>
 
-#include "augusta/grid.h"
 #include "augusta/math.h"
 #include "augusta/protocol.h"
+#include "protobuf_bytes.h"
 
 // A Match capture's records (ADR-0050), in the protocol's own encoding: pure
 // bytes in, record or error out, as the messages are (protocol_test.cpp).
@@ -22,18 +23,39 @@ using augusta::protocol::CapturedMatchEndWire;
 using augusta::protocol::CaptureHeaderWire;
 using augusta::protocol::CaptureRecordTypeWire;
 using augusta::protocol::CaptureRecordWire;
+using augusta::protocol::CommandsWire;
 using augusta::protocol::CommandWire;
+using augusta::protocol::Decode;
 using augusta::protocol::DecodeCaptureRecord;
 using augusta::protocol::DecodeError;
+using augusta::protocol::Encode;
 using augusta::protocol::EncodeCaptureRecord;
 using augusta::protocol::EncodeError;
-using augusta::protocol::kCaptureFormatVersion;
 using augusta::protocol::kMaxCharacterNameLength;
 using augusta::protocol::kMaxEngineVersionLength;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::SessionIdWire;
 using augusta::protocol::StanceWire;
 using augusta::protocol::TypeOf;
+
+using augusta::protobuf_bytes::Cat;
+using augusta::protobuf_bytes::LengthField;
+using augusta::protobuf_bytes::SignedField;
+using augusta::protobuf_bytes::VarintField;
+
+// Each record is its augusta.CaptureRecord member, numbered 1000 plus its type.
+constexpr int kFirstRecordNumber = 1000;
+
+int NumberOf(CaptureRecordTypeWire type) { return kFirstRecordNumber + static_cast<int>(type); }
+
+// The payload of a record of type whose member holds fields.
+BytesWire Record(CaptureRecordTypeWire type, const BytesWire& fields) { return LengthField(NumberOf(type), fields); }
+
+// The payload of a captured Command whose command holds command's fields.
+BytesWire CapturedCommandRecord(const BytesWire& command) {
+  return Record(CaptureRecordTypeWire::kCommand,
+                Cat({VarintField(1, 70'000), VarintField(2, 2), SignedField(3, -3), LengthField(4, command)}));
+}
 
 CaptureRecordWire RoundTrip(const CaptureRecordWire& record) {
   const auto decoded = DecodeCaptureRecord(EncodeCaptureRecord(record).value());
@@ -54,7 +76,6 @@ CaptureHeaderWire Header() {
                            .client_pack = FilledPackHash(100),
                            .engine_version = "2.0.1",
                            .started_unix_ms = 1'791'000'000'123,
-                           .format_version = kCaptureFormatVersion,
                            .tick_rate_hz = 60};
 }
 
@@ -96,18 +117,36 @@ TEST(ProtocolCaptureTest, ALeaveADeathAndAMatchEndRoundTrip) {
   EXPECT_EQ(std::get<CapturedMatchEndWire>(RoundTrip(end)), end);
 }
 
-TEST(ProtocolCaptureTest, EachRecordStartsWithItsType) {
+TEST(ProtocolCaptureTest, EachRecordIsItsTypesMember) {
   EXPECT_EQ(TypeOf(CaptureRecordWire{Header()}), CaptureRecordTypeWire::kHeader);
   EXPECT_EQ(TypeOf(CaptureRecordWire{Command()}), CaptureRecordTypeWire::kCommand);
-  const BytesWire bytes = EncodeCaptureRecord(CapturedLeaveWire{.offset = 1, .player = 1}).value();
-  EXPECT_EQ(bytes.front(), static_cast<std::byte>(CaptureRecordTypeWire::kLeave));
+  const BytesWire leave = Record(CaptureRecordTypeWire::kLeave, Cat({VarintField(1, 12), VarintField(2, 3)}));
+  EXPECT_EQ(DecodeCaptureRecord(leave).value(), CaptureRecordWire(CapturedLeaveWire{.offset = 12, .player = 3}));
+}
+
+// ADR-0050: a captured Command is the very augusta.Command a Commands message
+// carries, so the same command's fields read as the same command in either.
+TEST(ProtocolCaptureTest, ACapturedCommandCarriesTheCommandACommandsMessageDoes) {
+  // Every field away from its default: a sequence, which a capture ignores,
+  // direction (2, 0, -4) and yaw 5 and pitch -2 steps, sprint and fire with
+  // a crouch, and a Seen fraction of 64 steps.
+  const BytesWire command = Cat({VarintField(1, 9), SignedField(2, 2), SignedField(4, -4), SignedField(5, 5),
+                                 SignedField(6, -2), VarintField(7, 0x15), VarintField(9, 64)});
+  const BytesWire message =
+      LengthField(static_cast<int>(augusta::protocol::MessageTypeWire::kCommands), LengthField(1, command));
+
+  const CommandWire sent = std::get<CommandsWire>(Decode(message).value()).commands.at(0).command;
+  const CommandWire captured =
+      std::get<CapturedCommandWire>(DecodeCaptureRecord(CapturedCommandRecord(command)).value()).command;
+  EXPECT_EQ(captured, sent);
+  EXPECT_NE(captured, CommandWire{});
 }
 
 // ADR-0050: a record is never a message.
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, TheMessageDecoderNeverTakesACaptureRecord) {
   const BytesWire bytes = EncodeCaptureRecord(Header()).value();
-  EXPECT_FALSE(augusta::protocol::Decode(bytes).has_value());
+  EXPECT_FALSE(Decode(bytes).has_value());
 }
 
 // Requirements: NFR-12
@@ -115,10 +154,23 @@ TEST(ProtocolCaptureTest, AnEmptyPayloadIsNoRecord) {
   EXPECT_EQ(DecodeCaptureRecord(BytesWire{}).error(), DecodeError::kUnknownType);
 }
 
+// The envelope's members number from 1001 to 1006: a member past them is a
+// field this build does not know, ignored, which leaves the envelope with no
+// record.
 // Requirements: NFR-12
-TEST(ProtocolCaptureTest, AnUnknownTypeIsNoRecord) {
-  EXPECT_EQ(DecodeCaptureRecord(BytesWire{std::byte{0}}).error(), DecodeError::kUnknownType);
-  EXPECT_EQ(DecodeCaptureRecord(BytesWire{std::byte{7}}).error(), DecodeError::kUnknownType);
+TEST(ProtocolCaptureTest, AnEnvelopeWithNoMemberThisBuildKnowsIsNoRecord) {
+  EXPECT_TRUE(DecodeCaptureRecord(Record(CaptureRecordTypeWire::kMatchEnd, {})).has_value());
+  EXPECT_EQ(DecodeCaptureRecord(LengthField(1007, {})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(DecodeCaptureRecord(VarintField(1, 1)).error(), DecodeError::kUnknownType);
+}
+
+// A message's envelope numbers its members from 1 (ADR-0007), so a message is
+// never a record.
+// Requirements: NFR-12
+TEST(ProtocolCaptureTest, AMessageIsNoRecord) {
+  const BytesWire message =
+      Encode(CommandsWire{.commands = {{.sequence = 1, .command = Command().command}}, .seen_tick = 4}).value();
+  EXPECT_EQ(DecodeCaptureRecord(message).error(), DecodeError::kUnknownType);
 }
 
 // Requirements: NFR-12
@@ -131,18 +183,16 @@ TEST(ProtocolCaptureTest, ATruncatedRecordIsRefused) {
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, BytesAfterARecordAreRefused) {
   BytesWire bytes = EncodeCaptureRecord(CapturedMatchEndWire{.offset = 1, .winner = 0}).value();
+  // A zero byte, which protobuf reads as the tag of a field numbered 0, which
+  // no record has.
   bytes.push_back(std::byte{0});
   EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kMalformed);
 }
 
 // Requirements: NFR-12
 TEST(ProtocolCaptureTest, ACommandWithAFlagNoCommandHasIsRefused) {
-  BytesWire bytes = EncodeCaptureRecord(Command()).value();
-  // The record ends with its command, whose flags and stance byte is followed
-  // by its Seen age and Seen fraction.
-  const auto fraction_bytes = static_cast<std::size_t>(augusta::math::kFractionGrid.bytes);
-  bytes[bytes.size() - 2 - fraction_bytes] |= std::byte{0x80};
-  EXPECT_EQ(DecodeCaptureRecord(bytes).error(), DecodeError::kReservedBits);
+  // Bit 6 is past the command's flags (bits 0-3) and its stance (bits 4-5).
+  EXPECT_EQ(DecodeCaptureRecord(CapturedCommandRecord(VarintField(7, 0x40))).error(), DecodeError::kReservedBits);
 }
 
 TEST(ProtocolCaptureEncodeTest, AnEngineVersionLongerThanAllowedIsNotEncoded) {

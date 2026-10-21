@@ -7,12 +7,14 @@
 The Networking Protocol: the messages client and server exchange, and the
 capture's records, and their encoding. A pure codec - bytes in, a message or a
 typed error out - that treats its input as untrusted, and whose messages hold
-only its own plain `*Wire` types. A message travels as Protocol Buffers: one
-`augusta.Message`, which the codec maps each `*Wire` type to and from, checking
-the grids' ranges and the protocol's limits as it does, on an arena local to
-each call. An Authoritative State encoded once is readdressed to each recipient
-by keeping the bytes of its shared fields, which number first, and splicing the
-recipient's own fields after them under a fresh envelope tag and length.
+only its own plain `*Wire` types. A message travels as Protocol Buffers, one
+`augusta.Message`, and a capture record as one `augusta.CaptureRecord`, a
+captured Command's command the same `augusta.Command` a Commands message
+carries; the codec maps each `*Wire` type to and from them, checking the grids'
+ranges and the protocol's limits as it does, on an arena local to each call. An
+Authoritative State encoded once is readdressed to each recipient by keeping the
+bytes of its shared fields, which number first, and splicing the recipient's own
+fields after them under a fresh envelope tag and length.
 
 `proto/augusta.proto`, alone in its directory, is the protocol's one Protocol
 Buffers schema: every message under `augusta.Message` and every capture record

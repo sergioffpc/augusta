@@ -5,6 +5,7 @@ target's seed is one it wrote, so reading it here holds both halves to one
 format.
 """
 
+from augusta_pack import augusta_pb2
 from augusta_pack import capture
 from augusta_pack import pack_cli
 from conftest import EXAMPLES_ROOT
@@ -23,6 +24,7 @@ SEED = (
 def test_a_capture_the_server_wrote_reads_as_it_was_played():
     read = capture.read_capture(SEED.read_bytes())
 
+    assert read.header.format_version == 3
     assert read.header.engine_version == "2.0.1"
     assert read.header.server_pack == bytes([1]) * 32
     assert read.header.client_pack == bytes([2]) * 32
@@ -50,11 +52,22 @@ def test_a_capture_cut_short_drops_and_reports_its_last_record():
 
 def test_another_format_version_is_refused():
     data = bytearray(SEED.read_bytes())
-    # After the magic, the header's one-byte length and its type.
-    data[len(capture.MAGIC) + 2] = capture.FORMAT_VERSION + 1
+    # The one byte after the magic.
+    data[len(capture.MAGIC)] = 4
 
-    with pytest.raises(capture.CaptureError):
+    with pytest.raises(capture.CaptureError, match="format version 4"):
         capture.read_capture(bytes(data))
+
+
+def test_a_version_2_capture_is_refused():
+    # A v2 file has no version byte: its magic is followed by its header
+    # record's length (81), then the record: its type 1, its format version 2,
+    # then the 79 bytes of the fields v3 keeps.
+    record = bytes([1, 2]) + bytes(79)
+    data = capture.MAGIC + bytes([len(record)]) + record
+
+    with pytest.raises(capture.CaptureError, match="format version 81"):
+        capture.read_capture(data)
 
 
 def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
@@ -75,8 +88,10 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
 
 
 def test_a_record_after_the_match_end_is_refused():
-    # A Leave of player 1 at offset 9: type, offset, player, after its length.
-    data = SEED.read_bytes() + bytes([6, 4, 9, 0, 0, 0, 1])
+    leave = augusta_pb2.CaptureRecord(
+        leave=augusta_pb2.CapturedLeave(offset=9, player=1)
+    ).SerializeToString()
+    data = SEED.read_bytes() + bytes([len(leave)]) + leave
 
     with pytest.raises(capture.CaptureError):
         capture.read_capture(data)

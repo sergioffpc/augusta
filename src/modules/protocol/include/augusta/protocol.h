@@ -658,20 +658,25 @@ enum class EncodeError : std::uint8_t {
 // Match start to its Match end, each at its offset in ticks from the Match's
 // first tick, in this protocol's encoding. Not a message: Decode never yields
 // one, nor DecodeCaptureRecord a message. A record is one payload as a message
-// is, a one-byte CaptureRecordTypeWire followed by its fields, read under the
-// same untrusted-input rules. A player is named by its number in the capture,
-// from 1, in its Join's order.
+// is, one augusta.CaptureRecord of the same schema, its oneof member the
+// record's CaptureRecordTypeWire plus 1000, read under the same untrusted-input
+// rules. A captured Command's command is the augusta.Command a Commands message
+// carries. A player is named by its number in the capture, from 1, in its
+// Join's order.
 
-/// The bytes a capture file starts with, before its first record, so a reader
-/// tells it from a pack (ADR-0031) by them alone.
+/// The bytes a capture file starts with, before its format version, so a
+/// reader tells it from a pack (ADR-0031) by them alone.
 inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::byte{'U'}, std::byte{'G'},
                                                         std::byte{'C'},  std::byte{'A'}, std::byte{'P'},
                                                         std::byte{'\r'}, std::byte{'\n'}};
 
-/// The capture format this engine writes, in CaptureHeaderWire::format_version.
-inline constexpr std::uint8_t kCaptureFormatVersion = 2;
+/// The capture format this engine writes: the one raw byte a capture file holds
+/// after its magic and before its first record, so a reader refuses another
+/// format before it parses any record.
+inline constexpr std::uint8_t kCaptureFormatVersion = 3;
 
-/// The first byte of every record of a capture.
+/// Which record a payload is: the number of its augusta.CaptureRecord member,
+/// less 1000.
 enum class CaptureRecordTypeWire : std::uint8_t {
   /// What the Match ran on: a capture's first record, and its only one of this type.
   kHeader = 1,
@@ -693,8 +698,6 @@ struct CaptureHeaderWire {
   std::string engine_version;
   /// When the Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
-  /// kCaptureFormatVersion of the engine that wrote it.
-  std::uint8_t format_version = 0;
   std::uint8_t tick_rate_hz = 0;
 
   bool operator==(const CaptureHeaderWire&) const = default;
@@ -761,7 +764,7 @@ using CaptureRecordWire = std::variant<CaptureHeaderWire, CapturedJoinWire, Capt
 /// and gives no payload at all, as Encode does a message.
 [[nodiscard]] std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record);
 
-/// The type record's payload starts with.
+/// Which record record is.
 [[nodiscard]] CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record);
 
 /// Decodes one capture record's payload, or reports what is wrong with it, as Decode does a message's.

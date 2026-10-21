@@ -9,7 +9,7 @@ augusta_set_module_scope(augusta_capture_records SHARED)
 # A Match capture's file (ADR-0050): its engine-typed capture, read from and
 # written to a stream by the server's Capturer, Replay and a Captured player
 # (see capture.h). The format's framing and record order stay inside; each
-# record's bytes, the magic and the header's format version are the Link's
+# record's bytes, the magic and the format version's value are the Link's
 # conversions (augusta_link_messages), linked privately, so no reader reaches
 # them through this module and capture names no protocol type (ADR-0038,
 # checks/core_boundary.cmake).

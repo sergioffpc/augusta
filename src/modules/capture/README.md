@@ -15,7 +15,7 @@ and read, so it names no protocol type. Pure stream I/O.
 - Deciding what is captured, when, and how long a capture is kept: host
   (Capturer, capture retention, Replay).
 - Playing a captured player again: harness (`augusta/reenactment.h`).
-- Each record's bytes, the magic and the header's format version: link
+- Each record's bytes, the magic and the format version's value: link
   (`augusta_link_messages`), the only target capture converts through.
 
 ## Decisions

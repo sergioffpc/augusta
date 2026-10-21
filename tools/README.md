@@ -325,7 +325,8 @@ UTC), how long the Match lasted in ticks and seconds, one line per player (its
 number, which `augustac --reenact --player` takes, Session, Character, spawn,
 how many Commands it sent, and when it died and who killed it or when it left),
 then the Match end's winner or a Draw, and whether the file ends partway through
-a record. A Command's contents are counted, not decoded.
+a record. It reads each record through `augusta_pack.augusta_pb2`, generated
+from the protocol's one schema, and reports a Command only by count.
 
 It reads the pack through `augusta_assets`, with the same header and index
 parser the client and server load packs with, and refuses a malformed one with
