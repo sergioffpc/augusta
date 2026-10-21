@@ -67,11 +67,15 @@ it tars, and the staging check fails unless its build ID is the tarred
 `augustac`'s and the `.gnu_debuglink` names it (`scripts/stage-client.sh`,
 ADR-0058). Like the PDB, it is not attested.
 
-There is no crash handler in the client. A crash leaves a core through the
-player's `systemd-coredump` (`coredumpctl dump augustac -o core`), as a Windows
-crash leaves a dump through Windows Error Reporting. The core is read with the
-`augustac` it came from and the release's `.debug`, renamed `augustac.debug`,
-the name the `.gnu_debuglink` gives, and put beside it, where gdb looks:
+The Linux client installs the server's crash handler (ADR-0047): a crash logs
+its signal and its symbolized stack, read from the symbol table the tarred
+`augustac` keeps, to the console and to the Run's log, each line ending in the
+Run's `run=`. It raises `RLIMIT_CORE`'s soft limit to the hard limit and dies of
+the signal, so the core stays in the player's `systemd-coredump`, and the crash
+line names how to get it out, `core="coredumpctl dump augustac"`
+(`coredumpctl dump augustac -o core`). The core is read with the `augustac` it
+came from and the release's `.debug`, renamed `augustac.debug`, the name the
+`.gnu_debuglink` gives, and put beside it, where gdb looks:
 
 ```text
 gdb augustac core -ex bt
