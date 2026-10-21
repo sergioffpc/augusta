@@ -35,7 +35,9 @@ branch. Build, test and lint with `make` (`make help`; `PRESET=windows-debug` on
 Windows, through `scripts/dev-container.sh` on macOS): `test` is the one target
 that builds the tests, and `prepush` runs a push's checks, uncommitted changes
 included, before committing. Only CI's `client-x64-windows` job reproduces
-Windows-only failures. A worktree for parallel work comes and goes through
+Windows-only failures. After a push to a branch with an open PR,
+`gh pr checks <pr> --watch`: a red check blocks the next merge onto that branch.
+A worktree for parallel work comes and goes through
 `scripts/worktree.sh add|remove`, which links the submodules a build needs.
 
 ### Issue tracker
