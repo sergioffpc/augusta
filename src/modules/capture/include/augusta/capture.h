@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <istream>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -24,15 +25,15 @@
 /// format's rules; EncodeHeader, EncodeJoin and EncodeEvent encode one piece of
 /// it for Write, and WriteCapture writes a whole one.
 ///
-/// A file is the capture's magic, then each record's payload after its length
-/// in one byte, the header first, in the Networking Protocol's encoding: the
-/// Link (augusta/link_messages.h) turns each record of the engine's types
-/// (augusta/capture_records.h) into its payload and back, so this module
-/// names no protocol type (ADR-0038). Reading checks the magic, the
-/// header's format version and the records' order (every Join first, numbered
-/// from 1, then the events in offset order, each naming a player a Join did,
-/// nothing after the Match end). Pure stream I/O, on whichever thread holds the
-/// stream.
+/// A file is the capture's magic, then its format version as one raw byte, then
+/// each record's payload after its length in one byte, the header first, in the
+/// Networking Protocol's encoding: the Link (augusta/link_messages.h) turns each
+/// record of the engine's types (augusta/capture_records.h) into its payload and
+/// back, so this module names no protocol type (ADR-0038). Reading checks the
+/// magic, then the format version before any record, then the records' order
+/// (every Join first, numbered from 1, then the events in offset order, each
+/// naming a player a Join did, nothing after the Match end). Pure stream I/O, on
+/// whichever thread holds the stream.
 namespace augusta::capture {
 
 /// What every capture's file name ends in.
@@ -40,19 +41,32 @@ inline constexpr std::string_view kExtension = ".acap";
 
 /// Why a capture does not read, wherever it is read: Replay and the Replay
 /// catalog, and a Captured player's harness::ReadScript, report the same errors.
-enum class ReadError : std::uint8_t {
+enum class ReadErrorCode : std::uint8_t {
   /// The stream could not be read, or was never opened.
   kUnreadable,
   /// It does not start with a capture's magic.
   kNotACapture,
-  /// Its header is missing, or of a format version this engine does not read.
+  /// It is of a format version this engine does not read, or its header is missing.
   kUnsupported,
   /// A record does not decode, comes out of order, or names a player no Join did.
   kMalformed,
 };
 
-/// What to tell whoever runs the process about error.
-[[nodiscard]] std::string_view DescribeReadError(ReadError error);
+/// Why a capture does not read: its code, and what a message about it names
+/// beyond the code.
+struct ReadError {
+  ReadErrorCode code = ReadErrorCode::kUnreadable;
+  /// The format version the file names, for kUnsupported when it names one
+  /// this engine does not read: a file of format 2, which has no version byte,
+  /// names its header record's length. nullopt when its header is missing.
+  std::optional<std::uint8_t> format_version = std::nullopt;
+
+  bool operator==(const ReadError&) const = default;
+};
+
+/// What to tell whoever runs the process about error, naming the format
+/// version it refuses, if any, beside the one this engine reads.
+[[nodiscard]] std::string DescribeReadError(const ReadError& error);
 
 /// Whether in starts with a capture's magic. Reads as far as the magic goes.
 [[nodiscard]] bool StartsWithMagic(std::istream& in);
@@ -100,7 +114,7 @@ class Encoded {
   std::vector<std::byte> bytes_;
 };
 
-/// The capture's magic, then header, in this engine's format version: what a file starts with.
+/// The capture's magic, this engine's format version, then header: what a file starts with.
 [[nodiscard]] std::expected<Encoded, EncodeError> EncodeHeader(const Header& header);
 
 /// The Join of player, numbered from 1 in the Match start's order, at offset 0.

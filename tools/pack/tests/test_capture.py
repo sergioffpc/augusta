@@ -5,6 +5,7 @@ target's seed is one it wrote, so reading it here holds both halves to one
 format.
 """
 
+from augusta_pack import augusta_pb2
 from augusta_pack import capture
 from augusta_pack import pack_cli
 from conftest import EXAMPLES_ROOT
@@ -41,6 +42,24 @@ def test_a_capture_the_server_wrote_reads_as_it_was_played():
     assert not read.torn
 
 
+def test_the_seed_holds_every_record_kind_the_schema_has():
+    # So the test above reads every kind, and the reader, which refuses a
+    # kind it does not name, still names every member of the oneof.
+    data = SEED.read_bytes()
+    kinds = set()
+    at = len(capture.MAGIC) + 1
+    while at < len(data):
+        length = data[at]
+        record = augusta_pb2.CaptureRecord.FromString(
+            data[at + 1 : at + 1 + length]
+        )
+        kinds.add(record.WhichOneof("record"))
+        at += 1 + length
+    oneof = augusta_pb2.CaptureRecord.DESCRIPTOR.oneofs_by_name["record"]
+
+    assert kinds == {field.name for field in oneof.fields}
+
+
 def test_a_capture_cut_short_drops_and_reports_its_last_record():
     read = capture.read_capture(SEED.read_bytes()[:-1])
 
@@ -50,11 +69,32 @@ def test_a_capture_cut_short_drops_and_reports_its_last_record():
 
 def test_another_format_version_is_refused():
     data = bytearray(SEED.read_bytes())
-    # After the magic, the header's one-byte length and its type.
-    data[len(capture.MAGIC) + 2] = capture.FORMAT_VERSION + 1
+    # The one byte after the magic.
+    data[len(capture.MAGIC)] = 4
 
-    with pytest.raises(capture.CaptureError):
+    with pytest.raises(capture.CaptureError, match="format version 4"):
         capture.read_capture(bytes(data))
+
+
+def test_a_version_2_capture_is_refused():
+    # A v2 file has no version byte: its magic is followed by its header
+    # record's length (81), then the record: its type 1, its format version 2,
+    # then the 79 bytes of the fields v3 keeps.
+    record = bytes([1, 2]) + bytes(79)
+    data = capture.MAGIC + bytes([len(record)]) + record
+
+    with pytest.raises(capture.CaptureError, match="format version 81"):
+        capture.read_capture(data)
+
+
+def test_text_that_is_not_utf8_is_refused():
+    header = augusta_pb2.CaptureRecord(
+        header=augusta_pb2.CaptureHeader(engine_version=b"\xc3\x28")
+    ).SerializeToString()
+    data = capture.MAGIC + bytes([capture.FORMAT_VERSION, len(header)]) + header
+
+    with pytest.raises(capture.CaptureError, match="not UTF-8"):
+        capture.read_capture(data)
 
 
 def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
@@ -66,6 +106,7 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
     out = capsys.readouterr().out
     assert status == 0
     assert "Match capture" in out
+    assert "format version  3" in out
     assert "length          7 ticks, 0.12 s" in out
     assert (
         "  2  session 8  sniper  spawn (-3, 0, 4)  1 commands  "
@@ -75,8 +116,10 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
 
 
 def test_a_record_after_the_match_end_is_refused():
-    # A Leave of player 1 at offset 9: type, offset, player, after its length.
-    data = SEED.read_bytes() + bytes([6, 4, 9, 0, 0, 0, 1])
+    leave = augusta_pb2.CaptureRecord(
+        leave=augusta_pb2.CapturedLeave(offset=9, player=1)
+    ).SerializeToString()
+    data = SEED.read_bytes() + bytes([len(leave)]) + leave
 
     with pytest.raises(capture.CaptureError):
         capture.read_capture(data)

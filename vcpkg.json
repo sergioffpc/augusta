@@ -17,12 +17,14 @@
     "libsodium",
     "lua",
     "physx",
+    "protobuf",
     {
       "name": "prometheus-cpp",
       "default-features": false
     },
     "rapidcheck",
     "sol2",
+    "utf8-range",
     "yaml-cpp"
   ],
   "features": {

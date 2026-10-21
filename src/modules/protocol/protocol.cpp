@@ -1,8 +1,7 @@
 #include "augusta/protocol.h"
 
 #include <algorithm>
-#include <bit>
-#include <concepts>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -11,31 +10,75 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include <google/protobuf/arena.h>
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/message_lite.h>
+#include <google/protobuf/repeated_ptr_field.h>
+#include <utf8_range.h>
+
+#include "augusta.pb.h"
 #include "augusta/grid.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
-#include "augusta/tick.h"
 
 namespace augusta::protocol {
 
 namespace {
 
-constexpr int kBitsPerByte = 8;
+// The classes protobuf generates from proto/augusta.proto, which its package
+// puts in ::augusta.
+namespace pb = ::augusta;
 
-// Builds a payload front to back. The first field it is handed that the
-// protocol cannot carry is remembered, and Finish then gives that error and no
-// payload, so an encoder writes all of a message's fields and asks once at the
-// end, and nothing half-written ever leaves it: the write side of Reader.
-class Writer {
+// A command's flags take bits 0-3 of its bitfield and its stance bits 4-5
+// (ADR-0038).
+constexpr std::uint8_t kCommandFlagsMask = 0x0FU;
+constexpr unsigned kCommandStanceShift = 4U;
+constexpr std::uint32_t kStanceMask = 0x03U;
+constexpr std::uint32_t kCommandBitsMask = kCommandFlagsMask | (kStanceMask << kCommandStanceShift);
+
+// A body's stance takes bits 0-1 of its bitfield and its exhausted flag bit 2.
+constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted;
+constexpr unsigned kBodyFlagsShift = 2U;
+constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift);
+
+// The first block of each call's arena, on the stack: more than an
+// Authoritative State or a Commands message as large as the protocol allows
+// builds or parses into, so neither touches the heap but for an encode's
+// payload. A larger message (a Replay list) grows the arena there.
+constexpr std::size_t kArenaBlockSize = 4096;
+
+// An arena local to one call of the codec (ADR-0007): the messages the
+// call builds or parses live on it and go with it, and none reaches the API.
+class CallArena {
  public:
-  void Put(std::uint8_t value) { bytes_.push_back(static_cast<std::byte>(value)); }
+  template <typename Message>
+  Message& Create() {
+    return *google::protobuf::Arena::Create<Message>(&arena_);
+  }
 
-  void Put(std::span<const std::byte> bytes) { bytes_.insert(bytes_.end(), bytes.begin(), bytes.end()); }
+ private:
+  alignas(std::max_align_t) std::array<char, kArenaBlockSize> block_;
+  google::protobuf::Arena arena_{block_.data(), block_.size()};
+};
 
+// message's bytes: the one heap allocation of an encode.
+BytesWire Serialize(const google::protobuf::MessageLite& message) {
+  BytesWire bytes(message.ByteSizeLong());
+  message.SerializeWithCachedSizesToArray(reinterpret_cast<std::uint8_t*>(bytes.data()));
+  return bytes;
+}
+
+// What Encode maps a *Wire to its generated message with. The first field it is
+// handed that the protocol cannot carry is remembered, so a mapping sets all of
+// a message's fields and the caller asks once at the end, and nothing of a
+// message with such a field is ever serialized.
+class Outbound {
+ public:
   // Whether holds, remembering error if it does not.
   bool Check(bool holds, EncodeError error) {
     if (!holds && !error_.has_value()) {
@@ -44,274 +87,386 @@ class Writer {
     return holds;
   }
 
-  // value, an enumerator that must lie between first and last, as its byte.
+  // value, an enumerator that must lie between first and last, as its number.
   template <typename Enum>
-  std::uint8_t FromEnum(Enum value, Enum first, Enum last) {
-    const auto byte = static_cast<std::uint8_t>(value);
-    Check(byte >= static_cast<std::uint8_t>(first) && byte <= static_cast<std::uint8_t>(last),
+  std::uint32_t FromEnum(Enum value, Enum first, Enum last) {
+    const auto number = static_cast<std::uint32_t>(value);
+    Check(number >= static_cast<std::uint32_t>(first) && number <= static_cast<std::uint32_t>(last),
           EncodeError::kInvalidEnum);
-    return byte;
+    return number;
   }
 
   // flags, of which only the bits of mask may be set.
-  std::uint8_t FromFlags(std::uint8_t flags, std::uint8_t mask) {
+  std::uint32_t FromFlags(std::uint8_t flags, std::uint8_t mask) {
     Check((flags & ~mask) == 0, EncodeError::kReservedBits);
     return flags;
   }
 
-  std::expected<BytesWire, EncodeError> Finish() && {
-    if (error_.has_value()) {
-      return std::unexpected(*error_);
-    }
-    return std::move(bytes_);
+  // text, which may be at most max_length bytes long, and must be UTF-8.
+  std::string_view Text(std::string_view text, std::size_t max_length) {
+    Check(text.size() <= max_length, EncodeError::kFieldTooLong);
+    Check(IsUtf8(text), EncodeError::kNotUtf8);
+    return text;
   }
 
+  // Whether a list of size elements is at most max long.
+  bool Fits(std::size_t size, std::size_t max) { return Check(size <= max, EncodeError::kFieldTooLong); }
+
+  [[nodiscard]] std::optional<EncodeError> Error() const { return error_; }
+
  private:
-  BytesWire bytes_;
   std::optional<EncodeError> error_;
 };
 
-void WriteU8(Writer& out, std::uint8_t value) { out.Put(value); }
+// value as a whole count of grid's step (ADR-0038), held within its range.
+std::int32_t Steps(float value, const math::Grid& grid) { return math::ToSteps(value, grid); }
 
-// value's bytes, least significant first.
-template <std::unsigned_integral Unsigned>
-void WriteUnsigned(Writer& out, Unsigned value) {
-  for (int shift = 0; shift < std::numeric_limits<Unsigned>::digits; shift += kBitsPerByte) {
-    WriteU8(out, static_cast<std::uint8_t>(value >> shift));
-  }
+// The same, on a grid with no negative count, which travels as a uint32.
+std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
+  return static_cast<std::uint32_t>(math::ToSteps(value, grid));
 }
 
-void WriteU32(Writer& out, std::uint32_t value) { WriteUnsigned(out, value); }
+std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
 
-// A tick in as many bytes as tick::Tick has.
-void WriteTick(Writer& out, tick::Tick value) { WriteUnsigned(out, value); }
-
-// A command sequence in as many bytes as tick::Sequence has.
-void WriteSequence(Writer& out, tick::Sequence value) { WriteUnsigned(out, value); }
-
-void WriteF32(Writer& out, float value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
-
-// value as a whole count of grid's step (ADR-0038), in the grid's bytes.
-void WriteSteps(Writer& out, float value, const math::Grid& grid) {
-  const auto bits = static_cast<std::uint32_t>(math::ToSteps(value, grid));
-  for (int i = 0; i < grid.bytes; ++i) {
-    WriteU8(out, static_cast<std::uint8_t>(bits >> (kBitsPerByte * i)));
-  }
+void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
+  command.set_direction_x(Steps(wire.direction.x, math::kDirectionGrid));
+  command.set_direction_y(Steps(wire.direction.y, math::kDirectionGrid));
+  command.set_direction_z(Steps(wire.direction.z, math::kDirectionGrid));
+  command.set_yaw(Steps(wire.yaw, math::kAngleGrid));
+  command.set_pitch(Steps(wire.pitch, math::kAngleGrid));
+  const std::uint32_t flags = out.FromFlags(wire.flags, kCommandFlagsMask);
+  const std::uint32_t stance = out.FromEnum(wire.desired_stance, StanceWire::kStanding, StanceWire::kProne);
+  command.set_bits(flags | (stance << kCommandStanceShift));
+  command.set_seen_age(wire.seen_age);
+  command.set_seen_fraction(UnsignedSteps(wire.seen_fraction, math::kFractionGrid));
 }
 
-// A one-byte length and the bytes, at most max_length of them: the write side
-// of Reader::ReadString.
-void WriteString(Writer& out, std::string_view text, std::size_t max_length) {
-  if (!out.Check(text.size() <= max_length, EncodeError::kFieldTooLong)) {
+void Write(const EntityStateWire& wire, pb::Body& body, Outbound& out) {
+  body.set_entity(static_cast<std::uint32_t>(wire.entity));
+  body.set_position_x(Steps(wire.body.position.x, math::kPositionGrid));
+  body.set_position_y(Steps(wire.body.position.y, math::kPositionGrid));
+  body.set_position_z(Steps(wire.body.position.z, math::kPositionGrid));
+  body.set_velocity_x(Steps(wire.body.velocity.x, math::kVelocityGrid));
+  body.set_velocity_y(Steps(wire.body.velocity.y, math::kVelocityGrid));
+  body.set_velocity_z(Steps(wire.body.velocity.z, math::kVelocityGrid));
+  const std::uint32_t stance = out.FromEnum(wire.body.stance, StanceWire::kStanding, StanceWire::kProne);
+  const std::uint32_t flags = out.FromFlags(wire.body.flags, kBodyFlagsMask);
+  body.set_bits(stance | (flags << kBodyFlagsShift));
+  body.set_stamina(UnsignedSteps(wire.body.stamina, math::kStaminaGrid));
+  body.set_yaw(Steps(wire.yaw, math::kAngleGrid));
+}
+
+// An Authoritative State's shared fields: what every recipient of a tick is told alike.
+void WriteShared(const AuthoritativeStateWire& wire, pb::AuthoritativeState& state, Outbound& out) {
+  state.set_tick(wire.tick);
+  if (!out.Fits(wire.bodies.size(), limits::kMaxPlayers)) {
     return;
   }
-  WriteU8(out, static_cast<std::uint8_t>(text.size()));
-  for (const char letter : text) {
-    WriteU8(out, static_cast<std::uint8_t>(letter));
+  for (const EntityStateWire& body : wire.bodies) {
+    Write(body, *state.add_bodies(), out);
   }
 }
 
-// A character, by its name in the scenario's manifest: the write side of Reader::ReadCharacter.
-void WriteCharacter(Writer& out, std::string_view character) { WriteString(out, character, kMaxCharacterNameLength); }
+// Its recipient's own fields, none of which has a limit, so none fails. A
+// rifle's two times travel as floats, not on a grid: its owner replays its
+// commands from them, with the function the server stepped them with, and must
+// start from exactly what the server had. Its Recoil offset is kept on the
+// angle grid by that function, so its counts are exactly what the server had
+// too.
+void WriteOwn(const AuthoritativeStateWire& wire, pb::AuthoritativeState& state) {
+  state.set_acknowledged_sequence(wire.acknowledged_sequence);
+  state.set_queued_commands(wire.queued_commands);
+  state.set_rifle_rounds(wire.rifle.rounds);
+  state.set_rifle_cooldown(wire.rifle.cooldown);
+  state.set_rifle_reload_remaining(wire.rifle.reload_remaining);
+  state.set_rifle_burst_index(wire.rifle.burst_index);
+  state.set_rifle_recoil_pitch(Steps(wire.rifle.recoil_pitch, math::kAngleGrid));
+  state.set_rifle_recoil_yaw(Steps(wire.rifle.recoil_yaw, math::kAngleGrid));
+  // As a float, as the Parameters' starting health it counts down from.
+  state.set_health(wire.health);
+}
 
-void WritePackHash(Writer& out, const PackHashWire& hash) { out.Put(hash); }
-
-// A list of at most max elements: a one-byte count, then each one as write writes it.
-template <typename Element, typename Write>
-void WriteList(Writer& out, const std::vector<Element>& list, std::size_t max, Write write) {
-  if (!out.Check(list.size() <= max, EncodeError::kFieldTooLong)) {
-    return;
+void Write(const ParametersWire& wire, pb::Parameters& parameters, Outbound& out) {
+  pb::Stamina& stamina = *parameters.mutable_stamina();
+  stamina.set_deplete_per_second(wire.stamina.deplete_per_second);
+  stamina.set_regen_per_second(wire.stamina.regen_per_second);
+  stamina.set_forced_walk_below(wire.stamina.forced_walk_below);
+  pb::Rifle& rifle = *parameters.mutable_rifle();
+  rifle.set_rounds_per_minute(wire.rifle.rounds_per_minute);
+  rifle.set_muzzle_velocity(wire.rifle.muzzle_velocity);
+  rifle.set_reload_seconds(wire.rifle.reload_seconds);
+  rifle.set_recoil_recovery_per_second(wire.rifle.recoil_recovery_per_second);
+  rifle.set_ads_recoil_scale(wire.rifle.ads_recoil_scale);
+  rifle.set_ads_field_of_view(wire.rifle.ads_field_of_view);
+  if (out.Fits(wire.rifle.recoil_pattern.size(), limits::kMaxRecoilKicks)) {
+    for (const RecoilKickWire& kick : wire.rifle.recoil_pattern) {
+      pb::RecoilKick& written = *rifle.add_recoil_pattern();
+      written.set_pitch(kick.pitch);
+      written.set_yaw(kick.yaw);
+    }
   }
-  WriteU8(out, static_cast<std::uint8_t>(list.size()));
-  for (const Element& element : list) {
-    write(out, element);
+  rifle.set_magazine_capacity(wire.rifle.magazine_capacity);
+  pb::Ammo& ammo = *parameters.mutable_ammo();
+  ammo.set_gravity(wire.ammo.gravity);
+  ammo.set_max_range(wire.ammo.max_range);
+  ammo.set_head_damage(wire.ammo.head_damage);
+  ammo.set_torso_damage(wire.ammo.torso_damage);
+  ammo.set_limb_damage(wire.ammo.limb_damage);
+  parameters.set_starting_health(wire.starting_health);
+  parameters.set_player_count(wire.player_count);
+}
+
+void Write(const MatchPlayerWire& wire, pb::MatchPlayer& player, Outbound& out) {
+  player.set_session(static_cast<std::uint32_t>(wire.session));
+  player.set_entity(static_cast<std::uint32_t>(wire.entity));
+  player.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+  player.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
+  player.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
+  player.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
+}
+
+void Write(const ReplayListingWire& wire, pb::ReplayListing& listing, Outbound& out) {
+  listing.set_name(out.Text(wire.name, kMaxCaptureNameLength));
+  listing.set_started_unix_ms(wire.started_unix_ms);
+  listing.set_ticks(wire.ticks);
+  listing.set_tick_rate_hz(wire.tick_rate_hz);
+  if (out.Fits(wire.characters.size(), limits::kMaxPlayers)) {
+    for (const std::string& character : wire.characters) {
+      listing.add_characters(out.Text(character, kMaxCharacterNameLength));
+    }
   }
 }
 
-void WriteVec3(Writer& out, const math::Vec3& value, const math::Grid& grid) {
-  WriteSteps(out, value.x, grid);
-  WriteSteps(out, value.y, grid);
-  WriteSteps(out, value.z, grid);
-}
+// One overload per message: the envelope's member, then its fields.
+struct Encoder {
+  pb::Message& message;
+  Outbound& out;
 
-// A command's flags take the low four bits of one byte and its stance the two
-// above them; the top two are always 0.
-constexpr std::uint8_t kCommandFlagsMask = 0x0FU;
-constexpr unsigned kCommandStanceShift = 4U;
+  void operator()(const JoinRequestWire& wire) const {
+    pb::JoinRequest& request = *message.mutable_join_request();
+    request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
+    request.set_client_pack(BytesOf(wire.client_pack));
+    request.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+  }
 
-void WriteCommand(Writer& out, const CommandWire& command) {
-  WriteVec3(out, command.direction, math::kDirectionGrid);
-  WriteSteps(out, command.yaw, math::kAngleGrid);
-  WriteSteps(out, command.pitch, math::kAngleGrid);
-  const std::uint8_t flags = out.FromFlags(command.flags, kCommandFlagsMask);
-  const std::uint8_t stance = out.FromEnum(command.desired_stance, StanceWire::kStanding, StanceWire::kProne);
-  WriteU8(out, static_cast<std::uint8_t>(flags | (stance << kCommandStanceShift)));
-  WriteU8(out, command.seen_age);
-  WriteSteps(out, command.seen_fraction, math::kFractionGrid);
-}
+  void operator()(const JoinAcceptedWire& wire) const {
+    pb::JoinAccepted& accepted = *message.mutable_join_accepted();
+    accepted.set_session(static_cast<std::uint32_t>(wire.session));
+    accepted.set_tick_rate_hz(wire.tick_rate_hz);
+    Write(wire.parameters, *accepted.mutable_parameters(), out);
+    accepted.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+  }
 
-// A body's stance takes the low two bits of its stance byte and its flags the
-// one above them; the top five are always 0.
-constexpr std::uint8_t kBodyStanceMask = 0x03U;
-constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted;
-constexpr unsigned kBodyFlagsShift = 2U;
+  void operator()(const JoinRefusedWire& wire) const {
+    message.mutable_join_refused()->set_reason(static_cast<pb::JoinRefusal>(
+        out.FromEnum(wire.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kReenactmentsNotAccepted)));
+  }
 
-void WriteBodyState(Writer& out, const BodyStateWire& body) {
-  WriteVec3(out, body.position, math::kPositionGrid);
-  WriteVec3(out, body.velocity, math::kVelocityGrid);
-  const std::uint8_t stance = out.FromEnum(body.stance, StanceWire::kStanding, StanceWire::kProne);
-  const std::uint8_t flags = out.FromFlags(body.flags, kBodyFlagsMask);
-  WriteU8(out, static_cast<std::uint8_t>(stance | (flags << kBodyFlagsShift)));
-  WriteSteps(out, body.stamina, math::kStaminaGrid);
-}
+  void operator()(const CommandsWire& wire) const {
+    pb::Commands& commands = *message.mutable_commands();
+    if (out.Fits(wire.commands.size(), kMaxCommandsPerMessage)) {
+      for (const SequencedCommandWire& sequenced : wire.commands) {
+        pb::Command& command = *commands.add_commands();
+        command.set_sequence(sequenced.sequence);
+        Write(sequenced.command, command, out);
+      }
+    }
+    commands.set_seen_tick(wire.seen_tick);
+  }
 
-void WriteEntityState(Writer& out, const EntityStateWire& body) {
-  WriteU32(out, static_cast<std::uint32_t>(body.entity));
-  WriteBodyState(out, body.body);
-  WriteSteps(out, body.yaw, math::kAngleGrid);
-}
+  void operator()(const AuthoritativeStateWire& wire) const {
+    pb::AuthoritativeState& state = *message.mutable_authoritative_state();
+    WriteShared(wire, state, out);
+    WriteOwn(wire, state);
+  }
 
-// A rifle's two times travel as their bits, not on a grid: its owner replays
-// its commands from them, with the function the server stepped them with, and
-// must start from exactly what the server had. Its Recoil offset is kept on the
-// angle grid by that function, so its counts are exactly what the server had too.
-void WriteWeaponState(Writer& out, const WeaponStateWire& rifle) {
-  WriteU8(out, rifle.rounds);
-  WriteF32(out, rifle.cooldown);
-  WriteF32(out, rifle.reload_remaining);
-  WriteU8(out, rifle.burst_index);
-  WriteSteps(out, rifle.recoil_pitch, math::kAngleGrid);
-  WriteSteps(out, rifle.recoil_yaw, math::kAngleGrid);
-}
+  void operator()(const LobbyWire& wire) const {
+    pb::Lobby& lobby = *message.mutable_lobby();
+    lobby.set_version(wire.version);
+    if (out.Fits(wire.roster.size(), limits::kMaxPlayers)) {
+      for (const RosterEntryWire& entry : wire.roster) {
+        pb::RosterEntry& written = *lobby.add_roster();
+        written.set_session(static_cast<std::uint32_t>(entry.session));
+        written.set_character(out.Text(entry.character, kMaxCharacterNameLength));
+      }
+    }
+  }
 
-// An Authoritative State's recipient's own fields after its bodies, which end
-// its payload: fixed in size, so Readdress rewrites them in place.
-void WriteRecipientTail(Writer& out, const AuthoritativeStateWire& state) {
-  WriteU8(out, state.queued_commands);
-  WriteWeaponState(out, state.rifle);
-  // As its bits, as the Parameters' starting health it counts down from.
-  WriteF32(out, state.health);
-}
+  void operator()(const ReadyWire& wire) const { message.mutable_ready()->set_version(wire.version); }
 
-// Where an Authoritative State's acknowledged sequence lies: after its type and its tick.
-constexpr std::size_t kAcknowledgedSequenceOffset = 1 + (std::numeric_limits<tick::Tick>::digits / kBitsPerByte);
-// Where its count of bodies lies: after its acknowledged sequence.
-constexpr std::size_t kBodyCountOffset =
-    kAcknowledgedSequenceOffset + (std::numeric_limits<tick::Sequence>::digits / kBitsPerByte);
+  void operator()(const MatchStartWire& wire) const {
+    pb::MatchStart& start = *message.mutable_match_start();
+    if (out.Fits(wire.players.size(), limits::kMaxPlayers)) {
+      for (const MatchPlayerWire& player : wire.players) {
+        Write(player, *start.add_players(), out);
+      }
+    }
+    start.set_first_tick(wire.first_tick);
+  }
 
-// Walks a payload front to back. The first problem it meets is remembered and
-// every read after it returns a zero value, so a decoder can read all of a
-// message's fields and ask once at the end whether they were all there.
-class Reader {
+  void operator()(const MatchEndWire& wire) const {
+    message.mutable_match_end()->set_winner(static_cast<std::uint32_t>(wire.winner));
+  }
+
+  void operator()(const ShotWire& wire) const {
+    pb::Shot& shot = *message.mutable_shot();
+    shot.set_tick(wire.tick);
+    shot.set_shooter(static_cast<std::uint32_t>(wire.shooter));
+    shot.set_origin_x(Steps(wire.origin.x, math::kPositionGrid));
+    shot.set_origin_y(Steps(wire.origin.y, math::kPositionGrid));
+    shot.set_origin_z(Steps(wire.origin.z, math::kPositionGrid));
+    shot.set_yaw(Steps(wire.yaw, math::kAngleGrid));
+    shot.set_pitch(Steps(wire.pitch, math::kAngleGrid));
+  }
+
+  void operator()(const HitConfirmationWire& wire) const {
+    pb::HitConfirmation& hit = *message.mutable_hit_confirmation();
+    hit.set_target(static_cast<std::uint32_t>(wire.target));
+    hit.set_part(static_cast<pb::BodyPart>(out.FromEnum(wire.part, BodyPartWire::kHead, BodyPartWire::kLimb)));
+    hit.set_damage(wire.damage);
+  }
+
+  void operator()(const DeathWire& wire) const {
+    pb::Death& death = *message.mutable_death();
+    death.set_victim(static_cast<std::uint32_t>(wire.victim));
+    death.set_killer(static_cast<std::uint32_t>(wire.killer));
+    death.set_part(static_cast<pb::BodyPart>(out.FromEnum(wire.part, BodyPartWire::kHead, BodyPartWire::kLimb)));
+    death.set_yaw(Steps(wire.yaw, math::kAngleGrid));
+    death.set_pitch(Steps(wire.pitch, math::kAngleGrid));
+  }
+
+  void operator()(const ReplayListRequestWire& /*wire*/) const {
+    static_cast<void>(message.mutable_replay_list_request());
+  }
+
+  void operator()(const ReplayListWire& wire) const {
+    pb::ReplayList& list = *message.mutable_replay_list();
+    if (out.Fits(wire.replays.size(), kMaxReplayListings)) {
+      for (const ReplayListingWire& listing : wire.replays) {
+        Write(listing, *list.add_replays(), out);
+      }
+    }
+  }
+
+  void operator()(const ReplayRequestWire& wire) const {
+    pb::ReplayRequest& request = *message.mutable_replay_request();
+    request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
+    request.set_client_pack(BytesOf(wire.client_pack));
+    request.set_capture(out.Text(wire.capture, kMaxCaptureNameLength));
+  }
+
+  void operator()(const ReplayViewWire& wire) const {
+    pb::ReplayView& view = *message.mutable_replay_view();
+    view.set_tick(wire.tick);
+    if (out.Fits(wire.players.size(), limits::kMaxPlayers)) {
+      for (const PlayerViewWire& player : wire.players) {
+        pb::PlayerView& written = *view.add_players();
+        written.set_entity(static_cast<std::uint32_t>(player.entity));
+        written.set_pitch(Steps(player.pitch, math::kAngleGrid));
+        written.set_bits(out.FromFlags(player.flags, PlayerViewWire::kAds));
+      }
+    }
+  }
+
+  void operator()(const ReenactRequestWire& wire) const {
+    pb::ReenactRequest& request = *message.mutable_reenact_request();
+    request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
+    request.set_client_pack(BytesOf(wire.client_pack));
+    request.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    request.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
+    request.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
+    request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
+  }
+};
+
+// What Decode maps a parsed message to its *Wire with. The first value it meets
+// that no valid message of this build holds is remembered, and every check
+// after gives a zero value, so a mapping reads all of a message's fields and
+// the caller asks once at the end (ADR-0038, Untrusted input).
+class Inbound {
  public:
-  explicit Reader(std::span<const std::byte> bytes) : bytes_(bytes) {}
+  // count of grid's step as the value it stands for. A count outside the
+  // grid's range is none a sender, clamping, ever writes.
+  float FromSteps(std::int64_t count, const math::Grid& grid) {
+    if (count < grid.min || count > grid.max) {
+      Fail(DecodeError::kOutOfRange);
+      return 0.0F;
+    }
+    return math::FromSteps(static_cast<std::int32_t>(count), grid);
+  }
 
-  std::uint8_t ReadU8() {
-    if (bytes_.empty()) {
-      Fail(DecodeError::kTruncated);
+  math::Vec3 FromSteps(std::int64_t x, std::int64_t y, std::int64_t z, const math::Grid& grid) {
+    return {FromSteps(x, grid), FromSteps(y, grid), FromSteps(z, grid)};
+  }
+
+  // value, which its varint carries wider than its *Wire field's one byte.
+  std::uint8_t Narrow(std::uint32_t value) {
+    if (value > std::numeric_limits<std::uint8_t>::max()) {
+      Fail(DecodeError::kOutOfRange);
       return 0;
     }
-    const auto value = static_cast<std::uint8_t>(bytes_.front());
-    bytes_ = bytes_.subspan(1);
-    return value;
+    return static_cast<std::uint8_t>(value);
   }
-
-  std::uint32_t ReadU32() { return ReadUnsigned<std::uint32_t>(); }
-
-  tick::Tick ReadTick() { return ReadUnsigned<tick::Tick>(); }
-
-  tick::Sequence ReadSequence() { return ReadUnsigned<tick::Sequence>(); }
-
-  float ReadF32() { return std::bit_cast<float>(ReadU32()); }
-
-  // An enumerator between first and last, which must be consecutive.
-  template <typename Enum>
-  Enum ReadEnum(Enum first, Enum last) {
-    return ToEnum(ReadU8(), first, last);
-  }
-
-  // A character, by its name in the scenario's manifest (ADR-0042).
-  std::string ReadCharacter() { return ReadString(kMaxCharacterNameLength); }
 
   // value as an enumerator between first and last, which must be consecutive.
   template <typename Enum>
-  Enum ToEnum(std::uint8_t value, Enum first, Enum last) {
-    if (value < static_cast<std::uint8_t>(first) || value > static_cast<std::uint8_t>(last)) {
+  Enum ToEnum(std::int64_t value, Enum first, Enum last) {
+    if (value < static_cast<std::int64_t>(first) || value > static_cast<std::int64_t>(last)) {
       Fail(DecodeError::kInvalidEnum);
       return first;
     }
     return static_cast<Enum>(value);
   }
 
-  // value as flags of which only the bits of mask may be set.
-  std::uint8_t ToFlags(std::uint8_t value, std::uint8_t mask) {
-    if ((value & ~mask) != 0) {
-      Fail(DecodeError::kInvalidEnum);
+  // bits, of which only those of mask may be set.
+  std::uint32_t ToBits(std::uint32_t bits, std::uint32_t mask) {
+    if ((bits & ~mask) != 0) {
+      Fail(DecodeError::kReservedBits);
       return 0;
     }
-    return value;
+    return bits;
   }
 
-  // A count of grid's step, as the value it stands for. Every count a grid's
-  // bytes can hold is in its range, so there is nothing to refuse.
-  float ReadSteps(const math::Grid& grid) {
-    std::uint32_t bits = 0;
-    for (int i = 0; i < grid.bytes; ++i) {
-      bits |= static_cast<std::uint32_t>(ReadU8()) << (kBitsPerByte * i);
-    }
-    const int width = kBitsPerByte * grid.bytes;
-    if (grid.min < 0 && width < std::numeric_limits<std::uint32_t>::digits) {
-      const std::uint32_t sign = 1U << (width - 1);
-      bits = (bits ^ sign) - sign;
-    }
-    return math::FromSteps(static_cast<std::int32_t>(bits), grid);
-  }
-
-  math::Vec3 ReadVec3(const math::Grid& grid) {
-    const float x = ReadSteps(grid);
-    const float y = ReadSteps(grid);
-    const float z = ReadSteps(grid);
-    return {x, y, z};
-  }
-
-  // The number of elements of a list, at most max_count. It is checked before
-  // the caller allocates for them.
-  std::size_t ReadCount(std::size_t max_count) {
-    const std::size_t count = ReadU8();
-    if (count > max_count) {
+  // text, which may be at most max_length bytes long, and must be UTF-8: the
+  // schema holds it as bytes, so protobuf's parse never checks it, and never
+  // logs a line a peer's bad text would make at will (NFR-05).
+  std::string Text(std::string_view text, std::size_t max_length) {
+    if (text.size() > max_length) {
       Fail(DecodeError::kFieldTooLong);
-      return 0;
+      return {};
     }
-    return count;
+    if (!IsUtf8(text)) {
+      Fail(DecodeError::kMalformed);
+      return {};
+    }
+    return std::string(text);
   }
 
-  PackHashWire ReadPackHash() {
+  // bytes as a pack hash: none is the all-zero one an absent field reads as,
+  // and any other length than a hash's is a number wider than its field.
+  PackHashWire PackHash(std::string_view bytes) {
     PackHashWire hash{};
-    if (bytes_.size() < hash.size()) {
-      Fail(DecodeError::kTruncated);
+    if (bytes.empty()) {
       return hash;
     }
-    std::ranges::copy(bytes_.first(hash.size()), hash.begin());
-    bytes_ = bytes_.subspan(hash.size());
+    if (bytes.size() != hash.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return hash;
+    }
+    std::ranges::transform(bytes, hash.begin(), [](char byte) { return static_cast<std::byte>(byte); });
     return hash;
   }
 
-  std::string ReadString(std::size_t max_length) {
-    const std::size_t length = ReadCount(max_length);
-    if (bytes_.size() < length) {
-      Fail(DecodeError::kTruncated);
-      return {};
+  // Whether a list of size elements is at most max long.
+  bool Fits(int size, std::size_t max) {
+    if (std::cmp_greater(size, max)) {
+      Fail(DecodeError::kFieldTooLong);
+      return false;
     }
-    std::string value(length, '\0');
-    for (std::size_t i = 0; i < length; ++i) {
-      value[i] = static_cast<char>(bytes_[i]);
-    }
-    bytes_ = bytes_.subspan(length);
-    return value;
+    return true;
   }
 
   [[nodiscard]] std::optional<DecodeError> Error() const { return error_; }
-  [[nodiscard]] bool AtEnd() const { return bytes_.empty(); }
 
  private:
   void Fail(DecodeError error) {
@@ -320,712 +475,478 @@ class Reader {
     }
   }
 
-  // The read side of WriteUnsigned.
-  template <std::unsigned_integral Unsigned>
-  Unsigned ReadUnsigned() {
-    constexpr std::size_t kSize = sizeof(Unsigned);
-    if (bytes_.size() < kSize) {
-      Fail(DecodeError::kTruncated);
-      return 0;
-    }
-    Unsigned value = 0;
-    for (std::size_t i = 0; i < kSize; ++i) {
-      value |= static_cast<Unsigned>(bytes_[i]) << (kBitsPerByte * i);
-    }
-    bytes_ = bytes_.subspan(kSize);
-    return value;
-  }
-
-  std::span<const std::byte> bytes_;
   std::optional<DecodeError> error_;
 };
 
-// The read side of WriteList: at most max elements, each as read reads it.
-// Nothing is reserved for the count, and the list stops growing once a read
-// has failed, so a count the payload cannot back allocates only for the
-// elements the payload holds.
-template <typename Read>
-auto ReadList(Reader& reader, std::size_t max, Read read) {
-  const std::size_t count = reader.ReadCount(max);
-  std::vector<decltype(read(reader))> list;
-  for (std::size_t i = 0; i < count && !reader.Error(); ++i) {
-    list.push_back(read(reader));
+// list, at most max long, each element as read maps it.
+template <typename Element, typename ReadOne>
+auto ReadList(const google::protobuf::RepeatedPtrField<Element>& list, std::size_t max, Inbound& in, ReadOne read) {
+  std::vector<std::invoke_result_t<ReadOne, const Element&>> wires;
+  if (!in.Fits(list.size(), max)) {
+    return wires;
   }
-  return list;
+  wires.reserve(static_cast<std::size_t>(list.size()));
+  for (const Element& element : list) {
+    wires.push_back(read(element));
+  }
+  return wires;
 }
 
-CommandWire ReadCommand(Reader& reader) {
-  CommandWire command;
-  command.direction = reader.ReadVec3(math::kDirectionGrid);
-  command.yaw = reader.ReadSteps(math::kAngleGrid);
-  command.pitch = reader.ReadSteps(math::kAngleGrid);
-  const std::uint8_t packed = reader.ReadU8();
-  command.flags = packed & kCommandFlagsMask;
-  command.desired_stance = reader.ToEnum(static_cast<std::uint8_t>(packed >> kCommandStanceShift),
-                                         StanceWire::kStanding, StanceWire::kProne);
-  command.seen_age = reader.ReadU8();
-  command.seen_fraction = reader.ReadSteps(math::kFractionGrid);
-  return command;
+CommandWire Read(const pb::Command& command, Inbound& in) {
+  CommandWire wire;
+  wire.direction =
+      in.FromSteps(command.direction_x(), command.direction_y(), command.direction_z(), math::kDirectionGrid);
+  wire.yaw = in.FromSteps(command.yaw(), math::kAngleGrid);
+  wire.pitch = in.FromSteps(command.pitch(), math::kAngleGrid);
+  const std::uint32_t bits = in.ToBits(command.bits(), kCommandBitsMask);
+  wire.flags = static_cast<std::uint8_t>(bits & kCommandFlagsMask);
+  wire.desired_stance = in.ToEnum(bits >> kCommandStanceShift, StanceWire::kStanding, StanceWire::kProne);
+  wire.seen_age = in.Narrow(command.seen_age());
+  wire.seen_fraction = in.FromSteps(command.seen_fraction(), math::kFractionGrid);
+  return wire;
 }
 
-BodyStateWire ReadBodyState(Reader& reader) {
-  BodyStateWire body;
-  body.position = reader.ReadVec3(math::kPositionGrid);
-  body.velocity = reader.ReadVec3(math::kVelocityGrid);
-  const std::uint8_t packed = reader.ReadU8();
-  body.stance =
-      reader.ToEnum(static_cast<std::uint8_t>(packed & kBodyStanceMask), StanceWire::kStanding, StanceWire::kProne);
-  body.flags = reader.ToFlags(static_cast<std::uint8_t>(packed >> kBodyFlagsShift), kBodyFlagsMask);
-  body.stamina = reader.ReadSteps(math::kStaminaGrid);
-  return body;
+EntityStateWire Read(const pb::Body& body, Inbound& in) {
+  EntityStateWire wire{.entity = static_cast<EntityIdWire>(body.entity())};
+  wire.body.position = in.FromSteps(body.position_x(), body.position_y(), body.position_z(), math::kPositionGrid);
+  wire.body.velocity = in.FromSteps(body.velocity_x(), body.velocity_y(), body.velocity_z(), math::kVelocityGrid);
+  const std::uint32_t bits = in.ToBits(body.bits(), kBodyBitsMask);
+  wire.body.stance = in.ToEnum(bits & kStanceMask, StanceWire::kStanding, StanceWire::kProne);
+  wire.body.flags = static_cast<std::uint8_t>(bits >> kBodyFlagsShift);
+  wire.body.stamina = in.FromSteps(body.stamina(), math::kStaminaGrid);
+  wire.yaw = in.FromSteps(body.yaw(), math::kAngleGrid);
+  return wire;
 }
 
-JoinRequestWire ReadJoinRequest(Reader& reader) {
-  // Braced initializers evaluate in order: the version, the pack, then the character.
-  return JoinRequestWire{
-      .engine_version = reader.ReadString(kMaxEngineVersionLength),
-      .client_pack = reader.ReadPackHash(),
-      .character = reader.ReadCharacter(),
-  };
+JoinRequestWire Read(const pb::JoinRequest& request, Inbound& in) {
+  return JoinRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
+                         .client_pack = in.PackHash(request.client_pack()),
+                         .character = in.Text(request.character(), kMaxCharacterNameLength)};
 }
 
-ReenactRequestWire ReadReenactRequest(Reader& reader) {
-  // The Join request's fields in its order, then the spawn.
+ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
   return ReenactRequestWire{
-      .engine_version = reader.ReadString(kMaxEngineVersionLength),
-      .client_pack = reader.ReadPackHash(),
-      .character = reader.ReadCharacter(),
-      .spawn = reader.ReadVec3(math::kPositionGrid),
-  };
+      .engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
+      .client_pack = in.PackHash(request.client_pack()),
+      .character = in.Text(request.character(), kMaxCharacterNameLength),
+      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid)};
 }
 
-EntityStateWire ReadEntityState(Reader& reader) {
-  EntityStateWire state;
-  state.entity = static_cast<EntityIdWire>(reader.ReadU32());
-  state.body = ReadBodyState(reader);
-  state.yaw = reader.ReadSteps(math::kAngleGrid);
-  return state;
+RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
+  return RifleWire{.rounds_per_minute = rifle.rounds_per_minute(),
+                   .muzzle_velocity = rifle.muzzle_velocity(),
+                   .reload_seconds = rifle.reload_seconds(),
+                   .recoil_recovery_per_second = rifle.recoil_recovery_per_second(),
+                   .ads_recoil_scale = rifle.ads_recoil_scale(),
+                   .ads_field_of_view = rifle.ads_field_of_view(),
+                   .recoil_pattern = ReadList(rifle.recoil_pattern(), limits::kMaxRecoilKicks, in,
+                                              [](const pb::RecoilKick& kick) {
+                                                return RecoilKickWire{.pitch = kick.pitch(), .yaw = kick.yaw()};
+                                              }),
+                   .magazine_capacity = in.Narrow(rifle.magazine_capacity())};
 }
 
-RifleWire ReadRifle(Reader& reader) {
-  RifleWire rifle;
-  rifle.magazine_capacity = reader.ReadU8();
-  rifle.rounds_per_minute = reader.ReadF32();
-  rifle.muzzle_velocity = reader.ReadF32();
-  rifle.reload_seconds = reader.ReadF32();
-  rifle.recoil_recovery_per_second = reader.ReadF32();
-  rifle.ads_recoil_scale = reader.ReadF32();
-  rifle.ads_field_of_view = reader.ReadF32();
-  rifle.recoil_pattern = ReadList(reader, limits::kMaxRecoilKicks, [](Reader& kick_reader) {
-    RecoilKickWire kick;
-    kick.pitch = kick_reader.ReadF32();
-    kick.yaw = kick_reader.ReadF32();
-    return kick;
-  });
-  return rifle;
+ParametersWire Read(const pb::Parameters& parameters, Inbound& in) {
+  const pb::Stamina& stamina = parameters.stamina();
+  const pb::Ammo& ammo = parameters.ammo();
+  return ParametersWire{.stamina = {.deplete_per_second = stamina.deplete_per_second(),
+                                    .regen_per_second = stamina.regen_per_second(),
+                                    .forced_walk_below = stamina.forced_walk_below()},
+                        .rifle = Read(parameters.rifle(), in),
+                        .ammo = {.gravity = ammo.gravity(),
+                                 .max_range = ammo.max_range(),
+                                 .head_damage = ammo.head_damage(),
+                                 .torso_damage = ammo.torso_damage(),
+                                 .limb_damage = ammo.limb_damage()},
+                        .starting_health = parameters.starting_health(),
+                        .player_count = in.Narrow(parameters.player_count())};
 }
 
-AmmoWire ReadAmmo(Reader& reader) {
-  AmmoWire ammo;
-  ammo.gravity = reader.ReadF32();
-  ammo.max_range = reader.ReadF32();
-  ammo.head_damage = reader.ReadF32();
-  ammo.torso_damage = reader.ReadF32();
-  ammo.limb_damage = reader.ReadF32();
-  return ammo;
+JoinAcceptedWire Read(const pb::JoinAccepted& accepted, Inbound& in) {
+  return JoinAcceptedWire{.session = static_cast<SessionIdWire>(accepted.session()),
+                          .tick_rate_hz = in.Narrow(accepted.tick_rate_hz()),
+                          .parameters = Read(accepted.parameters(), in),
+                          .character = in.Text(accepted.character(), kMaxCharacterNameLength)};
 }
 
-ParametersWire ReadParameters(Reader& reader) {
-  ParametersWire parameters;
-  parameters.player_count = reader.ReadU8();
-  parameters.stamina.deplete_per_second = reader.ReadF32();
-  parameters.stamina.regen_per_second = reader.ReadF32();
-  parameters.stamina.forced_walk_below = reader.ReadF32();
-  parameters.rifle = ReadRifle(reader);
-  parameters.ammo = ReadAmmo(reader);
-  parameters.starting_health = reader.ReadF32();
-  return parameters;
+JoinRefusedWire Read(const pb::JoinRefused& refused, Inbound& in) {
+  return JoinRefusedWire{.reason = in.ToEnum(refused.reason(), JoinRefusalWire::kVersionMismatch,
+                                             JoinRefusalWire::kReenactmentsNotAccepted)};
 }
 
-JoinAcceptedWire ReadJoinAccepted(Reader& reader) {
-  JoinAcceptedWire accepted;
-  accepted.session = static_cast<SessionIdWire>(reader.ReadU32());
-  accepted.tick_rate_hz = reader.ReadU8();
-  accepted.parameters = ReadParameters(reader);
-  accepted.character = reader.ReadCharacter();
-  return accepted;
+CommandsWire Read(const pb::Commands& commands, Inbound& in) {
+  return CommandsWire{.commands = ReadList(commands.commands(), kMaxCommandsPerMessage, in,
+                                           [&in](const pb::Command& command) {
+                                             return SequencedCommandWire{.sequence = command.sequence(),
+                                                                         .command = Read(command, in)};
+                                           }),
+                      .seen_tick = commands.seen_tick()};
 }
 
-JoinRefusedWire ReadJoinRefused(Reader& reader) {
-  return JoinRefusedWire{
-      .reason = reader.ReadEnum(JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kReenactmentsNotAccepted)};
+AuthoritativeStateWire Read(const pb::AuthoritativeState& state, Inbound& in) {
+  return AuthoritativeStateWire{.tick = state.tick(),
+                                .bodies = ReadList(state.bodies(), limits::kMaxPlayers, in,
+                                                   [&in](const pb::Body& body) { return Read(body, in); }),
+                                .rifle = {.cooldown = state.rifle_cooldown(),
+                                          .reload_remaining = state.rifle_reload_remaining(),
+                                          .recoil_pitch = in.FromSteps(state.rifle_recoil_pitch(), math::kAngleGrid),
+                                          .recoil_yaw = in.FromSteps(state.rifle_recoil_yaw(), math::kAngleGrid),
+                                          .rounds = in.Narrow(state.rifle_rounds()),
+                                          .burst_index = in.Narrow(state.rifle_burst_index())},
+                                .health = state.health(),
+                                .acknowledged_sequence = state.acknowledged_sequence(),
+                                .queued_commands = in.Narrow(state.queued_commands())};
 }
 
-CommandsWire ReadCommands(Reader& reader) {
-  CommandsWire message;
-  message.commands = ReadList(reader, kMaxCommandsPerMessage, [](Reader& sequenced) {
-    const tick::Sequence sequence = sequenced.ReadSequence();
-    return SequencedCommandWire{.sequence = sequence, .command = ReadCommand(sequenced)};
-  });
-  message.seen_tick = reader.ReadTick();
-  return message;
+LobbyWire Read(const pb::Lobby& lobby, Inbound& in) {
+  return LobbyWire{.version = lobby.version(),
+                   .roster = ReadList(lobby.roster(), limits::kMaxPlayers, in, [&in](const pb::RosterEntry& entry) {
+                     return RosterEntryWire{.session = static_cast<SessionIdWire>(entry.session()),
+                                            .character = in.Text(entry.character(), kMaxCharacterNameLength)};
+                   })};
 }
 
-WeaponStateWire ReadWeaponState(Reader& reader) {
-  WeaponStateWire rifle;
-  rifle.rounds = reader.ReadU8();
-  rifle.cooldown = reader.ReadF32();
-  rifle.reload_remaining = reader.ReadF32();
-  rifle.burst_index = reader.ReadU8();
-  rifle.recoil_pitch = reader.ReadSteps(math::kAngleGrid);
-  rifle.recoil_yaw = reader.ReadSteps(math::kAngleGrid);
-  return rifle;
+MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
+  return MatchStartWire{.players = ReadList(start.players(), limits::kMaxPlayers, in,
+                                            [&in](const pb::MatchPlayer& player) {
+                                              return MatchPlayerWire{
+                                                  .spawn = in.FromSteps(player.spawn_x(), player.spawn_y(),
+                                                                        player.spawn_z(), math::kPositionGrid),
+                                                  .session = static_cast<SessionIdWire>(player.session()),
+                                                  .entity = static_cast<EntityIdWire>(player.entity()),
+                                                  .character = in.Text(player.character(), kMaxCharacterNameLength)};
+                                            }),
+                        .first_tick = start.first_tick()};
 }
 
-AuthoritativeStateWire ReadAuthoritativeState(Reader& reader) {
-  AuthoritativeStateWire state;
-  state.tick = reader.ReadTick();
-  state.acknowledged_sequence = reader.ReadSequence();
-  state.bodies = ReadList(reader, limits::kMaxPlayers, ReadEntityState);
-  state.queued_commands = reader.ReadU8();
-  state.rifle = ReadWeaponState(reader);
-  state.health = reader.ReadF32();
-  return state;
+ShotWire Read(const pb::Shot& shot, Inbound& in) {
+  return ShotWire{.tick = shot.tick(),
+                  .origin = in.FromSteps(shot.origin_x(), shot.origin_y(), shot.origin_z(), math::kPositionGrid),
+                  .shooter = static_cast<EntityIdWire>(shot.shooter()),
+                  .yaw = in.FromSteps(shot.yaw(), math::kAngleGrid),
+                  .pitch = in.FromSteps(shot.pitch(), math::kAngleGrid)};
 }
 
-LobbyWire ReadLobby(Reader& reader) {
-  LobbyWire lobby;
-  lobby.version = reader.ReadU32();
-  lobby.roster = ReadList(reader, limits::kMaxPlayers, [](Reader& entry) {
-    const auto session = static_cast<SessionIdWire>(entry.ReadU32());
-    return RosterEntryWire{.session = session, .character = entry.ReadCharacter()};
-  });
-  return lobby;
+HitConfirmationWire Read(const pb::HitConfirmation& hit, Inbound& in) {
+  return HitConfirmationWire{.target = static_cast<EntityIdWire>(hit.target()),
+                             .damage = hit.damage(),
+                             .part = in.ToEnum(hit.part(), BodyPartWire::kHead, BodyPartWire::kLimb)};
 }
 
-MatchPlayerWire ReadMatchPlayer(Reader& reader) {
-  MatchPlayerWire player;
-  player.session = static_cast<SessionIdWire>(reader.ReadU32());
-  player.entity = static_cast<EntityIdWire>(reader.ReadU32());
-  player.character = reader.ReadCharacter();
-  player.spawn = reader.ReadVec3(math::kPositionGrid);
-  return player;
+DeathWire Read(const pb::Death& death, Inbound& in) {
+  return DeathWire{.victim = static_cast<EntityIdWire>(death.victim()),
+                   .killer = static_cast<EntityIdWire>(death.killer()),
+                   .yaw = in.FromSteps(death.yaw(), math::kAngleGrid),
+                   .pitch = in.FromSteps(death.pitch(), math::kAngleGrid),
+                   .part = in.ToEnum(death.part(), BodyPartWire::kHead, BodyPartWire::kLimb)};
 }
 
-MatchStartWire ReadMatchStart(Reader& reader) {
-  MatchStartWire start;
-  start.players = ReadList(reader, limits::kMaxPlayers, ReadMatchPlayer);
-  start.first_tick = reader.ReadTick();
-  return start;
+ReplayListingWire Read(const pb::ReplayListing& listing, Inbound& in) {
+  return ReplayListingWire{.started_unix_ms = listing.started_unix_ms(),
+                           .characters = ReadList(listing.characters(), limits::kMaxPlayers, in,
+                                                  [&in](const std::string& character) {
+                                                    return in.Text(character, kMaxCharacterNameLength);
+                                                  }),
+                           .name = in.Text(listing.name(), kMaxCaptureNameLength),
+                           .ticks = listing.ticks(),
+                           .tick_rate_hz = in.Narrow(listing.tick_rate_hz())};
 }
 
-ShotWire ReadShot(Reader& reader) {
-  ShotWire shot;
-  shot.shooter = static_cast<EntityIdWire>(reader.ReadU32());
-  shot.tick = reader.ReadTick();
-  shot.origin = reader.ReadVec3(math::kPositionGrid);
-  shot.yaw = reader.ReadSteps(math::kAngleGrid);
-  shot.pitch = reader.ReadSteps(math::kAngleGrid);
-  return shot;
+ReplayRequestWire Read(const pb::ReplayRequest& request, Inbound& in) {
+  return ReplayRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
+                           .client_pack = in.PackHash(request.client_pack()),
+                           .capture = in.Text(request.capture(), kMaxCaptureNameLength)};
 }
 
-HitConfirmationWire ReadHitConfirmation(Reader& reader) {
-  HitConfirmationWire hit;
-  hit.target = static_cast<EntityIdWire>(reader.ReadU32());
-  hit.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
-  hit.damage = reader.ReadF32();
-  return hit;
+ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {
+  return ReplayViewWire{
+      .tick = view.tick(),
+      .players = ReadList(view.players(), limits::kMaxPlayers, in, [&in](const pb::PlayerView& player) {
+        return PlayerViewWire{.pitch = in.FromSteps(player.pitch(), math::kAngleGrid),
+                              .entity = static_cast<EntityIdWire>(player.entity()),
+                              .flags = static_cast<std::uint8_t>(in.ToBits(player.bits(), PlayerViewWire::kAds))};
+      })};
 }
 
-DeathWire ReadDeath(Reader& reader) {
-  DeathWire death;
-  death.victim = static_cast<EntityIdWire>(reader.ReadU32());
-  death.killer = static_cast<EntityIdWire>(reader.ReadU32());
-  death.part = reader.ReadEnum(BodyPartWire::kHead, BodyPartWire::kLimb);
-  death.yaw = reader.ReadSteps(math::kAngleGrid);
-  death.pitch = reader.ReadSteps(math::kAngleGrid);
-  return death;
-}
-
-ReplayListingWire ReadReplayListing(Reader& reader) {
-  ReplayListingWire listing;
-  listing.name = reader.ReadString(kMaxCaptureNameLength);
-  listing.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadTick());
-  listing.ticks = reader.ReadU32();
-  listing.tick_rate_hz = reader.ReadU8();
-  listing.characters =
-      ReadList(reader, limits::kMaxPlayers, [](Reader& character) { return character.ReadCharacter(); });
-  return listing;
-}
-
-ReplayRequestWire ReadReplayRequest(Reader& reader) {
-  // Braced initializers evaluate in order: the version, the pack, then the capture.
-  return ReplayRequestWire{
-      .engine_version = reader.ReadString(kMaxEngineVersionLength),
-      .client_pack = reader.ReadPackHash(),
-      .capture = reader.ReadString(kMaxCaptureNameLength),
-  };
-}
-
-PlayerViewWire ReadPlayerView(Reader& reader) {
-  PlayerViewWire view;
-  view.entity = static_cast<EntityIdWire>(reader.ReadU32());
-  view.pitch = reader.ReadSteps(math::kAngleGrid);
-  view.flags = reader.ToFlags(reader.ReadU8(), PlayerViewWire::kAds);
-  return view;
-}
-
-ReplayViewWire ReadReplayView(Reader& reader) {
-  ReplayViewWire view;
-  view.tick = reader.ReadTick();
-  view.players = ReadList(reader, limits::kMaxPlayers, ReadPlayerView);
-  return view;
-}
-
-// nullopt when type is not a message of this protocol.
-std::optional<MessageWire> ReadBody(MessageTypeWire type, Reader& reader) {
-  switch (type) {
-    case MessageTypeWire::kJoinRequest:
-      return ReadJoinRequest(reader);
-    case MessageTypeWire::kJoinAccepted:
-      return ReadJoinAccepted(reader);
-    case MessageTypeWire::kJoinRefused:
-      return ReadJoinRefused(reader);
-    case MessageTypeWire::kCommands:
-      return ReadCommands(reader);
-    case MessageTypeWire::kAuthoritativeState:
-      return ReadAuthoritativeState(reader);
-    case MessageTypeWire::kLobby:
-      return ReadLobby(reader);
-    case MessageTypeWire::kReady:
-      return ReadyWire{.version = reader.ReadU32()};
-    case MessageTypeWire::kMatchStart:
-      return ReadMatchStart(reader);
-    case MessageTypeWire::kMatchEnd:
-      return MatchEndWire{.winner = static_cast<SessionIdWire>(reader.ReadU32())};
-    case MessageTypeWire::kShot:
-      return ReadShot(reader);
-    case MessageTypeWire::kHitConfirmation:
-      return ReadHitConfirmation(reader);
-    case MessageTypeWire::kDeath:
-      return ReadDeath(reader);
-    case MessageTypeWire::kReplayListRequest:
+// message's body, or nullopt when it sets no member this build knows.
+std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
+  switch (message.body_case()) {
+    case pb::Message::kJoinRequest:
+      return Read(message.join_request(), in);
+    case pb::Message::kJoinAccepted:
+      return Read(message.join_accepted(), in);
+    case pb::Message::kJoinRefused:
+      return Read(message.join_refused(), in);
+    case pb::Message::kCommands:
+      return Read(message.commands(), in);
+    case pb::Message::kAuthoritativeState:
+      return Read(message.authoritative_state(), in);
+    case pb::Message::kLobby:
+      return Read(message.lobby(), in);
+    case pb::Message::kReady:
+      return ReadyWire{.version = message.ready().version()};
+    case pb::Message::kMatchStart:
+      return Read(message.match_start(), in);
+    case pb::Message::kMatchEnd:
+      return MatchEndWire{.winner = static_cast<SessionIdWire>(message.match_end().winner())};
+    case pb::Message::kShot:
+      return Read(message.shot(), in);
+    case pb::Message::kHitConfirmation:
+      return Read(message.hit_confirmation(), in);
+    case pb::Message::kDeath:
+      return Read(message.death(), in);
+    case pb::Message::kReplayListRequest:
       return ReplayListRequestWire{};
-    case MessageTypeWire::kReplayList:
-      return ReplayListWire{.replays = ReadList(reader, kMaxReplayListings, ReadReplayListing)};
-    case MessageTypeWire::kReplayRequest:
-      return ReadReplayRequest(reader);
-    case MessageTypeWire::kReplayView:
-      return ReadReplayView(reader);
-    case MessageTypeWire::kReenactRequest:
-      return ReadReenactRequest(reader);
+    case pb::Message::kReplayList:
+      return ReplayListWire{.replays = ReadList(message.replay_list().replays(), kMaxReplayListings, in,
+                                                [&in](const pb::ReplayListing& listing) { return Read(listing, in); })};
+    case pb::Message::kReplayRequest:
+      return Read(message.replay_request(), in);
+    case pb::Message::kReplayView:
+      return Read(message.replay_view(), in);
+    case pb::Message::kReenactRequest:
+      return Read(message.reenact_request(), in);
+    case pb::Message::BODY_NOT_SET:
+      return std::nullopt;
   }
   return std::nullopt;
 }
 
-void WriteRifle(Writer& out, const RifleWire& rifle) {
-  WriteU8(out, rifle.magazine_capacity);
-  WriteF32(out, rifle.rounds_per_minute);
-  WriteF32(out, rifle.muzzle_velocity);
-  WriteF32(out, rifle.reload_seconds);
-  WriteF32(out, rifle.recoil_recovery_per_second);
-  WriteF32(out, rifle.ads_recoil_scale);
-  WriteF32(out, rifle.ads_field_of_view);
-  WriteList(out, rifle.recoil_pattern, limits::kMaxRecoilKicks, [](Writer& kick_out, const RecoilKickWire& kick) {
-    WriteF32(kick_out, kick.pitch);
-    WriteF32(kick_out, kick.yaw);
-  });
+// Readdress's framing (ADR-0038): protobuf's own tags and varints, around the
+// generated messages, so a tick's bodies are serialized once; and the envelope
+// tag a payload's type is read from without decoding it.
+
+// The tag before a field: its number, shifted past three bits of wire type.
+constexpr unsigned kTagTypeBits = 3U;
+constexpr std::uint32_t kTagTypeMask = (1U << kTagTypeBits) - 1U;
+constexpr std::uint32_t kVarintType = 0;
+constexpr std::uint32_t kFixed64Type = 1;
+constexpr std::uint32_t kLengthDelimitedType = 2;
+constexpr std::uint32_t kFixed32Type = 5;
+constexpr int kFixed64Size = 8;
+constexpr int kFixed32Size = 4;
+// A tag is a varint of at most 32 bits: five bytes of seven bits each.
+constexpr std::size_t kMaxTagBytes = 5;
+
+constexpr std::uint32_t kAuthoritativeStateTag =
+    (static_cast<std::uint32_t>(pb::Message::kAuthoritativeStateFieldNumber) << kTagTypeBits) | kLengthDelimitedType;
+
+// The last of an Authoritative State's shared fields, which number below every
+// field that is its recipient's own (proto/augusta.proto).
+constexpr std::uint32_t kLastSharedField = pb::AuthoritativeState::kBodiesFieldNumber;
+
+// Steps input past the value of the field tag begins: false if it runs past
+// the end, or is of a wire type an Authoritative State's fields never have.
+bool SkipValue(google::protobuf::io::CodedInputStream& input, std::uint32_t tag) {
+  std::uint64_t varint = 0;
+  std::uint32_t length = 0;
+  switch (tag & kTagTypeMask) {
+    case kVarintType:
+      return input.ReadVarint64(&varint);
+    case kFixed64Type:
+      return input.Skip(kFixed64Size);
+    case kLengthDelimitedType:
+      return input.ReadVarint32(&length) && length <= static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+             input.Skip(static_cast<int>(length));
+    case kFixed32Type:
+      return input.Skip(kFixed32Size);
+    default:
+      return false;
+  }
 }
 
-void WriteAmmo(Writer& out, const AmmoWire& ammo) {
-  WriteF32(out, ammo.gravity);
-  WriteF32(out, ammo.max_range);
-  WriteF32(out, ammo.head_damage);
-  WriteF32(out, ammo.torso_damage);
-  WriteF32(out, ammo.limb_damage);
+// The bytes of payload's shared fields, if it is an Authoritative State as
+// Encode makes one: the envelope's member, as long as the rest of the payload,
+// with its fields in their numbers' order, so its shared fields come first and
+// end where its recipient's own begin.
+std::optional<std::span<const std::byte>> SharedFieldsOf(std::span<const std::byte> payload) {
+  if (payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return std::nullopt;
+  }
+  google::protobuf::io::CodedInputStream input(reinterpret_cast<const std::uint8_t*>(payload.data()),
+                                               static_cast<int>(payload.size()));
+  std::uint32_t length = 0;
+  if (input.ReadTag() != kAuthoritativeStateTag || !input.ReadVarint32(&length)) {
+    return std::nullopt;
+  }
+  const auto start = static_cast<std::size_t>(input.CurrentPosition());
+  if (payload.size() - start != length) {
+    return std::nullopt;
+  }
+  std::optional<std::size_t> own_start;
+  while (static_cast<std::size_t>(input.CurrentPosition()) < payload.size()) {
+    const auto at = static_cast<std::size_t>(input.CurrentPosition());
+    const std::uint32_t tag = input.ReadTag();
+    const std::uint32_t field = tag >> kTagTypeBits;
+    if (field == 0 || (own_start.has_value() && field <= kLastSharedField) || !SkipValue(input, tag)) {
+      return std::nullopt;
+    }
+    if (!own_start.has_value() && field > kLastSharedField) {
+      own_start = at;
+    }
+  }
+  return payload.subspan(start, own_start.value_or(payload.size()) - start);
 }
 
-void WriteParameters(Writer& out, const ParametersWire& parameters) {
-  WriteU8(out, parameters.player_count);
-  WriteF32(out, parameters.stamina.deplete_per_second);
-  WriteF32(out, parameters.stamina.regen_per_second);
-  WriteF32(out, parameters.stamina.forced_walk_below);
-  WriteRifle(out, parameters.rifle);
-  WriteAmmo(out, parameters.ammo);
-  WriteF32(out, parameters.starting_health);
-}
+// A Match capture's records (ADR-0050), each its augusta.CaptureRecord member,
+// mapped as the messages are: a captured Command's command is a Commands
+// message's augusta.Command, its sequence left 0.
 
-void WriteMatchPlayer(Writer& out, const MatchPlayerWire& player) {
-  WriteU32(out, static_cast<std::uint32_t>(player.session));
-  WriteU32(out, static_cast<std::uint32_t>(player.entity));
-  WriteCharacter(out, player.character);
-  WriteVec3(out, player.spawn, math::kPositionGrid);
-}
+// One overload per record: the envelope's member, then its fields.
+struct RecordEncoder {
+  pb::CaptureRecord& record;
+  Outbound& out;
 
-void WriteShot(Writer& out, const ShotWire& shot) {
-  WriteU32(out, static_cast<std::uint32_t>(shot.shooter));
-  WriteTick(out, shot.tick);
-  WriteVec3(out, shot.origin, math::kPositionGrid);
-  WriteSteps(out, shot.yaw, math::kAngleGrid);
-  WriteSteps(out, shot.pitch, math::kAngleGrid);
-}
-
-void WriteDeath(Writer& out, const DeathWire& death) {
-  WriteU32(out, static_cast<std::uint32_t>(death.victim));
-  WriteU32(out, static_cast<std::uint32_t>(death.killer));
-  WriteU8(out, out.FromEnum(death.part, BodyPartWire::kHead, BodyPartWire::kLimb));
-  WriteSteps(out, death.yaw, math::kAngleGrid);
-  WriteSteps(out, death.pitch, math::kAngleGrid);
-}
-
-void WriteReplayListing(Writer& out, const ReplayListingWire& listing) {
-  WriteString(out, listing.name, kMaxCaptureNameLength);
-  WriteTick(out, std::bit_cast<tick::Tick>(listing.started_unix_ms));
-  WriteU32(out, listing.ticks);
-  WriteU8(out, listing.tick_rate_hz);
-  WriteList(out, listing.characters, limits::kMaxPlayers,
-            [](Writer& character_out, const std::string& character) { WriteCharacter(character_out, character); });
-}
-
-void WritePlayerView(Writer& out, const PlayerViewWire& view) {
-  WriteU32(out, static_cast<std::uint32_t>(view.entity));
-  WriteSteps(out, view.pitch, math::kAngleGrid);
-  WriteU8(out, out.FromFlags(view.flags, PlayerViewWire::kAds));
-}
-
-// One overload per message: the type tag, then the fields.
-struct Encoder {
-  Writer& out;
-
-  void operator()(const JoinRequestWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRequest));
-    WriteString(out, message.engine_version, kMaxEngineVersionLength);
-    WritePackHash(out, message.client_pack);
-    WriteCharacter(out, message.character);
+  void operator()(const CaptureHeaderWire& wire) const {
+    pb::CaptureHeader& header = *record.mutable_header();
+    header.set_server_pack(BytesOf(wire.server_pack));
+    header.set_client_pack(BytesOf(wire.client_pack));
+    header.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
+    header.set_started_unix_ms(wire.started_unix_ms);
+    header.set_tick_rate_hz(wire.tick_rate_hz);
   }
 
-  void operator()(const JoinAcceptedWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinAccepted));
-    WriteU32(out, static_cast<std::uint32_t>(message.session));
-    WriteU8(out, message.tick_rate_hz);
-    WriteParameters(out, message.parameters);
-    WriteCharacter(out, message.character);
+  void operator()(const CapturedJoinWire& wire) const {
+    pb::CapturedJoin& join = *record.mutable_join();
+    join.set_offset(wire.offset);
+    join.set_player(wire.player);
+    join.set_session(static_cast<std::uint32_t>(wire.session));
+    join.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    join.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
+    join.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
+    join.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
   }
 
-  void operator()(const JoinRefusedWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kJoinRefused));
-    WriteU8(out,
-            out.FromEnum(message.reason, JoinRefusalWire::kVersionMismatch, JoinRefusalWire::kReenactmentsNotAccepted));
+  void operator()(const CapturedCommandWire& wire) const {
+    pb::CapturedCommand& command = *record.mutable_command();
+    command.set_offset(wire.offset);
+    command.set_player(wire.player);
+    command.set_seen_offset(wire.seen_offset);
+    Write(wire.command, *command.mutable_command(), out);
   }
 
-  void operator()(const CommandsWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kCommands));
-    WriteList(out, message.commands, kMaxCommandsPerMessage,
-              [](Writer& command_out, const SequencedCommandWire& sequenced) {
-                WriteSequence(command_out, sequenced.sequence);
-                WriteCommand(command_out, sequenced.command);
-              });
-    WriteTick(out, message.seen_tick);
+  void operator()(const CapturedLeaveWire& wire) const {
+    pb::CapturedLeave& leave = *record.mutable_leave();
+    leave.set_offset(wire.offset);
+    leave.set_player(wire.player);
   }
 
-  void operator()(const AuthoritativeStateWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kAuthoritativeState));
-    WriteTick(out, message.tick);
-    WriteSequence(out, message.acknowledged_sequence);
-    WriteList(out, message.bodies, limits::kMaxPlayers, WriteEntityState);
-    WriteRecipientTail(out, message);
+  void operator()(const CapturedDeathWire& wire) const {
+    pb::CapturedDeath& death = *record.mutable_death();
+    death.set_offset(wire.offset);
+    death.set_victim(wire.victim);
+    death.set_killer(wire.killer);
   }
 
-  void operator()(const LobbyWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kLobby));
-    WriteU32(out, message.version);
-    WriteList(out, message.roster, limits::kMaxPlayers, [](Writer& entry_out, const RosterEntryWire& entry) {
-      WriteU32(entry_out, static_cast<std::uint32_t>(entry.session));
-      WriteCharacter(entry_out, entry.character);
-    });
-  }
-
-  void operator()(const ReadyWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReady));
-    WriteU32(out, message.version);
-  }
-
-  void operator()(const MatchStartWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchStart));
-    WriteList(out, message.players, limits::kMaxPlayers, WriteMatchPlayer);
-    WriteTick(out, message.first_tick);
-  }
-
-  void operator()(const MatchEndWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kMatchEnd));
-    WriteU32(out, static_cast<std::uint32_t>(message.winner));
-  }
-
-  void operator()(const ShotWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kShot));
-    WriteShot(out, message);
-  }
-
-  void operator()(const HitConfirmationWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kHitConfirmation));
-    WriteU32(out, static_cast<std::uint32_t>(message.target));
-    WriteU8(out, out.FromEnum(message.part, BodyPartWire::kHead, BodyPartWire::kLimb));
-    WriteF32(out, message.damage);
-  }
-
-  void operator()(const DeathWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kDeath));
-    WriteDeath(out, message);
-  }
-
-  void operator()(const ReenactRequestWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReenactRequest));
-    WriteString(out, message.engine_version, kMaxEngineVersionLength);
-    WritePackHash(out, message.client_pack);
-    WriteCharacter(out, message.character);
-    WriteVec3(out, message.spawn, math::kPositionGrid);
-  }
-
-  void operator()(const ReplayListRequestWire& /*message*/) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayListRequest));
-  }
-
-  void operator()(const ReplayListWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayList));
-    WriteList(out, message.replays, kMaxReplayListings, WriteReplayListing);
-  }
-
-  void operator()(const ReplayRequestWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayRequest));
-    WriteString(out, message.engine_version, kMaxEngineVersionLength);
-    WritePackHash(out, message.client_pack);
-    WriteString(out, message.capture, kMaxCaptureNameLength);
-  }
-
-  void operator()(const ReplayViewWire& message) const {
-    WriteU8(out, static_cast<std::uint8_t>(MessageTypeWire::kReplayView));
-    WriteTick(out, message.tick);
-    WriteList(out, message.players, limits::kMaxPlayers, WritePlayerView);
+  void operator()(const CapturedMatchEndWire& wire) const {
+    pb::CapturedMatchEnd& end = *record.mutable_match_end();
+    end.set_offset(wire.offset);
+    end.set_winner(wire.winner);
   }
 };
 
-void WriteSigned32(Writer& out, std::int32_t value) { WriteU32(out, std::bit_cast<std::uint32_t>(value)); }
-
-CaptureHeaderWire ReadCaptureHeader(Reader& reader) {
-  CaptureHeaderWire header;
-  header.format_version = reader.ReadU8();
-  header.engine_version = reader.ReadString(kMaxEngineVersionLength);
-  header.server_pack = reader.ReadPackHash();
-  header.client_pack = reader.ReadPackHash();
-  header.tick_rate_hz = reader.ReadU8();
-  header.started_unix_ms = std::bit_cast<std::int64_t>(reader.ReadTick());
-  return header;
+CaptureHeaderWire Read(const pb::CaptureHeader& header, Inbound& in) {
+  return CaptureHeaderWire{.server_pack = in.PackHash(header.server_pack()),
+                           .client_pack = in.PackHash(header.client_pack()),
+                           .engine_version = in.Text(header.engine_version(), kMaxEngineVersionLength),
+                           .started_unix_ms = header.started_unix_ms(),
+                           .tick_rate_hz = in.Narrow(header.tick_rate_hz())};
 }
 
-CapturedJoinWire ReadCapturedJoin(Reader& reader) {
-  CapturedJoinWire join;
-  join.offset = reader.ReadU32();
-  join.player = reader.ReadU8();
-  join.session = static_cast<SessionIdWire>(reader.ReadU32());
-  join.character = reader.ReadCharacter();
-  join.spawn = reader.ReadVec3(math::kPositionGrid);
-  return join;
+CapturedJoinWire Read(const pb::CapturedJoin& join, Inbound& in) {
+  return CapturedJoinWire{.spawn = in.FromSteps(join.spawn_x(), join.spawn_y(), join.spawn_z(), math::kPositionGrid),
+                          .offset = join.offset(),
+                          .session = static_cast<SessionIdWire>(join.session()),
+                          .character = in.Text(join.character(), kMaxCharacterNameLength),
+                          .player = in.Narrow(join.player())};
 }
 
-// The command goes last, so a reader that only counts commands (augusta-inspect)
-// stops before it.
-CapturedCommandWire ReadCapturedCommand(Reader& reader) {
-  CapturedCommandWire command;
-  command.offset = reader.ReadU32();
-  command.player = reader.ReadU8();
-  command.seen_offset = std::bit_cast<std::int32_t>(reader.ReadU32());
-  command.command = ReadCommand(reader);
-  return command;
+CapturedCommandWire Read(const pb::CapturedCommand& command, Inbound& in) {
+  return CapturedCommandWire{.command = Read(command.command(), in),
+                             .offset = command.offset(),
+                             .seen_offset = command.seen_offset(),
+                             .player = in.Narrow(command.player())};
 }
 
-CapturedLeaveWire ReadCapturedLeave(Reader& reader) {
-  CapturedLeaveWire leave;
-  leave.offset = reader.ReadU32();
-  leave.player = reader.ReadU8();
-  return leave;
-}
-
-CapturedDeathWire ReadCapturedDeath(Reader& reader) {
-  CapturedDeathWire death;
-  death.offset = reader.ReadU32();
-  death.victim = reader.ReadU8();
-  death.killer = reader.ReadU8();
-  return death;
-}
-
-CapturedMatchEndWire ReadCapturedMatchEnd(Reader& reader) {
-  CapturedMatchEndWire end;
-  end.offset = reader.ReadU32();
-  end.winner = reader.ReadU8();
-  return end;
-}
-
-// nullopt when type is not a record of a capture.
-std::optional<CaptureRecordWire> ReadCaptureRecordBody(CaptureRecordTypeWire type, Reader& reader) {
-  switch (type) {
-    case CaptureRecordTypeWire::kHeader:
-      return ReadCaptureHeader(reader);
-    case CaptureRecordTypeWire::kJoin:
-      return ReadCapturedJoin(reader);
-    case CaptureRecordTypeWire::kCommand:
-      return ReadCapturedCommand(reader);
-    case CaptureRecordTypeWire::kLeave:
-      return ReadCapturedLeave(reader);
-    case CaptureRecordTypeWire::kDeath:
-      return ReadCapturedDeath(reader);
-    case CaptureRecordTypeWire::kMatchEnd:
-      return ReadCapturedMatchEnd(reader);
+// record's member, or nullopt when it sets none this build knows.
+std::optional<CaptureRecordWire> ReadRecord(const pb::CaptureRecord& record, Inbound& in) {
+  switch (record.record_case()) {
+    case pb::CaptureRecord::kHeader:
+      return Read(record.header(), in);
+    case pb::CaptureRecord::kJoin:
+      return Read(record.join(), in);
+    case pb::CaptureRecord::kCommand:
+      return Read(record.command(), in);
+    case pb::CaptureRecord::kLeave:
+      return CapturedLeaveWire{.offset = record.leave().offset(), .player = in.Narrow(record.leave().player())};
+    case pb::CaptureRecord::kDeath:
+      return CapturedDeathWire{.offset = record.death().offset(),
+                               .victim = in.Narrow(record.death().victim()),
+                               .killer = in.Narrow(record.death().killer())};
+    case pb::CaptureRecord::kMatchEnd:
+      return CapturedMatchEndWire{.offset = record.match_end().offset(),
+                                  .winner = in.Narrow(record.match_end().winner())};
+    case pb::CaptureRecord::RECORD_NOT_SET:
+      return std::nullopt;
   }
   return std::nullopt;
 }
 
-// One overload per record: the type tag, then the fields, an event's offset first.
-struct CaptureRecordEncoder {
-  Writer& out;
-
-  void operator()(const CaptureHeaderWire& header) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kHeader));
-    WriteU8(out, header.format_version);
-    WriteString(out, header.engine_version, kMaxEngineVersionLength);
-    WritePackHash(out, header.server_pack);
-    WritePackHash(out, header.client_pack);
-    WriteU8(out, header.tick_rate_hz);
-    WriteTick(out, std::bit_cast<tick::Tick>(header.started_unix_ms));
+// What read maps payload's Envelope (augusta.Message or augusta.CaptureRecord)
+// to, or why it is none of this build: kMalformed if protobuf cannot parse it,
+// kUnknownType if it sets no member this build knows, else the first value the
+// mapping refused.
+template <typename Wire, typename Envelope, typename ReadEnvelope>
+std::expected<Wire, DecodeError> DecodeEnvelope(std::span<const std::byte> payload, ReadEnvelope read) {
+  CallArena arena;
+  auto& envelope = arena.Create<Envelope>();
+  if (payload.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      !envelope.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
+    return std::unexpected(DecodeError::kMalformed);
   }
-
-  void operator()(const CapturedJoinWire& join) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kJoin));
-    WriteU32(out, join.offset);
-    WriteU8(out, join.player);
-    WriteU32(out, static_cast<std::uint32_t>(join.session));
-    WriteCharacter(out, join.character);
-    WriteVec3(out, join.spawn, math::kPositionGrid);
-  }
-
-  void operator()(const CapturedCommandWire& command) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kCommand));
-    WriteU32(out, command.offset);
-    WriteU8(out, command.player);
-    WriteSigned32(out, command.seen_offset);
-    WriteCommand(out, command.command);
-  }
-
-  void operator()(const CapturedLeaveWire& leave) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kLeave));
-    WriteU32(out, leave.offset);
-    WriteU8(out, leave.player);
-  }
-
-  void operator()(const CapturedDeathWire& death) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kDeath));
-    WriteU32(out, death.offset);
-    WriteU8(out, death.victim);
-    WriteU8(out, death.killer);
-  }
-
-  void operator()(const CapturedMatchEndWire& end) const {
-    WriteU8(out, static_cast<std::uint8_t>(CaptureRecordTypeWire::kMatchEnd));
-    WriteU32(out, end.offset);
-    WriteU8(out, end.winner);
-  }
-};
-
-// A payload whose body was read into body by reader, after its type byte: the
-// body, unless its type is unknown (nullopt), the read met a problem, or bytes
-// remain.
-template <typename Payload>
-std::expected<Payload, DecodeError> Finish(std::optional<Payload> body, const Reader& reader) {
-  if (!body.has_value()) {
+  Inbound in;
+  std::optional<Wire> wire = read(envelope, in);
+  if (!wire.has_value()) {
     return std::unexpected(DecodeError::kUnknownType);
   }
-  if (reader.Error().has_value()) {
-    return std::unexpected(*reader.Error());
+  if (in.Error().has_value()) {
+    return std::unexpected(*in.Error());
   }
-  if (!reader.AtEnd()) {
-    return std::unexpected(DecodeError::kTrailingBytes);
-  }
-  return std::move(*body);
+  return std::move(*wire);
 }
 
 }  // namespace
-
-std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record) {
-  Writer out;
-  std::visit(CaptureRecordEncoder{.out = out}, record);
-  return std::move(out).Finish();
-}
-
-CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record) {
-  struct Type {
-    CaptureRecordTypeWire operator()(const CaptureHeaderWire& /*wire*/) const { return CaptureRecordTypeWire::kHeader; }
-    CaptureRecordTypeWire operator()(const CapturedJoinWire& /*wire*/) const { return CaptureRecordTypeWire::kJoin; }
-    CaptureRecordTypeWire operator()(const CapturedCommandWire& /*wire*/) const {
-      return CaptureRecordTypeWire::kCommand;
-    }
-    CaptureRecordTypeWire operator()(const CapturedLeaveWire& /*wire*/) const { return CaptureRecordTypeWire::kLeave; }
-    CaptureRecordTypeWire operator()(const CapturedDeathWire& /*wire*/) const { return CaptureRecordTypeWire::kDeath; }
-    CaptureRecordTypeWire operator()(const CapturedMatchEndWire& /*wire*/) const {
-      return CaptureRecordTypeWire::kMatchEnd;
-    }
-  };
-  return std::visit(Type{}, record);
-}
-
-std::expected<CaptureRecordWire, DecodeError> DecodeCaptureRecord(std::span<const std::byte> payload) {
-  if (payload.empty()) {
-    return std::unexpected(DecodeError::kEmpty);
-  }
-  Reader reader(payload.subspan(1));
-  return Finish(ReadCaptureRecordBody(static_cast<CaptureRecordTypeWire>(payload.front()), reader), reader);
-}
 
 std::expected<BytesWire, EncodeError> Encode(const MessageWire& message) {
-  Writer out;
-  std::visit(Encoder{.out = out}, message);
-  return std::move(out).Finish();
-}
-
-namespace {
-
-// Whether payload is an Authoritative State as Encode makes one: its type, and
-// as long as its count of bodies, each of a fixed size, and tail_size make it.
-bool IsAuthoritativeState(const BytesWire& payload, std::size_t tail_size) {
-  if (payload.size() <= kBodyCountOffset ||
-      payload.front() != static_cast<std::byte>(MessageTypeWire::kAuthoritativeState)) {
-    return false;
+  CallArena arena;
+  auto& encoded = arena.Create<pb::Message>();
+  Outbound out;
+  std::visit(Encoder{.message = encoded, .out = out}, message);
+  if (out.Error().has_value()) {
+    return std::unexpected(*out.Error());
   }
-  Writer body_out;
-  WriteEntityState(body_out, EntityStateWire{});
-  const std::size_t body_size = std::move(body_out).Finish().value().size();
-  const auto bodies = std::to_integer<std::size_t>(payload[kBodyCountOffset]);
-  return payload.size() == kBodyCountOffset + 1 + (bodies * body_size) + tail_size;
+  return Serialize(encoded);
 }
-
-}  // namespace
 
 std::expected<void, EncodeError> Readdress(BytesWire& payload, const AuthoritativeStateWire& recipient) {
-  Writer sequence_out;
-  WriteSequence(sequence_out, recipient.acknowledged_sequence);
-  Writer tail_out;
-  WriteRecipientTail(tail_out, recipient);
-  auto sequence = std::move(sequence_out).Finish();
-  if (!sequence.has_value()) {
-    return std::unexpected(sequence.error());
-  }
-  auto tail = std::move(tail_out).Finish();
-  if (!tail.has_value()) {
-    return std::unexpected(tail.error());
-  }
-  if (!IsAuthoritativeState(payload, tail->size())) {
+  const std::optional<std::span<const std::byte>> shared = SharedFieldsOf(payload);
+  if (!shared.has_value()) {
     return std::unexpected(EncodeError::kNotAnAuthoritativeState);
   }
-  std::ranges::copy(*sequence, payload.begin() + static_cast<std::ptrdiff_t>(kAcknowledgedSequenceOffset));
-  std::ranges::copy(*tail, payload.end() - static_cast<std::ptrdiff_t>(tail->size()));
+  CallArena arena;
+  auto& own = arena.Create<pb::AuthoritativeState>();
+  WriteOwn(recipient, own);
+  const std::size_t own_size = own.ByteSizeLong();
+  const auto length = static_cast<std::uint32_t>(shared->size() + own_size);
+  using google::protobuf::io::CodedOutputStream;
+  BytesWire readdressed(CodedOutputStream::VarintSize32(kAuthoritativeStateTag) +
+                        CodedOutputStream::VarintSize32(length) + length);
+  auto* at = reinterpret_cast<std::uint8_t*>(readdressed.data());
+  at = CodedOutputStream::WriteVarint32ToArray(kAuthoritativeStateTag, at);
+  at = CodedOutputStream::WriteVarint32ToArray(length, at);
+  at = std::ranges::transform(*shared, at, [](std::byte byte) { return static_cast<std::uint8_t>(byte); }).out;
+  own.SerializeWithCachedSizesToArray(at);
+  payload = std::move(readdressed);
   return {};
 }
 
@@ -1056,26 +977,59 @@ MessageTypeWire TypeOf(const MessageWire& message) {
   return std::visit(Type{}, message);
 }
 
+MessageTypeWire TypeOf(std::span<const std::byte> payload) {
+  google::protobuf::io::CodedInputStream input(reinterpret_cast<const std::uint8_t*>(payload.data()),
+                                               static_cast<int>(std::min(payload.size(), kMaxTagBytes)));
+  return static_cast<MessageTypeWire>(input.ReadTag() >> kTagTypeBits);
+}
+
 std::expected<MessageWire, DecodeError> Decode(std::span<const std::byte> payload) {
-  if (payload.empty()) {
-    return std::unexpected(DecodeError::kEmpty);
+  return DecodeEnvelope<MessageWire, pb::Message>(payload, ReadBody);
+}
+
+std::expected<BytesWire, EncodeError> EncodeCaptureRecord(const CaptureRecordWire& record) {
+  CallArena arena;
+  auto& encoded = arena.Create<pb::CaptureRecord>();
+  Outbound out;
+  std::visit(RecordEncoder{.record = encoded, .out = out}, record);
+  if (out.Error().has_value()) {
+    return std::unexpected(*out.Error());
   }
-  Reader reader(payload.subspan(1));
-  return Finish(ReadBody(static_cast<MessageTypeWire>(payload.front()), reader), reader);
+  return Serialize(encoded);
+}
+
+CaptureRecordTypeWire TypeOf(const CaptureRecordWire& record) {
+  struct Type {
+    CaptureRecordTypeWire operator()(const CaptureHeaderWire& /*wire*/) const { return CaptureRecordTypeWire::kHeader; }
+    CaptureRecordTypeWire operator()(const CapturedJoinWire& /*wire*/) const { return CaptureRecordTypeWire::kJoin; }
+    CaptureRecordTypeWire operator()(const CapturedCommandWire& /*wire*/) const {
+      return CaptureRecordTypeWire::kCommand;
+    }
+    CaptureRecordTypeWire operator()(const CapturedLeaveWire& /*wire*/) const { return CaptureRecordTypeWire::kLeave; }
+    CaptureRecordTypeWire operator()(const CapturedDeathWire& /*wire*/) const { return CaptureRecordTypeWire::kDeath; }
+    CaptureRecordTypeWire operator()(const CapturedMatchEndWire& /*wire*/) const {
+      return CaptureRecordTypeWire::kMatchEnd;
+    }
+  };
+  return std::visit(Type{}, record);
+}
+
+std::expected<CaptureRecordWire, DecodeError> DecodeCaptureRecord(std::span<const std::byte> payload) {
+  return DecodeEnvelope<CaptureRecordWire, pb::CaptureRecord>(payload, ReadRecord);
 }
 
 std::string_view DescribeDecodeError(DecodeError error) {
   switch (error) {
-    case DecodeError::kEmpty:
-      return "empty payload";
+    case DecodeError::kMalformed:
+      return "payload does not parse";
     case DecodeError::kUnknownType:
-      return "unknown message type";
-    case DecodeError::kTruncated:
-      return "payload ends before the message does";
-    case DecodeError::kTrailingBytes:
-      return "bytes remain after the message";
+      return "no message type this build knows";
     case DecodeError::kInvalidEnum:
       return "field holds a value its enumeration lacks";
+    case DecodeError::kReservedBits:
+      return "flags field has a bit that is none of its flags";
+    case DecodeError::kOutOfRange:
+      return "number outside its grid or wider than its field";
     case DecodeError::kFieldTooLong:
       return "string or list field longer than allowed";
   }
@@ -1092,8 +1046,12 @@ std::string_view DescribeEncodeError(EncodeError error) {
       return "field holds a value its enumeration lacks";
     case EncodeError::kNotAnAuthoritativeState:
       return "payload to readdress is not an authoritative state's";
+    case EncodeError::kNotUtf8:
+      return "string field is not utf-8";
   }
   return "unknown encode error";
 }
+
+bool IsUtf8(std::string_view text) { return utf8_range_IsValid(text.data(), text.size()) != 0; }
 
 }  // namespace augusta::protocol

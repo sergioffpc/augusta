@@ -207,8 +207,10 @@ format-check:
 
 # Configuring first keeps
 # compile_commands.json in step with the sources (a file new on a branch has no
-# entry until then).
+# entry until then); then protoc writes augusta.pb.h, which protocol.cpp
+# includes.
 tidy: configure
+	$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 
 # clang-tidy through ctcache (scripts/bootstrap.sh installs it), as CI's Lint
@@ -253,10 +255,12 @@ format-files:
 # format-check's linters, then tidy's clang-tidy and include-cleaner, side by
 # side as tidy runs them. Unlike tidy it does not configure first, which would
 # make every push wait on CMake and vcpkg: the build must have been configured.
+# It generates augusta.pb.h when it lints protocol.cpp, as tidy does.
 LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint)
 LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
 lint-files:
 	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)) - on macOS through scripts/dev-container.sh)))
+	$(if $(filter tidy/src/modules/protocol/protocol.cpp,$(LINT_TIDY)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(strip $(LINT_TIDY)),"CTCACHE_DIR=$(CTCACHE_DIR)") $(LINT_CHECKS) $(LINT_TIDY)
 
 .PHONY: $(LINT_CHECKS)

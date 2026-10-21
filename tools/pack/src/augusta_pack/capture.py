@@ -1,31 +1,26 @@
 """Reading a Match capture (ADR-0050) for `augusta-inspect`.
 
-The read side of src/modules/capture, which reads and writes it, and
-src/modules/protocol's capture records: the capture's magic, then each record
-after its length in one byte (#463), the header first. A Command's contents are
-counted, never decoded, so a capture's size does not slow the reader; every
-other record is decoded in full.
+The read side of src/modules/capture, which reads and writes it: the capture's
+magic, then its format version in one byte, then each record after its length
+in one byte (#463), the header first. Each record is one augusta.CaptureRecord,
+read through augusta_pb2, the module generated from the protocol's one schema
+(ADR-0007), so this reader never copies the format by hand. A Command is only
+counted.
 """
 
 import dataclasses
 import datetime
-import struct
+
+from google.protobuf import message as protobuf_message
+
+from augusta_pack import augusta_pb2
 
 MAGIC = b"AUGCAP\r\n"
 # The format version this reader reads (protocol::kCaptureFormatVersion).
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
-_HEADER = 1
-_JOIN = 2
-_COMMAND = 3
-_LEAVE = 4
-_DEATH = 5
-_MATCH_END = 6
-
-_PACK_HASH_SIZE = 32
-# A position travels as a signed count of 1/1024 in 3 bytes (augusta/grid.h's
+# A position travels as a signed count of 1/1024 m (augusta/grid.h's
 # kPositionGrid).
-_POSITION_BYTES = 3
 _POSITION_STEP = 1.0 / 1024.0
 
 
@@ -52,7 +47,6 @@ class CapturedPlayer:
 class CaptureHeader:
     """What a captured Match ran on and when it started."""
 
-    format_version: int
     engine_version: str
     server_pack: bytes
     client_pack: bytes
@@ -80,53 +74,26 @@ def is_capture(data: bytes) -> bool:
     return data.startswith(MAGIC)
 
 
-class _Reader:
-    """Reads one record's fields front to back."""
+def _check_format_version(data: bytes) -> None:
+    """Refuses data unless the byte after its magic is this reader's version.
 
-    def __init__(self, payload: bytes) -> None:
-        self._payload = payload
-        self._at = 0
-
-    def take(self, size: int) -> bytes:
-        if self._at + size > len(self._payload):
-            raise CaptureError("a record ends before its fields do")
-        taken = self._payload[self._at : self._at + size]
-        self._at += size
-        return taken
-
-    def u8(self) -> int:
-        return self.take(1)[0]
-
-    def u32(self) -> int:
-        return struct.unpack("<I", self.take(4))[0]
-
-    def i32(self) -> int:
-        return struct.unpack("<i", self.take(4))[0]
-
-    def i64(self) -> int:
-        return struct.unpack("<q", self.take(8))[0]
-
-    def string(self) -> str:
-        return self.take(self.u8()).decode("utf-8", errors="replace")
-
-    def position(self) -> tuple[float, float, float]:
-        def axis() -> float:
-            steps = int.from_bytes(
-                self.take(_POSITION_BYTES), "little", signed=True
-            )
-            return steps * _POSITION_STEP
-
-        return (axis(), axis(), axis())
-
-    def end(self) -> None:
-        if self._at != len(self._payload):
-            raise CaptureError("bytes remain after a record")
+    A capture before version 3 holds its version inside its header record, so
+    the byte after its magic is that record's length, and it is refused here.
+    """
+    if len(data) <= len(MAGIC):
+        raise CaptureError("the capture has no format version")
+    version = data[len(MAGIC)]
+    if version != FORMAT_VERSION:
+        raise CaptureError(
+            f"capture format version {version}, this reader reads "
+            f"{FORMAT_VERSION}"
+        )
 
 
 def _frames(data: bytes) -> tuple[list[bytes], bool]:
-    """Every whole record after the magic, and whether the last was cut off."""
+    """Every whole record after the version, and whether the last is torn."""
     records = []
-    at = len(MAGIC)
+    at = len(MAGIC) + 1
     while at < len(data):
         length = data[at]
         if at + 1 + length > len(data):
@@ -136,38 +103,47 @@ def _frames(data: bytes) -> tuple[list[bytes], bool]:
     return records, False
 
 
+def _parse(payload: bytes) -> augusta_pb2.CaptureRecord:
+    try:
+        return augusta_pb2.CaptureRecord.FromString(payload)
+    except protobuf_message.DecodeError as error:
+        raise CaptureError("a record does not parse") from error
+
+
+def _text(field: bytes) -> str:
+    """A text field, which the schema holds as bytes of UTF-8."""
+    try:
+        return field.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CaptureError("a record's text is not UTF-8") from error
+
+
 def _read_header(payload: bytes) -> CaptureHeader:
-    reader = _Reader(payload)
-    if reader.u8() != _HEADER:
+    record = _parse(payload)
+    if record.WhichOneof("record") != "header":
         raise CaptureError("the capture does not start with its header")
-    format_version = reader.u8()
-    if format_version != FORMAT_VERSION:
-        raise CaptureError(
-            f"capture format version {format_version}, this reader reads "
-            f"{FORMAT_VERSION}"
-        )
-    header = CaptureHeader(
-        format_version=format_version,
-        engine_version=reader.string(),
-        server_pack=reader.take(_PACK_HASH_SIZE),
-        client_pack=reader.take(_PACK_HASH_SIZE),
-        tick_rate_hz=reader.u8(),
+    header = record.header
+    return CaptureHeader(
+        engine_version=_text(header.engine_version),
+        server_pack=header.server_pack,
+        client_pack=header.client_pack,
+        tick_rate_hz=header.tick_rate_hz,
         started=datetime.datetime.fromtimestamp(
-            reader.i64() / 1000, tz=datetime.UTC
+            header.started_unix_ms / 1000, tz=datetime.UTC
         ),
     )
-    reader.end()
-    return header
 
 
 def read_capture(data: bytes) -> Capture:
     """Reads the capture data holds.
 
     Raises:
-        CaptureError: data is no capture, or a record is malformed.
+        CaptureError: data is no capture, is of another format version, or a
+            record is malformed.
     """
     if not is_capture(data):
         raise CaptureError("the file does not start with a capture's magic")
+    _check_format_version(data)
     records, torn = _frames(data)
     if not records:
         raise CaptureError("the capture has no header")
@@ -188,45 +164,50 @@ def read_capture(data: bytes) -> Capture:
         return capture.players[number - 1]
 
     for payload in records[1:]:
-        reader = _Reader(payload)
-        kind = reader.u8()
-        offset = reader.u32()
+        record = _parse(payload)
+        kind = record.WhichOneof("record")
+        if kind is None:
+            raise CaptureError("a record is of no type this reader knows")
+        if kind == "header":
+            raise CaptureError("the capture has a second header")
+        event = getattr(record, kind)
+        offset = event.offset
         # As src/modules/capture/capture.cpp's RecordOrder: Joins first, at
         # 0, in order, then the events in tick order, and nothing after the
         # Match end.
         if capture.ended or offset < capture.last_offset:
             raise CaptureError("a record is out of order")
         capture.last_offset = offset
-        if kind == _JOIN:
-            number = reader.u8()
-            if number != len(capture.players) + 1 or offset != 0:
-                raise CaptureError(f"player {number} joins out of order")
+        if kind == "join":
+            if event.player != len(capture.players) + 1 or offset != 0:
+                raise CaptureError(f"player {event.player} joins out of order")
             capture.players.append(
                 CapturedPlayer(
-                    number=number,
-                    session=reader.u32(),
-                    character=reader.string(),
-                    spawn=reader.position(),
+                    number=event.player,
+                    session=event.session,
+                    character=_text(event.character),
+                    spawn=(
+                        event.spawn_x * _POSITION_STEP,
+                        event.spawn_y * _POSITION_STEP,
+                        event.spawn_z * _POSITION_STEP,
+                    ),
                 )
             )
-            reader.end()
-        elif kind == _COMMAND:
-            player(reader.u8()).commands += 1
-        elif kind == _LEAVE:
-            player(reader.u8()).left = offset
-            reader.end()
-        elif kind == _DEATH:
-            victim = player(reader.u8())
+        elif kind == "command":
+            player(event.player).commands += 1
+        elif kind == "leave":
+            player(event.player).left = offset
+        elif kind == "death":
+            victim = player(event.victim)
             victim.died = offset
-            victim.killer = player(reader.u8()).number
-            reader.end()
-        elif kind == _MATCH_END:
-            winner = reader.u8()
+            victim.killer = player(event.killer).number
+        elif kind == "match_end":
             capture.ended = True
-            capture.winner = player(winner).number if winner else None
-            reader.end()
+            capture.winner = (
+                player(event.winner).number if event.winner else None
+            )
         else:
-            raise CaptureError(f"unknown capture record type {kind}")
+            raise CaptureError(f"this reader does not read a {kind} record")
     return capture
 
 
@@ -237,7 +218,7 @@ def format_capture(capture: Capture) -> list[str]:
     seconds = ticks / header.tick_rate_hz if header.tick_rate_hz else 0.0
     lines = [
         "Match capture",
-        f"  format version  {header.format_version}",
+        f"  format version  {FORMAT_VERSION}",
         f"  engine version  {header.engine_version}",
         f"  server pack     {header.server_pack.hex()}",
         f"  client pack     {header.client_pack.hex()}",

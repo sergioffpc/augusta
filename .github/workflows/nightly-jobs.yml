@@ -87,9 +87,19 @@ jobs:
       fail-fast: false
       matrix:
         target: [protocol_decode, capture_read, pack_load]
+        # A target's corpus generation, bumped when its input's format changes
+        # so the night starts over from the seeds rather than from inputs of the
+        # old format: the protocol's moved to Protocol Buffers and capture v3.
+        include:
+          - target: protocol_decode
+            generation: -v2
+          - target: capture_read
+            generation: -v2
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
       CORPUS: fuzz-corpus/${{ matrix.target }}
+      # What each night's corpus cache entry is saved under, before its run id.
+      CORPUS_KEY: fuzz-corpus-${{ matrix.target }}${{ matrix.generation }}-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -110,9 +120,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CORPUS }}
-          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          key: ${{ env.CORPUS_KEY }}${{ github.run_id }}
           restore-keys: |
-            fuzz-corpus-${{ matrix.target }}-
+            ${{ env.CORPUS_KEY }}
       - name: Fuzz
         # New inputs go to the cached corpus, never into the committed seeds;
         # a crash lands in fuzz-crashes/ and fails the job.
@@ -138,14 +148,14 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CORPUS }}
-          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          key: ${{ env.CORPUS_KEY }}${{ github.run_id }}
       # Each night's corpus holds the one before, minimized: the older entries
       # are superseded.
       - if: success() && !inputs.release
         uses: ./.github/actions/prune-cache
         with:
-          prefix: fuzz-corpus-${{ matrix.target }}-
-          keep: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          prefix: ${{ env.CORPUS_KEY }}
+          keep: ${{ env.CORPUS_KEY }}${{ github.run_id }}
       - name: Upload crashing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

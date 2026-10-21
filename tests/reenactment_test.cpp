@@ -33,6 +33,7 @@ namespace {
 using augusta::capture::AtOffset;
 using augusta::capture::Capture;
 using augusta::capture::ReadError;
+using augusta::capture::ReadErrorCode;
 using augusta::command::Command;
 using augusta::harness::DueTick;
 using augusta::harness::EntityId;
@@ -158,11 +159,12 @@ TEST(ReadScriptTest, ACaptureWithoutThePlayerAskedForGivesNoScript) {
 }
 
 TEST(ReadScriptTest, ACaptureThatDoesNotReadGivesNoScriptForWhyItDoesNot) {
-  EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(), ScriptError{.capture = ReadError::kNotACapture});
+  EXPECT_EQ(ScriptOf("AUGPACK\r\n and the rest", 1).error(),
+            ScriptError{.capture = ReadError{.code = ReadErrorCode::kNotACapture}});
   std::ifstream missing((std::filesystem::temp_directory_path() / "augusta_reenactment_test_missing")
                             .replace_extension(augusta::capture::kExtension),
                         std::ios::binary);
-  EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError::kUnreadable});
+  EXPECT_EQ(ReadScript(missing, 1).error(), ScriptError{.capture = ReadError{.code = ReadErrorCode::kUnreadable}});
 }
 
 TEST(ReadScriptTest, ACaptureCutShortGivesTheScriptOfEveryWholeRecordAndSaysItIsTorn) {

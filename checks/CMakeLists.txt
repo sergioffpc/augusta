@@ -8,7 +8,9 @@
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
 # name the harness: the client converts (src/client/frame_mapping.h).
 # Nor does the protocol itself include or link anything but augusta_math,
-# augusta_tick and augusta_limits. A source scan, so it builds nothing.
+# augusta_tick, augusta_limits and the full protobuf runtime, PRIVATE, nor does
+# any header outside it include protobuf or the generated augusta.pb.h. A source
+# scan, so it builds nothing.
 add_test(
   NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake

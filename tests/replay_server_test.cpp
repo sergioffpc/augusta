@@ -960,6 +960,9 @@ TEST(ListedOfTest, ItNamesTheNewestCapturesAReplayRequestCanName) {
                                                   .ticks = 1,
                                                   .tick_rate_hz = kTickRate,
                                                   .characters = {}});
+  // A file name that is not UTF-8, as one on Linux may be.
+  listings.push_back(augusta::host::ReplayListing{
+      .name = "\xC3\x28.acap", .started = {}, .ticks = 1, .tick_rate_hz = kTickRate, .characters = {}});
 
   const std::vector<augusta::host::ReplayListing> listed = augusta::link::ListedOf(listings);
 

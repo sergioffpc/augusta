@@ -3486,16 +3486,14 @@ TEST_F(ImpossibleCommandTest, AMessageOnlyTheServerSendsChangesNothingWhenAClien
 // Requirements: US-15, NFR-05
 TEST_F(ImpossibleCommandTest, ACommandMessageWithMoreCommandsThanTheProtocolAllowsIsRefusedWhole) {
   // Encode writes no such message, so it is put together by hand: one of
-  // kMaxCommandsPerMessage commands, with one more spliced in before its Seen tick.
-  constexpr std::size_t kHeader = 2;  // The message type and the count.
-  constexpr std::size_t kSeenTick = sizeof(augusta::tick::Tick);
-  const protocol::BytesWire encoded = protocol::Encode(MostCommands()).value();
+  // kMaxCommandsPerMessage commands, then one of one more. Protobuf merges a
+  // message field that arrives twice and appends to its lists, so the two
+  // payloads back to back are one Commands message of both lists.
+  protocol::BytesWire too_many = protocol::Encode(MostCommands()).value();
   const protocol::BytesWire extra =
       protocol::Encode(protocol::CommandsWire{.commands = {Acting(augusta::protocol::kMaxCommandsPerMessage + 1)}})
           .value();
-  protocol::BytesWire too_many(encoded.begin(), encoded.end() - static_cast<std::ptrdiff_t>(kSeenTick));
-  too_many[1] = static_cast<std::byte>(augusta::protocol::kMaxCommandsPerMessage + 1);
-  too_many.insert(too_many.end(), extra.begin() + static_cast<std::ptrdiff_t>(kHeader), extra.end());
+  too_many.insert(too_many.end(), extra.begin(), extra.end());
   ASSERT_EQ(protocol::Decode(too_many).error(), protocol::DecodeError::kFieldTooLong);
   const Told before = Now();
 

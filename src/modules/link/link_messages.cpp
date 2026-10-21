@@ -148,8 +148,11 @@ std::expected<protocol::BytesWire, failure::Failure> EncodeToSend(const protocol
   });
 }
 
-MessageType TypeOf(std::span<const std::byte> payload) {
-  switch (static_cast<protocol::MessageTypeWire>(payload.front())) {
+namespace {
+
+// type as the Link names it.
+MessageType Named(protocol::MessageTypeWire type) {
+  switch (type) {
     case protocol::MessageTypeWire::kJoinRequest:
       return MessageType::kJoinRequest;
     case protocol::MessageTypeWire::kJoinAccepted:
@@ -187,6 +190,12 @@ MessageType TypeOf(std::span<const std::byte> payload) {
   }
   std::unreachable();
 }
+
+}  // namespace
+
+MessageType TypeOf(std::span<const std::byte> payload) { return Named(protocol::TypeOf(payload)); }
+
+MessageType TypeOf(const protocol::MessageWire& message) { return Named(protocol::TypeOf(message)); }
 
 protocol::SessionIdWire ToWire(SessionId session) {
   return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
