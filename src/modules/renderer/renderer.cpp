@@ -1,9 +1,11 @@
 #include "augusta/renderer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -26,8 +28,11 @@
 #include "vulkan_swapchain.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
+#include "augusta/window_events.h"
 #include "debug_hud.h"
+#include "debug_panels_pass.h"
 #include "debug_shapes_pass.h"
 #endif
 
@@ -198,6 +203,11 @@ struct Renderer::Impl {
   std::unique_ptr<DebugShapesPass> debug_shapes;
   std::unique_ptr<DebugHud> debug_hud;
   std::vector<std::string> text_lines;
+  std::unique_ptr<DebugPanelsPass> debug_panels;
+  debug::Panels panels;
+  // What the panels' controls changed to since TakeDebugControlEvents last
+  // took them.
+  std::vector<debug::ControlEvent> control_events;
 #endif
 
   // Signaled after each frame's work, per frame region (FrameRegion): a frame
@@ -217,6 +227,7 @@ struct Renderer::Impl {
 #if AUGUSTA_DEBUG_TOOLS
     debug_shapes = std::make_unique<DebugShapesPass>(*device, *binding_layout, framebuffer->getFramebufferInfo());
     debug_hud = std::make_unique<DebugHud>(*device);
+    debug_panels = std::make_unique<DebugPanelsPass>(*device);
 #endif
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
@@ -432,6 +443,7 @@ struct Renderer::Impl {
     Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
 #if AUGUSTA_DEBUG_TOOLS
     debug_hud->Render(*commands, *framebuffer, text_lines);
+    std::ranges::move(debug_panels->Render(*commands, *framebuffer, panels), std::back_inserter(control_events));
 #endif
     // None while the window is minimized: the frame is drawn, not shown.
     if (image != nullptr) {
@@ -511,6 +523,12 @@ void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay
 void Renderer::SetTextLines(std::vector<std::string> lines) { impl_->text_lines = std::move(lines); }
 
 void Renderer::SetDebugShapes(const debug::Shapes& shapes) { impl_->UploadDebugShapes(shapes); }
+
+void Renderer::SetDebugPanels(debug::Panels panels) { impl_->panels = std::move(panels); }
+
+void Renderer::HandleDebugPanelInput(std::span<const window::Event> events) { impl_->debug_panels->Handle(events); }
+
+std::vector<debug::ControlEvent> Renderer::TakeDebugControlEvents() { return std::exchange(impl_->control_events, {}); }
 #endif
 
 }  // namespace augusta::renderer

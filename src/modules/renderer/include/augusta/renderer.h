@@ -11,7 +11,9 @@
 #include "augusta/window.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
+#include "augusta/window_events.h"
 #endif
 
 /// \file
@@ -33,7 +35,12 @@
 /// The debug HUD it draws is the text lines it is handed (SetTextLines): what
 /// they say is augusta::hud's. The Debug overlays it draws are the shapes it is
 /// handed (SetDebugShapes), which augusta::debug describes and tessellates
-/// (ADR-0075). A Shipping build (ADR-0074) has neither.
+/// (ADR-0075). The Debug panels it draws are the ones it is handed
+/// (SetDebugPanels), operated by the window's events the client Runtime hands
+/// it in Debug interaction (HandleDebugPanelInput), and their changes come
+/// back from their own call (TakeDebugControlEvents), not from RenderFrame;
+/// Dear ImGui, which draws them, stays inside the Renderer. A Shipping build
+/// (ADR-0074) has none of them.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -269,6 +276,29 @@ class Renderer {
   /// grow as a frame needs and never shrink, as SetRemotePlayers' do, so it is
   /// cheap enough to call every frame. From the Main/Render thread.
   void SetDebugShapes(const debug::Shapes& shapes);
+
+  /// Replaces the Debug panels the next RenderFrame draws over everything else,
+  /// through Dear ImGui: each opens with its title bar, and no close button (a
+  /// panel closes from the Debug index), at a fixed default position given by
+  /// its place in panels, the first under the debug HUD and each next one
+  /// cascading down and right from it, and keeps, by its id, the place a
+  /// developer drags it to until the client exits. No layout is saved, so
+  /// every run opens them at their default positions. Panels live one frame:
+  /// the client hands the frame's panels, none included, before every
+  /// RenderFrame. From the Main/Render thread.
+  void SetDebugPanels(debug::Panels panels);
+
+  /// Hands the panels the window's events, oldest first, in Debug interaction
+  /// only: the cursor's position, the mouse buttons and the keys, which reach
+  /// the panels by the next RenderFrame. Out of Debug interaction the client
+  /// hands none, and the panels take no input. From the Main/Render thread.
+  void HandleDebugPanelInput(std::span<const window::Event> events);
+
+  /// The changes the developer made to the panels' controls in the
+  /// RenderFrames since the last call, oldest first, each naming its panel and
+  /// control: none for a greyed-out control. Cheap enough to call every frame,
+  /// after RenderFrame. From the Main/Render thread.
+  [[nodiscard]] std::vector<debug::ControlEvent> TakeDebugControlEvents();
 #endif
 
  private:
