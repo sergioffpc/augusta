@@ -174,7 +174,7 @@ augusta::uuid::Uuid CountingRunId() {
 
 // CountingRunId's 16 bytes, as a length-delimited field's payload.
 std::string CountingRunIdBytes() {
-  const auto& bytes = CountingRunId().Bytes();
+  const auto bytes = CountingRunId().Bytes();
   return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
