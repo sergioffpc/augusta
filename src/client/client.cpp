@@ -46,6 +46,7 @@
 #include "net_stats.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
 #endif
@@ -506,8 +507,9 @@ struct ClientRuntime::Impl {
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
-    // Shapes live one frame, and no area builds any yet (ADR-0075).
+    // Shapes and panels live one frame, and no area builds any yet (ADR-0075).
     renderer.SetDebugShapes(debug::Shapes{});
+    renderer.SetDebugPanels(debug::Panels{});
 #endif
   }
 

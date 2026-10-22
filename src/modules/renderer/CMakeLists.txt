@@ -86,11 +86,12 @@ if(AUGUSTA_CLIENT)
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
-  # The debug HUD (debug_hud.h), drawn with Dear ImGui, and the Debug overlays'
-  # shapes (debug_shapes_pass.h), which augusta_debug describes, public in
-  # renderer.h, in a Development build only (ADR-0074, ADR-0075): a Shipping
-  # build compiles no HUD or shapes pass, no ImGui or shapes shader, no font and
-  # no augusta_debug.
+  # The debug HUD (debug_hud.h) and the Debug panels (debug_panels_pass.h),
+  # drawn with Dear ImGui, and the Debug overlays' shapes (debug_shapes_pass.h),
+  # the panels and shapes described by augusta_debug, public in renderer.h, in a
+  # Development build only (ADR-0074, ADR-0075): a Shipping build compiles no
+  # HUD, panels or shapes pass, no ImGui or shapes shader, no font and no
+  # augusta_debug.
   if(AUGUSTA_DEBUG_TOOLS)
     augusta_compile_shader(DebugShapes.3d.slang vsMain vertex kDebugShapesVs)
     augusta_compile_shader(DebugShapes.3d.slang psMain fragment kDebugShapesPs)
@@ -115,7 +116,7 @@ if(AUGUSTA_CLIENT)
       VERBATIM
     )
     list(APPEND shader_headers ${font_header})
-    target_sources(augusta_renderer PRIVATE debug_hud.cpp imgui_renderer.cpp)
+    target_sources(augusta_renderer PRIVATE debug_hud.cpp debug_panels_pass.cpp imgui_renderer.cpp)
     target_link_libraries(augusta_renderer PRIVATE imgui::imgui)
   endif()
   target_sources(augusta_renderer PRIVATE ${shader_headers})

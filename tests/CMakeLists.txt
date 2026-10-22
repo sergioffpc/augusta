@@ -922,7 +922,10 @@ if(AUGUSTA_DEBUG_TOOLS)
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(
       augusta_client_renderer_smoke_tests
-      PRIVATE client_renderer_debug_hud_smoke_test.cpp client_renderer_debug_shapes_smoke_test.cpp
+      PRIVATE
+        client_renderer_debug_hud_smoke_test.cpp
+        client_renderer_debug_shapes_smoke_test.cpp
+        client_renderer_debug_panels_smoke_test.cpp
     )
   endif()
 
