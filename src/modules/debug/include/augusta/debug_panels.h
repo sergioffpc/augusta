@@ -17,7 +17,7 @@
 /// Development build (ADR-0074).
 namespace augusta::debug {
 
-/// A line of text.
+/// Shown as it is, unwrapped and unformatted, on a line of its own.
 struct Text {
   std::string text;
 };
@@ -91,7 +91,7 @@ using ControlValue = std::variant<bool, float, ButtonPress>;
 
 /// A developer's change to one control of one panel.
 struct ControlEvent {
-  /// The Panel's id.
+  /// The id of the panel the control is in: the area the event is routed to.
   std::string panel;
   /// The control's id, in that panel.
   std::string control;
