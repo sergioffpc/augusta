@@ -175,9 +175,12 @@ struct MatchConfig {
   std::size_t player_count = 1;
   /// How many ticks must pass after a match ends before the next can start.
   std::uint32_t pause_ticks = 0;
+#if AUGUSTA_DEBUG_TOOLS
   /// Whether a Reenact request, whose spawn is taken on trust, is admitted
-  /// (`simulation.reenactments`, ADR-0050); without it each is refused.
+  /// (`debug.reenactments`, ADR-0050); without it each is refused. A Shipping
+  /// build has no such setting and refuses every one (ADR-0074).
   bool reenactments = false;
+#endif
 };
 
 /// The Lobby, and the match its players go on to, keyed by the Link's peer identity of each player.
@@ -256,7 +259,9 @@ class Match {
   std::vector<std::string> characters_;
   std::size_t player_count_;
   std::uint32_t pause_ticks_;
+#if AUGUSTA_DEBUG_TOOLS
   bool reenactments_;
+#endif
   bool in_match_ = false;
   // Versions start at 1 once anyone has joined, so a ready_version of 0 never counts.
   std::uint32_t roster_version_ = 0;

@@ -73,9 +73,12 @@ struct HostConfig {
   CaptureMode capture_mode = CaptureMode::kOptional;
   /// What that directory is kept within, oldest capture first; off by default.
   CaptureRetention capture_retention{};
+#if AUGUSTA_DEBUG_TOOLS
   /// Whether a Captured player's Reenact request is admitted, at the spawn it
-  /// names (ADR-0050); without it each is refused. Never for a server open to players.
+  /// names (ADR-0050); without it each is refused. Never for a server open to
+  /// players; a Shipping build refuses every one (ADR-0074).
   bool reenactments = false;
+#endif
   /// For a test: asked at listener setup, at every send and receive
   /// (augusta/link.h) and at the capture's write and flush, so the transport or
   /// the disk fails there; null otherwise. Must outlive the Host.

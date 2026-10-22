@@ -19,8 +19,11 @@ Match::Match(MatchConfig config)
       characters_(std::move(config.characters)),
       player_count_(config.player_count),
       pause_ticks_(config.pause_ticks),
+#if AUGUSTA_DEBUG_TOOLS
       reenactments_(config.reenactments),
-      ticks_since_end_(config.pause_ticks) {}
+#endif
+      ticks_since_end_(config.pause_ticks) {
+}
 
 std::string_view DescribeJoinRefusal(JoinRefusal reason) {
   switch (reason) {
@@ -64,7 +67,13 @@ std::expected<Admission, JoinRefusal> Match::Join(link::PeerId peer, const JoinR
   // A client that can never play here should hear that before it hears "wait":
   // whether it may name its spawn at all, the version, then the pack its
   // characters come from, then the character, then whether it could join later.
-  if (request.spawn.has_value() && !reenactments_) {
+#if AUGUSTA_DEBUG_TOOLS
+  const bool takes_reenactments = reenactments_;
+#else
+  // A Shipping build has no path that admits one (ADR-0074).
+  constexpr bool takes_reenactments = false;
+#endif
+  if (request.spawn.has_value() && !takes_reenactments) {
     return std::unexpected(JoinRefusal::kReenactmentsNotAccepted);
   }
   if (const std::optional<JoinRefusal> refusal = RefusalOfClient(request.engine_version, request.client_pack, terms_)) {

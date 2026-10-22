@@ -725,13 +725,7 @@ JoinRequest ReenactRequest(std::string version, const Vec3& spawn) {
   return request;
 }
 
-// A match of player_count that takes Reenact requests.
-MatchConfig ReenactingConfig(std::size_t player_count = kPlayerCount) {
-  MatchConfig config = Config(player_count);
-  config.reenactments = true;
-  return config;
-}
-
+// A Shipping build's match takes none either (ADR-0074).
 // Requirements: US-21
 TEST(MatchTest, AMatchThatTakesNoReenactmentsRefusesAReenactRequestBeforeAnythingElse) {
   Match match(Config());
@@ -742,6 +736,14 @@ TEST(MatchTest, AMatchThatTakesNoReenactmentsRefusesAReenactRequestBeforeAnythin
             JoinRefusal::kReenactmentsNotAccepted);
   EXPECT_EQ(match.PlayerCount(), 0U);
   EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
+}
+
+#if AUGUSTA_DEBUG_TOOLS
+// A match of player_count that takes Reenact requests.
+MatchConfig ReenactingConfig(std::size_t player_count = kPlayerCount) {
+  MatchConfig config = Config(player_count);
+  config.reenactments = true;
+  return config;
 }
 
 // Requirements: US-21
@@ -771,5 +773,6 @@ TEST(MatchTest, AMatchStartNamesTheSpawnOfEachPlayerAdmittedThroughAReenactReque
   EXPECT_EQ(start->players[1].spawn, Vec3(4.0F, 0.0F, -2.0F));
   EXPECT_EQ(start->players[2].spawn, Vec3(-6.0F, 1.0F, 8.0F));
 }
+#endif
 
 }  // namespace

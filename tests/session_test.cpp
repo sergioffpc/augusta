@@ -2252,10 +2252,12 @@ TEST(CaptureHostConfigTest, AHostRefusesACaptureDirectoryItCannotCreate) {
   std::filesystem::remove(file);
 }
 
+#if AUGUSTA_DEBUG_TOOLS
 // ADR-0050 end to end: a playtest of two players captured on one server, then
 // both reenacted at once, joining in the other order, against another server
 // with reenactments on and other Spawn points, whose own capture of the run is
-// compared with the playtest's.
+// compared with the playtest's. Only a Development build takes reenactments
+// (ADR-0074).
 class ReenactmentHostTest : public ::testing::Test {
  protected:
   static constexpr float kFloorY = 0.0F;
@@ -2520,6 +2522,7 @@ TEST_F(ReenactmentHostTest, AServerWithReenactmentsOnStillAdmitsAJoinRequestWher
   EXPECT_EQ(std::ranges::count(spawns, Vec3(7, kFloorY, 7)), 1);
   EXPECT_EQ(std::ranges::count(spawns, Vec3(-30, kFloorY, 0)), 1);
 }
+#endif
 
 // One client on a floor, on the server's stamina rules: a bar that empties in
 // a second of sprinting and refills in four of rest, and a walk forced at or
@@ -3294,6 +3297,17 @@ TEST(SessionFailureTest, EveryFailureIsDescribedForThePlayerAndARefusalSaysWhy) 
       << full;
 }
 
+// Only a Development server knows the key that takes reenactments (ADR-0074),
+// so a player refused one is told both.
+// Requirements: US-21
+TEST(SessionFailureTest, AReenactmentsRefusalNamesTheKeyAndThatItNeedsADevelopmentServer) {
+  const std::string refused = augusta::harness::DescribeFailure(
+      {.kind = FailureKind::kRefused, .refusal = JoinRefusal::kReenactmentsNotAccepted});
+
+  EXPECT_NE(refused.find("debug.reenactments"), std::string::npos) << refused;
+  EXPECT_NE(refused.find("Development server"), std::string::npos) << refused;
+}
+
 // The server against peers that misbehave or leave.
 template <std::uint8_t kPlayers>
 class RobustnessOf : public MatchOf<kPlayers> {
@@ -3930,7 +3944,7 @@ TEST_F(ImpossibleJoinTest, AJoinThatCanNeverPlayHereIsRefusedAndTheLobbyIsToldNo
 }
 
 // ADR-0050: a Reenact request names its own spawn, which only a server with
-// simulation.reenactments takes; any other refuses it, whatever else it holds.
+// debug.reenactments takes; any other refuses it, whatever else it holds.
 // Requirements: US-15, NFR-05, US-21
 TEST_F(ImpossibleJoinTest, AReenactRequestToAServerThatTakesNoneIsRefusedAndTheLobbyIsToldNothingOfIt) {
   Session& bystander = Join();
