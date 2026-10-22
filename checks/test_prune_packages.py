@@ -185,7 +185,6 @@ def test_image_roots_are_the_caches_branches_environments_and_commits():
     assert _refs(roots, required=True) == [
         "buildcache",
         "buildcache-arm64",
-        "buildcache-dev",
         "develop",
         "main",
         "sha-cccccccccccc",
@@ -193,6 +192,7 @@ def test_image_roots_are_the_caches_branches_environments_and_commits():
     ]
     assert sorted(set(_refs(roots, required=False))) == [
         "2.0.0",
+        "buildcache-dev",
         "sha-0123456789ab",
         "sha-777777777777",
         "sha-777777777777-arm64",

@@ -238,8 +238,11 @@ def image_roots(
     """
     roots = [
         Root(tag, "CI's layer cache", required=True)
-        for tag in ("buildcache", "buildcache-arm64", "buildcache-dev")
+        for tag in ("buildcache", "buildcache-arm64")
     ]
+    # Only a push to develop writes the Development cache, so a repository
+    # whose develop has not pushed one yet still plans.
+    roots.append(Root("buildcache-dev", "CI's layer cache", required=False))
     roots += [
         Root(branch, "the branch's newest image", required=True)
         for branch in ("develop", "main")
