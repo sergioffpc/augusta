@@ -10,7 +10,9 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -41,11 +43,14 @@
 #include "augusta/runner.h"
 #include "augusta/tick.h"
 #include "augusta/window.h"
+#include "augusta/window_events.h"
 #include "frame_mapping.h"
 #include "lobby_readiness.h"
 #include "net_stats.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_index.h"
+#include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
@@ -54,6 +59,17 @@
 namespace augusta::client {
 
 namespace {
+
+#if AUGUSTA_DEBUG_TOOLS
+// The Debug index's entry for the Debug HUD, its first (`debug.hud`).
+constexpr std::string_view kDebugHudEntry = "hud";
+
+// The Debug index's entries, in the `debug` section's fixed order, as config
+// starts them.
+std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
+  return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud}};
+}
+#endif
 
 // The window the client opens, titled as the game.
 window::Config WindowConfig() {
@@ -170,23 +186,87 @@ struct ClientRuntime::Impl {
   HudNetStats hud_net_stats;
   // Main/Render thread only: the frames the HUD's FPS averages.
   hud::FrameTimeWindow frame_times;
+  // Main/Render thread only: where each frame's window events go, F1 entering
+  // and leaving Debug interaction, and the Debug index's switches, which last
+  // until the client exits.
+  debug::DebugInteraction debug_interaction{{.toggle = input::kReservedKey, .leave = input::kReleaseCursorKey}};
+  debug::DebugIndex debug_index{DebugIndexEntries(config)};
 
   std::optional<hud::NetStats> GetLatestHudNet() {
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
     return latest_hud_net;
   }
 
-  // Main/Render thread only: hands the Renderer this frame's HUD lines, when
-  // the config has the HUD on.
+  // Main/Render thread only: hands the Renderer this frame's HUD lines while
+  // the Debug index has the HUD on, and none while it is off.
   void UpdateDebugHud() {
-    if (!config.debug_hud) {
+    // Each frame ends the last one for the FPS the HUD reads, shown or not, so
+    // the HUD switched on reads the frames before it.
+    frame_times.Tick(hud::FrameTimeWindow::Clock::now());
+    if (!debug_index.IsOn(kDebugHudEntry)) {
+      renderer.SetTextLines({});
       return;
     }
-    // Each frame ends the last one for the FPS the HUD reads.
-    frame_times.Tick(hud::FrameTimeWindow::Clock::now());
     renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet()));
   }
+
+  // Main/Render thread only: the frame's Debug panels, the Debug index in
+  // Debug interaction only.
+  [[nodiscard]] debug::Panels DebugPanels() const {
+    debug::Panels panels;
+    if (debug_interaction.In()) {
+      panels.push_back(debug_index.BuildPanel());
+    }
+    return panels;
+  }
+
+  // Main/Render thread only: routes each control event the last RenderFrame's
+  // panels gave to the area whose panel it names.
+  void RouteDebugControlEvents() {
+    for (const debug::ControlEvent& event : renderer.TakeDebugControlEvents()) {
+      if (event.panel == debug::kDebugIndexPanelId) {
+        debug_index.Update(event);
+      }
+    }
+  }
 #endif
+
+  // Main/Render thread only: hands a frame's window events to Input, and in a
+  // Development build those of Debug interaction to the Debug panels instead.
+  void HandleWindowEvents(std::span<const window::Event> events) {
+#if AUGUSTA_DEBUG_TOOLS
+    const debug::Routing routing = debug_interaction.Route(events);
+    input.Handle(routing.game);
+    if (routing.entered) {
+      input.LetGo();
+    }
+    if (routing.left_by_escape) {
+      input.ReleaseCursor();
+    }
+    renderer.HandleDebugPanelInput(routing.panels);
+#else
+    input.Handle(events);
+#endif
+  }
+
+  // Main/Render thread only: whether the window's cursor is locked for
+  // mouselook, nullopt until the first UpdateCursorLock.
+  std::optional<bool> cursor_locked;
+
+  // Main/Render thread only: locks the window's cursor for mouselook while
+  // Input captures it - Escape releases it and a click captures it again, as
+  // Input decides - and in a Development build out of Debug interaction only.
+  void UpdateCursorLock() {
+#if AUGUSTA_DEBUG_TOOLS
+    const bool locked = debug_interaction.CursorLocked(input.CursorCaptured());
+#else
+    const bool locked = input.CursorCaptured();
+#endif
+    if (locked != cursor_locked) {
+      window.SetCursorLocked(locked);
+      cursor_locked = locked;
+    }
+  }
 
   void SampleNetworkStats() {
     const std::optional<link::ConnectionStats> stats = session->GetConnectionStats();
@@ -196,11 +276,10 @@ struct ClientRuntime::Impl {
     }
     net_stats_counters.Sample(stats);
 #if AUGUSTA_DEBUG_TOOLS
-    if (config.debug_hud) {
-      const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
-      const std::lock_guard<std::mutex> lock(hud_net_mutex);
-      latest_hud_net = net;
-    }
+    // Whether the HUD is on or not: the Debug index can switch it on at any frame.
+    const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    latest_hud_net = net;
 #endif
   }
 
@@ -507,9 +586,9 @@ struct ClientRuntime::Impl {
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
-    // Shapes and panels live one frame, and no area builds any yet (ADR-0075).
+    // Shapes and panels live one frame, and no area builds any shapes yet (ADR-0075).
     renderer.SetDebugShapes(debug::Shapes{});
-    renderer.SetDebugPanels(debug::Panels{});
+    renderer.SetDebugPanels(DebugPanels());
 #endif
   }
 
@@ -553,8 +632,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
   }
 
   window::Window& window = impl_->window;
-  bool cursor_locked = impl_->input.CursorCaptured();
-  window.SetCursorLocked(cursor_locked);
+  impl_->UpdateCursorLock();
   LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");
   while (!window.ShouldClose()) {
     failure = impl_->GetRunFailure();
@@ -578,12 +656,8 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       break;
     }
     const nvtx3::scoped_range range{"Main/Render Frame"};
-    impl_->input.Handle(window.Poll());
-    // Escape releases the cursor and a click captures it again (Input decides).
-    if (const bool captured = impl_->input.CursorCaptured(); captured != cursor_locked) {
-      window.SetCursorLocked(captured);
-      cursor_locked = captured;
-    }
+    impl_->HandleWindowEvents(window.Poll());
+    impl_->UpdateCursorLock();
 #if AUGUSTA_DEBUG_TOOLS
     impl_->UpdateDebugHud();
 #endif
@@ -591,6 +665,9 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     impl_->SetSeenTime(frame_state.seen_time);
     impl_->StageRenderFrame(frame_state);
     impl_->renderer.RenderFrame();
+#if AUGUSTA_DEBUG_TOOLS
+    impl_->RouteDebugControlEvents();
+#endif
   }
   LOG_INFO("subsystem=clientruntime event=loop_stopping loop=render");
   return failure;
