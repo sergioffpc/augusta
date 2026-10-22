@@ -920,13 +920,22 @@ if(AUGUSTA_DEBUG_TOOLS)
     target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
   endif()
   if(TARGET augusta_client_renderer_smoke_tests)
-    target_sources(augusta_client_renderer_smoke_tests PRIVATE client_renderer_debug_hud_smoke_test.cpp)
+    target_sources(
+      augusta_client_renderer_smoke_tests
+      PRIVATE client_renderer_debug_hud_smoke_test.cpp client_renderer_debug_shapes_smoke_test.cpp
+    )
   endif()
 
   # What the DebugHud shows (augusta_hud), free of any GPU API.
   add_executable(augusta_hud_tests hud_test.cpp)
   target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_hud_tests)
+
+  # The Debug overlays' shapes and their tessellation (augusta_debug), free of
+  # any GPU API.
+  add_executable(augusta_debug_tests debug_test.cpp)
+  target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_debug_tests)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints
