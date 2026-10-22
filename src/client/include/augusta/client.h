@@ -18,10 +18,10 @@
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
 /// every client module - Input, Audio, the harness::Session, PresentationWorld,
 /// the window and the Renderer that draws into it - and runs the Main/Render
-/// loop:
-/// it hands the window's events to Input and the HUD's lines (augusta::hud) to
-/// the Renderer (ADR-0059). augustac's entry point runs it behind the
-/// application boundary, and the end-to-end tests link it in augustac's place.
+/// loop: it hands the window's events to Input and, in a Development build
+/// (ADR-0074), the HUD's lines (augusta::hud) to the Renderer (ADR-0059).
+/// augustac's entry point runs it behind the application boundary, and the
+/// end-to-end tests link it in augustac's place.
 ///
 /// It plays nothing itself. Sending commands, receiving the server's state and
 /// reconciling the prediction is harness::Session's work, and its Prediction and
@@ -55,6 +55,11 @@ struct RuntimeConfig {
   std::optional<std::string> replay;
   /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
   boost::uuids::uuid run = boost::uuids::nil_uuid();
+#if AUGUSTA_DEBUG_TOOLS
+  /// Whether the Debug HUD is drawn (`debug.hud`); a Shipping build has none
+  /// (ADR-0074).
+  bool debug_hud = true;
+#endif
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render

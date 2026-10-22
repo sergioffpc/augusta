@@ -26,6 +26,22 @@ namespace {
 // defaults for the controls it leaves out.
 constexpr std::string_view kKeysSection = "input.keys";
 
+// Every scalar key augustac.yaml may hold.
+constexpr auto kKeys = std::to_array<std::string_view>({
+    "base_dir",
+    "content.pack",
+    "content.public_key",
+    "player.character",
+    "network.server_address",
+    "logging.level",
+    "input.mouse_sensitivity",
+#if AUGUSTA_DEBUG_TOOLS
+    // The debug tools' keys, in a Development build only (ADR-0074): a
+    // Shipping build refuses them as unknown.
+    "debug.hud",
+#endif
+});
+
 // Every control's name, comma-separated, for an entry that names none of them.
 std::string ControlNames() {
   std::string names;
@@ -89,19 +105,17 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
   return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// The `debug` section (ADR-0074): which debug tools start on.
+std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
+  return OptionalFlag(values, "debug.hud", true).transform([](bool hud) { return ClientDebugConfig{.hud = hud}; });
+}
+#endif
+
 }  // namespace
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 7> kKeys{
-      "base_dir",
-      "content.pack",
-      "content.public_key",
-      "player.character",
-      "network.server_address",
-      "logging.level",
-      "input.mouse_sensitivity",
-  };
   static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = kOpenSections});
   if (!values) {
@@ -133,6 +147,12 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   if (!input) {
     return std::unexpected(input.error());
   }
+#if AUGUSTA_DEBUG_TOOLS
+  const auto debug = ParseDebugConfig(*values);
+  if (!debug) {
+    return std::unexpected(debug.error());
+  }
+#endif
   return ClientConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -140,6 +160,9 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
       .server_address = OptionalString(*values, "network.server_address", kDefaultServerAddress),
       .log_level = *std::move(log_level),
       .input = *input,
+#if AUGUSTA_DEBUG_TOOLS
+      .debug = *debug,
+#endif
   };
 }
 

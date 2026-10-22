@@ -1,6 +1,7 @@
 # hud
 
-`augusta_hud`. Client-only: the headless server never links it.
+`augusta_hud`. Client-only: the headless server never links it. A debug tool:
+only a Development build has it (ADR-0074).
 
 ## Responsibility
 
@@ -17,4 +18,5 @@ the HUD's text lines, free of any GPU API.
 
 ## Decisions
 
-[ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md).
+[ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

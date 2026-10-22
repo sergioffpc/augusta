@@ -26,7 +26,6 @@
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
-#include "augusta/hud.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
 #include "augusta/link.h"
@@ -45,6 +44,10 @@
 #include "frame_mapping.h"
 #include "lobby_readiness.h"
 #include "net_stats.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hud.h"
+#endif
 
 namespace augusta::client {
 
@@ -149,6 +152,11 @@ struct ClientRuntime::Impl {
   std::mutex seen_time_mutex;
   std::optional<presentation::SeenTime> seen_time;
 
+  // Network I/O thread only: the counters Nsight Systems plots of the
+  // connection, sampled once per round of the Runner's network work.
+  NetStatsCounters net_stats_counters;
+
+#if AUGUSTA_DEBUG_TOOLS
   // Connection numbers for the debug HUD: written by the Network
   // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
   // frame. They should be consistent with each other, so - like
@@ -156,11 +164,8 @@ struct ClientRuntime::Impl {
   std::mutex hud_net_mutex;
   std::optional<hud::NetStats> latest_hud_net;
 
-  // Network I/O thread only: what the HUD shows of the connection, and the
-  // counters Nsight Systems plots of it, sampled once per round of the
-  // Runner's network work.
+  // Network I/O thread only: what the HUD shows of the connection.
   HudNetStats hud_net_stats;
-  NetStatsCounters net_stats_counters;
   // Main/Render thread only: the frames the HUD's FPS averages.
   hud::FrameTimeWindow frame_times;
 
@@ -169,6 +174,18 @@ struct ClientRuntime::Impl {
     return latest_hud_net;
   }
 
+  // Main/Render thread only: hands the Renderer this frame's HUD lines, when
+  // the config has the HUD on.
+  void UpdateDebugHud() {
+    if (!config.debug_hud) {
+      return;
+    }
+    // Each frame ends the last one for the FPS the HUD reads.
+    frame_times.Tick(hud::FrameTimeWindow::Clock::now());
+    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet()));
+  }
+#endif
+
   void SampleNetworkStats() {
     const std::optional<link::ConnectionStats> stats = session->GetConnectionStats();
     if (const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
@@ -176,9 +193,13 @@ struct ClientRuntime::Impl {
       round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, view->accepted->tick_rate_hz));
     }
     net_stats_counters.Sample(stats);
-    const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
-    latest_hud_net = net;
+#if AUGUSTA_DEBUG_TOOLS
+    if (config.debug_hud) {
+      const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
+      const std::lock_guard<std::mutex> lock(hud_net_mutex);
+      latest_hud_net = net;
+    }
+#endif
   }
 
   Impl(const RuntimeConfig& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
@@ -556,9 +577,9 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       window.SetCursorLocked(captured);
       cursor_locked = captured;
     }
-    // Each frame ends the last one for the FPS the HUD reads.
-    impl_->frame_times.Tick(hud::FrameTimeWindow::Clock::now());
-    impl_->renderer.SetTextLines(hud::Lines(impl_->frame_times.Average(), impl_->GetLatestHudNet()));
+#if AUGUSTA_DEBUG_TOOLS
+    impl_->UpdateDebugHud();
+#endif
     const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
     impl_->SetSeenTime(frame_state.seen_time);
     impl_->StageRenderFrame(frame_state);

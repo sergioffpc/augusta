@@ -104,35 +104,15 @@ TEST(ParseServerConfigTest, RejectsAnEmptyCaptureDirectory) {
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
 
-// Requirements: US-21
-TEST(ParseServerConfigTest, TakesNoReenactmentsByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->reenactments);
-}
-
-// Requirements: US-21
-TEST(ParseServerConfigTest, ReadsWhetherReenactmentsAreTaken) {
-  const auto on = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: true\n", kFileDir);
-  const auto off = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: false\n", kFileDir);
-
-  ASSERT_TRUE(on.has_value());
-  EXPECT_TRUE(on->reenactments);
-  ASSERT_TRUE(off.has_value());
-  EXPECT_FALSE(off->reenactments);
-}
-
-TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
+// The reenactments setting is a debug tool's (ADR-0074): its old key is
+// unknown in every build, Development included.
+TEST(ParseServerConfigTest, SimulationReenactmentsIsAnUnknownKey) {
   const auto config = ParseServerConfig(
-      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: yes\n", kFileDir);
+      std::string(kServerConfigWithoutTickRate) + "simulation:\n  tick_rate_hz: 60\n  reenactments: true\n", kFileDir);
 
   ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey);
   EXPECT_EQ(config.error().subject, "simulation.reenactments");
-  EXPECT_EQ(DescribeServerConfigError(config.error()), "'simulation.reenactments' must be true or false");
 }
 
 // Requirements: US-21
@@ -186,18 +166,6 @@ TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
   ASSERT_FALSE(config.has_value());
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "simulation.capture");
-}
-
-// Nor any player to reenact.
-TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
-  const auto config =
-      ParseServerConfig(std::string(kServerConfigWithoutTickRate) +
-                            "simulation:\n  tick_rate_hz: 60\n  reenactments: true\nreplay:\n  captures: captures\n",
-                        kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "simulation.reenactments");
 }
 
 TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {

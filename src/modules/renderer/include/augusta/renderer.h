@@ -27,7 +27,7 @@
 /// ClientRuntime's Run() loop decides that split.
 ///
 /// The debug HUD it draws is the text lines it is handed (SetTextLines): what
-/// they say is augusta::hud's.
+/// they say is augusta::hud's. A Shipping build (ADR-0074) has no debug HUD.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -251,7 +251,9 @@ class Renderer {
   /// one under the other, over everything else, by every RenderFrame from then
   /// on; none until the first call. Cheap enough to call every frame. From the
   /// Main/Render thread.
+#if AUGUSTA_DEBUG_TOOLS
   void SetTextLines(std::vector<std::string> lines);
+#endif
 
  private:
   struct Impl;

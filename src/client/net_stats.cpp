@@ -4,8 +4,11 @@
 #include <chrono>
 #include <optional>
 
-#include "augusta/hud.h"
 #include "augusta/link.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hud.h"
+#endif
 
 namespace augusta::client {
 
@@ -22,6 +25,7 @@ std::optional<float> PacketLossPercent(const link::ConnectionStats& stats) {
   return (1.0F - std::min(*worst_quality, 1.0F)) * 100.0F;
 }
 
+#if AUGUSTA_DEBUG_TOOLS
 std::optional<hud::NetStats> HudNetStats::Update(const std::optional<link::ConnectionStats>& stats,
                                                  std::chrono::steady_clock::time_point now) {
   if (!stats.has_value()) {
@@ -48,6 +52,7 @@ std::optional<hud::NetStats> HudNetStats::Update(const std::optional<link::Conne
                        .in_bytes_per_sec = stats->in_bytes_per_sec,
                        .out_bytes_per_sec = stats->out_bytes_per_sec};
 }
+#endif
 
 void NetStatsCounters::Sample(const std::optional<link::ConnectionStats>& stats) {
   if (!stats.has_value()) {

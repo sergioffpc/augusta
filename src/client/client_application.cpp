@@ -91,6 +91,9 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .reenactment = reenactment,
       .replay = replay,
       .run = run,
+#if AUGUSTA_DEBUG_TOOLS
+      .debug_hud = file_config.debug.hud,
+#endif
   };
   auto parts = std::make_unique<ClientProcess::Parts>();
   parts->pack = std::move(loaded->pack);

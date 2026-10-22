@@ -13,7 +13,8 @@
 namespace augusta {
 
 /// The engine's semantic version, tracked by hand until releases exist (see
-/// docs/ROADMAP.md).
+/// docs/ROADMAP.md): `X.Y.Z+dev` in a Development build, the bare `X.Y.Z` in a
+/// Shipping one (ADR-0074).
 std::string_view EngineVersion();
 
 /// Which build of it is running, as logfmt fields (ADR-0029) for the client's

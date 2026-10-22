@@ -16,12 +16,12 @@ replay server's Replays. It decides at its edges what the client loads from its
 verified pack (the scene, the characters other players bring, the map's
 collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
-types, classifies each phase's failure, and shows the connection's numbers on
-the debug HUD and to Nsight Systems. It starts each Run: takes its Run ID and
-opens its log file beside the executable, then writes its first lines. It
-decides over the files Runs leave there: their names from the Run ID, which Runs
-are kept, and how the previous Run ended, which a launch reports when it was a
-crash.
+types, classifies each phase's failure, and shows the connection's numbers to
+Nsight Systems and, in a Development build with `debug.hud` on (ADR-0074), on
+the debug HUD. It starts each Run: takes its Run ID and opens its log file
+beside the executable, then writes its first lines. It decides over the files
+Runs leave there: their names from the Run ID, which Runs are kept, and how the
+previous Run ended, which a launch reports when it was a crash.
 
 ## Not its responsibility
 
@@ -42,4 +42,5 @@ crash.
 [ADR-0043](../../docs/adr/0043-lobby-and-match-lifecycle.md),
 [ADR-0051](../../docs/adr/0051-replay.md),
 [ADR-0059](../../docs/adr/0059-renderer-nvrhi.md),
-[ADR-0060](../../docs/adr/0060-executables-are-glue.md).
+[ADR-0060](../../docs/adr/0060-executables-are-glue.md),
+[ADR-0074](../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

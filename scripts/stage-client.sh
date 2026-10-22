@@ -23,9 +23,9 @@
 # and the name its .gnu_debuglink gives (ADR-0055).
 #
 #   scripts/stage-client.sh build/x64-windows dist/augustac
-#   scripts/stage-client.sh build/x64-windows dist/augustac \
+#   scripts/stage-client.sh build/x64-windows-shipping dist/augustac \
 #     dist/augustac-windows-x64.zip 3.0.0
-#   scripts/stage-client.sh build/x64-linux dist/augustac \
+#   scripts/stage-client.sh build/x64-linux-shipping dist/augustac \
 #     dist/augustac-linux-x64.tar.gz 3.0.0
 set -euo pipefail
 

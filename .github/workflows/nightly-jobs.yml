@@ -291,13 +291,15 @@ jobs:
           path: coverage-report/
           if-no-files-found: ignore
   client-x64-linux:
-    # The Linux client (ADR-0006), which no pull request builds: the linux
-    # preset with the client on, as a Linux developer builds it, and its whole
-    # ctest suite, the renderer smoke test among it on Ubuntu's lavapipe in a
-    # virtual X server. So a change that breaks augustac on Linux, or the shared
-    # code under the client's build, surfaces within a night. Then the same
-    # suite again under ASan and UBSan (linux-san), since no pull request's
-    # sanitizers job builds the client or the Renderer.
+    # The Linux client (ADR-0006), which no pull request builds: the
+    # linux-shipping preset, the Shipping build a release publishes (ADR-0074),
+    # so the client without its debug tools is known to compile before a tag
+    # needs it, and its whole ctest suite, the renderer smoke test among it on
+    # Ubuntu's lavapipe in a virtual X server. So a change that breaks augustac
+    # on Linux, or the shared code under the client's build, surfaces within a
+    # night. Then the same suite again under ASan and UBSan (linux-san, a
+    # Development build, so the debug tools' tests run too), since no pull
+    # request's sanitizers job builds the client or the Renderer.
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -320,20 +322,20 @@ jobs:
           # whose saves would drop: a cache of its own.
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux-shipping
       - if: ${{ !inputs.release }}
         uses: ./.github/actions/save-vcpkg-cache
       - name: Build
-        run: cmake --build --preset linux --target all augusta_tests
+        run: cmake --build --preset linux-shipping --target all augusta_tests
       - name: Check that the smoke test is built
         # tests/CMakeLists.txt leaves it out, with only a configure message,
         # where it finds no lavapipe.
-        run: test -x build/x64-linux/tests/augusta_client_renderer_smoke_tests
+        run: test -x build/x64-linux-shipping/tests/augusta_client_renderer_smoke_tests
       - name: Test
         id: test
         # In a virtual X server, where the smoke test opens its hidden window:
         # GLFW picks X11, as there is no Wayland session.
-        run: xvfb-run --auto-servernum ctest --preset linux --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
+        run: xvfb-run --auto-servernum ctest --preset linux-shipping --output-junit "$GITHUB_WORKSPACE/junit/client-linux.xml"
       # The sanitized pass in this job rather than a matrix entry of its own:
       # it reuses this job's vcpkg cache and uploads in its junit artifact.
       - name: Configure (ASan + UBSan)
@@ -376,7 +378,7 @@ jobs:
         # copy with only the system's libraries, what it links held to the
         # allowlist, and its debug info matched by build ID
         # (scripts/stage-client.sh, ADR-0058).
-        run: scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
+        run: scripts/stage-client.sh build/x64-linux-shipping "$RUNNER_TEMP/augustac" "$RUNNER_TEMP/augustac-linux-x64.tar.gz"
       - name: Run the client on a clean Ubuntu 26.04
         # As release.yml does: the extracted tarball on Ubuntu's base image
         # alone, read-only and offline, so none of the runner's libraries can
@@ -394,7 +396,7 @@ jobs:
           python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_SHA" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
-            build/x64-linux/vcpkg_installed/x64-linux > "$RUNNER_TEMP/augustac.spdx.json"
+            build/x64-linux-shipping/vcpkg_installed/x64-linux > "$RUNNER_TEMP/augustac.spdx.json"
           python3 scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the

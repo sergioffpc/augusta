@@ -1,0 +1,48 @@
+#include <filesystem>
+
+#include <gtest/gtest.h>
+
+#include "augusta/client_config.h"
+#include "augusta/config.h"
+
+// augustac.yaml's `debug` section, which only a Development build knows
+// (ADR-0074); shipping_config_test.cpp has a Shipping build refusing it.
+namespace {
+
+using augusta::config::ConfigErrorCode;
+using augusta::config::ParseClientConfig;
+
+// The directory of the (imaginary) config file: what a relative base_dir is
+// relative to.
+const std::filesystem::path kFileDir = std::filesystem::path("file") / "dir";
+
+TEST(ParseClientConfigTest, TheDebugHudIsOnByDefault) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->debug.hud);
+}
+
+TEST(ParseClientConfigTest, DebugHudFalseTurnsTheHudOff) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  hud: false\n",
+      kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->debug.hud);
+}
+
+TEST(ParseClientConfigTest, RejectsADebugHudThatIsNotTrueOrFalse) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  hud: maybe\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.hud");
+}
+
+}  // namespace

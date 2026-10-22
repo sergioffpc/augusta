@@ -142,9 +142,10 @@ make
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml
 ```
 
-To bring back a playtest from its Match capture (ADR-0050), start a server with
-`simulation.reenactments: true` on the capture's packs, then one client per
-captured player, all at once, each the player of the capture `--player` names:
+To bring back a playtest from its Match capture (ADR-0050), start a Development
+server (ADR-0074) with `debug.reenactments: true` on the capture's packs, then
+one client per captured player, all at once, each the player of the capture
+`--player` names:
 
 ```powershell
 & "build/x64-windows/src/client/augustac.exe" --config config/augustac.yaml --reenact captures/20261009T101500123Z-0001.acap --player 1
@@ -168,6 +169,17 @@ Run the tests with the host's default preset, or select another preset:
 make test
 make test PRESET=windows-debug
 make test PRESET=linux-san
+```
+
+Every preset makes a Development build, which carries the debug tools, except
+`windows-shipping` and `linux-shipping`: they inherit `windows` and `linux` and
+make a Shipping build, what players get, without them (ADR-0074). A Development
+build's engine version ends in `+dev`, so the two kinds refuse each other at
+Join:
+
+```bash
+make test PRESET=windows-shipping
+make test PRESET=linux-shipping
 ```
 
 The `linux-fuzz` preset builds the fuzz targets:

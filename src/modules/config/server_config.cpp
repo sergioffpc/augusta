@@ -26,7 +26,9 @@ constexpr std::string_view kCaptureModeKey = "simulation.capture_mode";
 constexpr std::string_view kCaptureMaxFilesKey = "simulation.capture_retention.max_files";
 constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max_mib";
 constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
-constexpr std::string_view kReenactmentsKey = "simulation.reenactments";
+#if AUGUSTA_DEBUG_TOOLS
+constexpr std::string_view kReenactmentsKey = "debug.reenactments";
+#endif
 constexpr std::string_view kReplayCapturesKey = "replay.captures";
 constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
 constexpr std::uint32_t kMaxReplayViewers = std::numeric_limits<std::uint8_t>::max();
@@ -77,18 +79,6 @@ std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std:
   return mode == "strict";
 }
 
-// Whether Reenact requests are taken: "false" when absent.
-std::expected<bool, ConfigError> OptionalReenactments(const ConfigValues& values) {
-  const std::string taken = OptionalString(values, kReenactmentsKey, "false");
-  if (taken != "true" && taken != "false") {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
-                                       .subject = std::string(kReenactmentsKey),
-                                       .reason = "must be true or false",
-                                       .file = {}});
-  }
-  return taken == "true";
-}
-
 // A key that may not be set with replay.captures, or that needs it.
 ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
   return ConfigError{
@@ -110,8 +100,15 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
     }
     return {};
   }
-  for (const std::string_view key :
-       {kCaptureKey, kCaptureModeKey, kCaptureMaxFilesKey, kCaptureMaxMibKey, kReenactmentsKey}) {
+  for (const std::string_view key : {
+           kCaptureKey,
+           kCaptureModeKey,
+           kCaptureMaxFilesKey,
+           kCaptureMaxMibKey,
+#if AUGUSTA_DEBUG_TOOLS
+           kReenactmentsKey,
+#endif
+       }) {
     if (values.contains(key)) {
       return std::unexpected(ReplayEntryError(key, "cannot be set on a replay server: it runs no Match"));
     }
@@ -168,6 +165,13 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
+#if AUGUSTA_DEBUG_TOOLS
+  // The `debug` section (ADR-0074): whether Reenact requests are taken.
+  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
+  }
+#endif
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -178,7 +182,9 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .strict_capture = *strict_capture,
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
-      .reenactments = false,
+#if AUGUSTA_DEBUG_TOOLS
+      .reenactments = *reenactments,
+#endif
       .metrics_port = *metrics_port,
       .replay_captures = {},
   };
@@ -188,11 +194,26 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
 
 std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 14> kKeys{
-      "base_dir",      "content.pack",      "content.public_key", kTickRateKey,         kCaptureKey,
-      kCaptureModeKey, kCaptureMaxFilesKey, kCaptureMaxMibKey,    kReenactmentsKey,     "network.listen_address",
-      "logging.level", kMetricsPortKey,     kReplayCapturesKey,   kReplayMaxViewersKey,
-  };
+  // The `debug` section's keys only in a Development build (ADR-0074): a
+  // Shipping build refuses them as it refuses any unknown key.
+  static constexpr auto kKeys = std::to_array<std::string_view>({
+      "base_dir",
+      "content.pack",
+      "content.public_key",
+      kTickRateKey,
+      kCaptureKey,
+      kCaptureModeKey,
+      kCaptureMaxFilesKey,
+      kCaptureMaxMibKey,
+      "network.listen_address",
+      "logging.level",
+      kMetricsPortKey,
+      kReplayCapturesKey,
+      kReplayMaxViewersKey,
+#if AUGUSTA_DEBUG_TOOLS
+      kReenactmentsKey,
+#endif
+  });
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
   if (!values) {
     return std::unexpected(values.error());
@@ -203,16 +224,9 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  return ServerConfigFrom(*values, *root)
-      .and_then([&values](ServerConfig config) {
-        return OptionalReenactments(*values).transform([&config](bool reenactments) {
-          config.reenactments = reenactments;
-          return std::move(config);
-        });
-      })
-      .and_then([&](ServerConfig config) {
-        return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
-      });
+  return ServerConfigFrom(*values, *root).and_then([&](ServerConfig config) {
+    return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
+  });
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {
