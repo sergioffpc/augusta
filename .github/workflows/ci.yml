@@ -904,10 +904,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # Only a push writes the layer cache, which the next commits build from.
+      # A push to develop builds a Development build, which the develop
+      # Environment runs; a push to main and every pull request a Shipping
+      # build, what a release tag's image is (ADR-0074).
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
         with:
+          preset: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'linux' || 'linux-shipping' }}
           cache-to: ${{ github.event_name == 'push' }}
       - name: Save server image
         # For the confinement job, which runs the image this job checked, and
@@ -931,11 +935,11 @@ jobs:
           target: debuginfo
           load: true
           tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-debuginfo
-          # The vcpkg binaries the image step restored, and the toolchain it
-          # installed, or the build stage misses its layers.
+          # The vcpkg binaries the image step restored, and its preset and
+          # toolchain, or the build stage misses its layers.
           build-contexts: vcpkg-bincache=.vcpkg-bincache
-          build-args: ${{ steps.image.outputs.toolchain-args }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache
+          build-args: ${{ steps.image.outputs.build-args }}
+          cache-from: ${{ steps.image.outputs.cache-from }}
       - name: Save server debug info
         if: github.event_name == 'push'
         run: >-
@@ -1121,6 +1125,8 @@ jobs:
         id: image
         uses: ./.github/actions/build-server-image
         with:
+          # A Shipping build, as main's amd64 image is (ADR-0074).
+          preset: linux-shipping
           arch-suffix: -arm64
           cache-to: true
       - name: Publish server image
@@ -1139,8 +1145,8 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/augustad:sha-${{ steps.image.outputs.short-sha }}-arm64-debuginfo
           build-contexts: vcpkg-bincache=.vcpkg-bincache
-          build-args: ${{ steps.image.outputs.toolchain-args }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache-arm64
+          build-args: ${{ steps.image.outputs.build-args }}
+          cache-from: ${{ steps.image.outputs.cache-from }}
       - name: Sign and attest server image
         uses: ./.github/actions/sign-and-attest-server-image
         with:

@@ -47,12 +47,6 @@ simulation:
   #   # are deleted as it is written to stay under it. A Match that alone
   #   # outgrows it stops its capture there, logged once.
   #   max_mib: 2048
-  # Whether a Captured player's Reenact request is admitted (optional, default
-  # false): true lets augustac --reenact join and spawn where its capture has
-  # it, which the server takes on trust; false refuses it with "reenactments
-  # not accepted" (ADR-0050). A debugging setting: never on for a server open
-  # to players.
-  # reenactments: false
 network:
   # Local address to listen on (optional, default 0.0.0.0:27015).
   listen_address: 0.0.0.0:27015
@@ -69,14 +63,24 @@ logging:
   # (once a second: ticks, messages, drops, corrections) without the per-packet
   # trace firehose; set trace when debugging the network layer itself.
   level: debug
+# The debug tools to start on (optional; ADR-0074). Only a Development build
+# knows this section: a Shipping build, what players get, refuses it as an
+# unknown key, so it stays commented out here for this file to load in both.
+# debug:
+#   # Whether a Captured player's Reenact request is admitted (optional, default
+#   # false): true lets augustac --reenact join and spawn where its capture has
+#   # it, which the server takes on trust; false refuses it with "reenactments
+#   # not accepted" (ADR-0050). Never on for a server open to players.
+#   reenactments: false
 # Replay mode (optional, default off; ADR-0051). Set replay.captures and
 # augustad is a replay server: it runs no Lobby and no Match, refuses every Join,
 # and replays the Match captures of that directory made on its own server pack,
 # at its tick rate, to augustac --replays and --replay <capture>. Each viewer
 # watches a Replay of its own from the first tick, which logs the first Death or
 # Match end that differs from its capture's. A live server can capture into the
-# same directory: they are two processes. A replay server captures nothing, so
-# simulation.capture and its other keys must be left unset.
+# same directory: they are two processes. A replay server captures nothing and
+# reenacts no one, so simulation.capture and its other keys, and
+# debug.reenactments, must be left unset.
 # replay:
 #   # The directory of Match captures to replay (required for replay mode); it
 #   # must exist.

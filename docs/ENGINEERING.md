@@ -109,12 +109,15 @@ decisions already made in ARCHITECTURE.md:
        private key never touches CI
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
-       image built into the runner's Docker and scanned by trivy. It runs on
-       every push, and on a pull request when the image or chart changed; on a
-       push it also builds the image's `debuginfo` stage, and hands both to the
-       run as artifacts. `container-publish-x64-linux`, on a push only, waits
-       for it, the server-x64-linux job and `confinement`, then pushes that very
-       image (it builds none) with its `-debuginfo` image, signature and
+       image built into the runner's Docker and scanned by trivy. The image is a
+       Development build on a push to `develop`, and a Shipping build on a push
+       to `main` and on every pull request (ADR-0074); the Dockerfile's `PRESET`
+       argument, without which it is a Shipping build, chooses. It runs on every
+       push, and on a pull request when the image or chart changed; on a push it
+       also builds the image's `debuginfo` stage, and hands both to the run as
+       artifacts. `container-publish-x64-linux`, on a push only, waits for it,
+       the server-x64-linux job and `confinement`, then pushes that very image
+       (it builds none) with its `-debuginfo` image, signature and
        attestations - so a published image is always the one that was scanned
        and confined, of a commit whose tests passed. On a push to `main` alone,
        whose image is the one a release runs, `container-publish-arm64-linux`
@@ -163,10 +166,13 @@ decisions already made in ARCHITECTURE.md:
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
       binaries, sccache objects and clang-tidy results. The server image's
-      Docker layers live in GHCR (`augustad:buildcache`) instead: at several GB
-      they would evict the rest, and every pull request would rebuild its
-      dependencies from source. Only a push's `container-verify` writes them; a
-      pull request reads them, and a fork's reads nothing.
+      Docker layers live in GHCR instead: at several GB they would evict the
+      rest, and every pull request would rebuild its dependencies from source.
+      Each kind of build has its own cache, `augustad:buildcache` for Shipping
+      and `augustad:buildcache-dev` for Development, so `develop`'s pushes never
+      evict the layers a pull request's Shipping build reuses. Only a push's
+      `container-verify` writes them; a pull request reads them, and a fork's
+      reads nothing.
     - An Actions cache entry is kept only on a ref a later run restores from
       (its own, a pull request's base, or `main`). A release restores the caches
       but saves none: its tag's entries would serve only a rerun of it, which
@@ -175,34 +181,37 @@ decisions already made in ARCHITECTURE.md:
       saved by `main` alone, an entry per commit, and only the newest is kept.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
-  high case count, a `llvm-cov` coverage report, the Linux client's build and
-  tests, again under ASan and UBSan (`client-x64-linux`: no pull request builds
-  it), and the hot-path micro-benchmarks, whose history is kept on the
-  `benchmarks` branch (started by the first night if absent) and charted on the
-  documentation site; a failure, a benchmark more than twice as slow as the
-  night before among them, opens or updates a `nightly-failure` issue
-  (ADR-0013).
+  high case count, a `llvm-cov` coverage report, the Linux client's Shipping
+  build and tests, then its Development build's under ASan and UBSan
+  (`client-x64-linux`: no pull request builds it; the server-only jobs stay
+  Development builds, since their tests include the tools'), and the hot-path
+  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
+  the first night if absent) and charted on the documentation site; a failure, a
+  benchmark more than twice as slow as the night before among them, opens or
+  updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
-- **Releases:** a separate workflow, triggered by `v*` tags, builds
-  Release-config client/server binaries, runs the tests and the asset pipeline
-  check against them, runs every nightly job on the tagged commit, and attaches
-  the binaries to a GitHub Release only once all of it passes, its notes
-  generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic (ADR-0013,
-  ADR-0026). Started by hand on a branch, the same workflow is a dry run that
-  publishes nothing: how a change to it, or to the nightly jobs, is tried before
-  it merges (`gh workflow run release.yml --ref <branch>`). The client ships as
+- **Releases:** a separate workflow, triggered by `v*` tags, builds the
+  client/server binaries as Shipping builds (the shipping presets, ADR-0074),
+  runs the tests and the asset pipeline check against them, runs every nightly
+  job on the tagged commit, and attaches the binaries to a GitHub Release only
+  once all of it passes, its notes generated from the commits (Git Workflow
+  below) — not run on every push, so cutting a release is a deliberate tag
+  rather than automatic (ADR-0013, ADR-0026). Started by hand on a branch, the
+  same workflow is a dry run that publishes nothing: how a change to it, or to
+  the nightly jobs, is tried before it merges
+  (`gh workflow run release.yml --ref <branch>`). The client ships as
   `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
   some of its dependencies ship only as DLLs, so the client cannot be linked
   statically, and it carries the MSVC runtime so it needs no redistributable. A
   release is published only once its unzipped client runs `augustac --version`
-  and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
-  catches a DLL it imports that is missing, not one loaded only once it runs.
-  The Linux client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder
-  checked the same way, and for linking nothing from the system beyond an
-  allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
+  and prints the tag's version exactly (`scripts/stage-client.sh`, ADR-0058), so
+  a Development build, whose version ends in `+dev`, fails it. That catches a
+  DLL it imports that is missing, not one loaded only once it runs. The Linux
+  client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder checked
+  the same way, and for linking nothing from the system beyond an allowlist; it
+  runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
@@ -277,14 +286,14 @@ decisions already made in ARCHITECTURE.md:
   version.
 - **Package retention:** GitHub Packages keeps every version CI pushes, so the
   `prune-packages` workflow (`scripts/prune-packages.py`) deletes the ones
-  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`, `develop`,
-  `main`, the images of every release, of `main`'s newest commit and of the
-  newest `develop` commits (20 by default), what `develop` and `staging` run,
-  every tag or digest `develop` or `main` names, and whatever was pushed in the
-  day before its newest version, which a CI run may still be using; with each of
-  them, its platform manifests, debug info, signatures and attestations.
-  `charts/augustad` keeps `develop` and the charts of those releases and
-  commits, what `develop` can be rolled back to
+  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`,
+  `buildcache-dev`, `develop`, `main`, the images of every release, of `main`'s
+  newest commit and of the newest `develop` commits (20 by default), what
+  `develop` and `staging` run, every tag or digest `develop` or `main` names,
+  and whatever was pushed in the day before its newest version, which a CI run
+  may still be using; with each of them, its platform manifests, debug info,
+  signatures and attestations. `charts/augustad` keeps `develop` and the charts
+  of those releases and commits, what `develop` can be rolled back to
   ([flux-rollback.md](runbooks/flux-rollback.md)). Each vcpkg NuGet package
   keeps its newest versions (2 by default): a miss rebuilds the port. If what CI
   or the cluster runs now is missing, or a manifest cannot be read, the run

@@ -902,10 +902,12 @@ if(AUGUSTA_CLIENT)
   gtest_discover_tests(augusta_client_window_tests)
 endif()
 
-# Which tests a build's kind carries (ADR-0074), decided here alone: a debug
+# Which test executables a build's kind carries (ADR-0074), decided here: a debug
 # tool's tests only in a Development build, which carries the tool; in a
 # Shipping build, which carries none, the one test that the config readers
-# refuse a `debug` section.
+# refuse a `debug` section. A debug tool's test cases inside an executable both
+# kinds build, such as the reenactments' in the Match, Session and server config
+# tests, are left out by `#if AUGUSTA_DEBUG_TOOLS` in their file instead.
 if(AUGUSTA_DEBUG_TOOLS)
   # Each debug tool's tests go here.
 

@@ -112,7 +112,7 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
     case JoinRefusal::kUnknownCapture:
       return "the replay server replays no such capture: list them with --replays";
     case JoinRefusal::kReenactmentsNotAccepted:
-      return "the server does not take reenactments: it needs simulation.reenactments on";
+      return "the server does not take reenactments: it needs a Development server with debug.reenactments on";
   }
   return "unknown refusal";
 }

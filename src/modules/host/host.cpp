@@ -108,11 +108,15 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
           .characters = CharacterPaths(scenario.characters),
           .player_count = config.parameters.player_count,
           .pause_ticks = PauseTicks(config.tick_rate_hz),
+#if AUGUSTA_DEBUG_TOOLS
           .reenactments = config.reenactments,
+#endif
       }) {
+#if AUGUSTA_DEBUG_TOOLS
   if (config.reenactments) {
     LOG_WARN("subsystem=serverruntime event=reenactments_enabled");
   }
+#endif
 }
 
 bool Host::Impl::Failed() const { return transport_failure.Recorded() || invariant_failure.Recorded(); }
