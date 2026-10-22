@@ -32,7 +32,6 @@
 #include <fcntl.h>
 #include <signal.h>  // NOLINT(modernize-deprecated-headers)
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <time.h>  // NOLINT(modernize-deprecated-headers) - POSIX's nanosleep.
 #include <unistd.h>
 #include <unwind.h>
