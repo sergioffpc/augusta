@@ -16,6 +16,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/connection_sample.h"
 #include "augusta/content.h"
@@ -41,15 +43,21 @@
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
 #include "augusta/version.h"
-#include "utf8_path.h"
 
 namespace augusta::host {
 
 namespace {
 
-// A Replay viewer plays no one, so it is no player's session: Session IDs
-// start at 1 (ADR-0038).
-constexpr SessionId kViewerSession{0};
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
+
+// A Replay viewer plays no one, so it is no player's session: the nil UUID,
+// which no Session ID is (ADR-0038).
+constexpr SessionId kViewerSession{};
 
 // The characters' paths, in the scenario's order: what a capture's Joins must name.
 std::vector<std::string> PathsOf(const std::vector<scenario::Character>& characters) {
@@ -294,12 +302,14 @@ struct ReplayServer::Impl {
     lock.lock();
     gate.Admitted(peer);
     Send(peer, link::Encode(ToLink(Admission{.session = kViewerSession, .character = {}}, tick_rate_hz, parameters)));
-    Send(peer, link::Encode(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick())));
+    // The Replay's Match start names the captured Match by its Match ID.
+    Send(peer, link::Encode(ToLink(viewer->replay->Start(), viewer->replay->Spawns(), viewer->replay->FirstTick(),
+                                   viewer->replay->Match())));
     viewers.emplace(peer, std::move(viewer));
     metrics.joins_admitted.Increment();
     SetGauges();
-    LOG_INFO("subsystem=replay event=replay_started peer={} capture={} viewers={}", PeerNumber(peer), request.capture,
-             viewers.size());
+    LOG_INFO("subsystem=replay event=replay_started peer={} run={} capture={} viewers={}", PeerNumber(peer),
+             boost::uuids::to_string(request.run), request.capture, viewers.size());
   }
 
   // Drops what message brought and judges its peer, for reason. With mutex held.

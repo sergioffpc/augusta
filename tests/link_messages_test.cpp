@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -38,6 +40,11 @@ using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
 using augusta::protocol::kMaxCommandsPerMessage;
+
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
 
 // message as the other peer decodes it.
 template <typename MessageWire>
@@ -357,7 +364,7 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
   parameters.player_count = 4;
 
   const augusta::protocol::JoinAcceptedWire received = ThroughTheWire(augusta::protocol::JoinAcceptedWire{
-      .session = augusta::protocol::SessionIdWire{1}, .parameters = ToWire(parameters), .character = "soldier"});
+      .session = Session(1), .parameters = ToWire(parameters), .character = "soldier"});
 
   // Every parameter travels as its exact bits, so nothing is rounded on the way.
   const augusta::parameters::Parameters received_parameters = FromWire(received.parameters);
@@ -373,7 +380,7 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
 TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   const augusta::link::Lobby sent{
       .version = 7,
-      .roster = {{.session = SessionId{3}, .character = "medic"}, {.session = SessionId{5}, .character = "sniper"}}};
+      .roster = {{.session = Session(3), .character = "medic"}, {.session = Session(5), .character = "sniper"}}};
 
   const augusta::link::Lobby received = FromWire(ThroughTheWire(ToWire(sent)));
 
@@ -385,11 +392,20 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
   }
 }
 
+TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
+  const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
+
+  const augusta::link::MatchStart received =
+      FromWire(ThroughTheWire(ToWire(augusta::link::MatchStart{.players = {}, .first_tick = 0, .match = match})));
+
+  EXPECT_EQ(received.match, match);
+}
+
 TEST(LinkMessagesTest, AMatchStartTheServerSendsReachesTheClientUnchangedWithItsFirstTick) {
   const augusta::link::MatchStart sent{
       .players =
-          {{.session = SessionId{3}, .entity = EntityId{11}, .character = "medic", .spawn = Vec3(4.0F, 0.5F, -8.0F)},
-           {.session = SessionId{5}, .entity = EntityId{12}, .character = "sniper", .spawn = Vec3(-1.0F, 0.0F, 2.0F)}},
+          {{.session = Session(3), .entity = EntityId{11}, .character = "medic", .spawn = Vec3(4.0F, 0.5F, -8.0F)},
+           {.session = Session(5), .entity = EntityId{12}, .character = "sniper", .spawn = Vec3(-1.0F, 0.0F, 2.0F)}},
       .first_tick = 0x1'0000'0042ULL};
 
   const augusta::link::MatchStart received = FromWire(ThroughTheWire(ToWire(sent)));
@@ -408,7 +424,10 @@ TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.front() = std::byte{0xAB};
   client_pack.back() = std::byte{0x01};
-  const augusta::link::JoinRequest sent{.engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier"};
+  const augusta::link::JoinRequest sent{.engine_version = "1.2.3",
+                                        .client_pack = client_pack,
+                                        .character = "soldier",
+                                        .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::link::JoinRequest received =
       FromWire(ThroughTheWire(std::get<augusta::protocol::JoinRequestWire>(ToWire(sent))));
@@ -417,6 +436,7 @@ TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.character, sent.character);
   EXPECT_FALSE(received.spawn.has_value());
+  EXPECT_EQ(received.run, sent.run);
 }
 
 // Requirements: US-21
@@ -426,7 +446,8 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
   const augusta::link::JoinRequest sent{.engine_version = "1.2.3",
                                         .client_pack = client_pack,
                                         .character = "soldier",
-                                        .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F))};
+                                        .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F)),
+                                        .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::protocol::MessageWire wire = ToWire(sent);
   ASSERT_TRUE(std::holds_alternative<augusta::protocol::ReenactRequestWire>(wire));
@@ -437,26 +458,30 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.character, sent.character);
   EXPECT_EQ(received.spawn, sent.spawn);
+  EXPECT_EQ(received.run, sent.run);
 }
 
 TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.back() = std::byte{0x7F};
-  const augusta::link::ReplayRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.acap"};
+  const augusta::link::ReplayRequest sent{.engine_version = "1.2.3",
+                                          .client_pack = client_pack,
+                                          .capture = "match.acap",
+                                          .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::link::ReplayRequest received = FromWire(ThroughTheWire(ToWire(sent)));
 
   EXPECT_EQ(received.engine_version, sent.engine_version);
   EXPECT_EQ(received.client_pack, sent.client_pack);
   EXPECT_EQ(received.capture, sent.capture);
+  EXPECT_EQ(received.run, sent.run);
 }
 
 TEST(LinkMessagesTest, TheAdmissionTheServerSendsReachesTheClientUnchanged) {
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   const augusta::link::Admission sent{
-      .session = SessionId{7}, .tick_rate_hz = 30, .parameters = parameters, .character = "soldier"};
+      .session = Session(7), .tick_rate_hz = 30, .parameters = parameters, .character = "soldier"};
 
   const augusta::link::Admission received = FromWire(ThroughTheWire(ToWire(sent)));
 
@@ -511,13 +536,13 @@ TEST(LinkMessagesTest, AHitConfirmationTheServerSendsReachesTheClientUnchanged) 
 }
 
 TEST(LinkMessagesTest, AMatchEndTheServerSendsReachesTheClientWithItsWinnerOrAsADraw) {
-  const augusta::link::MatchEnd won{.winner = SessionId{5}};
+  const augusta::link::MatchEnd won{.winner = Session(5)};
   const augusta::link::MatchEnd drawn{.winner = std::nullopt};
 
   const augusta::link::MatchEnd won_received = FromWire(ThroughTheWire(ToWire(won)));
   const augusta::link::MatchEnd drawn_received = FromWire(ThroughTheWire(ToWire(drawn)));
 
-  EXPECT_EQ(won_received.winner, SessionId{5});
+  EXPECT_EQ(won_received.winner, Session(5));
   EXPECT_FALSE(drawn_received.winner.has_value());
 }
 

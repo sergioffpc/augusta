@@ -2,8 +2,9 @@
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
 `augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
-`augusta_client_net_stats`, `augusta_client_phases`, and augustac, the
-executable that runs them. Client-only: the headless server never links it.
+`augusta_client_net_stats`, `augusta_client_phases`, `augusta_client_run`,
+`augusta_client_run_files`, and augustac, the executable that runs them.
+Client-only: the headless server never links it.
 
 ## Responsibility
 
@@ -16,7 +17,11 @@ verified pack (the scene, the characters other players bring, the map's
 collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
 types, classifies each phase's failure, and shows the connection's numbers on
-the debug HUD and to Nsight Systems.
+the debug HUD and to Nsight Systems. It starts each Run: takes its Run ID and
+opens its log file beside the executable, then writes its first lines. It
+decides over the files Runs leave there: their names from the Run ID, which Runs
+are kept, and how the previous Run ended, which a launch reports when it was a
+crash.
 
 ## Not its responsibility
 
@@ -32,6 +37,7 @@ the debug HUD and to Nsight Systems.
 
 [ADR-0005](../../docs/adr/0005-threading-model.md),
 [ADR-0021](../../docs/adr/0021-client-runtime-decomposition.md),
+[ADR-0027](../../docs/adr/0027-logging.md),
 [ADR-0033](../../docs/adr/0033-error-handling.md),
 [ADR-0043](../../docs/adr/0043-lobby-and-match-lifecycle.md),
 [ADR-0051](../../docs/adr/0051-replay.md),

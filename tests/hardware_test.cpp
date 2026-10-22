@@ -83,5 +83,42 @@ TEST(QueryMachine, FindsTheOsCoresAndMemory) {
   EXPECT_GT(machine.memory.total_bytes, 0U);
 }
 
+TEST(GpuFromUevent, ReadsThePciIdsAndTheDriver) {
+  const std::optional<Gpu> gpu = GpuFromUevent(
+      "DRIVER=nvidia\n"
+      "PCI_CLASS=30000\n"
+      "PCI_ID=10DE:2684\n"
+      "PCI_SUBSYS_ID=10DE:167C\n"
+      "PCI_SLOT_NAME=0000:01:00.0\n");
+  ASSERT_TRUE(gpu.has_value());
+  EXPECT_EQ(gpu->vendor_id, 0x10deU);
+  EXPECT_EQ(gpu->device_id, 0x2684U);
+  EXPECT_EQ(gpu->driver, "nvidia");
+  EXPECT_EQ(gpu->name, "");
+  EXPECT_EQ(gpu->driver_version, "");
+}
+
+// A virtual card, or text that is not a uevent, names no GPU.
+TEST(GpuFromUevent, IsNulloptWithoutAPciId) {
+  EXPECT_FALSE(GpuFromUevent("DRIVER=vkms\n").has_value());
+  EXPECT_FALSE(GpuFromUevent("PCI_ID=10DE\n").has_value());
+  EXPECT_FALSE(GpuFromUevent("PCI_ID=XYZ:2684\n").has_value());
+}
+
+TEST(DescribeGpu, WritesEachFieldNamingAKnownVendor) {
+  EXPECT_EQ(DescribeGpu(Gpu{.name = "NVIDIA GeForce RTX 4090",
+                            .vendor_id = 0x10de,
+                            .device_id = 0x2684,
+                            .driver = "nvidia",
+                            .driver_version = "560.35.03"}),
+            "name=\"NVIDIA GeForce RTX 4090\" vendor=NVIDIA device_id=0x2684 driver=\"nvidia\" "
+            "driver_version=\"560.35.03\"");
+}
+
+TEST(DescribeGpu, SaysUnknownForWhatTheOsDidNotTellAndAnUnknownVendorsId) {
+  EXPECT_EQ(DescribeGpu(Gpu{.name = {}, .vendor_id = 0x1af4, .device_id = 0x1050, .driver = {}, .driver_version = {}}),
+            "name=unknown vendor=0x1af4 device_id=0x1050 driver=unknown driver_version=unknown");
+}
+
 }  // namespace
 }  // namespace augusta::hardware

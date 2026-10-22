@@ -7,6 +7,9 @@
 #include <string>
 #include <variant>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/math.h"
@@ -19,8 +22,11 @@
 /// reading and writing, which is built over it. Plain values.
 namespace augusta::capture {
 
-/// What a captured Match ran on and when it started.
+/// Which Match was captured, what it ran on and when it started.
 struct Header {
+  /// The Match's ID (a UUIDv7, unique across every server), which its file is
+  /// also named by (host::CaptureFileName).
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
   /// The capturing engine's version (augusta::EngineVersion).
   std::string engine_version;
   assets::PackHash server_pack{};
@@ -38,8 +44,8 @@ using Player = std::uint8_t;
 
 /// A player of the Match start, where it spawned on the position grid.
 struct Join {
-  /// Its Session's id on the server that captured it.
-  std::uint32_t session = 0;
+  /// Its Session's ID (a UUIDv7, unique across every server).
+  boost::uuids::uuid session = boost::uuids::nil_uuid();
   /// Its Character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
   math::Vec3 spawn{};

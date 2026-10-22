@@ -67,8 +67,10 @@ client classifies its Session ending on its own (`join_refused`,
 reported, and the boundary then writes the executable's one terminal event,
 `event=terminal_failure` at `CRIT`, and exits with status 1, whatever the
 failure's `Disposition`; a stop asked for (the window closed, SIGTERM) exits 0.
-The supervisor's own `ERR` line for a runtime's first cause is the runtime's,
-written where its stop was decided; the terminal event is the process's.
+The client's terminal event also ends in `log="<path>"`, the file its Run's log
+reaches (ADR-0027), so the player knows what to send. The supervisor's own `ERR`
+line for a runtime's first cause is the runtime's, written where its stop was
+decided; the terminal event is the process's.
 
 Runtime-boundary tests make dependencies fail through controlled fault injection
 (`failure::Faults`): a runtime asks it at each named site (dependency

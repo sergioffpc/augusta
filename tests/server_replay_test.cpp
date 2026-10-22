@@ -39,6 +39,11 @@ namespace capture = augusta::capture;
 // An event of a capture, at its offset.
 using Captured = capture::AtOffset<capture::Event>;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr std::uint8_t kTickRate = 60;
 constexpr const char* kCharacter = "soldier";
 
@@ -46,8 +51,8 @@ constexpr const char* kCharacter = "soldier";
 capture::Capture CaptureOf(std::vector<Captured> events) {
   capture::Capture capture;
   capture.header.tick_rate_hz = kTickRate;
-  capture.joins = {{.session = 7, .character = kCharacter, .spawn = Vec3(10.0F, 0.0F, 0.0F)},
-                   {.session = 9, .character = kCharacter, .spawn = Vec3(-10.0F, 0.0F, 4.0F)}};
+  capture.joins = {{.session = Session(7), .character = kCharacter, .spawn = Vec3(10.0F, 0.0F, 0.0F)},
+                   {.session = Session(9), .character = kCharacter, .spawn = Vec3(-10.0F, 0.0F, 4.0F)}};
   capture.events = std::move(events);
   return capture;
 }
@@ -108,9 +113,9 @@ TEST(CaptureReplayTest, TheMatchStartsWithTheCapturesPlayersWhereItHasThemWithou
   )"));
 
   ASSERT_EQ(replay.Start().players.size(), 2U);
-  EXPECT_EQ(replay.Start().players[0].session, SessionId{7});
+  EXPECT_EQ(replay.Start().players[0].session, Session(7));
   EXPECT_EQ(replay.Start().players[0].entity, EntityId{1});
-  EXPECT_EQ(replay.Start().players[1].session, SessionId{9});
+  EXPECT_EQ(replay.Start().players[1].session, Session(9));
   EXPECT_EQ(replay.Start().players[1].character, kCharacter);
   EXPECT_EQ(replay.Spawns(), (std::vector<Vec3>{Vec3(10.0F, 0.0F, 0.0F), Vec3(-10.0F, 0.0F, 4.0F)}));
   EXPECT_EQ(replay.FirstTick(), 1U);
@@ -215,7 +220,7 @@ TEST(CaptureReplayTest, ItEndsAtTheCapturesMatchEndWithItsWinner) {
   ASSERT_EQ(ticks.size(), 6U);
   EXPECT_TRUE(replay.Ended());
   ASSERT_TRUE(ticks.back().end.has_value());
-  EXPECT_EQ(ticks.back().end->winner, SessionId{9});
+  EXPECT_EQ(ticks.back().end->winner, Session(9));
   for (std::size_t i = 0; i + 1 < ticks.size(); ++i) {
     EXPECT_FALSE(ticks[i].end.has_value());
   }
@@ -231,7 +236,7 @@ TEST(CaptureReplayTest, ItEndsAtTheWorldsMatchEndAndChecksItAgainstTheCapturesOn
     local ticks = 0
     function on_tick(match)
       ticks = ticks + 1
-      if ticks == 4 then return {winner = 9} end
+      if ticks == 4 then return {winner = '0190a1b2-c3d4-7000-8000-000000000009'} end
     end
   )";
   Replay agreeing = ReplayOf(CaptureOf({EndAt(3, 2)}), Rules(kWinsOnTheFourthTick));
@@ -241,7 +246,7 @@ TEST(CaptureReplayTest, ItEndsAtTheWorldsMatchEndAndChecksItAgainstTheCapturesOn
   const std::vector<ReplayTick> disagreed = RunToEnd(disagreeing);
 
   ASSERT_EQ(agreed.size(), 4U);
-  EXPECT_EQ(agreed.back().end->winner, SessionId{9});
+  EXPECT_EQ(agreed.back().end->winner, Session(9));
   for (const ReplayTick& tick : agreed) {
     EXPECT_FALSE(tick.divergence.has_value());
   }

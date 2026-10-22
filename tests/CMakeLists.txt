@@ -680,9 +680,12 @@ target_compile_definitions(
 gtest_discover_tests(augusta_cooked_pack_tests)
 
 # The crash lines' format, against the log sink's, and the handler itself in
-# death tests.
+# death tests; on Windows they read the minidump a crash writes through dbghelp.
 add_executable(augusta_crash_tests crash_test.cpp)
-target_link_libraries(augusta_crash_tests PRIVATE augusta_server_crash augusta_logging GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_crash_tests
+  PRIVATE augusta_crash augusta_logging GTest::gtest GTest::gtest_main $<$<PLATFORM_ID:Windows>:dbghelp>
+)
 target_compile_definitions(augusta_crash_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 gtest_discover_tests(augusta_crash_tests)
 
@@ -691,7 +694,7 @@ gtest_discover_tests(augusta_crash_tests)
 add_executable(augusta_crash_property_tests crash_property_test.cpp)
 target_link_libraries(
   augusta_crash_property_tests
-  PRIVATE augusta_server_crash augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main
+  PRIVATE augusta_crash augusta_logging rapidcheck_gtest GTest::gtest GTest::gtest_main
 )
 # RapidCheck's Maybe uses std::aligned_storage, deprecated since C++23 (see
 # augusta_protocol_property_tests).
@@ -722,6 +725,14 @@ target_link_libraries(
 )
 gtest_discover_tests(augusta_renderer_vulkan_device_choice_tests)
 
+# And the files its GPU crash dumps are written to (gpu_crash_dump_files.h).
+add_executable(augusta_renderer_gpu_crash_dump_files_tests renderer_gpu_crash_dump_files_test.cpp)
+target_link_libraries(
+  augusta_renderer_gpu_crash_dump_files_tests
+  PRIVATE augusta_renderer_gpu_crash_dump_files GTest::gtest GTest::gtest_main
+)
+gtest_discover_tests(augusta_renderer_gpu_crash_dump_files_tests)
+
 if(AUGUSTA_CLIENT)
   # The client Runtime's internal targets build with the client, on Windows
   # and Linux - though only the smoke test below links the Renderer. Its
@@ -751,6 +762,26 @@ if(AUGUSTA_CLIENT)
   )
   target_include_directories(augusta_client_lobby_readiness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
   gtest_discover_tests(augusta_client_lobby_readiness_tests DISCOVERY_TIMEOUT 30)
+
+  # The files a Run leaves (see run_files.h), over a temporary directory.
+  add_executable(augusta_client_run_files_tests client_run_files_test.cpp)
+  target_link_libraries(augusta_client_run_files_tests PRIVATE augusta_client_run_files GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_client_run_files_tests)
+
+  # What a launch tells the player of the Run before it, and the Session in
+  # the log once admitted (see client_run.h).
+  add_executable(augusta_client_run_tests client_run_test.cpp)
+  target_link_libraries(
+    augusta_client_run_tests
+    PRIVATE
+      augusta_client_run
+      augusta_client_run_files
+      augusta_logging
+      augusta_renderer_gpu_crash_dump_files
+      GTest::gtest
+      GTest::gtest_main
+  )
+  gtest_discover_tests(augusta_client_run_tests)
 
   add_executable(augusta_client_phases_tests client_phases_test.cpp)
   target_link_libraries(

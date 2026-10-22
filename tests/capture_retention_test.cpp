@@ -15,6 +15,8 @@
 #include <thread>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
@@ -50,6 +52,17 @@ using augusta::host::SessionId;
 
 using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
+// A Match ID, a UUIDv7, told apart by its last byte.
+constexpr boost::uuids::uuid MatchId(std::uint8_t last) {
+  return boost::uuids::uuid(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 // 2026-10-09 10:15:00.123 UTC.
 const Milliseconds kStarted{std::chrono::milliseconds{1'791'540'900'123}};
 constexpr std::uint64_t kFirstTick = 1000;
@@ -72,19 +85,25 @@ std::vector<CompletedCapture> Sizes(const std::vector<std::uintmax_t>& sizes) {
   return completed;
 }
 
-TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsNumber) {
-  EXPECT_EQ(CaptureFileName(kStarted, 3), "20261009T101500123Z-0003" + std::string(kExtension));
+// Requirements: US-21
+TEST(CaptureFileNameTest, NamesTheMatchsStartInUtcThenItsMatchId) {
+  EXPECT_EQ(CaptureFileName(kStarted, MatchId(3)),
+            "20261009T101500123Z-0190a1b2-c3d5-7000-8000-000000000003" + std::string(kExtension));
 }
 
 TEST(CaptureFileNameTest, OneServersNamesSortByWhenTheirMatchStarted) {
-  const std::string first = CaptureFileName(kStarted, 9);
-  const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, 10);
+  const std::string first = CaptureFileName(kStarted, MatchId(9));
+  const std::string second = CaptureFileName(kStarted + std::chrono::milliseconds{1}, MatchId(2));
   EXPECT_LT(first, second);
 }
 
+// The names captures are given, and those an engine before the Match ID gave
+// them, numbered in their run.
 TEST(IsCaptureFileNameTest, AcceptsTheNamesCapturesAreGiven) {
-  EXPECT_TRUE(IsCaptureFileName(CaptureFileName(kStarted, 1)));
-  EXPECT_TRUE(IsCaptureFileName(CaptureFileName(kStarted, 12345)));
+  const std::string extension(kExtension);
+  EXPECT_TRUE(IsCaptureFileName(CaptureFileName(kStarted, MatchId(1))));
+  EXPECT_TRUE(IsCaptureFileName("20261009T101500123Z-0003" + extension));
+  EXPECT_TRUE(IsCaptureFileName("20261009T101500123Z-12345" + extension));
 }
 
 TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
@@ -94,7 +113,11 @@ TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
         "20261009T101500123Z-0003" + extension + ".tmp", "20261009T101500123-0003" + extension,
         "2026100XT101500123Z-0003" + extension, std::string("20261009T101500123Z-0003.ACAP"),
         ".20261009T101500123Z-0003" + extension, std::string("20261009T101500123Z-0003"),
-        std::string("20261009T101500123Z-0003.capture"), std::string()}) {
+        std::string("20261009T101500123Z-0003.capture"),
+        "20261009T101500123Z-0190A1B2-C3D5-7000-8000-000000000003" + extension,
+        "20261009T101500123Z-0190a1b2-c3d5-7000-8000-00000000003" + extension,
+        "20261009T101500123Z-0190a1b2c3d570008000000000000003" + extension,
+        "20261009T101500123Z-{0190a1b2-c3d5-7000-8000-000000000003}" + extension, std::string()}) {
     EXPECT_FALSE(IsCaptureFileName(name)) << name;
   }
 }
@@ -158,8 +181,8 @@ augusta::capture::Header Header() {
 }
 
 std::vector<CaptureEntrant> TwoPlayers() {
-  return {CaptureEntrant{.session = SessionId{7}, .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
-          CaptureEntrant{.session = SessionId{8}, .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
+  return {CaptureEntrant{.session = Session(7), .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
+          CaptureEntrant{.session = Session(8), .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
 }
 
 Command Walk() {
@@ -194,7 +217,7 @@ class CaptureRetentionTest : public ::testing::Test {
 
   // A completed capture of a Match that started hours_ago, size bytes long.
   std::string Seed(int hours_ago, std::uintmax_t size) {
-    const std::string name = CaptureFileName(kStarted - std::chrono::hours{hours_ago}, 1);
+    const std::string name = CaptureFileName(kStarted - std::chrono::hours{hours_ago}, MatchId(1));
     Write(directory_ / name, true, size);
     return name;
   }
@@ -247,9 +270,9 @@ class CaptureRetentionTest : public ::testing::Test {
     return capture.joins.size() + capture.events.size();
   }
 
-  // Plays one Match of commands Commands, started at started.
-  static void Play(Capturer& capturer, Milliseconds started, int commands) {
-    capturer.StartMatch(TwoPlayers(), kFirstTick, started);
+  // Plays the Match match of commands Commands, started at started.
+  static void Play(Capturer& capturer, Milliseconds started, int commands, const boost::uuids::uuid& match) {
+    capturer.StartMatch(match, TwoPlayers(), kFirstTick, started);
     for (int command = 0; command < commands; ++command) {
       capturer.Command(kFirstTick + command, EntityId{70}, Walk());
     }
@@ -267,10 +290,23 @@ TEST_F(CaptureRetentionTest, AMatchStartLeavesFewerThanMaxFilesOlderCapturesDele
   }
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 3, .max_bytes = std::nullopt}});
-    Play(capturer, kStarted, 1);
+    Play(capturer, kStarted, 1, MatchId(1));
   }
 
-  EXPECT_EQ(Names(), (std::vector<std::string>{seeded[3], seeded[4], CaptureFileName(kStarted, 1)}));
+  EXPECT_EQ(Names(), (std::vector<std::string>{seeded[3], seeded[4], CaptureFileName(kStarted, MatchId(1))}));
+}
+
+// A capture an engine before the Match ID wrote, named by its number in its
+// run, is still one of the directory's captures.
+// Requirements: US-21
+TEST_F(CaptureRetentionTest, ACaptureNamedByItsNumberInItsRunIsStillDeleted) {
+  Write(directory_ / ("20261009T091500123Z-0001" + std::string(kExtension)), true, 100);
+  {
+    Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
+    Play(capturer, kStarted, 1, MatchId(1));
+  }
+
+  EXPECT_EQ(Names(), std::vector<std::string>{CaptureFileName(kStarted, MatchId(1))});
 }
 
 // Requirements: US-21
@@ -278,10 +314,10 @@ TEST_F(CaptureRetentionTest, WithoutRetentionNothingIsDeleted) {
   const std::string seeded = Seed(1, 100);
   {
     Capturer capturer(directory_, Header());
-    Play(capturer, kStarted, 1);
+    Play(capturer, kStarted, 1, MatchId(1));
   }
 
-  EXPECT_EQ(Names(), (std::vector<std::string>{seeded, CaptureFileName(kStarted, 1)}));
+  EXPECT_EQ(Names(), (std::vector<std::string>{seeded, CaptureFileName(kStarted, MatchId(1))}));
 }
 
 // Requirements: US-21
@@ -294,7 +330,7 @@ TEST_F(CaptureRetentionTest, ADirectoryNearItsBudgetHasItsOldestCapturesDeletedW
   {
     Capturer capturer(directory_, Header(),
                       CaptureOptions{.retention = {.max_files = std::nullopt, .max_bytes = kBudget}});
-    capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
+    capturer.StartMatch(MatchId(1), TwoPlayers(), kFirstTick, kStarted);
     for (int command = 0; command < 20; ++command) {
       capturer.Command(kFirstTick + command, EntityId{70}, Walk());
       capturer.WaitUntilWritten();
@@ -309,7 +345,7 @@ TEST_F(CaptureRetentionTest, ADirectoryNearItsBudgetHasItsOldestCapturesDeletedW
   // What remains of the seeded is the newest of them, and the Match whole.
   const std::vector<std::string> kept(names.begin(), names.end() - 1);
   EXPECT_EQ(kept, std::vector<std::string>(seeded.end() - static_cast<std::ptrdiff_t>(kept.size()), seeded.end()));
-  EXPECT_EQ(names.back(), CaptureFileName(kStarted, 1));
+  EXPECT_EQ(names.back(), CaptureFileName(kStarted, MatchId(1)));
   EXPECT_EQ(Records(names.back()), 2U + 20U + 1U);
   EXPECT_LE(Bytes(), kBudget);
 }
@@ -326,29 +362,32 @@ TEST_F(CaptureRetentionTest, AMatchThatAloneExceedsTheBudgetStopsItsCaptureWithR
   {
     Capturer capturer(directory_, Header(),
                       CaptureOptions{.retention = {.max_files = std::nullopt, .max_bytes = kBudget}});
-    Play(capturer, kStarted, 100);
+    Play(capturer, kStarted, 100, MatchId(1));
   }
   const std::string written = testing::internal::GetCapturedStdout();
 
-  EXPECT_EQ(Names(), std::vector<std::string>{CaptureFileName(kStarted, 1)});
+  EXPECT_EQ(Names(), std::vector<std::string>{CaptureFileName(kStarted, MatchId(1))});
   EXPECT_LE(Bytes(), kBudget);
-  const Capture capture = Read(CaptureFileName(kStarted, 1));
+  const Capture capture = Read(CaptureFileName(kStarted, MatchId(1)));
   EXPECT_FALSE(capture.torn);
   EXPECT_EQ(capture.joins.size(), 2U);
   EXPECT_FALSE(capture.events.empty());
   EXPECT_LT(capture.events.size(), 100U + 1U);
-  EXPECT_EQ(Occurrences(written, "event=capture_stopped match=1 reason=retention_budget"), 1U) << written;
+  EXPECT_EQ(Occurrences(written, "event=capture_stopped match=" + boost::uuids::to_string(MatchId(1)) +
+                                     " reason=retention_budget"),
+            1U)
+      << written;
 }
 
 // Requirements: US-21
 TEST_F(CaptureRetentionTest, TheMatchInProgressIsNeverDeleted) {
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
-    Play(capturer, kStarted, 3);
-    Play(capturer, kStarted + std::chrono::seconds{1}, 3);
+    Play(capturer, kStarted, 3, MatchId(1));
+    Play(capturer, kStarted + std::chrono::seconds{1}, 3, MatchId(2));
   }
 
-  const std::string second = CaptureFileName(kStarted + std::chrono::seconds{1}, 2);
+  const std::string second = CaptureFileName(kStarted + std::chrono::seconds{1}, MatchId(2));
   EXPECT_EQ(Names(), std::vector<std::string>{second});
   EXPECT_EQ(Records(second), 2U + 3U + 1U);
 }
@@ -356,17 +395,19 @@ TEST_F(CaptureRetentionTest, TheMatchInProgressIsNeverDeleted) {
 // Requirements: US-21
 TEST_F(CaptureRetentionTest, FilesThatAreNotCapturesAndOtherDirectoriesAreNeverTouched) {
   Write(directory_ / "notes.txt", true, 100);
-  const std::string unmarked = CaptureFileName(kStarted - std::chrono::hours{3}, 1);
+  const std::string unmarked = CaptureFileName(kStarted - std::chrono::hours{3}, MatchId(1));
   Write(directory_ / unmarked, false, 100);
-  const std::filesystem::path nested = directory_ / CaptureFileName(kStarted - std::chrono::hours{2}, 1);
+  // Named as an older engine named its captures, so the file in it fits Windows' MAX_PATH.
+  const std::string older = "20261009T081500123Z-0001" + std::string(kExtension);
+  const std::filesystem::path nested = directory_ / older;
   std::filesystem::create_directory(nested);
-  Write(nested / CaptureFileName(kStarted - std::chrono::hours{2}, 1), true, 100);
+  Write(nested / older, true, 100);
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = 10'000}});
-    Play(capturer, kStarted, 0);
+    Play(capturer, kStarted, 0, MatchId(1));
   }
 
-  EXPECT_EQ(Names(), (std::vector<std::string>{unmarked, CaptureFileName(kStarted, 1), "notes.txt"}));
+  EXPECT_EQ(Names(), (std::vector<std::string>{unmarked, CaptureFileName(kStarted, MatchId(1)), "notes.txt"}));
   EXPECT_EQ(std::distance(std::filesystem::directory_iterator(nested), {}), 1);
 }
 
@@ -380,11 +421,11 @@ TEST_F(CaptureRetentionTest, AFileNamedOutsideTheCodePageIsLeftAloneAndTheMatchI
   Write(directory_ / outside, true, 100);
   {
     Capturer capturer(directory_, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
-    Play(capturer, kStarted, 1);
+    Play(capturer, kStarted, 1, MatchId(1));
   }
 
-  EXPECT_EQ(Names(), (std::vector<std::string>{CaptureFileName(kStarted, 1), Utf8(outside)}));
-  EXPECT_EQ(Records(CaptureFileName(kStarted, 1)), 2U + 1U + 1U);
+  EXPECT_EQ(Names(), (std::vector<std::string>{CaptureFileName(kStarted, MatchId(1)), Utf8(outside)}));
+  EXPECT_EQ(Records(CaptureFileName(kStarted, MatchId(1))), 2U + 1U + 1U);
 }
 
 // The directory's own path, which every line naming a capture logs as it
@@ -394,14 +435,14 @@ TEST_F(CaptureRetentionTest, AFileNamedOutsideTheCodePageIsLeftAloneAndTheMatchI
 TEST_F(CaptureRetentionTest, ACaptureDirectoryNamedOutsideTheCodePageHoldsWholeCaptures) {
   const std::filesystem::path directory = directory_ / kOutsideTheCodePage;
   std::filesystem::create_directories(directory);
-  Write(directory / CaptureFileName(kStarted - std::chrono::hours{1}, 1), true, 100);
-  const std::filesystem::path captured = directory / CaptureFileName(kStarted, 1);
+  Write(directory / CaptureFileName(kStarted - std::chrono::hours{1}, MatchId(1)), true, 100);
+  const std::filesystem::path captured = directory / CaptureFileName(kStarted, MatchId(1));
   augusta::logging::Init();
   augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
   testing::internal::CaptureStdout();
   {
     Capturer capturer(directory, Header(), CaptureOptions{.retention = {.max_files = 1, .max_bytes = std::nullopt}});
-    Play(capturer, kStarted, 3);
+    Play(capturer, kStarted, 3, MatchId(1));
   }
   const std::string written = testing::internal::GetCapturedStdout();
 
@@ -428,14 +469,14 @@ TEST_F(CaptureRetentionTest, AFailedDeletionIsLoggedOnceAndTheMatchIsStillCaptur
   {
     Capturer capturer(directory_, Header(),
                       CaptureOptions{.faults = &faults, .retention = {.max_files = 1, .max_bytes = std::nullopt}});
-    Play(capturer, kStarted, 2);
+    Play(capturer, kStarted, 2, MatchId(1));
   }
   const std::string written = testing::internal::GetCapturedStdout();
 
   EXPECT_EQ(Occurrences(written, "event=capture_retention_failed"), 1U) << written;
   EXPECT_EQ(Occurrences(written, "event=capture_stopped"), 0U) << written;
   EXPECT_EQ(Names().size(), seeded.size() + 1);
-  EXPECT_EQ(Records(CaptureFileName(kStarted, 1)), 2U + 2U + 1U);
+  EXPECT_EQ(Records(CaptureFileName(kStarted, MatchId(1))), 2U + 2U + 1U);
 }
 
 // NFR-01: what retention deletes, it deletes on the capture's writer thread,
@@ -455,7 +496,7 @@ TEST_F(CaptureRetentionTest, DeletionsRunOffTheCallersThreadAndAreObserved) {
   {
     Capturer capturer(directory_, Header(),
                       CaptureOptions{.retention = {.max_files = 2, .max_bytes = std::nullopt}, .observer = &told});
-    Play(capturer, kStarted, 2);
+    Play(capturer, kStarted, 2, MatchId(1));
   }
 
   ASSERT_EQ(told.deleters.size(), 2U);

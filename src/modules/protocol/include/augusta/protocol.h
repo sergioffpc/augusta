@@ -11,6 +11,9 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/math.h"
 #include "augusta/tick.h"
 
@@ -231,13 +234,15 @@ struct ParametersWire {
 };
 
 /// The server's name for one connected player, distinct from the transport's
-/// handle for the connection. Identifies a player inside messages; it is not a
-/// credential, since the server tells senders apart by connection.
-enum class SessionIdWire : std::uint32_t {};
+/// handle for the connection: a UUIDv7, unique across every server and every
+/// restart, carried as its 16 bytes in RFC 9562's order (ADR-0038). Identifies
+/// a player inside messages; it is not a credential, since the server tells
+/// senders apart by connection.
+using SessionIdWire = boost::uuids::uuid;
 
-/// The session a Match end names as its winner when it is a draw: Session IDs
-/// start at 1, so none is ever 0 (ADR-0038).
-inline constexpr SessionIdWire kDraw{};
+/// The session a Match end names as its winner when it is a draw: the nil
+/// UUID, which no Session ID is (ADR-0038).
+inline constexpr SessionIdWire kDraw = boost::uuids::nil_uuid();
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -275,6 +280,9 @@ struct JoinRequestWire {
   /// The character the player chose, by its name in the scenario's manifest
   /// (e.g. "soldier", ADR-0042); at most kMaxCharacterNameLength bytes.
   std::string character;
+  /// The client's Run ID, which the server logs at admission (ADR-0038); the
+  /// nil ID when the field is absent.
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -291,6 +299,8 @@ struct ReenactRequestWire {
   std::string character;
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
+  /// As JoinRequestWire::run.
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -308,7 +318,7 @@ struct EntityStateWire {
 /// Server to client: the join succeeded, and the client waits in the Lobby.
 struct JoinAcceptedWire {
   /// The session the server assigned to this client.
-  SessionIdWire session{};
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
@@ -400,7 +410,7 @@ struct AuthoritativeStateWire {
 
 /// One player in the Lobby.
 struct RosterEntryWire {
-  SessionIdWire session{};
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The player's character (see JoinAcceptedWire::character).
   std::string character;
 
@@ -429,7 +439,7 @@ struct ReadyWire {
 /// One player in a match, the body it controls, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
-  SessionIdWire session{};
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
   /// The player's character (see JoinAcceptedWire::character).
@@ -444,6 +454,9 @@ struct MatchStartWire {
   std::vector<MatchPlayerWire> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
+  /// The Match's Match ID, the same in every player's Match start (ADR-0043);
+  /// nil where the server names none.
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
 
   bool operator==(const MatchStartWire&) const = default;
 };
@@ -502,7 +515,7 @@ struct DeathWire {
 };
 
 /// Longest Match capture name a Replay message may carry, in bytes: a
-/// capture's file name (host::CaptureFileName's) is about half of it.
+/// capture's file name (host::CaptureFileName's) is 61 of them.
 inline constexpr std::size_t kMaxCaptureNameLength = 64;
 
 /// The most captures a Replay list names.
@@ -550,6 +563,8 @@ struct ReplayRequestWire {
   /// kMaxCaptureNameLength bytes. Never a path: the server matches it against
   /// its listing.
   std::string capture;
+  /// The Replay viewer's Run ID, as JoinRequestWire::run.
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const ReplayRequestWire&) const = default;
 };
@@ -688,7 +703,7 @@ inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::by
 /// The capture format this engine writes: the one raw byte a capture file holds
 /// after its magic and before its first record, so a reader refuses another
 /// format before it parses any record.
-inline constexpr std::uint8_t kCaptureFormatVersion = 3;
+inline constexpr std::uint8_t kCaptureFormatVersion = 4;
 
 /// Which record a payload is: the number of its augusta.CaptureRecord member,
 /// less 1000.
@@ -703,7 +718,7 @@ enum class CaptureRecordTypeWire : std::uint8_t {
   kMatchEnd = 6,
 };
 
-/// What a captured Match ran on and when it started.
+/// Which Match was captured, what it ran on and when it started.
 struct CaptureHeaderWire {
   /// The hash of the server pack the Match ran on (ADR-0031).
   PackHashWire server_pack{};
@@ -713,6 +728,8 @@ struct CaptureHeaderWire {
   std::string engine_version;
   /// When the Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
+  /// The Match's ID, as Match start names it (MatchStartWire::match).
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
   std::uint8_t tick_rate_hz = 0;
 
   bool operator==(const CaptureHeaderWire&) const = default;
@@ -723,7 +740,7 @@ struct CapturedJoinWire {
   /// Where the Match start spawned it, on the position grid.
   math::Vec3 spawn{};
   std::uint32_t offset = 0;
-  SessionIdWire session{};
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// Its Character, by its name in the scenario's manifest (ADR-0042); at most
   /// kMaxCharacterNameLength bytes.
   std::string character;

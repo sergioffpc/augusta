@@ -1,6 +1,7 @@
 #include "augusta/intent.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -35,6 +36,11 @@ using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::Stance;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr EntityId kOwn{1};
 constexpr EntityId kTarget{2};
 constexpr augusta::tick::Tick kNewestTick = 100;
@@ -45,9 +51,9 @@ constexpr int kTickRate = 60;
 ServerView InMatch() {
   ServerView view;
   view.accepted = augusta::harness::Admission{
-      .session = SessionId{1}, .tick_rate_hz = kTickRate, .parameters = {}, .character = "soldier"};
+      .session = Session(1), .tick_rate_hz = kTickRate, .parameters = {}, .character = "soldier"};
   view.match_start = augusta::harness::MatchStart{
-      .players = {{.session = SessionId{1}, .entity = kOwn, .character = "soldier", .spawn = {}}}, .first_tick = 0};
+      .players = {{.session = Session(1), .entity = kOwn, .character = "soldier", .spawn = {}}}, .first_tick = 0};
   view.matches_started = 1;
   view.in_match = true;
   AuthoritativeState state;

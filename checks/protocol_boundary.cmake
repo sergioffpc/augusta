@@ -12,10 +12,11 @@
 # Keeps the protocol itself a pure codec below the engine: its sources include
 # no augusta header but its own, the math's (augusta/math.h, augusta/grid.h),
 # the tick's (augusta/tick.h) and the limits' (augusta/limits.h), and its target
-# links nothing else, so a gameplay module (the Command, the Parameters) never
-# becomes what the wire depends on. Its links beyond them are the full
-# protobuf runtime, never the lite one, and protobuf's utf8_range, both
-# PRIVATE (ADR-0007).
+# links no other module, so a gameplay module (the Command, the Parameters)
+# never becomes what the wire depends on. The IDs it carries are Boost.Uuid's
+# (boost/uuid/*.hpp, ADR-0035), linked as Boost::uuid. Its links beyond them
+# are the full protobuf runtime, never the lite one, and protobuf's utf8_range,
+# both PRIVATE (ADR-0007).
 #
 # Keeps protobuf inside the protocol: no header outside src/modules/protocol
 # includes a protobuf header, utf8_range's or the generated augusta.pb.h, so
@@ -75,7 +76,7 @@ if(NOT protocol_sources)
 endif()
 
 set(allowed_include "augusta/(protocol|math|grid|tick|limits)\\.h")
-set(allowed_link "augusta_(math|tick|limits)")
+set(allowed_link "(augusta_(math|tick|limits)|Boost::uuid)")
 set(dependency_violations "")
 foreach(source ${protocol_sources})
   file(STRINGS "${source}" lines REGEX "#[ \t]*include[ \t]*[\"<]augusta/")
@@ -89,8 +90,8 @@ foreach(source ${protocol_sources})
   endforeach()
 endforeach()
 # The protocol's own target_link_libraries calls: every target they name must
-# be one of the allowed three, or the full protobuf runtime or utf8_range under
-# PRIVATE.
+# be one of the allowed modules or Boost::uuid, or the full protobuf runtime or
+# utf8_range under PRIVATE.
 file(READ "${SOURCE_DIR}/src/modules/protocol/CMakeLists.txt" protocol_cmake)
 string(REGEX MATCHALL "target_link_libraries\\([^)]*\\)" link_calls "${protocol_cmake}")
 foreach(call ${link_calls})
@@ -179,5 +180,5 @@ list(LENGTH presentation_headers presentation_count)
 list(LENGTH engine_headers engine_count)
 message(
   STATUS
-  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick, limits, the protobuf runtime and utf8_range only, ${engine_count} headers free of protobuf"
+  "protocol_boundary: ${count} headers free of protocol types, ${presentation_count} presentation headers free of harness types, the protocol on math, tick, limits, Boost.Uuid, the protobuf runtime and utf8_range only, ${engine_count} headers free of protobuf"
 )

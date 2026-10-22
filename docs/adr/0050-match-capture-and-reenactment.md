@@ -13,16 +13,18 @@ Reenactment can and cannot promise.
 server's run: the Lobby, the joins and Readies before the Match, and everything
 between two Matches are left out, since a Reenactment brings its own Lobby
 (below) and a Replay needs none (ADR-0051). A capture opens with a magic and the
-format's version, then a header: the engine version that made it, the server
-pack the Match ran on and the client pack its players joined with (their BLAKE3
-hashes), the tick rate and when the Match started, in UTC. Then one ordered
-stream of events, each at its offset in ticks from the Match's first tick, so
-the capture names no tick of the server that made it:
+format's version, then a header: the Match's Match ID (ADR-0043), the engine
+version that made it, the server pack the Match ran on and the client pack its
+players joined with (their BLAKE3 hashes), the tick rate and when the Match
+started, in UTC. Then one ordered stream of events, each at its offset in ticks
+from the Match's first tick, so the capture names no tick of the server that
+made it:
 
 - **Join**, at offset 0, one per player in the Match start's order: the player's
-  Session, its Character, by its name in the scenario's manifest (ADR-0042), and
-  where the Match start spawned it, on the position grid. A player's place in
-  this order is its number in the capture, from 1.
+  Session ID, the UUID's 16 bytes as Match start carries it (ADR-0038), its
+  Character, by its name in the scenario's manifest (ADR-0042), and where the
+  Match start spawned it, on the position grid. A player's place in this order
+  is its number in the capture, from 1.
 - **Commands**: each Command a player sent, at the offset of the tick the
   server's command queue handed it to SimulationWorld, its Seen time's tick
   turned into an offset the same way. Only what the client sent: the movement
@@ -60,18 +62,21 @@ the messages' one schema, but never messages: neither decoder yields the
 other's. A file is the magic, the format's version in one byte, then the header
 and the records in order, each after its length in one byte, so none is longer
 than 255 bytes: the longest, the header with its engine version and a Join with
-its Character's name, are about 110 and 85, and a Command about 20, so a wider
+its Character's name, are about 130 and 100, and a Command about 20, so a wider
 length would only add zeros.
 
 **The format's version comes before any record.** A reader checks it before it
 parses anything, so a capture of another format is refused by its version, with
 a clear error, and never misread; no reader of an older format is kept. The
 version goes up whenever a record changes what it means or loses a field, never
-for a field only added, which an older reader ignores (ADR-0007). Version 3 is
+for a field only added, which an older reader ignores (ADR-0007). Version 3 was
 the first in Protocol Buffers: a capture of the custom format before it held its
 version inside the header record, and the byte after its magic is that record's
-length, never as small as 3, so it is refused the same way. The magic is
-unchanged, so the server still counts and retains those older captures.
+length, never as small as 3, so it is refused the same way. Version 4, this
+engine's, has the header's Match ID and a Join's Session ID in its 16 bytes,
+where version 3 numbered the Session in its server's run: a version 3 capture is
+refused by its version like any other. The magic is unchanged, so the server
+still counts and retains those older captures.
 
 **The disk is written on a thread of the capture's own.** The Simulation thread
 encodes each record as the tick produces it and hands it to the capture's writer
@@ -111,26 +116,31 @@ degraded run's loss stays in its `capture_disabled` line as `lost=true`.
 
 **augustad captures only when asked.** `simulation.capture` in `augustad.yaml`
 (ADR-0034) names a directory; without it nothing is captured. Each Match is a
-file of its own, named by when it started and its number in the server's run, so
-a server that runs many Matches keeps every one. A capture's file name ends in
-`.acap`, the format's own extension, as a pack's ends in `.apak` (ADR-0030); the
-server lists and retains no other file.
+file of its own, named by when it started, in UTC to the millisecond, then its
+Match ID in the canonical form: `YYYYMMDDTHHMMSSmmmZ-<Match ID>.acap`. A server
+that runs many Matches keeps every one, one server's captures sort by when they
+started, and a Match's capture is found by the Match ID its log lines name, on
+whichever server it ran. A capture's file name ends in `.acap`, the format's own
+extension, as a pack's ends in `.apak` (ADR-0030); the server lists and retains
+no other file.
 
 **A server keeps its capture directory within a count and a size, oldest Match
 first (#461).** `simulation.capture_retention` sets `max_files`, `max_mib` or
 both; without it nothing is deleted, and `0` or a negative value fails the
 config. Only the directory's own regular files named as captures and starting
-with the magic count, oldest by the Match start in the name, never the mtime;
-the Match in progress is never one. At each Match start, before its file is
-created, the oldest are deleted until fewer than `max_files` remain. `max_mib`
-is a hard cap, the Match in progress included: before each record the writer
-deletes the oldest completed capture while the directory's total plus that
-record would pass it, and stops the capture with `retention_budget` when none is
-left, the file keeping every record before it. All of it runs on the writer
-thread, from one scan per Match start plus the bytes it writes and frees, never
-a rescan per record. A deletion that fails is logged once per Match start and
-stops nothing: a filesystem sized to the cap is the backstop (#460). Each
-server's budget is its own; the servers sharing a filesystem must sum to fit it.
+with the magic count, the names of an engine before the Match ID, which ended in
+the Match's number in its run (`-NNNN.acap`), among them, oldest by the Match
+start in the name, never the mtime; the Match in progress is never one. At each
+Match start, before its file is created, the oldest are deleted until fewer than
+`max_files` remain. `max_mib` is a hard cap, the Match in progress included:
+before each record the writer deletes the oldest completed capture while the
+directory's total plus that record would pass it, and stops the capture with
+`retention_budget` when none is left, the file keeping every record before it.
+All of it runs on the writer thread, from one scan per Match start plus the
+bytes it writes and frees, never a rescan per record. A deletion that fails is
+logged once per Match start and stops nothing: a filesystem sized to the cap is
+the backstop (#460). Each server's budget is its own; the servers sharing a
+filesystem must sum to fit it.
 
 **Match start names the Match's first tick.** A Captured player must turn the
 capture's offsets back into ticks of the server it plays against, and
@@ -199,14 +209,14 @@ anyone's, a person's included, joining with a Join request as always.
 
 **augusta-inspect reads a capture.** Given a file that opens with a capture's
 magic instead of a pack's, `augusta-inspect` prints the header (format version,
-engine version, server and client packs, tick rate, when the Match started), how
-long the Match lasted in ticks and seconds, and one line per player: its number
-for `--player`, Session, Character, spawn, how many Commands it sent, and when
-it left or died and who killed it; then the Match end's winner or a Draw, and
-whether the file ends partway through a record. It decodes every record, a
-Command's included, through a Python module generated from the protocol's one
-schema (ADR-0007), so it never copies the format by hand; a Command it reports
-only by count.
+Match ID, engine version, server and client packs, tick rate, when the Match
+started), how long the Match lasted in ticks and seconds, and one line per
+player: its number for `--player`, Session, Character, spawn, how many Commands
+it sent, and when it left or died and who killed it; then the Match end's winner
+or a Draw, and whether the file ends partway through a record. It decodes every
+record, a Command's included, through a Python module generated from the
+protocol's one schema (ADR-0007), so it never copies the format by hand; a
+Command it reports only by count.
 
 **A Reenactment reproduces conditions, not outcomes.** Every client action
 reaches the server in the same order, on or within a tick or two of the same

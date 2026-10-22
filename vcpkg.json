@@ -10,6 +10,7 @@
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
+    "boost-uuid",
     "flecs",
     "gamenetworkingsockets",
     "glm",

@@ -11,7 +11,10 @@
 // - flags and a small enumeration share one uint32 bitfield, with the bit
 //   layouts ADR-0038 gives, and the bits no field uses are 0;
 // - the Parameters, a rifle's two times, health and damage are float;
-// - a Tick and a Sequence are uint64, an entity ID and a session ID uint32;
+// - a Tick and a Sequence are uint64, an entity ID uint32;
+// - a session ID is bytes holding its UUIDv7's 16 bytes in RFC 9562's order,
+//   an empty or all-zero one the nil UUID, which names no Session;
+// - a Run ID is bytes holding its 16 bytes, in RFC 9562's order;
 // - text (an engine version, a Character, a capture's name) is bytes holding
 //   UTF-8, which the codec checks itself, so a peer's bad text is refused as
 //   any other bad field is, never logged by protobuf's parse (NFR-05);
@@ -80,6 +83,8 @@ message JoinRequest {
   // The client pack's BLAKE3 hash, 32 bytes.
   bytes client_pack = 2;
   bytes character = 3;
+  // The client's Run ID, which the server logs at admission.
+  bytes run = 4;
 }
 
 // Client to server: a Captured player's first message, in place of a
@@ -92,6 +97,7 @@ message ReenactRequest {
   sint32 spawn_x = 4;
   sint32 spawn_y = 5;
   sint32 spawn_z = 6;
+  bytes run = 7;
 }
 
 message Stamina {
@@ -135,7 +141,8 @@ message Parameters {
 
 // Server to client: the join succeeded, and the client waits in the Lobby.
 message JoinAccepted {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 5;
   uint32 tick_rate_hz = 2;
   Parameters parameters = 3;
   bytes character = 4;
@@ -218,7 +225,8 @@ message AuthoritativeState {
 }
 
 message RosterEntry {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 3;
   bytes character = 2;
 }
 
@@ -234,7 +242,8 @@ message Ready {
 }
 
 message MatchPlayer {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 7;
   uint32 entity = 2;
   bytes character = 3;
   // On the position grid.
@@ -247,12 +256,15 @@ message MatchPlayer {
 message MatchStart {
   repeated MatchPlayer players = 1;
   uint64 first_tick = 2;
+  // The Match ID: a UUID's 16 bytes, in RFC 9562 order.
+  bytes match = 3;
 }
 
 // Server to client: the match is over.
 message MatchEnd {
-  // The winner's session, or 0 for a draw.
-  uint32 winner = 1;
+  reserved 1;
+  // The winner's session, or the nil UUID for a draw.
+  bytes winner = 2;
 }
 
 // Server to client: one round a player fired (ADR-0044).
@@ -308,6 +320,8 @@ message ReplayRequest {
   bytes engine_version = 1;
   bytes client_pack = 2;
   bytes capture = 3;
+  // The Replay viewer's Run ID, as a JoinRequest's.
+  bytes run = 4;
 }
 
 message PlayerView {
@@ -339,7 +353,8 @@ message CaptureRecord {
   }
 }
 
-// What a captured Match ran on and when it started: a capture's first record.
+// Which Match was captured, what it ran on and when it started: a capture's
+// first record.
 // The format's version is the raw byte before it, never a field.
 message CaptureHeader {
   // The server and client packs' BLAKE3 hashes, 32 bytes each.
@@ -349,6 +364,8 @@ message CaptureHeader {
   // In milliseconds since the Unix epoch, UTC.
   int64 started_unix_ms = 4;
   uint32 tick_rate_hz = 5;
+  // The Match's ID, 16 bytes, as MatchStart names it.
+  bytes match = 6;
 }
 
 // A player of the Match start, in its order: always at offset 0.
@@ -356,7 +373,8 @@ message CapturedJoin {
   uint32 offset = 1;
   // The player's number in the capture, from 1.
   uint32 player = 2;
-  uint32 session = 3;
+  reserved 3;
+  bytes session = 8;
   bytes character = 4;
   // On the position grid.
   sint32 spawn_x = 5;

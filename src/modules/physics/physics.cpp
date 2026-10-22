@@ -245,7 +245,7 @@ struct PhysxProcessState {
   PxPhysics* physics = nullptr;
 };
 
-PhysxProcessState& ProcessState() {
+PhysxProcessState& GlobalState() {
   static PhysxProcessState state;
   return state;
 }
@@ -256,7 +256,7 @@ struct PhysxHandles {
 };
 
 PhysxHandles AcquirePhysx() {
-  PhysxProcessState& state = ProcessState();
+  PhysxProcessState& state = GlobalState();
   const std::lock_guard<std::mutex> lock(state.mutex);
   if (state.users == 0) {
     state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
@@ -276,7 +276,7 @@ PhysxHandles AcquirePhysx() {
 }
 
 void ReleasePhysx() {
-  PhysxProcessState& state = ProcessState();
+  PhysxProcessState& state = GlobalState();
   const std::lock_guard<std::mutex> lock(state.mutex);
   if (--state.users == 0) {
     state.physics->release();

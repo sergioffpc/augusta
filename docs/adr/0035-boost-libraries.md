@@ -6,7 +6,7 @@ adopted when the standard library or an existing dependency has nothing that
 does the job, and each adoption pays only for that library's own dependency
 closure (ADR-0025).
 
-Four libraries are adopted now:
+Five libraries are adopted now:
 
 - **Boost.DLL** finds the running executable's directory
   (`boost::dll::program_location()`), which is where `augustac.yaml` /
@@ -28,6 +28,19 @@ Four libraries are adopted now:
   (ADR-0049), on Boost.Asio. It is header-only, and its HTTP parsing and
   responses leave the endpoint only its routing to write; prometheus-cpp's own
   HTTP server cannot answer `/livez`'s `503`.
+- **Boost.Uuid** names the Run, Session and Match IDs (GLOSSARY.md). Its
+  `boost::uuids::uuid` is the engine's ID type, named directly in the headers of
+  every layer that carries an ID, the protocol's among them; its 16 bytes, in
+  RFC 9562's order, are what the wire and a capture carry, and its `to_string`
+  writes the canonical lowercase hyphenated form wherever an ID is logged or
+  names a file. Each ID is a UUIDv7 (RFC 9562) from a `time_generator_v7`, which
+  needs Boost 1.86 or newer. A UUIDv7 is unique across every machine with no
+  coordination, and starts with its time, so IDs, and the files and lines named
+  by them, sort by when they were taken. Each owner of IDs holds its own
+  generator: augustac's Run for its Run ID, the server's Match for its Session
+  IDs and Match IDs (one generator, called under the Host's lock), and each
+  Agent for its Run ID. Each ID one generator takes sorts after the one before.
+  It is header-only.
 
 Boost.DLL pulls in Boost.Filesystem and Boost.System, which are compiled
 libraries; they ship as DLLs next to each executable on Windows like every other
@@ -47,3 +60,12 @@ vcpkg dependency.
   dependency; Boost.Iostreams is a compiled library with a much larger
   dependency closure than Interprocess for the same read-only mapping.
 - **Boost.Log instead of spdlog** (ADR-0027): adopted separately, see ADR-0036.
+- **A value type of the engine's own over Boost.Uuid**, with Boost.Uuid behind
+  one translation unit: it kept Boost.Uuid out of the engine's headers, but
+  repeated what Boost.Uuid already gives (the bytes, the text, comparison, a
+  hash) behind one more module.
+- **A random UUIDv4, or a hand-written UUIDv7**, for the IDs: a UUIDv4 is as
+  unique but sorts by nothing, so a folder of Runs or a page of lines would not
+  sort by time; a hand-written UUIDv7 is a few dozen lines, but its monotonic
+  counter and its randomness source are where it would go wrong, and Boost.Uuid
+  has both, under this ADR's one-library-at-a-time rule.

@@ -12,6 +12,8 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -36,6 +38,11 @@ using augusta::host::ReplayCatalog;
 using augusta::host::ReplayListing;
 using augusta::host::ReplayTerms;
 using augusta::host::SessionId;
+
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
 
 constexpr std::uint8_t kTickRate = 60;
 
@@ -74,24 +81,25 @@ class ReplayCatalogTest : public ::testing::Test {
                     std::uint64_t last_offset = 30) {
     std::vector<CaptureEntrant> players;
     for (std::size_t i = 0; i < characters.size(); ++i) {
-      players.push_back(CaptureEntrant{.session = SessionId{static_cast<std::uint32_t>(i + 1)},
+      players.push_back(CaptureEntrant{.session = Session(static_cast<std::uint8_t>(i + 1)),
                                        .entity = EntityId{static_cast<std::uint32_t>(i + 1)},
                                        .character = characters[i],
                                        .spawn = {}});
     }
+    const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
     {
       Capturer capturer(directory_, capture::Header{.engine_version = "1.0.0",
                                                     .server_pack = PackOf(pack),
                                                     .client_pack = PackOf(2),
                                                     .tick_rate_hz = tick_rate_hz,
                                                     .started = {}});
-      capturer.StartMatch(players, 100, kStarted + std::chrono::seconds(++written_));
+      capturer.StartMatch(match, players, 100, kStarted + std::chrono::seconds(++written_));
       capturer.Command(100 + (last_offset / 2), EntityId{1}, augusta::command::Command{});
       capturer.EndMatch(100 + last_offset, std::nullopt);
     }
-    // Its only Match, the first of its run: destroying it wrote the file.
+    // Its only Match: destroying it wrote the file.
     return augusta::host::CaptureFileName(
-        std::chrono::floor<std::chrono::milliseconds>(kStarted + std::chrono::seconds(written_)), 1);
+        std::chrono::floor<std::chrono::milliseconds>(kStarted + std::chrono::seconds(written_)), match);
   }
 
   std::filesystem::path root_;
@@ -230,7 +238,7 @@ TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
   capture::Capture capture;
   capture.header.server_pack = PackOf(1);
   capture.header.tick_rate_hz = kTickRate;
-  capture.joins = {{.session = 4, .character = "soldier", .spawn = {}}};
+  capture.joins = {{.session = Session(4), .character = "soldier", .spawn = {}}};
   capture.events = {{.offset = 59, .event = capture::MatchEnd{}}};
 
   const std::optional<ReplayListing> listing = ListingOf(CaptureNamed("a"), capture, Terms());

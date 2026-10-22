@@ -5,9 +5,13 @@ crashing thread's symbolized stack, a kernel core dump, and, kept for every
 published build, the debug info that reads that dump.
 
 **The log.** `augustad` installs a handler for the fatal signals (`SIGSEGV`,
-`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main` (the server
-module's `augusta/crash.h`). It writes one
-`CRITICAL subsystem=server event=crash signal=<name>` line, then one
+`SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main`. The handler is
+the crash module's (`augusta_crash`, `augusta/crash.h`), shared between client
+and server so the two never drift in format or in how they unwind; each
+executable installs it with its own subsystem, and with the file its minidump
+goes to and its Run ID where it has them, which the server does not. It writes
+one `CRITICAL subsystem=<subsystem> event=crash signal=<name>` line
+(`subsystem=server` for `augustad`), then one
 `event=crash_frame index=<n> pc=0x<address> symbol="<function>"` line per frame,
 in the console pattern of ADR-0029, to stdout. It runs in a signal handler, so
 it writes past `augusta::logging`'s sink (which allocates and locks) with
@@ -20,10 +24,26 @@ then puts every fatal signal back to its default action and raises the signal
 again, so the process dies of it as it would have, and the kernel dumps its
 core. That needs `augustad` not to be the container's PID 1, whose signals to
 itself the kernel drops, so the image runs it under `tini`, which forwards it
-`SIGTERM` and exits with its status. A crash in another thread, or in the report
-itself, meets the default action and ends the process at once. It also raises
-`RLIMIT_CORE`'s soft limit to the hard limit, since a limit of 0 writes no core.
-The log names functions; file and line come from the core.
+`SIGTERM` and exits with its status. One thread reports at a time: a crash in
+another thread meanwhile waits for the report to end the process, so the two
+threads' lines never interleave, and a crash in the report itself ends the
+process at once. It also raises `RLIMIT_CORE`'s soft limit to the hard limit,
+since a limit of 0 writes no core. The log names functions; file and line come
+from the core.
+
+**The client's lines.** `augustac` installs the same handler as soon as its Run
+starts (ADR-0027), with its Run ID and the Run's log file. Its crash lines then
+end in the log's context, as every other line does (ADR-0029): `run=<id>`, and
+`session=` and `match=` while they are set. The handler cannot take the
+context's lock, so logging keeps a copy of it for the handler in a fixed buffer
+of atomics, written under a sequence number (`logging::CopyContext`): a read
+that a change overlaps is read again, and one that keeps being overlapped, as
+when the crash interrupted the change itself, ends in no context. The lines
+reach the Run's log file as well as stdout, through a descriptor `Install` opens
+ahead of any crash with `O_APPEND`, since the handler cannot open one. On Linux
+its crash line also says where the core is, `core="coredumpctl dump augustac"`:
+the player's `systemd-coredump` keeps it (ADR-0055). The Run's log therefore
+ends in the crash's lines, which is how the next launch knows the Run crashed.
 
 **The core.** Where the kernel writes a core is the node's
 `kernel.core_pattern`, which no container can set. The k3s node must run
@@ -87,7 +107,12 @@ from the image the pod ran.
   core without the logged stack.
 - The image has no shell or debugger (ADR-0054): a core is read off the node,
   never inside the pod, and a live server is inspected with `kubectl debug`.
-- On Windows (a development build only) the same handler runs through the CRT's
-  `signal`, symbolizing through the PDB; no core is written there.
+- On Windows the same module installs an unhandled-exception filter in place of
+  the `SIGSEGV`, `SIGILL` and `SIGFPE` handlers, and keeps `SIGABRT`'s. An
+  exception's crash line names its code, `event=crash exception=0x<code>`, in
+  place of `signal=<name>` (an abort's still names `signal=SIGABRT`); its frame
+  lines name a module and an offset, and the client's crash writes a minidump
+  (ADR-0055). The development-only Windows server build is given no minidump
+  file, so it writes neither a minidump nor a core.
 - The client's release binary gets its counterpart of the release's
   `augustad-linux-x64.debug`, a PDB of the same build, in ADR-0055.

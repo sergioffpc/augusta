@@ -49,7 +49,11 @@ keeps game policy separate from mechanism code.
   start calls the rules' `assign_spawns` once a Match (below).
 - **A hook reads** a plain read-only table built for the call: numbers,
   booleans, strings and nested lists and records, never a live binding into
-  Flecs or any other engine state. Writing to it raises an error.
+  Flecs or any other engine state. Writing to it raises an error. A Session ID
+  is a UUID, which no Lua number holds, so a hook sees it as its canonical
+  lowercase hyphenated string (ADR-0038). Rules only compare it and hand it
+  back, so a winner or an assignment names a player by that same string alone:
+  any other string, or a number, names no player and is refused.
 - **A hook acts** only through what it returns. What crosses back is plain data
   (nil, booleans, numbers, strings, lists keyed 1 to n, records keyed by
   strings), and C++ validates every returned value against what that hook may

@@ -56,13 +56,16 @@ struct Session::Impl {
             .client_pack = config.client_pack,
             .character = config.character,
             .spawn = config.spawn,
+            .run = config.run,
         },
         replay_request(config.replay.transform([&config](const std::string& capture) {
-          return link::ReplayRequest{
-              .engine_version = config.engine_version, .client_pack = config.client_pack, .capture = capture};
+          return link::ReplayRequest{.engine_version = config.engine_version,
+                                     .client_pack = config.client_pack,
+                                     .capture = capture,
+                                     .run = config.run};
         })),
         channel(config.faults),
-        inbox(config.replay.has_value()),
+        inbox(config.replay.has_value(), config.on_match),
         commands(std::move(world)) {}
 
   // Whether either failure has been recorded, taken or not: the runtime has

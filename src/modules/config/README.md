@@ -10,7 +10,8 @@ Reads each executable's startup settings from its YAML file instead of
 command-line arguments: the shared mechanism (`--config`, `--help`, `--version`,
 sections, dotted keys, strict errors, paths relative to `base_dir`), and each
 executable's own keys - `augustac.yaml` with the player's controls and
-`--reenact`, and `augustad.yaml`.
+`--reenact`, and `augustad.yaml`. It also says which directory the executable is
+in, where its config file lives (`ExecutableDirectory`).
 
 ## Not its responsibility
 

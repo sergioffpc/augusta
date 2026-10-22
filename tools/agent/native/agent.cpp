@@ -13,6 +13,9 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/command.h"
@@ -66,7 +69,11 @@ Agent::Agent(const std::string& server, const LoadedPack& pack, const std::strin
              ReportSink report)
     : readiness_(readiness),
       report_(std::move(report)),
-      session_(harness::SessionConfig{.server = {.address = server}, .client_pack = pack.hash, .character = character},
+      // Each Agent is a Run of its own, so its join carries a Run ID of its own.
+      session_(harness::SessionConfig{.server = {.address = server},
+                                      .client_pack = pack.hash,
+                                      .character = character,
+                                      .run = boost::uuids::time_generator_v7{}()},
                WorldWithMap(pack.map)) {
   runner_.emplace(
       session_,

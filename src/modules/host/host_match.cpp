@@ -2,13 +2,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
+
+#include <boost/uuid/uuid_io.hpp>
 
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -61,7 +65,7 @@ void CountCombat(HostMetrics& metrics, const simulation::TickResult& result) {
 // One line for every match that ends (ADR-0029): why, who won, how many
 // ticks it lasted, counting the one it ended on, and how many were in it.
 void Host::Impl::LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const {
-  host::LogMatchEnded(reason, winner, MatchTicks(), playing, match.GetRoster().version);
+  host::LogMatchEnded(match_id, reason, winner, MatchTicks(), playing, match.GetRoster().version);
 }
 
 // Counts a match that ended for reason, with winner or as a draw: how, and how
@@ -96,8 +100,7 @@ void Host::Impl::EndMatch(const std::optional<SessionId>& winner, EndReason reas
 // Acts on Game policy's Match end, after the tick it was decided on.
 void Host::Impl::Act(const policy::MatchEnd& end) {
   const std::lock_guard<std::mutex> lock(mutex);
-  EndMatch(end.winner.transform([](policy::SessionId winner) { return FromSimulation(winner); }),
-           EndReason::kWinCondition);
+  EndMatch(end.winner, EndReason::kWinCondition);
 }
 
 // Starts a match if one can start: its players' bodies enter the simulation
@@ -113,11 +116,10 @@ void Host::Impl::StartMatchIfReady() {
   entrants.reserve(start->players.size());
   std::vector<SessionId> sessions;
   for (const MatchPlayer& player : start->players) {
-    entrants.push_back(
-        simulation::MatchPlayer{.entity = ToSimulation(player.entity),
-                                .identity = {.session = ToSimulation(player.session), .character = player.character},
-                                .character = characters.at(player.character),
-                                .spawn = player.spawn});
+    entrants.push_back(simulation::MatchPlayer{.entity = ToSimulation(player.entity),
+                                               .identity = {.session = player.session, .character = player.character},
+                                               .character = characters.at(player.character),
+                                               .spawn = player.spawn});
     bodies.emplace(player.session, player.entity);
     players.at(player.session).commands = CommandQueue{tick_rate_hz};
     sessions.push_back(player.session);
@@ -126,6 +128,7 @@ void Host::Impl::StartMatchIfReady() {
   simulating_match = true;
   // Its first tick is the one about to run.
   match_start_tick = tick + 1;
+  match_id = start->match;
   if (capturer) {
     std::vector<CaptureEntrant> captured;
     captured.reserve(start->players.size());
@@ -134,12 +137,24 @@ void Host::Impl::StartMatchIfReady() {
       captured.push_back(CaptureEntrant{
           .session = player.session, .entity = player.entity, .character = player.character, .spawn = spawns[i]});
     }
-    capturer->StartMatch(captured, match_start_tick, std::chrono::system_clock::now());
+    capturer->StartMatch(match_id, captured, match_start_tick, std::chrono::system_clock::now());
   }
   metrics.matches_started.Increment();
   SetLobbyGauges();
-  SendTo(sessions, link::Encode(ToLink(*start, spawns, match_start_tick)));
-  LOG_INFO("subsystem=serverruntime event=match_started tick={} players={}", match_start_tick, sessions.size());
+  SendTo(sessions, link::Encode(ToLink(*start, spawns, match_start_tick, match_id)));
+  LogMatchStarted(sessions);
+}
+
+// The one line of the match that started (ADR-0029): its Match ID, its first
+// tick, and the session of each of its players, so who played with whom is
+// read off it.
+void Host::Impl::LogMatchStarted(const std::vector<SessionId>& sessions) const {
+  std::string players;
+  for (const SessionId& session : sessions) {
+    players += std::format(" session={}", boost::uuids::to_string(session));
+  }
+  LOG_INFO("subsystem=serverruntime event=match_started match={} tick={} players={}{}",
+           boost::uuids::to_string(match_id), match_start_tick, sessions.size(), players);
 }
 
 // Takes a match that has ended out of the simulation, its capture ending on
@@ -236,7 +251,7 @@ simulation::TickResult Host::Tick(float delta_time) {
   impl.SendTick(result.state, input.to);
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);
-  LogCombat(result.state);
+  LogCombat(impl.match_id, result.state);
   // After the tick's own messages, so a client hears the deaths that ended the
   // match before it hears that it has.
   for (const policy::PolicyAction& action : result.actions) {

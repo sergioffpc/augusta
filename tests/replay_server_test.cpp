@@ -18,6 +18,9 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -289,8 +292,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   if (!spawned_first(*sessions[0])) {
     std::swap(sessions[0], sessions[1]);
   }
-  const auto shooter =
-      static_cast<augusta::host::SessionId>(std::to_underlying(sessions[0]->GetServerView()->accepted->session));
+  const auto shooter = sessions[0]->GetServerView()->accepted->session;
   Command fire;
   const Vec3 aim = Vec3(0.0F, 1.65F - kEyeHeight, -kSpacing);
   fire.yaw = 0.0F;
@@ -468,10 +470,14 @@ TEST_F(ReplayServerTest, AReplayListRequestIsAnsweredWithEveryCaptureItReplaysTh
 // A name is matched against the listing, never opened as a path (ADR-0051).
 // Requirements: US-21
 TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
-  const std::string name = CaptureAKill(directory_.Path());
-  if (name.empty()) {
+  const std::string captured = CaptureAKill(directory_.Path());
+  if (captured.empty()) {
     return;  // CaptureAKill reported the missing capture.
   }
+  // Under a shorter name than a live server's, so that every path around it
+  // still fits in a Replay request.
+  const std::string name = CaptureNamed("kill");
+  std::filesystem::rename(directory_.Path() / captured, directory_.Path() / name);
   std::filesystem::create_directories(directory_.Path() / "inner");
   std::filesystem::copy_file(directory_.Path() / name, directory_.Path() / "inner" / name);
   const std::unique_ptr<ReplayServer> server = Serve();
@@ -517,17 +523,20 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_FALSE(received.empty());
   const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&received.front());
   ASSERT_NE(accepted, nullptr);
-  EXPECT_EQ(accepted->session, protocol::SessionIdWire{0});
+  EXPECT_EQ(accepted->session, protocol::kDraw);
   EXPECT_EQ(accepted->tick_rate_hz, kTickRate);
   EXPECT_EQ(accepted->parameters.player_count, 2);
   const std::vector<protocol::MatchStartWire> starts = Of<protocol::MatchStartWire>(received);
   ASSERT_EQ(starts.size(), 1U);
   ASSERT_EQ(starts[0].players.size(), 2U);
   EXPECT_EQ(starts[0].first_tick, 1U);
+  // The captured Match, by the Match ID the live server gave it.
+  EXPECT_FALSE(capture.header.match.is_nil());
+  EXPECT_EQ(starts[0].match, capture.header.match);
   ASSERT_EQ(capture.joins.size(), 2U);
   for (std::size_t i = 0; i < 2; ++i) {
     const augusta::capture::Join& join = capture.joins[i];
-    EXPECT_EQ(starts[0].players[i].session, static_cast<protocol::SessionIdWire>(join.session));
+    EXPECT_EQ(starts[0].players[i].session, join.session);
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }
@@ -656,10 +665,11 @@ TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefus
 // The client's side of a Replay (ADR-0051): a harness::Session that watches.
 class ReplayViewerTest : public ReplayServerTest {
  protected:
-  std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture) {
+  std::unique_ptr<augusta::harness::Session> Viewer(const ReplayServer& server, const std::string& capture,
+                                                    const boost::uuids::uuid& run = {}) {
     auto viewer = std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{
-            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture},
+            .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture, .run = run},
         augusta::prediction::World());
     viewer->Connect();
     return viewer;
@@ -684,6 +694,26 @@ class ReplayViewerTest : public ReplayServerTest {
     return false;
   }
 };
+
+// The replay server logs a Replay's start with the Run ID its viewer sent
+// (ADR-0038), as a live server logs an admission.
+TEST_F(ReplayViewerTest, AReplaysStartIsLoggedWithTheRunIdItsViewerSent) {
+  const std::string name = CaptureAKill(directory_.Path());
+  if (name.empty()) {
+    return;  // CaptureAKill reported the missing capture.
+  }
+  const std::unique_ptr<ReplayServer> server = Serve();
+  const boost::uuids::uuid run = boost::uuids::time_generator_v7{}();
+
+  testing::internal::CaptureStdout();
+  const std::unique_ptr<augusta::harness::Session> viewer = Viewer(*server, name, run);
+  const bool started = RunUntil(*server, *viewer, [&] { return viewer->GetServerView()->match_start.has_value(); });
+  const std::string log = testing::internal::GetCapturedStdout();
+
+  ASSERT_TRUE(started);
+  EXPECT_NE(log.find("event=replay_started peer="), std::string::npos) << log;
+  EXPECT_NE(log.find(" run=" + boost::uuids::to_string(run) + " capture=" + name), std::string::npos) << log;
+}
 
 // A viewer is a Spectator from the first tick: in the Match, with no body of
 // its own, shown every player's pitch and ADS, until the Match end, after
