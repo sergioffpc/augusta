@@ -687,25 +687,34 @@ Version: v3
 ```text
 Source:      A defect in the dedicated server or the client
 Stimulus:    A fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) in a
-             published Linux build
+             published Linux build; an unhandled exception or an abort in a
+             published Windows client
 Environment: The server: a k3s node whose kernel.core_pattern is
-             systemd-coredump's. The client: a player's Linux machine whose
-             kernel.core_pattern is systemd-coredump's
+             systemd-coredump's. The Linux client: a player's machine whose
+             kernel.core_pattern is systemd-coredump's. The Windows client: a
+             player's machine as installed, no registry key or Windows Error
+             Reporting set up
 Artifact:    The shared crash handler, the server's image, the client's
-             tarball and the build's debug info
-Response:    The process logs the signal and the crashing thread's symbolized
-             stack, then dies of the signal, and the kernel keeps its core; the
-             client's lines also reach the Run's log, under its Run ID
+             tarball or zip and the build's debug info or PDB
+Response:    The process logs the crash and the crashing thread's stack, then
+             dies. On Linux the stack is symbolized and the kernel keeps its
+             core; the Windows client names each frame's module and offset and
+             writes its own minidump. The client's lines also reach the Run's
+             log, under its Run ID
 Measure:     Every such crash leaves a crash line and one line per frame in
-             ADR-0029's format, a core, and debug info whose build ID matches
-             the binary, kept as long as the image or the release. The client's
-             lines end in the Run's run=, end the Run's log file, and the crash
-             line names coredumpctl as where the core is
+             ADR-0029's format, a core or minidump, and debug info whose build
+             ID, or PDB whose GUID and age, matches the binary, kept as long as
+             the image or the release. The client's lines end in the Run's
+             run=, end the Run's log file; the Linux crash line names
+             coredumpctl as where the core is, and the Windows client's
+             minidump is dumps/augustac-<run-id>.dmp, holding the Run ID in a
+             user stream
 ```
 
 A stack overflow, or a crash in another thread or in the report itself, leaves
-no logged stack, and the development-only Windows server build writes no core
-(ADR-0047, ADR-0055).
+no logged stack; a corrupted Windows client may fail to write its minidump; and
+the development-only Windows server build writes no core or minidump (ADR-0047,
+ADR-0055).
 
 ### NFR-11: Deployability
 

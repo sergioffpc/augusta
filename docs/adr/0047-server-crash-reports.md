@@ -8,9 +8,9 @@ published build, the debug info that reads that dump.
 `SIGBUS`, `SIGILL`, `SIGFPE`, `SIGABRT`) first thing in `main`. The handler is
 the crash module's (`augusta_crash`, `augusta/crash.h`), shared between client
 and server so the two never drift in format or in how they unwind; each
-executable installs it with its own subsystem, and with the directory its Crash
-dumps go to and its Run ID where it has them, which the server does not. It
-writes one `CRITICAL subsystem=<subsystem> event=crash signal=<name>` line
+executable installs it with its own subsystem, and with the file its minidump
+goes to and its Run ID where it has them, which the server does not. It writes
+one `CRITICAL subsystem=<subsystem> event=crash signal=<name>` line
 (`subsystem=server` for `augustad`), then one
 `event=crash_frame index=<n> pc=0x<address> symbol="<function>"` line per frame,
 in the console pattern of ADR-0029, to stdout. It runs in a signal handler, so
@@ -101,7 +101,10 @@ from the image the pod ran.
   core without the logged stack.
 - The image has no shell or debugger (ADR-0054): a core is read off the node,
   never inside the pod, and a live server is inspected with `kubectl debug`.
-- On Windows (a development build only) the same handler runs through the CRT's
-  `signal`, symbolizing through the PDB; no core is written there.
+- On Windows the same module installs an unhandled-exception filter in place of
+  the `SIGSEGV`, `SIGILL` and `SIGFPE` handlers, and keeps `SIGABRT`'s; its
+  frame lines name a module and an offset, and the client's crash writes a
+  minidump (ADR-0055). The development-only Windows server build is given no
+  minidump file, so it writes neither a minidump nor a core.
 - The client's release binary gets its counterpart of the release's
   `augustad-linux-x64.debug`, a PDB of the same build, in ADR-0055.

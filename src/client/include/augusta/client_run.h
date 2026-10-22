@@ -17,6 +17,9 @@ struct Run {
   uuid::Uuid id;
   /// The file its log reaches, or nullopt if it reaches only the console.
   std::optional<std::filesystem::path> log_file;
+  /// Where a crash on Windows writes its minidump, run_files.h's MinidumpPath,
+  /// or nullopt if the executable's directory is unknown.
+  std::optional<std::filesystem::path> minidump_file;
 };
 
 /// Takes the Run's ID and starts its log: every line from now on carries `run=`
