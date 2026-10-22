@@ -21,20 +21,21 @@ namespace {
 constexpr std::string_view kSubsystem = "client";
 
 // What the crash handler is given of run: its lines carry the Run ID and reach
-// the Run's log too, and on Linux, where the kernel's core of the crash stays
-// in the player's systemd-coredump, the crash line says how to get it out
-// (ADR-0047, ADR-0055).
+// the Run's log too. On Windows a crash writes the Run's minidump; on Linux,
+// where the kernel's core of the crash stays in the player's systemd-coredump,
+// the crash line says how to get it out (ADR-0047, ADR-0055).
 augusta::crash::Settings CrashSettings(const augusta::client::Run& run) {
-  return {
-      .dumps_directory = std::nullopt,
-      .run_id = run.id.ToString(),
-      .log_file = run.log_file,
 #ifdef _WIN32
-      .core_location = std::nullopt,
+  return {.minidump_file = run.minidump_file,
+          .run_id = run.id.ToString(),
+          .log_file = run.log_file,
+          .core_location = std::nullopt};
 #else
-      .core_location = "coredumpctl dump augustac",
+  return {.minidump_file = std::nullopt,
+          .run_id = run.id.ToString(),
+          .log_file = run.log_file,
+          .core_location = "coredumpctl dump augustac"};
 #endif
-  };
 }
 
 }  // namespace

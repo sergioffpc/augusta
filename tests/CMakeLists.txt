@@ -684,9 +684,12 @@ target_compile_definitions(
 gtest_discover_tests(augusta_cooked_pack_tests)
 
 # The crash lines' format, against the log sink's, and the handler itself in
-# death tests.
+# death tests; on Windows they read the minidump a crash writes through dbghelp.
 add_executable(augusta_crash_tests crash_test.cpp)
-target_link_libraries(augusta_crash_tests PRIVATE augusta_crash augusta_logging GTest::gtest GTest::gtest_main)
+target_link_libraries(
+  augusta_crash_tests
+  PRIVATE augusta_crash augusta_logging GTest::gtest GTest::gtest_main $<$<PLATFORM_ID:Windows>:dbghelp>
+)
 target_compile_definitions(augusta_crash_tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 gtest_discover_tests(augusta_crash_tests)
 
