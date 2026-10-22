@@ -74,7 +74,7 @@ TEST(DebugInteractionTest, F1FromInLeavesNotByEscape) {
 
   EXPECT_FALSE(interaction.In());
   EXPECT_FALSE(routing.entered);
-  EXPECT_FALSE(routing.left_by_escape);
+  EXPECT_FALSE(routing.left_by_leave_key);
 }
 
 TEST(DebugInteractionTest, EventsBeforeF1GoToTheGameAndAfterItToThePanels) {
@@ -106,7 +106,7 @@ TEST(DebugInteractionTest, EscapeLeavesAndSaysSo) {
   const Routing routing = interaction.Route(events);
 
   EXPECT_FALSE(interaction.In());
-  EXPECT_TRUE(routing.left_by_escape);
+  EXPECT_TRUE(routing.left_by_leave_key);
 }
 
 TEST(DebugInteractionTest, EscapeOutOfDebugInteractionGoesToTheGame) {
@@ -116,7 +116,7 @@ TEST(DebugInteractionTest, EscapeOutOfDebugInteractionGoesToTheGame) {
   const Routing routing = interaction.Route(events);
 
   EXPECT_FALSE(interaction.In());
-  EXPECT_FALSE(routing.left_by_escape);
+  EXPECT_FALSE(routing.left_by_leave_key);
   EXPECT_EQ(KeysOf(routing.game), (std::vector<Key>{Key::kEscape, Key::kEscape}));
 }
 

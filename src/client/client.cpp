@@ -277,7 +277,7 @@ struct ClientRuntime::Impl {
     if (routing.entered) {
       input.LetGo();
     }
-    if (routing.left_by_escape) {
+    if (routing.left_by_leave_key) {
       input.ReleaseCursor();
     }
     renderer.HandleDebugPanelInput(routing.panels);

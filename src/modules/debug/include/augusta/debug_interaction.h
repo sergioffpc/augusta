@@ -49,7 +49,7 @@ struct Routing {
   /// Debug interaction ended by the leave key during the batch: the game's
   /// cursor is to be released, as that key does in the game
   /// (input::Input::ReleaseCursor), after the game's share.
-  bool left_by_escape = false;
+  bool left_by_leave_key = false;
 };
 
 /// Out of Debug interaction at first. The client constructs one, and feeds it
