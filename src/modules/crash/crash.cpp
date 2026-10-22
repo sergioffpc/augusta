@@ -1,6 +1,7 @@
 #include "augusta/crash.h"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
@@ -18,7 +19,6 @@
 #ifdef _WIN32
 #include <windows.h>
 // After <windows.h>, whose types it uses.
-#include <atomic>
 #include <system_error>
 
 #include <dbghelp.h>
@@ -32,6 +32,8 @@
 #include <fcntl.h>
 #include <signal.h>  // NOLINT(modernize-deprecated-headers)
 #include <sys/resource.h>
+#include <sys/types.h>
+#include <time.h>  // NOLINT(modernize-deprecated-headers) - POSIX's nanosleep.
 #include <unistd.h>
 #include <unwind.h>
 #endif
@@ -63,8 +65,7 @@ std::optional<Descriptor> g_log_file;
 // The minidump's path, from the settings, or nullptr if none.
 const wchar_t* g_minidump_file = nullptr;
 // Set by the first crash to report, so a second - in another thread, or in the
-// report itself - ends the process at once, as the default action does on
-// Linux.
+// report itself - ends the process at once.
 std::atomic_flag g_reporting;
 
 // Only SIGABRT is a signal there: a fault is an exception, which the
@@ -74,6 +75,13 @@ std::atomic_flag g_reporting;
 constexpr std::array kFatalSignals{SIGABRT};
 #else
 constexpr std::array kFatalSignals{SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
+
+// The thread reporting a crash, or 0 until one does. A second thread that
+// crashes meanwhile waits for that report to end the process, so the two
+// threads' lines never interleave; a fault in the report itself ends the
+// process at once. Lock-free, as a handler needs.
+std::atomic<pid_t> g_reporter{0};
+static_assert(std::atomic<pid_t>::is_always_lock_free, "the fatal-signal handler takes the report");
 #endif
 
 constexpr int kMaxFrames = 64;
@@ -462,18 +470,49 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exception) {
 }
 #endif
 
-extern "C" void HandleFatalSignal(int signal) {
-  // Back to the default first, so a second fault - in another thread, or in
-  // this report - ends the process at once instead of reporting again.
+// Every fatal signal back to its default action.
+void RestoreDefaultActions() {
   for (const int fatal : kFatalSignals) {
     std::signal(fatal, SIG_DFL);
   }
+}
+
+#ifndef _WIN32
+// Until the process ends, which the report another thread is writing ends it
+// in. nanosleep, not pause: it is async-signal-safe, and the server's seccomp
+// profile allows the clock_nanosleep it makes (ADR-0057).
+[[noreturn]] void WaitForTheReport() {
+  for (;;) {
+    const timespec second{.tv_sec = 1, .tv_nsec = 0};
+    nanosleep(&second, nullptr);
+  }
+}
+#endif
+
+extern "C" void HandleFatalSignal(int signal) {
 #ifdef _WIN32
+  // Back to the default first, so a second fault - in another thread, or in
+  // this report - ends the process at once instead of reporting again.
+  RestoreDefaultActions();
   if (!g_reporting.test_and_set()) {
     ReportCrash(signal);
   }
 #else
+  const pid_t self = gettid();
+  pid_t reporter = 0;
+  if (!g_reporter.compare_exchange_strong(reporter, self)) {
+    if (reporter != self) {
+      WaitForTheReport();
+    }
+    // A fault in the report itself, of another signal than the one reported
+    // (that one is blocked while it is handled, so the kernel ends the process
+    // of it): its default action ends the process at once.
+    RestoreDefaultActions();
+    std::raise(signal);
+    return;
+  }
   ReportCrash(signal);
+  RestoreDefaultActions();
 #endif
   // Pending until the handler returns, then delivered to the default action:
   // the process dies of it and the kernel dumps its core. Not as PID 1, whose

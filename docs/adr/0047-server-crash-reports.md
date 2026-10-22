@@ -24,10 +24,12 @@ then puts every fatal signal back to its default action and raises the signal
 again, so the process dies of it as it would have, and the kernel dumps its
 core. That needs `augustad` not to be the container's PID 1, whose signals to
 itself the kernel drops, so the image runs it under `tini`, which forwards it
-`SIGTERM` and exits with its status. A crash in another thread, or in the report
-itself, meets the default action and ends the process at once. It also raises
-`RLIMIT_CORE`'s soft limit to the hard limit, since a limit of 0 writes no core.
-The log names functions; file and line come from the core.
+`SIGTERM` and exits with its status. One thread reports at a time: a crash in
+another thread meanwhile waits for the report to end the process, so the two
+threads' lines never interleave, and a crash in the report itself ends the
+process at once. It also raises `RLIMIT_CORE`'s soft limit to the hard limit,
+since a limit of 0 writes no core. The log names functions; file and line come
+from the core.
 
 **The client's lines.** `augustac` installs the same handler as soon as its Run
 starts (ADR-0027), with its Run ID and the Run's log file. Its crash lines then
