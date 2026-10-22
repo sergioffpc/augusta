@@ -238,7 +238,7 @@ def image_roots(
     """
     roots = [
         Root(tag, "CI's layer cache", required=True)
-        for tag in ("buildcache", "buildcache-arm64")
+        for tag in ("buildcache", "buildcache-arm64", "buildcache-dev")
     ]
     roots += [
         Root(branch, "the branch's newest image", required=True)

@@ -109,12 +109,15 @@ decisions already made in ARCHITECTURE.md:
        private key never touches CI
     7. The server image, in two jobs. `container-verify` needs only `changes`,
        so it runs alongside the server build: Helm and Dockerfile lint, then the
-       image built into the runner's Docker and scanned by trivy. It runs on
-       every push, and on a pull request when the image or chart changed; on a
-       push it also builds the image's `debuginfo` stage, and hands both to the
-       run as artifacts. `container-publish-x64-linux`, on a push only, waits
-       for it, the server-x64-linux job and `confinement`, then pushes that very
-       image (it builds none) with its `-debuginfo` image, signature and
+       image built into the runner's Docker and scanned by trivy. The image is a
+       Development build on a push to `develop`, and a Shipping build on a push
+       to `main` and on every pull request (ADR-0074); the Dockerfile's `PRESET`
+       argument, without which it is a Shipping build, chooses. It runs on every
+       push, and on a pull request when the image or chart changed; on a push it
+       also builds the image's `debuginfo` stage, and hands both to the run as
+       artifacts. `container-publish-x64-linux`, on a push only, waits for it,
+       the server-x64-linux job and `confinement`, then pushes that very image
+       (it builds none) with its `-debuginfo` image, signature and
        attestations - so a published image is always the one that was scanned
        and confined, of a commit whose tests passed. On a push to `main` alone,
        whose image is the one a release runs, `container-publish-arm64-linux`
@@ -163,10 +166,13 @@ decisions already made in ARCHITECTURE.md:
     - The Actions cache (10 GB per repository, least recently used evicted
       first) holds only what a pull request restores from `develop`: the vcpkg
       binaries, sccache objects and clang-tidy results. The server image's
-      Docker layers live in GHCR (`augustad:buildcache`) instead: at several GB
-      they would evict the rest, and every pull request would rebuild its
-      dependencies from source. Only a push's `container-verify` writes them; a
-      pull request reads them, and a fork's reads nothing.
+      Docker layers live in GHCR instead: at several GB they would evict the
+      rest, and every pull request would rebuild its dependencies from source.
+      Each kind of build has its own cache, `augustad:buildcache` for Shipping
+      and `augustad:buildcache-dev` for Development, so `develop`'s pushes never
+      evict the layers a pull request's Shipping build reuses. Only a push's
+      `container-verify` writes them; a pull request reads them, and a fork's
+      reads nothing.
     - An Actions cache entry is kept only on a ref a later run restores from
       (its own, a pull request's base, or `main`). A release restores the caches
       but saves none: its tag's entries would serve only a rerun of it, which
@@ -277,14 +283,14 @@ decisions already made in ARCHITECTURE.md:
   version.
 - **Package retention:** GitHub Packages keeps every version CI pushes, so the
   `prune-packages` workflow (`scripts/prune-packages.py`) deletes the ones
-  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`, `develop`,
-  `main`, the images of every release, of `main`'s newest commit and of the
-  newest `develop` commits (20 by default), what `develop` and `staging` run,
-  every tag or digest `develop` or `main` names, and whatever was pushed in the
-  day before its newest version, which a CI run may still be using; with each of
-  them, its platform manifests, debug info, signatures and attestations.
-  `charts/augustad` keeps `develop` and the charts of those releases and
-  commits, what `develop` can be rolled back to
+  nothing needs. `augustad` keeps `buildcache`, `buildcache-arm64`,
+  `buildcache-dev`, `develop`, `main`, the images of every release, of `main`'s
+  newest commit and of the newest `develop` commits (20 by default), what
+  `develop` and `staging` run, every tag or digest `develop` or `main` names,
+  and whatever was pushed in the day before its newest version, which a CI run
+  may still be using; with each of them, its platform manifests, debug info,
+  signatures and attestations. `charts/augustad` keeps `develop` and the charts
+  of those releases and commits, what `develop` can be rolled back to
   ([flux-rollback.md](runbooks/flux-rollback.md)). Each vcpkg NuGet package
   keeps its newest versions (2 by default): a miss rebuilds the port. If what CI
   or the cluster runs now is missing, or a manifest cannot be read, the run

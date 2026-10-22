@@ -9,6 +9,15 @@ description: >
   arch-suffix); the branch tag is the publishing job's. Assumes the repository is checked out with its submodules and
   buildx is set up; a job that reads or writes the cache logs in to GHCR first.
 inputs:
+  preset:
+    description: >
+      The Dockerfile's PRESET, the kind of build (ADR-0074): "linux", a
+      Development build, on container-verify's push to develop;
+      "linux-shipping" on a push to main, its arm64 build and every pull
+      request. Each kind has its own layer cache, buildcache for Shipping and
+      buildcache-dev for Development, so one kind's pushes never evict the
+      other's layers.
+    required: true
   cache-to:
     description: >
       Whether to write the registry layer cache: "true" only on
@@ -29,12 +38,19 @@ outputs:
     description: >
       The first 12 characters of the commit, as the sha-<12> tag has them.
     value: ${{ steps.short-sha.outputs.value }}
-  toolchain-args:
+  build-args:
     description: >
-      The build args naming the runner's toolchain, which the build stage
-      installs: a job building another target from the same layer cache (the
-      debuginfo stage) passes them too, or misses the build stage's layers.
-    value: ${{ steps.toolchain.outputs.args }}
+      The build args the image's build stage was built with, the preset and the
+      runner's toolchain: a job building another target from the same layer
+      cache (the debuginfo stage) passes them too, or misses the build stage's
+      layers.
+    value: |
+      PRESET=${{ inputs.preset }}
+      ${{ steps.toolchain.outputs.args }}
+  cache-from:
+    description: >
+      The layer caches the image was built from, which that job reads too.
+    value: ${{ steps.cache.outputs.from }}
 runs:
   using: composite
   steps:
@@ -85,6 +101,35 @@ runs:
     - id: short-sha
       shell: bash
       run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+    # The layer cache of the preset's kind, which a push writes. The amd64
+    # build reads the other kind's too, written by the other branch's pushes:
+    # its layers before the preset's first use (the toolchain, vcpkg's
+    # bootstrap) are both kinds' alike, and the PRESET build arg keeps every
+    # later one its own kind's. arm64 builds only Shipping, so has one cache.
+    - name: Name the layer caches
+      id: cache
+      shell: bash
+      env:
+        PRESET: ${{ inputs.preset }}
+        ARCH_SUFFIX: ${{ inputs.arch-suffix }}
+        REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
+      run: |
+        if [[ "${PRESET}" == linux-shipping ]]; then
+          own=buildcache
+          other=buildcache-dev
+        else
+          own=buildcache-dev
+          other=buildcache
+        fi
+        {
+          echo "to=type=registry,ref=${REPOSITORY}:${own}${ARCH_SUFFIX},mode=max"
+          echo "from<<EOF"
+          echo "type=registry,ref=${REPOSITORY}:${own}${ARCH_SUFFIX}"
+          if [[ -z "${ARCH_SUFFIX}" ]]; then
+            echo "type=registry,ref=${REPOSITORY}:${other}"
+          fi
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
     - name: Build server image
       uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
@@ -96,10 +141,11 @@ runs:
         # of Ubuntu's current packages, security updates included, rather than
         # a cached layer's (ADR-0054).
         no-cache-filters: rootfs
-        # Reported as augustad_build_info's commit label (ADR-0049), and the
-        # toolchain the build stage installs.
+        # Reported as augustad_build_info's commit label (ADR-0049), the
+        # preset the build stage builds with and the toolchain it installs.
         build-args: |
           AUGUSTA_COMMIT=${{ steps.short-sha.outputs.value }}
+          PRESET=${{ inputs.preset }}
           ${{ steps.toolchain.outputs.args }}
         # Mounted read-only by the dependency install alone (see Dockerfile).
         build-contexts: vcpkg-bincache=.vcpkg-bincache
@@ -111,9 +157,9 @@ runs:
         # GB they took most of its 10 GB, and GitHub evicted the vcpkg caches
         # every pull request restores from develop. A fork's pull request, not
         # logged in, reads nothing and builds from scratch. Each architecture
-        # has its own: one's layers are all the other's misses.
-        cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/augustad:buildcache${{ inputs.arch-suffix }}
-        cache-to: ${{ inputs.cache-to == 'true' && format('type=registry,ref=ghcr.io/{0}/augustad:buildcache{1},mode=max', github.repository_owner, inputs.arch-suffix) || '' }}
+        # and each kind of build has its own (the caches step above).
+        cache-from: ${{ steps.cache.outputs.from }}
+        cache-to: ${{ inputs.cache-to == 'true' && steps.cache.outputs.to || '' }}
     - name: Scan server image
       # Fails on a high or critical CVE that has a fix. A failure here leaves
       # the commit unpublished, and so undeployed: Flux's upgrade times out
