@@ -145,6 +145,12 @@ TEST(ProfilingPanelTest, TheSliderRangesFromOneToThreeThousandSixHundredFrames) 
   EXPECT_EQ(Find<Slider>(profiling.BuildPanel()).value, 1.0F);
 }
 
+TEST(ProfilingPanelTest, TheSliderShowsNAsAWholeNumber) {
+  const ProfilingPanel profiling(kWatched);
+
+  EXPECT_TRUE(Find<Slider>(profiling.BuildPanel()).whole_numbers);
+}
+
 TEST(ProfilingPanelTest, TheSliderDoesNotChangeNDuringACapture) {
   ProfilingPanel profiling(kWatched);
   ASSERT_EQ(profiling.Update(Drag(2.0F)), CaptureChange::kNone);

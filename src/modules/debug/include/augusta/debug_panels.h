@@ -53,6 +53,9 @@ struct Slider {
   float value = 0.0F;
   float min = 0.0F;
   float max = 1.0F;
+  /// Shown without a fraction, for a count: the value a drag gives may still
+  /// have one, which the area rounds.
+  bool whole_numbers = false;
   bool disabled = false;
 };
 

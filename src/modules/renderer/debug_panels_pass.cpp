@@ -230,7 +230,9 @@ struct ElementDrawer {
   void operator()(const debug::Slider& slider) const {
     DrawControl(slider, [&] {
       float value = slider.value;
-      if (ImGui::SliderFloat(slider.label.c_str(), &value, slider.min, slider.max)) {
+      // ImGui's own default format, with three decimals, unless whole.
+      const char* format = slider.whole_numbers ? "%.0f" : "%.3f";
+      if (ImGui::SliderFloat(slider.label.c_str(), &value, slider.min, slider.max, format)) {
         events.push_back({.panel = panel, .control = slider.id, .value = value});
       }
     });
