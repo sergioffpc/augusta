@@ -72,6 +72,7 @@ class RunFilesTest : public testing::Test {
   std::filesystem::path directory_;
 };
 
+// Requirements: NFR-10
 TEST_F(RunFilesTest, ARunsFilesAreNamedByItsRunId) {
   const Uuid run = RunId(7);
   const std::string id = "019a075c-4f10-7a01-8b02-000000000007";
