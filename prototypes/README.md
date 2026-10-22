@@ -13,3 +13,4 @@ ADR, not here.
 | [`replication-interpolation.html`](replication-interpolation.html) | Do clients show other players smoothly an Interpolation delay behind?         | ADR-0044, #1004    |
 | [`lag-compensation.html`](lag-compensation.html)                   | Does a round aimed at what the shooter saw hit, and what does the victim pay? | ADR-0044           |
 | [`acoustics-propagation.html`](acoustics-propagation.html)         | How does a sound travel through a Map's Acoustic geometry?                    | #802, ADR-0010     |
+| [`breakable-voxels.html`](breakable-voxels.html)                   | Can a Breakable Prop be voxels that a hit carves and that fall when unheld?   | ADR-0071           |
