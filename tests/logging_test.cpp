@@ -212,7 +212,25 @@ TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {
   const auto added = augusta::logging::AddFileSink(directory);
 
   ASSERT_FALSE(added.has_value());
-  EXPECT_FALSE(added.error().empty());
+  EXPECT_EQ(added.error().step, augusta::logging::FileSinkError::Step::kOpen);
+  EXPECT_EQ(added.error().path, directory);
+}
+
+TEST(LoggingFileSink, AFileWhoseDirectoryCannotBeMadeIsAnErrorNamingTheDirectory) {
+  // A file where the directory would be.
+  const std::filesystem::path root = std::filesystem::path(testing::TempDir()) / "augusta_logging_test_file_parent";
+  std::filesystem::create_directories(root);
+  const std::filesystem::path in_the_way = root / "not_a_directory";
+  std::ofstream(in_the_way, std::ios::binary) << "x";
+
+  const auto added = augusta::logging::AddFileSink(in_the_way / "logs" / "run.log");
+
+  ASSERT_FALSE(added.has_value());
+  EXPECT_EQ(added.error().step, augusta::logging::FileSinkError::Step::kCreateDirectory);
+  EXPECT_EQ(added.error().path, in_the_way / "logs");
+  EXPECT_TRUE(added.error().reason);
+  EXPECT_TRUE(augusta::logging::DescribeFileSinkError(added.error()).starts_with("cannot create "))
+      << added.error().path;
 }
 
 TEST(LoggingRuntimeLevel, LimitedWarningUnderItTakesNoThrottleSlot) {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -182,16 +183,31 @@ void Init() {
   });
 }
 
-std::expected<void, std::string> AddFileSink(const std::filesystem::path& file) {
+std::string DescribeFileSinkError(const FileSinkError& error) {
+  const std::string reason = error.reason ? ": " + error.reason.message() : "";
+  switch (error.step) {
+    case FileSinkError::Step::kCreateDirectory:
+      return std::format("cannot create {}{}", utf8::FromPath(error.path), reason);
+    case FileSinkError::Step::kOpen:
+      return std::format("cannot open {} for appending{}", utf8::FromPath(error.path), reason);
+  }
+  return "?";
+}
+
+std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file) {
   std::error_code error;
   std::filesystem::create_directories(file.parent_path(), error);
   if (error) {
-    return std::unexpected(std::format("cannot create {}: {}", utf8::FromPath(file.parent_path()), error.message()));
+    return std::unexpected(
+        FileSinkError{.step = FileSinkError::Step::kCreateDirectory, .path = file.parent_path(), .reason = error});
   }
-  // Binary, so a line ends in a bare line feed on every platform.
+  // Binary, so a line ends in a bare line feed on every platform. The stream
+  // says nothing of why it could not open; the C library under it sets errno.
+  errno = 0;
   auto stream = boost::make_shared<std::ofstream>(file, std::ios::out | std::ios::app | std::ios::binary);
   if (!stream->is_open()) {
-    return std::unexpected(std::format("cannot open {} for appending", utf8::FromPath(file)));
+    return std::unexpected(FileSinkError{
+        .step = FileSinkError::Step::kOpen, .path = file, .reason = std::error_code(errno, std::generic_category())});
   }
   using FileSink = boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>;
   const auto sink = boost::make_shared<FileSink>();

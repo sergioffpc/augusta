@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 /// \file
 /// augusta::logging writes the process's log lines (ADR-0027, ADR-0029, ADR-0036):
@@ -41,11 +42,29 @@ std::string FormatLine(std::chrono::system_clock::time_point time, Severity leve
 /// flooded by per-packet TRACE, unless a caller asks for it afterward.
 void Init();
 
+/// Why AddFileSink added no sink.
+struct FileSinkError {
+  enum class Step : std::uint8_t {
+    /// The file's directory could not be made.
+    kCreateDirectory,
+    /// The file could not be opened for appending.
+    kOpen,
+  };
+  Step step = Step::kOpen;
+  /// The directory or the file the step failed on.
+  std::filesystem::path path;
+  /// The system's reason, where it gave one.
+  std::error_code reason;
+};
+
+/// error in words, for a log line's `reason=`.
+std::string DescribeFileSinkError(const FileSinkError& error);
+
 /// Adds a second sink, the file at file, its directory created if missing:
 /// every line written from now on reaches it as it reaches the console, without
 /// colors, flushed as it is written (ADR-0027). The file is appended to. On
 /// failure, why it could not be opened, and no sink is added. Thread-safe.
-std::expected<void, std::string> AddFileSink(const std::filesystem::path& file);
+std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file);
 
 /// The process-wide context every line carries (ADR-0029): each field set is
 /// appended to every line's message, as `run=<value>`, `session=<value>` and

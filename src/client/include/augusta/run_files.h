@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
-#include <string>
+#include <system_error>
 #include <vector>
 
 #include "augusta/uuid.h"
@@ -41,7 +41,8 @@ inline constexpr std::size_t kKeptRuns = 10;
 /// A Run's file pruning could not delete, and why.
 struct UndeletedFile {
   std::filesystem::path path;
-  std::string reason;
+  /// The system's reason.
+  std::error_code reason;
 };
 
 /// Deletes the files of every Run but the kept newest, by Run ID, across

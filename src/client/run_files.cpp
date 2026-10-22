@@ -165,7 +165,7 @@ std::vector<UndeletedFile> PruneRuns(const std::filesystem::path& directory, std
     for (const auto& file : run->second) {
       std::error_code error;
       if (!std::filesystem::remove(file, error) && error) {
-        undeleted.push_back({.path = file, .reason = error.message()});
+        undeleted.push_back({.path = file, .reason = error});
       }
     }
   }

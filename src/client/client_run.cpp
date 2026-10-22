@@ -26,7 +26,7 @@ std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& d
   std::filesystem::path file = LogPath(directory, run_id);
   if (auto added = logging::AddFileSink(file); !added) {
     LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", utf8::FromPath(file),
-             added.error());
+             logging::DescribeFileSinkError(added.error()));
     return std::nullopt;
   }
   return file;
@@ -37,7 +37,7 @@ std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& d
 void PruneOldRuns(const std::filesystem::path& directory) {
   for (const UndeletedFile& file : PruneRuns(directory, kKeptRuns)) {
     LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", utf8::FromPath(file.path),
-             file.reason);
+             file.reason.message());
   }
 }
 
