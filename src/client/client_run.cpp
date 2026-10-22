@@ -12,6 +12,7 @@
 #include "augusta/hardware.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
+#include "augusta/utf8.h"
 #include "augusta/uuid.h"
 #include "augusta/version.h"
 
@@ -19,19 +20,13 @@ namespace augusta::client {
 
 namespace {
 
-// path in UTF-8, which, unlike path.string() on Windows, never throws for a
-// character the code page lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.u8string();
-  return {utf8.begin(), utf8.end()};
-}
-
 // Adds the Run's log file as a second sink and returns it, or warns why it
 // could not.
 std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& directory, const uuid::Uuid& run_id) {
   std::filesystem::path file = LogPath(directory, run_id);
   if (auto added = logging::AddFileSink(file); !added) {
-    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", Utf8(file), added.error());
+    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", utf8::FromPath(file),
+             added.error());
     return std::nullopt;
   }
   return file;
@@ -41,7 +36,8 @@ std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& d
 // could not.
 void PruneOldRuns(const std::filesystem::path& directory) {
   for (const UndeletedFile& file : PruneRuns(directory, kKeptRuns)) {
-    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", Utf8(file.path), file.reason);
+    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", utf8::FromPath(file.path),
+             file.reason);
   }
 }
 
@@ -86,7 +82,7 @@ void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid&
     files += (files.empty() ? "" : " ") + name;
   }
   LOG_WARN("subsystem=client event=previous_run_crashed crashed_run={} directory=\"{}\" files=\"{}\"", previous->id,
-           Utf8(directory), files);
+           utf8::FromPath(directory), files);
 }
 
 SessionLogContext::SessionLogContext(const uuid::Uuid& session) {

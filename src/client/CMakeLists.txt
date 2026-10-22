@@ -114,7 +114,7 @@ augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 # from the Run ID, which Runs are kept, and how the previous one ended.
 add_library(augusta_client_run_files STATIC run_files.cpp)
 target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_client_run_files PUBLIC augusta_uuid)
+target_link_libraries(augusta_client_run_files PUBLIC augusta_uuid PRIVATE augusta_utf8)
 augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
 
 # The start of one Run (see client_run.h): its Run ID, its log file and its
@@ -130,6 +130,7 @@ target_link_libraries(
     augusta_hardware
     augusta_logging
     augusta_renderer_gpu_crash_dump_files
+    augusta_utf8
     augusta_version
 )
 augusta_set_module_scope(augusta_client_run CLIENT_ONLY)

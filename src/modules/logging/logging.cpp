@@ -30,6 +30,8 @@
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
 
+#include "augusta/utf8.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -80,13 +82,6 @@ void ChangeContext(ContextField field, std::optional<std::string> value) {
       context.suffix += std::format(" {}={}", key, *set);
     }
   }
-}
-
-// path in UTF-8, which, unlike path.string() on Windows, never throws for a
-// character the code page lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.u8string();
-  return {utf8.begin(), utf8.end()};
 }
 
 std::string WithContext(std::string_view message) {
@@ -191,12 +186,12 @@ std::expected<void, std::string> AddFileSink(const std::filesystem::path& file) 
   std::error_code error;
   std::filesystem::create_directories(file.parent_path(), error);
   if (error) {
-    return std::unexpected(std::format("cannot create {}: {}", Utf8(file.parent_path()), error.message()));
+    return std::unexpected(std::format("cannot create {}: {}", utf8::FromPath(file.parent_path()), error.message()));
   }
   // Binary, so a line ends in a bare line feed on every platform.
   auto stream = boost::make_shared<std::ofstream>(file, std::ios::out | std::ios::app | std::ios::binary);
   if (!stream->is_open()) {
-    return std::unexpected(std::format("cannot open {} for appending", Utf8(file)));
+    return std::unexpected(std::format("cannot open {} for appending", utf8::FromPath(file)));
   }
   using FileSink = boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>;
   const auto sink = boost::make_shared<FileSink>();
