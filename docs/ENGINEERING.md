@@ -181,34 +181,37 @@ decisions already made in ARCHITECTURE.md:
       saved by `main` alone, an entry per commit, and only the newest is kept.
 
 - **Nightly** (on `develop`): long fuzzing runs, TSan, property-based tests at a
-  high case count, a `llvm-cov` coverage report, the Linux client's build and
-  tests, again under ASan and UBSan (`client-x64-linux`: no pull request builds
-  it), and the hot-path micro-benchmarks, whose history is kept on the
-  `benchmarks` branch (started by the first night if absent) and charted on the
-  documentation site; a failure, a benchmark more than twice as slow as the
-  night before among them, opens or updates a `nightly-failure` issue
-  (ADR-0013).
+  high case count, a `llvm-cov` coverage report, the Linux client's Shipping
+  build and tests, then its Development build's under ASan and UBSan
+  (`client-x64-linux`: no pull request builds it; the server-only jobs stay
+  Development builds, since their tests include the tools'), and the hot-path
+  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
+  the first night if absent) and charted on the documentation site; a failure, a
+  benchmark more than twice as slow as the night before among them, opens or
+  updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
-- **Releases:** a separate workflow, triggered by `v*` tags, builds
-  Release-config client/server binaries, runs the tests and the asset pipeline
-  check against them, runs every nightly job on the tagged commit, and attaches
-  the binaries to a GitHub Release only once all of it passes, its notes
-  generated from the commits (Git Workflow below) — not run on every push, so
-  cutting a release is a deliberate tag rather than automatic (ADR-0013,
-  ADR-0026). Started by hand on a branch, the same workflow is a dry run that
-  publishes nothing: how a change to it, or to the nightly jobs, is tried before
-  it merges (`gh workflow run release.yml --ref <branch>`). The client ships as
+- **Releases:** a separate workflow, triggered by `v*` tags, builds the
+  client/server binaries as Shipping builds (the shipping presets, ADR-0074),
+  runs the tests and the asset pipeline check against them, runs every nightly
+  job on the tagged commit, and attaches the binaries to a GitHub Release only
+  once all of it passes, its notes generated from the commits (Git Workflow
+  below) — not run on every push, so cutting a release is a deliberate tag
+  rather than automatic (ADR-0013, ADR-0026). Started by hand on a branch, the
+  same workflow is a dry run that publishes nothing: how a change to it, or to
+  the nightly jobs, is tried before it merges
+  (`gh workflow run release.yml --ref <branch>`). The client ships as
   `augustac-windows-x64.zip`, its whole runtime folder, never as a lone `.exe`:
   some of its dependencies ship only as DLLs, so the client cannot be linked
   statically, and it carries the MSVC runtime so it needs no redistributable. A
   release is published only once its unzipped client runs `augustac --version`
-  and prints the tag's version (`scripts/stage-client.sh`, ADR-0058). That
-  catches a DLL it imports that is missing, not one loaded only once it runs.
-  The Linux client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder
-  checked the same way, and for linking nothing from the system beyond an
-  allowlist; it runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
+  and prints the tag's version exactly (`scripts/stage-client.sh`, ADR-0058), so
+  a Development build, whose version ends in `+dev`, fails it. That catches a
+  DLL it imports that is missing, not one loaded only once it runs. The Linux
+  client ships as `augustac-linux-x64.tar.gz`, one `augustac/` folder checked
+  the same way, and for linking nothing from the system beyond an allowlist; it
+  runs on the glibc of Ubuntu 26.04 or newer (ADR-0058).
 - **Documentation site:** the `docs` workflow builds the site (MkDocs Material
   for `docs/`, `README.md` and `GLOSSARY.md`, Doxygen for the C++ API) on every
   pull request, and publishes `main`'s on GitHub Pages (ADR-0046). `make docs`
