@@ -415,8 +415,9 @@ TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
   EXPECT_TRUE(Contains(config.error().reason, "Escape")) << config.error().reason;
 }
 
-// Requirements: US-20. Reserved in a Shipping build too, so one config loads in
-// both kinds of build (ADR-0074).
+// Reserved in a Shipping build too, so one config loads in both kinds of build
+// (ADR-0074).
+// Requirements: US-20
 TEST(ParseClientConfigTest, RejectsBindingTheKeyReservedForTheDebugTools) {
   const auto config = ParseClient("input:\n  keys:\n    crouch: F1\n");
 

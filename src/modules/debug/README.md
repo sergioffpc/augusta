@@ -6,18 +6,21 @@ only a Development build has it (ADR-0074).
 ## Responsibility
 
 The vocabulary every area's debug tools are written in (ADR-0075): the Debug
-overlay shapes an area asks to be drawn into the world, as values, and their
-tessellation into the lines and triangles the Renderer draws, free of any GPU
-API. It also holds the Debug panels an area asks to be shown, as descriptions of
-text, tables, history plots, toggles, sliders and buttons, and the control
-events a developer's change to one of them comes back as, naming the panel and
-the control. It also holds Debug interaction, the state F1 enters and leaves in
-which the panels take the mouse and keyboard and the game gets neither: it
-decides which of the window's events go to the game and which to the panels, and
-what entering and leaving ask of the game's input. Beside it is the Debug index,
-the panel the client shows in Debug interaction listing its debug tools, each
-switched on or off from it. It depends on `augusta_math` and the window's event
-types alone, never on an area module, the Renderer, ImGui or a thread.
+overlay shapes an area asks to be drawn into the world, as values (segments,
+triangles, and oriented boxes, spheres, capsules and voxels drawn as a wireframe
+or filled), their tessellation into the lines and triangles the Renderer draws,
+free of any GPU API, and the keep-until helper that keeps a one-off event's
+shapes drawn until a time the producer gives it. It also holds the Debug panels
+an area asks to be shown, as descriptions of text, tables, history plots,
+toggles, sliders and buttons, and the control events a developer's change to one
+of them comes back as, naming the panel and the control. It also holds Debug
+interaction, the state F1 enters and leaves in which the panels take the mouse
+and keyboard and the game gets neither: it decides which of the window's events
+go to the game and which to the panels, and what entering and leaving ask of the
+game's input. Beside it is the Debug index, the panel the client shows in Debug
+interaction listing its debug tools, each switched on or off from it. It depends
+on `augusta_math` and the window's event types alone, never on an area module,
+the Renderer, ImGui or a thread.
 
 ## Not its responsibility
 
@@ -33,6 +36,8 @@ types alone, never on an area module, the Renderer, ImGui or a thread.
 - Turning an area's state into shapes: that area's module.
 - Handing a frame's shapes to the Renderer: the client runtime.
 - The Debug HUD's lines: hud.
+- The clock the keep-until helper is read against: its producer, which passes
+  the time.
 
 ## Decisions
 
