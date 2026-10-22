@@ -57,8 +57,8 @@ struct CaptureRetentionObserver {
 [[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
                                           const uuid::Uuid& match);
 
-/// Whether name is one CaptureFileName makes, YYYYMMDDTHHMMSSmmmZ-<Match ID>.acap,
-/// or one an engine before the Match ID made, YYYYMMDDTHHMMSSmmmZ-NNNN.acap
+/// Whether name is one CaptureFileName makes, `YYYYMMDDTHHMMSSmmmZ-<Match ID>.acap`,
+/// or one an engine before the Match ID made, `YYYYMMDDTHHMMSSmmmZ-NNNN.acap`
 /// with the Match's number in its run of 4 digits or more: retention still
 /// counts and deletes those.
 [[nodiscard]] bool IsCaptureFileName(std::string_view name);
