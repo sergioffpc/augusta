@@ -129,7 +129,7 @@ gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(
   augusta_protocol_tests
-  PRIVATE augusta_limits augusta_protocol augusta_tick GTest::gtest GTest::gtest_main
+  PRIVATE augusta_limits augusta_protocol augusta_tick augusta_version GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
@@ -905,6 +905,22 @@ if(AUGUSTA_CLIENT)
   target_include_directories(augusta_client_window_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/window)
   target_link_libraries(augusta_client_window_tests PRIVATE augusta_window glfw GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_window_tests)
+endif()
+
+# Which tests a build's kind carries (ADR-0074), decided here alone: a debug
+# tool's tests only in a Development build, which carries the tool; in a
+# Shipping build, which carries none, the one test that the config readers
+# refuse a `debug` section.
+if(AUGUSTA_DEBUG_TOOLS)
+  # Each debug tool's tests go here.
+else()
+  add_executable(augusta_shipping_config_tests shipping_config_test.cpp)
+  target_link_libraries(
+    augusta_shipping_config_tests
+    PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
+  )
+  # Links PhysX through augusta_input, as augusta_client_config_tests does.
+  gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30)
 endif()
 
 add_subdirectory(fuzz)

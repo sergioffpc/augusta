@@ -109,6 +109,19 @@ endif()
 
 include(cmake/AugustaModule.cmake)
 
+# Whether the debug tools are compiled in (ADR-0074): on, a Development build,
+# what every preset but windows-shipping and linux-shipping makes; off, a
+# Shipping build, what players get. Its own axis, apart from the build type,
+# so a Release build carries the tools too. Every target, modules, executables
+# and tests alike, is compiled with AUGUSTA_DEBUG_TOOLS defined to 1 or 0, which
+# code tests as `#if AUGUSTA_DEBUG_TOOLS`.
+option(AUGUSTA_DEBUG_TOOLS "Compile the debug tools in: a Development build, not a Shipping one" ON)
+if(AUGUSTA_DEBUG_TOOLS)
+  add_compile_definitions(AUGUSTA_DEBUG_TOOLS=1)
+else()
+  add_compile_definitions(AUGUSTA_DEBUG_TOOLS=0)
+endif()
+
 # Every binary of an ASan build (linux-san, linux-fuzz) starts with the options
 # cmake/asan_default_options.cpp gives it (ADR-0008): when ctest runs it, when
 # the build lists its tests, and when it is run by hand.

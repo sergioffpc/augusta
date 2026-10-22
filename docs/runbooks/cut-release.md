@@ -92,8 +92,9 @@ cut that release first and the hotfix off it.
 
 3. Bump the version in its three places, then commit:
 
-    - `src/modules/version/version.cpp`: `EngineVersion()` returns `"X.Y.Z"`.
-      Join refuses a client of another engine version (ADR-0038).
+    - `src/modules/version/version.cpp`: `EngineVersion()`'s release is
+      `"X.Y.Z"`, which a Development build returns with `+dev` appended
+      (ADR-0074). Join refuses a client of another engine version (ADR-0038).
     - `vcpkg.json`: `"version": "X.Y.Z"`.
     - `charts/augustad/Chart.yaml`: `version: X.Y.Z` and `appVersion: "X.Y.Z"`.
 

@@ -170,6 +170,17 @@ make test PRESET=windows-debug
 make test PRESET=linux-san
 ```
 
+Every preset makes a Development build, which carries the debug tools, except
+`windows-shipping` and `linux-shipping`: they inherit `windows` and `linux` and
+make a Shipping build, what players get, without them (ADR-0074). A Development
+build's engine version ends in `+dev`, so the two kinds refuse each other at
+Join:
+
+```bash
+make test PRESET=windows-shipping
+make test PRESET=linux-shipping
+```
+
 The `linux-fuzz` preset builds the fuzz targets:
 
 ```bash

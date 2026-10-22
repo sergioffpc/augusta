@@ -101,6 +101,21 @@ TEST(MatchTest, RefusesAnyOtherVersion) {
   EXPECT_FALSE(match.SessionOf(Peer(10)).has_value());
 }
 
+// A Development build's version is its Shipping one plus `+dev`, so neither
+// kind admits the other (ADR-0074).
+// Requirements: US-01
+TEST(MatchTest, AShippingServerAndADevelopmentClientRefuseEachOther) {
+  const std::string development_version = std::string(kVersion) + "+dev";
+  Match shipping_server(Config());
+  MatchConfig development_config = Config();
+  development_config.engine_version = development_version;
+  Match development_server(development_config);
+
+  EXPECT_EQ(shipping_server.Join(Peer(1), Request(development_version, kCharacter)).error(),
+            JoinRefusal::kVersionMismatch);
+  EXPECT_EQ(development_server.Join(Peer(1), Request(kVersion, kCharacter)).error(), JoinRefusal::kVersionMismatch);
+}
+
 // Requirements: US-01, NFR-08
 TEST(MatchTest, AdmitsOnlyTheClientPackCookedWithTheServers) {
   MatchConfig config = Config();

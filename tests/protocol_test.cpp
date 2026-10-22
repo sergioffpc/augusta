@@ -20,6 +20,7 @@
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/version.h"
 #include "protobuf_bytes.h"
 
 // ThreadSanitizer's runtime defines operator new and delete itself, so a build
@@ -244,6 +245,11 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = longest, .character = ""});
 
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).engine_version, longest);
+}
+
+// Either kind of build's version, `+dev` and all (ADR-0074), fits the wire.
+TEST(ProtocolTest, TheEngineVersionFitsAJoinRequest) {
+  EXPECT_LE(augusta::EngineVersion().size(), kMaxEngineVersionLength) << augusta::EngineVersion();
 }
 
 TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {

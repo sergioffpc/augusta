@@ -3,6 +3,14 @@
 Windows-only tools for profiling, GPU debugging and content authoring, reached
 from `CLAUDE.md`.
 
+## Build kinds
+
+Every preset (`windows`, `windows-debug`, ...) makes a Development build, with
+the debug tools compiled in, whatever its optimisation; `windows-shipping` and
+`linux-shipping` make a Shipping build, what players get, with none of them
+(ADR-0074). The tools below work on either, but a Shipping client carries no
+Debug HUD, and a Shipping build joins only a Shipping server.
+
 ## Profiling
 
 To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems

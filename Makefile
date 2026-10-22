@@ -98,6 +98,8 @@ all: build
 # $(info), not echo: make prints it itself, so the parentheses reach neither
 # cmd.exe nor /bin/sh, which would read them as syntax.
 help:
+	$(info Presets: windows-shipping and linux-shipping make a Shipping build, without the debug tools;)
+	$(info $()  every other preset a Development build, with them (ADR-0074).)
 	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
 	$(info $()  all           the default: build)
 	$(info $()  configure     cmake --preset)
