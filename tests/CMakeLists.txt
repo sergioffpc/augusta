@@ -913,15 +913,20 @@ endif()
 # refuse a `debug` section.
 if(AUGUSTA_DEBUG_TOOLS)
   # Each debug tool's tests go here.
+
+  # The Shipping-only test as an object library that nothing builds or runs:
+  # only so that its file has a compile command for clang-tidy, which lints
+  # against a Development build's.
+  add_library(augusta_shipping_config_tests OBJECT EXCLUDE_FROM_ALL shipping_config_test.cpp)
 else()
   add_executable(augusta_shipping_config_tests shipping_config_test.cpp)
-  target_link_libraries(
-    augusta_shipping_config_tests
-    PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
-  )
   # Links PhysX through augusta_input, as augusta_client_config_tests does.
   gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30)
 endif()
+target_link_libraries(
+  augusta_shipping_config_tests
+  PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
+)
 
 add_subdirectory(fuzz)
 
