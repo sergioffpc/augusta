@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -7,6 +9,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
@@ -16,7 +20,6 @@
 #include "augusta/math.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 // Property-based tests of the codec (ADR-0013): every message within the
 // protocol's limits survives Encode and Decode unchanged. RC_PARAMS sets the case
@@ -51,14 +54,15 @@ void showValue(const MessageWire& message, std::ostream& out) {
   struct Printer {
     std::ostream& out;
 
-    void Print(const SessionIdWire& session) const { out << " " << session.ToString(); }
+    void Print(const SessionIdWire& session) const { out << " " << boost::uuids::to_string(session); }
 
     void operator()(const JoinRequestWire& request) const {
       out << "JoinRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", character " << rc::toString(request.character) << ", run " << request.run.ToString() << "}";
+      out << ", character " << rc::toString(request.character) << ", run " << boost::uuids::to_string(request.run)
+          << "}";
     }
     void operator()(const JoinAcceptedWire& accepted) const {
       out << "JoinAccepted{session";
@@ -122,7 +126,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
         showValue(player.spawn, out);
         out << "; ";
       }
-      out << "first tick " << start.first_tick << ", match " << start.match.ToString() << "}";
+      out << "first tick " << start.first_tick << ", match " << boost::uuids::to_string(start.match) << "}";
     }
     void operator()(const MatchEndWire& end) const {
       out << "MatchEnd{winner";
@@ -161,7 +165,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const std::byte byte : request.client_pack) {
         out << " " << std::to_integer<int>(byte);
       }
-      out << ", capture " << rc::toString(request.capture) << ", run " << request.run.ToString() << "}";
+      out << ", capture " << rc::toString(request.capture) << ", run " << boost::uuids::to_string(request.run) << "}";
     }
     void operator()(const ReplayViewWire& view) const {
       out << "ReplayView{tick " << view.tick << ", ";
@@ -178,7 +182,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       }
       out << ", character " << rc::toString(request.character) << ", spawn ";
       showValue(request.spawn, out);
-      out << ", run " << request.run.ToString() << "}";
+      out << ", run " << boost::uuids::to_string(request.run) << "}";
     }
   };
   std::visit(Printer{.out = out}, message);
@@ -301,10 +305,13 @@ rc::Gen<PackHashWire> PackHash() {
 }
 
 // Any 16 bytes, the nil one among them: a Run ID, a Session ID or a Match ID.
-rc::Gen<augusta::uuid::Uuid> AnyUuid() {
-  return rc::gen::map(
-      rc::gen::arbitrary<augusta::uuid::Uuid::ByteArray>(),
-      [](const augusta::uuid::Uuid::ByteArray& bytes) { return augusta::uuid::Uuid::FromBytes(bytes); });
+rc::Gen<boost::uuids::uuid> AnyUuid() {
+  return rc::gen::map(rc::gen::arbitrary<std::array<std::uint8_t, boost::uuids::uuid::static_size()>>(),
+                      [](const std::array<std::uint8_t, boost::uuids::uuid::static_size()>& bytes) {
+                        boost::uuids::uuid id;
+                        std::ranges::copy(bytes, id.begin());
+                        return id;
+                      });
 }
 
 rc::Gen<CommandWire> Command() {

@@ -11,12 +11,13 @@
 #include <string_view>
 #include <system_error>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
-#include "augusta/uuid.h"
 
 // What a launch tells the player of the Run before it (ADR-0027): a crashed
 // one, in one WARN line naming it and its files, and nothing otherwise. And
@@ -30,10 +31,11 @@ using augusta::client::MatchLogContext;
 using augusta::client::MinidumpPath;
 using augusta::client::ReportPreviousRun;
 using augusta::client::SessionLogContext;
-using augusta::uuid::Uuid;
+using Uuid = boost::uuids::uuid;
 
 Uuid RunId(std::uint8_t n) {
-  return Uuid::FromBytes({0x01, 0x9a, 0x07, 0x5c, 0x4f, 0x10, 0x7a, 0x01, 0x8b, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, n});
+  return boost::uuids::uuid(
+      {0x01, 0x9a, 0x07, 0x5c, 0x4f, 0x10, 0x7a, 0x01, 0x8b, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, n});
 }
 
 std::size_t Occurrences(std::string_view text, std::string_view needle) {
@@ -87,7 +89,7 @@ TEST_F(ClientRunTest, ALaunchAfterACrashedRunWritesOneWarningNamingItAndItsFiles
 
   EXPECT_EQ(Occurrences(written, "\n"), 1U) << written;
   const std::u8string directory = Directory().u8string();
-  const std::string id = RunId(2).ToString();
+  const std::string id = boost::uuids::to_string(RunId(2));
   EXPECT_EQ(Occurrences(written, "WARN subsystem=client event=previous_run_crashed crashed_run=" + id +
                                      " directory=\"" + std::string(directory.begin(), directory.end()) +
                                      "\" files=\"dumps/augustac-" + id + ".dmp logs/augustac-" + id + ".log\""),
@@ -125,6 +127,40 @@ TEST_F(ClientRunTest, ARunsLogFileAndDumpsAreUnderItsDirectoryNamedByItsId) {
   EXPECT_EQ(run.minidump_file, MinidumpPath(Directory(), run.id));
 }
 
+// Whether text is a UUID's canonical form: 36 characters, lowercase hex
+// digits, hyphens where RFC 9562 puts them.
+bool IsCanonical(std::string_view text) {
+  if (text.size() != 36) {
+    return false;
+  }
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    const char c = text[i];
+    const bool hyphen = i == 8 || i == 13 || i == 18 || i == 23;
+    const bool digit = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    if (hyphen ? c != '-' : !digit) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The Run ID is a UUIDv7 (GLOSSARY.md): one taken after another is later, so
+// the Runs' files sort in the order the Runs began.
+TEST_F(ClientRunTest, TwoRunIdsTakenOneAfterTheOtherDifferSortInOrderAndAreCanonicalVersion7) {
+  const augusta::client::Run first = augusta::client::BeginRun(std::nullopt);
+  EndRun(first);
+  const augusta::client::Run second = augusta::client::BeginRun(std::nullopt);
+  EndRun(second);
+
+  const std::string first_text = boost::uuids::to_string(first.id);
+  const std::string second_text = boost::uuids::to_string(second.id);
+  EXPECT_NE(first.id, second.id);
+  EXPECT_LT(first.id, second.id);
+  EXPECT_LT(first_text, second_text);
+  EXPECT_TRUE(IsCanonical(first_text)) << first_text;
+  EXPECT_EQ(first_text[14], '7') << first_text;
+}
+
 TEST_F(ClientRunTest, ARunWithNoDirectoryLogsOnlyToTheConsoleAndSaysSo) {
   testing::internal::CaptureStdout();
   const augusta::client::Run run = augusta::client::BeginRun(std::nullopt);
@@ -159,9 +195,9 @@ TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestR
   augusta::client::ReportAndPruneRuns(Directory(), RunId(runs));
   const std::string written = testing::internal::GetCapturedStdout();
 
-  EXPECT_NE(
-      written.find("event=previous_run_crashed crashed_run=" + RunId(static_cast<std::uint8_t>(runs - 1)).ToString()),
-      std::string::npos)
+  EXPECT_NE(written.find("event=previous_run_crashed crashed_run=" +
+                         boost::uuids::to_string(RunId(static_cast<std::uint8_t>(runs - 1)))),
+            std::string::npos)
       << written;
   EXPECT_FALSE(std::filesystem::exists(LogPath(Directory(), RunId(1))));
   EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), RunId(2))));
@@ -182,8 +218,8 @@ TEST_F(ClientRunTest, ALaunchWithNoDirectoryReportsAndDeletesNothing) {
   EXPECT_NE(known.find("event=previous_run_crashed"), std::string::npos) << known;
 }
 
-const Uuid kSession =
-    Uuid::FromBytes({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11});
+const Uuid kSession = boost::uuids::uuid(
+    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11});
 
 // What one LOG_INFO of message writes to the console.
 std::string WrittenInfoLine(std::string_view message) {
@@ -217,8 +253,8 @@ TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
   EXPECT_EQ(written.find("session="), std::string::npos) << written;
 }
 
-const Uuid kMatch =
-    Uuid::FromBytes({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22});
+const Uuid kMatch = boost::uuids::uuid(
+    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22});
 
 TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNoneAfter) {
   const MatchLogContext held;

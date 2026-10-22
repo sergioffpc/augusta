@@ -19,7 +19,6 @@
 
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
-#include "augusta/utf8.h"
 #include "augusta/version.h"
 
 #endif
@@ -29,6 +28,13 @@ namespace augusta::renderer {
 #if AUGUSTA_HAS_AFTERMATH
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 // How long AwaitGpuCrashDump waits for Aftermath, and how often it checks.
 constexpr std::chrono::seconds kDumpTimeout{5};
@@ -52,14 +58,14 @@ std::filesystem::path ExecutablePath() {
 void WriteDump(const void* dump, std::uint32_t size, void* /*user_data*/) {
   const auto written = WriteGpuCrashDump(std::span(static_cast<const std::byte*>(dump), size));
   if (!written) {
-    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", utf8::FromPath(written.error()));
+    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(written.error()));
     return;
   }
-  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", utf8::FromPath(*written));
+  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(*written));
 }
 
 void DescribeDump(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add, void* /*user_data*/) {
-  add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, utf8::FromPath(ExecutablePath().stem()).c_str());
+  add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, Utf8(ExecutablePath().stem()).c_str());
   add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationVersion, std::string(EngineVersion()).c_str());
 }
 

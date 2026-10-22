@@ -8,7 +8,7 @@
 #include <system_error>
 #include <vector>
 
-#include "augusta/uuid.h"
+#include <boost/uuid/uuid.hpp>
 
 /// \file
 /// The files a Run of augustac leaves on disk (GLOSSARY.md), under the
@@ -24,19 +24,19 @@ namespace augusta::client {
 inline constexpr std::size_t kKeptRuns = 10;
 
 /// `<directory>/logs/augustac-<run-id>.log`: the Run's log.
-[[nodiscard]] std::filesystem::path LogPath(const std::filesystem::path& directory, const uuid::Uuid& run);
+[[nodiscard]] std::filesystem::path LogPath(const std::filesystem::path& directory, const boost::uuids::uuid& run);
 
 /// `<directory>/dumps/augustac-<run-id>.dmp`: the minidump a crash on Windows writes.
-[[nodiscard]] std::filesystem::path MinidumpPath(const std::filesystem::path& directory, const uuid::Uuid& run);
+[[nodiscard]] std::filesystem::path MinidumpPath(const std::filesystem::path& directory, const boost::uuids::uuid& run);
 
 /// `<directory>/dumps/augustac-<run-id>-<n>.nv-gpudmp`: the Run's n-th
 /// Aftermath dump of a GPU crash, from 1.
-[[nodiscard]] std::filesystem::path GpuDumpPath(const std::filesystem::path& directory, const uuid::Uuid& run,
+[[nodiscard]] std::filesystem::path GpuDumpPath(const std::filesystem::path& directory, const boost::uuids::uuid& run,
                                                 std::uint32_t n);
 
 /// The files of run directory holds, in either folder, in no order.
 [[nodiscard]] std::vector<std::filesystem::path> RunFiles(const std::filesystem::path& directory,
-                                                          const uuid::Uuid& run);
+                                                          const boost::uuids::uuid& run);
 
 /// A Run's file pruning could not delete, and why.
 struct UndeletedFile {
@@ -67,7 +67,7 @@ enum class RunEnd : std::uint8_t {
 
 /// The Run before this one, and how it ended.
 struct PreviousRun {
-  uuid::Uuid id;
+  boost::uuids::uuid id;
   RunEnd end = RunEnd::kOrdinary;
   /// Its files, as RunFiles gives them.
   std::vector<std::filesystem::path> files;
@@ -75,7 +75,7 @@ struct PreviousRun {
 
 /// The newest Run in directory older than current, or nullopt if there is none.
 [[nodiscard]] std::optional<PreviousRun> FindPreviousRun(const std::filesystem::path& directory,
-                                                         const uuid::Uuid& current);
+                                                         const boost::uuids::uuid& current);
 
 }  // namespace augusta::client
 

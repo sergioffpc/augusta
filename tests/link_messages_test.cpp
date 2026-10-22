@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -23,7 +25,6 @@
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 // The Link converts between the engine's types and the protocol's plain ones
 // (ADR-0038) and nowhere else: what one peer sends must reach the other's
@@ -42,8 +43,7 @@ using augusta::protocol::kMaxCommandsPerMessage;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // message as the other peer decodes it.
@@ -393,7 +393,7 @@ TEST(LinkMessagesTest, TheRosterTheServerSendsReachesTheClientUnchanged) {
 }
 
 TEST(LinkMessagesTest, AMatchStartReachesTheClientWithItsMatchId) {
-  const augusta::uuid::Uuid match = augusta::uuid::Generate();
+  const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
 
   const augusta::link::MatchStart received =
       FromWire(ThroughTheWire(ToWire(augusta::link::MatchStart{.players = {}, .first_tick = 0, .match = match})));
@@ -424,8 +424,10 @@ TEST(LinkMessagesTest, AJoinRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.front() = std::byte{0xAB};
   client_pack.back() = std::byte{0x01};
-  const augusta::link::JoinRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .character = "soldier", .run = augusta::uuid::Generate()};
+  const augusta::link::JoinRequest sent{.engine_version = "1.2.3",
+                                        .client_pack = client_pack,
+                                        .character = "soldier",
+                                        .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::link::JoinRequest received =
       FromWire(ThroughTheWire(std::get<augusta::protocol::JoinRequestWire>(ToWire(sent))));
@@ -445,7 +447,7 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
                                         .client_pack = client_pack,
                                         .character = "soldier",
                                         .spawn = augusta::math::SnapPosition(Vec3(4.5F, 0.25F, -9.75F)),
-                                        .run = augusta::uuid::Generate()};
+                                        .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::protocol::MessageWire wire = ToWire(sent);
   ASSERT_TRUE(std::holds_alternative<augusta::protocol::ReenactRequestWire>(wire));
@@ -462,8 +464,10 @@ TEST(LinkMessagesTest, AJoinThatNamesASpawnTravelsAsAReenactRequestAndReachesThe
 TEST(LinkMessagesTest, AReplayRequestTheClientSendsReachesTheServerUnchanged) {
   augusta::assets::PackHash client_pack{};
   client_pack.back() = std::byte{0x7F};
-  const augusta::link::ReplayRequest sent{
-      .engine_version = "1.2.3", .client_pack = client_pack, .capture = "match.acap", .run = augusta::uuid::Generate()};
+  const augusta::link::ReplayRequest sent{.engine_version = "1.2.3",
+                                          .client_pack = client_pack,
+                                          .capture = "match.acap",
+                                          .run = boost::uuids::time_generator_v7{}()};
 
   const augusta::link::ReplayRequest received = FromWire(ThroughTheWire(ToWire(sent)));
 

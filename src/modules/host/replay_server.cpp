@@ -16,6 +16,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/connection_sample.h"
 #include "augusta/content.h"
@@ -40,12 +42,18 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
-#include "augusta/utf8.h"
 #include "augusta/version.h"
 
 namespace augusta::host {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 // A Replay viewer plays no one, so it is no player's session: the nil UUID,
 // which no Session ID is (ADR-0038).
@@ -65,10 +73,9 @@ std::vector<std::string> PathsOf(const std::vector<scenario::Character>& charact
 std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   std::error_code error;
   if (!std::filesystem::is_directory(directory, error)) {
-    throw failure::ClassifiedFailure(
-        failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                         .context = {{.key = "directory", .value = utf8::FromPath(directory)}},
-                         .detail = "the replay captures directory is not a directory"});
+    throw failure::ClassifiedFailure(failure::Failure{.code = failure::Code::kInvalidConfiguration,
+                                                      .context = {{.key = "directory", .value = Utf8(directory)}},
+                                                      .detail = "the replay captures directory is not a directory"});
   }
   return directory;
 }
@@ -148,8 +155,8 @@ struct ReplayServer::Impl {
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
         network(ListenOnceTheMapBuilds(config.listen), config.faults) {
-    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}",
-             utf8::FromPath(config.captures), max_viewers);
+    LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
+             max_viewers);
   }
 
   [[nodiscard]] simulation::World NewWorld() const {
@@ -302,7 +309,7 @@ struct ReplayServer::Impl {
     metrics.joins_admitted.Increment();
     SetGauges();
     LOG_INFO("subsystem=replay event=replay_started peer={} run={} capture={} viewers={}", PeerNumber(peer),
-             request.run, request.capture, viewers.size());
+             boost::uuids::to_string(request.run), request.capture, viewers.size());
   }
 
   // Drops what message brought and judges its peer, for reason. With mutex held.

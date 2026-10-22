@@ -5,7 +5,7 @@ add_library(augusta_link_types INTERFACE)
 target_include_directories(augusta_link_types INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_link_types
-  INTERFACE augusta_assets augusta_gameplay augusta_math augusta_physics augusta_tick augusta_uuid
+  INTERFACE augusta_assets augusta_gameplay augusta_math augusta_physics augusta_tick Boost::uuid
 )
 augusta_set_module_scope(augusta_link_types SHARED)
 

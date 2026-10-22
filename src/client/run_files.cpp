@@ -17,8 +17,8 @@
 #include <utility>
 #include <vector>
 
-#include "augusta/utf8.h"
-#include "augusta/uuid.h"
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace augusta::client {
 
@@ -34,31 +34,45 @@ constexpr std::string_view kGpuDumpExtension = ".nv-gpudmp";
 // not one it classifies, and no crash or terminal line is.
 constexpr std::streamoff kTailBytes = 64 * 1024;
 
+// How many characters a Run ID is in a file's name: its canonical form.
+constexpr std::size_t kRunIdLength = 36;
+
+// The Run ID text writes in the canonical form boost::uuids::to_string writes
+// (lowercase, hyphenated, no braces), as LogPath and the dump paths name a
+// file; anything else, upper case among it, names no Run.
+std::optional<boost::uuids::uuid> ParseRunId(std::string_view text) {
+  boost::uuids::uuid run;
+  if (!boost::uuids::from_chars(text.data(), text.data() + text.size(), run) || boost::uuids::to_string(run) != text) {
+    return std::nullopt;
+  }
+  return run;
+}
+
 // The Run ID name starts with after kPrefix, and what follows it, or nullopt.
 struct NamedRun {
-  uuid::Uuid run;
+  boost::uuids::uuid run;
   std::string_view rest;
 };
 
 std::optional<NamedRun> SplitName(std::string_view name) {
-  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + uuid::kTextLength) {
+  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + kRunIdLength) {
     return std::nullopt;
   }
-  const auto run = uuid::Parse(name.substr(kPrefix.size(), uuid::kTextLength));
+  const auto run = ParseRunId(name.substr(kPrefix.size(), kRunIdLength));
   if (!run) {
     return std::nullopt;
   }
-  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + uuid::kTextLength)};
+  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + kRunIdLength)};
 }
 
 // The Run a log's name names, if it is one LogPath makes.
-std::optional<uuid::Uuid> RunOfLog(std::string_view name) {
+std::optional<boost::uuids::uuid> RunOfLog(std::string_view name) {
   const auto named = SplitName(name);
   return named && named->rest == kLogExtension ? std::optional(named->run) : std::nullopt;
 }
 
 // The Run a dump's name names, if it is one MinidumpPath or GpuDumpPath makes.
-std::optional<uuid::Uuid> RunOfDump(std::string_view name) {
+std::optional<boost::uuids::uuid> RunOfDump(std::string_view name) {
   const auto named = SplitName(name);
   if (!named) {
     return std::nullopt;
@@ -76,17 +90,20 @@ std::optional<uuid::Uuid> RunOfDump(std::string_view name) {
 }
 
 // Every Run's file in directory's two folders, by Run ID.
-std::map<uuid::Uuid, std::vector<std::filesystem::path>> ScanRuns(const std::filesystem::path& directory) {
-  std::map<uuid::Uuid, std::vector<std::filesystem::path>> runs;
+std::map<boost::uuids::uuid, std::vector<std::filesystem::path>> ScanRuns(const std::filesystem::path& directory) {
+  std::map<boost::uuids::uuid, std::vector<std::filesystem::path>> runs;
   const auto scan = [&runs](const std::filesystem::path& folder,
-                            const std::function<std::optional<uuid::Uuid>(std::string_view)>& run_of) {
+                            const std::function<std::optional<boost::uuids::uuid>(std::string_view)>& run_of) {
     std::error_code error;
     for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error)) {
       std::error_code status_error;
       if (!it->is_regular_file(status_error)) {
         continue;
       }
-      if (const auto run = run_of(utf8::FromPath(it->path().filename()))) {
+      // In UTF-8: path::string() converts to the ANSI code page on Windows,
+      // and throws for a character it lacks.
+      const std::u8string name = it->path().filename().u8string();
+      if (const auto run = run_of(std::string{name.begin(), name.end()})) {
         runs[*run].push_back(it->path());
       }
     }
@@ -137,19 +154,21 @@ RunEnd Classify(std::string_view line) {
 
 }  // namespace
 
-std::filesystem::path LogPath(const std::filesystem::path& directory, const uuid::Uuid& run) {
-  return directory / kLogsFolder / std::format("{}{}{}", kPrefix, run, kLogExtension);
+std::filesystem::path LogPath(const std::filesystem::path& directory, const boost::uuids::uuid& run) {
+  return directory / kLogsFolder / std::format("{}{}{}", kPrefix, boost::uuids::to_string(run), kLogExtension);
 }
 
-std::filesystem::path MinidumpPath(const std::filesystem::path& directory, const uuid::Uuid& run) {
-  return directory / kDumpsFolder / std::format("{}{}{}", kPrefix, run, kMinidumpExtension);
+std::filesystem::path MinidumpPath(const std::filesystem::path& directory, const boost::uuids::uuid& run) {
+  return directory / kDumpsFolder / std::format("{}{}{}", kPrefix, boost::uuids::to_string(run), kMinidumpExtension);
 }
 
-std::filesystem::path GpuDumpPath(const std::filesystem::path& directory, const uuid::Uuid& run, std::uint32_t n) {
-  return directory / kDumpsFolder / std::format("{}{}-{}{}", kPrefix, run, n, kGpuDumpExtension);
+std::filesystem::path GpuDumpPath(const std::filesystem::path& directory, const boost::uuids::uuid& run,
+                                  std::uint32_t n) {
+  return directory / kDumpsFolder /
+         std::format("{}{}-{}{}", kPrefix, boost::uuids::to_string(run), n, kGpuDumpExtension);
 }
 
-std::vector<std::filesystem::path> RunFiles(const std::filesystem::path& directory, const uuid::Uuid& run) {
+std::vector<std::filesystem::path> RunFiles(const std::filesystem::path& directory, const boost::uuids::uuid& run) {
   auto runs = ScanRuns(directory);
   const auto found = runs.find(run);
   return found == runs.end() ? std::vector<std::filesystem::path>{} : std::move(found->second);
@@ -186,7 +205,7 @@ RunEnd ReadRunEnd(const std::filesystem::path& log) {
   return Classify(LastLine(text));
 }
 
-std::optional<PreviousRun> FindPreviousRun(const std::filesystem::path& directory, const uuid::Uuid& current) {
+std::optional<PreviousRun> FindPreviousRun(const std::filesystem::path& directory, const boost::uuids::uuid& current) {
   auto runs = ScanRuns(directory);
   auto newer = runs.lower_bound(current);
   if (newer == runs.begin()) {

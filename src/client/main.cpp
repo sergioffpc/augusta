@@ -5,6 +5,9 @@
 #include <string_view>
 #include <utility>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/application.h"
 #include "augusta/client_application.h"
 #include "augusta/client_config.h"
@@ -13,7 +16,6 @@
 #include "augusta/config.h"
 #include "augusta/crash.h"
 #include "augusta/logging.h"
-#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 namespace {
@@ -28,12 +30,12 @@ constexpr std::string_view kSubsystem = "client";
 augusta::crash::Settings CrashSettings(const augusta::client::Run& run) {
 #ifdef _WIN32
   return {.minidump_file = run.minidump_file,
-          .run_id = run.id.ToString(),
+          .run_id = boost::uuids::to_string(run.id),
           .log_file = run.log_file,
           .core_location = std::nullopt};
 #else
   return {.minidump_file = std::nullopt,
-          .run_id = run.id.ToString(),
+          .run_id = boost::uuids::to_string(run.id),
           .log_file = run.log_file,
           .core_location = "coredumpctl dump augustac"};
 #endif

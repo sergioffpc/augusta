@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
@@ -25,8 +26,7 @@ using augusta::server::ConnectionHealth;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 constexpr SessionId kSession = Session(7);
@@ -82,7 +82,7 @@ class ConnectionHealthTest : public ::testing::Test {
         continue;
       }
       for (const prometheus::ClientMetric& metric : collected.metric) {
-        if (HasLabel(metric, "session_id", session.ToString()) &&
+        if (HasLabel(metric, "session_id", boost::uuids::to_string(session)) &&
             (direction.empty() || HasLabel(metric, "direction", direction))) {
           return metric.gauge.value;
         }
@@ -101,7 +101,7 @@ class ConnectionHealthTest : public ::testing::Test {
     int count = 0;
     for (const prometheus::MetricFamily& collected : health_.Collect()) {
       for (const prometheus::ClientMetric& metric : collected.metric) {
-        count += HasLabel(metric, "session_id", session.ToString()) ? 1 : 0;
+        count += HasLabel(metric, "session_id", boost::uuids::to_string(session)) ? 1 : 0;
       }
     }
     return count;
@@ -262,7 +262,7 @@ TEST_F(ConnectionHealthTest, EveryCollectionIsOneRecord) {
     }
   });
 
-  const std::string session_label = kSession.ToString();
+  const std::string session_label = boost::uuids::to_string(kSession);
   int mixed = 0;
   for (int i = 0; i < kRecords / 10; ++i) {
     std::optional<double> rtt;

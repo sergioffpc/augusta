@@ -10,12 +10,14 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/body_part.h"
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/parameters.h"
-#include "augusta/uuid.h"
 #include "match_players.h"
 
 namespace augusta::harness {
@@ -103,8 +105,8 @@ void Inbox::OnJoinAccepted(const Admission& accepted) {
     return;
   }
   Publish([&](ServerView& next) { next.accepted = accepted; });
-  LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}", accepted.session,
-           accepted.character, accepted.tick_rate_hz);
+  LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
+           boost::uuids::to_string(accepted.session), accepted.character, accepted.tick_rate_hz);
 }
 
 void Inbox::OnJoinRefused(JoinRefusal reason) {
@@ -153,13 +155,13 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   // still taken: they stay under this match, which a view takes until the next
   // starts.
   if (end.winner.has_value()) {
-    LOG_INFO("subsystem=harness event=match_ended winner={}", *end.winner);
+    LOG_INFO("subsystem=harness event=match_ended winner={}", boost::uuids::to_string(*end.winner));
   } else {
     LOG_INFO("subsystem=harness event=match_ended winner=draw");
   }
   // After the line above, which is still the Match's.
   if (on_match_) {
-    on_match_(uuid::kNil);
+    on_match_(boost::uuids::uuid{});
   }
 }
 

@@ -27,8 +27,8 @@ endif()
 
 # Boost.Uuid links its users to libatomic under clang on Linux, for the sake of
 # time_generator_v1's atomic state, which the project does not use: the v7
-# generator (augusta_uuid) takes no atomic, and the server image has no
-# libatomic, so a binary that needs it would not even start.
+# generators the engine holds (ADR-0035) take no atomic, and the server image
+# has no libatomic, so a binary that needs it would not even start.
 if(PORT STREQUAL "boost-uuid")
   list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -DBOOST_UUID_LINK_LIBATOMIC=OFF)
 endif()

@@ -4,7 +4,7 @@
 #include <optional>
 #include <variant>
 
-#include "augusta/uuid.h"
+#include <boost/uuid/uuid.hpp>
 
 /// \file
 /// The typed contract between Game policy and the rest of the server
@@ -18,9 +18,9 @@ namespace augusta::policy {
 /// The server's name for the player who controls a body (GLOSSARY.md, "Session
 /// ID"): how Game policy names a player, and a Match end its winner. A UUIDv7
 /// the server takes at admission; the nil UUID is no player's, and never a
-/// winner. A hook sees it as its canonical string (uuid::Uuid::ToString),
+/// winner. A hook sees it as its canonical string (boost::uuids::to_string),
 /// which it only compares and hands back (ADR-0022).
-using SessionId = uuid::Uuid;
+using SessionId = boost::uuids::uuid;
 
 /// Game policy's decision to end the Match (US-14), made by the rules'
 /// on_tick on a tick and taken by host::Host after it (ADR-0023).

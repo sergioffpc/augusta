@@ -118,7 +118,7 @@ if(AUGUSTA_CLIENT)
     find_package(boost_dll CONFIG REQUIRED)
     target_link_libraries(
       augusta_renderer
-      PRIVATE augusta_aftermath augusta_renderer_gpu_crash_dump_files augusta_utf8 augusta_version Boost::dll
+      PRIVATE augusta_aftermath augusta_renderer_gpu_crash_dump_files augusta_version Boost::dll
     )
     target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=1)
   else()

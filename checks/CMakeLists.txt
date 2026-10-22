@@ -8,7 +8,7 @@
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
 # name the harness: the client converts (src/client/frame_mapping.h).
 # Nor does the protocol itself include or link anything but augusta_math,
-# augusta_tick, augusta_limits, augusta_uuid and the full protobuf runtime,
+# augusta_tick, augusta_limits, Boost::uuid and the full protobuf runtime,
 # PRIVATE, nor does any header outside it include protobuf or the generated
 # augusta.pb.h. A source scan, so it builds nothing.
 add_test(

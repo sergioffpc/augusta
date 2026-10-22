@@ -12,6 +12,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
 #include "augusta/failure.h"
@@ -30,7 +32,6 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
-#include "augusta/uuid.h"
 #include "host_impl.h"
 
 namespace augusta::host {
@@ -127,7 +128,7 @@ void Host::Impl::StartMatchIfReady() {
   simulating_match = true;
   // Its first tick is the one about to run.
   match_start_tick = tick + 1;
-  match_id = uuid::Generate();
+  match_id = start->match;
   if (capturer) {
     std::vector<CaptureEntrant> captured;
     captured.reserve(start->players.size());
@@ -150,10 +151,10 @@ void Host::Impl::StartMatchIfReady() {
 void Host::Impl::LogMatchStarted(const std::vector<SessionId>& sessions) const {
   std::string players;
   for (const SessionId& session : sessions) {
-    players += std::format(" session={}", session);
+    players += std::format(" session={}", boost::uuids::to_string(session));
   }
-  LOG_INFO("subsystem=serverruntime event=match_started match={} tick={} players={}{}", match_id, match_start_tick,
-           sessions.size(), players);
+  LOG_INFO("subsystem=serverruntime event=match_started match={} tick={} players={}{}",
+           boost::uuids::to_string(match_id), match_start_tick, sessions.size(), players);
 }
 
 // Takes a match that has ended out of the simulation, its capture ending on

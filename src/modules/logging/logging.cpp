@@ -33,8 +33,6 @@
 #include <boost/smart_ptr/make_shared_object.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
 
-#include "augusta/utf8.h"
-
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -44,6 +42,13 @@
 namespace augusta::logging {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 // The per-record attribute carrying when the message was written (the
 // severity travels as Boost.Log's own "Severity" attribute).
@@ -240,9 +245,9 @@ std::string DescribeFileSinkError(const FileSinkError& error) {
   const std::string reason = error.reason ? ": " + error.reason.message() : "";
   switch (error.step) {
     case FileSinkError::Step::kCreateDirectory:
-      return std::format("cannot create {}{}", utf8::FromPath(error.path), reason);
+      return std::format("cannot create {}{}", Utf8(error.path), reason);
     case FileSinkError::Step::kOpen:
-      return std::format("cannot open {} for appending{}", utf8::FromPath(error.path), reason);
+      return std::format("cannot open {} for appending{}", Utf8(error.path), reason);
   }
   return "?";
 }

@@ -6,11 +6,12 @@
 #include <optional>
 #include <string_view>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/link.h"
 #include "augusta/match.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// The log lines Host writes from more than one of its parts (ADR-0029,
@@ -48,14 +49,14 @@ enum class Leaving : std::uint8_t {
 /// The one line of the match that ended: its Match ID, why, who won (nullopt
 /// for a draw), how many ticks it lasted, counting the one it ended on, how many
 /// players were in it, and the Lobby's Roster version after it.
-void LogMatchEnded(const uuid::Uuid& match, EndReason reason, const std::optional<SessionId>& winner, tick::Tick ticks,
-                   std::size_t players, std::uint32_t roster_version);
+void LogMatchEnded(const boost::uuids::uuid& match, EndReason reason, const std::optional<SessionId>& winner,
+                   tick::Tick ticks, std::size_t players, std::uint32_t roster_version);
 
 /// One line per hit of state's tick, then one per death, each naming match,
 /// the Match they are of. At INFO, though players provoke them: a Match's hits
 /// and deaths are what its operator reads the log for (US-12, US-13), in a
 /// Release build too.
-void LogCombat(const uuid::Uuid& match, const simulation::State& state);
+void LogCombat(const boost::uuids::uuid& match, const simulation::State& state);
 
 }  // namespace augusta::host
 

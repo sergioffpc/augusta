@@ -23,6 +23,9 @@
 #include <sys/stat.h>
 #endif
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
 #include "augusta/capture_retention.h"
@@ -31,7 +34,6 @@
 #include "augusta/faults.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
-#include "augusta/uuid.h"
 
 // A Match capture (ADR-0050), written by a Capturer into a directory of its
 // own and read back by ReadCapture, with no Host: the events are handed in by
@@ -68,13 +70,12 @@ using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // A Match ID, a UUIDv7, told apart by its last byte.
-constexpr augusta::uuid::Uuid MatchId(std::uint8_t last) {
-  return augusta::uuid::Uuid::FromBytes(
+constexpr boost::uuids::uuid MatchId(std::uint8_t last) {
+  return boost::uuids::uuid(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
@@ -375,7 +376,7 @@ TEST_F(CapturerTest, AnOptionalCaptureThatFailsToWriteDegradesAndCapturesTheNext
     ASSERT_TRUE(lost.has_value());
     EXPECT_EQ(lost->code, Code::kCaptureWriteFailed);
     EXPECT_EQ(DispositionOf(lost->code), Disposition::kSubsystem);
-    EXPECT_TRUE(Names(*lost, "match=" + MatchId(1).ToString() + " step=write")) << DescribeFailure(*lost);
+    EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=write")) << DescribeFailure(*lost);
     EXPECT_EQ(lost->detail, "disk full");
 
     capturer.StartMatch(MatchId(2), TwoPlayers(), kFirstTick + 10, kStarted + std::chrono::seconds{1});
@@ -402,7 +403,7 @@ TEST_F(CapturerTest, AnOptionalCaptureWhoseFlushFailsDegradesOnAFlushFailure) {
   const std::optional<augusta::failure::Failure> lost = capturer.Loss();
   ASSERT_TRUE(lost.has_value());
   EXPECT_EQ(lost->code, Code::kCaptureFlushFailed);
-  EXPECT_TRUE(Names(*lost, "match=" + MatchId(1).ToString() + " step=flush")) << DescribeFailure(*lost);
+  EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=flush")) << DescribeFailure(*lost);
 }
 
 TEST_F(CapturerTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
@@ -417,7 +418,8 @@ TEST_F(CapturerTest, AnOptionalCaptureKeepsItsFirstLossOnly) {
 
   EXPECT_EQ(capturer.Health(), CaptureHealth::kDegraded);
   ASSERT_TRUE(capturer.Loss().has_value());
-  EXPECT_TRUE(Names(*capturer.Loss(), "match=" + MatchId(1).ToString() + " ")) << DescribeFailure(*capturer.Loss());
+  EXPECT_TRUE(Names(*capturer.Loss(), "match=" + boost::uuids::to_string(MatchId(1)) + " "))
+      << DescribeFailure(*capturer.Loss());
 }
 
 // Requirements: US-21
@@ -438,7 +440,7 @@ TEST_F(CapturerTest, AStrictCaptureThatFailsToWriteIsARuntimeFailureAndCapturesN
     ASSERT_TRUE(lost.has_value());
     EXPECT_EQ(lost->code, Code::kStrictCaptureFailed);
     EXPECT_EQ(DispositionOf(lost->code), Disposition::kRuntime);
-    EXPECT_TRUE(Names(*lost, "match=" + MatchId(1).ToString() + " step=write")) << DescribeFailure(*lost);
+    EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=write")) << DescribeFailure(*lost);
     EXPECT_EQ(lost->detail, "disk full");
 
     capturer.EndMatch(kFirstTick + 1, std::nullopt);
@@ -465,7 +467,7 @@ TEST_F(CapturerTest, AStrictCaptureWhoseFlushFailsIsARuntimeFailure) {
   const std::optional<augusta::failure::Failure> lost = capturer.Loss();
   ASSERT_TRUE(lost.has_value());
   EXPECT_EQ(lost->code, Code::kStrictCaptureFailed);
-  EXPECT_TRUE(Names(*lost, "match=" + MatchId(1).ToString() + " step=flush")) << DescribeFailure(*lost);
+  EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=flush")) << DescribeFailure(*lost);
 }
 
 TEST_F(CapturerTest, AStrictCaptureWhoseQueueIsFullFailsAtOnce) {
@@ -513,7 +515,7 @@ TEST(LostCaptureTest, AStrictCapturesLossIsTheRuntimesWhateverItsStep) {
 
 TEST(LostCaptureTest, ALossNamesItsMatchStepAndDetail) {
   EXPECT_EQ(DescribeFailure(LostCapture(CaptureMode::kOptional, MatchId(3), CaptureStep::kRecordTooLong, "300 bytes")),
-            "code=capture_record_too_long disposition=subsystem match=" + MatchId(3).ToString() +
+            "code=capture_record_too_long disposition=subsystem match=" + boost::uuids::to_string(MatchId(3)) +
                 " step=record_too_long detail=\"300 bytes\"");
 }
 
@@ -633,7 +635,7 @@ TEST_F(CapturerTest, AnExceptionOnTheWritersThreadIsAWriteFailureInEitherMode) {
     const std::optional<augusta::failure::Failure> lost = capturer.Loss();
     ASSERT_TRUE(lost.has_value());
     EXPECT_EQ(lost->code, mode == CaptureMode::kStrict ? Code::kStrictCaptureFailed : Code::kCaptureWriteFailed);
-    EXPECT_TRUE(Names(*lost, "match=" + MatchId(1).ToString() + " step=write")) << DescribeFailure(*lost);
+    EXPECT_TRUE(Names(*lost, "match=" + boost::uuids::to_string(MatchId(1)) + " step=write")) << DescribeFailure(*lost);
     EXPECT_EQ(lost->detail, "observer refused");
   }
 }

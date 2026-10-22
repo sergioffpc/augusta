@@ -24,6 +24,10 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
 #include "augusta/capture_retention.h"
@@ -34,12 +38,17 @@
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/tick.h"
-#include "augusta/utf8.h"
-#include "augusta/uuid.h"
 
 namespace augusta::host {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 // What directory's retention reports, told to observer: the directory's
 // files and bytes, and each deletion and failed one.
@@ -127,9 +136,9 @@ std::string_view CaptureStepName(CaptureStep step) {
   return "unknown";
 }
 
-failure::Failure LostCapture(CaptureMode mode, const uuid::Uuid& match, CaptureStep step, std::string detail) {
+failure::Failure LostCapture(CaptureMode mode, const boost::uuids::uuid& match, CaptureStep step, std::string detail) {
   return {.code = mode == CaptureMode::kStrict ? failure::Code::kStrictCaptureFailed : OptionalLossCode(step),
-          .context = {{.key = "match", .value = match.ToString()},
+          .context = {{.key = "match", .value = boost::uuids::to_string(match)},
                       {.key = "step", .value = std::string(CaptureStepName(step))}},
           .detail = std::move(detail)};
 }
@@ -195,21 +204,21 @@ class Capturer::Writer {
   Writer& operator=(Writer&&) = delete;
 
   // match is the Match open, captured until its Close or a stop.
-  void Begin(const uuid::Uuid& match) {
+  void Begin(const boost::uuids::uuid& match) {
     const std::scoped_lock lock(mutex_);
     open_match_ = match;
     observer_->OnState(CaptureState::kCapturing);
   }
 
-  void Open(const uuid::Uuid& match, std::filesystem::path path, capture::Encoded header) {
+  void Open(const boost::uuids::uuid& match, std::filesystem::path path, capture::Encoded header) {
     Enqueue({.kind = Kind::kOpen, .match = match, .encoded = std::move(header), .path = std::move(path)});
   }
 
-  void Close(const uuid::Uuid& match) {
+  void Close(const boost::uuids::uuid& match) {
     {
       const std::scoped_lock lock(mutex_);
       if (open_match_ == match) {
-        open_match_ = uuid::kNil;
+        open_match_ = boost::uuids::nil_uuid();
         observer_->OnState(CaptureState::kIdle);
       }
       queue_.push_back({.kind = Kind::kClose, .match = match, .encoded = std::nullopt, .path = {}});
@@ -219,7 +228,7 @@ class Capturer::Writer {
 
   // Queues match's record, or stops its capture there when capacity records
   // are still unwritten. Once its capture has stopped, drops every one.
-  void Push(const uuid::Uuid& match, capture::Encoded record) {
+  void Push(const boost::uuids::uuid& match, capture::Encoded record) {
     {
       const std::scoped_lock lock(mutex_);
       if (stopped_.contains(match) || health_ == CaptureHealth::kStopped) {
@@ -238,7 +247,7 @@ class Capturer::Writer {
     ready_.notify_one();
   }
 
-  void Stop(const uuid::Uuid& match, CaptureStep step) {
+  void Stop(const boost::uuids::uuid& match, CaptureStep step) {
     const std::scoped_lock lock(mutex_);
     StopLocked(match, step, {});
   }
@@ -274,7 +283,7 @@ class Capturer::Writer {
 
   struct Item {
     Kind kind;
-    uuid::Uuid match;
+    boost::uuids::uuid match;
     // kOpen: the magic with the header; kRecord: the record.
     std::optional<capture::Encoded> encoded;
     std::filesystem::path path;
@@ -352,17 +361,18 @@ class Capturer::Writer {
   // Makes room in the directory for the magic and the header, then creates
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
-    if (!directory_.Open(item.match, utf8::FromPath(item.path.filename()), item.encoded->SizeOnDisk())) {
+    if (!directory_.Open(item.match, Utf8(item.path.filename()), item.encoded->SizeOnDisk())) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Failed{.step = CaptureStep::kCreate, .detail = utf8::FromPath(item.path)};
+      return Failed{.step = CaptureStep::kCreate, .detail = Utf8(item.path)};
     }
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
-    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, utf8::FromPath(path_));
+    LOG_INFO("subsystem=capture event=capture_started match={} path={}", boost::uuids::to_string(item.match),
+             Utf8(path_));
     observer_->OnStarted();
     return Write(*item.encoded);
   }
@@ -388,7 +398,7 @@ class Capturer::Writer {
     }
     capture::Write(file_, encoded);
     if (!file_) {
-      return Failed{.step = CaptureStep::kWrite, .detail = utf8::FromPath(path_)};
+      return Failed{.step = CaptureStep::kWrite, .detail = Utf8(path_)};
     }
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
       file_.setstate(std::ios::badbit);
@@ -396,14 +406,14 @@ class Capturer::Writer {
     }
     file_.flush();
     if (!file_) {
-      return Failed{.step = CaptureStep::kFlush, .detail = utf8::FromPath(path_)};
+      return Failed{.step = CaptureStep::kFlush, .detail = Utf8(path_)};
     }
     ++records_;
     observer_->OnWritten(encoded.SizeOnDisk());
     return std::nullopt;
   }
 
-  void CloseFile(const uuid::Uuid& match) {
+  void CloseFile(const boost::uuids::uuid& match) {
     bool stopped = false;
     {
       const std::scoped_lock lock(mutex_);
@@ -414,11 +424,11 @@ class Capturer::Writer {
       return;
     }
     file_.close();
-    file_match_ = uuid::kNil;
+    file_match_ = boost::uuids::nil_uuid();
     // A capture that stopped said so once already.
     if (!stopped) {
-      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, utf8::FromPath(path_),
-               records_);
+      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", boost::uuids::to_string(match),
+               Utf8(path_), records_);
       observer_->OnCompleted();
     }
   }
@@ -427,16 +437,17 @@ class Capturer::Writer {
   // it in detail, nothing more of it queued, and its file closed once the
   // writer gets to it. Told as the state of captures only while match is
   // still the one open. With mutex_ held.
-  void StopLocked(const uuid::Uuid& match, CaptureStep step, std::string detail) {
+  void StopLocked(const boost::uuids::uuid& match, CaptureStep step, std::string detail) {
     if (!stopped_.insert(match).second) {
       return;
     }
     const CaptureStop stop = StopAt(step);
     if (stop == CaptureStop::kWriteFailed) {
-      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"", match,
-               CaptureStopName(stop), CaptureStepName(step), detail);
+      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={} step={} detail=\"{}\"",
+               boost::uuids::to_string(match), CaptureStopName(stop), CaptureStepName(step), detail);
     } else {
-      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={}", match, CaptureStopName(stop));
+      LOG_WARN("subsystem=capture event=capture_stopped match={} reason={}", boost::uuids::to_string(match),
+               CaptureStopName(stop));
     }
     observer_->OnStopped(stop);
     if (match == open_match_) {
@@ -448,7 +459,7 @@ class Capturer::Writer {
   // The run's first loss, of match's record at step: kept, and reported once
   // as the health it leaves the captures in. A later one changes nothing.
   // With mutex_ held.
-  void LoseLocked(const uuid::Uuid& match, CaptureStep step, std::string detail) {
+  void LoseLocked(const boost::uuids::uuid& match, CaptureStep step, std::string detail) {
     if (health_ != CaptureHealth::kEnabled) {
       return;
     }
@@ -461,8 +472,8 @@ class Capturer::Writer {
     } else {
       // Only the state change: the runtime that stops on the failure writes
       // its one ERR line, with its detail (ADR-0033).
-      LOG_INFO("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_), match,
-               CaptureStepName(step));
+      LOG_INFO("subsystem=capture event=capture_disabled mode={} match={} step={}", CaptureModeName(mode_),
+               boost::uuids::to_string(match), CaptureStepName(step));
       Enter(CaptureHealth::kStopped);
     }
   }
@@ -497,9 +508,9 @@ class Capturer::Writer {
   std::deque<Item> queue_;
   std::size_t records_queued_ = 0;
   // The Matches whose capture stopped and whose file is not yet closed.
-  std::unordered_set<uuid::Uuid> stopped_;
+  std::unordered_set<boost::uuids::uuid> stopped_;
   // The Match the Simulation thread has open (nil for none), as Begin and Close set it.
-  uuid::Uuid open_match_ = uuid::kNil;
+  boost::uuids::uuid open_match_ = boost::uuids::nil_uuid();
   bool closing_ = false;
   // An item off the queue but not yet handled keeps WaitUntilWritten waiting.
   bool writing_ = false;
@@ -509,7 +520,7 @@ class Capturer::Writer {
   // The file open, the Match it captures (nil for none), and how many records
   // it holds. Writer thread only.
   std::ofstream file_;
-  uuid::Uuid file_match_ = uuid::kNil;
+  boost::uuids::uuid file_match_ = boost::uuids::nil_uuid();
   std::filesystem::path path_;
   std::size_t records_ = 0;
   // The directory's captures, as scanned at the file's creation and grown by
@@ -525,8 +536,8 @@ Capturer::Capturer(std::filesystem::path directory, capture::Header header, Capt
 
 Capturer::~Capturer() = default;
 
-void Capturer::StartMatch(const uuid::Uuid& match, const std::vector<CaptureEntrant>& players, tick::Tick first_tick,
-                          std::chrono::system_clock::time_point started) {
+void Capturer::StartMatch(const boost::uuids::uuid& match, const std::vector<CaptureEntrant>& players,
+                          tick::Tick first_tick, std::chrono::system_clock::time_point started) {
   if (open_) {
     writer_->Close(match_);
     open_ = false;

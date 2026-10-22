@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "answers.h"
@@ -32,8 +33,7 @@ using augusta::scripting::Value;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 constexpr SessionId kAlice = Session(1);
@@ -43,7 +43,7 @@ const std::vector<SessionId> kBothAlive{kAlice, kBob};
 Value Number(double number) { return Value{.data = number}; }
 
 // session as a hook names it: its canonical string.
-Value Named(const SessionId& session) { return Value{.data = session.ToString()}; }
+Value Named(const SessionId& session) { return Value{.data = boost::uuids::to_string(session)}; }
 
 Value Record(std::vector<Field> fields) { return Value{.data = Value::Record(std::move(fields))}; }
 

@@ -9,10 +9,11 @@
 #include <system_error>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/run_files.h"
-#include "augusta/uuid.h"
 
 // The files a Run of augustac leaves beside its executable (GLOSSARY.md, ADR-0027,
 // ADR-0055): their names from the Run ID, the last Runs kept, and how the
@@ -28,12 +29,13 @@ using augusta::client::PruneRuns;
 using augusta::client::ReadRunEnd;
 using augusta::client::RunEnd;
 using augusta::client::RunFiles;
-using augusta::uuid::Uuid;
+using Uuid = boost::uuids::uuid;
 
 // The Run ID whose last byte is n and whose others are a fixed UUIDv7's: a
 // larger n is a later Run.
 Uuid RunId(std::uint8_t n) {
-  return Uuid::FromBytes({0x01, 0x9a, 0x07, 0x5c, 0x4f, 0x10, 0x7a, 0x01, 0x8b, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, n});
+  return boost::uuids::uuid(
+      {0x01, 0x9a, 0x07, 0x5c, 0x4f, 0x10, 0x7a, 0x01, 0x8b, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, n});
 }
 
 // A directory of its own under the system's temporary one, removed with it.
@@ -137,15 +139,18 @@ TEST_F(RunFilesTest, PruningLeavesAloneAFileThatIsNotARuns) {
       Directory() / "logs" / "notes.txt",
       Directory() / "logs" / "augustac-not-a-run-id.log",
       Directory() / "logs" / "augustac-019A075C-4F10-7A01-8B02-0000000000FF.log",
-      Directory() / "logs" / ("augustac-" + RunId(1).ToString() + ".dmp"),
-      Directory() / "dumps" / ("augustac-" + RunId(1).ToString() + ".log"),
-      Directory() / "dumps" / ("augustac-" + RunId(1).ToString() + "-x.nv-gpudmp"),
-      Directory() / "dumps" / ("augustad-" + RunId(1).ToString() + ".dmp"),
+      Directory() / "logs" / "augustac-019a075c4f107a018b020000000000ff.log",
+      Directory() / "logs" / "augustac-{019a075c-4f10-7a01-8b02-0000000000ff}.log",
+      Directory() / "logs" / ("augustac-" + boost::uuids::to_string(RunId(1)) + ".dmp"),
+      Directory() / "dumps" / ("augustac-" + boost::uuids::to_string(RunId(1)) + ".log"),
+      Directory() / "dumps" / ("augustac-" + boost::uuids::to_string(RunId(1)) + "-x.nv-gpudmp"),
+      Directory() / "dumps" / ("augustad-" + boost::uuids::to_string(RunId(1)) + ".dmp"),
   };
   for (const auto& stranger : strangers) {
     Write(stranger, "keep me");
   }
-  std::filesystem::create_directories(Directory() / "logs" / ("augustac-" + RunId(1).ToString() + ".log.d"));
+  std::filesystem::create_directories(Directory() / "logs" /
+                                      ("augustac-" + boost::uuids::to_string(RunId(1)) + ".log.d"));
 
   EXPECT_TRUE(PruneRuns(Directory(), kKeptRuns).empty());
 

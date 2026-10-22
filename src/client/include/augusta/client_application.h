@@ -5,10 +5,11 @@
 #include <optional>
 #include <string>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/application.h"
 #include "augusta/client_config.h"
 #include "augusta/reenactment.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// augustac's runs behind the application boundary (application.h, ADR-0033),
@@ -66,7 +67,8 @@ class ClientProcess {
 /// a Captured player or a Replay viewer alike, carries run, the Run's ID.
 [[nodiscard]] application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
                                                                     std::optional<harness::Script> reenactment,
-                                                                    std::optional<std::string> replay, uuid::Uuid run);
+                                                                    std::optional<std::string> replay,
+                                                                    boost::uuids::uuid run);
 
 }  // namespace augusta::client
 

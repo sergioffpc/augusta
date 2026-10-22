@@ -11,9 +11,11 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/math.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// augusta::protocol is the Networking Protocol (ADR-0007, ADR-0038): the
@@ -236,11 +238,11 @@ struct ParametersWire {
 /// restart, carried as its 16 bytes in RFC 9562's order (ADR-0038). Identifies
 /// a player inside messages; it is not a credential, since the server tells
 /// senders apart by connection.
-using SessionIdWire = uuid::Uuid;
+using SessionIdWire = boost::uuids::uuid;
 
 /// The session a Match end names as its winner when it is a draw: the nil
 /// UUID, which no Session ID is (ADR-0038).
-inline constexpr SessionIdWire kDraw = uuid::kNil;
+inline constexpr SessionIdWire kDraw = boost::uuids::nil_uuid();
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -280,7 +282,7 @@ struct JoinRequestWire {
   std::string character;
   /// The client's Run ID, which the server logs at admission (ADR-0038); the
   /// nil ID when the field is absent.
-  uuid::Uuid run = uuid::kNil;
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const JoinRequestWire&) const = default;
 };
@@ -298,7 +300,7 @@ struct ReenactRequestWire {
   /// Where the capture's Match start spawned the player, on the position grid.
   math::Vec3 spawn{};
   /// As JoinRequestWire::run.
-  uuid::Uuid run = uuid::kNil;
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const ReenactRequestWire&) const = default;
 };
@@ -316,7 +318,7 @@ struct EntityStateWire {
 /// Server to client: the join succeeded, and the client waits in the Lobby.
 struct JoinAcceptedWire {
   /// The session the server assigned to this client.
-  SessionIdWire session = uuid::kNil;
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
@@ -408,7 +410,7 @@ struct AuthoritativeStateWire {
 
 /// One player in the Lobby.
 struct RosterEntryWire {
-  SessionIdWire session = uuid::kNil;
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The player's character (see JoinAcceptedWire::character).
   std::string character;
 
@@ -437,7 +439,7 @@ struct ReadyWire {
 /// One player in a match, the body it controls, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
-  SessionIdWire session = uuid::kNil;
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
   /// The player's character (see JoinAcceptedWire::character).
@@ -454,7 +456,7 @@ struct MatchStartWire {
   tick::Tick first_tick = 0;
   /// The Match's Match ID, the same in every player's Match start (ADR-0043);
   /// nil where the server names none.
-  uuid::Uuid match = uuid::kNil;
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
 
   bool operator==(const MatchStartWire&) const = default;
 };
@@ -562,7 +564,7 @@ struct ReplayRequestWire {
   /// its listing.
   std::string capture;
   /// The Replay viewer's Run ID, as JoinRequestWire::run.
-  uuid::Uuid run = uuid::kNil;
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 
   bool operator==(const ReplayRequestWire&) const = default;
 };
@@ -727,7 +729,7 @@ struct CaptureHeaderWire {
   /// When the Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
   /// The Match's ID, as Match start names it (MatchStartWire::match).
-  uuid::Uuid match = uuid::kNil;
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
   std::uint8_t tick_rate_hz = 0;
 
   bool operator==(const CaptureHeaderWire&) const = default;
@@ -738,7 +740,7 @@ struct CapturedJoinWire {
   /// Where the Match start spawned it, on the position grid.
   math::Vec3 spawn{};
   std::uint32_t offset = 0;
-  SessionIdWire session = uuid::kNil;
+  SessionIdWire session = boost::uuids::nil_uuid();
   /// Its Character, by its name in the scenario's manifest (ADR-0042); at most
   /// kMaxCharacterNameLength bytes.
   std::string character;

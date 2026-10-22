@@ -21,7 +21,7 @@ target_link_libraries(
     augusta_agent_testing_server
     augusta_link
     augusta_logging
-    augusta_uuid
+    Boost::uuid
     GTest::gtest
     GTest::gtest_main
 )

@@ -4,6 +4,8 @@
 #include <string>
 #include <thread>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/agent.h"
@@ -11,7 +13,6 @@
 #include "augusta/assets.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/uuid.h"
 #include "example_run.h"
 #include "match_loop.h"
 #include "testing_server.h"
@@ -102,7 +103,7 @@ TEST(AgentJoinTest, EachAgentJoinsWithARunIdOfItsOwn) {
     runs.insert((*it)[1].str());
   }
   EXPECT_EQ(runs.size(), 2U) << log;
-  EXPECT_FALSE(runs.contains(augusta::uuid::Uuid{}.ToString())) << log;
+  EXPECT_FALSE(runs.contains(boost::uuids::to_string(boost::uuids::uuid{}))) << log;
 }
 
 }  // namespace

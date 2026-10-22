@@ -13,13 +13,13 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/grid.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 #include "protobuf_bytes.h"
 
 // ThreadSanitizer's runtime defines operator new and delete itself, so a build
@@ -138,14 +138,14 @@ using augusta::protobuf_bytes::VarintField;
 
 // A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
 SessionIdWire Session(std::uint8_t last) {
-  return SessionIdWire::FromBytes(
+  return SessionIdWire(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // session's 16 bytes, as a bytes field carries them.
 BytesWire BytesOf(const SessionIdWire& session) {
   BytesWire bytes;
-  for (const std::uint8_t byte : session.Bytes()) {
+  for (const std::uint8_t byte : session) {
     bytes.push_back(static_cast<std::byte>(byte));
   }
   return bytes;
@@ -179,27 +179,29 @@ PackHashWire CountingPackHash() {
 }
 
 // A Run ID of 0x11, 0x12 ... 0x20, so its bytes are told apart on the wire.
-augusta::uuid::Uuid CountingRunId() {
-  augusta::uuid::Uuid::ByteArray bytes{};
-  for (std::size_t i = 0; i < bytes.size(); ++i) {
-    bytes[i] = static_cast<std::uint8_t>(0x11U + i);
+boost::uuids::uuid CountingRunId() {
+  boost::uuids::uuid id{};
+  std::uint8_t next = 0x11U;
+  for (std::uint8_t& byte : id) {
+    byte = next++;
   }
-  return augusta::uuid::Uuid::FromBytes(bytes);
+  return id;
 }
 
 // CountingRunId's 16 bytes, as a length-delimited field's payload.
 std::string CountingRunIdBytes() {
-  const auto bytes = CountingRunId().Bytes();
-  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+  const boost::uuids::uuid id = CountingRunId();
+  return {reinterpret_cast<const char*>(id.begin()), id.size()};
 }
 
 // A Match ID of 1, 2, 3 ... 16, so its bytes are told apart on the wire.
-augusta::uuid::Uuid CountingMatchId() {
-  augusta::uuid::Uuid::ByteArray bytes{};
-  for (std::size_t i = 0; i < bytes.size(); ++i) {
-    bytes[i] = static_cast<std::uint8_t>(i + 1);
+boost::uuids::uuid CountingMatchId() {
+  boost::uuids::uuid id{};
+  std::uint8_t next = 1;
+  for (std::uint8_t& byte : id) {
+    byte = next++;
   }
-  return augusta::uuid::Uuid::FromBytes(bytes);
+  return id;
 }
 
 // One message of every type, each one Encode encodes.
@@ -296,7 +298,7 @@ TEST(ProtocolTest, AJoinRequestsRunIdIsItsFourthFieldsSixteenBytes) {
 TEST(ProtocolTest, AJoinRequestWithNoRunIdReadsAsTheNilOne) {
   const auto decoded = Decode(Envelope(MessageTypeWire::kJoinRequest, TextField(1, "0.1.0")));
 
-  EXPECT_EQ(std::get<JoinRequestWire>(decoded.value()).run, augusta::uuid::Uuid{});
+  EXPECT_TRUE(std::get<JoinRequestWire>(decoded.value()).run.is_nil());
 }
 
 TEST(ProtocolTest, ARunIdOfAnyOtherLengthThanSixteenBytesIsOutOfRange) {

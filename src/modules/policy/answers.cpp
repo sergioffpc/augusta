@@ -12,6 +12,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
 
@@ -31,7 +33,7 @@ std::optional<std::size_t> WholeNumberUpTo(const scripting::Value& value, std::s
 
 // Whether text names session: a Session ID reaches a hook as its canonical
 // string, so the same string, and only it, names it back.
-bool Names(std::string_view text, SessionId session) { return session.ToString() == text; }
+bool Names(std::string_view text, SessionId session) { return boost::uuids::to_string(session) == text; }
 
 }  // namespace
 

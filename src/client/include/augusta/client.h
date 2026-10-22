@@ -5,12 +5,14 @@
 #include <optional>
 #include <string>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/client_content.h"
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
@@ -52,7 +54,7 @@ struct RuntimeConfig {
   /// and its run ends, as the window closing ends it, once the Replay has.
   std::optional<std::string> replay;
   /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
-  uuid::Uuid run = uuid::kNil;
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render

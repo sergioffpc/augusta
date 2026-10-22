@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
@@ -104,7 +105,7 @@ std::uint32_t Number(Id id) {
 
 // A Session ID as the string the script sees: its canonical form, which a
 // script only compares.
-std::string Text(const SessionId& session) { return session.ToString(); }
+std::string Text(const SessionId& session) { return boost::uuids::to_string(session); }
 
 template <typename T>
 py::tuple ToPyTuple(const std::vector<T>& items) {
