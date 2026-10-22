@@ -73,4 +73,24 @@ TEST_F(GpuCrashDumpFilesTest, ADumpThatCannotBeWrittenIsReportedWithItsPathAndWh
   EXPECT_TRUE(written.error().reason);
 }
 
+TEST_F(GpuCrashDumpFilesTest, TheDirectoryIsTheOneTheNextDumpLandsIn) {
+  GpuCrashDumpFiles files(
+      [this](std::uint32_t n) { return Directory() / "dumps" / std::format("run-{}.nv-gpudmp", n); });
+
+  EXPECT_EQ(files.Directory(), Directory() / "dumps");
+}
+
+TEST_F(GpuCrashDumpFilesTest, ANamingWithoutAFolderLandsInTheWorkingDirectory) {
+  const GpuCrashDumpFiles files([](std::uint32_t n) { return std::filesystem::path(std::format("dump-{}", n)); });
+
+  EXPECT_EQ(files.Directory(), std::filesystem::current_path());
+}
+
+TEST_F(GpuCrashDumpFilesTest, ARelativeFolderIsMadeAbsolute) {
+  const GpuCrashDumpFiles files(
+      [](std::uint32_t n) { return std::filesystem::path("dumps") / std::format("dump-{}", n); });
+
+  EXPECT_EQ(files.Directory(), std::filesystem::current_path() / "dumps");
+}
+
 }  // namespace

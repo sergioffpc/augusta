@@ -52,6 +52,16 @@ endif()
 target_compile_definitions(augusta_client_net_stats PRIVATE NOMINMAX)
 augusta_set_module_scope(augusta_client_net_stats CLIENT_ONLY)
 
+# The Profiling Debug panel (see profiling_panel.h), in a Development build
+# only (ADR-0074): its state, which says when the capture window opens and
+# closes; the client Runtime opens and closes the NVTX range.
+if(AUGUSTA_DEBUG_TOOLS)
+  add_library(augusta_client_profiling_panel STATIC profiling_panel.cpp)
+  target_include_directories(augusta_client_profiling_panel PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include)
+  target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
+  augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
+endif()
+
 # What the client loads in the Lobby before it reports Ready, and for which
 # Roster (see lobby_readiness.h): the decision only, so its tests need no
 # renderer or connection.
@@ -102,7 +112,7 @@ target_link_libraries(
 # Debug index and Debug interaction, in a Development build only (ADR-0074,
 # ADR-0075).
 if(AUGUSTA_DEBUG_TOOLS)
-  target_link_libraries(augusta_client PRIVATE augusta_debug augusta_hud)
+  target_link_libraries(augusta_client PRIVATE augusta_client_profiling_panel augusta_debug augusta_hud)
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.

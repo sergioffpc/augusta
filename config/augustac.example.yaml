@@ -58,3 +58,8 @@ input:
 #   # Whether the Debug HUD - the frame rate and the connection's numbers - is
 #   # drawn (optional, default true): true or false.
 #   hud: true
+#   profiling:
+#     # Whether the Profiling Debug panel - a window of frames for Nsight
+#     # Systems to capture, and Aftermath's status - is shown (optional, default
+#     # false): true or false.
+#     panel: false

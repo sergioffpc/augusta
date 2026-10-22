@@ -124,5 +124,14 @@ TEST_F(DebugPanelsSmokeTest, HandsBackAClickedTogglesNewState) {
             (std::vector<debug::ControlEvent>{{.panel = "index", .control = "hud", .value = false}}));
 }
 
+// lavapipe is no NVIDIA GPU, so Aftermath's diagnostics are never on its
+// device, whether Aftermath started or not; a dump would still land somewhere.
+TEST_F(DebugPanelsSmokeTest, ReportsAftermathUnattachedOnLavapipe) {
+  const GpuCrashDumpStatus status = renderer_->GpuCrashDumps();
+
+  EXPECT_FALSE(status.attached);
+  EXPECT_TRUE(status.directory.is_absolute());
+}
+
 }  // namespace
 }  // namespace augusta::renderer::smoke_test

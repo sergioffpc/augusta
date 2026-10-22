@@ -30,6 +30,7 @@
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
+#include "augusta/gpu_crash_dump_files.h"
 #include "augusta/window_events.h"
 #include "debug_hud.h"
 #include "debug_panels_pass.h"
@@ -529,6 +530,12 @@ void Renderer::SetDebugPanels(debug::Panels panels) { impl_->panels = std::move(
 void Renderer::HandleDebugPanelInput(std::span<const window::Event> events) { impl_->debug_panels->Handle(events); }
 
 std::vector<debug::ControlEvent> Renderer::TakeDebugControlEvents() { return std::exchange(impl_->control_events, {}); }
+
+GpuCrashDumpStatus Renderer::GpuCrashDumps() const {
+  return {.enabled = impl_->vulkan.GpuCrashDumpsEnabled(),
+          .attached = impl_->vulkan.GpuCrashDumpsAttached(),
+          .directory = GpuCrashDumpDirectory()};
+}
 #endif
 
 }  // namespace augusta::renderer

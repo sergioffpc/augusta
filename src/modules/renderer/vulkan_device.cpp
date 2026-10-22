@@ -228,7 +228,7 @@ std::string_view Describe(Adapter adapter) {
 
 VulkanDevice::VulkanDevice(const window::Window& window, Adapter adapter, Validation validation) {
   // Aftermath watches only the devices made after it starts.
-  const bool gpu_crash_dumps = EnableGpuCrashDumps();
+  gpu_crash_dumps_enabled_ = EnableGpuCrashDumps();
   LoadVulkan(window);
   CreateInstance(window, validation);
   VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -238,7 +238,7 @@ VulkanDevice::VulkanDevice(const window::Window& window, Adapter adapter, Valida
   }
   surface_ = vk::UniqueSurfaceKHR(surface, *instance_);
   ChoosePhysicalDevice(adapter);
-  CreateDevice(gpu_crash_dumps);
+  CreateDevice(gpu_crash_dumps_enabled_);
   ThrowValidationErrors();
 }
 
@@ -369,6 +369,7 @@ void VulkanDevice::CreateDevice(bool gpu_crash_dumps) {
       vk::PhysicalDeviceDiagnosticsConfigFeaturesNV().setDiagnosticsConfig(vk::True).setPNext(&diagnostics);
   if (HasDiagnosticsConfig(physical_device_, device_extensions_)) {
     features13.setPNext(&diagnostics_feature);
+    gpu_crash_dumps_attached_ = true;
     LOG_INFO("subsystem=renderer event=gpu_crash_dumps_attached");
   }
   device_ = physical_device_.createDeviceUnique(vk::DeviceCreateInfo()

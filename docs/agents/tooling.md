@@ -16,6 +16,26 @@ Debug HUD, and a Shipping build joins only a Shipping server.
 To use nsys refer to 'C:\Program Files\NVIDIA Corporation\Nsight Systems
 2026.5.1\skills\nsight-systems\SKILL.md'
 
+A whole session is too long to read, so a Development client's Profiling Debug
+panel marks a window of frames for nsys to record alone. Start the client under
+a windowed capture:
+
+```sh
+nsys profile --capture-range=nvtx --nvtx-capture=augusta.capture \
+  --env-var=NSYS_NVTX_PROFILER_REGISTER_ONLY=0 augustac.exe
+```
+
+`NSYS_NVTX_PROFILER_REGISTER_ONLY=0` lets the capture start on a range whose
+message is a plain string, as `augusta.capture` is, rather than a registered
+one. Then turn the panel on (`debug.profiling.panel: true`, or from the Debug
+index F1 opens), set N on its slider (1 to 3600 frames, 300 by default) and
+press "Capture N frames": the client opens the NVTX range `augusta.capture`, in
+the default domain, over the next N frames, and nsys records only those. The
+slider and the button are greyed out until the window closes, and the panel
+counts the frames through it. The same panel says whether Aftermath is enabled,
+whether it is attached to the device, and the directory a GPU crash dump would
+land in (below).
+
 ## Graphics/GPU debugging
 
 Nsight Graphics is the replacement for augusta_renderer's former full in-app

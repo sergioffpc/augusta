@@ -93,6 +93,7 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .run = run,
 #if AUGUSTA_DEBUG_TOOLS
       .debug_hud = file_config.debug.hud,
+      .debug_profiling_panel = file_config.debug.profiling_panel,
 #endif
   };
   auto parts = std::make_unique<ClientProcess::Parts>();

@@ -126,13 +126,13 @@ if(AUGUSTA_CLIENT)
   # without its own Aftermath support, so the Renderer attaches Aftermath to
   # the Vulkan device itself. An executable linking this target stages the
   # Aftermath shared libraries beside it with augusta_stage_aftermath.
+  # The dump files with or without it: where a dump would land is what the
+  # Profiling Debug panel shows (Renderer::GpuCrashDumps).
+  target_link_libraries(augusta_renderer PRIVATE augusta_renderer_gpu_crash_dump_files)
   include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
   if(AUGUSTA_AFTERMATH_DIR)
     find_package(boost_dll CONFIG REQUIRED)
-    target_link_libraries(
-      augusta_renderer
-      PRIVATE augusta_aftermath augusta_renderer_gpu_crash_dump_files augusta_version Boost::dll
-    )
+    target_link_libraries(augusta_renderer PRIVATE augusta_aftermath augusta_version Boost::dll)
     target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=1)
   else()
     target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=0)

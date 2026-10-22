@@ -40,8 +40,12 @@ class GpuCrashDumpFiles {
   /// that path, or why the dump could not be written there. From any thread.
   std::expected<std::filesystem::path, GpuCrashDumpError> Write(std::span<const std::byte> dump);
 
+  /// The absolute directory the next dump lands in: the working directory's,
+  /// made absolute, when the naming gives no folder. From any thread.
+  [[nodiscard]] std::filesystem::path Directory() const;
+
  private:
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   GpuCrashDumpNaming naming_;
   std::uint32_t count_ = 0;
 };
@@ -50,6 +54,11 @@ class GpuCrashDumpFiles {
 /// Until it is called they are `gpu-crash-<n>.nv-gpudmp` in the working
 /// directory. Call it before the Renderer is made, so no dump comes first.
 void NameGpuCrashDumps(GpuCrashDumpNaming naming);
+
+/// The absolute directory the process's next GPU crash dump lands in, as
+/// NameGpuCrashDumps names it: what the Profiling Debug panel shows
+/// (Renderer::GpuCrashDumps).
+std::filesystem::path GpuCrashDumpDirectory();
 
 /// Writes the process's next GPU crash dump as NameGpuCrashDumps names it: what
 /// the Renderer's Aftermath callback calls (vulkan_gpu_crash_dumps.h).

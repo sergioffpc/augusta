@@ -34,6 +34,11 @@ inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 struct ClientDebugConfig {
   /// Key `debug.hud` (true or false, default true): whether the Debug HUD is drawn.
   bool hud = true;
+  /// Key `debug.profiling.panel` (true or false, default false): whether the
+  /// Profiling Debug panel is shown. Each later Debug panel is its area's
+  /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
+  /// by default.
+  bool profiling_panel = false;
 };
 #endif
 
