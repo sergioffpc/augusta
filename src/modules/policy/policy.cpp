@@ -43,7 +43,7 @@ scripting::Value ToValue(const PlayerView& player) {
   if (player.killer.has_value()) {
     record.push_back(NumberField("killer", *player.killer));
   }
-  record.push_back(NumberField("session", std::to_underlying(player.session)));
+  record.push_back(StringField("session", player.session.ToString()));
   return scripting::Value{.data = std::move(record)};
 }
 

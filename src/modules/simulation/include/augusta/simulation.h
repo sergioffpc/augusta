@@ -19,6 +19,7 @@
 #include "augusta/policy.h"
 #include "augusta/policy_actions.h"
 #include "augusta/tick.h"
+#include "augusta/uuid.h"
 #include "augusta/weapon.h"
 
 /// \file
@@ -126,7 +127,7 @@ enum class EntityId : std::uint32_t {};
 /// player and the Character it plays.
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
-  policy::SessionId session{};
+  policy::SessionId session = uuid::kNil;
   /// The character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };

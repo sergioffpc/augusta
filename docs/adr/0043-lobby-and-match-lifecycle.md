@@ -19,6 +19,14 @@ and NFR-06 do.
 the match. Players can join and leave the Lobby freely until the match starts.
 The server refuses a join once the Lobby already holds the player count.
 
+**Every admitted player is named by a global Session ID.** The server takes a
+UUIDv7 (ADR-0038) when it admits a join, so a Session ID names one Session
+across every server and every restart, and one taken later sorts later. The
+Lobby's Roster, the Match start and the Match end name each player by it, as 16
+bytes on the wire; Game policy's hooks see it as its canonical lowercase
+hyphenated string (ADR-0022), which is also how the server's lines and the
+client's log context write it (`session=`, ADR-0029).
+
 **Ready is automatic.** A client is Ready once it has loaded everything it needs
 to draw every player in the Lobby: each player's character is known from the
 moment they are admitted (ADR-0042), so the client does its loading here and

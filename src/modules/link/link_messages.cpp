@@ -197,14 +197,6 @@ MessageType TypeOf(std::span<const std::byte> payload) { return Named(protocol::
 
 MessageType TypeOf(const protocol::MessageWire& message) { return Named(protocol::TypeOf(message)); }
 
-protocol::SessionIdWire ToWire(SessionId session) {
-  return static_cast<protocol::SessionIdWire>(static_cast<std::uint32_t>(session));
-}
-
-SessionId FromWire(protocol::SessionIdWire session) {
-  return static_cast<SessionId>(static_cast<std::uint32_t>(session));
-}
-
 protocol::EntityIdWire ToWire(EntityId entity) {
   return static_cast<protocol::EntityIdWire>(static_cast<std::uint32_t>(entity));
 }
@@ -350,7 +342,7 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
 
 protocol::JoinAcceptedWire ToWire(const Admission& admission) {
   return protocol::JoinAcceptedWire{
-      .session = ToWire(admission.session),
+      .session = admission.session,
       .tick_rate_hz = admission.tick_rate_hz,
       .parameters = ToWire(admission.parameters),
       .character = admission.character,
@@ -359,7 +351,7 @@ protocol::JoinAcceptedWire ToWire(const Admission& admission) {
 
 Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
   return Admission{
-      .session = FromWire(accepted.session),
+      .session = accepted.session,
       .tick_rate_hz = accepted.tick_rate_hz,
       .parameters = FromWire(accepted.parameters),
       .character = accepted.character,
@@ -466,7 +458,7 @@ protocol::LobbyWire ToWire(const Lobby& lobby) {
   protocol::LobbyWire result{.version = lobby.version, .roster = {}};
   result.roster.reserve(lobby.roster.size());
   for (const RosterEntry& entry : lobby.roster) {
-    result.roster.push_back(protocol::RosterEntryWire{.session = ToWire(entry.session), .character = entry.character});
+    result.roster.push_back(protocol::RosterEntryWire{.session = entry.session, .character = entry.character});
   }
   return result;
 }
@@ -475,7 +467,7 @@ Lobby FromWire(const protocol::LobbyWire& lobby) {
   Lobby result{.version = lobby.version, .roster = {}};
   result.roster.reserve(lobby.roster.size());
   for (const protocol::RosterEntryWire& entry : lobby.roster) {
-    result.roster.push_back(RosterEntry{.session = FromWire(entry.session), .character = entry.character});
+    result.roster.push_back(RosterEntry{.session = entry.session, .character = entry.character});
   }
   return result;
 }
@@ -487,7 +479,7 @@ protocol::MatchStartWire ToWire(const MatchStart& start) {
   result.players.reserve(start.players.size());
   for (const MatchPlayer& player : start.players) {
     result.players.push_back(protocol::MatchPlayerWire{.spawn = player.spawn,
-                                                       .session = ToWire(player.session),
+                                                       .session = player.session,
                                                        .entity = ToWire(player.entity),
                                                        .character = player.character});
   }
@@ -498,7 +490,7 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
   MatchStart result;
   result.players.reserve(start.players.size());
   for (const protocol::MatchPlayerWire& player : start.players) {
-    result.players.push_back(MatchPlayer{.session = FromWire(player.session),
+    result.players.push_back(MatchPlayer{.session = player.session,
                                          .entity = FromWire(player.entity),
                                          .character = player.character,
                                          .spawn = player.spawn});
@@ -509,11 +501,11 @@ MatchStart FromWire(const protocol::MatchStartWire& start) {
 }
 
 protocol::MatchEndWire ToWire(const MatchEnd& end) {
-  return protocol::MatchEndWire{.winner = end.winner.has_value() ? ToWire(*end.winner) : protocol::kDraw};
+  return protocol::MatchEndWire{.winner = end.winner.has_value() ? *end.winner : protocol::kDraw};
 }
 
 MatchEnd FromWire(const protocol::MatchEndWire& end) {
-  return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(FromWire(end.winner))};
+  return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(end.winner)};
 }
 
 protocol::ReplayViewWire ToWire(const ReplayView& view) {

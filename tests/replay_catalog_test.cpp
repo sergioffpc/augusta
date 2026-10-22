@@ -37,6 +37,12 @@ using augusta::host::ReplayListing;
 using augusta::host::ReplayTerms;
 using augusta::host::SessionId;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr std::uint8_t kTickRate = 60;
 
 // stem as a capture's file is named.
@@ -74,7 +80,7 @@ class ReplayCatalogTest : public ::testing::Test {
                     std::uint64_t last_offset = 30) {
     std::vector<CaptureEntrant> players;
     for (std::size_t i = 0; i < characters.size(); ++i) {
-      players.push_back(CaptureEntrant{.session = SessionId{static_cast<std::uint32_t>(i + 1)},
+      players.push_back(CaptureEntrant{.session = Session(static_cast<std::uint8_t>(i + 1)),
                                        .entity = EntityId{static_cast<std::uint32_t>(i + 1)},
                                        .character = characters[i],
                                        .spawn = {}});
@@ -230,7 +236,7 @@ TEST(ReplayListingTest, ACapturesLengthRunsToItsLastTick) {
   capture::Capture capture;
   capture.header.server_pack = PackOf(1);
   capture.header.tick_rate_hz = kTickRate;
-  capture.joins = {{.session = 4, .character = "soldier", .spawn = {}}};
+  capture.joins = {{.session = Session(4), .character = "soldier", .spawn = {}}};
   capture.events = {{.offset = 59, .event = capture::MatchEnd{}}};
 
   const std::optional<ReplayListing> listing = ListingOf(CaptureNamed("a"), capture, Terms());

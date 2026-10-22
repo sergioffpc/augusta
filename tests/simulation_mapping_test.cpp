@@ -21,7 +21,6 @@ using augusta::assets::HitboxData;
 using augusta::host::EntityId;
 using augusta::host::FromBlob;
 using augusta::host::FromSimulation;
-using augusta::host::SessionId;
 using augusta::host::ToSimulation;
 using augusta::math::Vec3;
 
@@ -32,11 +31,6 @@ HitboxData Triangle(BodyPart part) {
 TEST(SimulationMappingTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
   EXPECT_EQ(FromSimulation(ToSimulation(EntityId{77})), EntityId{77});
   EXPECT_EQ(std::to_underlying(ToSimulation(EntityId{77})), 77U);
-}
-
-TEST(SimulationMappingTest, MatchAndGamePolicyNameAPlayerByTheSameSession) {
-  EXPECT_EQ(FromSimulation(ToSimulation(SessionId{5})), SessionId{5});
-  EXPECT_EQ(std::to_underlying(ToSimulation(SessionId{5})), 5U);
 }
 
 TEST(SimulationMappingTest, EveryBodyPartOfTheBlobIsTheSameBodyPart) {

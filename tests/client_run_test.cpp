@@ -19,13 +19,16 @@
 #include "augusta/uuid.h"
 
 // What a launch tells the player of the Run before it (ADR-0027): a crashed
-// one, in one WARN line naming it and its files, and nothing otherwise.
+// one, in one WARN line naming it and its files, and nothing otherwise. And
+// the client's Session in its log (ADR-0029): from its admission to its end,
+// every line carries `session=`, and none does after.
 namespace {
 
 using augusta::client::GpuDumpPath;
 using augusta::client::LogPath;
 using augusta::client::MinidumpPath;
 using augusta::client::ReportPreviousRun;
+using augusta::client::SessionLogContext;
 using augusta::uuid::Uuid;
 
 Uuid RunId(std::uint8_t n) {
@@ -113,6 +116,37 @@ TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
   EXPECT_EQ(*written, GpuDumpPath(*executable_directory, run.id, 1));
   std::error_code ignored;
   std::filesystem::remove(*written, ignored);
+}
+
+const Uuid kSession =
+    Uuid::FromBytes({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11});
+
+// What one LOG_INFO of message writes to the console.
+std::string WrittenInfoLine(std::string_view message) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  testing::internal::CaptureStdout();
+  LOG_INFO("{}", message);
+  return testing::internal::GetCapturedStdout();
+}
+
+TEST(SessionLogContextTest, EveryLineWhileTheSessionIsHeldCarriesItsSessionId) {
+  const SessionLogContext held(kSession);
+
+  const std::string written = WrittenInfoLine("subsystem=test event=admitted");
+
+  EXPECT_NE(written.find("event=admitted session=0190a1b2-c3d4-7000-8000-000000000011\n"), std::string::npos)
+      << written;
+}
+
+TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
+  {
+    const SessionLogContext held(kSession);
+  }
+
+  const std::string written = WrittenInfoLine("subsystem=test event=ended");
+
+  EXPECT_EQ(written.find("session="), std::string::npos) << written;
 }
 
 }  // namespace

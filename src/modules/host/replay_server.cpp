@@ -48,9 +48,9 @@ namespace augusta::host {
 
 namespace {
 
-// A Replay viewer plays no one, so it is no player's session: Session IDs
-// start at 1 (ADR-0038).
-constexpr SessionId kViewerSession{0};
+// A Replay viewer plays no one, so it is no player's session: the nil UUID,
+// which no Session ID is (ADR-0038).
+constexpr SessionId kViewerSession{};
 
 // The characters' paths, in the scenario's order: what a capture's Joins must name.
 std::vector<std::string> PathsOf(const std::vector<scenario::Character>& characters) {

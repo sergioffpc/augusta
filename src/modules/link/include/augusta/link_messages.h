@@ -45,9 +45,6 @@ namespace augusta::link {
 [[nodiscard]] MessageType TypeOf(std::span<const std::byte> payload);
 [[nodiscard]] MessageType TypeOf(const protocol::MessageWire& message);
 
-[[nodiscard]] protocol::SessionIdWire ToWire(SessionId session);
-[[nodiscard]] SessionId FromWire(protocol::SessionIdWire session);
-
 [[nodiscard]] protocol::EntityIdWire ToWire(EntityId entity);
 [[nodiscard]] EntityId FromWire(protocol::EntityIdWire entity);
 

@@ -65,6 +65,12 @@ namespace capture = augusta::capture;
 
 using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 // 2026-10-09 10:15:00.123 UTC.
 const Milliseconds kStarted{std::chrono::milliseconds{1'791'540'900'123}};
 constexpr std::uint64_t kFirstTick = 1000;
@@ -77,8 +83,8 @@ capture::Header Header() {
 }
 
 std::vector<CaptureEntrant> TwoPlayers() {
-  return {CaptureEntrant{.session = SessionId{7}, .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
-          CaptureEntrant{.session = SessionId{8}, .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
+  return {CaptureEntrant{.session = Session(7), .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
+          CaptureEntrant{.session = Session(8), .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}};
 }
 
 Command Walk(std::uint64_t seen_tick) {
@@ -210,7 +216,7 @@ TEST_F(CapturerTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
     capturer.Command(kFirstTick + 1, EntityId{80}, Walk(kFirstTick));
     capturer.Death(kFirstTick + 5, EntityId{80}, EntityId{70});
     capturer.Leave(kFirstTick + 6, EntityId{80});
-    capturer.EndMatch(kFirstTick + 6, SessionId{7});
+    capturer.EndMatch(kFirstTick + 6, Session(7));
   }
 
   const std::vector<std::filesystem::path> files = Files();
@@ -221,8 +227,8 @@ TEST_F(CapturerTest, AMatchPlayedToItsEndReadsBackAsPlayed) {
   const Command first = Walk(0);
   const capture::Capture expected{
       .header = header,
-      .joins = {{.session = 7, .character = "soldier", .spawn = {1, 0, 2}},
-                {.session = 8, .character = "sniper", .spawn = {-3, 0, 4}}},
+      .joins = {{.session = Session(7), .character = "soldier", .spawn = {1, 0, 2}},
+                {.session = Session(8), .character = "sniper", .spawn = {-3, 0, 4}}},
       .events = {{.offset = 0, .event = capture::Command{.player = 1, .seen_offset = -2, .command = first}},
                  {.offset = 1, .event = capture::Command{.player = 2, .seen_offset = 0, .command = first}},
                  {.offset = 5, .event = capture::Death{.victim = 2, .killer = 1}},
@@ -254,7 +260,7 @@ TEST_F(CapturerTest, EachMatchIsAFileOfItsOwn) {
     capturer.EndMatch(kFirstTick + 10, std::nullopt);
     capturer.StartMatch(TwoPlayers(), kFirstTick + 100, kStarted + std::chrono::seconds{5});
     capturer.Command(kFirstTick + 103, EntityId{70}, Walk(kFirstTick + 101));
-    capturer.EndMatch(kFirstTick + 110, SessionId{8});
+    capturer.EndMatch(kFirstTick + 110, Session(8));
   }
 
   const std::vector<std::filesystem::path> files = Files();
@@ -582,7 +588,7 @@ TEST_F(CapturerTest, ACaptureThatLosesNothingIsTheSameInEitherMode) {
       capturer.StartMatch(TwoPlayers(), kFirstTick, kStarted);
       capturer.Command(kFirstTick, EntityId{70}, Walk(kFirstTick - 2));
       capturer.Death(kFirstTick + 5, EntityId{80}, EntityId{70});
-      capturer.EndMatch(kFirstTick + 6, SessionId{7});
+      capturer.EndMatch(kFirstTick + 6, Session(7));
       capturer.WaitUntilWritten();
       EXPECT_EQ(capturer.Health(), CaptureHealth::kEnabled);
       EXPECT_FALSE(capturer.Loss().has_value());

@@ -32,9 +32,10 @@
 namespace augusta::link {
 
 /// The server's name for one connected player (GLOSSARY.md, "Session ID"), as
-/// a message carries it: assigned when the server admits the join. Distinct
-/// from the transport's handle for the connection, and not a credential.
-enum class SessionId : std::uint32_t {};
+/// a message carries it: a UUIDv7 assigned when the server admits the join,
+/// unique across every server and every restart. Distinct from the transport's
+/// handle for the connection, and not a credential.
+using SessionId = uuid::Uuid;
 
 /// The server's name for one dynamic body (GLOSSARY.md, "Entity ID"), as a
 /// message carries it: a player's is given in Match start. It names the body,
@@ -129,7 +130,7 @@ struct Death {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// Its character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
@@ -144,7 +145,7 @@ struct Lobby {
 
 /// One player in a match, the body it controls, and where the server spawned it.
 struct MatchPlayer {
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The body this player's commands move for the whole match.
   EntityId entity{};
   /// Its character (see RosterEntry::character).
@@ -193,7 +194,7 @@ enum class JoinRefusal : std::uint8_t {
 /// What the server said when it admitted a client.
 struct Admission {
   /// The session the server assigned to the client.
-  SessionId session{};
+  SessionId session = uuid::kNil;
   /// The rate, in Hz, at which the server ticks and the client must: the
   /// server's startup setting, fixed for the life of its process. The client
   /// has no rate of its own.

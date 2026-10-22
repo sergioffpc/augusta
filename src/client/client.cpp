@@ -21,6 +21,7 @@
 #include "augusta/client_character_loader.h"
 #include "augusta/client_content.h"
 #include "augusta/client_phases.h"
+#include "augusta/client_run.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -87,6 +88,9 @@ struct ClientRuntime::Impl {
   LobbyReadiness lobby_readiness;
   input::Input input;
   audio::Engine audio;
+  // `session=` on every line from the admission WaitForAdmission sees: declared
+  // before the Session, so it ends after it, its last lines included.
+  std::optional<SessionLogContext> session_log;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
@@ -378,6 +382,7 @@ struct ClientRuntime::Impl {
   }
 
   // Keeps the window responsive until the server admits this client, then
+  // has every line carry its Session ID (session_log), and
   // hands PresentationWorld the parameters it sent and its tick: what tracers
   // fly by and ADS zooms to. So every render frame is drawn admitted. Returns
   // why the run failed first, if it did; returns nothing if the window closed
@@ -390,6 +395,7 @@ struct ClientRuntime::Impl {
       }
       const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
       if (const std::optional<harness::Admission>& accepted = view->accepted; accepted.has_value()) {
+        session_log.emplace(accepted->session);
         if (reenactment.has_value()) {
           if (const std::optional<std::string> mismatch = reenactment->PlayerCountMismatch(*accepted)) {
             LOG_WARN("subsystem=reenactment {}", *mismatch);

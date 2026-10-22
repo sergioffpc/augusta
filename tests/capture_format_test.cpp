@@ -23,6 +23,7 @@
 #include "augusta/failure.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
+#include "augusta/uuid.h"
 #include "frame.h"
 
 // A Match capture's file (ADR-0050) through the capture module's interface:
@@ -53,6 +54,12 @@ using augusta::capture::StartsWithMagic;
 using augusta::capture::Write;
 using augusta::capture::WriteCapture;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr augusta::uuid::Uuid Session(std::uint8_t last) {
+  return augusta::uuid::Uuid::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr std::chrono::sys_time<std::chrono::milliseconds> kStarted{std::chrono::milliseconds{1'791'000'000'123}};
 
 Header TheHeader() {
@@ -63,8 +70,8 @@ Header TheHeader() {
 }
 
 std::vector<Join> TwoJoins() {
-  return {Join{.session = 7, .character = "soldier", .spawn = {1.0F, 0.0F, -2.5F}},
-          Join{.session = 9, .character = "scout", .spawn = {-4.0F, 0.25F, 3.0F}}};
+  return {Join{.session = Session(7), .character = "soldier", .spawn = {1.0F, 0.0F, -2.5F}},
+          Join{.session = Session(9), .character = "scout", .spawn = {-4.0F, 0.25F, 3.0F}}};
 }
 
 // A Command whose every field survives the protocol's grids exactly.
@@ -147,8 +154,8 @@ TEST(CaptureFormatTest, EachPlayersJoinIsAtItsNumberLessOne) {
   const auto read = Read(Bytes(TwoPlayers(MatchEnd{})));
   ASSERT_TRUE(read.has_value());
   ASSERT_EQ(read->joins.size(), 2U);
-  EXPECT_EQ(read->joins[0].session, 7U);
-  EXPECT_EQ(read->joins[1].session, 9U);
+  EXPECT_EQ(read->joins[0].session, Session(7));
+  EXPECT_EQ(read->joins[1].session, Session(9));
 }
 
 // A capture with no events, stopped before its Match end, reads as it was.

@@ -109,8 +109,8 @@ void Inbox::OnJoinAccepted(const Admission& accepted) {
     return;
   }
   Publish([&](ServerView& next) { next.accepted = accepted; });
-  LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
-           static_cast<std::uint32_t>(accepted.session), accepted.character, accepted.tick_rate_hz);
+  LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}", accepted.session,
+           accepted.character, accepted.tick_rate_hz);
 }
 
 void Inbox::OnJoinRefused(JoinRefusal reason) {
@@ -163,7 +163,7 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   // still taken: they stay under this match, which a view takes until the next
   // starts.
   if (end.winner.has_value()) {
-    LOG_INFO("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
+    LOG_INFO("subsystem=harness event=match_ended winner={}", *end.winner);
   } else {
     LOG_INFO("subsystem=harness event=match_ended winner=draw");
   }

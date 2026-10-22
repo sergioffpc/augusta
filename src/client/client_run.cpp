@@ -88,4 +88,10 @@ void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid&
            Utf8(directory), files);
 }
 
+SessionLogContext::SessionLogContext(const uuid::Uuid& session) {
+  logging::SetContext(logging::ContextField::kSession, session.ToString());
+}
+
+SessionLogContext::~SessionLogContext() { logging::ClearContext(logging::ContextField::kSession); }
+
 }  // namespace augusta::client

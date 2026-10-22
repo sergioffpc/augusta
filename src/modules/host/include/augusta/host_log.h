@@ -42,8 +42,6 @@ enum class Leaving : std::uint8_t {
 /// The Link's peer identity as a number, for log lines.
 [[nodiscard]] std::uint32_t PeerNumber(link::PeerId peer);
 
-[[nodiscard]] std::uint32_t SessionNumber(SessionId session);
-
 /// how as a departure's log line says it.
 [[nodiscard]] std::string_view LeavingName(Leaving how);
 

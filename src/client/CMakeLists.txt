@@ -77,6 +77,7 @@ target_link_libraries(
     augusta_client_phases
     augusta_client_frame_mapping
     augusta_client_lobby_readiness
+    augusta_client_run
     augusta_client_net_stats
     augusta_audio
     augusta_gameplay

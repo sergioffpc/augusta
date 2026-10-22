@@ -23,8 +23,14 @@ using augusta::host::SessionId;
 using augusta::link::ConnectionStats;
 using augusta::server::ConnectionHealth;
 
-constexpr SessionId kSession{7};
-constexpr SessionId kOtherSession{8};
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
+constexpr SessionId kSession = Session(7);
+constexpr SessionId kOtherSession = Session(8);
 
 // A connection the transport has fully measured.
 ConnectionStats Measured() {
@@ -76,7 +82,7 @@ class ConnectionHealthTest : public ::testing::Test {
         continue;
       }
       for (const prometheus::ClientMetric& metric : collected.metric) {
-        if (HasLabel(metric, "session_id", std::to_string(static_cast<std::uint32_t>(session))) &&
+        if (HasLabel(metric, "session_id", session.ToString()) &&
             (direction.empty() || HasLabel(metric, "direction", direction))) {
           return metric.gauge.value;
         }
@@ -95,7 +101,7 @@ class ConnectionHealthTest : public ::testing::Test {
     int count = 0;
     for (const prometheus::MetricFamily& collected : health_.Collect()) {
       for (const prometheus::ClientMetric& metric : collected.metric) {
-        count += HasLabel(metric, "session_id", std::to_string(static_cast<std::uint32_t>(session))) ? 1 : 0;
+        count += HasLabel(metric, "session_id", session.ToString()) ? 1 : 0;
       }
     }
     return count;
@@ -249,14 +255,14 @@ TEST_F(ConnectionHealthTest, EveryCollectionIsOneRecord) {
     for (int i = 0; i < kRecords; ++i) {
       if (i % 2 == 0) {
         health_.Record({{.session = kSession, .stats = Measured()},
-                        {.session = SessionId{static_cast<std::uint32_t>(100 + i)}, .stats = Measured()}});
+                        {.session = Session(static_cast<std::uint8_t>(100 + i)), .stats = Measured()}});
       } else {
         health_.Record({{.session = kSession, .stats = fast}});
       }
     }
   });
 
-  const std::string session_label = std::to_string(static_cast<std::uint32_t>(kSession));
+  const std::string session_label = kSession.ToString();
   int mixed = 0;
   for (int i = 0; i < kRecords / 10; ++i) {
     std::optional<double> rtt;

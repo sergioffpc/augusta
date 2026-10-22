@@ -232,13 +232,15 @@ struct ParametersWire {
 };
 
 /// The server's name for one connected player, distinct from the transport's
-/// handle for the connection. Identifies a player inside messages; it is not a
-/// credential, since the server tells senders apart by connection.
-enum class SessionIdWire : std::uint32_t {};
+/// handle for the connection: a UUIDv7, unique across every server and every
+/// restart, carried as its 16 bytes in RFC 9562's order (ADR-0038). Identifies
+/// a player inside messages; it is not a credential, since the server tells
+/// senders apart by connection.
+using SessionIdWire = uuid::Uuid;
 
-/// The session a Match end names as its winner when it is a draw: Session IDs
-/// start at 1, so none is ever 0 (ADR-0038).
-inline constexpr SessionIdWire kDraw{};
+/// The session a Match end names as its winner when it is a draw: the nil
+/// UUID, which no Session ID is (ADR-0038).
+inline constexpr SessionIdWire kDraw = uuid::kNil;
 
 /// The server's name for one dynamic body - today a player's, later any that
 /// moves (a crate, a door). Distinct from the session of the player who
@@ -314,7 +316,7 @@ struct EntityStateWire {
 /// Server to client: the join succeeded, and the client waits in the Lobby.
 struct JoinAcceptedWire {
   /// The session the server assigned to this client.
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The rate, in Hz, at which the server simulates and this client must predict:
   /// the server's startup setting, fixed for the life of the server process and
   /// so sent here once and never again.
@@ -406,7 +408,7 @@ struct AuthoritativeStateWire {
 
 /// One player in the Lobby.
 struct RosterEntryWire {
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The player's character (see JoinAcceptedWire::character).
   std::string character;
 
@@ -435,7 +437,7 @@ struct ReadyWire {
 /// One player in a match, the body it controls, and where the server spawns it.
 struct MatchPlayerWire {
   math::Vec3 spawn{};
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// The body this player's commands move for the whole match.
   EntityIdWire entity{};
   /// The player's character (see JoinAcceptedWire::character).
@@ -734,7 +736,7 @@ struct CapturedJoinWire {
   /// Where the Match start spawned it, on the position grid.
   math::Vec3 spawn{};
   std::uint32_t offset = 0;
-  SessionIdWire session{};
+  SessionIdWire session = uuid::kNil;
   /// Its Character, by its name in the scenario's manifest (ADR-0042); at most
   /// kMaxCharacterNameLength bytes.
   std::string character;

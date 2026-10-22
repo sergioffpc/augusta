@@ -290,8 +290,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   if (!spawned_first(*sessions[0])) {
     std::swap(sessions[0], sessions[1]);
   }
-  const auto shooter =
-      static_cast<augusta::host::SessionId>(std::to_underlying(sessions[0]->GetServerView()->accepted->session));
+  const auto shooter = sessions[0]->GetServerView()->accepted->session;
   Command fire;
   const Vec3 aim = Vec3(0.0F, 1.65F - kEyeHeight, -kSpacing);
   fire.yaw = 0.0F;
@@ -518,7 +517,7 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_FALSE(received.empty());
   const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&received.front());
   ASSERT_NE(accepted, nullptr);
-  EXPECT_EQ(accepted->session, protocol::SessionIdWire{0});
+  EXPECT_EQ(accepted->session, protocol::kDraw);
   EXPECT_EQ(accepted->tick_rate_hz, kTickRate);
   EXPECT_EQ(accepted->parameters.player_count, 2);
   const std::vector<protocol::MatchStartWire> starts = Of<protocol::MatchStartWire>(received);
@@ -528,7 +527,7 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_EQ(capture.joins.size(), 2U);
   for (std::size_t i = 0; i < 2; ++i) {
     const augusta::capture::Join& join = capture.joins[i];
-    EXPECT_EQ(starts[0].players[i].session, static_cast<protocol::SessionIdWire>(join.session));
+    EXPECT_EQ(starts[0].players[i].session, join.session);
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }

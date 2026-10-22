@@ -6,6 +6,7 @@
 #include <expected>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -28,8 +29,9 @@ std::optional<std::size_t> WholeNumberUpTo(const scripting::Value& value, std::s
   return static_cast<std::size_t>(*number);
 }
 
-// Whether number names session: Session IDs reach a hook as Lua numbers.
-bool Names(double number, SessionId session) { return static_cast<double>(std::to_underlying(session)) == number; }
+// Whether text names session: a Session ID reaches a hook as its canonical
+// string, so the same string, and only it, names it back.
+bool Names(std::string_view text, SessionId session) { return session.ToString() == text; }
 
 }  // namespace
 
@@ -56,7 +58,7 @@ std::expected<std::optional<PolicyAction>, ActionRefusal> ReadTickAction(const s
   if (const auto* draw = std::get_if<bool>(&field.value.data); field.key == "draw" && draw != nullptr && *draw) {
     return MatchEnd{.winner = std::nullopt};
   }
-  const auto* winner = std::get_if<double>(&field.value.data);
+  const auto* winner = std::get_if<std::string>(&field.value.data);
   if (field.key != "winner" || winner == nullptr) {
     return std::unexpected(ActionRefusal::kNotAnAction);
   }
@@ -100,7 +102,7 @@ std::expected<std::vector<std::size_t>, SpawnRefusal> ReadSpawnAssignment(const 
         (*record)[1].key != "spawn_point") {
       return std::unexpected(SpawnRefusal::kNotAnAssignment);
     }
-    const auto* session = std::get_if<double>(&(*record)[0].value.data);
+    const auto* session = std::get_if<std::string>(&(*record)[0].value.data);
     const auto player = std::ranges::find_if(
         players, [&](SessionId candidate) { return session != nullptr && Names(*session, candidate); });
     if (player == players.end()) {

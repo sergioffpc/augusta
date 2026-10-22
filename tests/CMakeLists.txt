@@ -769,7 +769,8 @@ if(AUGUSTA_CLIENT)
   target_link_libraries(augusta_client_run_files_tests PRIVATE augusta_client_run_files GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_client_run_files_tests)
 
-  # What a launch tells the player of the Run before it (see client_run.h).
+  # What a launch tells the player of the Run before it, and the Session in
+  # the log once admitted (see client_run.h).
   add_executable(augusta_client_run_tests client_run_test.cpp)
   target_link_libraries(
     augusta_client_run_tests

@@ -11,7 +11,9 @@
 // - flags and a small enumeration share one uint32 bitfield, with the bit
 //   layouts ADR-0038 gives, and the bits no field uses are 0;
 // - the Parameters, a rifle's two times, health and damage are float;
-// - a Tick and a Sequence are uint64, an entity ID and a session ID uint32;
+// - a Tick and a Sequence are uint64, an entity ID uint32;
+// - a session ID is bytes holding its UUIDv7's 16 bytes in RFC 9562's order,
+//   an empty or all-zero one the nil UUID, which names no Session;
 // - a Run ID is bytes holding its 16 bytes, in RFC 9562's order;
 // - text (an engine version, a Character, a capture's name) is bytes holding
 //   UTF-8, which the codec checks itself, so a peer's bad text is refused as
@@ -139,7 +141,8 @@ message Parameters {
 
 // Server to client: the join succeeded, and the client waits in the Lobby.
 message JoinAccepted {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 5;
   uint32 tick_rate_hz = 2;
   Parameters parameters = 3;
   bytes character = 4;
@@ -222,7 +225,8 @@ message AuthoritativeState {
 }
 
 message RosterEntry {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 3;
   bytes character = 2;
 }
 
@@ -238,7 +242,8 @@ message Ready {
 }
 
 message MatchPlayer {
-  uint32 session = 1;
+  reserved 1;
+  bytes session = 7;
   uint32 entity = 2;
   bytes character = 3;
   // On the position grid.
@@ -257,8 +262,9 @@ message MatchStart {
 
 // Server to client: the match is over.
 message MatchEnd {
-  // The winner's session, or 0 for a draw.
-  uint32 winner = 1;
+  reserved 1;
+  // The winner's session, or the nil UUID for a draw.
+  bytes winner = 2;
 }
 
 // Server to client: one round a player fired (ADR-0044).
@@ -364,7 +370,8 @@ message CapturedJoin {
   uint32 offset = 1;
   // The player's number in the capture, from 1.
   uint32 player = 2;
-  uint32 session = 3;
+  reserved 3;
+  bytes session = 8;
   bytes character = 4;
   // On the position grid.
   sint32 spawn_x = 5;

@@ -55,6 +55,12 @@ using augusta::tick::Tick;
 using CapturedCommand = augusta::capture::Command;
 using CapturedPlayer = augusta::capture::Player;
 
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId::FromBytes(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 constexpr std::uint8_t kTickRate = 60;
 // At 60 Hz the server's queue holds a movement for 6 ticks (command::HeldTicks).
 constexpr int kHeldTicks = 6;
@@ -78,8 +84,8 @@ Command Walk(float speed, bool fire = false) {
 Capture TheMatch() {
   Capture capture{
       .header = {.engine_version = "2.0.1", .tick_rate_hz = kTickRate, .started = {}},
-      .joins = {{.session = 7, .character = "soldier", .spawn = {1, 0, 2}},
-                {.session = 8, .character = "sniper", .spawn = {-3, 0, 4}}},
+      .joins = {{.session = Session(7), .character = "soldier", .spawn = {1, 0, 2}},
+                {.session = Session(8), .character = "sniper", .spawn = {-3, 0, 4}}},
       .events = {{.offset = 0, .event = CapturedCommand{.player = 2, .seen_offset = -3, .command = Walk(1.0F)}},
                  {.offset = 1, .event = CapturedCommand{.player = 2, .seen_offset = -2, .command = Walk(1.0F)}},
                  {.offset = 1, .event = CapturedCommand{.player = 1, .seen_offset = 1, .command = Walk(-1.0F, true)}},
@@ -345,7 +351,7 @@ ServerView InMatch(std::optional<Tick> tick, augusta::tick::Sequence acknowledge
   view.in_match = true;
   MatchStart start{.players = {}, .first_tick = kFirstTick};
   for (std::uint32_t i = 0; i < 3; ++i) {
-    start.players.push_back(MatchPlayer{.session = SessionId{11 + i},
+    start.players.push_back(MatchPlayer{.session = Session(static_cast<std::uint8_t>(11 + i)),
                                         .entity = EntityId{21 + i},
                                         .character = "soldier",
                                         .spawn = Vec3(static_cast<float>(i + 1), 0, 0)});
@@ -447,7 +453,7 @@ TEST(ReenactmentTest, ItEndsAtTheCapturesMatchEndOrTheServersWhicheverComesFirst
   EXPECT_EQ(run.Check(InMatch(kFirstTick + 50), 0), Progress::kEnded);
   ServerView ended = InMatch(std::nullopt);
   ended.in_match = false;
-  ended.match_end = augusta::harness::MatchEnd{.winner = SessionId{13}};
+  ended.match_end = augusta::harness::MatchEnd{.winner = Session(13)};
   EXPECT_EQ(run.Check(ended, 0), Progress::kEnded);
 }
 
@@ -478,7 +484,7 @@ TEST(ReenactmentTest, ItsOutcomePutsEachCapturedDeathAndTheMatchEndBesideWhatThe
   const Reenactment run(ThreePlayerScript());
   ServerView ended = InMatch(std::nullopt);
   ended.in_match = false;
-  ended.match_end = augusta::harness::MatchEnd{.winner = SessionId{13}};
+  ended.match_end = augusta::harness::MatchEnd{.winner = Session(13)};
   const std::vector<ObservedDeath> observed = {
       {.tick = kFirstTick + 31, .victim = EntityId{23}, .killer = EntityId{21}},
       {.tick = kFirstTick + 35, .victim = EntityId{22}, .killer = EntityId{23}},

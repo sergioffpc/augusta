@@ -11,6 +11,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/link.h"
+#include "augusta/uuid.h"
 
 namespace augusta::host {
 
@@ -81,11 +82,9 @@ std::expected<Admission, JoinRefusal> Match::Join(link::PeerId peer, const JoinR
     return std::unexpected(JoinRefusal::kLobbyFull);
   }
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member& member = members_
-                             .emplace(peer, Member{.session = static_cast<SessionId>(next_session_++),
-                                                   .character = *found,
-                                                   .spawn = request.spawn})
-                             .first->second;
+  const Member& member =
+      members_.emplace(peer, Member{.session = uuid::Generate(), .character = *found, .spawn = request.spawn})
+          .first->second;
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
 }

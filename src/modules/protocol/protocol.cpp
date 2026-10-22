@@ -222,7 +222,7 @@ void Write(const ParametersWire& wire, pb::Parameters& parameters, Outbound& out
 }
 
 void Write(const MatchPlayerWire& wire, pb::MatchPlayer& player, Outbound& out) {
-  player.set_session(static_cast<std::uint32_t>(wire.session));
+  player.set_session(BytesOf(wire.session));
   player.set_entity(static_cast<std::uint32_t>(wire.entity));
   player.set_character(out.Text(wire.character, kMaxCharacterNameLength));
   player.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
@@ -257,7 +257,7 @@ struct Encoder {
 
   void operator()(const JoinAcceptedWire& wire) const {
     pb::JoinAccepted& accepted = *message.mutable_join_accepted();
-    accepted.set_session(static_cast<std::uint32_t>(wire.session));
+    accepted.set_session(BytesOf(wire.session));
     accepted.set_tick_rate_hz(wire.tick_rate_hz);
     Write(wire.parameters, *accepted.mutable_parameters(), out);
     accepted.set_character(out.Text(wire.character, kMaxCharacterNameLength));
@@ -292,7 +292,7 @@ struct Encoder {
     if (out.Fits(wire.roster.size(), limits::kMaxPlayers)) {
       for (const RosterEntryWire& entry : wire.roster) {
         pb::RosterEntry& written = *lobby.add_roster();
-        written.set_session(static_cast<std::uint32_t>(entry.session));
+        written.set_session(BytesOf(entry.session));
         written.set_character(out.Text(entry.character, kMaxCharacterNameLength));
       }
     }
@@ -311,9 +311,7 @@ struct Encoder {
     start.set_match(BytesOf(wire.match));
   }
 
-  void operator()(const MatchEndWire& wire) const {
-    message.mutable_match_end()->set_winner(static_cast<std::uint32_t>(wire.winner));
-  }
+  void operator()(const MatchEndWire& wire) const { message.mutable_match_end()->set_winner(BytesOf(wire.winner)); }
 
   void operator()(const ShotWire& wire) const {
     pb::Shot& shot = *message.mutable_shot();
@@ -589,7 +587,7 @@ ParametersWire Read(const pb::Parameters& parameters, Inbound& in) {
 }
 
 JoinAcceptedWire Read(const pb::JoinAccepted& accepted, Inbound& in) {
-  return JoinAcceptedWire{.session = static_cast<SessionIdWire>(accepted.session()),
+  return JoinAcceptedWire{.session = in.Uuid(accepted.session()),
                           .tick_rate_hz = in.Narrow(accepted.tick_rate_hz()),
                           .parameters = Read(accepted.parameters(), in),
                           .character = in.Text(accepted.character(), kMaxCharacterNameLength)};
@@ -627,7 +625,7 @@ AuthoritativeStateWire Read(const pb::AuthoritativeState& state, Inbound& in) {
 LobbyWire Read(const pb::Lobby& lobby, Inbound& in) {
   return LobbyWire{.version = lobby.version(),
                    .roster = ReadList(lobby.roster(), limits::kMaxPlayers, in, [&in](const pb::RosterEntry& entry) {
-                     return RosterEntryWire{.session = static_cast<SessionIdWire>(entry.session()),
+                     return RosterEntryWire{.session = in.Uuid(entry.session()),
                                             .character = in.Text(entry.character(), kMaxCharacterNameLength)};
                    })};
 }
@@ -638,7 +636,7 @@ MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
                                               return MatchPlayerWire{
                                                   .spawn = in.FromSteps(player.spawn_x(), player.spawn_y(),
                                                                         player.spawn_z(), math::kPositionGrid),
-                                                  .session = static_cast<SessionIdWire>(player.session()),
+                                                  .session = in.Uuid(player.session()),
                                                   .entity = static_cast<EntityIdWire>(player.entity()),
                                                   .character = in.Text(player.character(), kMaxCharacterNameLength)};
                                             }),
@@ -716,7 +714,7 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
     case pb::Message::kMatchStart:
       return Read(message.match_start(), in);
     case pb::Message::kMatchEnd:
-      return MatchEndWire{.winner = static_cast<SessionIdWire>(message.match_end().winner())};
+      return MatchEndWire{.winner = in.Uuid(message.match_end().winner())};
     case pb::Message::kShot:
       return Read(message.shot(), in);
     case pb::Message::kHitConfirmation:
@@ -838,7 +836,7 @@ struct RecordEncoder {
     pb::CapturedJoin& join = *record.mutable_join();
     join.set_offset(wire.offset);
     join.set_player(wire.player);
-    join.set_session(static_cast<std::uint32_t>(wire.session));
+    join.set_session(BytesOf(wire.session));
     join.set_character(out.Text(wire.character, kMaxCharacterNameLength));
     join.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
     join.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
@@ -884,7 +882,7 @@ CaptureHeaderWire Read(const pb::CaptureHeader& header, Inbound& in) {
 CapturedJoinWire Read(const pb::CapturedJoin& join, Inbound& in) {
   return CapturedJoinWire{.spawn = in.FromSteps(join.spawn_x(), join.spawn_y(), join.spawn_z(), math::kPositionGrid),
                           .offset = join.offset(),
-                          .session = static_cast<SessionIdWire>(join.session()),
+                          .session = in.Uuid(join.session()),
                           .character = in.Text(join.character(), kMaxCharacterNameLength),
                           .player = in.Narrow(join.player())};
 }

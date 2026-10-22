@@ -8,7 +8,8 @@
 
 /// \file
 /// The start of one Run of augustac (GLOSSARY.md): its Run ID, and the files it
-/// leaves beside the executable (ADR-0027), named as run_files.h names them.
+/// leaves beside the executable (ADR-0027), named as run_files.h names them;
+/// and its Session's ID in its log once it is admitted.
 namespace augusta::client {
 
 /// A Run once it has started.
@@ -36,6 +37,20 @@ Run BeginRun();
 /// current in directory and its files when that Run ended in a crash, so a
 /// player learns of it though its window closed; nothing otherwise.
 void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid& current);
+
+/// While it lives, every line carries `session=<session>` (ADR-0029): held by
+/// ClientRuntime from the admission it sees to the Session's end, so the
+/// client's lines map to the server's about the same Session.
+class SessionLogContext {
+ public:
+  explicit SessionLogContext(const uuid::Uuid& session);
+  ~SessionLogContext();
+
+  SessionLogContext(const SessionLogContext&) = delete;
+  SessionLogContext& operator=(const SessionLogContext&) = delete;
+  SessionLogContext(SessionLogContext&&) = delete;
+  SessionLogContext& operator=(SessionLogContext&&) = delete;
+};
 
 }  // namespace augusta::client
 
