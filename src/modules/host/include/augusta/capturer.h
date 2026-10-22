@@ -13,6 +13,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/capture_retention.h"
 #include "augusta/command.h"
@@ -21,7 +24,6 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// A Match capture (ADR-0050): one file per Match, from its Match start to its
@@ -107,7 +109,7 @@ enum class CaptureStep : std::uint8_t {
 /// own subsystem's, named for the step: kCaptureWriteFailed (create, write),
 /// kCaptureFlushFailed, kCaptureQueueFull, kCaptureRecordTooLong or
 /// kCaptureRetentionBudget.
-[[nodiscard]] failure::Failure LostCapture(CaptureMode mode, const uuid::Uuid& match, CaptureStep step,
+[[nodiscard]] failure::Failure LostCapture(CaptureMode mode, const boost::uuids::uuid& match, CaptureStep step,
                                            std::string detail);
 
 /// "optional" or "strict", as logs name mode.
@@ -184,7 +186,7 @@ inline constexpr std::size_t kCaptureQueueCapacity = 4096;
 
 /// One player of a Match start, as Host hands it to a Capturer.
 struct CaptureEntrant {
-  SessionId session = uuid::kNil;
+  SessionId session = boost::uuids::nil_uuid();
   /// The body its Commands move, which the Simulation's events name it by.
   EntityId entity{};
   std::string character;
@@ -241,7 +243,7 @@ class Capturer {
   /// its header holds and its file is named by (never nil, and never one
   /// opened before), its players, in their Match start's order, first_tick its
   /// first tick, started when it started.
-  void StartMatch(const uuid::Uuid& match, const std::vector<CaptureEntrant>& players, tick::Tick first_tick,
+  void StartMatch(const boost::uuids::uuid& match, const std::vector<CaptureEntrant>& players, tick::Tick first_tick,
                   std::chrono::system_clock::time_point started);
 
   /// The Command the player of entity sent, handed to SimulationWorld on tick.
@@ -304,7 +306,7 @@ class Capturer {
   std::unique_ptr<Writer> writer_;
   // The Match open, if any: its Match ID (that of the last one opened once it
   // ends), its first tick, and the number of each of its players' bodies.
-  uuid::Uuid match_ = uuid::kNil;
+  boost::uuids::uuid match_ = boost::uuids::nil_uuid();
   bool open_ = false;
   tick::Tick first_tick_ = 0;
   std::unordered_map<EntityId, capture::Player> players_;

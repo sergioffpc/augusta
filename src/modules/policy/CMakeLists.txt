@@ -5,7 +5,7 @@
 # view's on_tick is the simulation's time (augusta/tick.h).
 add_library(augusta_policy STATIC answers.cpp policy.cpp)
 target_include_directories(augusta_policy PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_policy PUBLIC augusta_tick augusta_uuid PRIVATE augusta_scripting)
+target_link_libraries(augusta_policy PUBLIC augusta_tick Boost::uuid PRIVATE augusta_scripting)
 augusta_set_module_scope(augusta_policy SERVER_ONLY)
 
 # Reads the scenario's Game policy scripts out of the server pack into the

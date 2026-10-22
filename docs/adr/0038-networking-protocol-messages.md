@@ -387,7 +387,7 @@ lost (after), reports it, and exits non-zero.
 
 **Session ID.** The server names each admitted player with a session ID it
 generates itself: a UUIDv7 (RFC 9562) from Boost.Uuid's `time_generator_v7`
-(ADR-0035), `uuid::Uuid` in the engine and on the wire
+(ADR-0035), `boost::uuids::uuid` in the engine and on the wire
 (`protocol::SessionIdWire`), where it travels as a `bytes` field of its 16 bytes
 in RFC 9562's order. It is unique across every server and every restart, so a
 `session=` found in any log names one Session, and deliberately unrelated to the
@@ -416,7 +416,7 @@ sends leads to the server's lines about that Session. Like the session ID it
 identifies and does not authenticate: the server checks nothing of it, an absent
 one reads as the nil ID, and one of any length but 16 bytes does not decode
 (`kOutOfRange`). Not being a credential, it is logged. The protocol carries it
-as a `uuid::Uuid`, so `augusta_uuid` is the one module it depends on beyond
+as a `boost::uuids::uuid`, so Boost.Uuid is the one library it depends on beyond
 those above, and `checks/protocol_boundary.cmake` allows it.
 
 **Entity ID.** A body is named by an entity ID, not by the session of the player

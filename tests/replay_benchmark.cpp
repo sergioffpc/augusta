@@ -5,6 +5,8 @@
 #include <utility>
 
 #include <benchmark/benchmark.h>
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
@@ -13,7 +15,6 @@
 #include "augusta/replay.h"
 #include "augusta/replay_server.h"
 #include "augusta/simulation.h"
-#include "augusta/uuid.h"
 #include "benchmark_match.h"
 #include "benchmark_scene.h"
 
@@ -42,7 +43,7 @@ Capture FullMatchCapture() {
   capture.header.tick_rate_hz = augusta::benchmarks::kTickRate;
   for (std::uint8_t player = 1; player <= kPlayers; ++player) {
     capture.joins.push_back(
-        augusta::capture::Join{.session = augusta::uuid::Generate(),
+        augusta::capture::Join{.session = boost::uuids::time_generator_v7{}(),
                                .character = kCharacter,
                                .spawn = augusta::math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player - 1))});
   }

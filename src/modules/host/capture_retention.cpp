@@ -16,17 +16,33 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
-#include "augusta/utf8.h"
-#include "augusta/uuid.h"
 
 namespace augusta::host {
 
 namespace {
 
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
+
 bool IsDigit(char character) { return character >= '0' && character <= '9'; }
+
+// Whether text is a Match ID in the canonical form boost::uuids::to_string
+// writes (lowercase, hyphenated, no braces), as CaptureFileName names a file.
+bool IsMatchId(std::string_view text) {
+  boost::uuids::uuid match;
+  return boost::uuids::from_chars(text.data(), text.data() + text.size(), match) &&
+         boost::uuids::to_string(match) == text;
+}
 
 // Whether the file at path starts with a capture's magic.
 bool StartsWithMagic(const std::filesystem::path& path) {
@@ -36,9 +52,10 @@ bool StartsWithMagic(const std::filesystem::path& path) {
 
 }  // namespace
 
-std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, const uuid::Uuid& match) {
+std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, const boost::uuids::uuid& match) {
   const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
-  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{}{}", seconds, (started - seconds).count(), match, capture::kExtension);
+  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{}{}", seconds, (started - seconds).count(),
+                     boost::uuids::to_string(match), capture::kExtension);
 }
 
 bool IsCaptureFileName(std::string_view name) {
@@ -56,7 +73,7 @@ bool IsCaptureFileName(std::string_view name) {
   };
   const std::string_view match = name.substr(kStart.size(), name.size() - kStart.size() - kExtension.size());
   return std::ranges::equal(kStart, name.substr(0, kStart.size()), matches) &&
-         (uuid::Parse(match).has_value() || std::ranges::all_of(match, IsDigit));
+         (IsMatchId(match) || std::ranges::all_of(match, IsDigit));
 }
 
 RetentionPlan PlanRetention(std::span<const CompletedCapture> completed, std::uintmax_t total, bool opening,
@@ -89,7 +106,7 @@ CaptureDirectory::CaptureDirectory(std::filesystem::path directory, CaptureReten
       observer_(std::move(observer)),
       faults_(faults) {}
 
-bool CaptureDirectory::Open(const uuid::Uuid& match, std::string_view file_name, std::uintmax_t bytes) {
+bool CaptureDirectory::Open(const boost::uuids::uuid& match, std::string_view file_name, std::uintmax_t bytes) {
   match_ = match;
   failure_logged_ = false;
   open_ = false;
@@ -123,7 +140,7 @@ std::vector<CompletedCapture> CaptureDirectory::Scan(std::string_view file_name)
   std::error_code error;
   for (std::filesystem::directory_iterator entry(directory_, error), end; !error && entry != end;
        entry.increment(error)) {
-    const std::string name = utf8::FromPath(entry->path().filename());
+    const std::string name = Utf8(entry->path().filename());
     std::error_code status;
     // A symbolic link is not the directory's own file, even to a capture.
     if (name == file_name || !IsCaptureFileName(name) || !entry->is_regular_file(status) || entry->is_symlink(status)) {
@@ -156,7 +173,8 @@ void CaptureDirectory::DeleteOldest() {
     }
   }
   if (!failure.has_value()) {
-    LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", match_, utf8::FromPath(oldest.path));
+    LOG_INFO("subsystem=capture event=capture_deleted match={} path={}", boost::uuids::to_string(match_),
+             Utf8(oldest.path));
     if (observer_.on_deleted) {
       observer_.on_deleted();
     }
@@ -167,8 +185,8 @@ void CaptureDirectory::DeleteOldest() {
   }
   if (!failure_logged_) {
     failure_logged_ = true;
-    LOG_WARN("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"", match_,
-             utf8::FromPath(oldest.path), *failure);
+    LOG_WARN("subsystem=capture event=capture_retention_failed match={} path={} detail=\"{}\"",
+             boost::uuids::to_string(match_), Utf8(oldest.path), *failure);
   }
 }
 

@@ -15,6 +15,8 @@
 #include <thread>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/capture.h"
@@ -24,7 +26,6 @@
 #include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
-#include "augusta/uuid.h"
 
 // A capture directory kept within a count and a size, oldest Match first
 // (ADR-0050, #461): PlanRetention's decision on its own, then a Capturer
@@ -53,13 +54,12 @@ using Milliseconds = std::chrono::sys_time<std::chrono::milliseconds>;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // A Match ID, a UUIDv7, told apart by its last byte.
-constexpr augusta::uuid::Uuid MatchId(std::uint8_t last) {
-  return augusta::uuid::Uuid::FromBytes(
+constexpr boost::uuids::uuid MatchId(std::uint8_t last) {
+  return boost::uuids::uuid(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
@@ -116,7 +116,8 @@ TEST(IsCaptureFileNameTest, RefusesAnyOtherName) {
         std::string("20261009T101500123Z-0003.capture"),
         "20261009T101500123Z-0190A1B2-C3D5-7000-8000-000000000003" + extension,
         "20261009T101500123Z-0190a1b2-c3d5-7000-8000-00000000003" + extension,
-        "20261009T101500123Z-0190a1b2c3d570008000000000000003" + extension, std::string()}) {
+        "20261009T101500123Z-0190a1b2c3d570008000000000000003" + extension,
+        "20261009T101500123Z-{0190a1b2-c3d5-7000-8000-000000000003}" + extension, std::string()}) {
     EXPECT_FALSE(IsCaptureFileName(name)) << name;
   }
 }
@@ -270,7 +271,7 @@ class CaptureRetentionTest : public ::testing::Test {
   }
 
   // Plays the Match match of commands Commands, started at started.
-  static void Play(Capturer& capturer, Milliseconds started, int commands, const augusta::uuid::Uuid& match) {
+  static void Play(Capturer& capturer, Milliseconds started, int commands, const boost::uuids::uuid& match) {
     capturer.StartMatch(match, TwoPlayers(), kFirstTick, started);
     for (int command = 0; command < commands; ++command) {
       capturer.Command(kFirstTick + command, EntityId{70}, Walk());
@@ -372,7 +373,8 @@ TEST_F(CaptureRetentionTest, AMatchThatAloneExceedsTheBudgetStopsItsCaptureWithR
   EXPECT_EQ(capture.joins.size(), 2U);
   EXPECT_FALSE(capture.events.empty());
   EXPECT_LT(capture.events.size(), 100U + 1U);
-  EXPECT_EQ(Occurrences(written, "event=capture_stopped match=" + MatchId(1).ToString() + " reason=retention_budget"),
+  EXPECT_EQ(Occurrences(written, "event=capture_stopped match=" + boost::uuids::to_string(MatchId(1)) +
+                                     " reason=retention_budget"),
             1U)
       << written;
 }

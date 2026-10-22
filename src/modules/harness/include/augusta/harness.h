@@ -11,6 +11,9 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
@@ -20,7 +23,6 @@
 #include "augusta/math.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 #include "augusta/version.h"
 
 /// \file
@@ -198,14 +200,14 @@ struct SessionConfig {
   std::optional<math::Vec3> spawn = std::nullopt;
   /// The Run ID of the executable this Session is for, which its Join, Reenact
   /// or Replay request carries and the server logs at admission (ADR-0038).
-  uuid::Uuid run = uuid::kNil;
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
   /// Told, on the Network I/O thread, of the Match this Session is in: its
   /// Match ID at each Match start the Session takes, before the start's line,
   /// and the nil ID at its Match end, after the end's line. Null, the default,
   /// tells nothing. The client holds the Match in its logging context
   /// (ADR-0029); a process that holds many Sessions, as the Agent does, has no
   /// one Match to name, and passes none.
-  std::function<void(const uuid::Uuid& match)> on_match = nullptr;
+  std::function<void(const boost::uuids::uuid& match)> on_match = nullptr;
 };
 
 /// The client's network connection and PredictionWorld, without a window or a GPU.

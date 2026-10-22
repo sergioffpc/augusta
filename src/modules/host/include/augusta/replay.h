@@ -8,13 +8,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/capture.h"
 #include "augusta/command_queue.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// A Replay (ADR-0051): a Match capture handed, tick by tick, to a fresh
@@ -133,7 +134,7 @@ class Replay {
   [[nodiscard]] tick::Tick FirstTick() const { return 1; }
 
   /// The captured Match's ID, from the capture's header: what its Match start names.
-  [[nodiscard]] const uuid::Uuid& Match() const { return capture_.header.match; }
+  [[nodiscard]] const boost::uuids::uuid& Match() const { return capture_.header.match; }
 
   /// Runs the Replay's next tick. Must not be called once it has ended.
   [[nodiscard]] ReplayTick Step();

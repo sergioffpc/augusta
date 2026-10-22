@@ -8,11 +8,12 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/string_generator.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
 #include "augusta/protocol.h"
-#include "augusta/uuid.h"
 
 // The protocol_decode fuzz target's seeds (tests/fuzz/README.md): one committed
 // payload per message kind, so the fuzzer starts from valid messages rather
@@ -68,7 +69,7 @@ struct Seed {
 // somewhere, so each field's encoding is in the corpus.
 // A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
 SessionIdWire Session(std::uint8_t last) {
-  return SessionIdWire::FromBytes(
+  return SessionIdWire(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
@@ -86,7 +87,7 @@ std::vector<Seed> Seeds() {
                             .desired_stance = StanceWire::kProne,
                             .seen_age = 1};
   // A Run ID, the same in every request that carries one.
-  const augusta::uuid::Uuid run = augusta::uuid::Parse("017f22e2-79b0-7cc3-98c4-dc0c0c07398f").value();
+  const boost::uuids::uuid run = boost::uuids::string_generator{}("017f22e2-79b0-7cc3-98c4-dc0c0c07398f");
   return {
       {.name = "join_request",
        .message = JoinRequestWire{.engine_version = "0.1.0", .client_pack = {}, .character = "soldier", .run = run}},

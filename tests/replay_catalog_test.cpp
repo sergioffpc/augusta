@@ -12,6 +12,8 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -21,7 +23,6 @@
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/match.h"
-#include "augusta/uuid.h"
 
 // Which captures a replay server replays (ADR-0051), from a directory of
 // captures a Capturer wrote, as a live server's would be.
@@ -40,8 +41,7 @@ using augusta::host::SessionId;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr SessionId Session(std::uint8_t last) {
-  return SessionId::FromBytes(
-      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 constexpr std::uint8_t kTickRate = 60;
@@ -86,7 +86,7 @@ class ReplayCatalogTest : public ::testing::Test {
                                        .character = characters[i],
                                        .spawn = {}});
     }
-    const augusta::uuid::Uuid match = augusta::uuid::Generate();
+    const boost::uuids::uuid match = boost::uuids::time_generator_v7{}();
     {
       Capturer capturer(directory_, capture::Header{.engine_version = "1.0.0",
                                                     .server_pack = PackOf(pack),

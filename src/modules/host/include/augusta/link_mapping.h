@@ -5,6 +5,8 @@
 #include <span>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/link_types.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -12,15 +14,14 @@
 #include "augusta/replay.h"
 #include "augusta/replication.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// The conversions Host makes at the Link's edge (ADR-0038), the way
 /// augusta/simulation_mapping.h makes them at SimulationWorld's: what Match,
 /// replication and a Replay decide to send, which name players and bodies by
 /// the server's own IDs, as the Link's messages (augusta/link_types.h), which
-/// name them by the same numbers. A Session ID is one uuid::Uuid on both sides,
-/// so it needs no conversion. The Link alone turns those into the
+/// name them by the same numbers. A Session ID is one boost::uuids::uuid on
+/// both sides, so it needs no conversion. The Link alone turns those into the
 /// protocol's. What a client sends needs none: a join, a Replay request and a
 /// command are the Link's own types on the server too.
 namespace augusta::host {
@@ -41,7 +42,7 @@ namespace augusta::host {
 /// start.players at the spawns entry of the same index; first_tick is the
 /// Match's first tick, and match its Match ID.
 [[nodiscard]] link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spawns,
-                                      tick::Tick first_tick, const uuid::Uuid& match);
+                                      tick::Tick first_tick, const boost::uuids::uuid& match);
 
 [[nodiscard]] link::MatchEnd ToLink(const MatchEnd& end);
 

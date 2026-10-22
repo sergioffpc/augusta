@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/application.h"
 #include "augusta/assets.h"
 #include "augusta/client.h"
@@ -19,7 +21,6 @@
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
-#include "augusta/uuid.h"
 
 namespace augusta::client {
 
@@ -71,7 +72,7 @@ namespace {
 // Loads what the runtime is made from and constructs it (ClientLifecycle).
 std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess(
     const config::ClientConfig& file_config, const std::optional<harness::Script>& reenactment,
-    const std::optional<std::string>& replay, uuid::Uuid run) {
+    const std::optional<std::string>& replay, boost::uuids::uuid run) {
   auto loaded = LoadClient(file_config);
   if (!loaded) {
     return std::unexpected(std::move(loaded.error()));
@@ -112,7 +113,7 @@ application::Outcome ListReplays(const config::ClientConfig& file_config) {
 
 application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
                                                       std::optional<harness::Script> reenactment,
-                                                      std::optional<std::string> replay, uuid::Uuid run) {
+                                                      std::optional<std::string> replay, boost::uuids::uuid run) {
   config::ClientConfig played = file_config;
   // A Captured player plays its capture's Character, not the config's.
   if (reenactment.has_value()) {

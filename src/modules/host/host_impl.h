@@ -15,6 +15,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/admission.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -35,7 +38,6 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// Host's state, shared by the files that each implement one side of it:
@@ -104,9 +106,9 @@ struct Host::Impl {
   std::unordered_map<SessionId, Player> players;
   // The tick the match in progress, or the last one, started on.
   tick::Tick match_start_tick = 0;
-  // The Match ID of the match in progress, or of the last one: taken afresh at
-  // each Match start, so every server's and every restart's are distinct.
-  uuid::Uuid match_id = uuid::kNil;
+  // The Match ID of the match in progress, or of the last one: the one Match
+  // took at its start, so every server's and every restart's are distinct.
+  boost::uuids::uuid match_id = boost::uuids::nil_uuid();
   // The winner of the match that ended last, nullopt for a draw: what its
   // capture's Match end names once the Simulation thread takes it out.
   std::optional<SessionId> match_winner;

@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -19,7 +20,6 @@
 #include "augusta/harness.h"
 #include "augusta/math.h"
 #include "augusta/reenactment.h"
-#include "augusta/uuid.h"
 
 // augustac's application boundary (ADR-0033): whatever its startup or its
 // runtime fails with, the client ends on one classified failure. Its runtime
@@ -44,8 +44,8 @@ using augusta::harness::FailureKind;
 using augusta::harness::JoinRefusal;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
-constexpr augusta::uuid::Uuid Session(std::uint8_t last) {
-  return augusta::uuid::Uuid::FromBytes(
+constexpr boost::uuids::uuid Session(std::uint8_t last) {
+  return boost::uuids::uuid(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 

@@ -12,8 +12,10 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/faults.h"
-#include "augusta/uuid.h"
 
 /// \file
 /// How a server keeps its capture directory within a count and a size, oldest
@@ -55,7 +57,7 @@ struct CaptureRetentionObserver {
 /// names of one server's captures sort by when they started and a Match's
 /// capture is found by its Match ID.
 [[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
-                                          const uuid::Uuid& match);
+                                          const boost::uuids::uuid& match);
 
 /// Whether name is one CaptureFileName makes, `YYYYMMDDTHHMMSSmmmZ-<Match ID>.acap`,
 /// or one an engine before the Match ID made, `YYYYMMDDTHHMMSSmmmZ-NNNN.acap`
@@ -105,7 +107,7 @@ class CaptureDirectory {
   /// first: rescans the directory, that file left out, and deletes the oldest
   /// completed captures until fewer than max_files remain and bytes fit.
   /// False when they do not even with none left, and nothing is to be written.
-  [[nodiscard]] bool Open(const uuid::Uuid& match, std::string_view file_name, std::uintmax_t bytes);
+  [[nodiscard]] bool Open(const boost::uuids::uuid& match, std::string_view file_name, std::uintmax_t bytes);
 
   /// Before bytes more are written to the capture open: deletes the oldest
   /// completed captures until they fit, and counts them as written. False when
@@ -134,7 +136,7 @@ class CaptureDirectory {
   std::uintmax_t total_ = 0;
   // Whether the capture open counts as one of the directory's files.
   bool open_ = false;
-  uuid::Uuid match_ = uuid::kNil;
+  boost::uuids::uuid match_ = boost::uuids::nil_uuid();
   // Whether a failed deletion was logged since match_'s start.
   bool failure_logged_ = false;
 };

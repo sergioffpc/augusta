@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/link_types.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
@@ -14,7 +16,6 @@
 #include "augusta/replication.h"
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 
 namespace augusta::host {
 
@@ -64,7 +65,7 @@ link::Lobby ToLink(const Roster& roster) {
 }
 
 link::MatchStart ToLink(const MatchStart& start, std::span<const math::Vec3> spawns, tick::Tick first_tick,
-                        const uuid::Uuid& match) {
+                        const boost::uuids::uuid& match) {
   link::MatchStart result{.players = {}, .first_tick = first_tick, .match = match};
   result.players.reserve(start.players.size());
   for (std::size_t i = 0; i < start.players.size(); ++i) {

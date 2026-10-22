@@ -136,6 +136,9 @@ find_package(protobuf CONFIG REQUIRED)
 # utf8_range, protobuf's own UTF-8 check, with which the protocol checks the
 # text its schema holds as bytes (src/modules/protocol).
 find_package(utf8_range CONFIG REQUIRED)
+# Boost.Uuid: the Run ID, the Session ID and the Match ID (ADR-0035), whose
+# type the protocol's headers and every layer above name.
+find_package(boost_uuid CONFIG REQUIRED)
 
 # NVTX (github.com/NVIDIA/NVTX) is header-only and not on vcpkg, so it's
 # vendored as a pinned git submodule (third_party/nvtx) instead. Not
@@ -156,9 +159,7 @@ find_package(benchmark CONFIG REQUIRED)
 find_package(rapidcheck CONFIG REQUIRED)
 
 add_subdirectory(src/modules/version)
-add_subdirectory(src/modules/utf8)
 add_subdirectory(src/modules/logging)
-add_subdirectory(src/modules/uuid)
 add_subdirectory(src/modules/crash)
 add_subdirectory(src/modules/hardware)
 add_subdirectory(src/modules/config)

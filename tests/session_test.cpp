@@ -23,6 +23,10 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/string_generator.hpp>
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
@@ -63,7 +67,6 @@
 #include "augusta/reenactment.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
-#include "augusta/uuid.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 #include "connection_health.h"
@@ -516,8 +519,7 @@ class JoinTest : public ::testing::Test {
   // Its join carries run.
   Session& AddClient(const std::string& engine_version = std::string(augusta::EngineVersion()),
                      const std::string& character = kCharacter,
-                     const augusta::assets::PackHash& client_pack = ClientPack(1),
-                     const augusta::uuid::Uuid& run = {}) {
+                     const augusta::assets::PackHash& client_pack = ClientPack(1), const boost::uuids::uuid& run = {}) {
     sessions_.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                                                 .engine_version = engine_version,
                                                                 .client_pack = client_pack,
@@ -572,9 +574,9 @@ TEST_F(JoinTest, AnAdmittedClientsSessionIdIsAUuidV7) {
 
   ASSERT_TRUE(client.GetServerView()->accepted.has_value());
   const SessionId session = client.GetServerView()->accepted->session;
-  EXPECT_EQ(session.Bytes()[6] >> 4U, 7U);
-  EXPECT_EQ(session.Bytes()[8] >> 6U, 2U);
-  EXPECT_EQ(augusta::uuid::Parse(session.ToString()), session);
+  EXPECT_EQ(session.data[6] >> 4U, 7U);
+  EXPECT_EQ(session.data[8] >> 6U, 2U);
+  EXPECT_EQ(boost::uuids::string_generator{}(boost::uuids::to_string(session)), session);
 }
 
 // Requirements: US-01
@@ -603,7 +605,7 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
 // as (ADR-0038).
 TEST_F(JoinTest, AnAdmittedClientIsLoggedWithTheRunIdItSentAndItsSession) {
   augusta::logging::Init();
-  const augusta::uuid::Uuid run = augusta::uuid::Generate();
+  const boost::uuids::uuid run = boost::uuids::time_generator_v7{}();
 
   testing::internal::CaptureStdout();
   Session& client = AddClient(std::string(augusta::EngineVersion()), kCharacter, ClientPack(1), run);
@@ -613,9 +615,9 @@ TEST_F(JoinTest, AnAdmittedClientIsLoggedWithTheRunIdItSentAndItsSession) {
   ASSERT_TRUE(answered);
   ASSERT_TRUE(client.GetServerView()->accepted.has_value());
   EXPECT_NE(log.find("event=lobby_joined peer="), std::string::npos) << log;
-  EXPECT_NE(
-      log.find(" run=" + run.ToString() + " session=" + client.GetServerView()->accepted->session.ToString() + " "),
-      std::string::npos)
+  EXPECT_NE(log.find(" run=" + boost::uuids::to_string(run) +
+                     " session=" + boost::uuids::to_string(client.GetServerView()->accepted->session) + " "),
+            std::string::npos)
       << log;
 }
 
@@ -1946,15 +1948,15 @@ TEST_F(MatchCycleTest, EveryClientOfAMatchIsToldTheSameMatchIdAndTheNextMatchIsN
   Session& first = Join();
   Session& second = Join();
   ASSERT_TRUE(StartMatch());
-  const augusta::uuid::Uuid match = first.GetServerView()->match_start->match;
+  const boost::uuids::uuid match = first.GetServerView()->match_start->match;
   ASSERT_TRUE(EndMatchIntoTheLobby(host_, All()));
 
   ASSERT_TRUE(StartMatch());
 
-  EXPECT_NE(match, augusta::uuid::Uuid{});
+  EXPECT_FALSE(match.is_nil());
   EXPECT_EQ(second.GetServerView()->match_start->match, first.GetServerView()->match_start->match);
   EXPECT_NE(first.GetServerView()->match_start->match, match);
-  EXPECT_NE(first.GetServerView()->match_start->match, augusta::uuid::Uuid{});
+  EXPECT_FALSE(first.GetServerView()->match_start->match.is_nil());
 }
 
 // Who played with whom is read off the server's Match start line (ADR-0029).
@@ -1970,12 +1972,13 @@ TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPla
 
   ASSERT_TRUE(started);
   ASSERT_TRUE(ended);
-  const std::string match = first.GetServerView()->match_start->match.ToString();
+  const std::string match = boost::uuids::to_string(first.GetServerView()->match_start->match);
   const std::size_t start_at = log.find("subsystem=serverruntime event=match_started match=" + match);
   ASSERT_NE(start_at, std::string::npos) << log;
   const std::string start_line = log.substr(start_at, log.find('\n', start_at) - start_at);
   for (const Session* session : {&first, &second}) {
-    EXPECT_NE(start_line.find(" session=" + session->GetServerView()->accepted->session.ToString()), std::string::npos)
+    EXPECT_NE(start_line.find(" session=" + boost::uuids::to_string(session->GetServerView()->accepted->session)),
+              std::string::npos)
         << start_line;
   }
   EXPECT_NE(log.find("subsystem=serverruntime event=match_ended match=" + match), std::string::npos) << log;
@@ -1985,19 +1988,19 @@ TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPla
 // client holds in its logging context (ADR-0029): the Match ID at Match start,
 // the nil ID at Match end.
 TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEnd) {
-  std::vector<augusta::uuid::Uuid> told;
+  std::vector<boost::uuids::uuid> told;
   SessionConfig config = TestSessionConfig(host_.ListenEndpoint());
-  config.on_match = [&told](const augusta::uuid::Uuid& match) { told.push_back(match); };
+  config.on_match = [&told](const boost::uuids::uuid& match) { told.push_back(match); };
   Session& client = Connect(config);
   ASSERT_TRUE(client.GetServerView()->accepted.has_value());
   Join();
   ASSERT_TRUE(StartMatch());
-  const augusta::uuid::Uuid match = client.GetServerView()->match_start->match;
+  const boost::uuids::uuid match = client.GetServerView()->match_start->match;
 
   ASSERT_TRUE(EndMatchIntoTheLobby(host_, All()));
 
-  EXPECT_NE(match, augusta::uuid::kNil);
-  EXPECT_EQ(told, (std::vector<augusta::uuid::Uuid>{match, augusta::uuid::kNil}));
+  EXPECT_FALSE(match.is_nil());
+  EXPECT_EQ(told, (std::vector<boost::uuids::uuid>{match, boost::uuids::uuid{}}));
 }
 
 // A Session outside the client, as each of the Agent's many is, sets no Match
@@ -2016,7 +2019,7 @@ TEST_F(MatchCycleTest, ASessionWithNoOwnerToTellPutsNoMatchInTheLogContext) {
 
   // In a Match that has an ID to name.
   ASSERT_TRUE(client.GetServerView()->in_match);
-  ASSERT_NE(client.GetServerView()->match_start->match, augusta::uuid::kNil);
+  ASSERT_FALSE(client.GetServerView()->match_start->match.is_nil());
   EXPECT_NE(in_match.find("event=in_match"), std::string::npos) << in_match;
   EXPECT_EQ(in_match.find("match="), std::string::npos) << in_match;
 }
@@ -2472,7 +2475,7 @@ TEST_F(ReenactmentHostTest, EveryCapturedPlayerSpawnsWhereTheCaptureHasItAndItsC
 TEST_F(ReenactmentHostTest, ACapturedPlayerIsLoggedWithTheRunIdItSent) {
   augusta::logging::Init();
   const std::unique_ptr<Host> host = Server(reenacted_, {Vec3(-30, kFloorY, 0), Vec3(-40, kFloorY, 5)}, true);
-  const augusta::uuid::Uuid run = augusta::uuid::Generate();
+  const boost::uuids::uuid run = boost::uuids::time_generator_v7{}();
   std::vector<std::unique_ptr<Session>> sessions;
   sessions.push_back(std::make_unique<Session>(SessionConfig{.server = {.address = host->ListenEndpoint().address},
                                                              .character = kCharacter,
@@ -2488,7 +2491,7 @@ TEST_F(ReenactmentHostTest, ACapturedPlayerIsLoggedWithTheRunIdItSent) {
 
   ASSERT_TRUE(admitted);
   EXPECT_NE(log.find("event=lobby_joined peer="), std::string::npos) << log;
-  EXPECT_NE(log.find(" run=" + run.ToString() + " session="), std::string::npos) << log;
+  EXPECT_NE(log.find(" run=" + boost::uuids::to_string(run) + " session="), std::string::npos) << log;
   EXPECT_NE(log.find("event=reenactment_joined"), std::string::npos) << log;
 }
 
@@ -2712,14 +2715,14 @@ TEST_F(ScriptedParametersTest, AClientPredictsItsRifleWithTheValuesOfTheServersS
 }
 
 // The session a ScriptedServer admits its client under.
-constexpr SessionIdWire kScriptedSession = SessionIdWire::FromBytes(
-    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+constexpr SessionIdWire kScriptedSession =
+    SessionIdWire({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
 
 // Another session than kScriptedSession, told apart by its last byte.
 constexpr SessionIdWire OtherScriptedSession(std::uint8_t last) {
-  SessionIdWire::ByteArray bytes = kScriptedSession.Bytes();
-  bytes.back() = last;
-  return SessionIdWire::FromBytes(bytes);
+  SessionIdWire session = kScriptedSession;
+  *(session.end() - 1) = last;
+  return session;
 }
 
 // The body a ScriptedServer gives its client in Match start: not its session's number.
@@ -4002,8 +4005,9 @@ TEST_F(MisbehaviourTest, APeerFloodingMalformedMessagesIsDisconnectedAndItsBodyL
   EXPECT_GT(BodySeenBy(honest, *honest.GetServerView()->OwnEntity())->position.x, SpawnPoints()[0].x + 1.0F);
   EXPECT_EQ(CountOccurrences(log, "event=misbehaving_disconnected"), 1U) << log;
   EXPECT_NE(log.find("WARN subsystem=serverruntime event=misbehaving_disconnected peer="), std::string::npos) << log;
-  EXPECT_NE(log.find("session=" + raw.GetSessionId().value().ToString() + " reason=\"undecodable message\""),
-            std::string::npos)
+  EXPECT_NE(
+      log.find("session=" + boost::uuids::to_string(raw.GetSessionId().value()) + " reason=\"undecodable message\""),
+      std::string::npos)
       << log;
 #if AUGUSTA_LOG_ACTIVE_LEVEL <= AUGUSTA_LOG_LEVEL_DEBUG
   EXPECT_NE(log.find(" misbehaving=1"), std::string::npos) << log;
@@ -6061,10 +6065,10 @@ TEST_F(LastStandingDuelTest, EveryMatchEndIsLoggedWithItsWinnerItsDurationAndIts
   const std::string log = testing::internal::GetCapturedStdout();
 
   ASSERT_EQ(match_ends_.size(), 1U);
-  EXPECT_NE(
-      log.find("event=match_ended match=" + shooter.GetServerView()->match_start->match.ToString() +
-               " reason=\"win condition\" winner=" + shooter.GetServerView()->accepted->session.ToString() + " ticks="),
-      std::string::npos)
+  EXPECT_NE(log.find("event=match_ended match=" + boost::uuids::to_string(shooter.GetServerView()->match_start->match) +
+                     " reason=\"win condition\" winner=" +
+                     boost::uuids::to_string(shooter.GetServerView()->accepted->session) + " ticks="),
+            std::string::npos)
       << log;
 }
 

@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -23,7 +24,6 @@
 #include "augusta/failure.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
-#include "augusta/uuid.h"
 #include "frame.h"
 
 // A Match capture's file (ADR-0050) through the capture module's interface:
@@ -55,13 +55,13 @@ using augusta::capture::Write;
 using augusta::capture::WriteCapture;
 
 // A Session ID, a UUIDv7, told apart by its last byte.
-constexpr augusta::uuid::Uuid Session(std::uint8_t last) {
-  return augusta::uuid::Uuid::FromBytes(
+constexpr boost::uuids::uuid Session(std::uint8_t last) {
+  return boost::uuids::uuid(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 // The captured Match's ID, a UUIDv7.
-constexpr augusta::uuid::Uuid kMatch = augusta::uuid::Uuid::FromBytes(
+constexpr boost::uuids::uuid kMatch = boost::uuids::uuid(
     {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x7A, 0xBC, 0x8D, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB});
 
 constexpr std::chrono::sys_time<std::chrono::milliseconds> kStarted{std::chrono::milliseconds{1'791'000'000'123}};

@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
@@ -352,17 +353,17 @@ RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ())
 // who has died or one alive.
 // A Session ID, a UUIDv7, told apart by its last byte.
 constexpr augusta::policy::SessionId Session(std::uint8_t last) {
-  return augusta::policy::SessionId::FromBytes(
+  return augusta::policy::SessionId(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
 rc::Gen<std::string> MatchEndAnswer() {
-  return rc::gen::weightedOneOf<std::string>({{60, rc::gen::just(std::string("nil"))},
-                                              {1, rc::gen::just(std::string("{draw = true}"))},
-                                              {3, rc::gen::map(rc::gen::inRange(10, 14), [](int session) {
-                                                 return "{winner = '" +
-                                                        Session(static_cast<std::uint8_t>(session)).ToString() + "'}";
-                                               })}});
+  return rc::gen::weightedOneOf<std::string>(
+      {{60, rc::gen::just(std::string("nil"))},
+       {1, rc::gen::just(std::string("{draw = true}"))},
+       {3, rc::gen::map(rc::gen::inRange(10, 14), [](int session) {
+          return "{winner = '" + boost::uuids::to_string(Session(static_cast<std::uint8_t>(session))) + "'}";
+        })}});
 }
 
 // A rules script whose on_tick answers what answers holds for each tick,

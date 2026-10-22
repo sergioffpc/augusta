@@ -143,8 +143,8 @@ TEST(MatchTest, SessionIdsAreUniqueAndIndependentOfTheTransportHandle) {
   ASSERT_TRUE(first.has_value() && second.has_value());
   EXPECT_NE(first->session, second->session);
   // A UUIDv7 (RFC 9562): version 7, variant 0b10, whatever the peer's handle.
-  EXPECT_EQ(first->session.Bytes()[6] >> 4U, 7U);
-  EXPECT_EQ(first->session.Bytes()[8] >> 6U, 2U);
+  EXPECT_EQ(first->session.data[6] >> 4U, 7U);
+  EXPECT_EQ(first->session.data[8] >> 6U, 2U);
 }
 
 // Each server takes its Session IDs apart from every other's, so two that
@@ -355,6 +355,24 @@ TEST(MatchTest, AMatchStartsOnceTheLobbyHoldsThePlayerCount) {
   EXPECT_EQ(start->players[0].session, *match.SessionOf(Peer(1)));
   EXPECT_EQ(start->players[1].session, *match.SessionOf(Peer(2)));
   EXPECT_EQ(match.Playing(), (std::vector<SessionId>{*match.SessionOf(Peer(1)), *match.SessionOf(Peer(2))}));
+}
+
+// The Match ID (GLOSSARY.md) is a UUIDv7 Match takes at the start, from the
+// generator its Session IDs come from: later than its players' Session IDs,
+// and each Match's later than the one before.
+TEST(MatchTest, EachMatchStartNamesANewMatchIdLaterThanEveryIdBefore) {
+  Match match(Config(1));
+  JoinPeers(match, 1, 1);
+
+  const auto first = ReadyAndStart(match);
+  ASSERT_TRUE(first.has_value());
+  ASSERT_TRUE(match.End().has_value());
+  const auto second = ReadyAndStart(match);
+  ASSERT_TRUE(second.has_value());
+
+  EXPECT_EQ(first->match.data[6] >> 4U, 7U);
+  EXPECT_LT(*match.SessionOf(Peer(1)), first->match);
+  EXPECT_LT(first->match, second->match);
 }
 
 // Requirements: US-02

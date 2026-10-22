@@ -15,6 +15,9 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <prometheus/client_metric.h>
 #include <prometheus/metric_family.h>
 #include <prometheus/metric_type.h>
@@ -24,7 +27,6 @@
 #include "augusta/link.h"
 #include "augusta/lock_free_metrics.h"
 #include "augusta/match.h"
-#include "augusta/uuid.h"
 
 namespace augusta::server {
 namespace {
@@ -81,7 +83,7 @@ enum SessionValue : std::uint8_t {
 
 // One Session's gauges, each kNotMeasured until first measured.
 struct SessionGauges {
-  host::SessionId session = uuid::kNil;
+  host::SessionId session = boost::uuids::nil_uuid();
   std::array<double, kSessionValueCount> values{};
 };
 
@@ -144,9 +146,9 @@ class PublishedGauges {
     void Store(const std::optional<SessionGauges>& gauges) {
       occupied_.store(gauges.has_value(), std::memory_order_relaxed);
       if (gauges.has_value()) {
-        const uuid::Uuid::ByteArray& bytes = gauges->session.Bytes();
-        for (std::size_t i = 0; i < bytes.size(); ++i) {
-          session_[i].store(bytes[i], std::memory_order_relaxed);
+        const host::SessionId& session = gauges->session;
+        for (std::size_t i = 0; i < session.size(); ++i) {
+          session_[i].store(session.begin()[i], std::memory_order_relaxed);
         }
         for (std::size_t i = 0; i < values_.size(); ++i) {
           values_[i].store(gauges->values[i], std::memory_order_relaxed);
@@ -158,11 +160,10 @@ class PublishedGauges {
       if (!occupied_.load(std::memory_order_relaxed)) {
         return std::nullopt;
       }
-      uuid::Uuid::ByteArray bytes{};
-      for (std::size_t i = 0; i < bytes.size(); ++i) {
-        bytes[i] = session_[i].load(std::memory_order_relaxed);
+      SessionGauges gauges{.session = {}, .values = {}};
+      for (std::size_t i = 0; i < gauges.session.size(); ++i) {
+        gauges.session.begin()[i] = session_[i].load(std::memory_order_relaxed);
       }
-      SessionGauges gauges{.session = host::SessionId::FromBytes(bytes), .values = {}};
       for (std::size_t i = 0; i < values_.size(); ++i) {
         gauges.values[i] = values_[i].load(std::memory_order_relaxed);
       }
@@ -171,7 +172,7 @@ class PublishedGauges {
 
    private:
     std::atomic<bool> occupied_{false};
-    std::array<std::atomic<std::uint8_t>, uuid::Uuid::kByteCount> session_{};
+    std::array<std::atomic<std::uint8_t>, boost::uuids::uuid::static_size()> session_{};
     std::array<std::atomic<double>, kSessionValueCount> values_{};
   };
 
@@ -203,7 +204,7 @@ MetricFamily SessionFamily(std::string name, std::string help, const std::vector
         continue;
       }
       ClientMetric metric;
-      metric.label.push_back({.name = "session_id", .value = session.session.ToString()});
+      metric.label.push_back({.name = "session_id", .value = boost::uuids::to_string(session.session)});
       if (each.direction != nullptr) {
         metric.label.push_back({.name = "direction", .value = each.direction});
       }

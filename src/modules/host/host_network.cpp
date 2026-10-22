@@ -8,6 +8,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/command_queue.h"
 #include "augusta/connection_sample.h"
 #include "augusta/host.h"
@@ -60,11 +62,11 @@ void Host::Impl::HandleJoinRequest(link::PeerId peer, const JoinRequest& request
     // The client's Run ID beside the Session it is admitted as: what ties a
     // client's own log to the server's (ADR-0038).
     LOG_INFO("subsystem=serverruntime event=lobby_joined peer={} run={} session={} character={} players={} version={}",
-             PeerNumber(peer), request.run, admission->session, admission->character, match.PlayerCount(),
-             match.GetRoster().version);
+             PeerNumber(peer), boost::uuids::to_string(request.run), boost::uuids::to_string(admission->session),
+             admission->character, match.PlayerCount(), match.GetRoster().version);
     if (request.spawn.has_value()) {
       LOG_INFO("subsystem=serverruntime event=reenactment_joined session={} spawn=({:.3f},{:.3f},{:.3f})",
-               admission->session, request.spawn->x, request.spawn->y, request.spawn->z);
+               boost::uuids::to_string(admission->session), request.spawn->x, request.spawn->y, request.spawn->z);
     }
     SendRoster();
   }
@@ -186,7 +188,7 @@ Verdict Host::Impl::Judge(link::PeerId peer, PeerRejection rejection, std::chron
 void Host::Impl::Expel(link::PeerId peer, std::string_view reason) {
   if (const std::optional<SessionId> session = match.SessionOf(peer); session.has_value()) {
     LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} session={} reason=\"{}\"",
-             PeerNumber(peer), *session, reason);
+             PeerNumber(peer), boost::uuids::to_string(*session), reason);
   } else {
     LOG_WARN("subsystem=serverruntime event=misbehaving_disconnected peer={} reason=\"{}\"", PeerNumber(peer), reason);
   }
@@ -213,21 +215,24 @@ void Host::Impl::HandleDisconnect(link::PeerId peer, Leaving how) {
     case Departure::kFromLobby:
       metrics.disconnects_from_lobby[how].Increment();
       LOG_INFO("subsystem=serverruntime event=lobby_left peer={} session={} how={} players={} version={}",
-               PeerNumber(peer), *session, LeavingName(how), match.PlayerCount(), match.GetRoster().version);
+               PeerNumber(peer), boost::uuids::to_string(*session), LeavingName(how), match.PlayerCount(),
+               match.GetRoster().version);
       SendRoster();
       break;
     case Departure::kFromMatch:
       metrics.disconnects_from_match[how].Increment();
-      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing={}", match_id,
-               PeerNumber(peer), *session, LeavingName(how), match.Playing().size());
+      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing={}",
+               boost::uuids::to_string(match_id), PeerNumber(peer), boost::uuids::to_string(*session), LeavingName(how),
+               match.Playing().size());
       break;
     case Departure::kEndedMatch:
       // Nobody won a match its last player left, whoever won the one before.
       match_winner = std::nullopt;
       metrics.disconnects_from_match[how].Increment();
       CountMatchEnded(EndReason::kNoPlayersLeft, std::nullopt);
-      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing=0", match_id,
-               PeerNumber(peer), *session, LeavingName(how));
+      LOG_INFO("subsystem=serverruntime event=match_left match={} peer={} session={} how={} playing=0",
+               boost::uuids::to_string(match_id), PeerNumber(peer), boost::uuids::to_string(*session),
+               LeavingName(how));
       LogMatchEnded(EndReason::kNoPlayersLeft, std::nullopt, 0);
       break;
   }

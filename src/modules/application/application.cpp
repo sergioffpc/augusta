@@ -8,7 +8,6 @@
 
 #include "augusta/failure.h"
 #include "augusta/logging.h"
-#include "augusta/utf8.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -49,7 +48,10 @@ int Conclude(std::string_view executable, const Outcome& outcome, const std::opt
   }
   std::string log;
   if (run_log) {
-    log = std::format(" log=\"{}\"", utf8::FromPath(*run_log));
+    // In UTF-8: path::string() converts to the ANSI code page on Windows, and
+    // throws for a character it lacks.
+    const std::u8string path = run_log->u8string();
+    log = std::format(" log=\"{}\"", std::string{path.begin(), path.end()});
   }
   LOG_CRITICAL("subsystem={} event=terminal_failure {} exit_status={}{}", executable,
                failure::DescribeFailure(*outcome), kFailedExitStatus, log);

@@ -189,10 +189,6 @@ policy (ADR-0060).
 - Hardware — the machine a process runs on, its OS, CPU and memory, which each
   Runtime logs as it starts (augusta_hardware); the GPU, display and audio
   device are logged by the modules that open them
-- Identifiers — the UUIDv7 value type the Run, Session and Match IDs are
-  (augusta_uuid, ADR-0035)
-- UTF-8 — a path as UTF-8 text on every platform, for whatever writes one
-  (augusta_utf8)
 - Application — the application boundary each executable's `main` runs behind
   (augusta_application, ADR-0033). The failure model both report in is a module
   of its own (augusta_failure), so any module names a failure without linking

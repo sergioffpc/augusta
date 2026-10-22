@@ -15,6 +15,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
 #include <google/protobuf/arena.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/message_lite.h>
@@ -25,7 +26,6 @@
 #include "augusta/grid.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
-#include "augusta/uuid.h"
 
 namespace augusta::protocol {
 
@@ -129,8 +129,8 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
 
 std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
 
-std::string_view BytesOf(const uuid::Uuid& id) {
-  return {reinterpret_cast<const char*>(id.Bytes().data()), id.Bytes().size()};
+std::string_view BytesOf(const boost::uuids::uuid& id) {
+  return {reinterpret_cast<const char*>(id.begin()), id.size()};
 }
 
 void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
@@ -466,17 +466,17 @@ class Inbound {
 
   // bytes as a UUID (a Run ID, a Match ID): none is the nil one an absent field reads as,
   // and any other length than a UUID's is a number wider than its field.
-  uuid::Uuid Uuid(std::string_view bytes) {
-    uuid::Uuid::ByteArray id{};
+  boost::uuids::uuid Uuid(std::string_view bytes) {
+    boost::uuids::uuid id{};
     if (bytes.empty()) {
-      return {};
+      return id;
     }
     if (bytes.size() != id.size()) {
       Fail(DecodeError::kOutOfRange);
-      return {};
+      return id;
     }
     std::ranges::transform(bytes, id.begin(), [](char byte) { return static_cast<std::uint8_t>(byte); });
-    return uuid::Uuid::FromBytes(id);
+    return id;
   }
 
   // Whether a list of size elements is at most max long.

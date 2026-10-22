@@ -15,11 +15,17 @@
 
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
-#include "augusta/utf8.h"
 
 namespace augusta::host {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 std::optional<capture::Capture> ReadCaptureAt(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
@@ -75,7 +81,7 @@ std::vector<ReplayListing> ReplayCatalog::List() {
   std::vector<ReplayListing> listings;
   std::unordered_map<std::string, Read> still;
   for (const std::filesystem::directory_entry& entry : Entries()) {
-    std::string name = utf8::FromPath(entry.path().filename());
+    std::string name = Utf8(entry.path().filename());
     std::error_code error;
     const std::uintmax_t size = entry.file_size(error);
     const std::filesystem::file_time_type written = entry.last_write_time(error);
@@ -105,7 +111,7 @@ std::optional<capture::Capture> ReplayCatalog::Find(std::string_view name) const
   // name is only ever compared with what the directory lists: a path from the
   // network names no file here, so it reaches none (ADR-0051).
   for (const std::filesystem::directory_entry& entry : Entries()) {
-    const std::string listed = utf8::FromPath(entry.path().filename());
+    const std::string listed = Utf8(entry.path().filename());
     if (listed != name) {
       continue;
     }

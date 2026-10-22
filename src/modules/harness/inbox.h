@@ -9,10 +9,11 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
-#include "augusta/uuid.h"
 #include "pending.h"
 
 /// \file
@@ -31,7 +32,7 @@ class Inbox {
  public:
   /// viewer: whether the Session is a Replay viewer (ADR-0051), which is in
   /// no Match start it is sent. on_match: SessionConfig::on_match, or null.
-  explicit Inbox(bool viewer = false, std::function<void(const uuid::Uuid& match)> on_match = nullptr)
+  explicit Inbox(bool viewer = false, std::function<void(const boost::uuids::uuid& match)> on_match = nullptr)
       : viewer_(viewer), on_match_(std::move(on_match)) {}
 
   /// Not copyable or movable: the view and the pending events are shared with
@@ -80,7 +81,7 @@ class Inbox {
 
   const bool viewer_;
   // Network I/O thread only.
-  const std::function<void(const uuid::Uuid& match)> on_match_;
+  const std::function<void(const boost::uuids::uuid& match)> on_match_;
   // The published view, swapped whole under view_mutex_ and copied out under it:
   // libc++ has no std::atomic<std::shared_ptr>.
   mutable std::mutex view_mutex_;

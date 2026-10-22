@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <optional>
 
-#include "augusta/uuid.h"
+#include <boost/uuid/uuid.hpp>
 
 /// \file
 /// The start of one Run of augustac (GLOSSARY.md): its Run ID, and the files it
@@ -14,7 +14,7 @@ namespace augusta::client {
 
 /// A Run once it has started.
 struct Run {
-  uuid::Uuid id;
+  boost::uuids::uuid id;
   /// The file its log reaches, or nullopt if it reaches only the console.
   std::optional<std::filesystem::path> log_file;
   /// Where a crash on Windows writes its minidump, run_files.h's MinidumpPath,
@@ -39,19 +39,19 @@ Run BeginRun(const std::optional<std::filesystem::path>& directory);
 /// all but the last run_files.h kKeptRuns Runs, current included, warning of
 /// any it could not. Nothing if directory is unknown. Call once the crash
 /// handler is installed, so a crash here is reported too.
-void ReportAndPruneRuns(const std::optional<std::filesystem::path>& directory, const uuid::Uuid& current);
+void ReportAndPruneRuns(const std::optional<std::filesystem::path>& directory, const boost::uuids::uuid& current);
 
 /// Writes one WARN line, `event=previous_run_crashed`, naming the Run before
 /// current in directory and its files when that Run ended in a crash, so a
 /// player learns of it though its window closed; nothing otherwise.
-void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid& current);
+void ReportPreviousRun(const std::filesystem::path& directory, const boost::uuids::uuid& current);
 
 /// While it lives, every line carries `session=<session>` (ADR-0029): held by
 /// ClientRuntime from the admission it sees to the Session's end, so the
 /// client's lines map to the server's about the same Session.
 class SessionLogContext {
  public:
-  explicit SessionLogContext(const uuid::Uuid& session);
+  explicit SessionLogContext(const boost::uuids::uuid& session);
   ~SessionLogContext();
 
   SessionLogContext(const SessionLogContext&) = delete;
@@ -77,7 +77,7 @@ class MatchLogContext {
 
   /// match on every line from now on; with the nil ID, which a Match end and
   /// a Match start that names no Match tell, none.
-  static void Hold(const uuid::Uuid& match);
+  static void Hold(const boost::uuids::uuid& match);
 };
 
 }  // namespace augusta::client

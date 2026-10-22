@@ -3,7 +3,7 @@
 # reading and writing, which is built over it.
 add_library(augusta_capture_records INTERFACE)
 target_include_directories(augusta_capture_records INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_capture_records INTERFACE augusta_assets augusta_gameplay augusta_math augusta_uuid)
+target_link_libraries(augusta_capture_records INTERFACE augusta_assets augusta_gameplay augusta_math Boost::uuid)
 augusta_set_module_scope(augusta_capture_records SHARED)
 
 # A Match capture's file (ADR-0050): its engine-typed capture, read from and
