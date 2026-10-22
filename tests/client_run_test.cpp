@@ -136,7 +136,8 @@ bool IsCanonical(std::string_view text) {
   for (std::size_t i = 0; i < text.size(); ++i) {
     const char c = text[i];
     const bool hyphen = i == 8 || i == 13 || i == 18 || i == 23;
-    if (hyphen ? c != '-' : !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+    const bool digit = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    if (hyphen ? c != '-' : !digit) {
       return false;
     }
   }
