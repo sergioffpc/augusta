@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -12,7 +13,6 @@
 
 #include <gtest/gtest.h>
 
-#include "augusta/config.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
@@ -94,28 +94,83 @@ TEST_F(ClientRunTest, ALaunchAfterACrashedRunWritesOneWarningNamingItAndItsFiles
       << written;
 }
 
+// Run 2 follows a crashed Run, so it is told of it: the warning is written in
+// this setup. Run 3 follows Run 2's terminal failure, and Run 1 follows none.
 TEST_F(ClientRunTest, ALaunchAfterAnyOtherEndWritesNothing) {
   Write(LogPath(Directory(), RunId(1)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
   Write(LogPath(Directory(), RunId(2)),
         "2026-10-21T10:00:01Z CRITICAL subsystem=client event=terminal_failure code=server_unreachable\n");
 
+  EXPECT_NE(Reported(RunId(2)), "");
   EXPECT_EQ(Reported(RunId(3)), "");
   EXPECT_EQ(Reported(RunId(1)), "");
 }
 
-// BeginRun's files are beside the test's executable, as augustac's are beside
-// it; the dump it names is removed after.
+// What BeginRun left behind, undone: its log file's sink and its Run in the
+// context, so the directory can go and no later test's line carries the Run.
+void EndRun(const augusta::client::Run& run) {
+  if (run.log_file) {
+    augusta::logging::RemoveFileSink(*run.log_file);
+  }
+  augusta::logging::ClearContext(augusta::logging::ContextField::kRun);
+}
+
+TEST_F(ClientRunTest, ARunsLogFileAndDumpsAreUnderItsDirectoryNamedByItsId) {
+  const augusta::client::Run run = augusta::client::BeginRun(Directory());
+  EndRun(run);
+
+  EXPECT_EQ(run.log_file, LogPath(Directory(), run.id));
+  EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), run.id)));
+  EXPECT_EQ(run.minidump_file, MinidumpPath(Directory(), run.id));
+}
+
+TEST_F(ClientRunTest, ARunWithNoDirectoryLogsOnlyToTheConsoleAndSaysSo) {
+  testing::internal::CaptureStdout();
+  const augusta::client::Run run = augusta::client::BeginRun(std::nullopt);
+  const std::string written = testing::internal::GetCapturedStdout();
+  EndRun(run);
+
+  EXPECT_FALSE(run.log_file.has_value());
+  EXPECT_FALSE(run.minidump_file.has_value());
+  EXPECT_NE(written.find("WARN subsystem=client event=log_file_unavailable"), std::string::npos) << written;
+}
+
 TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
-  const augusta::client::Run run = augusta::client::BeginRun();
+  const augusta::client::Run run = augusta::client::BeginRun(Directory());
+  EndRun(run);
 
   const auto written = augusta::renderer::WriteGpuCrashDump(std::as_bytes(std::span("gpu")));
 
   ASSERT_TRUE(written.has_value());
-  const auto executable_directory = augusta::config::ExecutableDirectory();
-  ASSERT_TRUE(executable_directory.has_value());
-  EXPECT_EQ(*written, GpuDumpPath(*executable_directory, run.id, 1));
-  std::error_code ignored;
-  std::filesystem::remove(*written, ignored);
+  EXPECT_EQ(*written, GpuDumpPath(Directory(), run.id, 1));
+}
+
+// A launch tells of the crashed Run before it, then keeps only the newest
+// Runs, its own among them.
+TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestRuns) {
+  const auto runs = static_cast<std::uint8_t>(augusta::client::kKeptRuns + 1);
+  for (std::uint8_t n = 1; n <= runs; ++n) {
+    Write(LogPath(Directory(), RunId(n)),
+          "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
+  }
+
+  testing::internal::CaptureStdout();
+  augusta::client::ReportAndPruneRuns(Directory(), RunId(runs));
+  const std::string written = testing::internal::GetCapturedStdout();
+
+  EXPECT_NE(
+      written.find("event=previous_run_crashed crashed_run=" + RunId(static_cast<std::uint8_t>(runs - 1)).ToString()),
+      std::string::npos)
+      << written;
+  EXPECT_FALSE(std::filesystem::exists(LogPath(Directory(), RunId(1))));
+  EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), RunId(2))));
+}
+
+TEST_F(ClientRunTest, ALaunchWithNoDirectoryReportsAndDeletesNothing) {
+  testing::internal::CaptureStdout();
+  augusta::client::ReportAndPruneRuns(std::nullopt, RunId(1));
+
+  EXPECT_EQ(testing::internal::GetCapturedStdout(), "");
 }
 
 const Uuid kSession =
@@ -139,13 +194,17 @@ TEST(SessionLogContextTest, EveryLineWhileTheSessionIsHeldCarriesItsSessionId) {
       << written;
 }
 
+// While held, a line carries the Session; once it ends, none does.
 TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
+  std::string during;
   {
     const SessionLogContext held(kSession);
+    during = WrittenInfoLine("subsystem=test event=playing");
   }
 
   const std::string written = WrittenInfoLine("subsystem=test event=ended");
 
+  EXPECT_NE(during.find("session="), std::string::npos) << during;
   EXPECT_EQ(written.find("session="), std::string::npos) << written;
 }
 

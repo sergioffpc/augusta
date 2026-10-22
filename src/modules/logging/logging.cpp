@@ -19,6 +19,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <boost/log/attributes/attribute_name.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
@@ -30,6 +31,7 @@
 #include <boost/log/utility/manipulators/add_value.hpp>
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/smart_ptr/make_shared_object.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 
 #include "augusta/utf8.h"
 
@@ -63,6 +65,19 @@ struct Context {
 Context& TheContext() {
   static Context context;
   return context;
+}
+
+// The file sinks AddFileSink added, by their file, under their lock.
+using FileSink = boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>;
+
+struct FileSinks {
+  std::mutex mutex;
+  std::vector<std::pair<std::filesystem::path, boost::shared_ptr<FileSink>>> sinks;
+};
+
+FileSinks& TheFileSinks() {
+  static FileSinks file_sinks;
+  return file_sinks;
 }
 
 // The order the fields are appended in, and their keys.
@@ -209,7 +224,6 @@ std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file
     return std::unexpected(FileSinkError{
         .step = FileSinkError::Step::kOpen, .path = file, .reason = std::error_code(errno, std::generic_category())});
   }
-  using FileSink = boost::log::sinks::synchronous_sink<boost::log::sinks::text_ostream_backend>;
   const auto sink = boost::make_shared<FileSink>();
   sink->locked_backend()->add_stream(stream);
   // Flushed as written, as the console is: a crash must not eat the lines before it.
@@ -218,7 +232,23 @@ std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file
     FormatRecord(record, out, false);
   });
   boost::log::core::get()->add_sink(sink);
+  FileSinks& file_sinks = TheFileSinks();
+  const std::scoped_lock lock(file_sinks.mutex);
+  file_sinks.sinks.emplace_back(file, sink);
   return {};
+}
+
+void RemoveFileSink(const std::filesystem::path& file) {
+  FileSinks& file_sinks = TheFileSinks();
+  const std::scoped_lock lock(file_sinks.mutex);
+  // The last sink holding the file's stream, so erasing it closes the file.
+  std::erase_if(file_sinks.sinks, [&file](const auto& added) {
+    if (added.first != file) {
+      return false;
+    }
+    boost::log::core::get()->remove_sink(added.second);
+    return true;
+  });
 }
 
 void SetContext(ContextField field, std::string_view value) { ChangeContext(field, std::string(value)); }

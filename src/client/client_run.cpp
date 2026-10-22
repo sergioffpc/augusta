@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "augusta/config.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/hardware.h"
 #include "augusta/logging.h"
@@ -43,10 +42,9 @@ void PruneOldRuns(const std::filesystem::path& directory) {
 
 }  // namespace
 
-Run BeginRun() {
+Run BeginRun(const std::optional<std::filesystem::path>& directory) {
   Run run{.id = uuid::Generate(), .log_file = std::nullopt, .minidump_file = std::nullopt};
   logging::SetContext(logging::ContextField::kRun, run.id.ToString());
-  const auto directory = config::ExecutableDirectory();
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
     run.minidump_file = MinidumpPath(*directory, run.id);
@@ -57,11 +55,14 @@ Run BeginRun() {
   }
   LOG_INFO("subsystem=client event=starting version={} {}", EngineVersion(), DescribeBuild());
   LOG_INFO("subsystem=client event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+  return run;
+}
+
+void ReportAndPruneRuns(const std::optional<std::filesystem::path>& directory, const uuid::Uuid& current) {
   if (directory) {
-    ReportPreviousRun(*directory, run.id);
+    ReportPreviousRun(*directory, current);
     PruneOldRuns(*directory);
   }
-  return run;
 }
 
 void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid& current) {

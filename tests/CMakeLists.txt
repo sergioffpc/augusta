@@ -784,7 +784,6 @@ if(AUGUSTA_CLIENT)
     PRIVATE
       augusta_client_run
       augusta_client_run_files
-      augusta_config
       augusta_logging
       augusta_renderer_gpu_crash_dump_files
       GTest::gtest

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <gtest/gtest.h>
 
@@ -202,6 +203,27 @@ TEST(LoggingFileSink, ALineReachesTheFileAsItIsWrittenAndUncolored) {
   }
   EXPECT_TRUE(matched) << in_file;
   EXPECT_TRUE(IsInfoLineWrittenBetween(console, "subsystem=test event=to_file run=r1", before, after)) << console;
+}
+
+// Before it is removed a line reaches the file; after, none does, and the file
+// is closed, so it can be deleted.
+TEST(LoggingFileSink, ALineAfterTheSinkIsRemovedReachesTheFileNoMore) {
+  ClearEveryContextField();
+  const std::filesystem::path file =
+      std::filesystem::path(testing::TempDir()) / "augusta_logging_test" / "logs" / "removed_sink.log";
+  std::filesystem::remove(file);
+  augusta::logging::Init();
+  ASSERT_TRUE(augusta::logging::AddFileSink(file).has_value());
+  WrittenInfoLine("subsystem=test event=before_removal");
+
+  augusta::logging::RemoveFileSink(file);
+  WrittenInfoLine("subsystem=test event=after_removal");
+
+  const std::string in_file = ReadWhole(file);
+  EXPECT_NE(in_file.find("event=before_removal"), std::string::npos) << in_file;
+  EXPECT_EQ(in_file.find("event=after_removal"), std::string::npos) << in_file;
+  std::error_code error;
+  EXPECT_TRUE(std::filesystem::remove(file, error)) << error.message();
 }
 
 TEST(LoggingFileSink, AFileThatCannotBeOpenedIsAnError) {

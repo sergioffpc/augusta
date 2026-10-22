@@ -66,6 +66,11 @@ std::string DescribeFileSinkError(const FileSinkError& error);
 /// failure, why it could not be opened, and no sink is added. Thread-safe.
 std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file);
 
+/// Removes the sink AddFileSink added for file, and closes the file: lines
+/// written from now on no longer reach it. Nothing if file has no sink.
+/// Thread-safe.
+void RemoveFileSink(const std::filesystem::path& file);
+
 /// The process-wide context every line carries (ADR-0029): each field set is
 /// appended to every line's message, as `run=<value>`, `session=<value>` and
 /// `match=<value>` in that order, so call sites never write them. Only a process

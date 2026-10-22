@@ -126,7 +126,6 @@ target_link_libraries(
   PUBLIC augusta_uuid
   PRIVATE
     augusta_client_run_files
-    augusta_config
     augusta_hardware
     augusta_logging
     augusta_renderer_gpu_crash_dump_files

@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <optional>
 #include <print>
 #include <string>
@@ -56,12 +57,15 @@ int main(int argc, char** argv) {
     return 0;
   }
   // The Run starts here, before its config is read, so even a config that
-  // fails is named by its Run ID; a --help or --version is no Run. The crash
-  // handler follows at once, as soon as there is a Run to name and a log file
-  // to write the crash into. Its terminal event names its log file, for the
-  // player to send.
-  const augusta::client::Run client_run = augusta::client::BeginRun();
+  // fails is named by its Run ID; a --help or --version is no Run. Its files
+  // are beside the executable. The crash handler follows at once, as soon as
+  // there is a Run to name and a log file to write the crash into, and before
+  // anything else reads or deletes a file. Its terminal event names its log
+  // file, for the player to send.
+  const std::optional<std::filesystem::path> run_directory = augusta::config::ExecutableDirectory();
+  const augusta::client::Run client_run = augusta::client::BeginRun(run_directory);
   augusta::crash::Install(argv[0], kSubsystem, CrashSettings(client_run));
+  augusta::client::ReportAndPruneRuns(run_directory, client_run.id);
   const auto conclude = [&client_run](const augusta::application::Outcome& outcome) {
     return augusta::application::Conclude(kSubsystem, outcome, client_run.log_file);
   };
