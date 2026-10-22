@@ -21,6 +21,7 @@
 #include "augusta/admission.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
+#include "augusta/debug_subscriptions.h"
 #include "augusta/failure.h"
 #include "augusta/failure_latch.h"
 #include "augusta/heartbeat.h"
@@ -122,6 +123,11 @@ struct Host::Impl {
   // expelled during this PumpNetwork, whose messages still in its batch are
   // ignored (peer_gate.h).
   PeerGate gate{metrics};
+#if AUGUSTA_DEBUG_TOOLS
+  // Each connected peer's last Debug subscribe, against the streams the
+  // server's `debug` keys serve (ADR-0038).
+  DebugSubscriptions debug_subscriptions;
+#endif
 
   Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy);
 
@@ -150,6 +156,9 @@ struct Host::Impl {
   void HandleMessage(const link::PeerMessage& message, std::chrono::steady_clock::time_point now);
   void HandleJoinRequest(link::PeerId peer, const JoinRequest& request, std::chrono::steady_clock::time_point now);
   void HandleReady(link::PeerId peer, std::uint32_t version, std::chrono::steady_clock::time_point now);
+#if AUGUSTA_DEBUG_TOOLS
+  void HandleDebugSubscribe(link::PeerId peer, link::DebugSubscribe subscribe);
+#endif
   void HandleCommands(link::PeerId peer, const std::vector<SequencedCommand>& commands,
                       std::chrono::steady_clock::time_point now);
   void RecordRejection(link::PeerId peer, const SequencedCommand& command, Rejection rejection);

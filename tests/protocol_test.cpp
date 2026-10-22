@@ -667,12 +667,13 @@ TEST(ProtocolTest, AnEmptyPayloadIsOfNoTypeThisBuildKnows) {
   EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kUnknownType);
 }
 
-// The envelope's members number from 1 to 17: a member past them is a field
-// this build does not know, ignored, which leaves the envelope with no body.
+// The envelope's members number from 1, one per message: a member past them
+// all (999, below a capture record's 1000) is a field this build does not know,
+// ignored, which leaves the envelope with no body.
 // Requirements: NFR-12
 TEST(ProtocolTest, AnEnvelopeWithNoMemberThisBuildKnowsIsOfAnUnknownType) {
   EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kReenactRequest, {})).has_value());
-  EXPECT_EQ(Decode(LengthField(18, {})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(LengthField(999, {})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(VarintField(1, 1)).error(), DecodeError::kUnknownType);
 }
 

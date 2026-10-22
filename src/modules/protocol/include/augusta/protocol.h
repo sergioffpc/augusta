@@ -106,6 +106,12 @@ enum class MessageTypeWire : std::uint8_t {
   kReplayView = 16,
   /// Client to server: asks to join the Lobby as a Captured player, naming its spawn (ADR-0050).
   kReenactRequest = 17,
+#if AUGUSTA_DEBUG_TOOLS
+  // A Development build's alone (ADR-0038, ADR-0074): a Shipping build has no
+  // such type, and refuses its member as one it lacks.
+  /// Client to server: which streams of the server's state the client wants from now on.
+  kDebugSubscribe = 18,
+#endif
 };
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
@@ -595,11 +601,31 @@ struct ReplayViewWire {
   bool operator==(const ReplayViewWire&) const = default;
 };
 
-/// Any message of the protocol.
+#if AUGUSTA_DEBUG_TOOLS
+/// Client to server, in a Development build: which streams of the server's
+/// state the client wants from now on, each a bit, a cleared one stopping its
+/// stream (ADR-0038). Any byte is a valid one: the server ignores a bit no
+/// stream uses, so a later stream's never makes a message malformed.
+struct DebugSubscribeWire {
+  /// The bit of flags that asks for Shot judgements.
+  static constexpr std::uint8_t kShotJudgements = 1U << 0U;
+
+  std::uint8_t flags = 0;
+
+  bool operator==(const DebugSubscribeWire&) const = default;
+};
+#endif
+
+/// Any message of the protocol: in a Development build, its messages too.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
                  ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire,
-                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire>;
+                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire
+#if AUGUSTA_DEBUG_TOOLS
+                 ,
+                 DebugSubscribeWire
+#endif
+                 >;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;

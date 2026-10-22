@@ -105,6 +105,10 @@ SendResult Client::Send(ReplayListRequest request) { return impl_->Send(ToWire(r
 
 SendResult Client::Send(Ready ready) { return impl_->Send(ToWire(ready)); }
 
+#if AUGUSTA_DEBUG_TOOLS
+SendResult Client::Send(DebugSubscribe subscribe) { return impl_->Send(ToWire(subscribe)); }
+#endif
+
 SendResult Client::Send(std::span<const SequencedCommand> commands) { return impl_->Send(ToWire(commands)); }
 
 std::expected<std::vector<ServerMessage>, failure::Failure> Client::Receive() {

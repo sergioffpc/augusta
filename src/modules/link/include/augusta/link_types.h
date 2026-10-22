@@ -275,6 +275,19 @@ struct Ready {
 /// says nothing more.
 struct ReplayListRequest {};
 
+#if AUGUSTA_DEBUG_TOOLS
+/// A client asks for the streams of the server's state it wants from now on,
+/// in a Development build alone (ADR-0038, ADR-0074): one bit per stream, a
+/// cleared one stopping its stream. A bit no stream uses may be set, and the
+/// server ignores it.
+struct DebugSubscribe {
+  /// The bit of flags that asks for Shot judgements.
+  static constexpr std::uint8_t kShotJudgements = 1U << 0U;
+
+  std::uint8_t flags = 0;
+};
+#endif
+
 /// What a server sends a client: Join accepted (an Admission), Join refused
 /// (its reason), and the rest each as what it says; a Replay list as the
 /// captures it names.
@@ -283,8 +296,13 @@ using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, Ma
 
 /// What a client sends a server: a join (a Reenact request is one that names
 /// its spawn), a Replay request, a Replay list request, a Ready and a tick's
-/// commands, each as what it says.
-using ClientMessage = std::variant<JoinRequest, ReplayRequest, ReplayListRequest, Ready, std::vector<SequencedCommand>>;
+/// commands, each as what it says; in a Development build, a Debug subscribe too.
+using ClientMessage = std::variant<JoinRequest, ReplayRequest, ReplayListRequest, Ready, std::vector<SequencedCommand>
+#if AUGUSTA_DEBUG_TOOLS
+                                   ,
+                                   DebugSubscribe
+#endif
+                                   >;
 
 /// The Networking Protocol's message types (ADR-0038), in the engine's terms:
 /// what a payload is, for whoever counts what it sends and receives.
@@ -306,7 +324,19 @@ enum class MessageType : std::uint8_t {
   kReplayRequest,
   kReplayView,
   kReenactRequest,
+#if AUGUSTA_DEBUG_TOOLS
+  /// A Development build's alone (ADR-0074).
+  kDebugSubscribe,
+#endif
 };
+
+/// The last of MessageType's values in this build: a Development build's
+/// messages follow every other.
+#if AUGUSTA_DEBUG_TOOLS
+inline constexpr MessageType kLastMessageType = MessageType::kDebugSubscribe;
+#else
+inline constexpr MessageType kLastMessageType = MessageType::kReenactRequest;
+#endif
 
 /// type's name as a log line or a metric labels it, e.g. "authoritative_state".
 [[nodiscard]] constexpr std::string_view NameOf(MessageType type) {
@@ -345,6 +375,10 @@ enum class MessageType : std::uint8_t {
       return "replay_view";
     case MessageType::kReenactRequest:
       return "reenact_request";
+#if AUGUSTA_DEBUG_TOOLS
+    case MessageType::kDebugSubscribe:
+      return "debug_subscribe";
+#endif
   }
   return {};
 }

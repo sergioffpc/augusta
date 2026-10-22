@@ -22,7 +22,10 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 
 The `protocol_decode` seeds are what `Encode` writes for the messages in
 [protocol_decode_seeds_test.cpp](protocol_decode_seeds_test.cpp), which fails
-when they drift from it. After a deliberate change to the wire, rewrite them:
+when they drift from it; those of a Development build's messages are in
+[protocol_decode_seeds_debug.cpp](protocol_decode_seeds_debug.cpp), which only a
+Development build checks and regenerates (ADR-0074). After a deliberate change
+to the wire, rewrite them:
 
 ```bash
 cmake --build --preset linux --target augusta_protocol_decode_seeds

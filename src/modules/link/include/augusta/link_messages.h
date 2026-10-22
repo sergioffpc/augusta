@@ -122,6 +122,9 @@ void FillRecipientFields(protocol::AuthoritativeStateWire& state, const Authorit
 
 [[nodiscard]] protocol::ReadyWire ToWire(const Ready& ready);
 [[nodiscard]] protocol::ReplayListRequestWire ToWire(ReplayListRequest request);
+#if AUGUSTA_DEBUG_TOOLS
+[[nodiscard]] protocol::DebugSubscribeWire ToWire(DebugSubscribe subscribe);
+#endif
 
 /// message as what a server says to a client, or nullopt if it is one only a
 /// client sends.

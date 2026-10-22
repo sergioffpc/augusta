@@ -1,3 +1,5 @@
+#include "protocol_decode_seeds.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -5,6 +7,7 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -59,21 +62,18 @@ using augusta::protocol::ShotWire;
 using augusta::protocol::StaminaWire;
 using augusta::protocol::StanceWire;
 using augusta::protocol::WeaponStateWire;
+using augusta::protocol_decode_seeds::DevelopmentSeeds;
+using augusta::protocol_decode_seeds::Seed;
 
-struct Seed {
-  std::string name;
-  MessageWire message;
-};
-
-// One message of each kind, with every list non-empty and every flag in use
-// somewhere, so each field's encoding is in the corpus.
 // A Session ID, a UUIDv7's 16 bytes, told apart by its last byte.
 SessionIdWire Session(std::uint8_t last) {
   return SessionIdWire(
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
-std::vector<Seed> Seeds() {
+// One message of each kind both kinds of build have, with every list non-empty
+// and every flag in use somewhere, so each field's encoding is in the corpus.
+std::vector<Seed> SeedsOfEveryBuild() {
   const BodyStateWire body{.position = Vec3(12.5F, 1.75F, -40.0F),
                            .velocity = Vec3(3.0F, -0.5F, 4.25F),
                            .stamina = 0.25F,
@@ -173,6 +173,15 @@ std::vector<Seed> Seeds() {
                                      .spawn = Vec3(-8.0F, 0.0F, 16.5F),
                                      .run = run}},
   };
+}
+
+// Every seed this build's messages have.
+std::vector<Seed> Seeds() {
+  std::vector<Seed> seeds = SeedsOfEveryBuild();
+  for (Seed& seed : DevelopmentSeeds()) {
+    seeds.push_back(std::move(seed));
+  }
+  return seeds;
 }
 
 std::string SeedPath(const Seed& seed) { return std::string(AUGUSTA_PROTOCOL_DECODE_CORPUS) + "/" + seed.name; }

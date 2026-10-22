@@ -8,7 +8,9 @@ Where anything that plays talks to the server: a Session is the client's network
 connection and PredictionWorld without a window or a GPU, so the client, a
 scripted Agent and an automated test play the same way. It holds the Runner that
 runs a Session in real time, the Intents an Agent acts through, the Captured
-player's reenactment and the netcode statistics a run leaves.
+player's reenactment and the netcode statistics a run leaves. In a Development
+build a Session sends a Debug subscribe for whoever asks for the server's
+streams, keeping no subscription of its own.
 
 ## Not its responsibility
 
@@ -29,4 +31,5 @@ player's reenactment and the netcode statistics a run leaves.
 [ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md),
 [ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
 [ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md),
-[ADR-0052](../../../docs/adr/0052-python-scripted-agents.md).
+[ADR-0052](../../../docs/adr/0052-python-scripted-agents.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

@@ -176,6 +176,9 @@ class Client {
   [[nodiscard]] SendResult Send(const ReplayRequest& request);
   [[nodiscard]] SendResult Send(ReplayListRequest request);
   [[nodiscard]] SendResult Send(Ready ready);
+#if AUGUSTA_DEBUG_TOOLS
+  [[nodiscard]] SendResult Send(DebugSubscribe subscribe);
+#endif
   /// A tick's commands, oldest first, as its one Commands message: the
   /// Carried ones alone.
   [[nodiscard]] SendResult Send(std::span<const SequencedCommand> commands);

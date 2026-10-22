@@ -207,6 +207,14 @@ void Session::ReportReady(std::uint32_t version) {
   }
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+void Session::SubscribeDebug(std::uint8_t flags) {
+  if (impl_->Send(link::DebugSubscribe{.flags = flags})) {
+    LOG_DEBUG("subsystem=harness event=debug_subscribed flags={:#04x}", flags);
+  }
+}
+#endif
+
 std::vector<Shot> Session::TakeShots(const ServerView& view) { return impl_->inbox.TakeShots(view.matches_started); }
 
 std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& view) {

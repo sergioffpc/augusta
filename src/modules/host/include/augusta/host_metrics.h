@@ -54,7 +54,7 @@ using LeavingCounters = metrics::EnumCounters<Leaving, Leaving::kLeft, Leaving::
 /// which host_metrics.cpp checks.
 using MisbehaviourCounters =
     metrics::EnumCounters<PeerRejection, PeerRejection::kUndecodable, PeerRejection::kCommandsBeforeJoining>;
-using MessageCounters = metrics::EnumCounters<MessageType, MessageType::kJoinRequest, MessageType::kReenactRequest>;
+using MessageCounters = metrics::EnumCounters<MessageType, MessageType::kJoinRequest, link::kLastMessageType>;
 using RejectionCounters = metrics::EnumCounters<Rejection, Rejection::kStale, Rejection::kOutOfRange>;
 using BodyPartCounters =
     metrics::EnumCounters<body_part::BodyPart, body_part::BodyPart::kHead, body_part::BodyPart::kLimb>;

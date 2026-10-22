@@ -68,6 +68,9 @@ using MatchEnd = link::MatchEnd;
 using JoinRefusal = link::JoinRefusal;
 using Admission = link::Admission;
 using ReplayListing = link::ReplayListing;
+#if AUGUSTA_DEBUG_TOOLS
+using DebugSubscribe = link::DebugSubscribe;
+#endif
 
 /// The most Shots a Session keeps for TakeShots: a few seconds of a full match
 /// firing, so a caller that asks every frame loses none and one that never
@@ -281,6 +284,15 @@ class Session {
   /// is that of the newest Roster received: the server would not count an older
   /// one. The caller decides when loading is done; safe to call from any thread.
   void ReportReady(std::uint32_t version);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Asks the server for the streams of its state flags names
+  /// (DebugSubscribe's bits), from now on, in a Development build alone
+  /// (ADR-0038, ADR-0074): a cleared bit stops its stream. Sent as it is, at
+  /// any point of the connection; the Session keeps no subscription of its
+  /// own, so a new connection asks again. Safe to call from any thread.
+  void SubscribeDebug(std::uint8_t flags);
+#endif
 
   /// The Shots of the match view is of (ServerView::matches_started): the
   /// match in progress, or the last one if back in the Lobby. Those received

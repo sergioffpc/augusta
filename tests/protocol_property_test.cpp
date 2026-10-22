@@ -6,6 +6,7 @@
 #include <exception>  // IWYU pragma: keep - rapidcheck/Gen.hpp uses it without including it
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -185,7 +186,17 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << ", run " << boost::uuids::to_string(request.run) << "}";
     }
   };
-  std::visit(Printer{.out = out}, message);
+  std::visit(
+      [&out](const auto& typed) {
+        if constexpr (std::is_invocable_v<Printer, decltype(typed)>) {
+          Printer{.out = out}(typed);
+        } else {
+          // A Development build's message (ADR-0074), which Message() never
+          // makes: protocol_property_debug_test.cpp prints its own.
+          out << "Message{type " << +static_cast<std::uint8_t>(TypeOf(MessageWire{typed})) << "}";
+        }
+      },
+      message);
 }
 
 }  // namespace augusta::protocol

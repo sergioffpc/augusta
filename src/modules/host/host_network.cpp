@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string_view>
@@ -12,6 +13,7 @@
 
 #include "augusta/command_queue.h"
 #include "augusta/connection_sample.h"
+#include "augusta/debug_subscriptions.h"
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
@@ -83,6 +85,22 @@ void Host::Impl::HandleReady(link::PeerId peer, std::uint32_t version, std::chro
   }
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// Keeps what peer asks for, whether or not it has joined: never a rejection, so
+// never misbehaviour. A bit the server does not serve is ignored, logged the
+// first time peer sets it.
+void Host::Impl::HandleDebugSubscribe(link::PeerId peer, link::DebugSubscribe subscribe) {
+  const std::uint8_t unserved = debug_subscriptions.Subscribe(peer, subscribe.flags);
+  for (unsigned index = 0; index < std::numeric_limits<std::uint8_t>::digits; ++index) {
+    const auto bit = static_cast<std::uint8_t>(1U << index);
+    if ((unserved & bit) != 0) {
+      LOG_INFO("subsystem=serverruntime event=debug_stream_not_served peer={} stream={}", PeerNumber(peer),
+               DebugStreamName(bit));
+    }
+  }
+}
+#endif
+
 void Host::Impl::HandleCommands(link::PeerId peer, const std::vector<SequencedCommand>& commands,
                                 std::chrono::steady_clock::time_point now) {
   const std::optional<SessionId> session = match.SessionOf(peer);
@@ -153,6 +171,10 @@ void Host::Impl::HandleMessage(const link::PeerMessage& message, std::chrono::st
     HandleCommands(message.from, *commands, now);
   } else if (const auto* ready = std::get_if<link::Ready>(&said)) {
     HandleReady(message.from, ready->version, now);
+#if AUGUSTA_DEBUG_TOOLS
+  } else if (const auto* subscribe = std::get_if<link::DebugSubscribe>(&said)) {
+    HandleDebugSubscribe(message.from, *subscribe);
+#endif
   } else {
     // A Replay list request or a Replay request, which only a replay server serves.
     RefuseAsNoReplayServer(message.from, now);
@@ -201,6 +223,9 @@ void Host::Impl::Expel(link::PeerId peer, std::string_view reason) {
 // simulation at the start of the next tick. how only decides what is logged.
 void Host::Impl::HandleDisconnect(link::PeerId peer, Leaving how) {
   gate.Left(peer);
+#if AUGUSTA_DEBUG_TOOLS
+  debug_subscriptions.Forget(peer);
+#endif
   const std::optional<SessionId> session = match.SessionOf(peer);
   if (!session.has_value()) {
     metrics.disconnects_before_admission[how].Increment();

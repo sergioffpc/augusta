@@ -187,6 +187,10 @@ MessageType Named(protocol::MessageTypeWire type) {
       return MessageType::kReplayView;
     case protocol::MessageTypeWire::kReenactRequest:
       return MessageType::kReenactRequest;
+#if AUGUSTA_DEBUG_TOOLS
+    case protocol::MessageTypeWire::kDebugSubscribe:
+      return MessageType::kDebugSubscribe;
+#endif
   }
   std::unreachable();
 }
@@ -641,6 +645,12 @@ protocol::ReadyWire ToWire(const Ready& ready) { return protocol::ReadyWire{.ver
 
 protocol::ReplayListRequestWire ToWire(ReplayListRequest /*request*/) { return protocol::ReplayListRequestWire{}; }
 
+#if AUGUSTA_DEBUG_TOOLS
+protocol::DebugSubscribeWire ToWire(DebugSubscribe subscribe) {
+  return protocol::DebugSubscribeWire{.flags = subscribe.flags};
+}
+#endif
+
 std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& message) {
   if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
     return FromWire(*accepted);
@@ -697,6 +707,11 @@ std::optional<ClientMessage> ClientMessageFromWire(const protocol::MessageWire& 
   if (std::holds_alternative<protocol::ReplayListRequestWire>(message)) {
     return ReplayListRequest{};
   }
+#if AUGUSTA_DEBUG_TOOLS
+  if (const auto* subscribe = std::get_if<protocol::DebugSubscribeWire>(&message)) {
+    return DebugSubscribe{.flags = subscribe->flags};
+  }
+#endif
   return std::nullopt;
 }
 

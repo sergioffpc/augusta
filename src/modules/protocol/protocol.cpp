@@ -384,6 +384,10 @@ struct Encoder {
     request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
     request.set_run(BytesOf(wire.run));
   }
+
+#if AUGUSTA_DEBUG_TOOLS
+  void operator()(const DebugSubscribeWire& wire) const { message.mutable_debug_subscribe()->set_flags(wire.flags); }
+#endif
 };
 
 // What Decode maps a parsed message to its *Wire with. The first value it meets
@@ -732,6 +736,13 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
       return Read(message.replay_view(), in);
     case pb::Message::kReenactRequest:
       return Read(message.reenact_request(), in);
+    case pb::Message::kDebugSubscribe:
+#if AUGUSTA_DEBUG_TOOLS
+      return DebugSubscribeWire{.flags = in.Narrow(message.debug_subscribe().flags())};
+#else
+      // A Development build's message, which a Shipping one lacks (ADR-0074).
+      return std::nullopt;
+#endif
     case pb::Message::BODY_NOT_SET:
       return std::nullopt;
   }
@@ -1001,6 +1012,9 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
     MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
     MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
+#if AUGUSTA_DEBUG_TOOLS
+    MessageTypeWire operator()(const DebugSubscribeWire& /*wire*/) const { return MessageTypeWire::kDebugSubscribe; }
+#endif
   };
   return std::visit(Type{}, message);
 }

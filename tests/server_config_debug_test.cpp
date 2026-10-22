@@ -62,4 +62,39 @@ TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.reenactments");
 }
 
+TEST(ParseServerConfigTest, SendsNoShotJudgementsByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->shot_judgements);
+}
+
+TEST(ParseServerConfigTest, ReadsWhetherShotJudgementsAreSent) {
+  const auto on = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\n"), kFileDir);
+  const auto off = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: false\n"), kFileDir);
+
+  ASSERT_TRUE(on.has_value());
+  EXPECT_TRUE(on->shot_judgements);
+  ASSERT_TRUE(off.has_value());
+  EXPECT_FALSE(off->shot_judgements);
+}
+
+TEST(ParseServerConfigTest, RejectsShotJudgementsThatAreNeitherTrueNorFalse) {
+  const auto config = ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: 1\n"), kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.shot_judgements");
+}
+
+// A replay server runs no Match, so no round of it is judged.
+TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
+  const auto config =
+      ParseServerConfig(ServerConfigWith("debug:\n  shot_judgements: true\nreplay:\n  captures: captures\n"), kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.shot_judgements");
+}
+
 }  // namespace
