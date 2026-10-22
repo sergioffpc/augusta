@@ -383,11 +383,6 @@ target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTes
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
 
-# What the DebugHud shows (augusta_hud), free of any GPU API.
-add_executable(augusta_hud_tests hud_test.cpp)
-target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_hud_tests)
-
 add_executable(augusta_input_tests input_test.cpp)
 target_link_libraries(augusta_input_tests PRIVATE augusta_input GTest::gtest GTest::gtest_main)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
@@ -913,6 +908,11 @@ endif()
 # refuse a `debug` section.
 if(AUGUSTA_DEBUG_TOOLS)
   # Each debug tool's tests go here.
+
+  # What the DebugHud shows (augusta_hud), free of any GPU API.
+  add_executable(augusta_hud_tests hud_test.cpp)
+  target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_hud_tests)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints

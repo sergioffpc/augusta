@@ -51,3 +51,10 @@ input:
     fire: MouseLeft
     ads: MouseRight
     reload: R
+# Which debug tools start on (optional, ADR-0074). The section exists only in a
+# Development build; a Shipping build, the one players get, refuses it as an
+# unknown key, so it is left commented out here.
+# debug:
+#   # Whether the Debug HUD - the frame rate and the connection's numbers - is
+#   # drawn (optional, default true): true or false.
+#   hud: true

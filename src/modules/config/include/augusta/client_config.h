@@ -27,6 +27,16 @@ inline constexpr std::string_view kClientConfigFileName = "augustac.yaml";
 /// Default server the client connects to (ARCHITECTURE.md §3: direct IP:port).
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 
+#if AUGUSTA_DEBUG_TOOLS
+/// augustac.yaml's `debug` section: which of the client's debug tools start on
+/// (ADR-0074). It exists only in a Development build, so a Shipping build
+/// refuses the section as an unknown key.
+struct ClientDebugConfig {
+  /// Key `debug.hud` (true or false, default true): whether the Debug HUD is drawn.
+  bool hud = true;
+};
+#endif
+
 /// What augustac.yaml holds. Its required key `base_dir` is where the relative
 /// paths below start from; it is applied, not kept.
 struct ClientConfig {
@@ -53,6 +63,10 @@ struct ClientConfig {
   /// An `input.keys` entry it rejects is a kInvalidEntry error, its subject the
   /// entry (`input.keys.jump`) and its reason what is wrong with it.
   input::Config input{};
+#if AUGUSTA_DEBUG_TOOLS
+  /// Section `debug`, in a Development build only.
+  ClientDebugConfig debug{};
+#endif
 };
 
 /// Parses a client config from yaml_text. A relative `base_dir` key is resolved

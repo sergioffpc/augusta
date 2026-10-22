@@ -20,11 +20,14 @@
 
 #include "augusta/math.h"
 #include "augusta/window.h"
-#include "debug_hud.h"
 #include "frame_regions.h"
 #include "vertices.h"
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "debug_hud.h"
+#endif
 
 // The shaders' SPIR-V, compiled at build time (CMakeLists.txt).
 #include "kEffectsPs.h"
@@ -35,7 +38,8 @@
 // The Renderer on NVRHI's Vulkan backend, in the window it is lent (ADR-0059).
 // It draws into an offscreen target, then copies that to the swapchain's image
 // and presents it (vulkan_swapchain.h). It draws the scene, the remote players, the
-// fight's effects and the overlay, and the debug HUD's lines over them.
+// fight's effects and the overlay, and, in a Development build (ADR-0074), the
+// debug HUD's lines over them.
 namespace augusta::renderer {
 
 namespace {
@@ -212,9 +216,11 @@ struct Renderer::Impl {
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
+#if AUGUSTA_DEBUG_TOOLS
   // Made once the device is.
   std::unique_ptr<DebugHud> debug_hud;
   std::vector<std::string> text_lines;
+#endif
 
   // The scene and the remote players, lit by Renderer.3d.slang, and the
   // fight's effects, by Effects.3d.slang, all from the camera's
@@ -256,7 +262,9 @@ struct Renderer::Impl {
     CreateFramebuffer(swapchain.ImageSize().value_or(window.GetSize()));
     commands = device->createCommandList();
     CreatePipelines();
+#if AUGUSTA_DEBUG_TOOLS
     debug_hud = std::make_unique<DebugHud>(*device);
+#endif
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
@@ -459,7 +467,9 @@ struct Renderer::Impl {
     // After everything opaque, so the depth buffer hides the effects behind it.
     Draw(effects_pipeline, bindings, effect_vertices);
     Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
+#if AUGUSTA_DEBUG_TOOLS
     debug_hud->Render(*commands, *framebuffer, text_lines);
+#endif
     // None while the window is minimized: the frame is drawn, not shown.
     if (image != nullptr) {
       // The copy overwrites the whole image, so what it held, and the layout it
@@ -534,6 +544,8 @@ void Renderer::SetCombatEffects(const CombatEffects& effects) { impl_->UploadCom
 
 void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay); }
 
+#if AUGUSTA_DEBUG_TOOLS
 void Renderer::SetTextLines(std::vector<std::string> lines) { impl_->text_lines = std::move(lines); }
+#endif
 
 }  // namespace augusta::renderer

@@ -11,7 +11,9 @@ Draws through NVRHI on Vulkan with Slang shaders into the client's single
 window, which it is lent: it has the window make its Vulkan surface, creates its
 GPU device and swapchain, and draws the Presentation State - the scene, remote
 players, the fight's effects, the overlay - and the debug HUD's text lines over
-them, rendering a frame apart from when the window's events are drained.
+them, rendering a frame apart from when the window's events are drained. A
+Shipping build compiles no debug HUD: no pass, no ImGui, no embedded font
+(ADR-0074).
 
 ## Not its responsibility
 
@@ -27,4 +29,5 @@ them, rendering a frame apart from when the window's events are drained.
 
 [ADR-0014](../../../docs/adr/0014-shading-language.md),
 [ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md),
-[ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md).
+[ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

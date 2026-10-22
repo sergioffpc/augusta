@@ -34,11 +34,14 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
 
-# The connection's numbers as the debug HUD shows them and Nsight Systems plots
-# them (see net_stats.h). nvtx3-cpp (third_party/nvtx, see the root
-# CMakeLists.txt) is header-only.
+# The connection's numbers as Nsight Systems plots them and, in a Development
+# build (ADR-0074), as the debug HUD shows them (see net_stats.h). nvtx3-cpp
+# (third_party/nvtx, see the root CMakeLists.txt) is header-only.
 add_library(augusta_client_net_stats STATIC net_stats.cpp)
-target_link_libraries(augusta_client_net_stats PUBLIC augusta_hud augusta_link nvtx3-cpp)
+target_link_libraries(augusta_client_net_stats PUBLIC augusta_link nvtx3-cpp)
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_client_net_stats PUBLIC augusta_hud)
+endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max in net_stats.cpp.
 target_compile_definitions(augusta_client_net_stats PRIVATE NOMINMAX)
@@ -81,7 +84,6 @@ target_link_libraries(
     augusta_client_net_stats
     augusta_audio
     augusta_gameplay
-    augusta_hud
     augusta_link
     augusta_logging
     augusta_physics
@@ -91,6 +93,10 @@ target_link_libraries(
     augusta_window
     nvtx3-cpp
 )
+# The debug HUD's lines, in a Development build only (ADR-0074).
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_client PRIVATE augusta_hud)
+endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.
 target_compile_definitions(augusta_client PRIVATE NOMINMAX)

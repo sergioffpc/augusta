@@ -26,7 +26,6 @@ if(AUGUSTA_CLIENT)
   # compiler below are the manifest's client feature, which AUGUSTA_CLIENT
   # installs.
   find_package(nvrhi CONFIG REQUIRED)
-  find_package(imgui CONFIG REQUIRED)
   find_package(VulkanHeaders CONFIG REQUIRED)
 
   # Its shaders, compiled to SPIR-V at build time and embedded in the renderer
@@ -53,39 +52,12 @@ if(AUGUSTA_CLIENT)
     )
     set(shader_headers ${shader_headers} ${output} PARENT_SCOPE)
   endfunction()
-  augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
-  augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
   augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
   augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
   augusta_compile_shader(Effects.3d.slang vsMain vertex kEffectsVs)
   augusta_compile_shader(Effects.3d.slang psMain fragment kEffectsPs)
 
-  # The debug HUD's monospace font (fonts/, with its licence), embedded the same
-  # way, so there is no font file to ship or find.
-  set(font_header ${shader_dir}/debug_hud_font.h)
-  set(font ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Bold.ttf)
-  add_custom_command(
-    OUTPUT ${font_header}
-    COMMAND
-      ${CMAKE_COMMAND} -DINPUT=${font} -DOUTPUT=${font_header} -DNAME=kDebugHudFont -P
-      ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
-    DEPENDS ${font} ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
-    COMMENT "Embedding the debug HUD's font"
-    VERBATIM
-  )
-
-  add_library(
-    augusta_renderer
-    STATIC
-    renderer.cpp
-    vulkan_device.cpp
-    vulkan_swapchain.cpp
-    vulkan_gpu_crash_dumps.cpp
-    debug_hud.cpp
-    imgui_renderer.cpp
-    ${shader_headers}
-    ${font_header}
-  )
+  add_library(augusta_renderer STATIC renderer.cpp vulkan_device.cpp vulkan_swapchain.cpp vulkan_gpu_crash_dumps.cpp)
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${shader_dir})
   # No Vulkan loader is linked: Vulkan is reached through the system's, which
   # the window finds at runtime, so the client ships none (ADR-0059).
@@ -99,7 +71,6 @@ if(AUGUSTA_CLIENT)
       nvrhi
       nvrhi_vk
       Vulkan::Headers
-      imgui::imgui
   )
   # Vulkan-Hpp calls Vulkan through a dispatcher filled in at runtime, as NVRHI
   # does (vulkan_device.cpp). NOMINMAX: on Windows, NVRHI's Vulkan target has
@@ -107,6 +78,33 @@ if(AUGUSTA_CLIENT)
   # std::numeric_limits<>::max().
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
+
+  # The debug HUD (debug_hud.h), drawn with Dear ImGui, in a Development build
+  # only (ADR-0074): a Shipping build compiles no HUD pass, ImGui shader or
+  # font.
+  if(AUGUSTA_DEBUG_TOOLS)
+    find_package(imgui CONFIG REQUIRED)
+    augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
+    augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
+
+    # The debug HUD's monospace font (fonts/, with its licence), embedded as the
+    # shaders are, so there is no font file to ship or find.
+    set(font_header ${shader_dir}/debug_hud_font.h)
+    set(font ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Bold.ttf)
+    add_custom_command(
+      OUTPUT ${font_header}
+      COMMAND
+        ${CMAKE_COMMAND} -DINPUT=${font} -DOUTPUT=${font_header} -DNAME=kDebugHudFont -P
+        ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+      DEPENDS ${font} ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+      COMMENT "Embedding the debug HUD's font"
+      VERBATIM
+    )
+    list(APPEND shader_headers ${font_header})
+    target_sources(augusta_renderer PRIVATE debug_hud.cpp imgui_renderer.cpp)
+    target_link_libraries(augusta_renderer PRIVATE imgui::imgui)
+  endif()
+  target_sources(augusta_renderer PRIVATE ${shader_headers})
 
   # GPU crash dumps (vulkan_gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
   # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built

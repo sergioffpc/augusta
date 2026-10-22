@@ -29,9 +29,11 @@ constexpr int kClearChannel = 34;
 constexpr int kTolerance = 1;
 constexpr std::uint8_t kOpaque = 255;
 
+#if AUGUSTA_DEBUG_TOOLS
 // The debug HUD's first line sits in the frame's top rows: its window 10 pixels
 // in, its padding, and one line of text.
 constexpr std::uint32_t kHudBottom = 48;
+#endif
 
 constexpr std::size_t kBytesPerPixel = 4;
 
@@ -171,6 +173,8 @@ TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
   EXPECT_TRUE(frame.pixels.empty());
 }
 
+// The debug HUD is in a Development build only (ADR-0074).
+#if AUGUSTA_DEBUG_TOOLS
 TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
   renderer_->SetTextLines({"FPS: 144 (6.9ms) | RTT: --"});
   RenderFrames();
@@ -182,6 +186,7 @@ TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
   ASSERT_EQ(frame.pixels.size(), std::size_t{kWidth} * kHeight * kBytesPerPixel);
   EXPECT_EQ(CountOtherPixels(frame, kHudBottom, kHeight), 0U);
 }
+#endif
 
 TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
   const CapturedFrame frame = RenderFrames();
@@ -190,6 +195,7 @@ TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
   EXPECT_EQ(CountOtherPixels(frame, 0, kHeight), 0U);
 }
 
+#if AUGUSTA_DEBUG_TOOLS
 TEST_F(RendererSmokeTest, DrawsTheDebugHudsLinesInItsRegion) {
   renderer_->SetTextLines({"FPS: --"});
   const std::size_t short_line = CountOtherPixels(RenderFrames(), 0, kHudBottom);
@@ -201,6 +207,7 @@ TEST_F(RendererSmokeTest, DrawsTheDebugHudsLinesInItsRegion) {
   EXPECT_GT(short_line, 0U);
   EXPECT_GT(CountOtherPixels(frame, 0, kHudBottom), short_line);
 }
+#endif
 
 TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
   SetWorld();

@@ -6,14 +6,13 @@
 #include "augusta/link.h"
 #include "net_stats.h"
 
-// Unit tests for what the debug HUD shows of the connection. Links no GPU or
-// window: they only use hud.h's types.
+// Unit tests for what the client makes of its connection's numbers: the packet
+// loss in every build, and what the debug HUD shows in a Development build only
+// (ADR-0074). Links no GPU or window: they only use hud.h's types.
 namespace {
 
-using augusta::client::HudNetStats;
 using augusta::client::PacketLossPercent;
 using augusta::link::ConnectionStats;
-using std::chrono::milliseconds;
 
 constexpr float kTolerance = 1e-4F;
 
@@ -26,6 +25,10 @@ TEST(PacketLossPercentTest, IgnoresADirectionNotMeasuredYet) {
   EXPECT_NEAR(*PacketLossPercent({.quality_local = 0.8F, .quality_remote = -1.0F}), 20.0F, kTolerance);
   EXPECT_FALSE(PacketLossPercent({.quality_local = -1.0F, .quality_remote = -1.0F}).has_value());
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+using augusta::client::HudNetStats;
+using std::chrono::milliseconds;
 
 TEST(HudNetStatsTest, ShowsNothingWithoutAConnection) {
   HudNetStats hud;
@@ -73,5 +76,6 @@ TEST(HudNetStatsTest, ForgetsTheJitterWhenTheConnectionGoes) {
   ASSERT_TRUE(shown.has_value());
   EXPECT_FALSE(shown->jitter_ms.has_value());
 }
+#endif
 
 }  // namespace
