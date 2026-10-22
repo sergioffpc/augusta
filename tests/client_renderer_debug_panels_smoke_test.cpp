@@ -107,6 +107,10 @@ TEST_F(DebugPanelsSmokeTest, HandsBackAClickedButtonsPress) {
 }
 
 TEST_F(DebugPanelsSmokeTest, HandsBackNothingForAGreyedOutButton) {
+  renderer_->SetDebugPanels({PanelWithButton(false)});
+  RenderFrames();
+  ClickAt(kFirstButtonX, kFirstButtonY);  // Control: not greyed out, the click presses it.
+  ASSERT_EQ(renderer_->TakeDebugControlEvents().size(), 1U);
   renderer_->SetDebugPanels({PanelWithButton(true)});
   RenderFrames();
 

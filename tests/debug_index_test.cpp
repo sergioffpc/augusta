@@ -56,6 +56,9 @@ TEST(DebugIndexTest, IgnoresAnotherPanelsEvent) {
   index.Update(ControlEvent{.panel = "profiling", .control = "hud", .value = false});
 
   EXPECT_TRUE(index.IsOn("hud"));
+  // Control: the same event, the index's, switches the entry.
+  index.Update(ControlEvent{.panel = std::string(kDebugIndexPanelId), .control = "hud", .value = false});
+  EXPECT_FALSE(index.IsOn("hud"));
 }
 
 }  // namespace

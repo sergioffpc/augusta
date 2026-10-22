@@ -91,6 +91,9 @@ TEST(ProfilingPanelTest, NFrameTicksCloseTheWindow) {
 
 TEST(ProfilingPanelTest, FrameTicksOutsideACaptureDoNothing) {
   ProfilingPanel profiling(kWatched);
+  ASSERT_EQ(profiling.Update(Drag(1.0F)), CaptureChange::kNone);
+  ASSERT_EQ(profiling.Update(Press()), CaptureChange::kOpens);
+  ASSERT_EQ(profiling.Tick(), CaptureChange::kCloses);  // Control: in a capture, a tick closes it.
 
   EXPECT_EQ(profiling.Tick(), CaptureChange::kNone);
 }
@@ -157,9 +160,14 @@ TEST(ProfilingPanelTest, TheSliderDoesNotChangeNDuringACapture) {
 TEST(ProfilingPanelTest, AnotherPanelsEventChangesNothing) {
   ProfilingPanel profiling(kWatched);
 
-  EXPECT_EQ(profiling.Update({.panel = "network", .control = "capture", .value = ButtonPress{}}), CaptureChange::kNone);
   EXPECT_EQ(profiling.Update({.panel = "network", .control = "frames", .value = 5.0F}), CaptureChange::kNone);
+  EXPECT_EQ(profiling.Update({.panel = "network", .control = "capture", .value = ButtonPress{}}), CaptureChange::kNone);
   EXPECT_EQ(Find<Slider>(profiling.BuildPanel()).value, 300.0F);
+
+  // Control: the same events, the Profiling panel's, set N and open a window.
+  ASSERT_EQ(profiling.Update(Drag(5.0F)), CaptureChange::kNone);
+  EXPECT_EQ(Find<Slider>(profiling.BuildPanel()).value, 5.0F);
+  EXPECT_EQ(profiling.Update(Press()), CaptureChange::kOpens);
 }
 
 TEST(ProfilingPanelTest, TheProgressTextCountsTheFramesOfTheWindow) {
