@@ -102,9 +102,11 @@ from the image the pod ran.
 - The image has no shell or debugger (ADR-0054): a core is read off the node,
   never inside the pod, and a live server is inspected with `kubectl debug`.
 - On Windows the same module installs an unhandled-exception filter in place of
-  the `SIGSEGV`, `SIGILL` and `SIGFPE` handlers, and keeps `SIGABRT`'s; its
-  frame lines name a module and an offset, and the client's crash writes a
-  minidump (ADR-0055). The development-only Windows server build is given no
-  minidump file, so it writes neither a minidump nor a core.
+  the `SIGSEGV`, `SIGILL` and `SIGFPE` handlers, and keeps `SIGABRT`'s. An
+  exception's crash line names its code, `event=crash exception=0x<code>`, in
+  place of `signal=<name>` (an abort's still names `signal=SIGABRT`); its frame
+  lines name a module and an offset, and the client's crash writes a minidump
+  (ADR-0055). The development-only Windows server build is given no minidump
+  file, so it writes neither a minidump nor a core.
 - The client's release binary gets its counterpart of the release's
   `augustad-linux-x64.debug`, a PDB of the same build, in ADR-0055.
