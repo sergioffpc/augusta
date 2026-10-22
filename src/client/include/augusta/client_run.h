@@ -9,7 +9,7 @@
 /// \file
 /// The start of one Run of augustac (GLOSSARY.md): its Run ID, and the files it
 /// leaves beside the executable (ADR-0027), named as run_files.h names them;
-/// and its Session's ID in its log once it is admitted.
+/// and its Session's and its Match's IDs in its log while it holds them.
 namespace augusta::client {
 
 /// A Run once it has started.
@@ -58,6 +58,26 @@ class SessionLogContext {
   SessionLogContext& operator=(const SessionLogContext&) = delete;
   SessionLogContext(SessionLogContext&&) = delete;
   SessionLogContext& operator=(SessionLogContext&&) = delete;
+};
+
+/// Every line carries `match=<id>` from a Match start it is told of to that
+/// Match's end, and none once it goes (ADR-0029): ClientRuntime hands Hold to
+/// its Session as harness::SessionConfig::on_match, so the client's lines map
+/// to the server's and the capture's about the same Match. The client alone
+/// holds one, as it holds one Session at a time.
+class MatchLogContext {
+ public:
+  MatchLogContext() = default;
+  ~MatchLogContext();
+
+  MatchLogContext(const MatchLogContext&) = delete;
+  MatchLogContext& operator=(const MatchLogContext&) = delete;
+  MatchLogContext(MatchLogContext&&) = delete;
+  MatchLogContext& operator=(MatchLogContext&&) = delete;
+
+  /// match on every line from now on; with the nil ID, which a Match end and
+  /// a Match start that names no Match tell, none.
+  static void Hold(const uuid::Uuid& match);
 };
 
 }  // namespace augusta::client

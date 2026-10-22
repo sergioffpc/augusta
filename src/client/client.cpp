@@ -88,9 +88,11 @@ struct ClientRuntime::Impl {
   LobbyReadiness lobby_readiness;
   input::Input input;
   audio::Engine audio;
-  // `session=` on every line from the admission WaitForAdmission sees: declared
-  // before the Session, so it ends after it, its last lines included.
+  // `session=` on every line from the admission WaitForAdmission sees, and
+  // `match=` from each Match start the Session tells of to its end: declared
+  // before the Session, so they end after it, its last lines included.
   std::optional<SessionLogContext> session_log;
+  MatchLogContext match_log;
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
@@ -213,7 +215,8 @@ struct ClientRuntime::Impl {
                                            .replay = cfg.replay,
                                            .spawn = cfg.reenactment.transform(
                                                [](const harness::Script& script) { return script.spawn; }),
-                                           .run = cfg.run},
+                                           .run = cfg.run,
+                                           .on_match = &MatchLogContext::Hold},
                     std::move(world));
   }
 

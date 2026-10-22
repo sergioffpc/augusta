@@ -26,6 +26,7 @@ namespace {
 
 using augusta::client::GpuDumpPath;
 using augusta::client::LogPath;
+using augusta::client::MatchLogContext;
 using augusta::client::MinidumpPath;
 using augusta::client::ReportPreviousRun;
 using augusta::client::SessionLogContext;
@@ -166,11 +167,19 @@ TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestR
   EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), RunId(2))));
 }
 
+// The same Runs as in a directory that is known, which are reported.
 TEST_F(ClientRunTest, ALaunchWithNoDirectoryReportsAndDeletesNothing) {
-  testing::internal::CaptureStdout();
-  augusta::client::ReportAndPruneRuns(std::nullopt, RunId(1));
+  Write(LogPath(Directory(), RunId(1)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
 
-  EXPECT_EQ(testing::internal::GetCapturedStdout(), "");
+  testing::internal::CaptureStdout();
+  augusta::client::ReportAndPruneRuns(std::nullopt, RunId(2));
+  const std::string unknown = testing::internal::GetCapturedStdout();
+  testing::internal::CaptureStdout();
+  augusta::client::ReportAndPruneRuns(Directory(), RunId(2));
+  const std::string known = testing::internal::GetCapturedStdout();
+
+  EXPECT_EQ(unknown, "");
+  EXPECT_NE(known.find("event=previous_run_crashed"), std::string::npos) << known;
 }
 
 const Uuid kSession =
@@ -206,6 +215,35 @@ TEST(SessionLogContextTest, NoLineAfterTheSessionEndsCarriesASessionId) {
 
   EXPECT_NE(during.find("session="), std::string::npos) << during;
   EXPECT_EQ(written.find("session="), std::string::npos) << written;
+}
+
+const Uuid kMatch =
+    Uuid::FromBytes({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22});
+
+TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNoneAfter) {
+  const MatchLogContext held;
+  MatchLogContext::Hold(kMatch);
+  const std::string during = WrittenInfoLine("subsystem=test event=playing");
+  MatchLogContext::Hold(Uuid{});
+  const std::string after = WrittenInfoLine("subsystem=test event=in_lobby");
+
+  EXPECT_NE(during.find("event=playing match=0190a1b2-c3d4-7000-8000-000000000022\n"), std::string::npos) << during;
+  EXPECT_EQ(after.find("match="), std::string::npos) << after;
+}
+
+// Held when it goes, the Match is carried no more.
+TEST(MatchLogContextTest, NoLineAfterItGoesCarriesAMatchId) {
+  std::string during;
+  {
+    const MatchLogContext held;
+    MatchLogContext::Hold(kMatch);
+    during = WrittenInfoLine("subsystem=test event=playing");
+  }
+
+  const std::string written = WrittenInfoLine("subsystem=test event=closed");
+
+  EXPECT_NE(during.find("match="), std::string::npos) << during;
+  EXPECT_EQ(written.find("match="), std::string::npos) << written;
 }
 
 }  // namespace

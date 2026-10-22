@@ -92,4 +92,14 @@ SessionLogContext::SessionLogContext(const uuid::Uuid& session) {
 
 SessionLogContext::~SessionLogContext() { logging::ClearContext(logging::ContextField::kSession); }
 
+MatchLogContext::~MatchLogContext() { logging::ClearContext(logging::ContextField::kMatch); }
+
+void MatchLogContext::Hold(const uuid::Uuid& match) {
+  if (match == uuid::kNil) {
+    logging::ClearContext(logging::ContextField::kMatch);
+  } else {
+    logging::SetContext(logging::ContextField::kMatch, match.ToString());
+  }
+}
+
 }  // namespace augusta::client
