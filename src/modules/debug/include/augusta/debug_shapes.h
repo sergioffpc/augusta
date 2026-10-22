@@ -2,6 +2,7 @@
 #define AUGUSTA_DEBUG_SHAPES_H_
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 #include "augusta/math.h"
@@ -31,6 +32,8 @@ struct Segment {
   /// Drawn over what is in front of it, as a Hitbox behind cover is, rather
   /// than hidden behind it, as every shape's.
   bool through_walls = false;
+
+  bool operator==(const Segment&) const = default;
 };
 
 /// A triangle, always filled, seen from both sides.
@@ -39,6 +42,69 @@ struct Triangle {
   math::Vec3 color{1.0F, 1.0F, 1.0F};
   float alpha = 1.0F;
   bool through_walls = false;
+
+  bool operator==(const Triangle&) const = default;
+};
+
+/// How a box, a sphere, a capsule or a voxel is drawn: as one-pixel lines
+/// along its outline, or as triangles over its surface.
+enum class Style : std::uint8_t { kWireframe, kFilled };
+
+/// An oriented box.
+struct Box {
+  math::Vec3 center{};
+  /// Half the box's size along each of its own axes, in metres.
+  math::Vec3 half_extents{};
+  /// From the box's own axes to the world's.
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  math::Vec3 color{1.0F, 1.0F, 1.0F};
+  float alpha = 1.0F;
+  Style style = Style::kWireframe;
+  bool through_walls = false;
+
+  bool operator==(const Box&) const = default;
+};
+
+/// A sphere, drawn with a fixed number of segments.
+struct Sphere {
+  math::Vec3 center{};
+  /// In metres.
+  float radius = 0.0F;
+  math::Vec3 color{1.0F, 1.0F, 1.0F};
+  float alpha = 1.0F;
+  Style style = Style::kWireframe;
+  bool through_walls = false;
+
+  bool operator==(const Sphere&) const = default;
+};
+
+/// The points within radius of the segment between from and to, such as a
+/// collider's capsule, drawn with a fixed number of segments.
+struct Capsule {
+  /// The centres of its two hemispherical caps.
+  math::Vec3 from{};
+  math::Vec3 to{};
+  /// In metres.
+  float radius = 0.0F;
+  math::Vec3 color{1.0F, 1.0F, 1.0F};
+  float alpha = 1.0F;
+  Style style = Style::kWireframe;
+  bool through_walls = false;
+
+  bool operator==(const Capsule&) const = default;
+};
+
+/// An axis-aligned cube on a grid, such as one of a Smoke screen's voxels.
+struct Voxel {
+  math::Vec3 center{};
+  /// The cube's edge, in metres.
+  float edge = 1.0F;
+  math::Vec3 color{1.0F, 1.0F, 1.0F};
+  float alpha = 1.0F;
+  Style style = Style::kWireframe;
+  bool through_walls = false;
+
+  bool operator==(const Voxel&) const = default;
 };
 
 /// A frame's shapes, which a producer appends to: drawn for the one frame they
@@ -46,6 +112,12 @@ struct Triangle {
 struct Shapes {
   std::vector<Segment> segments;
   std::vector<Triangle> triangles;
+  std::vector<Box> boxes;
+  std::vector<Sphere> spheres;
+  std::vector<Capsule> capsules;
+  std::vector<Voxel> voxels;
+
+  bool operator==(const Shapes&) const = default;
 };
 
 /// One corner of a drawn line or triangle, in world space, with its shape's
@@ -58,8 +130,9 @@ struct Vertex {
   bool operator==(const Vertex&) const = default;
 };
 
-/// Lines, two vertices each, and triangles, three each, in the order their
-/// shapes were appended.
+/// Lines, two vertices each, and triangles, three each: kind by kind in the
+/// order Shapes lists them, and each kind's shapes in the order they were
+/// appended.
 struct Primitives {
   std::vector<Vertex> lines;
   std::vector<Vertex> triangles;
