@@ -6,10 +6,16 @@ find_package(absl CONFIG REQUIRED)
 add_library(augusta_crash STATIC crash.cpp)
 target_include_directories(augusta_crash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Its lines end in logging's context, which logging keeps for it to read
-# without a lock (logging::CopyContext).
+# without a lock (logging::CopyContext). Its settings name the Run by its
+# Boost.Uuid ID, and are kept past exit in an absl::NoDestructor.
 target_link_libraries(
   augusta_crash
-  PRIVATE augusta_logging $<$<NOT:$<PLATFORM_ID:Windows>>:absl::symbolize> $<$<PLATFORM_ID:Windows>:dbghelp>
+  PUBLIC Boost::uuid
+  PRIVATE
+    augusta_logging
+    absl::no_destructor
+    $<$<NOT:$<PLATFORM_ID:Windows>>:absl::symbolize>
+    $<$<PLATFORM_ID:Windows>:dbghelp>
 )
 # crash.cpp writes through <windows.h> there; keep its min/max macros out of the
 # way of the standard library.

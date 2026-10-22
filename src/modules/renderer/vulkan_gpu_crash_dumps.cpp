@@ -58,7 +58,8 @@ std::filesystem::path ExecutablePath() {
 void WriteDump(const void* dump, std::uint32_t size, void* /*user_data*/) {
   const auto written = WriteGpuCrashDump(std::span(static_cast<const std::byte*>(dump), size));
   if (!written) {
-    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(written.error()));
+    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\" reason=\"{}\"", Utf8(written.error().path),
+             written.error().reason.message());
     return;
   }
   LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(*written));

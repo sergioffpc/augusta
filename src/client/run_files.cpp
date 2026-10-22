@@ -20,9 +20,19 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include "augusta/application.h"
+#include "augusta/crash.h"
+
 namespace augusta::client {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 constexpr std::string_view kLogsFolder = "logs";
 constexpr std::string_view kDumpsFolder = "dumps";
@@ -100,10 +110,7 @@ std::map<boost::uuids::uuid, std::vector<std::filesystem::path>> ScanRuns(const 
       if (!it->is_regular_file(status_error)) {
         continue;
       }
-      // In UTF-8: path::string() converts to the ANSI code page on Windows,
-      // and throws for a character it lacks.
-      const std::u8string name = it->path().filename().u8string();
-      if (const auto run = run_of(std::string{name.begin(), name.end()})) {
+      if (const auto run = run_of(Utf8(it->path().filename()))) {
         runs[*run].push_back(it->path());
       }
     }
@@ -135,18 +142,21 @@ std::string_view Word(std::string_view line, std::size_t index) {
 }
 
 // How a log whose last line is line ended: a line is `<time> <LEVEL>
-// subsystem=<s> event=<e> ...` (ADR-0029), so its event is its fourth word.
+// subsystem=<s> event=<e> ...` (ADR-0029), so its event is its fourth word,
+// one crash.h's or application.h's when the Run crashed or failed.
 RunEnd Classify(std::string_view line) {
   constexpr std::size_t kSubsystemWord = 2;
   constexpr std::size_t kEventWord = 3;
-  if (!Word(line, kSubsystemWord).starts_with("subsystem=")) {
+  constexpr std::string_view kEventKey = "event=";
+  std::string_view event = Word(line, kEventWord);
+  if (!Word(line, kSubsystemWord).starts_with("subsystem=") || !event.starts_with(kEventKey)) {
     return RunEnd::kOrdinary;
   }
-  const std::string_view event = Word(line, kEventWord);
-  if (event == "event=crash" || event == "event=crash_frame") {
+  event.remove_prefix(kEventKey.size());
+  if (event == crash::kCrashEvent || event == crash::kCrashFrameEvent) {
     return RunEnd::kCrash;
   }
-  if (event == "event=terminal_failure") {
+  if (event == application::kTerminalFailureEvent) {
     return RunEnd::kTerminalFailure;
   }
   return RunEnd::kOrdinary;

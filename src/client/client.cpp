@@ -209,15 +209,16 @@ struct ClientRuntime::Impl {
           .detail = std::format("map collision rejected: {}", physics::DescribeCollisionMeshError(added.error()))});
     }
     // A Captured player asks to join at its captured spawn (ADR-0050).
-    session.emplace(harness::SessionConfig{.server = link::Endpoint{.address = cfg.server_address},
-                                           .client_pack = cfg.client_pack,
-                                           .character = cfg.character,
-                                           .replay = cfg.replay,
-                                           .spawn = cfg.reenactment.transform(
-                                               [](const harness::Script& script) { return script.spawn; }),
-                                           .run = cfg.run,
-                                           .on_match = &MatchLogContext::Hold},
-                    std::move(world));
+    session.emplace(
+        harness::SessionConfig{
+            .server = link::Endpoint{.address = cfg.server_address},
+            .client_pack = cfg.client_pack,
+            .character = cfg.character,
+            .replay = cfg.replay,
+            .spawn = cfg.reenactment.transform([](const harness::Script& script) { return script.spawn; }),
+            .run = cfg.run,
+            .on_match = [this](const boost::uuids::uuid& match) { match_log.Hold(match); }},
+        std::move(world));
   }
 
   // Prediction thread only: the state of the tick before the newest, nullopt

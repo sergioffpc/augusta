@@ -12,6 +12,9 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/string_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/logging.h"
@@ -200,7 +203,7 @@ void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::cras
   dup2(STDERR_FILENO, STDOUT_FILENO);
 #endif
   if (settings.run_id) {
-    augusta::logging::SetContext(augusta::logging::ContextField::kRun, *settings.run_id);
+    augusta::logging::SetContext(augusta::logging::ContextField::kRun, boost::uuids::to_string(*settings.run_id));
   }
   augusta::crash::Install("augusta_crash_tests", subsystem, std::move(settings));
   crash();
@@ -208,6 +211,9 @@ void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::cras
 
 // A Run's ID, in its canonical form.
 constexpr std::string_view kRunId = "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f";
+
+// kRunId as the ID the client holds.
+boost::uuids::uuid RunId() { return boost::uuids::string_generator()(std::string(kRunId)); }
 
 // A new, empty directory of the test's own under the temporary directory,
 // which the child that dies makes again (on Windows it reruns the test).
@@ -256,10 +262,9 @@ TEST(CrashHandlerDeathTest, ACrashsLinesEndInTheLogsContext) {
       {
         augusta::logging::SetContext(augusta::logging::ContextField::kSession, "0190f2a4-1b2c-7d3e-8f40-000000000001");
         augusta::logging::SetContext(augusta::logging::ContextField::kMatch, "0190f2a4-1b2c-7d3e-8f40-000000000002");
-        CrashWithStdoutOnStderr("client", {.minidump_file = std::nullopt,
-                                           .run_id = std::string(kRunId),
-                                           .log_file = log,
-                                           .core_location = std::nullopt});
+        CrashWithStdoutOnStderr(
+            "client",
+            {.minidump_file = std::nullopt, .run_id = RunId(), .log_file = log, .core_location = std::nullopt});
       },
       std::string(kCrashEvent));
 
@@ -301,8 +306,7 @@ TEST(CrashHandlerDeathTest, UnhandledExceptionWritesTheRunsMinidumpAndLog) {
 
   EXPECT_DEATH(
       CrashWithStdoutOnStderr(
-          "client",
-          {.minidump_file = minidump, .run_id = std::string(kRunId), .log_file = log, .core_location = std::nullopt}),
+          "client", {.minidump_file = minidump, .run_id = RunId(), .log_file = log, .core_location = std::nullopt}),
       "event=crash exception=0xc0000005");
 
   ASSERT_TRUE(std::filesystem::exists(minidump));
@@ -322,13 +326,12 @@ TEST(CrashHandlerDeathTest, AbortWritesTheRunsMinidump) {
   const std::filesystem::path minidump =
       EmptyDirectory("AbortWritesTheRunsMinidump") / "dumps" / "augustac-0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f.dmp";
 
-  EXPECT_DEATH(CrashWithStdoutOnStderr("client",
-                                       {.minidump_file = minidump,
-                                        .run_id = std::string(kRunId),
-                                        .log_file = std::nullopt,
-                                        .core_location = std::nullopt},
-                                       [] { std::abort(); }),
-               "event=crash signal=SIGABRT");
+  EXPECT_DEATH(
+      CrashWithStdoutOnStderr(
+          "client",
+          {.minidump_file = minidump, .run_id = RunId(), .log_file = std::nullopt, .core_location = std::nullopt},
+          [] { std::abort(); }),
+      "event=crash signal=SIGABRT");
 
   EXPECT_EQ(RunIdStream(minidump), kRunId);
 }
@@ -340,7 +343,7 @@ TEST(CrashHandlerDeathTest, FatalSignalIsLoggedIntoTheRunsLogFile) {
   const std::filesystem::path log = EmptyDirectory("FatalSignalIsLoggedIntoTheRunsLogFile") / "run.log";
 
   EXPECT_DEATH(CrashWithStdoutOnStderr("client", {.minidump_file = std::nullopt,
-                                                  .run_id = std::string(kRunId),
+                                                  .run_id = RunId(),
                                                   .log_file = log,
                                                   .core_location = "coredumpctl dump augustac"}),
                "event=crash signal=SIGSEGV");

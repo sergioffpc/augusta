@@ -57,15 +57,16 @@ PDB matches.
 
 A crashing Windows client writes its own minidump, so a player needs no registry
 key and no Windows Error Reporting setup for there to be a dump. `augustac`
-installs the shared crash handler (ADR-0047) as soon as its Run starts, with the
-Run ID, the Run's log file and `dumps/augustac-<run-id>.dmp` beside the
-executable, named as the Run's other files are (`augusta/run_files.h`). On
-Windows the handler is an unhandled-exception filter
-(`SetUnhandledExceptionFilter`), which meets an exception no handler took in any
-thread. No `SIGSEGV`, `SIGILL` or `SIGFPE` handler is installed beside it: the
-CRT would take the main thread's exception into the signal handler first, and
-the minidump would have no exception to show. `SIGABRT` keeps its handler, since
-`abort()` raises no exception.
+installs the shared crash handler (ADR-0047) as soon as its Run is named, before
+the Run opens, reads or deletes any file, with the Run ID, the Run's log file
+and `dumps/augustac-<run-id>.dmp` beside the executable, named as the Run's
+other files are (`augusta/run_files.h`); only reading its command line comes
+before it, since `--help` and `--version` are no Run. On Windows the handler is
+an unhandled-exception filter (`SetUnhandledExceptionFilter`), which meets an
+exception no handler took in any thread. No `SIGSEGV`, `SIGILL` or `SIGFPE`
+handler is installed beside it: the CRT would take the main thread's exception
+into the signal handler first, and the minidump would have no exception to show.
+`SIGABRT` keeps its handler, since `abort()` raises no exception.
 
 On a crash the filter writes
 `CRITICAL subsystem=client event=crash exception=0x<code>` (`0xc0000005` for an

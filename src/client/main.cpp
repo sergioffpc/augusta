@@ -5,9 +5,6 @@
 #include <string_view>
 #include <utility>
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include "augusta/application.h"
 #include "augusta/client_application.h"
 #include "augusta/client_config.h"
@@ -22,24 +19,6 @@ namespace {
 
 // The subsystem augustac's terminal event and crash lines name (ADR-0029).
 constexpr std::string_view kSubsystem = "client";
-
-// What the crash handler is given of run: its lines carry the Run ID and reach
-// the Run's log too. On Windows a crash writes the Run's minidump; on Linux,
-// where the kernel's core of the crash stays in the player's systemd-coredump,
-// the crash line says how to get it out (ADR-0047, ADR-0055).
-augusta::crash::Settings CrashSettings(const augusta::client::Run& run) {
-#ifdef _WIN32
-  return {.minidump_file = run.minidump_file,
-          .run_id = boost::uuids::to_string(run.id),
-          .log_file = run.log_file,
-          .core_location = std::nullopt};
-#else
-  return {.minidump_file = std::nullopt,
-          .run_id = boost::uuids::to_string(run.id),
-          .log_file = run.log_file,
-          .core_location = "coredumpctl dump augustac"};
-#endif
-}
 
 }  // namespace
 
@@ -59,15 +38,19 @@ int main(int argc, char** argv) {
     return 0;
   }
   // The Run starts here, before its config is read, so even a config that
-  // fails is named by its Run ID; a --help or --version is no Run. Its files
-  // are beside the executable. The crash handler follows at once, as soon as
-  // there is a Run to name and a log file to write the crash into, and before
-  // anything else reads or deletes a file. Its terminal event names its log
+  // fails is named by its Run ID; a --help or --version is no Run, so only
+  // reading the command line comes first. Its files are beside the executable.
+  // The crash handler is installed as soon as there is a Run to name, before
+  // the Run opens, reads or deletes any file. Its terminal event names its log
   // file, for the player to send.
   const std::optional<std::filesystem::path> run_directory = augusta::config::ExecutableDirectory();
-  const augusta::client::Run client_run = augusta::client::BeginRun(run_directory);
-  augusta::crash::Install(argv[0], kSubsystem, CrashSettings(client_run));
-  augusta::client::ReportAndPruneRuns(run_directory, client_run.id);
+  const augusta::client::Run taken_run = augusta::client::TakeRun(run_directory);
+  augusta::crash::Install(argv[0], kSubsystem, augusta::client::CrashSettings(taken_run));
+  const augusta::client::Run client_run = augusta::client::BeginRun(taken_run);
+  if (run_directory) {
+    augusta::client::ReportPreviousRun(*run_directory, client_run.id);
+    augusta::client::PruneOldRuns(*run_directory);
+  }
   const auto conclude = [&client_run](const augusta::application::Outcome& outcome) {
     return augusta::application::Conclude(kSubsystem, outcome, client_run.log_file);
   };

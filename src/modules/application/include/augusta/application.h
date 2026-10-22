@@ -121,6 +121,10 @@ template <typename Runtime>
   return ran ? *std::move(ran) : Outcome(std::move(ran.error()));
 }
 
+/// The event Conclude writes for a failure, `event=<name>`. What reads a log
+/// back for how its Run ended (the client's run_files.h) matches it.
+inline constexpr std::string_view kTerminalFailureEvent = "terminal_failure";
+
 /// Writes the executable's one terminal log event for outcome (ADR-0029) and
 /// returns the exit status main() returns: `subsystem=<executable>
 /// event=terminal_failure <the failure> exit_status=1` at CRIT for a failure,

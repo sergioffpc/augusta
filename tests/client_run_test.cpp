@@ -15,6 +15,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
+#include "augusta/crash.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
@@ -109,7 +110,13 @@ TEST_F(ClientRunTest, ALaunchAfterAnyOtherEndWritesNothing) {
   EXPECT_EQ(Reported(RunId(1)), "");
 }
 
-// What BeginRun left behind, undone: its log file's sink and its Run in the
+// A Run taken and begun, as augustac's main takes and begins one either side
+// of installing the crash handler.
+augusta::client::Run StartRun(const std::optional<std::filesystem::path>& directory) {
+  return augusta::client::BeginRun(augusta::client::TakeRun(directory));
+}
+
+// What StartRun left behind, undone: its log file's sink and its Run in the
 // context, so the directory can go and no later test's line carries the Run.
 void EndRun(const augusta::client::Run& run) {
   if (run.log_file) {
@@ -118,8 +125,19 @@ void EndRun(const augusta::client::Run& run) {
   augusta::logging::ClearContext(augusta::logging::ContextField::kRun);
 }
 
+// Taking a Run names its files but makes none, so the crash handler is
+// installed before the Run touches the disk.
+TEST_F(ClientRunTest, TakingARunNamesItsFilesAndMakesNone) {
+  const augusta::client::Run run = augusta::client::TakeRun(Directory());
+  augusta::logging::ClearContext(augusta::logging::ContextField::kRun);
+
+  EXPECT_EQ(run.directory, Directory());
+  EXPECT_EQ(run.log_file, LogPath(Directory(), run.id));
+  EXPECT_FALSE(std::filesystem::exists(Directory()));
+}
+
 TEST_F(ClientRunTest, ARunsLogFileAndDumpsAreUnderItsDirectoryNamedByItsId) {
-  const augusta::client::Run run = augusta::client::BeginRun(Directory());
+  const augusta::client::Run run = StartRun(Directory());
   EndRun(run);
 
   EXPECT_EQ(run.log_file, LogPath(Directory(), run.id));
@@ -151,9 +169,9 @@ bool IsCanonical(std::string_view text) {
 // The Run ID is a UUIDv7 (GLOSSARY.md): one taken after another is later, so
 // the Runs' files sort in the order the Runs began.
 TEST_F(ClientRunTest, TwoRunIdsTakenOneAfterTheOtherDifferSortInOrderAndAreCanonicalVersion7) {
-  const augusta::client::Run first = augusta::client::BeginRun(std::nullopt);
+  const augusta::client::Run first = StartRun(std::nullopt);
   EndRun(first);
-  const augusta::client::Run second = augusta::client::BeginRun(std::nullopt);
+  const augusta::client::Run second = StartRun(std::nullopt);
   EndRun(second);
 
   const std::string first_text = boost::uuids::to_string(first.id);
@@ -167,17 +185,19 @@ TEST_F(ClientRunTest, TwoRunIdsTakenOneAfterTheOtherDifferSortInOrderAndAreCanon
 
 TEST_F(ClientRunTest, ARunWithNoDirectoryLogsOnlyToTheConsoleAndSaysSo) {
   testing::internal::CaptureStdout();
-  const augusta::client::Run run = augusta::client::BeginRun(std::nullopt);
+  const augusta::client::Run run = StartRun(std::nullopt);
   const std::string written = testing::internal::GetCapturedStdout();
   EndRun(run);
 
   EXPECT_FALSE(run.log_file.has_value());
   EXPECT_FALSE(run.minidump_file.has_value());
   EXPECT_NE(written.find("WARN subsystem=client event=log_file_unavailable"), std::string::npos) << written;
+  // Its GPUs, or that it found none, whatever the machine running the test.
+  EXPECT_NE(written.find("subsystem=client event=gpu"), std::string::npos) << written;
 }
 
 TEST_F(ClientRunTest, ARunNamesItsGpuCrashDumpsAfterItsId) {
-  const augusta::client::Run run = augusta::client::BeginRun(Directory());
+  const augusta::client::Run run = StartRun(Directory());
   EndRun(run);
 
   const auto written = augusta::renderer::WriteGpuCrashDump(std::as_bytes(std::span("gpu")));
@@ -196,7 +216,8 @@ TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestR
   }
 
   testing::internal::CaptureStdout();
-  augusta::client::ReportAndPruneRuns(Directory(), RunId(runs));
+  ReportPreviousRun(Directory(), RunId(runs));
+  augusta::client::PruneOldRuns(Directory());
   const std::string written = testing::internal::GetCapturedStdout();
 
   EXPECT_NE(written.find("event=previous_run_crashed crashed_run=" +
@@ -207,19 +228,36 @@ TEST_F(ClientRunTest, ALaunchReportsTheCrashedRunBeforeItThenKeepsOnlyTheNewestR
   EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), RunId(2))));
 }
 
-// The same Runs as in a directory that is known, which are reported.
-TEST_F(ClientRunTest, ALaunchWithNoDirectoryReportsAndDeletesNothing) {
-  Write(LogPath(Directory(), RunId(1)), "2026-10-21T10:00:01Z CRITICAL subsystem=client event=crash signal=SIGSEGV\n");
+// A crash names its Run and writes into the Run's log; then on Windows its
+// minidump, and on Linux where its core is.
+TEST_F(ClientRunTest, TheCrashHandlerIsGivenTheRunAndWhereItsCrashGoes) {
+  const augusta::client::Run run{.id = RunId(1),
+                                 .log_file = LogPath(Directory(), RunId(1)),
+                                 .minidump_file = MinidumpPath(Directory(), RunId(1)),
+                                 .directory = Directory()};
 
-  testing::internal::CaptureStdout();
-  augusta::client::ReportAndPruneRuns(std::nullopt, RunId(2));
-  const std::string unknown = testing::internal::GetCapturedStdout();
-  testing::internal::CaptureStdout();
-  augusta::client::ReportAndPruneRuns(Directory(), RunId(2));
-  const std::string known = testing::internal::GetCapturedStdout();
+  const augusta::crash::Settings settings = augusta::client::CrashSettings(run);
 
-  EXPECT_EQ(unknown, "");
-  EXPECT_NE(known.find("event=previous_run_crashed"), std::string::npos) << known;
+  EXPECT_EQ(settings.run_id, run.id);
+  EXPECT_EQ(settings.log_file, run.log_file);
+  EXPECT_EQ(settings.minidump_file, run.minidump_file);
+#ifdef _WIN32
+  EXPECT_EQ(settings.core_location, std::nullopt);
+#else
+  EXPECT_EQ(settings.core_location, "coredumpctl dump augustac");
+#endif
+}
+
+// A Run with no files - its directory unknown - gives the handler none.
+TEST_F(ClientRunTest, ARunWithNoFilesGivesTheCrashHandlerNone) {
+  const augusta::client::Run run{
+      .id = RunId(1), .log_file = std::nullopt, .minidump_file = std::nullopt, .directory = std::nullopt};
+
+  const augusta::crash::Settings settings = augusta::client::CrashSettings(run);
+
+  EXPECT_EQ(settings.run_id, run.id);
+  EXPECT_EQ(settings.log_file, std::nullopt);
+  EXPECT_EQ(settings.minidump_file, std::nullopt);
 }
 
 const Uuid kSession = boost::uuids::uuid(
@@ -261,10 +299,10 @@ const Uuid kMatch = boost::uuids::uuid(
     {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22});
 
 TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNoneAfter) {
-  const MatchLogContext held;
-  MatchLogContext::Hold(kMatch);
+  MatchLogContext held;
+  held.Hold(kMatch);
   const std::string during = WrittenInfoLine("subsystem=test event=playing");
-  MatchLogContext::Hold(Uuid{});
+  held.Hold(Uuid{});
   const std::string after = WrittenInfoLine("subsystem=test event=in_lobby");
 
   EXPECT_NE(during.find("event=playing match=0190a1b2-c3d4-7000-8000-000000000022\n"), std::string::npos) << during;
@@ -275,8 +313,8 @@ TEST(MatchLogContextTest, EveryLineFromAMatchStartToItsEndCarriesItsMatchIdAndNo
 TEST(MatchLogContextTest, NoLineAfterItGoesCarriesAMatchId) {
   std::string during;
   {
-    const MatchLogContext held;
-    MatchLogContext::Hold(kMatch);
+    MatchLogContext held;
+    held.Hold(kMatch);
     during = WrittenInfoLine("subsystem=test event=playing");
   }
 

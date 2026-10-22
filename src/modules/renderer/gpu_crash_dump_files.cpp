@@ -35,7 +35,7 @@ std::mutex& GlobalFilesMutex() {
 
 GpuCrashDumpFiles::GpuCrashDumpFiles(GpuCrashDumpNaming naming) : naming_(std::move(naming)) {}
 
-std::expected<std::filesystem::path, std::filesystem::path> GpuCrashDumpFiles::Write(std::span<const std::byte> dump) {
+std::expected<std::filesystem::path, GpuCrashDumpError> GpuCrashDumpFiles::Write(std::span<const std::byte> dump) {
   std::filesystem::path path;
   {
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -45,14 +45,15 @@ std::expected<std::filesystem::path, std::filesystem::path> GpuCrashDumpFiles::W
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) {
-      return std::unexpected(std::move(path));
+      return std::unexpected(GpuCrashDumpError{.path = std::move(path), .reason = error});
     }
   }
   std::ofstream file(path, std::ios::binary);
   file.write(reinterpret_cast<const char*>(dump.data()), static_cast<std::streamsize>(dump.size()));
   file.close();
   if (!file) {
-    return std::unexpected(std::move(path));
+    return std::unexpected(
+        GpuCrashDumpError{.path = std::move(path), .reason = std::make_error_code(std::io_errc::stream)});
   }
   return path;
 }
@@ -63,7 +64,7 @@ void NameGpuCrashDumps(GpuCrashDumpNaming naming) {
   GlobalFiles().swap(files);
 }
 
-std::expected<std::filesystem::path, std::filesystem::path> WriteGpuCrashDump(std::span<const std::byte> dump) {
+std::expected<std::filesystem::path, GpuCrashDumpError> WriteGpuCrashDump(std::span<const std::byte> dump) {
   std::shared_ptr<GpuCrashDumpFiles> files;
   {
     const std::lock_guard<std::mutex> lock(GlobalFilesMutex());

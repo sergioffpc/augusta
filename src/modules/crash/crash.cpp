@@ -11,16 +11,19 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
+#include <boost/uuid/uuid_io.hpp>
+
+#include "absl/base/no_destructor.h"
 #include "augusta/logging.h"
 
 #ifdef _WIN32
 #include <windows.h>
 // After <windows.h>, whose types it uses.
-#include <system_error>
-
 #include <dbghelp.h>
 #include <excpt.h>
 #else
@@ -50,15 +53,25 @@ using Descriptor = HANDLE;
 using Descriptor = int;
 #endif
 
+// How many characters a Run ID is in its canonical form.
+constexpr std::size_t kRunIdLength = 36;
+
 // What Install was given, set before any handler is: the subsystem a literal,
-// the settings never freed, so a crash during exit still reads them. The Run
-// ID (for the minidump) and core location are views into them, empty where not
-// given, and the log file opened ahead of any crash, if given.
+// the Run ID (for the minidump) in its canonical form and the core location a
+// view into GlobalSettings, empty where not given, and the log file opened
+// ahead of any crash, if given.
 std::string_view g_subsystem;
-const Settings* g_settings = nullptr;
+std::array<char, kRunIdLength> g_run_id_text{};
 std::string_view g_run_id;
 std::string_view g_core_location;
 std::optional<Descriptor> g_log_file;
+
+// The settings Install was given, never destroyed, so a crash during exit still
+// reads them.
+Settings& GlobalSettings() {
+  static absl::NoDestructor<Settings> settings;
+  return *settings;
+}
 
 #ifdef _WIN32
 // The minidump's path, from the settings, or nullptr if none.
@@ -205,7 +218,9 @@ void PutCrashPrefix(LineWriter& writer, std::string_view subsystem, std::chrono:
 void PutFramePrefix(LineWriter& writer, std::string_view subsystem, std::chrono::sys_seconds time, int index,
                     std::uintptr_t pc) {
   PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash_frame index=");
+  writer.Put("event=");
+  writer.Put(kCrashFrameEvent);
+  writer.Put(" index=");
   writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
   writer.Put(" pc=0x");
   writer.PutDigits(pc, kHexadecimal);
@@ -427,22 +442,36 @@ void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now
 // time() rather than system_clock::now(): POSIX lists it as async-signal-safe.
 std::chrono::sys_seconds Now() { return std::chrono::sys_seconds{std::chrono::seconds{std::time(nullptr)}}; }
 
-void ReportCrash(int signal) {
+// Every crash's lines, the log's context at the crash ending each: the first,
+// which first(line, now, context) writes into line, then one per frame of the
+// stack capture(frames) stores, innermost first, returning how many. Lambdas,
+// not std::function, which may allocate.
+template <typename FirstLine, typename Capture>
+void WriteCrashLines(FirstLine first, Capture capture) {
   const std::chrono::sys_seconds now = Now();
   logging::ContextText context_text{};
-  const std::string_view log_context = logging::CopyContext(context_text);
+  const std::string_view context = logging::CopyContext(context_text);
   Line line{};
-  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, log_context));
-
+  WriteLine(first(line, now, context));
   std::array<void*, kMaxFrames> frames{};
+  const int depth = capture(std::span<void*>(frames));
+  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, context, line);
+}
+
+void ReportCrash(int signal) {
+  WriteCrashLines(
+      [signal](Line& line, std::chrono::sys_seconds now, std::string_view context) {
+        return FormatSignalLine(line, g_subsystem, now, signal, g_core_location, context);
+      },
+      [](std::span<void*> frames) {
 #ifdef _WIN32
-  CONTEXT context{};
-  RtlCaptureContext(&context);
-  const int depth = CaptureFrames(context, frames);
+        CONTEXT context{};
+        RtlCaptureContext(&context);
+        return CaptureFrames(context, frames);
 #else
-  const int depth = CaptureFrames(frames);
+        return CaptureFrames(frames);
 #endif
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, log_context, line);
+      });
 #ifdef _WIN32
   WriteMinidump(nullptr);
 #endif
@@ -454,14 +483,11 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exception) {
   if (g_reporting.test_and_set()) {
     return EXCEPTION_EXECUTE_HANDLER;
   }
-  const std::chrono::sys_seconds now = Now();
-  logging::ContextText context_text{};
-  const std::string_view context = logging::CopyContext(context_text);
-  Line line{};
-  WriteLine(FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, context));
-  std::array<void*, kMaxFrames> frames{};
-  const int depth = CaptureFrames(*exception->ContextRecord, frames);
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, context, line);
+  WriteCrashLines(
+      [exception](Line& line, std::chrono::sys_seconds now, std::string_view context) {
+        return FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, context);
+      },
+      [exception](std::span<void*> frames) { return CaptureFrames(*exception->ContextRecord, frames); });
   WriteMinidump(exception);
   // Ends the process with the exception's code, as Windows would have, but
   // without Windows Error Reporting: the dump is written.
@@ -538,7 +564,9 @@ std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::c
                                   std::string_view core, std::string_view context) {
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash signal=");
+  writer.Put("event=");
+  writer.Put(kCrashEvent);
+  writer.Put(" signal=");
   if (const std::string_view name = SignalName(signal); !name.empty()) {
     writer.Put(name);
   } else {
@@ -588,7 +616,9 @@ std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std
   constexpr int kCodeDigits = 8;
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash exception=0x");
+  writer.Put("event=");
+  writer.Put(kCrashEvent);
+  writer.Put(" exception=0x");
   writer.PutDigits(code, kHexadecimal, kCodeDigits);
   writer.Put(context);
   return writer.Finish();
@@ -596,23 +626,29 @@ std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std
 
 void Install([[maybe_unused]] const char* argv0, std::string_view subsystem, Settings settings) {
   g_subsystem = subsystem;
-  g_settings = new Settings(std::move(settings));
-  if (g_settings->run_id) {
-    g_run_id = *g_settings->run_id;
+  Settings& kept = GlobalSettings();
+  kept = std::move(settings);
+  if (kept.run_id) {
+    const std::string text = boost::uuids::to_string(*kept.run_id);
+    g_run_id = {g_run_id_text.data(), text.copy(g_run_id_text.data(), g_run_id_text.size())};
   }
-  if (g_settings->core_location) {
-    g_core_location = *g_settings->core_location;
+  if (kept.core_location) {
+    g_core_location = *kept.core_location;
   }
-  if (g_settings->log_file) {
-    g_log_file = OpenForAppending(*g_settings->log_file);
+  if (kept.log_file) {
+    // Its directory made first, as the log sink would: Install comes before
+    // it. If it cannot be, the file is not opened.
+    std::error_code ignored;
+    std::filesystem::create_directories(kept.log_file->parent_path(), ignored);
+    g_log_file = OpenForAppending(*kept.log_file);
   }
 #ifdef _WIN32
-  if (g_settings->minidump_file) {
+  if (kept.minidump_file) {
     // Made now, since the filter makes nothing it can do without; if it cannot
     // be, the minidump is not written, as when the file cannot be created.
     std::error_code ignored;
-    std::filesystem::create_directories(g_settings->minidump_file->parent_path(), ignored);
-    g_minidump_file = g_settings->minidump_file->c_str();
+    std::filesystem::create_directories(kept.minidump_file->parent_path(), ignored);
+    g_minidump_file = kept.minidump_file->c_str();
   }
   SetUnhandledExceptionFilter(HandleUnhandledException);
 #else

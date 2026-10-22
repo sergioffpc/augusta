@@ -16,10 +16,10 @@ PredictionWorld are a module, tested by hand-driven ticks.
 
 - **What is Glue.** Anything worth a test of its own is not Glue and belongs in
   a module. Glue is the entry point alone, tested only end to end.
-- **What is a module.** One building block of ARCHITECTURE Â§5: a directory
+- **What is a module.** One building block of ARCHITECTURE §5: a directory
   `src/modules/<module>/` with one concept and one responsibility at its
   interface. It may build several internal targets, as the renderer and config
-  modules do. A new block enters Â§5 before it gets a directory. Code is grouped
+  modules do. A new block enters §5 before it gets a directory. Code is grouped
   by what changes together, not one module per file.
 - **One consumer is enough.** A module may be used by one side only, scoped
   `CLIENT_ONLY` or `SERVER_ONLY` (ADR-0006), as the renderer, simulation and

@@ -60,7 +60,7 @@ TEST_F(GpuCrashDumpFilesTest, EachDumpIsWrittenWhereTheNamingPutsItsNumberFromOn
   EXPECT_EQ(Read(*second), "gpu");
 }
 
-TEST_F(GpuCrashDumpFilesTest, ADumpThatCannotBeWrittenIsReportedWithItsPath) {
+TEST_F(GpuCrashDumpFilesTest, ADumpThatCannotBeWrittenIsReportedWithItsPathAndWhy) {
   // A file where its folder should be.
   std::filesystem::create_directories(Directory());
   std::ofstream(Directory() / "dumps") << "not a folder";
@@ -69,7 +69,8 @@ TEST_F(GpuCrashDumpFilesTest, ADumpThatCannotBeWrittenIsReportedWithItsPath) {
   const auto written = files.Write(kDump);
 
   ASSERT_FALSE(written.has_value());
-  EXPECT_EQ(written.error(), Directory() / "dumps" / "run.nv-gpudmp");
+  EXPECT_EQ(written.error().path, Directory() / "dumps" / "run.nv-gpudmp");
+  EXPECT_TRUE(written.error().reason);
 }
 
 }  // namespace

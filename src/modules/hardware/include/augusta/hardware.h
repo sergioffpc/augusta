@@ -4,14 +4,16 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 /// \file
 /// The machine a process runs on, as the OS reports it at startup: its
-/// operating system, CPU and memory. Each Runtime logs it once as it starts, so
-/// a log sent with a bug report says what the bug ran on. The GPU, display and
-/// audio device are each logged by the module that opens them (renderer, window,
-/// audio), which alone knows which one it chose. The line's format is
-/// ADR-0029's.
+/// operating system, CPU and memory, and its GPUs with their drivers. Each
+/// Runtime logs it once as it starts, so a log sent with a bug report says what
+/// the bug ran on, even a Run that ends before its Renderer starts. Which GPU
+/// the Renderer draws with, the display and the audio device are each logged
+/// by the module that opens them (renderer, window, audio), which alone knows
+/// which one it chose. The line's format is ADR-0029's.
 namespace augusta::hardware {
 
 struct Cpu {
@@ -55,6 +57,32 @@ Machine QueryMachine();
 /// empty or 0, then cpu_limit and memory_limit_mib, "none" for what is not
 /// capped.
 std::string DescribeMachine(const Machine& machine);
+
+/// One GPU, as the OS lists it.
+struct Gpu {
+  /// As the OS names it, e.g. "NVIDIA GeForce RTX 4090"; empty if it names
+  /// none, as Linux does.
+  std::string name;
+  /// PCI IDs.
+  std::uint32_t vendor_id = 0;
+  std::uint32_t device_id = 0;
+  /// The kernel driver, e.g. "nvidia"; empty where the OS does not say, as on
+  /// Windows.
+  std::string driver;
+  /// The driver's version, e.g. "32.0.15.6094" on Windows (its user-mode
+  /// driver's) or "560.35.03" on Linux (its kernel module's); empty if
+  /// unknown, as for a Linux driver built into the kernel.
+  std::string driver_version;
+};
+
+/// Asks the OS for each GPU it lists: DXGI's hardware adapters on Windows, the
+/// DRM cards on Linux. Never fails: empty if it finds none.
+std::vector<Gpu> QueryGpus();
+
+/// gpu as logfmt fields (ADR-0029): name, vendor (its name for NVIDIA, AMD and
+/// Intel, its ID otherwise), device_id, driver and driver_version, "unknown"
+/// for what is empty.
+std::string DescribeGpu(const Gpu& gpu);
 
 }  // namespace augusta::hardware
 

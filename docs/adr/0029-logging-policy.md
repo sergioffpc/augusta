@@ -47,8 +47,10 @@ writes its `session=` or `match=` itself.
 
 The client's first lines say what read its Crash dumps and where it ran: its
 version with its PDB's GUID and age (Windows) or its build ID (Linux)
-(ADR-0055), then its OS; the Renderer's line naming its GPU and driver follows
-once it chooses one.
+(ADR-0055), then its OS, CPU and memory, then one line per GPU the OS lists with
+its driver's version, so even a Run that ends before its Renderer starts names
+them; the Renderer's line naming the GPU it draws with follows once it chooses
+one.
 
 No level is a safe place for credentials or session/auth tokens - this applies
 unconditionally, including `TRACE`. Peer IPs are fine to log (direct-IP

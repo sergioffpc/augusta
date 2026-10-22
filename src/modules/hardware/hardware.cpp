@@ -9,12 +9,19 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "proc_files.h"
 
 #ifdef _WIN32
 #include <windows.h>
+// After <windows.h>, whose types they use.
+#include <dxgi.h>
+#include <wrl/client.h>
 #else
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 
@@ -75,6 +82,18 @@ std::string LimitMib(std::optional<std::uint64_t> bytes) {
   return bytes ? std::to_string(*bytes / kBytesPerMib) : "none";
 }
 
+// text, in hexadecimal and whole, as a number; nullopt if it is not one.
+std::optional<std::uint32_t> HexNumber(std::string_view text) {
+  constexpr int kHexadecimal = 16;
+  std::uint32_t number = 0;
+  const char* const end = text.data() + text.size();
+  const auto [last, error] = std::from_chars(text.data(), end, number, kHexadecimal);
+  if (text.empty() || error != std::errc{} || last != end) {
+    return std::nullopt;
+  }
+  return number;
+}
+
 std::optional<std::uint64_t> Number(std::string_view text) {
   std::uint64_t number = 0;
   const char* const end = text.data() + text.size();
@@ -85,7 +104,39 @@ std::optional<std::uint64_t> Number(std::string_view text) {
   return number;
 }
 
+// A vendor's name from its PCI ID, or the ID in hexadecimal for another.
+std::string VendorName(std::uint32_t vendor_id) {
+  constexpr std::uint32_t kNvidia = 0x10de;
+  constexpr std::uint32_t kAmd = 0x1002;
+  constexpr std::uint32_t kIntel = 0x8086;
+  switch (vendor_id) {
+    case kNvidia:
+      return "NVIDIA";
+    case kAmd:
+      return "AMD";
+    case kIntel:
+      return "Intel";
+    default:
+      return std::format("{:#06x}", vendor_id);
+  }
+}
+
 #ifdef _WIN32
+
+// text, UTF-16, in UTF-8; empty if it cannot be converted.
+std::string Utf8(std::wstring_view text) {
+  if (text.empty()) {
+    return {};
+  }
+  const int size =
+      WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+  if (size <= 0) {
+    return {};
+  }
+  std::string converted(static_cast<std::size_t>(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), converted.data(), size, nullptr, nullptr);
+  return converted;
+}
 
 // A string under HKEY_LOCAL_MACHINE; empty if there is none.
 std::string RegistryString(const char* key, const char* value) {
@@ -143,10 +194,40 @@ Memory QueryMemory() {
   return {.total_bytes = status.ullTotalPhys, .available_bytes = status.ullAvailPhys};
 }
 
+// Each hardware adapter DXGI lists, the software rasterizer left out: its
+// name, and its user-mode driver's version as Device Manager shows it
+// (32.0.15.6094). DXGI names no driver.
+std::vector<Gpu> ListGpus() {
+  std::vector<Gpu> gpus;
+  Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+    return gpus;
+  }
+  Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+  for (UINT index = 0; factory->EnumAdapters1(index, &adapter) != DXGI_ERROR_NOT_FOUND; ++index) {
+    DXGI_ADAPTER_DESC1 description{};
+    if (FAILED(adapter->GetDesc1(&description)) || (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
+      continue;
+    }
+    std::string version;
+    if (LARGE_INTEGER umd{}; SUCCEEDED(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umd))) {
+      const auto high = static_cast<std::uint32_t>(umd.HighPart);
+      const auto low = static_cast<std::uint32_t>(umd.LowPart);
+      version = std::format("{}.{}.{}.{}", HIWORD(high), LOWORD(high), HIWORD(low), LOWORD(low));
+    }
+    gpus.push_back({.name = Utf8(description.Description),
+                    .vendor_id = description.VendorId,
+                    .device_id = description.DeviceId,
+                    .driver = {},
+                    .driver_version = std::move(version)});
+  }
+  return gpus;
+}
+
 #else
 
 // Empty if path can't be read.
-std::string ReadFile(const char* path) {
+std::string ReadFile(const std::filesystem::path& path) {
   std::ifstream file(path);
   return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
@@ -170,6 +251,32 @@ Memory QueryMemory() { return MemoryFromMeminfo(ReadFile("/proc/meminfo")); }
 Limits QueryLimits() {
   return {.cpus = CpusFromCpuMax(ReadFile("/sys/fs/cgroup/cpu.max")),
           .memory_bytes = BytesFromMemoryMax(ReadFile("/sys/fs/cgroup/memory.max"))};
+}
+
+// Each GPU the kernel's DRM lists as /sys/class/drm/card<n>, in the order it
+// numbers them, with its driver module's version where the module gives one
+// (an out-of-tree one, as NVIDIA's; an in-tree one is the kernel's).
+std::vector<Gpu> ListGpus() {
+  std::vector<std::filesystem::path> cards;
+  std::error_code error;
+  for (std::filesystem::directory_iterator it("/sys/class/drm", error), end; !error && it != end; it.increment(error)) {
+    const std::string name = it->path().filename().string();
+    if (name.starts_with("card") && name.size() > 4 && name.find_first_not_of("0123456789", 4) == std::string::npos) {
+      cards.push_back(it->path());
+    }
+  }
+  std::ranges::sort(cards);
+  std::vector<Gpu> gpus;
+  for (const auto& card : cards) {
+    if (std::optional<Gpu> gpu = GpuFromUevent(ReadFile(card / "device" / "uevent"))) {
+      if (!gpu->driver.empty()) {
+        gpu->driver_version =
+            std::string(Trim(ReadFile(std::filesystem::path("/sys/module") / gpu->driver / "version")));
+      }
+      gpus.push_back(*std::move(gpu));
+    }
+  }
+  return gpus;
 }
 
 #endif
@@ -209,6 +316,24 @@ std::string PrettyNameFromOsRelease(std::string_view os_release) {
   return std::string(name);
 }
 
+std::optional<Gpu> GpuFromUevent(std::string_view uevent) {
+  const std::string_view pci_id = ValueOf(uevent, "PCI_ID", '=').value_or("");
+  const std::size_t colon = pci_id.find(':');
+  if (colon == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::optional<std::uint32_t> vendor_id = HexNumber(pci_id.substr(0, colon));
+  const std::optional<std::uint32_t> device_id = HexNumber(pci_id.substr(colon + 1));
+  if (!vendor_id || !device_id) {
+    return std::nullopt;
+  }
+  return Gpu{.name = {},
+             .vendor_id = *vendor_id,
+             .device_id = *device_id,
+             .driver = std::string(ValueOf(uevent, "DRIVER", '=').value_or("")),
+             .driver_version = {}};
+}
+
 Machine QueryMachine() {
   return {.os = QueryOs(),
           .cpu = {.model = QueryCpuModel(), .logical_cores = std::thread::hardware_concurrency()},
@@ -223,6 +348,13 @@ std::string DescribeMachine(const Machine& machine) {
       machine.cpu.logical_cores == 0 ? "unknown" : std::to_string(machine.cpu.logical_cores),
       Mib(machine.memory.total_bytes), Mib(machine.memory.available_bytes),
       machine.limits.cpus ? std::format("{}", *machine.limits.cpus) : "none", LimitMib(machine.limits.memory_bytes));
+}
+
+std::vector<Gpu> QueryGpus() { return ListGpus(); }
+
+std::string DescribeGpu(const Gpu& gpu) {
+  return std::format("name={} vendor={} device_id={:#06x} driver={} driver_version={}", Quoted(gpu.name),
+                     VendorName(gpu.vendor_id), gpu.device_id, Quoted(gpu.driver), Quoted(gpu.driver_version));
 }
 
 }  // namespace augusta::hardware

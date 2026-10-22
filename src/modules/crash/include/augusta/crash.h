@@ -10,6 +10,8 @@
 #include <string>
 #include <string_view>
 
+#include <boost/uuid/uuid.hpp>
+
 /// \file
 /// What an executable leaves behind when it crashes (ADR-0047): on a fatal
 /// signal it writes the signal and a symbolized stack to stdout as CRITICAL log
@@ -24,6 +26,12 @@
 namespace augusta::crash {
 
 inline constexpr std::size_t kLineCapacity = 512;
+
+/// The events a crash's lines name, `event=<name>`: its first line, then one
+/// per frame. What reads a log back for its crash (the client's run_files.h)
+/// matches them.
+inline constexpr std::string_view kCrashEvent = "crash";
+inline constexpr std::string_view kCrashFrameEvent = "crash_frame";
 
 /// One crash log line, newline included; a longer one is cut to fit.
 using Line = std::array<char, kLineCapacity>;
@@ -77,12 +85,13 @@ struct Settings {
   /// the client's `dumps/augustac-<run-id>.dmp` (ADR-0055). None on Linux,
   /// where the kernel keeps the core.
   std::optional<std::filesystem::path> minidump_file;
-  /// The Run's ID, in its canonical form, which the Windows minidump holds in
-  /// its kRunIdStreamType user stream. The lines' `run=` is the log's context's
-  /// (logging::SetContext), as on every other line.
-  std::optional<std::string> run_id;
+  /// The Run's ID, which the Windows minidump holds in its kRunIdStreamType
+  /// user stream in its canonical form. The lines' `run=` is the log's
+  /// context's (logging::SetContext), as on every other line.
+  std::optional<boost::uuids::uuid> run_id;
   /// The Run's log file, which the crash lines then reach as well as stdout,
-  /// appended to. Opened by Install, since the handler cannot open it.
+  /// appended to. Opened by Install, its directory made if missing, since the
+  /// handler can do neither.
   std::optional<std::filesystem::path> log_file;
   /// How to get the core out of where the kernel keeps it, named on the crash
   /// line as `core="<how>"`: `coredumpctl dump augustac` for a Linux client.

@@ -39,7 +39,7 @@ add_test(
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/server_platform.cmake
 )
 
-# The headless server has no client Input dependency (ARCHITECTURE.md Â§5):
+# The headless server has no client Input dependency (ARCHITECTURE.md §5):
 # augusta_input stays client-only so the configure-time scope check covers it,
 # that check rejects a fixture build graph where a server-only target reaches a
 # client-only one, and no server source or server config header names Input.
