@@ -284,6 +284,9 @@ class Outgoing {
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Death& death);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings);
+#if AUGUSTA_DEBUG_TOOLS
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ShotJudgement& judgement);
+#endif
 
 /// state, an Authoritative State encoded for one recipient, encoded for
 /// recipient instead: recipient's own fields (its acknowledged sequence, rifle,

@@ -1,7 +1,10 @@
 #include "augusta/link_mapping.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -14,6 +17,7 @@
 #include "augusta/parameters.h"
 #include "augusta/replay.h"
 #include "augusta/replication.h"
+#include "augusta/simulation.h"
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 
@@ -123,5 +127,55 @@ link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick) {
   }
   return view;
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+namespace {
+
+link::Struck ToLink(simulation::Struck struck) {
+  switch (struck) {
+    case simulation::Struck::kNothing:
+      return link::Struck::kNothing;
+    case simulation::Struck::kMap:
+      return link::Struck::kMap;
+    case simulation::Struck::kProp:
+      return link::Struck::kProp;
+    case simulation::Struck::kHitbox:
+      return link::Struck::kHitbox;
+  }
+  // A corrupted one goes on as the number it holds, which the Link then
+  // refuses to encode (ADR-0033).
+  return static_cast<link::Struck>(std::to_underlying(struck));
+}
+
+}  // namespace
+
+link::ShotJudgement ToLink(const simulation::ShotJudgement& judgement) {
+  link::ShotJudgement result{
+      .shot_tick = judgement.shot_tick,
+      .shooters_delay = judgement.shooters_delay,
+      .struck = ToLink(judgement.struck),
+      .part = judgement.part,
+      .point = judgement.point,
+      .target = judgement.target.has_value() ? std::optional(ToLink(FromSimulation(*judgement.target))) : std::nullopt,
+      .entries = {},
+      .entries_left_out = judgement.entries_left_out,
+  };
+  result.entries.reserve(judgement.entries.size());
+  for (const simulation::ShotJudgementEntry& entry : judgement.entries) {
+    link::ShotJudgementEntry& mapped = result.entries.emplace_back(
+        link::ShotJudgementEntry{.ticks_after_shot = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+                                     entry.ticks_after_shot, std::numeric_limits<std::uint16_t>::max())),
+                                 .players = {}});
+    mapped.players.reserve(entry.players.size());
+    for (const simulation::JudgedPlayer& player : entry.players) {
+      mapped.players.push_back(link::JudgedPlayer{.entity = ToLink(FromSimulation(player.entity)),
+                                                  .position = player.position,
+                                                  .stance = player.stance,
+                                                  .yaw = player.yaw});
+    }
+  }
+  return result;
+}
+#endif
 
 }  // namespace augusta::host

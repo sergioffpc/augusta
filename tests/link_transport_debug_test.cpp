@@ -18,4 +18,10 @@ TEST(ReliabilityOfDebugTest, ADebugSubscribeTravelsReliably) {
   EXPECT_EQ(ReliabilityOf(MessageType::kDebugSubscribe), Reliability::kReliable);
 }
 
+// Each is sent once, when its round's flight ends: a lost one is a round the
+// overlay never shows.
+TEST(ReliabilityOfDebugTest, AShotJudgementTravelsReliably) {
+  EXPECT_EQ(ReliabilityOf(MessageType::kShotJudgement), Reliability::kReliable);
+}
+
 }  // namespace

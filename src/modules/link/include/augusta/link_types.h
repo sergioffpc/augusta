@@ -286,13 +286,74 @@ struct DebugSubscribe {
 
   std::uint8_t flags = 0;
 };
+
+/// What ended a round's flight, as its Shot judgement tells it.
+enum class Struck : std::uint8_t {
+  /// Nothing: it flew past its range or its flight time.
+  kNothing,
+  kMap,
+  kProp,
+  kHitbox,
+};
+
+/// One player a round was judged against on one tick of its flight, by the
+/// pose the server's Hitbox history gave it: what, with its Character, places
+/// its Hitboxes.
+struct JudgedPlayer {
+  EntityId entity{};
+  /// Where its feet were.
+  math::Vec3 position{};
+  physics::Stance stance = physics::Stance::kStanding;
+  /// Where it faced, in radians.
+  float yaw = 0.0F;
+
+  bool operator==(const JudgedPlayer&) const = default;
+};
+
+/// One tick of a round's flight whose segment crossed some player's bounds.
+struct ShotJudgementEntry {
+  /// How many ticks after its Shot's this one is.
+  std::uint16_t ticks_after_shot = 0;
+  /// Every player whose bounds it crossed.
+  std::vector<JudgedPlayer> players;
+
+  bool operator==(const ShotJudgementEntry&) const = default;
+};
+
+/// How the server judged one round a client's player fired, once its flight
+/// ended (GLOSSARY.md's Shot judgement, ADR-0038), as the server tells that
+/// client alone, in a Development build alone (ADR-0074).
+struct ShotJudgement {
+  /// The server tick its Shot was fired on.
+  tick::Tick shot_tick = 0;
+  /// Its Shooter's delay (ADR-0044), in ticks.
+  float shooters_delay = 0.0F;
+  Struck struck = Struck::kNothing;
+  /// The Body part struck; meaningful only when struck is kHitbox.
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
+  /// Where it struck.
+  math::Vec3 point{};
+  /// The body or Prop it struck; nullopt when it struck neither.
+  std::optional<EntityId> target = std::nullopt;
+  /// The ticks of its flight whose segment crossed some player's bounds, oldest first.
+  std::vector<ShotJudgementEntry> entries;
+  /// Whether more ticks crossed some player's bounds than entries holds.
+  bool entries_left_out = false;
+
+  bool operator==(const ShotJudgement&) const = default;
+};
 #endif
 
 /// What a server sends a client: Join accepted (an Admission), Join refused
 /// (its reason), and the rest each as what it says; a Replay list as the
-/// captures it names.
+/// captures it names; in a Development build, a Shot judgement too.
 using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, MatchEnd, AuthoritativeState, Shot,
-                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>>;
+                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>
+#if AUGUSTA_DEBUG_TOOLS
+                                   ,
+                                   ShotJudgement
+#endif
+                                   >;
 
 /// What a client sends a server: a join (a Reenact request is one that names
 /// its spawn), a Replay request, a Replay list request, a Ready and a tick's
@@ -327,13 +388,14 @@ enum class MessageType : std::uint8_t {
 #if AUGUSTA_DEBUG_TOOLS
   /// A Development build's alone (ADR-0074).
   kDebugSubscribe,
+  kShotJudgement,
 #endif
 };
 
 /// The last of MessageType's values in this build: a Development build's
 /// messages follow every other.
 #if AUGUSTA_DEBUG_TOOLS
-inline constexpr MessageType kLastMessageType = MessageType::kDebugSubscribe;
+inline constexpr MessageType kLastMessageType = MessageType::kShotJudgement;
 #else
 inline constexpr MessageType kLastMessageType = MessageType::kReenactRequest;
 #endif
@@ -378,6 +440,8 @@ inline constexpr MessageType kLastMessageType = MessageType::kReenactRequest;
 #if AUGUSTA_DEBUG_TOOLS
     case MessageType::kDebugSubscribe:
       return "debug_subscribe";
+    case MessageType::kShotJudgement:
+      return "shot_judgement";
 #endif
   }
   return {};

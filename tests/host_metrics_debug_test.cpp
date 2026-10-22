@@ -7,6 +7,8 @@
 #include <prometheus/metric_family.h>
 
 #include "augusta/host_metrics.h"
+#include "augusta/link.h"
+#include "augusta/link_types.h"
 
 // The server's metrics of a Development build's messages (ADR-0049,
 // ADR-0074), as host_metrics_test.cpp has the rest's.
@@ -44,6 +46,19 @@ TEST(HostMetricsDebugTest, ADebugSubscribeIsCountedUnderItsOwnType) {
 
   EXPECT_EQ(CountOf(families, "augustad_messages_received_total", "debug_subscribe"), 2.0);
   EXPECT_EQ(CountOf(families, "augustad_messages_sent_total", "debug_subscribe"), 0.0);
+}
+
+// Requirements: NFR-07
+TEST(HostMetricsDebugTest, EachShotJudgementSentIsCountedUnderItsOwnType) {
+  HostMetrics metrics(kTickRate);
+  const augusta::link::Outgoing judgement = augusta::link::Encode(augusta::link::ShotJudgement{}).value();
+
+  augusta::host::CountSent(metrics, judgement);
+  augusta::host::CountSent(metrics, judgement);
+
+  const std::vector<MetricFamily> families = metrics.Collect();
+  EXPECT_EQ(CountOf(families, "augustad_messages_sent_total", "shot_judgement"), 2.0);
+  EXPECT_EQ(CountOf(families, "augustad_messages_received_total", "shot_judgement"), 0.0);
 }
 
 }  // namespace

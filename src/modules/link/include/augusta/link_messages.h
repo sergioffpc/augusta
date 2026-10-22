@@ -124,6 +124,11 @@ void FillRecipientFields(protocol::AuthoritativeStateWire& state, const Authorit
 [[nodiscard]] protocol::ReplayListRequestWire ToWire(ReplayListRequest request);
 #if AUGUSTA_DEBUG_TOOLS
 [[nodiscard]] protocol::DebugSubscribeWire ToWire(DebugSubscribe subscribe);
+
+/// The Shooter's delay travels as its whole ticks, held to a byte, and its
+/// fraction on the Seen fraction grid (ADR-0038); no target as entity 0.
+[[nodiscard]] protocol::ShotJudgementWire ToWire(const ShotJudgement& judgement);
+[[nodiscard]] ShotJudgement FromWire(const protocol::ShotJudgementWire& judgement);
 #endif
 
 /// message as what a server says to a client, or nullopt if it is one only a

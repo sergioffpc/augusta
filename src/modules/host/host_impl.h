@@ -127,6 +127,9 @@ struct Host::Impl {
   // Each connected peer's last Debug subscribe, against the streams the
   // server's `debug` keys serve (ADR-0038).
   DebugSubscriptions debug_subscriptions;
+  // Whether SimulationWorld builds Shot judgements in each Match
+  // (`debug.shot_judgements`); never changes, so needs no lock.
+  const bool shot_judgements;
 #endif
 
   Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy);
@@ -181,8 +184,8 @@ struct Host::Impl {
   void TakeOutEndedMatch();
   TickInput PrepareTick();
   void CaptureDeaths(const simulation::TickResult& result) const;
-  // Sends state's tick messages to `to`, stopping once the runtime has failed.
-  void SendTick(const simulation::State& state, const TickRecipients& to);
+  // Sends the tick messages of result to `to`, stopping once the runtime has failed.
+  void SendTick(const simulation::TickResult& result, const TickRecipients& to);
 };
 
 }  // namespace augusta::host

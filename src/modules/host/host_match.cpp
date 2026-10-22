@@ -124,6 +124,10 @@ void Host::Impl::StartMatchIfReady() {
     players.at(player.session).commands = CommandQueue{tick_rate_hz};
     sessions.push_back(player.session);
   }
+#if AUGUSTA_DEBUG_TOOLS
+  // Before its first tick, so every round of the Match is judged or none.
+  simulation.JudgeShots(shot_judgements);
+#endif
   const std::vector<math::Vec3> spawns = simulation.StartMatch(entrants, spawn_points);
   simulating_match = true;
   // Its first tick is the one about to run.
@@ -214,6 +218,9 @@ Host::Impl::TickInput Host::Impl::PrepareTick() {
     });
     input.to.peers.emplace(entity, player.peer);
   }
+#if AUGUSTA_DEBUG_TOOLS
+  input.to.shot_judgement_peers = ShotJudgementPeers(input.to, debug_subscriptions);
+#endif
   return input;
 }
 
@@ -227,10 +234,11 @@ void Host::Impl::CaptureDeaths(const simulation::TickResult& result) const {
   }
 }
 
-void Host::Impl::SendTick(const simulation::State& state, const TickRecipients& to) {
+void Host::Impl::SendTick(const simulation::TickResult& result, const TickRecipients& to) {
   // Asked before each message: a failure the Network I/O thread records
   // mid-tick stops the rest of the tick's messages too.
-  if (auto sent = SendTickMessages(network, metrics, state, tick, to, [this] { return Failed(); }); !sent.has_value()) {
+  if (auto sent = SendTickMessages(network, metrics, result, tick, to, [this] { return Failed(); });
+      !sent.has_value()) {
     // Either the tick's messages could not be encoded, and none was sent, or
     // the local transport failed sending them: each kept where a worker takes it.
     failure::FailureLatch& kept =
@@ -248,7 +256,7 @@ simulation::TickResult Host::Tick(float delta_time) {
   if (impl.capturer && impl.capturer->Failure().has_value()) {
     impl.invariant_failure.Record(*impl.capturer->Failure());
   }
-  impl.SendTick(result.state, input.to);
+  impl.SendTick(result, input.to);
   impl.metrics.match_players_alive.Set(static_cast<double>(result.state.alive.size()));
   CountCombat(impl.metrics, result);
   LogCombat(impl.match_id, result.state);

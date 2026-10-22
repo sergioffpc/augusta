@@ -69,6 +69,11 @@ void Inbox::Receive(link::ServerMessage message) {
           OnMatchEnd(said);
         } else if constexpr (std::is_same_v<Said, ReplayView>) {
           OnReplayView(std::forward<Message>(said));
+#if AUGUSTA_DEBUG_TOOLS
+        } else if constexpr (std::is_same_v<Said, link::ShotJudgement>) {
+      // A Development build's Shot judgement (ADR-0038), which nothing
+      // here takes in: dropped, and never a malformed message.
+#endif
         } else {
           // A Replay list, which a replay server sends only a client that asked for it.
           LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"replay list unasked for\"");

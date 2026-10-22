@@ -193,6 +193,12 @@ std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing
   return OutgoingAccess::Make(ToWire(listings));
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+std::expected<Outgoing, failure::Failure> Encode(const ShotJudgement& judgement) {
+  return OutgoingAccess::Make(ToWire(judgement));
+}
+#endif
+
 std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state, const AuthoritativeState& recipient) {
   return OutgoingAccess::Readdressed(state, recipient);
 }

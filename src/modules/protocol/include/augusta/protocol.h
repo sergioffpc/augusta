@@ -111,8 +111,15 @@ enum class MessageTypeWire : std::uint8_t {
   // such type, and refuses its member as one it lacks.
   /// Client to server: which streams of the server's state the client wants from now on.
   kDebugSubscribe = 18,
+  /// Server to client: how the server judged one round the recipient fired, once its flight ended.
+  kShotJudgement = 19,
 #endif
 };
+
+/// The most bytes one payload holds: the largest message the transport sends
+/// (GameNetworkingSockets' k_cbMaxSteamNetworkingSocketsMessageSizeSend,
+/// ADR-0003). Every message the protocol bounds encodes within it.
+inline constexpr std::size_t kMaxPayloadSize = std::size_t{512} * 1024;
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
@@ -614,6 +621,69 @@ struct DebugSubscribeWire {
 
   bool operator==(const DebugSubscribeWire&) const = default;
 };
+
+/// What ended a round's flight, as its Shot judgement tells it.
+enum class StruckWire : std::uint8_t {
+  /// Nothing: it flew past its range or its flight time.
+  kNothing = 0,
+  kMap = 1,
+  kProp = 2,
+  kHitbox = 3,
+};
+
+/// The most ticks of a round's flight one Shot judgement tells.
+inline constexpr std::size_t kMaxShotJudgementEntries = 16;
+
+/// One player a round was judged against on one tick of its flight, as the
+/// Hitbox history held it: what places its Hitboxes, with its Character.
+struct JudgedPlayerWire {
+  /// Where its feet were, on the position grid.
+  math::Vec3 position{};
+  EntityIdWire entity{};
+  /// Where it faced, in radians, on the angle grid.
+  float yaw = 0.0F;
+  StanceWire stance = StanceWire::kStanding;
+
+  bool operator==(const JudgedPlayerWire&) const = default;
+};
+
+/// One tick of a round's flight whose segment crossed some player's bounds.
+struct ShotJudgementEntryWire {
+  /// Every player whose bounds it crossed, at most limits::kMaxPlayers.
+  std::vector<JudgedPlayerWire> players;
+  /// How many ticks after its Shot's this one is.
+  std::uint16_t ticks_after_shot = 0;
+
+  bool operator==(const ShotJudgementEntryWire&) const = default;
+};
+
+/// Server to client, in a Development build, to the round's shooter alone:
+/// how the server judged one round it fired, once its flight ended (ADR-0038).
+struct ShotJudgementWire {
+  /// The bits of flags: more ticks crossed some player's bounds than entries holds.
+  static constexpr std::uint8_t kEntriesLeftOut = 1U << 0U;
+
+  /// The server tick its Shot was fired on.
+  tick::Tick shot_tick = 0;
+  /// The ticks of its flight whose segment crossed some player's bounds,
+  /// oldest first, at most kMaxShotJudgementEntries.
+  std::vector<ShotJudgementEntryWire> entries;
+  /// Where it struck, on the position grid.
+  math::Vec3 point{};
+  /// The Prop or body it struck; 0 when it struck neither.
+  EntityIdWire target{};
+  /// Its Shooter's delay's fraction of a tick, on the Seen fraction grid.
+  float delay_fraction = 0.0F;
+  /// Its Shooter's delay's whole ticks.
+  std::uint8_t delay_ticks = 0;
+  StruckWire struck = StruckWire::kNothing;
+  /// The Body part struck, meaningful only when struck is kHitbox.
+  BodyPartWire part = BodyPartWire::kTorso;
+  /// kEntriesLeftOut or not; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const ShotJudgementWire&) const = default;
+};
 #endif
 
 /// Any message of the protocol: in a Development build, its messages too.
@@ -623,7 +693,7 @@ using MessageWire =
                  ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire
 #if AUGUSTA_DEBUG_TOOLS
                  ,
-                 DebugSubscribeWire
+                 DebugSubscribeWire, ShotJudgementWire
 #endif
                  >;
 
