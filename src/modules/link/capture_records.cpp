@@ -73,11 +73,13 @@ protocol::CaptureHeaderWire HeaderToWire(const capture::Header& header) {
                                      .client_pack = ToWire(header.client_pack),
                                      .engine_version = header.engine_version,
                                      .started_unix_ms = header.started.time_since_epoch().count(),
+                                     .match = header.match,
                                      .tick_rate_hz = header.tick_rate_hz};
 }
 
 capture::Header HeaderFromWire(const protocol::CaptureHeaderWire& header) {
   return capture::Header{
+      .match = header.match,
       .engine_version = header.engine_version,
       .server_pack = FromWire(header.server_pack),
       .client_pack = FromWire(header.client_pack),

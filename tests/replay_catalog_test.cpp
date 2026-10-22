@@ -21,6 +21,7 @@
 #include "augusta/capturer.h"
 #include "augusta/command.h"
 #include "augusta/match.h"
+#include "augusta/uuid.h"
 
 // Which captures a replay server replays (ADR-0051), from a directory of
 // captures a Capturer wrote, as a live server's would be.
@@ -85,19 +86,20 @@ class ReplayCatalogTest : public ::testing::Test {
                                        .character = characters[i],
                                        .spawn = {}});
     }
+    const augusta::uuid::Uuid match = augusta::uuid::Generate();
     {
       Capturer capturer(directory_, capture::Header{.engine_version = "1.0.0",
                                                     .server_pack = PackOf(pack),
                                                     .client_pack = PackOf(2),
                                                     .tick_rate_hz = tick_rate_hz,
                                                     .started = {}});
-      capturer.StartMatch(players, 100, kStarted + std::chrono::seconds(++written_));
+      capturer.StartMatch(match, players, 100, kStarted + std::chrono::seconds(++written_));
       capturer.Command(100 + (last_offset / 2), EntityId{1}, augusta::command::Command{});
       capturer.EndMatch(100 + last_offset, std::nullopt);
     }
-    // Its only Match, the first of its run: destroying it wrote the file.
+    // Its only Match: destroying it wrote the file.
     return augusta::host::CaptureFileName(
-        std::chrono::floor<std::chrono::milliseconds>(kStarted + std::chrono::seconds(written_)), 1);
+        std::chrono::floor<std::chrono::milliseconds>(kStarted + std::chrono::seconds(written_)), match);
   }
 
   std::filesystem::path root_;

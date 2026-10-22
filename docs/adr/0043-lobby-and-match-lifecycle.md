@@ -48,7 +48,8 @@ restart, and Match start gives the same one to every player in the match. The
 server's lines about the match carry it as `match=`, and its Match start line
 also gives every player's `session=`, which is where who played with whom is
 read (ADR-0029). The client holds it in its logging context from Match start to
-Match end, so each of its lines in between carries it too.
+Match end, so each of its lines in between carries it too, and the Match's
+capture is named and headed by it (ADR-0050).
 
 **No one joins a match in progress.** A join that arrives while a match runs is
 refused with a new Join refused reason, _match in progress_.

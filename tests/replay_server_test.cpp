@@ -524,6 +524,9 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
   ASSERT_EQ(starts.size(), 1U);
   ASSERT_EQ(starts[0].players.size(), 2U);
   EXPECT_EQ(starts[0].first_tick, 1U);
+  // The captured Match, by the Match ID the live server gave it.
+  EXPECT_NE(capture.header.match, augusta::uuid::kNil);
+  EXPECT_EQ(starts[0].match, capture.header.match);
   ASSERT_EQ(capture.joins.size(), 2U);
   for (std::size_t i = 0; i < 2; ++i) {
     const augusta::capture::Join& join = capture.joins[i];

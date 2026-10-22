@@ -830,6 +830,7 @@ struct RecordEncoder {
     header.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     header.set_started_unix_ms(wire.started_unix_ms);
     header.set_tick_rate_hz(wire.tick_rate_hz);
+    header.set_match(BytesOf(wire.match));
   }
 
   void operator()(const CapturedJoinWire& wire) const {
@@ -876,6 +877,7 @@ CaptureHeaderWire Read(const pb::CaptureHeader& header, Inbound& in) {
                            .client_pack = in.PackHash(header.client_pack()),
                            .engine_version = in.Text(header.engine_version(), kMaxEngineVersionLength),
                            .started_unix_ms = header.started_unix_ms(),
+                           .match = in.Uuid(header.match()),
                            .tick_rate_hz = in.Narrow(header.tick_rate_hz())};
 }
 

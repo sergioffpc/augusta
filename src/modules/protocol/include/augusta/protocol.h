@@ -513,8 +513,9 @@ struct DeathWire {
 };
 
 /// Longest Match capture name a Replay message may carry, in bytes: a
-/// capture's file name (host::CaptureFileName's) is about half of it.
-inline constexpr std::size_t kMaxCaptureNameLength = 64;
+/// capture's file name (host::CaptureFileName's) is 61 of them, so a name with
+/// a path around it still fits, and is refused as no name the server lists.
+inline constexpr std::size_t kMaxCaptureNameLength = 128;
 
 /// The most captures a Replay list names.
 inline constexpr std::size_t kMaxReplayListings = 255;
@@ -701,7 +702,7 @@ inline constexpr std::array<std::byte, 8> kCaptureMagic{std::byte{'A'},  std::by
 /// The capture format this engine writes: the one raw byte a capture file holds
 /// after its magic and before its first record, so a reader refuses another
 /// format before it parses any record.
-inline constexpr std::uint8_t kCaptureFormatVersion = 3;
+inline constexpr std::uint8_t kCaptureFormatVersion = 4;
 
 /// Which record a payload is: the number of its augusta.CaptureRecord member,
 /// less 1000.
@@ -716,7 +717,7 @@ enum class CaptureRecordTypeWire : std::uint8_t {
   kMatchEnd = 6,
 };
 
-/// What a captured Match ran on and when it started.
+/// Which Match was captured, what it ran on and when it started.
 struct CaptureHeaderWire {
   /// The hash of the server pack the Match ran on (ADR-0031).
   PackHashWire server_pack{};
@@ -726,6 +727,8 @@ struct CaptureHeaderWire {
   std::string engine_version;
   /// When the Match started, in milliseconds since the Unix epoch, UTC.
   std::int64_t started_unix_ms = 0;
+  /// The Match's ID, as Match start names it (MatchStartWire::match).
+  uuid::Uuid match = uuid::kNil;
   std::uint8_t tick_rate_hz = 0;
 
   bool operator==(const CaptureHeaderWire&) const = default;

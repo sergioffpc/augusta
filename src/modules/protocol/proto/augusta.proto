@@ -353,7 +353,8 @@ message CaptureRecord {
   }
 }
 
-// What a captured Match ran on and when it started: a capture's first record.
+// Which Match was captured, what it ran on and when it started: a capture's
+// first record.
 // The format's version is the raw byte before it, never a field.
 message CaptureHeader {
   // The server and client packs' BLAKE3 hashes, 32 bytes each.
@@ -363,6 +364,8 @@ message CaptureHeader {
   // In milliseconds since the Unix epoch, UTC.
   int64 started_unix_ms = 4;
   uint32 tick_rate_hz = 5;
+  // The Match's ID, 16 bytes, as MatchStart names it.
+  bytes match = 6;
 }
 
 // A player of the Match start, in its order: always at offset 0.
