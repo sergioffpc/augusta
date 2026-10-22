@@ -152,6 +152,7 @@ def test_image_roots_are_the_caches_branches_environments_and_commits():
     tags = {
         "buildcache",
         "buildcache-arm64",
+        "buildcache-dev",
         "develop",
         "main",
         "sha-aaaaaaaaaaaa",
@@ -184,6 +185,7 @@ def test_image_roots_are_the_caches_branches_environments_and_commits():
     assert _refs(roots, required=True) == [
         "buildcache",
         "buildcache-arm64",
+        "buildcache-dev",
         "develop",
         "main",
         "sha-cccccccccccc",
