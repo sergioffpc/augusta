@@ -2,6 +2,62 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 6.0.0 - 2026-10-22
+
+### Features
+
+- **client:** name each Run by a UUIDv7 Run ID and log it to a file
+- **protocol:** name each Match by a UUIDv7 Match ID
+- **client:** keep the last 10 Runs' files and report a crashed Run
+- **client:** log a Linux client's crash into the Run's log
+- **protocol:** carry the client's Run ID on its join, and log it at admission
+- **client:** write Aftermath GPU crash dumps to the Run's dumps/
+- **protocol:** **BREAKING** make the Session ID a UUIDv7 unique across servers
+- **capture:** name and head each Match capture by its Match ID
+- **crash:** write a Windows client's minidump under its Run ID
+- **crash:** end a crash's lines in the log's whole context
+
+### Bug Fixes
+
+- **pack:** build the cooker's native target on every bootstrap
+- **harness:** report a resynchronised Tick, and stop two tests timing the machine
+- **uuid:** name the hash's and the hex digits' constants for clang-tidy
+- **protocol:** satisfy clang-tidy for the Match ID
+- **uuid:** keep the std specialisations out of Doxygen, and include <iterator> only on Windows
+- **uuid:** default the Run ID fields to a named nil ID for clang-tidy
+- **crash:** put the deprecated-header waiver on <signal.h> itself
+- **protocol:** copy the counting Run ID's bytes out of its temporary
+- **build:** keep Boost.Uuid from linking augustad to libatomic
+- **protocol:** keep a Replay message's capture name at 64 bytes
+- **client:** hold the Match in the log context in the client, not the Inbox
+- **crash:** let one thread at a time report a Linux crash
+- **client:** name a minidump file only on Windows
+- **crash:** drop <sys/types.h>, which the Linux handler does not use directly
+- **client:** install the crash handler before the Run opens a file, and log its GPUs at startup
+
+### Refactoring
+
+- **crash:** share the crash handler between client and server
+- **uuid:** export the canonical form's length as uuid::kTextLength
+- **utf8:** give the path-to-UTF-8 helper one home
+- **crash:** write both frame lines' shared prefix once
+- **logging:** return a file sink's failure as a type
+- **client:** inject the Run's directory and look back once crash is installed
+- use Boost.Uuid and the standard library in place of augusta_uuid and augusta_utf8
+- name process-wide accessors by the Process prefix
+- name process-wide accessors by the Global prefix
+
+### Documentation
+
+- **scripts:** index the scripts in a README
+- **requirements:** add a table of contents
+- **adr:** a repeated logfmt key and the Windows crash line
+- name the build identity in version.h and mark NFR-10's tests
+- **host:** quote the capture names Doxygen read as an HTML tag
+
+### Tests
+
+- **client:** split the canonical-form check so tidy reads it
 ## 5.0.0 - 2026-10-21
 
 ### Features
