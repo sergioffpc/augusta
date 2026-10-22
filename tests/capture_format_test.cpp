@@ -60,10 +60,14 @@ constexpr augusta::uuid::Uuid Session(std::uint8_t last) {
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
+// The captured Match's ID, a UUIDv7.
+constexpr augusta::uuid::Uuid kMatch = augusta::uuid::Uuid::FromBytes(
+    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x7A, 0xBC, 0x8D, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB});
+
 constexpr std::chrono::sys_time<std::chrono::milliseconds> kStarted{std::chrono::milliseconds{1'791'000'000'123}};
 
 Header TheHeader() {
-  Header header{.engine_version = "0.4.0", .tick_rate_hz = 60, .started = kStarted};
+  Header header{.match = kMatch, .engine_version = "0.4.0", .tick_rate_hz = 60, .started = kStarted};
   header.server_pack.fill(std::byte{0x11});
   header.client_pack.fill(std::byte{0x22});
   return header;
@@ -158,6 +162,14 @@ TEST(CaptureFormatTest, EachPlayersJoinIsAtItsNumberLessOne) {
   EXPECT_EQ(read->joins[1].session, Session(9));
 }
 
+// A capture's header names its Match by the Match ID.
+// Requirements: US-21
+TEST(CaptureFormatTest, ACapturesHeaderReadsBackWithItsMatchId) {
+  const auto read = Read(Bytes(TwoPlayers(MatchEnd{})));
+  ASSERT_TRUE(read.has_value());
+  EXPECT_EQ(read->header.match, kMatch);
+}
+
 // A capture with no events, stopped before its Match end, reads as it was.
 TEST(CaptureFormatTest, ACaptureStoppedBeforeItsMatchEndReadsBackEqual) {
   const Capture written{.header = TheHeader(), .joins = TwoJoins(), .events = {}, .torn = false};
@@ -181,14 +193,14 @@ TEST(CaptureFormatTest, AFileStartsWithTheMagicThenItsFormatVersion) {
                           augusta::protocol::kCaptureMagic.size());
   ASSERT_GT(bytes.size(), magic.size());
   EXPECT_EQ(bytes.substr(0, magic.size()), magic);
-  EXPECT_EQ(static_cast<std::uint8_t>(bytes[magic.size()]), 3);
+  EXPECT_EQ(static_cast<std::uint8_t>(bytes[magic.size()]), 4);
 }
 
 // Another format version is refused by name, so whoever runs the process is
 // told which version the file is.
 // Requirements: NFR-12
 TEST(CaptureFormatTest, AnotherFormatVersionIsRefusedNamingIt) {
-  for (const std::uint8_t version : {0, 2, 4, 255}) {
+  for (const std::uint8_t version : {0, 2, 3, 5, 255}) {
     std::string bytes = Bytes(TwoPlayers(MatchEnd{}));
     bytes[augusta::protocol::kCaptureMagic.size()] = static_cast<char>(version);
     const ReadError error = Read(bytes).error();
@@ -198,14 +210,23 @@ TEST(CaptureFormatTest, AnotherFormatVersionIsRefusedNamingIt) {
   }
 }
 
+// A v3 file, the format before the Match ID and the 16-byte Session IDs, is
+// refused by its version before any record is read.
+// Requirements: NFR-12
+TEST(CaptureFormatTest, AVersion3FileIsRefused) {
+  std::string v3 = Bytes(TwoPlayers(MatchEnd{}));
+  v3[augusta::protocol::kCaptureMagic.size()] = 3;
+  EXPECT_EQ(Read(v3).error(), (ReadError{.code = ReadErrorCode::kUnsupported, .format_version = 3}));
+}
+
 // A v2 file has no version byte: its magic is followed by its header record's
-// length, which a v3 reader takes for the version.
+// length, which a reader takes for the version.
 // Requirements: NFR-12
 TEST(CaptureFormatTest, AVersion2FileIsRefused) {
   const std::string written = Bytes(TwoPlayers(MatchEnd{}));
   const std::size_t magic = augusta::protocol::kCaptureMagic.size();
   // A v2 header record, framed by its one-byte length: its type 1, its format
-  // version 2, then the 79 bytes of the fields v3 keeps (its engine version
+  // version 2, then the 79 bytes of the fields v3 kept (its engine version
   // "0.4.0" after its length, two pack hashes, a tick rate and a start time).
   const std::string record = std::string{1, 2} + std::string(79, 'x');
   const std::string v2 = written.substr(0, magic) + static_cast<char>(record.size()) + record;

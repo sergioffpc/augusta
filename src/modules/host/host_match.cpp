@@ -136,7 +136,7 @@ void Host::Impl::StartMatchIfReady() {
       captured.push_back(CaptureEntrant{
           .session = player.session, .entity = player.entity, .character = player.character, .spawn = spawns[i]});
     }
-    capturer->StartMatch(captured, match_start_tick, std::chrono::system_clock::now());
+    capturer->StartMatch(match_id, captured, match_start_tick, std::chrono::system_clock::now());
   }
   metrics.matches_started.Increment();
   SetLobbyGauges();

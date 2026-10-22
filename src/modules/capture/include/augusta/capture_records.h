@@ -20,8 +20,11 @@
 /// reading and writing, which is built over it. Plain values.
 namespace augusta::capture {
 
-/// What a captured Match ran on and when it started.
+/// Which Match was captured, what it ran on and when it started.
 struct Header {
+  /// The Match's ID (a UUIDv7, unique across every server), which its file is
+  /// also named by (host::CaptureFileName).
+  uuid::Uuid match = uuid::kNil;
   /// The capturing engine's version (augusta::EngineVersion).
   std::string engine_version;
   assets::PackHash server_pack{};

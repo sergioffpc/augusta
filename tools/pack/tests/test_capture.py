@@ -24,6 +24,7 @@ SEED = (
 def test_a_capture_the_server_wrote_reads_as_it_was_played():
     read = capture.read_capture(SEED.read_bytes())
 
+    assert read.header.match == "0190a1b2-c3d5-7000-8000-000000000001"
     assert read.header.engine_version == "2.0.1"
     assert read.header.server_pack == bytes([1]) * 32
     assert read.header.client_pack == bytes([2]) * 32
@@ -67,19 +68,22 @@ def test_a_capture_cut_short_drops_and_reports_its_last_record():
     assert not read.ended
 
 
-def test_another_format_version_is_refused():
+@pytest.mark.parametrize("version", [3, 5])
+def test_another_format_version_is_refused(version):
+    # 3 is the format before the Match ID and the 16-byte Session IDs.
     data = bytearray(SEED.read_bytes())
     # The one byte after the magic.
-    data[len(capture.MAGIC)] = 4
+    data[len(capture.MAGIC)] = version
 
-    with pytest.raises(capture.CaptureError, match="format version 4"):
+    refusal = f"format version {version},"
+    with pytest.raises(capture.CaptureError, match=refusal):
         capture.read_capture(bytes(data))
 
 
 def test_a_version_2_capture_is_refused():
     # A v2 file has no version byte: its magic is followed by its header
     # record's length (81), then the record: its type 1, its format version 2,
-    # then the 79 bytes of the fields v3 keeps.
+    # then the 79 bytes of the fields v3 kept.
     record = bytes([1, 2]) + bytes(79)
     data = capture.MAGIC + bytes([len(record)]) + record
 
@@ -106,7 +110,8 @@ def test_inspect_prints_a_capture_it_tells_from_a_pack(capsys, tmp_path):
     out = capsys.readouterr().out
     assert status == 0
     assert "Match capture" in out
-    assert "format version  3" in out
+    assert "format version  4" in out
+    assert "match           0190a1b2-c3d5-7000-8000-000000000001" in out
     assert "length          7 ticks, 0.12 s" in out
     assert (
         "  2  session 0190a1b2-c3d4-7000-8000-000000000008  sniper  "

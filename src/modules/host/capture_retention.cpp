@@ -19,6 +19,7 @@
 #include "augusta/capture.h"
 #include "augusta/faults.h"
 #include "augusta/logging.h"
+#include "augusta/uuid.h"
 #include "utf8_path.h"
 
 namespace augusta::host {
@@ -35,15 +36,15 @@ bool StartsWithMagic(const std::filesystem::path& path) {
 
 }  // namespace
 
-std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, std::uint64_t match_number) {
+std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started, const uuid::Uuid& match) {
   const auto seconds = std::chrono::floor<std::chrono::seconds>(started);
-  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{:04}{}", seconds, (started - seconds).count(), match_number,
-                     capture::kExtension);
+  return std::format("{:%Y%m%dT%H%M%S}{:03}Z-{}{}", seconds, (started - seconds).count(), match, capture::kExtension);
 }
 
 bool IsCaptureFileName(std::string_view name) {
-  // D a digit: the Match start in UTC to the millisecond, then its number
-  // of at least 4 digits, as CaptureFileName makes it.
+  // D a digit: the Match start in UTC to the millisecond, then its Match ID,
+  // as CaptureFileName makes it, or an older engine's number of at least 4
+  // digits.
   constexpr std::string_view kStart = "DDDDDDDDTDDDDDDDDDZ-";
   constexpr std::string_view kExtension = capture::kExtension;
   constexpr std::size_t kNumberDigits = 4;
@@ -53,8 +54,9 @@ bool IsCaptureFileName(std::string_view name) {
   const auto matches = [](char pattern, char character) {
     return pattern == 'D' ? IsDigit(character) : pattern == character;
   };
-  const std::string_view number = name.substr(kStart.size(), name.size() - kStart.size() - kExtension.size());
-  return std::ranges::equal(kStart, name.substr(0, kStart.size()), matches) && std::ranges::all_of(number, IsDigit);
+  const std::string_view match = name.substr(kStart.size(), name.size() - kStart.size() - kExtension.size());
+  return std::ranges::equal(kStart, name.substr(0, kStart.size()), matches) &&
+         (uuid::Parse(match).has_value() || std::ranges::all_of(match, IsDigit));
 }
 
 RetentionPlan PlanRetention(std::span<const CompletedCapture> completed, std::uintmax_t total, bool opening,
@@ -87,7 +89,7 @@ CaptureDirectory::CaptureDirectory(std::filesystem::path directory, CaptureReten
       observer_(std::move(observer)),
       faults_(faults) {}
 
-bool CaptureDirectory::Open(std::uint64_t match, std::string_view file_name, std::uintmax_t bytes) {
+bool CaptureDirectory::Open(const uuid::Uuid& match, std::string_view file_name, std::uintmax_t bytes) {
   match_ = match;
   failure_logged_ = false;
   open_ = false;

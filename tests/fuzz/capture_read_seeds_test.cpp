@@ -17,6 +17,7 @@
 #include "augusta/command.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/uuid.h"
 
 // The capture_read fuzz target's seed (tests/fuzz/README.md): one whole
 // capture holding every kind of record, so the fuzzer starts from a valid file
@@ -36,6 +37,10 @@ constexpr SessionId Session(std::uint8_t last) {
       {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
 }
 
+// The captured Match's ID, a UUIDv7.
+constexpr augusta::uuid::Uuid kMatch = augusta::uuid::Uuid::FromBytes(
+    {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD5, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+
 const std::string kSeedPath = std::string(AUGUSTA_CAPTURE_READ_CORPUS) + "/match";
 
 // The bytes of a short Match a Capturer captured: two players, a Command
@@ -50,6 +55,7 @@ std::string Captured() {
     header.client_pack.fill(std::byte{2});
     Capturer capturer(directory, header);
     capturer.StartMatch(
+        kMatch,
         {CaptureEntrant{.session = Session(7), .entity = EntityId{70}, .character = "soldier", .spawn = {1, 0, 2}},
          CaptureEntrant{.session = Session(8), .entity = EntityId{80}, .character = "sniper", .spawn = {-3, 0, 4}}},
         1000, std::chrono::system_clock::time_point{std::chrono::milliseconds{1'791'540'900'123}});

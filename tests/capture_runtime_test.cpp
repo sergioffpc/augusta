@@ -204,7 +204,7 @@ TEST_F(CaptureFailureTest, AStrictCapturesLossIsKnownOnceItsRecordsAreWritten) {
   const std::optional<augusta::failure::Failure> lost = host->FinishCapture();
   ASSERT_TRUE(lost.has_value());
   EXPECT_EQ(lost->code, Code::kStrictCaptureFailed);
-  EXPECT_NE(augusta::failure::DescribeFailure(*lost).find("match=1 step=write"), std::string::npos);
+  EXPECT_NE(augusta::failure::DescribeFailure(*lost).find(" step=write"), std::string::npos);
 }
 
 TEST_F(CaptureFailureTest, AStrictCaptureThatFailsStopsTheRuntimeOnceWithItsFailure) {
