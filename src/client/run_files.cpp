@@ -29,8 +29,6 @@ constexpr std::string_view kPrefix = "augustac-";
 constexpr std::string_view kLogExtension = ".log";
 constexpr std::string_view kMinidumpExtension = ".dmp";
 constexpr std::string_view kGpuDumpExtension = ".nv-gpudmp";
-// The canonical form's length, which uuid::Parse alone accepts.
-constexpr std::size_t kRunIdLength = 36;
 // How much of a log's end ReadRunEnd reads: a last line longer than this is
 // not one it classifies, and no crash or terminal line is.
 constexpr std::streamoff kTailBytes = 64 * 1024;
@@ -49,14 +47,14 @@ struct NamedRun {
 };
 
 std::optional<NamedRun> SplitName(std::string_view name) {
-  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + kRunIdLength) {
+  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + uuid::kTextLength) {
     return std::nullopt;
   }
-  const auto run = uuid::Parse(name.substr(kPrefix.size(), kRunIdLength));
+  const auto run = uuid::Parse(name.substr(kPrefix.size(), uuid::kTextLength));
   if (!run) {
     return std::nullopt;
   }
-  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + kRunIdLength)};
+  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + uuid::kTextLength)};
 }
 
 // The Run a log's name names, if it is one LogPath makes.

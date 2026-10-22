@@ -18,6 +18,10 @@
 /// later, as bytes and as strings alike. Boost.Uuid stays behind uuid.cpp.
 namespace augusta::uuid {
 
+/// How many characters an ID's canonical form is (Uuid::ToString): what Parse
+/// alone accepts.
+inline constexpr std::size_t kTextLength = 36;
+
 class Uuid {
  public:
   /// The 16 bytes an ID is.
@@ -33,7 +37,7 @@ class Uuid {
   /// Its 16 bytes in RFC 9562's order: what the wire and a file carry.
   [[nodiscard]] constexpr const ByteArray& Bytes() const { return bytes_; }
 
-  /// The canonical lowercase hyphenated form, 36 characters, e.g.
+  /// The canonical lowercase hyphenated form, kTextLength characters, e.g.
   /// "017f22e2-79b0-7cc3-98c4-dc0c0c07398f": how an ID is written wherever it
   /// is logged or names a file.
   [[nodiscard]] std::string ToString() const;
