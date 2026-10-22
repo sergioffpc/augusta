@@ -138,6 +138,17 @@ void Input::Handle(std::span<const window::Event> events) {
   }
 }
 
+void Input::LetGo() {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  held_.fill(false);
+  last_cursor_.reset();
+}
+
+void Input::ReleaseCursor() {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  SetCursorCaptured(false);
+}
+
 void Input::Apply(const window::KeyEvent& event) {
   const bool pressed = event.state == KeyState::kPressed;
   if (!cursor_captured_) {

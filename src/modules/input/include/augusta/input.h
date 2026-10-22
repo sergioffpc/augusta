@@ -152,6 +152,21 @@ class Input {
   /// one, and the first only sets where the cursor starts.
   void Handle(std::span<const window::Event> events);
 
+  /// Lets go of every key and button held, as if each were released, the
+  /// capture unchanged: the next Sample has no move, fire or ADS, and a key
+  /// still down only counts again once pressed again. The next cursor position
+  /// starts a new baseline rather than turning the view, as events the caller
+  /// keeps from Input meanwhile may have moved the cursor. A reload pressed
+  /// since the last Sample still reloads. From the Main/Render thread, safe
+  /// beside a concurrent Sample.
+  void LetGo();
+
+  /// Releases the cursor exactly as pressing kReleaseCursorKey does (see
+  /// CursorCaptured): every held control is let go, and the next click
+  /// captures it again. From the Main/Render thread, safe beside a concurrent
+  /// Sample.
+  void ReleaseCursor();
+
  private:
   // One event of Handle's; callers hold mutex_.
   void Apply(const window::KeyEvent& event);
