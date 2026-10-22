@@ -642,6 +642,21 @@ struct ClientRuntime::Impl {
     const std::lock_guard<std::mutex> lock(seen_time_mutex);
     return seen_time;
   }
+
+  // Main/Render thread only: one render frame, from the window's events to
+  // RenderFrame, inside the Main/Render Frame range.
+  void RunRenderFrame() {
+    const nvtx3::scoped_range range{"Main/Render Frame"};
+    HandleWindowEvents(window.Poll());
+    UpdateCursorLock();
+#if AUGUSTA_DEBUG_TOOLS
+    UpdateDebugHud();
+#endif
+    const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
+    SetSeenTime(frame_state.seen_time);
+    StageRenderFrame(frame_state);
+    renderer.RenderFrame();
+  }
 };
 
 ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
@@ -692,18 +707,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       impl_->LogOutcome(*view, *ending);
       break;
     }
-    {
-      const nvtx3::scoped_range range{"Main/Render Frame"};
-      impl_->HandleWindowEvents(window.Poll());
-      impl_->UpdateCursorLock();
-#if AUGUSTA_DEBUG_TOOLS
-      impl_->UpdateDebugHud();
-#endif
-      const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
-      impl_->SetSeenTime(frame_state.seen_time);
-      impl_->StageRenderFrame(frame_state);
-      impl_->renderer.RenderFrame();
-    }
+    impl_->RunRenderFrame();
 #if AUGUSTA_DEBUG_TOOLS
     // Between two frames' ranges, so the capture window holds whole frames.
     // The frame ends before the events are routed: a window opened by them
