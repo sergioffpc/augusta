@@ -17,10 +17,18 @@ env:
   VCPKG_BINARY_SOURCES: "clear;nuget,GitHubPackages,readwrite"
 # Each build job restores the sccache cache its ci.yml or nightly counterpart
 # saved on main, and saves none: an entry on the tag's ref would be read by no
-# other ref (save-sccache-cache).
+# other ref (save-sccache-cache). Only the nightly's client-x64-linux builds
+# the same Shipping build as its counterpart here; ci.yml's are Development
+# builds, whose objects a Shipping build, compiled with AUGUSTA_DEBUG_TOOLS=0,
+# cannot reuse.
+#
+# What is published is a Shipping build, by construction (ADR-0074): each build
+# job configures, builds, tests and stages with a shipping preset, so no debug
+# tool is in a published binary, and a client whose version ends in +dev (a
+# Development build) fails the tag's exact --version check.
 #
 # What is published is tested first (ADR-0013): each build job runs ctest on
-# the Release binaries it stages, which includes loading the golden packs, and
+# the Shipping binaries it stages, which includes loading the golden packs, and
 # the nightly job runs every nightly check on the same commit. publish needs
 # them all, so a failing test publishes nothing. The tools, which a release
 # publishes none of, are tested by ci.yml's build jobs, the cooker's cook of the
@@ -44,18 +52,18 @@ jobs:
         # As ci.yml's client-x64-windows job does: vcpkg and NVTX alone.
         run: git submodule update --init --depth 1 third_party/vcpkg third_party/nvtx
       - uses: ./.github/actions/setup-windows-msvc
-      # clang-cl and lld-link, which the windows preset builds with (ADR-0008).
+      # clang-cl and lld-link, which the windows presets build with (ADR-0008).
       - uses: ./.github/actions/setup-windows-llvm
       - uses: ./.github/actions/restore-sccache-cache
       - uses: ./.github/actions/setup-windows-vcpkg
         with:
           feed-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Configure
-        run: cmake --preset windows
+        run: cmake --preset windows-shipping
       - name: Build
-        run: cmake --build --preset windows --target all augusta_tests
+        run: cmake --build --preset windows-shipping --target all augusta_tests
       - name: Test
-        run: ctest --preset windows
+        run: ctest --preset windows-shipping
       - name: Stage the client
         # Its whole runtime folder, zipped: augustac.exe alone loads nothing.
         # The zip is checked to start on its own and print the tag's version
@@ -66,11 +74,11 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             version="${GITHUB_REF_NAME#v}"
           fi
-          scripts/stage-client.sh build/x64-windows "$RUNNER_TEMP/augustac" \
+          scripts/stage-client.sh build/x64-windows-shipping "$RUNNER_TEMP/augustac" \
             dist/augustac-windows-x64.zip "$version"
           # Its PDB, from this same build, so its GUID and age are the ones
           # the zipped augustac.exe's debug directory names (ADR-0055).
-          cp build/x64-windows/src/client/augustac.pdb dist/augustac-windows-x64.pdb
+          cp build/x64-windows-shipping/src/client/augustac.pdb dist/augustac-windows-x64.pdb
       # NVTX is a submodule, not a vcpkg port, so it is named by its commit.
       # The MSVC runtime the zip ships is named too (ADR-0058), at the version
       # of the staged vcruntime140.dll.
@@ -80,7 +88,7 @@ jobs:
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
             --msvc-runtime "$RUNNER_TEMP/augustac/bin/vcruntime140.dll" \
-            build/x64-windows/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
+            build/x64-windows-shipping/vcpkg_installed/x64-windows > dist/augustac-windows-x64.spdx.json
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -122,13 +130,13 @@ jobs:
             libgl-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxkbcommon-dev libxrandr-dev libvulkan1 mesa-vulkan-drivers xauth xvfb
           vcpkg-cache-prefix: vcpkg-bincache-client-linux-
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux-shipping
       - name: Build
-        run: cmake --build --preset linux --target all augusta_tests
+        run: cmake --build --preset linux-shipping --target all augusta_tests
       - name: Test
         # In a virtual X server, for the renderer smoke test's window, as the
         # nightly's client-x64-linux job runs it.
-        run: xvfb-run --auto-servernum ctest --preset linux
+        run: xvfb-run --auto-servernum ctest --preset linux-shipping
       - name: Stage the client
         # Its runtime folder, tarred as one augustac/ folder, checked as the
         # Windows zip is, and for what it links and its debug info
@@ -138,11 +146,11 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             version="${GITHUB_REF_NAME#v}"
           fi
-          scripts/stage-client.sh build/x64-linux "$RUNNER_TEMP/augustac" \
+          scripts/stage-client.sh build/x64-linux-shipping "$RUNNER_TEMP/augustac" \
             dist/augustac-linux-x64.tar.gz "$version"
           # Its debug info, split off by this same build, whose build ID the
           # staging check matched to the tarred augustac's (ADR-0055).
-          cp build/x64-linux/src/client/augustac.debug dist/augustac-linux-x64.debug
+          cp build/x64-linux-shipping/src/client/augustac.debug dist/augustac-linux-x64.debug
       - name: Run the client on a clean Ubuntu 26.04
         # The extracted tarball on Ubuntu's base image alone, read-only and
         # offline: none of the runner's own libraries can stand in for one the
@@ -162,7 +170,7 @@ jobs:
           python3 scripts/vcpkg-sbom.py --name augustac --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
             --git-package third_party/nvtx \
-            build/x64-linux/vcpkg_installed/x64-linux > dist/augustac-linux-x64.spdx.json
+            build/x64-linux-shipping/vcpkg_installed/x64-linux > dist/augustac-linux-x64.spdx.json
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -218,26 +226,26 @@ jobs:
       - name: Configure
         # augustad and what it is built from, without the client, whose Linux
         # build the nightly jobs below test.
-        run: cmake --preset linux -DAUGUSTA_CLIENT=OFF
+        run: cmake --preset linux-shipping -DAUGUSTA_CLIENT=OFF
       - name: Build
-        run: cmake --build --preset linux --target all augusta_tests
+        run: cmake --build --preset linux-shipping --target all augusta_tests
       - name: Test
-        run: ctest --preset linux
+        run: ctest --preset linux-shipping
       - name: Stage binary
-        # The linux preset builds into build/x64-linux on either architecture:
-        # the directory is the preset's, not the target's.
+        # The linux-shipping preset builds into build/x64-linux-shipping on
+        # either architecture: the directory is the preset's, not the target's.
         run: |
           mkdir -p dist
-          cp build/x64-linux/src/server/augustad "dist/$BINARY"
+          cp build/x64-linux-shipping/src/server/augustad "dist/$BINARY"
           # Its debug info, split off by this same build, so it matches this
           # binary's build ID - not the image's (ADR-0047).
-          cp build/x64-linux/src/server/augustad.debug "dist/$BINARY.debug"
+          cp build/x64-linux-shipping/src/server/augustad.debug "dist/$BINARY.debug"
       - name: SBOM
         # vcpkg's triplet is the runner's own: x64-linux or arm64-linux.
         run: |
           python3 scripts/vcpkg-sbom.py --name augustad --version "$GITHUB_REF_NAME" \
             --repo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
-            "build/x64-linux/vcpkg_installed/${{ matrix.arch }}-linux" > "dist/$BINARY.spdx.json"
+            "build/x64-linux-shipping/vcpkg_installed/${{ matrix.arch }}-linux" > "dist/$BINARY.spdx.json"
       - name: Attest provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

@@ -195,15 +195,17 @@ cut that release first and the hotfix off it.
     once its image is published.
 
 9. Watch the workflow. Its `client-x64-windows`, `client-x64-linux` and `server`
-   jobs rebuild and test the Release binaries, and `client-x64-windows` and
-   `client-x64-linux` check the zip and the tarball start from an empty folder
-   (ADR-0058). Once the three build jobs pass, its `nightly` job runs every
-   nightly job on the tagged commit (ADR-0013), the scan of the SBOMs just built
-   among them. `publish` creates the GitHub Release only if all of them pass.
-   Plan for the builds' time and then a night's on top, over an hour in all: the
-   fuzzing alone takes 30 minutes per target, the targets side by side. A
-   failing nightly job here fails the run and opens no `nightly-failure` issue;
-   the run is where it shows:
+   jobs rebuild and test the binaries as Shipping builds, with the shipping
+   presets (ADR-0074), and `client-x64-windows` and `client-x64-linux` check the
+   zip and the tarball start from an empty folder and print the tag's version
+   exactly, so a `+dev` client fails the run (ADR-0058). Once the three build
+   jobs pass, its `nightly` job runs every nightly job on the tagged commit
+   (ADR-0013), the scan of the SBOMs just built among them. `publish` creates
+   the GitHub Release only if all of them pass. Plan for the builds' time and
+   then a night's on top, over an hour in all: the fuzzing alone takes 30
+   minutes per target, the targets side by side. A failing nightly job here
+   fails the run and opens no `nightly-failure` issue; the run is where it
+   shows:
 
     ```sh
     gh run list --workflow release.yml --limit 1
