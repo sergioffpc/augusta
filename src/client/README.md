@@ -17,11 +17,15 @@ verified pack (the scene, the characters other players bring, the map's
 collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
 types, classifies each phase's failure, and shows the connection's numbers to
-Nsight Systems and, in a Development build with `debug.hud` on (ADR-0074), on
-the debug HUD. It starts each Run: takes its Run ID and opens its log file
-beside the executable, then writes its first lines. It decides over the files
-Runs leave there: their names from the Run ID, which Runs are kept, and how the
-previous Run ended, which a launch reports when it was a crash.
+Nsight Systems and, in a Development build with the debug HUD on (ADR-0074), on
+the debug HUD. In a Development build it routes the window's events by Debug
+interaction, to input or to the Debug panels, shows the Debug index, which
+starts each tool as the `debug` section says and switches it until the client
+exits, and routes each panel's control events to the area that built it. It
+starts each Run: takes its Run ID and opens its log file beside the executable,
+then writes its first lines. It decides over the files Runs leave there: their
+names from the Run ID, which Runs are kept, and how the previous Run ended,
+which a launch reports when it was a crash.
 
 ## Not its responsibility
 

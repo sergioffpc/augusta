@@ -934,9 +934,9 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_hud_tests)
 
-  # The Debug overlays' shapes and their tessellation (augusta_debug), free of
-  # any GPU API.
-  add_executable(augusta_debug_tests debug_test.cpp)
+  # The Debug overlays' shapes and their tessellation, the Debug index and
+  # Debug interaction (augusta_debug), free of any GPU API.
+  add_executable(augusta_debug_tests debug_test.cpp debug_index_test.cpp debug_interaction_test.cpp)
   target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_debug_tests)
 

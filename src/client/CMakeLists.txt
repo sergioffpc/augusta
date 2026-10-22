@@ -98,8 +98,9 @@ target_link_libraries(
     augusta_window
     nvtx3-cpp
 )
-# The debug HUD's lines and the Debug overlays' shapes, in a Development build
-# only (ADR-0074, ADR-0075).
+# The debug HUD's lines, the Debug overlays' shapes, the Debug panels, the
+# Debug index and Debug interaction, in a Development build only (ADR-0074,
+# ADR-0075).
 if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_client PRIVATE augusta_debug augusta_hud)
 endif()
