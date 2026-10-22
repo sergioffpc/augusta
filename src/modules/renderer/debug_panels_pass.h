@@ -1,7 +1,9 @@
 #ifndef AUGUSTA_RENDERER_DEBUG_PANELS_PASS_H_
 #define AUGUSTA_RENDERER_DEBUG_PANELS_PASS_H_
 
+#include <cstddef>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <imgui.h>
@@ -46,6 +48,13 @@ class DebugPanelsPass final {
   // panels. Made, with ImGui's default font, before renderer_ uploads the font.
   ImGuiContext* context_;
   ImGuiRenderer renderer_;
+  // The ids of the panels drawn so far, in the order they were first drawn:
+  // a panel's place here is its default position's slot, so it never shares
+  // one with another, whatever the order of a frame's panels.
+  std::vector<std::string> seen_ids_;
+
+  // The slot of the panel with id, the next free one if it is new.
+  std::size_t Slot(const std::string& id);
 };
 
 }  // namespace augusta::renderer

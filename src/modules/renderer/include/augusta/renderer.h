@@ -296,9 +296,10 @@ class Renderer {
 
   /// Replaces the Debug panels the next RenderFrame draws over everything else,
   /// through Dear ImGui: each opens with its title bar, and no close button (a
-  /// panel closes from the Debug index), at a fixed default position given by
-  /// its place in panels, the first under the debug HUD and each next one
-  /// cascading down and right from it, and keeps, by its id, the place a
+  /// panel closes from the Debug index), at a fixed default position of its
+  /// own, whatever its place in panels: the first panel drawn opens under the
+  /// debug HUD, and each panel drawn for the first time after it one step
+  /// further down and right. It keeps, by its id, the place a
   /// developer drags it to until the client exits. No layout is saved, so
   /// every run opens them at their default positions. Panels live one frame:
   /// the client hands the frame's panels, none included, before every

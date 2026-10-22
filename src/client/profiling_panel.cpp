@@ -30,6 +30,7 @@ debug::Panel ProfilingPanel::BuildPanel() const {
                                             .value = static_cast<float>(frames_),
                                             .min = static_cast<float>(kMinFrames),
                                             .max = static_cast<float>(kMaxFrames),
+                                            .whole_numbers = true,
                                             .disabled = Capturing()});
   panel.elements.emplace_back(debug::Button{
       .id = std::string(kCaptureButton), .label = std::format("Capture {} frames", frames_), .disabled = Capturing()});

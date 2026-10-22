@@ -40,9 +40,11 @@ class GpuCrashDumpFiles {
   /// that path, or why the dump could not be written there. From any thread.
   std::expected<std::filesystem::path, GpuCrashDumpError> Write(std::span<const std::byte> dump);
 
+#if AUGUSTA_DEBUG_TOOLS
   /// The absolute directory the next dump lands in: the working directory's,
   /// made absolute, when the naming gives no folder. From any thread.
   [[nodiscard]] std::filesystem::path Directory() const;
+#endif
 
  private:
   mutable std::mutex mutex_;
@@ -55,10 +57,12 @@ class GpuCrashDumpFiles {
 /// directory. Call it before the Renderer is made, so no dump comes first.
 void NameGpuCrashDumps(GpuCrashDumpNaming naming);
 
+#if AUGUSTA_DEBUG_TOOLS
 /// The absolute directory the process's next GPU crash dump lands in, as
 /// NameGpuCrashDumps names it: what the Profiling Debug panel shows
-/// (Renderer::GpuCrashDumps).
+/// (Renderer::GpuCrashDumps), so a Development build's only.
 std::filesystem::path GpuCrashDumpDirectory();
+#endif
 
 /// Writes the process's next GPU crash dump as NameGpuCrashDumps names it: what
 /// the Renderer's Aftermath callback calls (vulkan_gpu_crash_dumps.h).

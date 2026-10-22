@@ -31,7 +31,7 @@ Routing DebugInteraction::Route(std::span<const window::Event> events) {
       }
     } else if (in_ && IsKey(event, keys_.leave, window::KeyState::kPressed)) {
       Leave(routing);
-      routing.left_by_escape = true;
+      routing.left_by_leave_key = true;
       leave_release_owed_ = true;
     } else if (IsKey(event, keys_.toggle, window::KeyState::kReleased)) {
       // The toggle key is Debug interaction's alone.
