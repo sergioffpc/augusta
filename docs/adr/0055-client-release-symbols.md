@@ -71,15 +71,16 @@ On a crash the filter writes
 `CRITICAL subsystem=client event=crash exception=0x<code>` (`0xc0000005` for an
 access violation), then one
 `event=crash_frame index=<n> pc=0x<address> module="<file>" offset=0x<offset>`
-line per frame, each ending in `run=<id>`, to the console and the Run's log, as
-the Linux client's lines go (ADR-0047). A frame names its module and the offset
-into it rather than a symbol, since the zip carries no PDB: the release's PDB
-symbolizes it later (`llvm-symbolizer --obj=augustac.exe` with
-`0x140000000 + offset`, the image base `lld-link` gives an `.exe`, or the
-module's `lm` base plus offset in WinDbg). The frames are unwound from the
-exception's context by each module's unwind tables (`RtlVirtualUnwind`), so the
-first is the faulting instruction, not the dispatch of the exception. A test
-holds both lines to `logging::FormatLine`, as the signal lines are held.
+line per frame, each ending in the log's context (`run=<id>`, and `session=` and
+`match=` while set), to the console and the Run's log, as the Linux client's
+lines go (ADR-0047). A frame names its module and the offset into it rather than
+a symbol, since the zip carries no PDB: the release's PDB symbolizes it later
+(`llvm-symbolizer --obj=augustac.exe` with `0x140000000 + offset`, the image
+base `lld-link` gives an `.exe`, or the module's `lm` base plus offset in
+WinDbg). The frames are unwound from the exception's context by each module's
+unwind tables (`RtlVirtualUnwind`), so the first is the faulting instruction,
+not the dispatch of the exception. A test holds both lines to
+`logging::FormatLine`, as the signal lines are held.
 
 It then writes the minidump through `MiniDumpWriteDump` (dbghelp), as
 `MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory`: the threads'

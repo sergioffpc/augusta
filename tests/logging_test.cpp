@@ -175,6 +175,37 @@ TEST(LoggingContext, SettingAFieldAgainReplacesIt) {
   EXPECT_TRUE(IsInfoLineWrittenBetween(written, "subsystem=test event=again session=s2", before, after)) << written;
 }
 
+// What a crash handler reads of the context (ADR-0047): the fields as a line
+// ends in them, and none once cleared.
+TEST(LoggingContext, ACopyOfTheContextIsTheFieldsAsALineEndsInThem) {
+  ClearEveryContextField();
+  SetContext(ContextField::kRun, "r1");
+  SetContext(ContextField::kSession, "s1");
+  SetContext(ContextField::kMatch, "m1");
+  augusta::logging::ContextText set{};
+  const std::string copied(augusta::logging::CopyContext(set));
+  ClearEveryContextField();
+  augusta::logging::ContextText cleared{};
+
+  EXPECT_EQ(copied, " run=r1 session=s1 match=m1");
+  EXPECT_EQ(augusta::logging::CopyContext(cleared), "");
+}
+
+TEST(LoggingContext, ACopyLeavesOutAFieldTooLongForItAndKeepsTheOthers) {
+  ClearEveryContextField();
+  SetContext(ContextField::kRun, std::string(augusta::logging::kContextCapacity, 'r'));
+  SetContext(ContextField::kSession, "s1");
+  augusta::logging::ContextText text{};
+  const std::string copied(augusta::logging::CopyContext(text));
+  const std::string line = WrittenInfoLine("subsystem=test event=long");
+  ClearEveryContextField();
+
+  EXPECT_EQ(copied, " session=s1");
+  // The line itself still carries it whole.
+  EXPECT_NE(line.find("run=" + std::string(augusta::logging::kContextCapacity, 'r') + " session=s1"), std::string::npos)
+      << line;
+}
+
 std::string ReadWhole(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};

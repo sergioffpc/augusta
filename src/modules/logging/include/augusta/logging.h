@@ -1,7 +1,9 @@
 #ifndef AUGUSTA_LOGGING_H_
 #define AUGUSTA_LOGGING_H_
 
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -86,6 +88,22 @@ void SetContext(ContextField field, std::string_view value);
 
 /// Clears field: lines written from now on carry it no more.
 void ClearContext(ContextField field);
+
+/// Room for the context as CopyContext copies it: its three fields, each an ID
+/// in its canonical form, with some to spare.
+inline constexpr std::size_t kContextCapacity = 192;
+
+/// What CopyContext copies the context into.
+using ContextText = std::array<char, kContextCapacity>;
+
+/// The context's fields as every line ends in them, ` run=<value>
+/// session=<value>`, copied into text; empty if none is set. Takes no lock and
+/// allocates nothing, so a signal handler or an unhandled-exception filter may
+/// call it: the crash lines end in it (ADR-0047). A context changed in the
+/// same instant, by another thread or by the code the handler interrupted, may
+/// read as none, and a field that does not fit whole in kContextCapacity
+/// after those before it is left out.
+std::string_view CopyContext(ContextText& text) noexcept;
 
 /// Writes message at level to the sinks, with the context's fields appended,
 /// whatever the runtime floor. Use

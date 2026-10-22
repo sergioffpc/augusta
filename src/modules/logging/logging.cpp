@@ -80,6 +80,38 @@ FileSinks& TheFileSinks() {
   return file_sinks;
 }
 
+// The context's suffix again, for CopyContext to read without the lock: a
+// sequence lock over atomics, so a read that a write overlaps sees the version
+// change and is retried, and is never a data race. Constant-initialized, so
+// reading it needs no guard of a function-local static. Written under
+// Context's lock only.
+struct PublishedContext {
+  // Odd while a write is under way.
+  std::atomic<std::uint32_t> version{0};
+  std::atomic<std::size_t> size{0};
+  std::array<std::atomic<char>, kContextCapacity> text{};
+};
+
+static_assert(std::atomic<std::uint32_t>::is_always_lock_free && std::atomic<std::size_t>::is_always_lock_free &&
+                  std::atomic<char>::is_always_lock_free,
+              "a signal handler reads the published context");
+
+constinit PublishedContext published_context;
+
+// How many times CopyContext reads again when a write overlapped its read.
+constexpr int kCopyAttempts = 4;
+
+void Publish(std::string_view suffix) {
+  const std::uint32_t version = published_context.version.load(std::memory_order_relaxed);
+  published_context.version.store(version + 1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
+  for (std::size_t i = 0; i < suffix.size(); ++i) {
+    published_context.text.at(i).store(suffix[i], std::memory_order_relaxed);
+  }
+  published_context.size.store(suffix.size(), std::memory_order_relaxed);
+  published_context.version.store(version + 2, std::memory_order_release);
+}
+
 // The order the fields are appended in, and their keys.
 constexpr std::array<std::pair<ContextField, std::string_view>, 3> kContextKeys{
     std::pair{ContextField::kRun, "run"},
@@ -87,17 +119,23 @@ constexpr std::array<std::pair<ContextField, std::string_view>, 3> kContextKeys{
     std::pair{ContextField::kMatch, "match"},
 };
 
-// Sets or clears field, and remakes the suffix.
+// Sets or clears field, and remakes the suffix and what CopyContext reads.
 void ChangeContext(ContextField field, std::optional<std::string> value) {
   Context& context = TheContext();
   const std::scoped_lock lock(context.mutex);
   context.fields.at(static_cast<std::size_t>(field)) = std::move(value);
   context.suffix.clear();
+  std::string published;
   for (const auto& [key_field, key] : kContextKeys) {
     if (const auto& set = context.fields.at(static_cast<std::size_t>(key_field))) {
-      context.suffix += std::format(" {}={}", key, *set);
+      const std::string written = std::format(" {}={}", key, *set);
+      context.suffix += written;
+      if (published.size() + written.size() <= kContextCapacity) {
+        published += written;
+      }
     }
   }
+  Publish(published);
 }
 
 std::string WithContext(std::string_view message) {
@@ -254,6 +292,24 @@ void RemoveFileSink(const std::filesystem::path& file) {
 void SetContext(ContextField field, std::string_view value) { ChangeContext(field, std::string(value)); }
 
 void ClearContext(ContextField field) { ChangeContext(field, std::nullopt); }
+
+std::string_view CopyContext(ContextText& text) noexcept {
+  for (int attempt = 0; attempt < kCopyAttempts; ++attempt) {
+    const std::uint32_t before = published_context.version.load(std::memory_order_acquire);
+    if (before % 2 != 0) {
+      continue;
+    }
+    const std::size_t size = std::min(published_context.size.load(std::memory_order_relaxed), text.size());
+    for (std::size_t i = 0; i < size; ++i) {
+      text.at(i) = published_context.text.at(i).load(std::memory_order_relaxed);
+    }
+    std::atomic_thread_fence(std::memory_order_acquire);
+    if (published_context.version.load(std::memory_order_relaxed) == before) {
+      return {text.data(), size};
+    }
+  }
+  return {};
+}
 
 void Write(Severity level, std::string_view message) {
   static boost::log::sources::severity_logger_mt<Severity> logger;

@@ -13,6 +13,8 @@
 #include <string_view>
 #include <utility>
 
+#include "augusta/logging.h"
+
 #ifdef _WIN32
 #include <windows.h>
 // After <windows.h>, whose types it uses.
@@ -49,8 +51,8 @@ using Descriptor = int;
 
 // What Install was given, set before any handler is: the subsystem a literal,
 // the settings never freed, so a crash during exit still reads them. The Run
-// ID and core location are views into them, empty where not given, and the
-// log file opened ahead of any crash, if given.
+// ID (for the minidump) and core location are views into them, empty where not
+// given, and the log file opened ahead of any crash, if given.
 std::string_view g_subsystem;
 const Settings* g_settings = nullptr;
 std::string_view g_run_id;
@@ -202,11 +204,6 @@ void PutFramePrefix(LineWriter& writer, std::string_view subsystem, std::chrono:
   writer.PutDigits(pc, kHexadecimal);
 }
 
-constexpr std::string_view kRunKey = " run=";
-
-// How many characters PutRun writes for run_id.
-std::size_t RunLength(std::string_view run_id) { return run_id.empty() ? 0 : kRunKey.size() + run_id.size(); }
-
 // How many digits PutDigits writes for value in hexadecimal.
 std::size_t HexLength(std::uint64_t value) {
   std::size_t length = 1;
@@ -215,14 +212,6 @@ std::size_t HexLength(std::uint64_t value) {
     ++length;
   }
   return length;
-}
-
-// The Run's field, where logging's context puts it: last (ADR-0029).
-void PutRun(LineWriter& writer, std::string_view run_id) {
-  if (!run_id.empty()) {
-    writer.Put(kRunKey);
-    writer.Put(run_id);
-  }
 }
 
 std::string_view SignalName(int signal) {
@@ -351,13 +340,14 @@ const char* ModuleOf(void* pc, std::span<char> name, std::uintptr_t& base) {
 
 // One line per frame, each naming its module and offset, for the release's
 // PDB to symbolize (ADR-0055).
-void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, Line& line) {
+void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, std::string_view context,
+                     Line& line) {
   std::array<char, kSymbolCapacity> module{};
   for (std::size_t index = 0; index < frames.size(); ++index) {
     const auto pc = reinterpret_cast<std::uintptr_t>(frames[index]);
     std::uintptr_t base = 0;
     const char* const name = ModuleOf(frames[index], module, base);
-    WriteLine(FormatModuleFrameLine(line, g_subsystem, now, static_cast<int>(index), pc, name, pc - base, g_run_id));
+    WriteLine(FormatModuleFrameLine(line, g_subsystem, now, static_cast<int>(index), pc, name, pc - base, context));
   }
 }
 
@@ -415,13 +405,14 @@ int CaptureFrames(std::span<void*> frames) {
 
 // One line per frame, each naming its function, from the symbol table the
 // binary keeps.
-void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, Line& line) {
+void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, std::string_view context,
+                     Line& line) {
   std::array<char, kSymbolCapacity> symbol{};
   for (std::size_t index = 0; index < frames.size(); ++index) {
     void* const pc = frames[index];
     const bool resolved = absl::Symbolize(pc, symbol.data(), static_cast<int>(symbol.size()));
     WriteLine(FormatFrameLine(line, g_subsystem, now, static_cast<int>(index), reinterpret_cast<std::uintptr_t>(pc),
-                              resolved ? symbol.data() : nullptr, g_run_id));
+                              resolved ? symbol.data() : nullptr, context));
   }
 }
 #endif
@@ -431,8 +422,10 @@ std::chrono::sys_seconds Now() { return std::chrono::sys_seconds{std::chrono::se
 
 void ReportCrash(int signal) {
   const std::chrono::sys_seconds now = Now();
+  logging::ContextText context_text{};
+  const std::string_view log_context = logging::CopyContext(context_text);
   Line line{};
-  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, g_run_id));
+  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, log_context));
 
   std::array<void*, kMaxFrames> frames{};
 #ifdef _WIN32
@@ -442,7 +435,7 @@ void ReportCrash(int signal) {
 #else
   const int depth = CaptureFrames(frames);
 #endif
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, line);
+  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, log_context, line);
 #ifdef _WIN32
   WriteMinidump(nullptr);
 #endif
@@ -455,11 +448,13 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exception) {
     return EXCEPTION_EXECUTE_HANDLER;
   }
   const std::chrono::sys_seconds now = Now();
+  logging::ContextText context_text{};
+  const std::string_view context = logging::CopyContext(context_text);
   Line line{};
-  WriteLine(FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, g_run_id));
+  WriteLine(FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, context));
   std::array<void*, kMaxFrames> frames{};
   const int depth = CaptureFrames(*exception->ContextRecord, frames);
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, line);
+  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, context, line);
   WriteMinidump(exception);
   // Ends the process with the exception's code, as Windows would have, but
   // without Windows Error Reporting: the dump is written.
@@ -502,7 +497,7 @@ void RaiseCoreLimit() {
 }  // namespace
 
 std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal,
-                                  std::string_view core, std::string_view run_id) {
+                                  std::string_view core, std::string_view context) {
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash signal=");
@@ -513,51 +508,51 @@ std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::c
   }
   if (!core.empty()) {
     writer.Put(" core=");
-    writer.PutQuoted(core, RunLength(run_id));
+    writer.PutQuoted(core, context.size());
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
-                                 std::uintptr_t pc, const char* symbol, std::string_view run_id) {
+                                 std::uintptr_t pc, const char* symbol, std::string_view context) {
   LineWriter writer(line);
   PutFramePrefix(writer, subsystem, time, index, pc);
   if (symbol != nullptr) {
     writer.Put(" symbol=");
-    // The Run's field kept whole: a line that loses it no longer says its Run.
-    writer.PutQuoted(symbol, RunLength(run_id));
+    // The context kept whole: a line that loses it no longer says its Run.
+    writer.PutQuoted(symbol, context.size());
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatModuleFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
                                        std::uintptr_t pc, const char* module, std::uintptr_t offset,
-                                       std::string_view run_id) {
+                                       std::string_view context) {
   LineWriter writer(line);
   PutFramePrefix(writer, subsystem, time, index, pc);
   if (module != nullptr) {
-    // The offset and the Run kept whole: a frame without its offset names no
-    // instruction.
+    // The offset and the context kept whole: a frame without its offset names
+    // no instruction.
     constexpr std::string_view kOffsetKey = " offset=0x";
     writer.Put(" module=");
-    writer.PutQuoted(module, kOffsetKey.size() + HexLength(offset) + RunLength(run_id));
+    writer.PutQuoted(module, kOffsetKey.size() + HexLength(offset) + context.size());
     writer.Put(kOffsetKey);
     writer.PutDigits(offset, kHexadecimal);
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time,
-                                     std::uint32_t code, std::string_view run_id) {
+                                     std::uint32_t code, std::string_view context) {
   constexpr int kCodeDigits = 8;
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash exception=0x");
   writer.PutDigits(code, kHexadecimal, kCodeDigits);
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
