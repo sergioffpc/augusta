@@ -19,7 +19,7 @@ namespace augusta::renderer {
 namespace {
 
 // The first panel's top left, under the debug HUD's first lines, and how far
-// down and right each next panel opens from the one before it.
+// down and right each next panel ImGui sees opens from the one before it.
 constexpr ImVec2 kFirstPanelPos(10.0F, 60.0F);
 constexpr float kPanelCascade = 30.0F;
 
@@ -43,8 +43,9 @@ ImGuiContext* CreateContext() {
   return context;
 }
 
-ImVec2 DefaultPosition(std::size_t place) {
-  const float offset = kPanelCascade * static_cast<float>(place);
+// The default top left of the panel ImGui saw slot-th, from 0.
+ImVec2 DefaultPosition(std::size_t slot) {
+  const float offset = kPanelCascade * static_cast<float>(slot);
   return {kFirstPanelPos.x + offset, kFirstPanelPos.y + offset};
 }
 
@@ -245,9 +246,10 @@ struct ElementDrawer {
 };
 
 // Draws panel as its own window, its title shown and its id keeping its place,
-// appending to events the changes made to its controls.
-void DrawPanel(const debug::Panel& panel, std::size_t place, std::vector<debug::ControlEvent>& events) {
-  ImGui::SetNextWindowPos(DefaultPosition(place), ImGuiCond_FirstUseEver);
+// opening at the default position of slot, appending to events the changes
+// made to its controls.
+void DrawPanel(const debug::Panel& panel, std::size_t slot, std::vector<debug::ControlEvent>& events) {
+  ImGui::SetNextWindowPos(DefaultPosition(slot), ImGuiCond_FirstUseEver);
   // No p_open, so no close button.
   ImGui::Begin((panel.title + "###" + panel.id).c_str(), nullptr, kPanelFlags);
   for (std::size_t element = 0; element < panel.elements.size(); ++element) {
@@ -261,6 +263,15 @@ void DrawPanel(const debug::Panel& panel, std::size_t place, std::vector<debug::
 DebugPanelsPass::DebugPanelsPass(nvrhi::IDevice& device) : context_(CreateContext()), renderer_(device) {}
 
 DebugPanelsPass::~DebugPanelsPass() { ImGui::DestroyContext(context_); }
+
+std::size_t DebugPanelsPass::Slot(const std::string& id) {
+  const auto seen = std::ranges::find(seen_ids_, id);
+  if (seen != seen_ids_.end()) {
+    return static_cast<std::size_t>(seen - seen_ids_.begin());
+  }
+  seen_ids_.push_back(id);
+  return seen_ids_.size() - 1;
+}
 
 void DebugPanelsPass::Handle(std::span<const window::Event> events) {
   ImGui::SetCurrentContext(context_);
@@ -283,8 +294,8 @@ std::vector<debug::ControlEvent> DebugPanelsPass::Render(nvrhi::ICommandList& co
   io.DeltaTime = kFrameSeconds;
   ImGui::NewFrame();
   std::vector<debug::ControlEvent> events;
-  for (std::size_t place = 0; place < panels.size(); ++place) {
-    DrawPanel(panels[place], place, events);
+  for (const debug::Panel& panel : panels) {
+    DrawPanel(panel, Slot(panel.id), events);
   }
   ImGui::Render();
   renderer_.Render(commands, framebuffer, *ImGui::GetDrawData());

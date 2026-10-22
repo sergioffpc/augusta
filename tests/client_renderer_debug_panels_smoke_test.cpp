@@ -18,6 +18,8 @@ namespace {
 // The first panel's window opens with its top left here, under the debug HUD.
 constexpr std::uint32_t kPanelLeft = 10;
 constexpr std::uint32_t kPanelTop = 60;
+// How far down and right each next panel opens from the one before it.
+constexpr float kPanelCascade = 30.0F;
 
 // A point inside a panel's first element, when it is a button: under the
 // panel's title bar and its padding, a few pixels into the button.
@@ -122,6 +124,27 @@ TEST_F(DebugPanelsSmokeTest, HandsBackAClickedTogglesNewState) {
 
   EXPECT_EQ(renderer_->TakeDebugControlEvents(),
             (std::vector<debug::ControlEvent>{{.panel = "index", .control = "hud", .value = false}}));
+}
+
+// A panel opens at a default place of its own, the next one free when ImGui
+// first sees it, not at its place in the frame's list: one shown alone first
+// keeps the first place when another comes before it in the list.
+TEST_F(DebugPanelsSmokeTest, KeepsEachPanelsDefaultPlaceWhenTheListsOrderChanges) {
+  const debug::Panel first{
+      .id = "first", .title = "First", .elements = {debug::Button{.id = "press", .label = "First's button"}}};
+  const debug::Panel second{
+      .id = "second", .title = "Second", .elements = {debug::Button{.id = "press", .label = "Second's button"}}};
+  renderer_->SetDebugPanels({first});
+  RenderFrames();
+  renderer_->SetDebugPanels({second, first});
+  RenderFrames();
+
+  ClickAt(kFirstButtonX, kFirstButtonY);
+  ClickAt(kFirstButtonX + kPanelCascade, kFirstButtonY + kPanelCascade);
+
+  EXPECT_EQ(renderer_->TakeDebugControlEvents(),
+            (std::vector<debug::ControlEvent>{{.panel = "first", .control = "press", .value = debug::ButtonPress{}},
+                                              {.panel = "second", .control = "press", .value = debug::ButtonPress{}}}));
 }
 
 // lavapipe is no NVIDIA GPU, so Aftermath's diagnostics are never on its
