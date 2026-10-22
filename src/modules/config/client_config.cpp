@@ -64,8 +64,8 @@ std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& val
 }
 
 // Decision: the keymap the `input.keys` entries of values (control name -> key
-// name) make of the defaults. Each control keeps a key of its own, never the
-// one that releases the cursor; errors name the entry ("input.keys.<control>").
+// name) make of the defaults. Each control keeps a key of its own, never a
+// reserved one; errors name the entry ("input.keys.<control>").
 std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values) {
   const std::string prefix = std::format("{}.", kKeysSection);
   auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
@@ -77,10 +77,13 @@ std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values
     }
     const auto key = input::KeyNamed(key_name);
     if (!key) {
-      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F1 or MouseRight");
+      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F2 or MouseRight");
     }
     if (*key == input::kReleaseCursorKey) {
       return Reject(path, std::format("can't use {}: it releases the cursor", input::NameOf(input::kReleaseCursorKey)));
+    }
+    if (*key == input::kReservedKey) {
+      return Reject(path, std::format("can't use {}: it is reserved", input::NameOf(input::kReservedKey)));
     }
     keymap.at(static_cast<std::size_t>(*control)) = *key;
   }
