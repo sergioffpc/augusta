@@ -918,7 +918,10 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_client_config_tests PRIVATE client_config_debug_test.cpp)
   target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
   target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
-  target_sources(augusta_session_tests PRIVATE session_reenactment_test.cpp session_debug_subscribe_test.cpp)
+  target_sources(
+    augusta_session_tests
+    PRIVATE session_reenactment_test.cpp session_debug_subscribe_test.cpp session_shot_judgement_test.cpp
+  )
   target_sources(augusta_protocol_tests PRIVATE protocol_debug_test.cpp)
   target_sources(augusta_protocol_property_tests PRIVATE protocol_property_debug_test.cpp)
   target_sources(augusta_link_messages_tests PRIVATE link_messages_debug_test.cpp)

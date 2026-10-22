@@ -223,6 +223,12 @@ std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& vie
 
 std::vector<Death> Session::TakeDeaths(const ServerView& view) { return impl_->inbox.TakeDeaths(view.matches_started); }
 
+#if AUGUSTA_DEBUG_TOOLS
+std::vector<ShotJudgement> Session::TakeShotJudgements(const ServerView& view) {
+  return impl_->inbox.TakeShotJudgements(view.matches_started);
+}
+#endif
+
 tick::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {

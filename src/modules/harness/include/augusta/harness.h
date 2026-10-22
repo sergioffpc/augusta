@@ -70,6 +70,7 @@ using Admission = link::Admission;
 using ReplayListing = link::ReplayListing;
 #if AUGUSTA_DEBUG_TOOLS
 using DebugSubscribe = link::DebugSubscribe;
+using ShotJudgement = link::ShotJudgement;
 #endif
 
 /// The most Shots a Session keeps for TakeShots: a few seconds of a full match
@@ -83,6 +84,12 @@ inline constexpr std::size_t kMaxPendingDeaths = 16;
 /// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
 /// than one rifle lands between two frames, by far.
 inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
+
+#if AUGUSTA_DEBUG_TOOLS
+/// The most Shot judgements a Session keeps for TakeShotJudgements: as many as
+/// the Hit confirmations it keeps, one per round its own player fired.
+inline constexpr std::size_t kMaxPendingShotJudgements = 64;
+#endif
 
 /// The most Authoritative State updates a Server view keeps
 /// (ServerView::recent_authoritative): as many as the interpolation keeps per
@@ -313,6 +320,15 @@ class Session {
   /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
   /// arrived.
   [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// The Shot judgements of the match view is of, in a Development build
+  /// alone (ADR-0038, ADR-0074), as TakeShots hands out Shots; the newest
+  /// kMaxPendingShotJudgements of them if more arrived. The server sends one
+  /// for each round this client's player fired, once its flight ends, while
+  /// this client's Debug subscribe asks for them (SubscribeDebug).
+  [[nodiscard]] std::vector<ShotJudgement> TakeShotJudgements(const ServerView& view);
+#endif
 
   /// The sequence the command of the next Tick in a match goes under: what a
   /// caller that paces its commands to the server's ticks counts from (the
