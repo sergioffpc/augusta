@@ -10,6 +10,10 @@
 #include "augusta/math.h"
 #include "augusta/window.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_shapes.h"
+#endif
+
 /// \file
 /// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
 /// exclusively by the client. It draws into the client's single
@@ -27,7 +31,9 @@
 /// ClientRuntime's Run() loop decides that split.
 ///
 /// The debug HUD it draws is the text lines it is handed (SetTextLines): what
-/// they say is augusta::hud's. A Shipping build (ADR-0074) has no debug HUD.
+/// they say is augusta::hud's. The Debug overlays it draws are the shapes it is
+/// handed (SetDebugShapes), which augusta::debug describes and tessellates
+/// (ADR-0075). A Shipping build (ADR-0074) has neither.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -247,12 +253,22 @@ class Renderer {
   /// frame. From the Main/Render thread.
   void SetOverlay(const Overlay& overlay);
 
+#if AUGUSTA_DEBUG_TOOLS
   /// Replaces the debug HUD's text lines, drawn green in the frame's top left,
   /// one under the other, over everything else, by every RenderFrame from then
   /// on; none until the first call. Cheap enough to call every frame. From the
   /// Main/Render thread.
-#if AUGUSTA_DEBUG_TOOLS
   void SetTextLines(std::vector<std::string> lines);
+
+  /// Replaces the Debug overlay shapes the next RenderFrame draws, tessellated
+  /// by augusta::debug: alpha-blended over the frame at its output resolution,
+  /// after the scene and the fight's effects and before the overlay and the
+  /// debug HUD, each hidden behind what is in front of it unless marked to show
+  /// through walls. Shapes live one frame: the client hands the frame's shapes,
+  /// none included, before every RenderFrame. The buffers they are written to
+  /// grow as a frame needs and never shrink, as SetRemotePlayers' do, so it is
+  /// cheap enough to call every frame. From the Main/Render thread.
+  void SetDebugShapes(const debug::Shapes& shapes);
 #endif
 
  private:

@@ -11,8 +11,11 @@ Draws through NVRHI on Vulkan with Slang shaders into the client's single
 window, which it is lent: it has the window make its Vulkan surface, creates its
 GPU device and swapchain, and draws the Presentation State - the scene, remote
 players, the fight's effects, the overlay - and the debug HUD's text lines over
-them, rendering a frame apart from when the window's events are drained. A
-Shipping build compiles no debug HUD: no pass, no ImGui, no embedded font
+them, rendering a frame apart from when the window's events are drained. In a
+Development build it also draws the Debug overlays' shapes it is handed each
+frame (`SetDebugShapes`), tessellated by debug, over the scene and the effects
+and under the overlay and the debug HUD (ADR-0075). A Shipping build compiles
+neither: no HUD or shapes pass, no ImGui, no embedded font and no debug
 (ADR-0074).
 
 ## Not its responsibility
@@ -21,6 +24,8 @@ Shipping build compiles no debug HUD: no pass, no ImGui, no embedded font
   runtime owns and polls.
 - Input: the renderer knows nothing of it.
 - What the debug HUD's lines say: hud.
+- What a Debug overlay shows, and its shapes' tessellation: each area's module
+  and debug.
 - What is shown and where the camera is: presentation.
 - How often each call runs: the client runtime.
 - What its GPU crash dumps are named: the client's Run (client_run.h).
@@ -30,4 +35,5 @@ Shipping build compiles no debug HUD: no pass, no ImGui, no embedded font
 [ADR-0014](../../../docs/adr/0014-shading-language.md),
 [ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md),
 [ADR-0059](../../../docs/adr/0059-renderer-nvrhi.md),
-[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
+[ADR-0075](../../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

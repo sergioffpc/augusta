@@ -9,7 +9,8 @@ lines (ADR-0059). Like every debug tool, it exists only in a Development build
 (ADR-0074).
 
 **One vocabulary module.** `augusta_debug`, client-only and compiled only with
-`AUGUSTA_DEBUG_TOOLS`, depends on no other module of the game. It holds the
+`AUGUSTA_DEBUG_TOOLS`, depends on `augusta_math` and the window's event types
+alone, never on an area module, the Renderer, ImGui or a thread. It holds the
 shape and panel types, the tessellation of shapes into lines and triangles, and
 a helper that keeps shapes until a time. The Renderer draws them; the client
 Runtime composes them (ADR-0021).

@@ -4,7 +4,8 @@
 # only, so they take that header's directory rather than linking
 # augusta_renderer: their tests need neither a GPU nor a window.
 # renderer.h includes window.h, which needs no GLFW, hence
-# augusta_window_events. frame_mapping.h, lobby_readiness.h and net_stats.h are
+# augusta_window_events, and in a Development build debug_shapes.h, hence
+# augusta_debug (ADR-0075). frame_mapping.h, lobby_readiness.h and net_stats.h are
 # private to the Runtime: its tests reach them through this directory, as the
 # renderer's do theirs.
 
@@ -33,6 +34,10 @@ target_link_libraries(
   PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation augusta_window_events
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug)
+  target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
+endif()
 
 # The connection's numbers as Nsight Systems plots them and, in a Development
 # build (ADR-0074), as the debug HUD shows them (see net_stats.h). nvtx3-cpp
@@ -93,9 +98,10 @@ target_link_libraries(
     augusta_window
     nvtx3-cpp
 )
-# The debug HUD's lines, in a Development build only (ADR-0074).
+# The debug HUD's lines and the Debug overlays' shapes, in a Development build
+# only (ADR-0074, ADR-0075).
 if(AUGUSTA_DEBUG_TOOLS)
-  target_link_libraries(augusta_client PRIVATE augusta_hud)
+  target_link_libraries(augusta_client PRIVATE augusta_debug augusta_hud)
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.
