@@ -167,6 +167,10 @@ std::expected<std::uint32_t, ConfigError> RequireWholeNumber(const ConfigValues&
 /// key's value, or fallback if values lacks it.
 std::string OptionalString(const ConfigValues& values, std::string_view key, std::string_view fallback);
 
+/// key's value as a flag, "true" or "false", or fallback if values lacks it;
+/// kInvalidEntry, its subject key, if it is neither.
+std::expected<bool, ConfigError> OptionalFlag(const ConfigValues& values, std::string_view key, bool fallback);
+
 /// key's value, or fallback if values lacks it; kInvalidLogLevel if it is not
 /// one augusta::logging::ParseSeverity accepts.
 std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,

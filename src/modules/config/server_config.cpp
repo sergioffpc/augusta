@@ -79,22 +79,6 @@ std::expected<bool, ConfigError> OptionalStrict(const ConfigValues& values, std:
   return mode == "strict";
 }
 
-#if AUGUSTA_DEBUG_TOOLS
-// Reads the `debug` section's settings into config (ADR-0074): whether
-// Reenact requests are taken, "false" when absent.
-std::expected<void, ConfigError> ReadDebug(const ConfigValues& values, ServerConfig& config) {
-  const std::string taken = OptionalString(values, kReenactmentsKey, "false");
-  if (taken != "true" && taken != "false") {
-    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
-                                       .subject = std::string(kReenactmentsKey),
-                                       .reason = "must be true or false",
-                                       .file = {}});
-  }
-  config.reenactments = taken == "true";
-  return {};
-}
-#endif
-
 // A key that may not be set with replay.captures, or that needs it.
 ConfigError ReplayEntryError(std::string_view key, std::string_view reason) {
   return ConfigError{
@@ -181,6 +165,13 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
+#if AUGUSTA_DEBUG_TOOLS
+  // The `debug` section (ADR-0074): whether Reenact requests are taken.
+  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
+  }
+#endif
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -192,7 +183,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
 #if AUGUSTA_DEBUG_TOOLS
-      .reenactments = false,
+      .reenactments = *reenactments,
 #endif
       .metrics_port = *metrics_port,
       .replay_captures = {},
@@ -233,15 +224,9 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  return ServerConfigFrom(*values, *root)
-#if AUGUSTA_DEBUG_TOOLS
-      .and_then([&values](ServerConfig config) {
-        return ReadDebug(*values, config).transform([&config] { return std::move(config); });
-      })
-#endif
-      .and_then([&](ServerConfig config) {
-        return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
-      });
+  return ServerConfigFrom(*values, *root).and_then([&](ServerConfig config) {
+    return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
+  });
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {

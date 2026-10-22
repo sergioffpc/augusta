@@ -239,6 +239,20 @@ std::string OptionalString(const ConfigValues& values, std::string_view key, std
   return found == values.end() ? std::string(fallback) : found->second;
 }
 
+std::expected<bool, ConfigError> OptionalFlag(const ConfigValues& values, std::string_view key, bool fallback) {
+  const auto found = values.find(key);
+  if (found == values.end()) {
+    return fallback;
+  }
+  if (found->second != "true" && found->second != "false") {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
+                                       .subject = std::string(key),
+                                       .reason = "must be true or false",
+                                       .file = {}});
+  }
+  return found->second == "true";
+}
+
 // fallback when key is absent; when present, its value must be one
 // augusta::logging::ParseSeverity accepts.
 std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,

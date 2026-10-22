@@ -51,8 +51,7 @@ std::string ControlNames() {
   return names;
 }
 
-// A kInvalidEntry error naming entry (an `input.keys` entry, or a key such as
-// `debug.hud`), and reason why it is rejected.
+// An `input.keys` entry the keymap rejects, and reason why.
 std::unexpected<ConfigError> Reject(std::string entry, std::string reason) {
   return std::unexpected(ConfigError{
       .code = ConfigErrorCode::kInvalidEntry, .subject = std::move(entry), .reason = std::move(reason), .file = {}});
@@ -107,18 +106,6 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-// key's value as true or false; fallback when values lacks it.
-std::expected<bool, ConfigError> OptionalFlag(const ConfigValues& values, std::string_view key, bool fallback) {
-  if (!values.contains(key)) {
-    return fallback;
-  }
-  const std::string value = OptionalString(values, key, {});
-  if (value != "true" && value != "false") {
-    return Reject(std::string(key), "must be true or false");
-  }
-  return value == "true";
-}
-
 // The `debug` section (ADR-0074): which debug tools start on.
 std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
   return OptionalFlag(values, "debug.hud", true).transform([](bool hud) { return ClientDebugConfig{.hud = hud}; });
