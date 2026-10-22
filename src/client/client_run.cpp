@@ -65,7 +65,10 @@ Run BeginRun(const std::optional<std::filesystem::path>& directory) {
   logging::SetContext(logging::ContextField::kRun, boost::uuids::to_string(run.id));
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
+#ifdef _WIN32
+    // Only Windows writes a minidump; Linux's core stays in systemd-coredump.
     run.minidump_file = MinidumpPath(*directory, run.id);
+#endif
     renderer::NameGpuCrashDumps(
         [directory = *directory, id = run.id](std::uint32_t n) { return GpuDumpPath(directory, id, n); });
   } else {

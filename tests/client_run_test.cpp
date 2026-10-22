@@ -124,7 +124,11 @@ TEST_F(ClientRunTest, ARunsLogFileAndDumpsAreUnderItsDirectoryNamedByItsId) {
 
   EXPECT_EQ(run.log_file, LogPath(Directory(), run.id));
   EXPECT_TRUE(std::filesystem::exists(LogPath(Directory(), run.id)));
+#ifdef _WIN32
   EXPECT_EQ(run.minidump_file, MinidumpPath(Directory(), run.id));
+#else
+  EXPECT_FALSE(run.minidump_file.has_value());
+#endif
 }
 
 // Whether text is a UUID's canonical form: 36 characters, lowercase hex

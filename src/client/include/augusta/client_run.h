@@ -17,8 +17,9 @@ struct Run {
   boost::uuids::uuid id;
   /// The file its log reaches, or nullopt if it reaches only the console.
   std::optional<std::filesystem::path> log_file;
-  /// Where a crash on Windows writes its minidump, run_files.h's MinidumpPath,
-  /// or nullopt if the executable's directory is unknown.
+  /// Where a crash on Windows writes its minidump, run_files.h's MinidumpPath.
+  /// nullopt on Linux, whose core stays in systemd-coredump, or if the
+  /// executable's directory is unknown.
   std::optional<std::filesystem::path> minidump_file;
 };
 
