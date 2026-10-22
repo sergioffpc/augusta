@@ -32,6 +32,12 @@ inline constexpr physics::SurfaceId kMapSurface{0};
 /// them.
 [[nodiscard]] float ReachOf(std::span<const CharacterHitbox> hitboxes);
 
+/// A player a bullet is tested against, and the pose its hitboxes are placed by.
+struct PosedTarget {
+  EntityId target{};
+  Pose pose{};
+};
+
 /// What a strike on a posed hitbox means: whose it is, and which part.
 struct StruckHitbox {
   EntityId target{};
@@ -60,6 +66,11 @@ class HitboxPosing {
   /// The bullet's hitboxes, each with its Surface id. Valid until the next
   /// BeginBullet or Clear.
   [[nodiscard]] std::span<const ballistics::Hitbox> BulletHitboxes();
+
+  /// The players whose hitboxes the bullet is tested against, in the order
+  /// they were considered, with their poses. Valid until the next BeginBullet
+  /// or Clear.
+  [[nodiscard]] std::span<const PosedTarget> BulletTargets() const { return bullet_targets_; }
 
   /// What a strike on surface, a Surface of this tick's posed hitboxes and not
   /// kMapSurface, means. Any other is a broken id, checked rather than read
@@ -103,6 +114,7 @@ class HitboxPosing {
   double bullet_time_ = 0.0;
   ballistics::Segment bullet_segment_{};
   std::vector<Posing> bullet_posings_;
+  std::vector<PosedTarget> bullet_targets_;
   std::vector<ballistics::Hitbox> bullet_hitboxes_;
 };
 

@@ -78,6 +78,7 @@ void HitboxPosing::BeginBullet(double time, const ballistics::Segment& segment) 
   bullet_time_ = time;
   bullet_segment_ = segment;
   bullet_posings_.clear();
+  bullet_targets_.clear();
 }
 
 void HitboxPosing::Consider(EntityId target, std::span<const CharacterHitbox> standing, float reach, const Pose& pose) {
@@ -99,6 +100,7 @@ void HitboxPosing::Consider(EntityId target, std::span<const CharacterHitbox> st
     }
   }
   bullet_posings_.push_back(posing->second);
+  bullet_targets_.push_back(PosedTarget{.target = target, .pose = pose});
 }
 
 std::span<const ballistics::Hitbox> HitboxPosing::BulletHitboxes() {
