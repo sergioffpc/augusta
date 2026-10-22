@@ -7,7 +7,6 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -74,11 +73,13 @@ protocol::CaptureHeaderWire HeaderToWire(const capture::Header& header) {
                                      .client_pack = ToWire(header.client_pack),
                                      .engine_version = header.engine_version,
                                      .started_unix_ms = header.started.time_since_epoch().count(),
+                                     .match = header.match,
                                      .tick_rate_hz = header.tick_rate_hz};
 }
 
 capture::Header HeaderFromWire(const protocol::CaptureHeaderWire& header) {
   return capture::Header{
+      .match = header.match,
       .engine_version = header.engine_version,
       .server_pack = FromWire(header.server_pack),
       .client_pack = FromWire(header.client_pack),
@@ -90,10 +91,9 @@ capture::Header HeaderFromWire(const protocol::CaptureHeaderWire& header) {
 struct RecordFromWire {
   CaptureRecord operator()(const protocol::CaptureHeaderWire& header) const { return HeaderFromWire(header); }
   CaptureRecord operator()(const protocol::CapturedJoinWire& join) const {
-    return CapturedJoin{
-        .offset = join.offset,
-        .player = join.player,
-        .join = {.session = std::to_underlying(join.session), .character = join.character, .spawn = join.spawn}};
+    return CapturedJoin{.offset = join.offset,
+                        .player = join.player,
+                        .join = {.session = join.session, .character = join.character, .spawn = join.spawn}};
   }
   template <typename EventWire>
   CaptureRecord operator()(const EventWire& event) const {
@@ -119,11 +119,8 @@ std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureHeader(cons
 
 std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureJoin(capture::Player player,
                                                                           const capture::Join& join) {
-  return EncodeRecord(protocol::CapturedJoinWire{.spawn = join.spawn,
-                                                 .offset = 0,
-                                                 .session = static_cast<protocol::SessionIdWire>(join.session),
-                                                 .character = join.character,
-                                                 .player = player});
+  return EncodeRecord(protocol::CapturedJoinWire{
+      .spawn = join.spawn, .offset = 0, .session = join.session, .character = join.character, .player = player});
 }
 
 std::expected<std::vector<std::byte>, failure::Failure> EncodeCaptureEvent(

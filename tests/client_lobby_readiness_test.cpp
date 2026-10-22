@@ -21,7 +21,12 @@ using augusta::harness::RosterEntry;
 using augusta::harness::ServerView;
 using augusta::harness::SessionId;
 
-constexpr SessionId kOwn{1};
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
+constexpr SessionId kOwn = Session(1);
 constexpr std::uint8_t kTickRateHz = 60;
 
 // The server's admission of this client.
@@ -40,10 +45,10 @@ ServerView InLobby(std::uint32_t version, std::vector<RosterEntry> roster) {
 TEST(LobbyReadinessTest, PlansTheOtherPlayersCharactersEachOnceInRosterOrder) {
   const LobbyReadiness readiness;
 
-  const std::optional<ReadyPlan> plan = readiness.Plan(InLobby(3, {{.session = SessionId{2}, .character = "c"},
+  const std::optional<ReadyPlan> plan = readiness.Plan(InLobby(3, {{.session = Session(2), .character = "c"},
                                                                    {.session = kOwn, .character = "characters/own"},
-                                                                   {.session = SessionId{3}, .character = "a"},
-                                                                   {.session = SessionId{4}, .character = "c"}}));
+                                                                   {.session = Session(3), .character = "a"},
+                                                                   {.session = Session(4), .character = "c"}}));
 
   ASSERT_TRUE(plan.has_value());
   EXPECT_EQ(plan->version, 3U);
@@ -55,7 +60,7 @@ TEST(LobbyReadinessTest, PlansNoCharacterAlreadyLoaded) {
   readiness.MarkLoaded("a");
 
   const std::optional<ReadyPlan> plan = readiness.Plan(
-      InLobby(1, {{.session = SessionId{2}, .character = "a"}, {.session = SessionId{3}, .character = "b"}}));
+      InLobby(1, {{.session = Session(2), .character = "a"}, {.session = Session(3), .character = "b"}}));
 
   ASSERT_TRUE(plan.has_value());
   EXPECT_EQ(plan->characters_to_load, (std::vector<std::string>{"b"}));
@@ -65,7 +70,7 @@ TEST(LobbyReadinessTest, PlansNothingOnceReadyForThatRoster) {
   LobbyReadiness readiness;
   readiness.MarkReady(1);
 
-  EXPECT_FALSE(readiness.Plan(InLobby(1, {{.session = SessionId{2}, .character = "a"}})).has_value());
+  EXPECT_FALSE(readiness.Plan(InLobby(1, {{.session = Session(2), .character = "a"}})).has_value());
 }
 
 TEST(LobbyReadinessTest, PlansAgainForANewRoster) {
@@ -74,7 +79,7 @@ TEST(LobbyReadinessTest, PlansAgainForANewRoster) {
   readiness.MarkReady(1);
 
   const std::optional<ReadyPlan> plan = readiness.Plan(
-      InLobby(2, {{.session = SessionId{2}, .character = "a"}, {.session = SessionId{3}, .character = "b"}}));
+      InLobby(2, {{.session = Session(2), .character = "a"}, {.session = Session(3), .character = "b"}}));
 
   ASSERT_TRUE(plan.has_value());
   EXPECT_EQ(plan->version, 2U);
@@ -98,7 +103,7 @@ TEST(LobbyReadinessTest, PlansNothingOutsideTheLobby) {
   not_admitted.lobby = Lobby{.version = 1, .roster = {}};
   EXPECT_FALSE(readiness.Plan(not_admitted).has_value());
 
-  ServerView in_match = InLobby(1, {{.session = SessionId{2}, .character = "a"}});
+  ServerView in_match = InLobby(1, {{.session = Session(2), .character = "a"}});
   in_match.in_match = true;
   EXPECT_FALSE(readiness.Plan(in_match).has_value());
 

@@ -10,6 +10,9 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -31,9 +34,10 @@
 namespace augusta::link {
 
 /// The server's name for one connected player (GLOSSARY.md, "Session ID"), as
-/// a message carries it: assigned when the server admits the join. Distinct
-/// from the transport's handle for the connection, and not a credential.
-enum class SessionId : std::uint32_t {};
+/// a message carries it: a UUIDv7 assigned when the server admits the join,
+/// unique across every server and every restart. Distinct from the transport's
+/// handle for the connection, and not a credential.
+using SessionId = boost::uuids::uuid;
 
 /// The server's name for one dynamic body (GLOSSARY.md, "Entity ID"), as a
 /// message carries it: a player's is given in Match start. It names the body,
@@ -128,7 +132,7 @@ struct Death {
 
 /// One player in the Lobby.
 struct RosterEntry {
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// Its character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };
@@ -143,7 +147,7 @@ struct Lobby {
 
 /// One player in a match, the body it controls, and where the server spawned it.
 struct MatchPlayer {
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// The body this player's commands move for the whole match.
   EntityId entity{};
   /// Its character (see RosterEntry::character).
@@ -156,6 +160,9 @@ struct MatchStart {
   std::vector<MatchPlayer> players;
   /// The Match's first server tick: what a Match capture's offsets count from (ADR-0050).
   tick::Tick first_tick = 0;
+  /// The Match's Match ID (GLOSSARY.md), the same in every player's Match
+  /// start; the nil UUID where the server names none.
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
 };
 
 /// What the server said when a match ended (US-14).
@@ -189,7 +196,7 @@ enum class JoinRefusal : std::uint8_t {
 /// What the server said when it admitted a client.
 struct Admission {
   /// The session the server assigned to the client.
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// The rate, in Hz, at which the server ticks and the client must: the
   /// server's startup setting, fixed for the life of its process. The client
   /// has no rate of its own.
@@ -229,6 +236,8 @@ struct JoinRequest {
   /// Where it asks to spawn, as a Captured player (ADR-0050), which only a
   /// Reenact request names; nullopt for anyone else.
   std::optional<math::Vec3> spawn = std::nullopt;
+  /// The client's Run ID, which the server logs at admission (ADR-0038).
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 };
 
 /// What a client asks when it watches a Replay (ADR-0051).
@@ -239,6 +248,8 @@ struct ReplayRequest {
   assets::PackHash client_pack{};
   /// The capture to watch, by its name in the replay server's Replay list.
   std::string capture;
+  /// The Replay viewer's Run ID, as a JoinRequest's.
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 };
 
 /// One tick's command and the number its client gave it. Numbers start at 1 and

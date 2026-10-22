@@ -5,7 +5,9 @@
 ## Responsibility
 
 The engine's version: what each executable prints for `--version` and logs at
-startup, and what a client presents when it joins.
+startup, and what a client presents when it joins. And which build of it is
+running: the PDB GUID and age (Windows) or build ID (Linux) that match a Crash
+dump to its symbols, which the client logs on its first line.
 
 ## Not its responsibility
 

@@ -32,6 +32,11 @@ std::optional<std::uint64_t> BytesFromMemoryMax(std::string_view memory_max);
 /// PRETTY_NAME from /etc/os-release's text, unquoted; empty if none.
 std::string PrettyNameFromOsRelease(std::string_view os_release);
 
+/// The GPU a DRM card's device/uevent text describes: its PCI_ID's vendor and
+/// device, and its DRIVER; nullopt for a card with no PCI_ID, as a virtual
+/// one. Linux names no GPU and gives no version there, so both are empty.
+std::optional<Gpu> GpuFromUevent(std::string_view uevent);
+
 }  // namespace augusta::hardware
 
 #endif  // AUGUSTA_HARDWARE_PROC_FILES_H_

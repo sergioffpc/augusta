@@ -1,6 +1,7 @@
 #include "augusta/policy_actions.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <string>
@@ -8,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
 #include "answers.h"
@@ -29,19 +31,27 @@ using augusta::policy::SpawnRefusal;
 using augusta::scripting::Field;
 using augusta::scripting::Value;
 
-constexpr SessionId kAlice{1};
-constexpr SessionId kBob{2};
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
+constexpr SessionId kAlice = Session(1);
+constexpr SessionId kBob = Session(2);
 const std::vector<SessionId> kBothAlive{kAlice, kBob};
 
 Value Number(double number) { return Value{.data = number}; }
+
+// session as a hook names it: its canonical string.
+Value Named(const SessionId& session) { return Value{.data = boost::uuids::to_string(session)}; }
 
 Value Record(std::vector<Field> fields) { return Value{.data = Value::Record(std::move(fields))}; }
 
 Value List(std::vector<Value> values) { return Value{.data = Value::List(std::move(values))}; }
 
-Value Assignment(double session, double spawn_point) {
+Value Assignment(const SessionId& session, double spawn_point) {
   return Record(
-      {Field{.key = "session", .value = Number(session)}, Field{.key = "spawn_point", .value = Number(spawn_point)}});
+      {Field{.key = "session", .value = Named(session)}, Field{.key = "spawn_point", .value = Number(spawn_point)}});
 }
 
 // The MatchEnd action holds, or a failed test if it is not one.
@@ -61,10 +71,24 @@ TEST(ReadTickActionTest, NilTakesNoAction) {
 
 // Requirements: US-14
 TEST(ReadTickActionTest, AWinnerAliveInTheMatchEndsItWithThatWinner) {
-  const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(2)}}), kBothAlive);
+  const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Named(kBob)}}), kBothAlive);
 
   ASSERT_TRUE(action.has_value());
   EXPECT_EQ(EndOf(*action).winner, kBob);
+}
+
+// A hook only compares a Session ID and hands it back, so only the string it
+// was given names the player: any other spelling of the same UUID does not.
+// Requirements: US-14
+TEST(ReadTickActionTest, AWinnerNamedByAnyOtherStringIsRefused) {
+  for (const std::string& other :
+       {std::string("0190A1B2-C3D4-7000-8000-000000000002"), std::string("{0190a1b2-c3d4-7000-8000-000000000002}"),
+        std::string("0190a1b2c3d4700080000000000000002"), std::string("2")}) {
+    const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Value{.data = other}}}), kBothAlive);
+
+    ASSERT_FALSE(action.has_value()) << other;
+    EXPECT_EQ(action.error(), ActionRefusal::kNotAWinner) << other;
+  }
 }
 
 // Requirements: US-14
@@ -77,15 +101,16 @@ TEST(ReadTickActionTest, ADrawEndsTheMatchWithNoWinner) {
 
 // Requirements: US-14
 TEST(ReadTickActionTest, AWinnerNotAliveInTheMatchIsRefused) {
-  const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(2)}}), std::vector{kAlice});
+  const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Named(kBob)}}), std::vector{kAlice});
 
   ASSERT_FALSE(action.has_value());
   EXPECT_EQ(action.error(), ActionRefusal::kNotAWinner);
 }
 
 // Requirements: US-14
-TEST(ReadTickActionTest, SessionZeroIsNeverAWinner) {
-  const auto action = ReadTickAction(Record({Field{.key = "winner", .value = Number(0)}}), std::vector{SessionId{}});
+TEST(ReadTickActionTest, TheNilSessionIsNeverAWinner) {
+  const auto action =
+      ReadTickAction(Record({Field{.key = "winner", .value = Named(SessionId{})}}), std::vector{SessionId{}});
 
   ASSERT_FALSE(action.has_value());
   EXPECT_EQ(action.error(), ActionRefusal::kNotAWinner);
@@ -98,9 +123,9 @@ TEST(ReadTickActionTest, AnythingElseIsNotAnAction) {
       Value{.data = std::string("winner")},
       List({Number(1)}),
       Record({Field{.key = "draw", .value = Value{.data = false}}}),
-      Record({Field{.key = "winner", .value = Value{.data = std::string("1")}}}),
-      Record({Field{.key = "loser", .value = Number(1)}}),
-      Record({Field{.key = "draw", .value = Value{.data = true}}, Field{.key = "winner", .value = Number(1)}}),
+      Record({Field{.key = "winner", .value = Number(1)}}),
+      Record({Field{.key = "loser", .value = Named(kAlice)}}),
+      Record({Field{.key = "draw", .value = Value{.data = true}}, Field{.key = "winner", .value = Named(kAlice)}}),
   };
   for (std::size_t i = 0; i < refused.size(); ++i) {
     const auto action = ReadTickAction(refused[i], kBothAlive);
@@ -112,7 +137,7 @@ TEST(ReadTickActionTest, AnythingElseIsNotAnAction) {
 
 // Requirements: US-03
 TEST(ReadSpawnAssignmentTest, GivesEachPlayerItsSpawnPointFromZeroInPlayerOrder) {
-  const auto spawns = ReadSpawnAssignment(List({Assignment(2, 1), Assignment(1, 3)}), kBothAlive, 3);
+  const auto spawns = ReadSpawnAssignment(List({Assignment(kBob, 1), Assignment(kAlice, 3)}), kBothAlive, 3);
 
   ASSERT_TRUE(spawns.has_value());
   EXPECT_EQ(*spawns, (std::vector<std::size_t>{2, 0}));
@@ -120,7 +145,7 @@ TEST(ReadSpawnAssignmentTest, GivesEachPlayerItsSpawnPointFromZeroInPlayerOrder)
 
 // Requirements: US-03
 TEST(ReadSpawnAssignmentTest, TwoPlayersMayShareASpawnPoint) {
-  const auto spawns = ReadSpawnAssignment(List({Assignment(1, 1), Assignment(2, 1)}), kBothAlive, 1);
+  const auto spawns = ReadSpawnAssignment(List({Assignment(kAlice, 1), Assignment(kBob, 1)}), kBothAlive, 1);
 
   ASSERT_TRUE(spawns.has_value());
   EXPECT_EQ(*spawns, (std::vector<std::size_t>{0, 0}));
@@ -131,14 +156,17 @@ TEST(ReadSpawnAssignmentTest, RefusesWhatIsNotAWholeAssignment) {
   const std::vector<std::pair<Value, SpawnRefusal>> refused{
       {Number(1), SpawnRefusal::kNotAList},
       {List({Number(1)}), SpawnRefusal::kNotAnAssignment},
-      {List({Record({Field{.key = "session", .value = Number(1)}})}), SpawnRefusal::kNotAnAssignment},
-      {List({Assignment(3, 1), Assignment(2, 1)}), SpawnRefusal::kUnknownPlayer},
-      {List({Assignment(1, 1), Assignment(1, 2)}), SpawnRefusal::kPlayerTwice},
-      {List({Assignment(1, 1)}), SpawnRefusal::kPlayerMissing},
-      {List({Assignment(1, 0), Assignment(2, 1)}), SpawnRefusal::kNotASpawnPoint},
-      {List({Assignment(1, 4), Assignment(2, 1)}), SpawnRefusal::kNotASpawnPoint},
-      {List({Assignment(1, 1.5), Assignment(2, 1)}), SpawnRefusal::kNotASpawnPoint},
-      {List({Assignment(1, std::numeric_limits<double>::quiet_NaN()), Assignment(2, 1)}),
+      {List({Record({Field{.key = "session", .value = Named(kAlice)}})}), SpawnRefusal::kNotAnAssignment},
+      {List({Assignment(Session(3), 1), Assignment(kBob, 1)}), SpawnRefusal::kUnknownPlayer},
+      {List({Record({Field{.key = "session", .value = Number(1)}, Field{.key = "spawn_point", .value = Number(1)}}),
+             Assignment(kBob, 1)}),
+       SpawnRefusal::kUnknownPlayer},
+      {List({Assignment(kAlice, 1), Assignment(kAlice, 2)}), SpawnRefusal::kPlayerTwice},
+      {List({Assignment(kAlice, 1)}), SpawnRefusal::kPlayerMissing},
+      {List({Assignment(kAlice, 0), Assignment(kBob, 1)}), SpawnRefusal::kNotASpawnPoint},
+      {List({Assignment(kAlice, 4), Assignment(kBob, 1)}), SpawnRefusal::kNotASpawnPoint},
+      {List({Assignment(kAlice, 1.5), Assignment(kBob, 1)}), SpawnRefusal::kNotASpawnPoint},
+      {List({Assignment(kAlice, std::numeric_limits<double>::quiet_NaN()), Assignment(kBob, 1)}),
        SpawnRefusal::kNotASpawnPoint},
   };
   for (std::size_t i = 0; i < refused.size(); ++i) {

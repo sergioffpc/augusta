@@ -15,6 +15,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
 #include <google/protobuf/arena.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/message_lite.h>
@@ -128,6 +129,10 @@ std::uint32_t UnsignedSteps(float value, const math::Grid& grid) {
 
 std::string_view BytesOf(const PackHashWire& hash) { return {reinterpret_cast<const char*>(hash.data()), hash.size()}; }
 
+std::string_view BytesOf(const boost::uuids::uuid& id) {
+  return {reinterpret_cast<const char*>(id.begin()), id.size()};
+}
+
 void Write(const CommandWire& wire, pb::Command& command, Outbound& out) {
   command.set_direction_x(Steps(wire.direction.x, math::kDirectionGrid));
   command.set_direction_y(Steps(wire.direction.y, math::kDirectionGrid));
@@ -217,7 +222,7 @@ void Write(const ParametersWire& wire, pb::Parameters& parameters, Outbound& out
 }
 
 void Write(const MatchPlayerWire& wire, pb::MatchPlayer& player, Outbound& out) {
-  player.set_session(static_cast<std::uint32_t>(wire.session));
+  player.set_session(BytesOf(wire.session));
   player.set_entity(static_cast<std::uint32_t>(wire.entity));
   player.set_character(out.Text(wire.character, kMaxCharacterNameLength));
   player.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
@@ -247,11 +252,12 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_character(out.Text(wire.character, kMaxCharacterNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const JoinAcceptedWire& wire) const {
     pb::JoinAccepted& accepted = *message.mutable_join_accepted();
-    accepted.set_session(static_cast<std::uint32_t>(wire.session));
+    accepted.set_session(BytesOf(wire.session));
     accepted.set_tick_rate_hz(wire.tick_rate_hz);
     Write(wire.parameters, *accepted.mutable_parameters(), out);
     accepted.set_character(out.Text(wire.character, kMaxCharacterNameLength));
@@ -286,7 +292,7 @@ struct Encoder {
     if (out.Fits(wire.roster.size(), limits::kMaxPlayers)) {
       for (const RosterEntryWire& entry : wire.roster) {
         pb::RosterEntry& written = *lobby.add_roster();
-        written.set_session(static_cast<std::uint32_t>(entry.session));
+        written.set_session(BytesOf(entry.session));
         written.set_character(out.Text(entry.character, kMaxCharacterNameLength));
       }
     }
@@ -302,11 +308,10 @@ struct Encoder {
       }
     }
     start.set_first_tick(wire.first_tick);
+    start.set_match(BytesOf(wire.match));
   }
 
-  void operator()(const MatchEndWire& wire) const {
-    message.mutable_match_end()->set_winner(static_cast<std::uint32_t>(wire.winner));
-  }
+  void operator()(const MatchEndWire& wire) const { message.mutable_match_end()->set_winner(BytesOf(wire.winner)); }
 
   void operator()(const ShotWire& wire) const {
     pb::Shot& shot = *message.mutable_shot();
@@ -353,6 +358,7 @@ struct Encoder {
     request.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_capture(out.Text(wire.capture, kMaxCaptureNameLength));
+    request.set_run(BytesOf(wire.run));
   }
 
   void operator()(const ReplayViewWire& wire) const {
@@ -376,6 +382,7 @@ struct Encoder {
     request.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
     request.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
     request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
+    request.set_run(BytesOf(wire.run));
   }
 };
 
@@ -457,6 +464,21 @@ class Inbound {
     return hash;
   }
 
+  // bytes as a UUID (a Run ID, a Match ID): none is the nil one an absent field reads as,
+  // and any other length than a UUID's is a number wider than its field.
+  boost::uuids::uuid Uuid(std::string_view bytes) {
+    boost::uuids::uuid id{};
+    if (bytes.empty()) {
+      return id;
+    }
+    if (bytes.size() != id.size()) {
+      Fail(DecodeError::kOutOfRange);
+      return id;
+    }
+    std::ranges::transform(bytes, id.begin(), [](char byte) { return static_cast<std::uint8_t>(byte); });
+    return id;
+  }
+
   // Whether a list of size elements is at most max long.
   bool Fits(int size, std::size_t max) {
     if (std::cmp_greater(size, max)) {
@@ -521,7 +543,8 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
 JoinRequestWire Read(const pb::JoinRequest& request, Inbound& in) {
   return JoinRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                          .client_pack = in.PackHash(request.client_pack()),
-                         .character = in.Text(request.character(), kMaxCharacterNameLength)};
+                         .character = in.Text(request.character(), kMaxCharacterNameLength),
+                         .run = in.Uuid(request.run())};
 }
 
 ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
@@ -529,7 +552,8 @@ ReenactRequestWire Read(const pb::ReenactRequest& request, Inbound& in) {
       .engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
       .client_pack = in.PackHash(request.client_pack()),
       .character = in.Text(request.character(), kMaxCharacterNameLength),
-      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid)};
+      .spawn = in.FromSteps(request.spawn_x(), request.spawn_y(), request.spawn_z(), math::kPositionGrid),
+      .run = in.Uuid(request.run())};
 }
 
 RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
@@ -563,7 +587,7 @@ ParametersWire Read(const pb::Parameters& parameters, Inbound& in) {
 }
 
 JoinAcceptedWire Read(const pb::JoinAccepted& accepted, Inbound& in) {
-  return JoinAcceptedWire{.session = static_cast<SessionIdWire>(accepted.session()),
+  return JoinAcceptedWire{.session = in.Uuid(accepted.session()),
                           .tick_rate_hz = in.Narrow(accepted.tick_rate_hz()),
                           .parameters = Read(accepted.parameters(), in),
                           .character = in.Text(accepted.character(), kMaxCharacterNameLength)};
@@ -601,7 +625,7 @@ AuthoritativeStateWire Read(const pb::AuthoritativeState& state, Inbound& in) {
 LobbyWire Read(const pb::Lobby& lobby, Inbound& in) {
   return LobbyWire{.version = lobby.version(),
                    .roster = ReadList(lobby.roster(), limits::kMaxPlayers, in, [&in](const pb::RosterEntry& entry) {
-                     return RosterEntryWire{.session = static_cast<SessionIdWire>(entry.session()),
+                     return RosterEntryWire{.session = in.Uuid(entry.session()),
                                             .character = in.Text(entry.character(), kMaxCharacterNameLength)};
                    })};
 }
@@ -612,11 +636,12 @@ MatchStartWire Read(const pb::MatchStart& start, Inbound& in) {
                                               return MatchPlayerWire{
                                                   .spawn = in.FromSteps(player.spawn_x(), player.spawn_y(),
                                                                         player.spawn_z(), math::kPositionGrid),
-                                                  .session = static_cast<SessionIdWire>(player.session()),
+                                                  .session = in.Uuid(player.session()),
                                                   .entity = static_cast<EntityIdWire>(player.entity()),
                                                   .character = in.Text(player.character(), kMaxCharacterNameLength)};
                                             }),
-                        .first_tick = start.first_tick()};
+                        .first_tick = start.first_tick(),
+                        .match = in.Uuid(start.match())};
 }
 
 ShotWire Read(const pb::Shot& shot, Inbound& in) {
@@ -655,7 +680,8 @@ ReplayListingWire Read(const pb::ReplayListing& listing, Inbound& in) {
 ReplayRequestWire Read(const pb::ReplayRequest& request, Inbound& in) {
   return ReplayRequestWire{.engine_version = in.Text(request.engine_version(), kMaxEngineVersionLength),
                            .client_pack = in.PackHash(request.client_pack()),
-                           .capture = in.Text(request.capture(), kMaxCaptureNameLength)};
+                           .capture = in.Text(request.capture(), kMaxCaptureNameLength),
+                           .run = in.Uuid(request.run())};
 }
 
 ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {
@@ -688,7 +714,7 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
     case pb::Message::kMatchStart:
       return Read(message.match_start(), in);
     case pb::Message::kMatchEnd:
-      return MatchEndWire{.winner = static_cast<SessionIdWire>(message.match_end().winner())};
+      return MatchEndWire{.winner = in.Uuid(message.match_end().winner())};
     case pb::Message::kShot:
       return Read(message.shot(), in);
     case pb::Message::kHitConfirmation:
@@ -804,13 +830,14 @@ struct RecordEncoder {
     header.set_engine_version(out.Text(wire.engine_version, kMaxEngineVersionLength));
     header.set_started_unix_ms(wire.started_unix_ms);
     header.set_tick_rate_hz(wire.tick_rate_hz);
+    header.set_match(BytesOf(wire.match));
   }
 
   void operator()(const CapturedJoinWire& wire) const {
     pb::CapturedJoin& join = *record.mutable_join();
     join.set_offset(wire.offset);
     join.set_player(wire.player);
-    join.set_session(static_cast<std::uint32_t>(wire.session));
+    join.set_session(BytesOf(wire.session));
     join.set_character(out.Text(wire.character, kMaxCharacterNameLength));
     join.set_spawn_x(Steps(wire.spawn.x, math::kPositionGrid));
     join.set_spawn_y(Steps(wire.spawn.y, math::kPositionGrid));
@@ -850,13 +877,14 @@ CaptureHeaderWire Read(const pb::CaptureHeader& header, Inbound& in) {
                            .client_pack = in.PackHash(header.client_pack()),
                            .engine_version = in.Text(header.engine_version(), kMaxEngineVersionLength),
                            .started_unix_ms = header.started_unix_ms(),
+                           .match = in.Uuid(header.match()),
                            .tick_rate_hz = in.Narrow(header.tick_rate_hz())};
 }
 
 CapturedJoinWire Read(const pb::CapturedJoin& join, Inbound& in) {
   return CapturedJoinWire{.spawn = in.FromSteps(join.spawn_x(), join.spawn_y(), join.spawn_z(), math::kPositionGrid),
                           .offset = join.offset(),
-                          .session = static_cast<SessionIdWire>(join.session()),
+                          .session = in.Uuid(join.session()),
                           .character = in.Text(join.character(), kMaxCharacterNameLength),
                           .player = in.Narrow(join.player())};
 }

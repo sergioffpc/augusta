@@ -11,6 +11,8 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
+
 #include "answers.h"
 #include "augusta/policy_actions.h"
 #include "augusta/scripting.h"
@@ -43,7 +45,7 @@ scripting::Value ToValue(const PlayerView& player) {
   if (player.killer.has_value()) {
     record.push_back(NumberField("killer", *player.killer));
   }
-  record.push_back(NumberField("session", std::to_underlying(player.session)));
+  record.push_back(StringField("session", boost::uuids::to_string(player.session)));
   return scripting::Value{.data = std::move(record)};
 }
 

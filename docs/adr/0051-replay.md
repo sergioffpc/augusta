@@ -90,15 +90,14 @@ the ones that ended, never while stepping them.
 
 **A Replay viewer is a Spectator from the first tick.** The viewer is sent what
 a Match's Spectator is: the tick rate and Parameters, in a Join accepted whose
-session is 0, which no player has, since Session IDs start at 1 (ADR-0038). That
-is the value a Match end gives for a Draw, and a viewer plays no one, so neither
-can name it as a winner. Then the Match start with its first tick, every
-Authoritative State, Shot and Death, and the Match end, after which the replay
-server closes the connection. It has no body, sends no Commands and predicts
-nothing; it draws every body by interpolating Authoritative States, as any
-client draws the other players, so it is as smooth as the other players always
-are. It watches the capture's first player and moves on with fire, as a
-Spectator does.
+session is the nil UUID, which no player has (ADR-0038). That is the value a
+Match end gives for a Draw, and a viewer plays no one, so neither can name it as
+a winner. Then the Match start with its first tick, every Authoritative State,
+Shot and Death, and the Match end, after which the replay server closes the
+connection. It has no body, sends no Commands and predicts nothing; it draws
+every body by interpolating Authoritative States, as any client draws the other
+players, so it is as smooth as the other players always are. It watches the
+capture's first player and moves on with fire, as a Spectator does.
 
 **A Replay sends what the watched player saw.** A Spectator's camera looks level
 from the hip, since a remote player's pitch and ADS are not replicated. A Replay

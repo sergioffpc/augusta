@@ -97,7 +97,8 @@ TEST(ProtocolCaptureTest, AHeaderRoundTrips) { EXPECT_EQ(std::get<CaptureHeaderW
 TEST(ProtocolCaptureTest, AJoinRoundTrips) {
   const CapturedJoinWire join{.spawn = Vec3{4.0F, 0.5F, -12.25F},
                               .offset = 0,
-                              .session = SessionIdWire{7},
+                              .session = SessionIdWire({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00,
+                                                        0x00, 0x00, 0x00, 0x00, 0x00, 0x07}),
                               .character = "soldier",
                               .player = 1};
   EXPECT_EQ(std::get<CapturedJoinWire>(RoundTrip(join)), join);

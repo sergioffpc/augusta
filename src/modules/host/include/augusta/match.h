@@ -11,6 +11,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
@@ -19,7 +23,8 @@
 /// \file
 /// augusta::host::Match is the server's book of who is playing, in the Lobby
 /// and in a Match (ADR-0043): it decides whether a peer's join is admitted,
-/// names each admitted peer with a session ID of its own making, remembers its
+/// names each admitted peer with a new UUIDv7 Session ID and each Match with a
+/// new UUIDv7 Match ID, both from the one generator it holds, remembers its
 /// character, numbers every version of the Lobby's Roster, counts who is Ready
 /// for which, and decides when a match starts and when it has ended. Where each
 /// player spawns is not its to decide: Game policy assigns Spawn points in
@@ -34,10 +39,11 @@ namespace augusta::host {
 /// that stays full leaves anyone who is done the time to leave (ADR-0043).
 inline constexpr std::chrono::seconds kMatchPause{5};
 
-/// The server's name for one connected player (CONTEXT.md, "Session ID"),
-/// which Match makes when it admits a join. Distinct from the Link's peer
+/// The server's name for one connected player (GLOSSARY.md, "Session ID"): a
+/// UUIDv7 Match takes when it admits a join, unique across every server and
+/// every restart, and later ones compare greater. Distinct from the Link's peer
 /// identity for the connection, and not a credential.
-enum class SessionId : std::uint32_t {};
+using SessionId = boost::uuids::uuid;
 
 /// The server's name for one dynamic body (CONTEXT.md, "Entity ID"), which
 /// Match makes for each player's body when a match starts. The body is named by
@@ -48,7 +54,7 @@ enum class EntityId : std::uint32_t {};
 
 /// One player in the Lobby.
 struct RosterEntry {
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// Its character, by its name in the scenario's manifest: one of the scenario's (ADR-0042).
   std::string character;
 };
@@ -63,7 +69,7 @@ struct Roster {
 
 /// One player in a match and the body it controls.
 struct MatchPlayer {
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// The body the player's commands move for the whole match.
   EntityId entity{};
   /// Its character (see RosterEntry::character).
@@ -73,10 +79,13 @@ struct MatchPlayer {
   std::optional<math::Vec3> spawn = std::nullopt;
 };
 
-/// Who a match starts with.
+/// Who a match starts with, and its name.
 struct MatchStart {
   /// Ordered by session.
   std::vector<MatchPlayer> players;
+  /// The Match ID (GLOSSARY.md): a UUIDv7 Match takes at its start, later than
+  /// every Session ID and Match ID it took before.
+  boost::uuids::uuid match = boost::uuids::nil_uuid();
 };
 
 /// How a match ended, for its players to be told.
@@ -90,7 +99,7 @@ struct MatchEnd {
 /// What a peer is told when it is admitted to the Lobby.
 struct Admission {
   /// The name the server gave the peer's player.
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// The character it plays (see RosterEntry::character).
   std::string character;
 };
@@ -253,12 +262,13 @@ class Match {
   std::uint32_t roster_version_ = 0;
   // Ticks since the last match ended; the first match waits for no pause.
   std::uint32_t ticks_since_end_;
-  // IDs count up and are never reused, so a session ID never names two
-  // players over the life of the server.
-  std::uint32_t next_session_ = 1;
-  // Entity IDs likewise: a body of one match is never mistaken for one of another.
+  // Entity IDs count up and are never reused: a body of one match is never
+  // mistaken for one of another.
   std::uint32_t next_entity_ = 1;
   std::unordered_map<link::PeerId, Member> members_;
+  // Where its Session IDs and Match IDs come from, so each it takes is later
+  // than the last. Match is not thread-safe, and Host calls it under one lock.
+  boost::uuids::time_generator_v7 ids_;
 };
 
 }  // namespace augusta::host

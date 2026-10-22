@@ -24,3 +24,11 @@ if(PORT STREQUAL "physx")
   set(VCPKG_C_FLAGS "-Wno-missing-include-dirs -Wno-unique-object-duplication -Wno-nrvo -Wno-error=format")
   set(VCPKG_CXX_FLAGS "${VCPKG_C_FLAGS}")
 endif()
+
+# Boost.Uuid links its users to libatomic under clang on Linux, for the sake of
+# time_generator_v1's atomic state, which the project does not use: the v7
+# generators the engine holds (ADR-0035) take no atomic, and the server image
+# has no libatomic, so a binary that needs it would not even start.
+if(PORT STREQUAL "boost-uuid")
+  list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -DBOOST_UUID_LINK_LIBATOMIC=OFF)
+endif()

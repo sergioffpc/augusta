@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -223,6 +224,42 @@ TEST(ApplicationTest, ATerminalFailureWritesOneTerminalEventAndExitsNonZero) {
                         "disposition=runtime thread=network detail=\"x\""),
             1U)
       << written;
+}
+
+// A client's terminal event also says which file holds its Run's log, so the
+// player knows what to send (ADR-0027); it is still the one terminal event.
+TEST(ApplicationTest, ATerminalFailureWithARunLogGivesItsPathInTheOneTerminalEvent) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  const std::filesystem::path log = std::filesystem::path(u8"C:/augustac/logs") / u8"augustac-run-中文.log";
+  testing::internal::CaptureStdout();
+
+  const int status =
+      Conclude("client", Failure{.code = Code::kServerUnreachable, .context = {}, .detail = "timed out"}, log);
+
+  const std::string written = testing::internal::GetCapturedStdout();
+  EXPECT_EQ(status, 1);
+  EXPECT_EQ(Occurrences(written, "\n"), 1U) << written;
+  const std::u8string utf8 = log.u8string();
+  EXPECT_EQ(Occurrences(written,
+                        "CRITICAL subsystem=client event=terminal_failure code=server_unreachable "
+                        "disposition=session detail=\"timed out\" exit_status=1 log=\"" +
+                            std::string(utf8.begin(), utf8.end()) + "\""),
+            1U)
+      << written;
+}
+
+// A stop as asked leaves nothing to send, so it names no log.
+TEST(ApplicationTest, AStopAsAskedWithARunLogNamesNoLog) {
+  augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
+  testing::internal::CaptureStdout();
+
+  const int status = Conclude("client", std::nullopt, std::filesystem::path("logs/augustac-run.log"));
+
+  const std::string written = testing::internal::GetCapturedStdout();
+  EXPECT_EQ(status, 0);
+  EXPECT_EQ(Occurrences(written, "log="), 0U) << written;
 }
 
 TEST(ApplicationTest, EveryDispositionOfTerminalFailureExitsNonZero) {

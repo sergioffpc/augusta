@@ -1,6 +1,6 @@
 {
   "name": "augusta",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "dependencies": [
     "abseil",
     "benchmark",
@@ -10,6 +10,7 @@
     "boost-interprocess",
     "boost-log",
     "boost-program-options",
+    "boost-uuid",
     "flecs",
     "gamenetworkingsockets",
     "glm",

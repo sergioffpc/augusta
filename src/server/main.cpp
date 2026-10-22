@@ -15,7 +15,7 @@
 
 namespace {
 
-// The subsystem augustad's terminal event names (ADR-0029).
+// The subsystem augustad's terminal event and crash lines name (ADR-0029).
 constexpr std::string_view kSubsystem = "server";
 
 // Signal handlers can't capture context, so this is the only way to
@@ -54,7 +54,7 @@ class SignalTarget {
 int main(int argc, char** argv) {
   // First, so a crash anywhere after it - startup included - is logged and
   // leaves a core dump (ADR-0047).
-  augusta::server::InstallCrashHandler(argv[0]);
+  augusta::crash::Install(argv[0], kSubsystem);
   augusta::logging::Init();
 
   // Settings come from a config file - augustad.yaml next to the executable

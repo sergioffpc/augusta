@@ -6,6 +6,8 @@
 #include <optional>
 #include <string_view>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/link.h"
 #include "augusta/match.h"
 #include "augusta/simulation.h"
@@ -41,21 +43,20 @@ enum class Leaving : std::uint8_t {
 /// The Link's peer identity as a number, for log lines.
 [[nodiscard]] std::uint32_t PeerNumber(link::PeerId peer);
 
-[[nodiscard]] std::uint32_t SessionNumber(SessionId session);
-
 /// how as a departure's log line says it.
 [[nodiscard]] std::string_view LeavingName(Leaving how);
 
-/// The one line of a match that ended: why, who won (nullopt for a draw), how
-/// many ticks it lasted, counting the one it ended on, how many players were in
-/// it, and the Lobby's Roster version after it.
-void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, tick::Tick ticks, std::size_t players,
-                   std::uint32_t roster_version);
+/// The one line of the match that ended: its Match ID, why, who won (nullopt
+/// for a draw), how many ticks it lasted, counting the one it ended on, how many
+/// players were in it, and the Lobby's Roster version after it.
+void LogMatchEnded(const boost::uuids::uuid& match, EndReason reason, const std::optional<SessionId>& winner,
+                   tick::Tick ticks, std::size_t players, std::uint32_t roster_version);
 
-/// One line per hit of state's tick, then one per death. At INFO, though
-/// players provoke them: a Match's hits and deaths are what its operator reads
-/// the log for (US-12, US-13), in a Release build too.
-void LogCombat(const simulation::State& state);
+/// One line per hit of state's tick, then one per death, each naming match,
+/// the Match they are of. At INFO, though players provoke them: a Match's hits
+/// and deaths are what its operator reads the log for (US-12, US-13), in a
+/// Release build too.
+void LogCombat(const boost::uuids::uuid& match, const simulation::State& state);
 
 }  // namespace augusta::host
 

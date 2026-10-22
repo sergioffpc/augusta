@@ -10,6 +10,9 @@
 #include <string>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -126,7 +129,7 @@ enum class EntityId : std::uint32_t {};
 /// player and the Character it plays.
 struct PlayerIdentity {
   /// The session of its player; 0, for a body no session plays, cannot win.
-  policy::SessionId session{};
+  policy::SessionId session = boost::uuids::nil_uuid();
   /// The character, by its name in the scenario's manifest (ADR-0042).
   std::string character;
 };

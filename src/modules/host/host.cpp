@@ -32,11 +32,17 @@
 #include "augusta/tick_messages.h"
 #include "augusta/version.h"
 #include "host_impl.h"
-#include "utf8_path.h"
 
 namespace augusta::host {
 
 namespace {
+
+// path in UTF-8: path::string() converts to the ANSI code page on Windows, and
+// throws for a character it lacks.
+std::string Utf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return {text.begin(), text.end()};
+}
 
 // What captures each Match into the directory config names, if it names one
 // (ADR-0050), creating it first, what it does counted into metrics through

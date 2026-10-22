@@ -1,27 +1,56 @@
 # Logging Policy: Level Semantics and Structured Message Format
 
-Building on ADR-0027 (console-only, level tied to build type), this defines what
-each level is for and how a log line is written, for both client and server.
-`TRACE` is the highest-frequency tier: per-packet network I/O, and per-tick
-lines that say something (a decision, a change), never a marker that a phase
-ran. `DEBUG` is for internal decisions worth seeing while diagnosing a problem
-but too noisy for routine reading, and carries the once-a-second heartbeat
-below. `INFO` is for what matters to someone tailing stdout in production:
-process/loop startup and shutdown, connection state changes - never per-packet
-traffic. `WARN` is an anomalous but recoverable condition needing no
-intervention. `ERR` is an operation that failed and was aborted, with the
-process continuing. `CRIT` is a state the process cannot safely continue from.
+Building on ADR-0027 (the console, the client's Run log, level tied to build
+type), this defines what each level is for and how a log line is written, for
+both client and server. `TRACE` is the highest-frequency tier: per-packet
+network I/O, and per-tick lines that say something (a decision, a change), never
+a marker that a phase ran. `DEBUG` is for internal decisions worth seeing while
+diagnosing a problem but too noisy for routine reading, and carries the
+once-a-second heartbeat below. `INFO` is for what matters to someone tailing
+stdout in production: process/loop startup and shutdown, connection state
+changes - never per-packet traffic. `WARN` is an anomalous but recoverable
+condition needing no intervention. `ERR` is an operation that failed and was
+aborted, with the process continuing. `CRIT` is a state the process cannot
+safely continue from.
 
 Message bodies are logfmt-style: lowercase, short, `key=value` pairs, no
 sentences. Every line starts with `subsystem=<name>` (e.g. `simulationworld`,
 `serverruntime`, `networking`); `event=` is the common second key, and callers
 add whatever else is relevant (`tick=`, `bytes=`, ...). This is convention, not
-an enforced schema. The single process-wide `"augusta"` logger (ADR-0027) is
-kept rather than one logger per module, so the console pattern is fixed here
-rather than left open as ADR-0027 did: `<UTC ISO-8601 time> <LEVEL> <message>`,
-e.g. `2024-02-01T12:00:00Z INFO subsystem=client event=starting` (see
+an enforced schema. A key appears once in a line, except that a line naming
+several values of one key repeats the key once per value: the server's Match
+start line writes `session=` once per player. Loki's `| logfmt` parser keeps
+only one value of a repeated key, so a query for one of them matches the line
+with a line filter (`|= "session=<id>"`), not with a label filter after
+`| logfmt`. The single process-wide `"augusta"` logger (ADR-0027) is kept rather
+than one logger per module, so the console pattern is fixed here rather than
+left open as ADR-0027 did: `<UTC ISO-8601 time> <LEVEL> <message>`, e.g.
+`2024-02-01T12:00:00Z INFO subsystem=client event=starting` (see
 `augusta::logging::FormatLine`). The lines a crash writes from its signal
 handler, which cannot use the sink, keep the same pattern (ADR-0047).
+
+## Context fields
+
+The logger holds a process-wide context of three fields, `run=`, `session=` and
+`match=`, and appends each one that is set to the end of every line's message,
+in that order: `... event=heartbeat ticks=60 run=<run-id> session=<session-id>`.
+Call sites never write them, so no line can forget them, and a line copied out
+of a file still says which Run, Session and Match it came from. Each value is
+the ID's canonical lowercase hyphenated form (ADR-0035).
+
+Only the client sets a context, because it holds one Session and at most one
+Match at a time: the Run at launch, before its config is read; the Session at
+admission and the Match at Match start, each cleared when it ends. A line
+written with no field set carries none of them. The server holds many Sessions
+at once, so it sets no context: each of its lines about one Session or Match
+writes its `session=` or `match=` itself.
+
+The client's first lines say what read its Crash dumps and where it ran: its
+version with its PDB's GUID and age (Windows) or its build ID (Linux)
+(ADR-0055), then its OS, CPU and memory, then one line per GPU the OS lists with
+its driver's version, so even a Run that ends before its Renderer starts names
+them; the Renderer's line naming the GPU it draws with follows once it chooses
+one.
 
 No level is a safe place for credentials or session/auth tokens - this applies
 unconditionally, including `TRACE`. Peer IPs are fine to log (direct-IP

@@ -82,9 +82,11 @@ between backends would double what has to be tested, for no gain to a player.
   `VK_NV_device_diagnostic_checkpoints` where the device has them; a device
   without them, such as lavapipe or a GPU not NVIDIA's, is made exactly as
   without Aftermath. Once Vulkan reports the device lost, the Renderer waits a
-  few seconds for the dump before it throws. A dump is a `.nv-gpudmp` beside the
-  executable. The build stages the SDK's shared libraries beside the executable
-  and in the client's package. The code is the same on both platforms.
+  few seconds for the dump before it throws. A dump is a `.nv-gpudmp`, written
+  where its process names it (`gpu_crash_dump_files.h`): the client's Run, in
+  `dumps/` beside the executable (ADR-0055). The build stages the SDK's shared
+  libraries beside the executable and in the client's package. The code is the
+  same on both platforms.
 - **Testing.** `Config` can choose `kSoftware` and validation, the Renderer can
   be lent a hidden window, and `Renderer::CaptureFrame` reads the last frame
   back. A smoke test drives the Renderer through its interface on Mesa's

@@ -10,6 +10,9 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/policy_actions.h"
 #include "augusta/tick.h"
 
@@ -44,7 +47,7 @@ inline constexpr std::string_view kAssignSpawns = "assign_spawns";
 struct PlayerView {
   /// The Entity ID of its body.
   std::uint32_t entity = 0;
-  SessionId session{};
+  SessionId session = boost::uuids::nil_uuid();
   /// Its Character, by its path in the pack (ADR-0042).
   std::string character;
   bool alive = true;

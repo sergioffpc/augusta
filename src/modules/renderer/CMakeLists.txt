@@ -13,6 +13,13 @@ target_include_directories(augusta_renderer_vulkan_device_choice PUBLIC ${CMAKE_
 target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vulkan_device_choice CLIENT_ONLY)
 
+# The files GPU crash dumps are written to (gpu_crash_dump_files.h), apart from
+# Aftermath so it is built and tested on every platform. Public, unlike the two
+# above: the client names the files (client_run.h).
+add_library(augusta_renderer_gpu_crash_dump_files STATIC gpu_crash_dump_files.cpp)
+target_include_directories(augusta_renderer_gpu_crash_dump_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+augusta_set_module_scope(augusta_renderer_gpu_crash_dump_files CLIENT_ONLY)
+
 if(AUGUSTA_CLIENT)
   # The Renderer on NVRHI's Vulkan backend (ADR-0059), which augustac links and
   # tests/client_renderer_smoke_test.cpp drives. NVRHI, ImGui and the shader
@@ -109,7 +116,10 @@ if(AUGUSTA_CLIENT)
   include(${CMAKE_SOURCE_DIR}/cmake/Aftermath.cmake)
   if(AUGUSTA_AFTERMATH_DIR)
     find_package(boost_dll CONFIG REQUIRED)
-    target_link_libraries(augusta_renderer PRIVATE augusta_aftermath augusta_version Boost::dll)
+    target_link_libraries(
+      augusta_renderer
+      PRIVATE augusta_aftermath augusta_renderer_gpu_crash_dump_files augusta_version Boost::dll
+    )
     target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=1)
   else()
     target_compile_definitions(augusta_renderer PRIVATE AUGUSTA_HAS_AFTERMATH=0)

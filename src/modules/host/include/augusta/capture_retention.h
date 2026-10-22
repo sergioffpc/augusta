@@ -12,6 +12,9 @@
 #include <string_view>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/faults.h"
 
 /// \file
@@ -49,14 +52,17 @@ struct CaptureRetentionObserver {
   std::function<void(std::size_t files, std::uintmax_t bytes)> on_directory;
 };
 
-/// The name of the file of the Match that started at started, the
-/// match_number-th of its server's run, from 1: its start in UTC, then its
-/// number, so the names of one server's captures sort by when they started.
+/// The name of the file of the Match that started at started, whose Match ID
+/// is match: its start in UTC, then its Match ID in the canonical form, so the
+/// names of one server's captures sort by when they started and a Match's
+/// capture is found by its Match ID.
 [[nodiscard]] std::string CaptureFileName(std::chrono::sys_time<std::chrono::milliseconds> started,
-                                          std::uint64_t match_number);
+                                          const boost::uuids::uuid& match);
 
-/// Whether name is one CaptureFileName makes: YYYYMMDDTHHMMSSmmmZ-NNNN.acap,
-/// the number of 4 digits or more.
+/// Whether name is one CaptureFileName makes, `YYYYMMDDTHHMMSSmmmZ-<Match ID>.acap`,
+/// or one an engine before the Match ID made, `YYYYMMDDTHHMMSSmmmZ-NNNN.acap`
+/// with the Match's number in its run of 4 digits or more: retention still
+/// counts and deletes those.
 [[nodiscard]] bool IsCaptureFileName(std::string_view name);
 
 /// A completed capture in a capture directory.
@@ -101,7 +107,7 @@ class CaptureDirectory {
   /// first: rescans the directory, that file left out, and deletes the oldest
   /// completed captures until fewer than max_files remain and bytes fit.
   /// False when they do not even with none left, and nothing is to be written.
-  [[nodiscard]] bool Open(std::uint64_t match, std::string_view file_name, std::uintmax_t bytes);
+  [[nodiscard]] bool Open(const boost::uuids::uuid& match, std::string_view file_name, std::uintmax_t bytes);
 
   /// Before bytes more are written to the capture open: deletes the oldest
   /// completed captures until they fit, and counts them as written. False when
@@ -130,7 +136,7 @@ class CaptureDirectory {
   std::uintmax_t total_ = 0;
   // Whether the capture open counts as one of the directory's files.
   bool open_ = false;
-  std::uint64_t match_ = 0;
+  boost::uuids::uuid match_ = boost::uuids::nil_uuid();
   // Whether a failed deletion was logged since match_'s start.
   bool failure_logged_ = false;
 };

@@ -10,6 +10,9 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include "augusta/body_part.h"
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
@@ -103,7 +106,7 @@ void Inbox::OnJoinAccepted(const Admission& accepted) {
   }
   Publish([&](ServerView& next) { next.accepted = accepted; });
   LOG_INFO("subsystem=harness event=joined session={} character={} tick_rate_hz={}",
-           static_cast<std::uint32_t>(accepted.session), accepted.character, accepted.tick_rate_hz);
+           boost::uuids::to_string(accepted.session), accepted.character, accepted.tick_rate_hz);
 }
 
 void Inbox::OnJoinRefused(JoinRefusal reason) {
@@ -125,6 +128,10 @@ void Inbox::OnMatchStart(MatchStart start) {
     return;
   }
   const std::size_t players = start.players.size();
+  // Before the start's line, which is the Match's.
+  if (on_match_) {
+    on_match_(start.match);
+  }
   Publish([&](ServerView& next) {
     next.match_start = std::move(start);
     ++next.matches_started;
@@ -148,9 +155,13 @@ void Inbox::OnMatchEnd(const MatchEnd& end) {
   // still taken: they stay under this match, which a view takes until the next
   // starts.
   if (end.winner.has_value()) {
-    LOG_INFO("subsystem=harness event=match_ended winner={}", std::to_underlying(*end.winner));
+    LOG_INFO("subsystem=harness event=match_ended winner={}", boost::uuids::to_string(*end.winner));
   } else {
     LOG_INFO("subsystem=harness event=match_ended winner=draw");
+  }
+  // After the line above, which is still the Match's.
+  if (on_match_) {
+    on_match_(boost::uuids::uuid{});
   }
 }
 

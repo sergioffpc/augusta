@@ -1,16 +1,22 @@
 #ifndef AUGUSTA_LOGGING_H_
 #define AUGUSTA_LOGGING_H_
 
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 /// \file
 /// augusta::logging writes the process's log lines (ADR-0027, ADR-0029, ADR-0036):
-/// one process-wide, thread-safe console sink, no file sink. Boost.Log does the
+/// one process-wide, thread-safe console sink, a file sink beside it where the
+/// process adds one, and a context of fields every line carries. Boost.Log does the
 /// work behind logging.cpp; nothing here includes it, so no other translation
 /// unit pays for its headers.
 namespace augusta::logging {
@@ -38,7 +44,69 @@ std::string FormatLine(std::chrono::system_clock::time_point time, Severity leve
 /// flooded by per-packet TRACE, unless a caller asks for it afterward.
 void Init();
 
-/// Writes message at level to the console sink, whatever the runtime floor. Use
+/// Why AddFileSink added no sink.
+struct FileSinkError {
+  enum class Step : std::uint8_t {
+    /// The file's directory could not be made.
+    kCreateDirectory,
+    /// The file could not be opened for appending.
+    kOpen,
+  };
+  Step step = Step::kOpen;
+  /// The directory or the file the step failed on.
+  std::filesystem::path path;
+  /// The system's reason, where it gave one.
+  std::error_code reason;
+};
+
+/// error in words, for a log line's `reason=`.
+std::string DescribeFileSinkError(const FileSinkError& error);
+
+/// Adds a second sink, the file at file, its directory created if missing:
+/// every line written from now on reaches it as it reaches the console, without
+/// colors, flushed as it is written (ADR-0027). The file is appended to. On
+/// failure, why it could not be opened, and no sink is added. Thread-safe.
+std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file);
+
+/// Removes the sink AddFileSink added for file, and closes the file: lines
+/// written from now on no longer reach it. Nothing if file has no sink.
+/// Thread-safe.
+void RemoveFileSink(const std::filesystem::path& file);
+
+/// The process-wide context every line carries (ADR-0029): each field set is
+/// appended to every line's message, as `run=<value>`, `session=<value>` and
+/// `match=<value>` in that order, so call sites never write them. Only a process
+/// that holds one Run, Session and Match at a time sets them: the client.
+enum class ContextField : std::uint8_t {
+  kRun,
+  kSession,
+  kMatch,
+};
+
+/// Sets field to value for every line written from now on, from any thread.
+void SetContext(ContextField field, std::string_view value);
+
+/// Clears field: lines written from now on carry it no more.
+void ClearContext(ContextField field);
+
+/// Room for the context as CopyContext copies it: its three fields, each an ID
+/// in its canonical form, with some to spare.
+inline constexpr std::size_t kContextCapacity = 192;
+
+/// What CopyContext copies the context into.
+using ContextText = std::array<char, kContextCapacity>;
+
+/// The context's fields as every line ends in them, ` run=<value>
+/// session=<value>`, copied into text; empty if none is set. Takes no lock and
+/// allocates nothing, so a signal handler or an unhandled-exception filter may
+/// call it: the crash lines end in it (ADR-0047). A context changed in the
+/// same instant, by another thread or by the code the handler interrupted, may
+/// read as none, and a field that does not fit whole in kContextCapacity
+/// after those before it is left out.
+std::string_view CopyContext(ContextText& text) noexcept;
+
+/// Writes message at level to the sinks, with the context's fields appended,
+/// whatever the runtime floor. Use
 /// the macros below instead: they drop calls under the compile-time level, and
 /// under the runtime floor before formatting their message.
 void Write(Severity level, std::string_view message);

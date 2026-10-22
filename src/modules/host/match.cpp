@@ -81,11 +81,8 @@ std::expected<Admission, JoinRefusal> Match::Join(link::PeerId peer, const JoinR
     return std::unexpected(JoinRefusal::kLobbyFull);
   }
   // A newcomer bumps the version, so no one is Ready until they have loaded its character.
-  const Member& member = members_
-                             .emplace(peer, Member{.session = static_cast<SessionId>(next_session_++),
-                                                   .character = *found,
-                                                   .spawn = request.spawn})
-                             .first->second;
+  const Member& member =
+      members_.emplace(peer, Member{.session = ids_(), .character = *found, .spawn = request.spawn}).first->second;
   ++roster_version_;
   return Admission{.session = member.session, .character = member.character};
 }
@@ -140,7 +137,7 @@ std::optional<MatchStart> Match::TryStart() {
     return std::nullopt;
   }
   in_match_ = true;
-  MatchStart start;
+  MatchStart start{.players = {}, .match = ids_()};
   for (const Member& member : MembersBySession()) {
     start.players.push_back(MatchPlayer{.session = member.session,
                                         .entity = static_cast<EntityId>(next_entity_++),

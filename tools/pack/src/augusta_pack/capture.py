@@ -10,6 +10,7 @@ counted.
 
 import dataclasses
 import datetime
+import uuid
 
 from google.protobuf import message as protobuf_message
 
@@ -17,7 +18,7 @@ from augusta_pack import augusta_pb2
 
 MAGIC = b"AUGCAP\r\n"
 # The format version this reader reads (protocol::kCaptureFormatVersion).
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 
 # A position travels as a signed count of 1/1024 m (augusta/grid.h's
 # kPositionGrid).
@@ -33,7 +34,8 @@ class CapturedPlayer:
     """One player of the Match start and what it did."""
 
     number: int
-    session: int
+    # Its Session ID in the canonical form the server logs it in.
+    session: str
     character: str
     spawn: tuple[float, float, float]
     commands: int = 0
@@ -45,8 +47,10 @@ class CapturedPlayer:
 
 @dataclasses.dataclass
 class CaptureHeader:
-    """What a captured Match ran on and when it started."""
+    """Which Match was captured, what it ran on and when it started."""
 
+    # Its Match ID in the canonical form the server logs it in.
+    match: str
     engine_version: str
     server_pack: bytes
     client_pack: bytes
@@ -118,12 +122,25 @@ def _text(field: bytes) -> str:
         raise CaptureError("a record's text is not UTF-8") from error
 
 
+def _uuid(data: bytes, name: str) -> str:
+    """An ID's 16 bytes as its canonical lowercase hyphenated form.
+
+    As the protocol reads one: an absent field is the nil UUID.
+    """
+    if not data:
+        return str(uuid.UUID(int=0))
+    if len(data) != 16:
+        raise CaptureError(f"a {name} is not 16 bytes")
+    return str(uuid.UUID(bytes=data))
+
+
 def _read_header(payload: bytes) -> CaptureHeader:
     record = _parse(payload)
     if record.WhichOneof("record") != "header":
         raise CaptureError("the capture does not start with its header")
     header = record.header
     return CaptureHeader(
+        match=_uuid(header.match, "Match ID"),
         engine_version=_text(header.engine_version),
         server_pack=header.server_pack,
         client_pack=header.client_pack,
@@ -184,7 +201,7 @@ def read_capture(data: bytes) -> Capture:
             capture.players.append(
                 CapturedPlayer(
                     number=event.player,
-                    session=event.session,
+                    session=_uuid(event.session, "Session ID"),
                     character=_text(event.character),
                     spawn=(
                         event.spawn_x * _POSITION_STEP,
@@ -219,6 +236,7 @@ def format_capture(capture: Capture) -> list[str]:
     lines = [
         "Match capture",
         f"  format version  {FORMAT_VERSION}",
+        f"  match           {header.match}",
         f"  engine version  {header.engine_version}",
         f"  server pack     {header.server_pack.hex()}",
         f"  client pack     {header.client_pack.hex()}",

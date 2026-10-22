@@ -2,6 +2,7 @@
 #define AUGUSTA_APPLICATION_H_
 
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -120,12 +121,20 @@ template <typename Runtime>
   return ran ? *std::move(ran) : Outcome(std::move(ran.error()));
 }
 
+/// The event Conclude writes for a failure, `event=<name>`. What reads a log
+/// back for how its Run ended (the client's run_files.h) matches it.
+inline constexpr std::string_view kTerminalFailureEvent = "terminal_failure";
+
 /// Writes the executable's one terminal log event for outcome (ADR-0029) and
 /// returns the exit status main() returns: `subsystem=<executable>
 /// event=terminal_failure <the failure> exit_status=1` at CRIT for a failure,
 /// `event=exiting exit_status=0` at INFO otherwise. The only line the
 /// application boundary writes; executable is the subsystem, e.g. "server".
-[[nodiscard]] int Conclude(std::string_view executable, const Outcome& outcome);
+/// A failure's event ends in `log="<run_log>"` when the executable gives the
+/// file its Run's log reaches (the client's, ADR-0027), so the player knows
+/// what to send.
+[[nodiscard]] int Conclude(std::string_view executable, const Outcome& outcome,
+                           const std::optional<std::filesystem::path>& run_log = std::nullopt);
 
 }  // namespace augusta::application
 

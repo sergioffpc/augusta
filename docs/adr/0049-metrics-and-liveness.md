@@ -125,20 +125,20 @@ variable: compiled in, it would change the build step's input on every commit
 and defeat the image's build cache. A local build reports `unknown`.
 
 Connection health is kept two ways. Histograms over every connection, joined or
-not, show its trend and drive the alert rules. Gauges labelled by Session ID
-show the one player whose connection is bad; the RTT, quality and jitter gauges
-are named apart from their histograms (`augustad_session_connection_*`), because
-one name cannot be both a histogram and a gauge in the exposition. A value the
-transport has not measured yet (a negative quality, or no jitter yet, right
-after connecting) is not recorded. Every Session's gauges are read together, so
-the Network I/O thread publishes them whole, once a sample, into a fixed set of
-slots, one per player the Lobby can hold, which the endpoint reads without the
-writer ever waiting on it: a scrape never mixes two samples, nor shows a Session
-that one sample ended alongside one that the next sample added. A Session's
-gauges are removed at the first sample after the Session ends, so within a
-heartbeat interval. Session IDs are never reused, so every Session leaves its
-own series behind, but no more than the Player count are live at once, which a
-15-day retention easily holds.
+not, show its trend and drive the alert rules. Gauges labelled by Session ID, in
+its canonical form (ADR-0038), show the one player whose connection is bad; the
+RTT, quality and jitter gauges are named apart from their histograms
+(`augustad_session_connection_*`), because one name cannot be both a histogram
+and a gauge in the exposition. A value the transport has not measured yet (a
+negative quality, or no jitter yet, right after connecting) is not recorded.
+Every Session's gauges are read together, so the Network I/O thread publishes
+them whole, once a sample, into a fixed set of slots, one per player the Lobby
+can hold, which the endpoint reads without the writer ever waiting on it: a
+scrape never mixes two samples, nor shows a Session that one sample ended
+alongside one that the next sample added. A Session's gauges are removed at the
+first sample after the Session ends, so within a heartbeat interval. Session IDs
+are never reused, so every Session leaves its own series behind, but no more
+than the Player count are live at once, which a 15-day retention easily holds.
 
 The Capture family is counted where the capture's log lines are written
 (ADR-0050), by the Simulation thread or the capture's writer thread, through an

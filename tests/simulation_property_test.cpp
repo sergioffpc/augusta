@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
@@ -350,12 +351,19 @@ RC_GTEST_PROP(SimulationPropertyTest, ADeadPlayerNeverComesBackFiresOrMoves, ())
 // lasts long enough for its players to die, else a draw or a winner by
 // session, which may be no player's (11 and 12 are the players'), a player's
 // who has died or one alive.
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr augusta::policy::SessionId Session(std::uint8_t last) {
+  return augusta::policy::SessionId(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
 rc::Gen<std::string> MatchEndAnswer() {
-  return rc::gen::weightedOneOf<std::string>({{60, rc::gen::just(std::string("nil"))},
-                                              {1, rc::gen::just(std::string("{draw = true}"))},
-                                              {3, rc::gen::map(rc::gen::inRange(10, 14), [](int session) {
-                                                 return "{winner = " + std::to_string(session) + "}";
-                                               })}});
+  return rc::gen::weightedOneOf<std::string>(
+      {{60, rc::gen::just(std::string("nil"))},
+       {1, rc::gen::just(std::string("{draw = true}"))},
+       {3, rc::gen::map(rc::gen::inRange(10, 14), [](int session) {
+          return "{winner = '" + boost::uuids::to_string(Session(static_cast<std::uint8_t>(session))) + "'}";
+        })}});
 }
 
 // A rules script whose on_tick answers what answers holds for each tick,
@@ -375,8 +383,8 @@ std::string AnsweringRules(const std::vector<std::string>& answers) {
 // Requirements: US-14
 RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlwaysAPlayerAliveInIt, ()) {
   constexpr augusta::simulation::EntityId kOther = static_cast<augusta::simulation::EntityId>(2);
-  const std::map<augusta::simulation::EntityId, augusta::policy::SessionId> sessions = {
-      {kPlayer, static_cast<augusta::policy::SessionId>(11)}, {kOther, static_cast<augusta::policy::SessionId>(12)}};
+  const std::map<augusta::simulation::EntityId, augusta::policy::SessionId> sessions = {{kPlayer, Session(11)},
+                                                                                        {kOther, Session(12)}};
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
   parameters.rifle.rounds_per_minute = 3600.0F;

@@ -39,7 +39,7 @@ the issues is ENGINEERING.md's Milestones section.
 - [v4.1 — Codebase Review (4.1.0, 2026-10-21)](#v41--codebase-review-410-2026-10-21)
 - [v5 — Protocol Buffers (5.0.0, 2026-10-21)](#v5--protocol-buffers-500-2026-10-21)
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
-- [Client Diagnosability (planned)](#client-diagnosability-planned)
+- [v6 — Client Diagnosability (6.0.0, 2026-10-22)](#v6--client-diagnosability-600-2026-10-22)
     - [M18b — Client Diagnosability (M)](#m18b--client-diagnosability-m)
 - [Debug Tooling (planned)](#debug-tooling-planned)
     - [M19a — Debug Tooling (L)](#m19a--debug-tooling-l)
@@ -396,12 +396,12 @@ of its own, ahead of the planned releases.
 **Exercises:** ADR-0007, ADR-0038, ADR-0050 **Exit criteria:** every message
 crosses the wire as Protocol Buffers, through the codec the build generates
 
-## Client Diagnosability (planned)
+## v6 — Client Diagnosability (6.0.0, 2026-10-22)
 
 A client that dies in a playtest leaves what explains it on the player's
 machine, and one Run ID leads from it to what the server saw. It changes the
-join, the Match start and the Session ID on the wire, so it ships as a major of
-its own, after Protocol Buffers.
+join, the Match start and the Session ID on the wire, so it shipped as a major
+of its own, after Protocol Buffers.
 
 ### M18b — Client Diagnosability (M)
 

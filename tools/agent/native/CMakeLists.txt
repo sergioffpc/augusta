@@ -12,7 +12,7 @@ target_include_directories(augusta_agent PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 target_link_libraries(
   augusta_agent
   PUBLIC augusta_assets augusta_gameplay augusta_harness augusta_physics
-  PRIVATE augusta_failure augusta_prediction
+  PRIVATE augusta_failure augusta_prediction Boost::uuid
 )
 augusta_set_module_scope(augusta_agent CLIENT_ONLY)
 

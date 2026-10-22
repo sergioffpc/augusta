@@ -5,6 +5,9 @@
 #include <optional>
 #include <string>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/assets.h"
 #include "augusta/client_content.h"
 #include "augusta/failure.h"
@@ -50,6 +53,8 @@ struct RuntimeConfig {
   /// watches the capture of this name on a replay server instead of playing,
   /// and its run ends, as the window closing ends it, once the Replay has.
   std::optional<std::string> replay;
+  /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
+  boost::uuids::uuid run = boost::uuids::nil_uuid();
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render

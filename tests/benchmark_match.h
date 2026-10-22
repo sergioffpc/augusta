@@ -9,6 +9,8 @@
 #include <vector>
 
 #include <benchmark/benchmark.h>
+#include <boost/uuid/time_generator_v7.hpp>
+#include <boost/uuid/uuid.hpp>
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
@@ -145,7 +147,7 @@ inline std::optional<FullMatch> StartFullMatch(benchmark::State& benchmark,
     world.AddPlayer(
         static_cast<simulation::EntityId>(player + 1), math::Vec3(0.0F, 0.5F, -3.0F * static_cast<float>(player)),
         SquaresCharacter(),
-        simulation::PlayerIdentity{.session = static_cast<policy::SessionId>(player + 1), .character = std::string()});
+        simulation::PlayerIdentity{.session = boost::uuids::time_generator_v7{}(), .character = std::string()});
   }
 
   simulation::State previous = world.Tick({}, kTick).state;

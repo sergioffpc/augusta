@@ -193,6 +193,10 @@ policy (ADR-0060).
   (augusta_application, ADR-0033). The failure model both report in is a module
   of its own (augusta_failure), so any module names a failure without linking
   thread supervision
+- Crash — the fatal-signal handler each executable's `main` installs first
+  (augusta_crash, ADR-0047): it logs the signal and the crashing thread's
+  symbolized stack under the executable's subsystem, then lets the process die
+  of the signal so its core is still dumped
 
 **Client-only** (Windows and Linux)
 
@@ -324,8 +328,8 @@ exclusively server-authoritative.
   Harness; its messages go through the Link
 - Server Runtime — augustad's Runtime (augusta_server, in `src/server`): its
   config, the Network I/O and Simulation threads around the Host, its clock, the
-  metrics endpoint with its liveness and every client's Connection health, and
-  crash handling (ADR-0047, ADR-0049, ADR-0060). What the server runs:
+  metrics endpoint with its liveness and every client's Connection health
+  (ADR-0049, ADR-0060). What the server runs:
     - SimulationWorld (ECS) — the single authoritative world (no prediction, no
       presentation needed). Runs mechanism systems in C++ (movement via PhysX,
       ballistics, hit detection, damage) and policy via a Scripts/Behaviours
@@ -683,7 +687,8 @@ not affect numbering.
 - [ADR-0012](./adr/0012-coding-style.md) — Coding style
 - [ADR-0013](./adr/0013-testing-and-benchmarking.md) — Testing strategy
 - [ADR-0025](./adr/0025-dependency-manager.md) — Dependency manager: vcpkg
-- [ADR-0027](./adr/0027-logging.md) — Logging: `augusta::logging`, console-only
+- [ADR-0027](./adr/0027-logging.md) — Logging: `augusta::logging`, the console
+  and the client's Run log
 - [ADR-0029](./adr/0029-logging-policy.md) — Logging policy: level semantics and
   structured message format
 - [ADR-0034](./adr/0034-runtime-config-file.md) — Runtime configuration: a YAML

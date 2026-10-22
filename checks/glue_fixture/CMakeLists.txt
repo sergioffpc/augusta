@@ -1,9 +1,9 @@
 # A build graph for glue_boundary.cmake to configure: whether the Glue check
 # (cmake/AugustaModule.cmake) refuses an executable that links more than the
-# application, its Runtime, failure, logging and version, and a target that
-# links an executable. CASE picks the graph: GLUE (an executable linking all it
-# may, build infrastructure every binary links among it, and a test linking its
-# Runtime), LINK_REFUSED (the executable linking a module it may not) or
+# application, its Runtime, crash, failure, logging and version, and a target
+# that links an executable. CASE picks the graph: GLUE (an executable linking
+# all it may, build infrastructure every binary links among it, and a test
+# linking its Runtime), LINK_REFUSED (the executable linking a module it may not) or
 # TEST_EXECUTABLE (a test linking the executable itself).
 cmake_minimum_required(VERSION 3.25)
 project(augusta_glue_fixture NONE)
@@ -15,6 +15,7 @@ include(${AUGUSTA_SOURCE_DIR}/cmake/AugustaModule.cmake)
 # reads a target's name, its source directory and its links, not how it is
 # built.
 add_library(augusta_application INTERFACE)
+add_library(augusta_crash INTERFACE)
 add_library(augusta_failure INTERFACE)
 add_library(augusta_logging INTERFACE)
 add_library(augusta_version INTERFACE)

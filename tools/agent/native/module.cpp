@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 
+#include <boost/uuid/uuid_io.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
@@ -74,6 +75,7 @@ using augusta::harness::NetcodeStats;
 using augusta::harness::Phase;
 using augusta::harness::Reload;
 using augusta::harness::RosterEntry;
+using augusta::harness::SessionId;
 using augusta::harness::Shot;
 using augusta::harness::TriggerIntent;
 using augusta::link::ConnectionStats;
@@ -95,11 +97,15 @@ Vec3Tuple ToTuple(const Vec3& vector) { return {vector.x, vector.y, vector.z}; }
 
 Vec3 ToVec3(const Vec3Tuple& tuple) { return {std::get<0>(tuple), std::get<1>(tuple), std::get<2>(tuple)}; }
 
-// A Session or Entity ID as the number the script sees.
+// An Entity ID as the number the script sees.
 template <typename Id>
 std::uint32_t Number(Id id) {
   return static_cast<std::uint32_t>(id);
 }
+
+// A Session ID as the string the script sees: its canonical form, which a
+// script only compares.
+std::string Text(const SessionId& session) { return boost::uuids::to_string(session); }
 
 template <typename T>
 py::tuple ToPyTuple(const std::vector<T>& items) {
@@ -267,7 +273,7 @@ class AgentHandle {
 // Who is in the Lobby.
 void BindLobby(py::module_& module) {
   py::class_<RosterEntry>(module, "RosterEntry")
-      .def_property_readonly("session", [](const RosterEntry& entry) { return Number(entry.session); })
+      .def_property_readonly("session", [](const RosterEntry& entry) { return Text(entry.session); })
       .def_readonly("character", &RosterEntry::character);
 
   py::class_<Lobby>(module, "Lobby")
@@ -278,7 +284,7 @@ void BindLobby(py::module_& module) {
 // A Match's players and bodies, and an Agent's own.
 void BindMatch(py::module_& module) {
   py::class_<MatchPlayer>(module, "MatchPlayer")
-      .def_property_readonly("session", [](const MatchPlayer& player) { return Number(player.session); })
+      .def_property_readonly("session", [](const MatchPlayer& player) { return Text(player.session); })
       .def_property_readonly("entity", [](const MatchPlayer& player) { return Number(player.entity); })
       .def_readonly("character", &MatchPlayer::character)
       .def_property_readonly("spawn", [](const MatchPlayer& player) { return ToTuple(player.spawn); });
@@ -313,11 +319,11 @@ void BindView(py::module_& module) {
   py::class_<AgentView>(module, "View")
       .def_property_readonly("phase", [](const AgentView& view) { return view.server->GetPhase(); })
       .def_property_readonly("session",
-                             [](const AgentView& view) -> std::optional<std::uint32_t> {
+                             [](const AgentView& view) -> std::optional<std::string> {
                                if (!view.server->accepted.has_value()) {
                                  return std::nullopt;
                                }
-                               return Number(view.server->accepted->session);
+                               return Text(view.server->accepted->session);
                              })
       .def_property_readonly("player_count",
                              [](const AgentView& view) -> std::optional<std::uint8_t> {
@@ -385,11 +391,11 @@ void BindReports(py::module_& module) {
       .def_readonly("first_tick", &MatchStart::first_tick);
 
   py::class_<MatchEnd>(module, "MatchEnd")
-      .def_property_readonly("winner", [](const MatchEnd& end) -> std::optional<std::uint32_t> {
+      .def_property_readonly("winner", [](const MatchEnd& end) -> std::optional<std::string> {
         if (!end.winner.has_value()) {
           return std::nullopt;
         }
-        return Number(*end.winner);
+        return Text(*end.winner);
       });
 
   py::enum_<IntentEnding>(module, "IntentEnding")

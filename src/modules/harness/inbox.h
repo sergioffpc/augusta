@@ -3,9 +3,13 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
+
+#include <boost/uuid/uuid.hpp>
 
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
@@ -18,15 +22,18 @@
 /// out, or a state of a body not in the match, is dropped as a malformed message
 /// is), and kept, either in the ServerView it publishes or, for what is handed
 /// out once, until it is taken. No connection of its own: Session hands it each
-/// message the Link received. Private to the harness module.
+/// message the Link received. It tells the Session's owner of each Match start
+/// and Match end it takes (SessionConfig::on_match). Private to the harness
+/// module.
 namespace augusta::harness {
 
 /// The server's messages, as a Session reads them.
 class Inbox {
  public:
   /// viewer: whether the Session is a Replay viewer (ADR-0051), which is in
-  /// no Match start it is sent.
-  explicit Inbox(bool viewer = false) : viewer_(viewer) {}
+  /// no Match start it is sent. on_match: SessionConfig::on_match, or null.
+  explicit Inbox(bool viewer = false, std::function<void(const boost::uuids::uuid& match)> on_match = nullptr)
+      : viewer_(viewer), on_match_(std::move(on_match)) {}
 
   /// Not copyable or movable: the view and the pending events are shared with
   /// the threads that read them.
@@ -73,6 +80,8 @@ class Inbox {
   }
 
   const bool viewer_;
+  // Network I/O thread only.
+  const std::function<void(const boost::uuids::uuid& match)> on_match_;
   // The published view, swapped whole under view_mutex_ and copied out under it:
   // libc++ has no std::atomic<std::shared_ptr>.
   mutable std::mutex view_mutex_;

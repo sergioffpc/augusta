@@ -15,6 +15,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/uuid/nil_generator.hpp>
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/admission.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
@@ -103,6 +106,9 @@ struct Host::Impl {
   std::unordered_map<SessionId, Player> players;
   // The tick the match in progress, or the last one, started on.
   tick::Tick match_start_tick = 0;
+  // The Match ID of the match in progress, or of the last one: the one Match
+  // took at its start, so every server's and every restart's are distinct.
+  boost::uuids::uuid match_id = boost::uuids::nil_uuid();
   // The winner of the match that ended last, nullopt for a draw: what its
   // capture's Match end names once the Simulation thread takes it out.
   std::optional<SessionId> match_winner;
@@ -157,6 +163,7 @@ struct Host::Impl {
   // How many ticks the match in progress, or the last one, has lasted,
   // counting the one it ended on.
   [[nodiscard]] tick::Tick MatchTicks() const { return tick - match_start_tick + 1; }
+  void LogMatchStarted(const std::vector<SessionId>& sessions) const;
   void LogMatchEnded(EndReason reason, const std::optional<SessionId>& winner, std::size_t playing) const;
   void CountMatchEnded(EndReason reason, const std::optional<SessionId>& winner);
   void EndMatch(const std::optional<SessionId>& winner, EndReason reason);

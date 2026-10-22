@@ -1,12 +1,14 @@
 #include "augusta/client_phases.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
 #include <string>
 #include <string_view>
 
+#include <boost/uuid/uuid.hpp>
 #include <gtest/gtest.h>
 
 #include "augusta/assets.h"
@@ -40,6 +42,12 @@ using augusta::failure::Code;
 using augusta::failure::Failure;
 using augusta::harness::FailureKind;
 using augusta::harness::JoinRefusal;
+
+// A Session ID, a UUIDv7, told apart by its last byte.
+constexpr boost::uuids::uuid Session(std::uint8_t last) {
+  return boost::uuids::uuid(
+      {0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
 
 const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 
@@ -147,7 +155,7 @@ std::filesystem::path WriteCapture(const std::string& stem) {
   const std::filesystem::path path =
       (std::filesystem::temp_directory_path() / stem).replace_extension(augusta::capture::kExtension);
   augusta::capture::Capture capture{.header = {.engine_version = "1.0.0", .tick_rate_hz = 60, .started = {}},
-                                    .joins = {{.session = 1, .character = "soldier", .spawn = {4, 0, -2}}},
+                                    .joins = {{.session = Session(1), .character = "soldier", .spawn = {4, 0, -2}}},
                                     .events = {},
                                     .torn = false};
   capture.header.client_pack.fill(std::byte{9});

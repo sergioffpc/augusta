@@ -8,9 +8,9 @@
 # the Link converts (augusta/link_messages.h). Nor does a presentation header
 # name the harness: the client converts (src/client/frame_mapping.h).
 # Nor does the protocol itself include or link anything but augusta_math,
-# augusta_tick, augusta_limits and the full protobuf runtime, PRIVATE, nor does
-# any header outside it include protobuf or the generated augusta.pb.h. A source
-# scan, so it builds nothing.
+# augusta_tick, augusta_limits, Boost::uuid and the full protobuf runtime,
+# PRIVATE, nor does any header outside it include protobuf or the generated
+# augusta.pb.h. A source scan, so it builds nothing.
 add_test(
   NAME augusta_protocol_boundary
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/protocol_boundary.cmake
@@ -53,9 +53,9 @@ add_test(
 
 # Executables are Glue (ADR-0060): the Glue check refuses a second target
 # inside an executable's own directory, an executable that links more than the
-# application, its Runtime, failure, logging and version, and a test that links
-# an executable, and allows an executable linking all of those and a test
-# linking its Runtime. It only configures a fixture build graph, with no
+# application, its Runtime, crash, failure, logging and version, and a test
+# that links an executable, and allows an executable linking all of those and a
+# test linking its Runtime. It only configures a fixture build graph, with no
 # compiler, so it builds nothing.
 add_test(
   NAME augusta_glue_boundary

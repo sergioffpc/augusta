@@ -5,6 +5,8 @@
 #include <optional>
 #include <string>
 
+#include <boost/uuid/uuid.hpp>
+
 #include "augusta/application.h"
 #include "augusta/client_config.h"
 #include "augusta/reenactment.h"
@@ -61,10 +63,12 @@ class ClientProcess {
 /// a dependency's (no window or GPU device), or one already classified (a
 /// rejected collision mesh); run runs it until the window closes, its
 /// reenactment or Replay ends or it fails. With no reconnecting and no
-/// connection screen, it says what happened and exits.
+/// connection screen, it says what happened and exits. Its join, as a player,
+/// a Captured player or a Replay viewer alike, carries run, the Run's ID.
 [[nodiscard]] application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
                                                                     std::optional<harness::Script> reenactment,
-                                                                    std::optional<std::string> replay);
+                                                                    std::optional<std::string> replay,
+                                                                    boost::uuids::uuid run);
 
 }  // namespace augusta::client
 

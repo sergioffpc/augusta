@@ -44,7 +44,7 @@ readonly MATCHES=2
 # Runs record gives up after, should every one log something new.
 readonly RECORD_RUNS=5
 # What a Match does not reach but a server may still make: its crash handler
-# (src/server/crash.cpp) re-raising a fatal signal (rt_sigprocmask, getpid,
+# (src/modules/crash/crash.cpp) re-raising a fatal signal (rt_sigprocmask, getpid,
 # gettid, tgkill) after symbolizing the stack from its own binary (pread64,
 # lseek). Without them a crash would end in SIGSYS, its report and core lost.
 readonly CRASH_SYSCALLS=(rt_sigprocmask getpid gettid tgkill pread64 lseek)

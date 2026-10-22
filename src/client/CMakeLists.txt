@@ -70,13 +70,14 @@ add_library(augusta_client STATIC client.cpp)
 target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_client
-  PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input
+  PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input Boost::uuid
   # nvtx3-cpp: client.cpp names the Main/Render, Simulation, and Network I/O
   # thread loops for Nsight Systems.
   PRIVATE
     augusta_client_phases
     augusta_client_frame_mapping
     augusta_client_lobby_readiness
+    augusta_client_run
     augusta_client_net_stats
     augusta_audio
     augusta_gameplay
@@ -104,21 +105,52 @@ add_library(augusta_client_application STATIC client_application.cpp)
 target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_client_application
-  PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness
-  PRIVATE augusta_assets augusta_client augusta_failure augusta_hardware augusta_link augusta_logging
+  PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness Boost::uuid
+  PRIVATE augusta_assets augusta_client augusta_failure augusta_link
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
+
+# The files a Run leaves beside the executable (see run_files.h): their names
+# from the Run ID, which Runs are kept, and how the previous one ended.
+add_library(augusta_client_run_files STATIC run_files.cpp)
+target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# It reads a log's last line for the events crash and application write.
+target_link_libraries(augusta_client_run_files PUBLIC Boost::uuid PRIVATE augusta_application augusta_crash)
+augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
+
+# The start of one Run (see client_run.h): its Run ID, its log file and its
+# first lines, before augustac reads its config.
+add_library(augusta_client_run STATIC client_run.cpp)
+target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(
+  augusta_client_run
+  PUBLIC augusta_crash Boost::uuid
+  PRIVATE
+    augusta_client_run_files
+    augusta_hardware
+    augusta_logging
+    augusta_renderer_gpu_crash_dump_files
+    augusta_version
+)
+augusta_set_module_scope(augusta_client_run CLIENT_ONLY)
 
 # augustac's entry point: it runs the client Runtime above behind the
 # application boundary (ADR-0033, ADR-0060).
 add_executable(augustac main.cpp)
 target_link_libraries(
   augustac
-  PRIVATE augusta_application augusta_failure augusta_version augusta_logging augusta_client_application
+  PRIVATE
+    augusta_application
+    augusta_crash
+    augusta_failure
+    augusta_version
+    augusta_logging
+    augusta_client_application
+    augusta_client_run
 )
 augusta_set_module_scope(augustac CLIENT_ONLY)
 # augustac is Glue: it links only the application, the client Runtime beside
-# it, failure, logging and version - anything else fails the configure
+# it, crash, failure, logging and version - anything else fails the configure
 # (ADR-0060, cmake/AugustaModule.cmake).
 augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
@@ -167,8 +199,9 @@ if(WIN32)
   )
 else()
   # Release's debug info split off into augustac.debug, as augustad's is
-  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). No
-  # crash handler: a player's systemd-coredump keeps the core.
+  # (ADR-0047), which a release publishes beside the tarball (ADR-0055). The
+  # symbol table stays, for the crash handler's frame lines; a player's
+  # systemd-coredump keeps the core.
   augusta_split_debug_info(augustac)
   # The shared libraries the folder bundles are found beside augustac, wherever
   # it is extracted, with no launcher script setting a library path. In the

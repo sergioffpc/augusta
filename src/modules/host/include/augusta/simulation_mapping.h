@@ -29,12 +29,6 @@ namespace augusta::host {
 /// A SimulationWorld body's entity as Match named it; the inverse of ToSimulation.
 [[nodiscard]] EntityId FromSimulation(simulation::EntityId entity);
 
-/// session as SimulationWorld's Game policy names the same player.
-[[nodiscard]] policy::SessionId ToSimulation(SessionId session);
-
-/// A Game policy player's session as Match named it; the inverse of ToSimulation.
-[[nodiscard]] SessionId FromSimulation(policy::SessionId session);
-
 /// part, in the blob's numbering, as the Body part every module names, the way
 /// the link's FromWire takes one off the protocol's wire enum.
 [[nodiscard]] body_part::BodyPart FromBlob(assets::BodyPart part);

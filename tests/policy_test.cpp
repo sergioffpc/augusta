@@ -59,9 +59,15 @@ constexpr float kTick = 1.0F / kTickRate;
 
 constexpr EntityId kAlice = static_cast<EntityId>(1);
 constexpr EntityId kBob = static_cast<EntityId>(2);
-// Their sessions: numbers of their own, unrelated to their bodies'.
-constexpr SessionId kAliceSession = static_cast<SessionId>(11);
-constexpr SessionId kBobSession = static_cast<SessionId>(12);
+// A Session ID, a UUIDv7, told apart by its last byte: a hook sees it as
+// "0190a1b2-c3d4-7000-8000-0000000000" and that byte in hex.
+constexpr SessionId Session(std::uint8_t last) {
+  return SessionId({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, last});
+}
+
+// Their sessions, unrelated to their bodies': "...0b" and "...0c" to a hook.
+constexpr SessionId kAliceSession = Session(11);
+constexpr SessionId kBobSession = Session(12);
 const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
 
 // The Match end Game policy took on the tick of result, if it took one.
@@ -194,18 +200,22 @@ TEST_F(PolicyTest, AFailingHookIsLoggedDecidesNothingAndTheTickGoesOn) {
            FailingHook{.rules = "on_tick = 5", .logged = "not a function"},
            FailingHook{.rules = "function on_tick() return #string.rep('x', 1 << 30) end",
                        .logged = "not enough memory"},
-           FailingHook{.rules = "function on_tick() return {winner = 1} end",
-                       .logged = "not a player alive in the Match"},
-           FailingHook{.rules = "function on_tick() return {winner = 11.5} end",
+           FailingHook{.rules = "function on_tick() return {winner = '0190a1b2-c3d4-7000-8000-000000000001'} end",
                        .logged = "not a player alive in the Match"},
            FailingHook{.rules = "function on_tick() return {winner = '11'} end",
+                       .logged = "not a player alive in the Match"},
+           FailingHook{.rules = "function on_tick() return {winner = '0190A1B2-C3D4-7000-8000-00000000000B'} end",
+                       .logged = "not a player alive in the Match"},
+           FailingHook{.rules = "function on_tick() return {winner = 11} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
            FailingHook{.rules = "function on_tick() return {draw = false} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.rules = "function on_tick() return {winner = 11, draw = true} end",
-                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
-           FailingHook{.rules = "function on_tick() return {winner = 11, by = 'me'} end",
-                       .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+           FailingHook{
+               .rules = "function on_tick() return {winner = '0190a1b2-c3d4-7000-8000-00000000000b', draw = true} end",
+               .logged = "neither {winner = <Session ID>} nor {draw = true}"},
+           FailingHook{
+               .rules = "function on_tick() return {winner = '0190a1b2-c3d4-7000-8000-00000000000b', by = 'me'} end",
+               .logged = "neither {winner = <Session ID>} nor {draw = true}"},
            FailingHook{.rules = "function on_tick() return {} end",
                        .logged = "neither {winner = <Session ID>} nor {draw = true}"},
            FailingHook{.rules = "function on_tick() return true end",
@@ -443,18 +453,18 @@ TEST_F(PolicyTest, TheParametersScriptAndTheRulesShareNoGlobals) {
 
 using augusta::simulation::MatchPlayer;
 
-// Three players, sessions 4, 5 and 6 with bodies 11, 12 and 13, playing
+// Three players, sessions ending 4, 5 and 6 with bodies 11, 12 and 13, playing
 // the sniper, the player and the medic.
 std::vector<MatchPlayer> ThreePlayers() {
   return {
       MatchPlayer{.entity = static_cast<EntityId>(11),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(4), .character = "sniper"},
+                  .identity = PlayerIdentity{.session = Session(4), .character = "sniper"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(12),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(5), .character = "soldier"},
+                  .identity = PlayerIdentity{.session = Session(5), .character = "soldier"},
                   .character = kCharacter},
       MatchPlayer{.entity = static_cast<EntityId>(13),
-                  .identity = PlayerIdentity{.session = static_cast<SessionId>(6), .character = "medic"},
+                  .identity = PlayerIdentity{.session = Session(6), .character = "medic"},
                   .character = kCharacter},
   };
 }
@@ -467,9 +477,9 @@ TEST_F(PolicyTest, AnAssignSpawnsAnswerPlacesEachPlayerAtTheSpawnPointItNames) {
   World world(Parameters{}, kTickRate, WithRules(R"(
     function assign_spawns(match)
       return {
-        {session = 4, spawn_point = 3},
-        {session = 5, spawn_point = 1},
-        {session = 6, spawn_point = 2},
+        {session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 3},
+        {session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 1},
+        {session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 2},
       }
     end
   )"));
@@ -495,7 +505,7 @@ TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
     function assign_spawns(match)
       local seen = string.format("count=%d points=%d", match.player_count, match.spawn_points)
       for _, player in ipairs(match.players) do
-        seen = seen .. string.format(" %d/%d/%s", player.session, player.entity, player.character)
+        seen = seen .. string.format(" %s/%d/%s", player.session, player.entity, player.character)
       end
       error(seen)
     end
@@ -505,7 +515,10 @@ TEST_F(PolicyTest, AssignSpawnsIsHandedAReadOnlyViewOfTheMatch) {
   world.StartMatch(ThreePlayers(), kSpawnPoints);
   const std::string log = testing::internal::GetCapturedStdout();
 
-  EXPECT_NE(log.find("count=3 points=3 4/11/sniper 5/12/soldier 6/13/medic"), std::string::npos) << log;
+  EXPECT_NE(log.find("count=3 points=3 0190a1b2-c3d4-7000-8000-000000000004/11/sniper "
+                     "0190a1b2-c3d4-7000-8000-000000000005/12/soldier 0190a1b2-c3d4-7000-8000-000000000006/13/medic"),
+            std::string::npos)
+      << log;
 }
 
 // Requirements: US-03
@@ -530,8 +543,8 @@ TEST_F(PolicyTest, WithoutAnAssignSpawnsHookPlayersTakeTheSpawnPointsInOrderSile
 TEST_F(PolicyTest, APlayerThatNamesItsSpawnIsPlacedThereAndAssignSpawnsPlacesOnlyTheOthers) {
   World world(Parameters{}, kTickRate, WithRules(R"(
     function assign_spawns(match)
-      assert(#match.players == 1 and match.players[1].session == 5)
-      return {{session = 5, spawn_point = 3}}
+      assert(#match.players == 1 and match.players[1].session == '0190a1b2-c3d4-7000-8000-000000000005')
+      return {{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 3}}
     end
   )"));
   std::vector<MatchPlayer> players = ThreePlayers();
@@ -582,31 +595,40 @@ struct RefusedAnswer {
 TEST_F(PolicyTest, ARefusedOrFailingAssignSpawnsAnswerFallsBackToTheInOrderAssignmentAndIsLogged) {
   // Each answer but the one it is about is a valid one.
   for (const RefusedAnswer& answer : {
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 5, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 4}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 4}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 0}, {session = 5, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 0}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1.5}, {session = 5, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1.5}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = '1'}, {session = 5, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = '1'}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "spawn_point is not a whole number"},
-           RefusedAnswer{.body = "return {{session = 7, spawn_point = 1}, {session = 5, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000007', spawn_point = 1}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "not a player in the Match"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 4, spawn_point = 2}, "
-                                 "{session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 2}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "names a player twice"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1}, {session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1}, "
+                                 "{session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "leaves a player out"},
-           RefusedAnswer{.body = "return {{session = 4, spawn_point = 1, team = 1}, {session = 5, spawn_point = "
-                                 "2}, {session = 6, spawn_point = 3}}",
+           RefusedAnswer{.body = "return {{session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1, team = "
+                                 "1}, {session = '0190a1b2-c3d4-7000-8000-000000000005', spawn_point = "
+                                 "2}, {session = '0190a1b2-c3d4-7000-8000-000000000006', spawn_point = 3}}",
                          .logged = "not a record of exactly a session and a spawn_point"},
            RefusedAnswer{.body = "return {3, 1, 2}", .logged = "not a record of exactly"},
-           RefusedAnswer{.body = "return {session = 4, spawn_point = 1}", .logged = "not a list"},
+           RefusedAnswer{.body = "return {session = '0190a1b2-c3d4-7000-8000-000000000004', spawn_point = 1}",
+                         .logged = "not a list"},
            RefusedAnswer{.body = "return 3", .logged = "not a list"},
            RefusedAnswer{.body = "error('boom')", .logged = "boom"},
            RefusedAnswer{.body = "while true do end", .logged = "instruction limit"},
@@ -684,14 +706,14 @@ Policy ExamplePolicy() {
   return policy ? *std::move(policy) : Policy{};
 }
 
-// count players, sessions 1 to count with bodies 101 on, all playing the player.
+// count players, sessions ending 1 to count with bodies 101 on, all playing the player.
 std::vector<MatchPlayer> Players(std::size_t count) {
   std::vector<MatchPlayer> players;
   for (std::size_t i = 1; i <= count; ++i) {
-    players.push_back(
-        MatchPlayer{.entity = static_cast<EntityId>(100 + i),
-                    .identity = PlayerIdentity{.session = static_cast<SessionId>(i), .character = "soldier"},
-                    .character = kCharacter});
+    players.push_back(MatchPlayer{
+        .entity = static_cast<EntityId>(100 + i),
+        .identity = PlayerIdentity{.session = Session(static_cast<std::uint8_t>(i)), .character = "soldier"},
+        .character = kCharacter});
   }
   return players;
 }
@@ -738,7 +760,7 @@ TEST_F(PolicyTest, TheExampleRulesStartTheSpawnPointsOverOnlyWhenTheMapHasFewerT
 TEST_F(PolicyTest, AWinnerOnTickDeclaresIsAnActionOfTheTickThatDeclaredIt) {
   World world = WithAlice(WithRules(R"(
     function on_tick(match)
-      if match.tick == 3 then return {winner = 11} end
+      if match.tick == 3 then return {winner = '0190a1b2-c3d4-7000-8000-00000000000b'} end
     end
   )"));
 
@@ -815,12 +837,14 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
 
   const std::string log = LogOfTicks(world, 1);
 
-  EXPECT_NE(log.find("tick=1 player_count=2"
-                     " [session=11 entity=1 character=sniper alive=true health=75 killed=false"
-                     " killer=nil]"
-                     " [session=12 entity=2 character=soldier alive=true health=75 killed=false"
-                     " killer=nil]"),
-            std::string::npos)
+  EXPECT_NE(
+      log.find(
+          "tick=1 player_count=2"
+          " [session=0190a1b2-c3d4-7000-8000-00000000000b entity=1 character=sniper alive=true health=75 killed=false"
+          " killer=nil]"
+          " [session=0190a1b2-c3d4-7000-8000-00000000000c entity=2 character=soldier alive=true health=75 killed=false"
+          " killer=nil]"),
+      std::string::npos)
       << log;
 }
 
@@ -842,11 +866,12 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
   EXPECT_EQ(MatchEndOf(result)->winner, kBobSession);
 }
 
-// A body added with no identity has Session ID 0, which is no player's: it is
-// never declared the winner, whatever policy says.
+// A body added with no identity has the nil Session ID, which is no player's:
+// it is never declared the winner, whatever policy says.
 // Requirements: US-14
-TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
-  World world(Parameters{}, kTickRate, WithRules("function on_tick() return {winner = 0} end"));
+TEST_F(PolicyTest, TheNilSessionIsNeverTheWinner) {
+  World world(Parameters{}, kTickRate,
+              WithRules("function on_tick() return {winner = '00000000-0000-0000-0000-000000000000'} end"));
   world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
 
   EXPECT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
@@ -854,7 +879,7 @@ TEST_F(PolicyTest, SessionZeroIsNeverTheWinner) {
 
 // Requirements: US-14
 TEST_F(PolicyTest, AWinnerWhoIsNotInTheMatchIsRefusedLoggedAndTheMatchGoesOn) {
-  World world = WithAlice(WithRules("function on_tick() return {winner = 12} end"));
+  World world = WithAlice(WithRules("function on_tick() return {winner = '0190a1b2-c3d4-7000-8000-00000000000c'} end"));
 
   testing::internal::CaptureStdout();
   const TickResult result = world.Tick({}, kTick);
