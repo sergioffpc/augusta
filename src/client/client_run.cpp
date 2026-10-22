@@ -31,7 +31,7 @@ std::string Utf8(const std::filesystem::path& path) {
 // The generator every Run ID is taken from: one for the process, so a Run ID
 // taken after another compares greater. BeginRun alone takes from it, on
 // main's thread.
-boost::uuids::time_generator_v7& RunIds() {
+boost::uuids::time_generator_v7& ProcessRunIds() {
   static boost::uuids::time_generator_v7 generator;
   return generator;
 }
@@ -61,7 +61,7 @@ void PruneOldRuns(const std::filesystem::path& directory) {
 }  // namespace
 
 Run BeginRun(const std::optional<std::filesystem::path>& directory) {
-  Run run{.id = RunIds()(), .log_file = std::nullopt, .minidump_file = std::nullopt};
+  Run run{.id = ProcessRunIds()(), .log_file = std::nullopt, .minidump_file = std::nullopt};
   logging::SetContext(logging::ContextField::kRun, boost::uuids::to_string(run.id));
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
