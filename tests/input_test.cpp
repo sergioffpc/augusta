@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <initializer_list>
 #include <numbers>
 #include <span>
 #include <string_view>
@@ -347,6 +348,66 @@ TEST_F(InputTest, AKeyboardKeyWhileReleasedDoesNotCaptureTheCursor) {
   Release(Key::kEscape);
   Press(Key::kSpace);
   EXPECT_FALSE(input_.CursorCaptured());
+}
+
+TEST_F(InputTest, LettingGoClearsEveryHeldControlAndKeepsTheCursorCaptured) {
+  Press(Key::kW);
+  Press(Key::kLeftShift);
+  Press(Key::kMouseLeft);
+  Press(Key::kMouseRight);
+  Command command = input_.Sample();  // Control: held, they move, sprint, fire and aim.
+  ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, -1.0F));
+  EXPECT_TRUE(command.movement.sprint);
+  EXPECT_TRUE(command.fire);
+  EXPECT_TRUE(command.ads);
+  input_.LetGo();
+  command = input_.Sample();
+  ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_FALSE(command.movement.sprint);
+  EXPECT_FALSE(command.fire);
+  EXPECT_FALSE(command.ads);
+  EXPECT_TRUE(input_.CursorCaptured());
+}
+
+TEST_F(InputTest, AfterLettingGoTheNextCursorPositionOnlySetsABaseline) {
+  MoveMouse(0.0F, 0.0F);
+  MoveMouse(10.0F, 0.0F);  // Control: before letting go, the cursor turns the view.
+  EXPECT_NEAR(input_.CurrentAim().yaw, -10.0F * kSensitivity, kTolerance);
+  input_.LetGo();
+  MoveMouse(500.0F, 0.0F);  // Where the cursor went while Input was not handed its moves.
+  MoveMouse(10.0F, 0.0F);
+  EXPECT_NEAR(input_.Sample().yaw, -20.0F * kSensitivity, kTolerance);
+}
+
+// Requirements: US-20
+TEST_F(InputTest, ReleasingTheCursorLeavesWhatEscapeLeaves) {
+  Input by_escape{Config{.mouse_sensitivity = kSensitivity}};
+  for (Input* input : {&by_escape, &input_}) {
+    Handle(*input, KeyEvent{.key = Key::kW, .state = KeyState::kPressed});
+    Handle(*input, KeyEvent{.key = Key::kMouseRight, .state = KeyState::kPressed});
+    EXPECT_TRUE(input->IsHeld(Control::kMoveForward));  // Control: held before the release.
+  }
+  Handle(by_escape, KeyEvent{.key = Key::kEscape, .state = KeyState::kPressed});
+  input_.ReleaseCursor();
+  for (Input* input : {&by_escape, &input_}) {
+    EXPECT_FALSE(input->CursorCaptured());
+    const Command command = input->Sample();
+    ExpectNear(command.movement.direction, Vec3(0.0F, 0.0F, 0.0F));
+    EXPECT_FALSE(command.ads);
+  }
+}
+
+// Requirements: US-07, US-20
+TEST_F(InputTest, AfterReleasingTheCursorTheNextClickCapturesItWithoutFiring) {
+  input_.ReleaseCursor();
+  Press(Key::kW);  // Ignored: pressed while released.
+  EXPECT_FALSE(input_.IsHeld(Control::kMoveForward));
+  Press(Key::kMouseLeft);  // Taken by the capture.
+  EXPECT_TRUE(input_.CursorCaptured());
+  EXPECT_FALSE(input_.Sample().fire);
+  Release(Key::kMouseLeft);
+  Press(Key::kMouseLeft);  // Control: once captured, a click fires.
+  EXPECT_TRUE(input_.Sample().fire);
 }
 
 // Every control rebound, with prone on a mouse button.
