@@ -111,7 +111,7 @@ class StatusHandlerRegistry {
   std::unordered_map<std::int64_t, StatusHandler> handlers_;
 };
 
-StatusHandlerRegistry& ProcessStatusHandlers() {
+StatusHandlerRegistry& GlobalStatusHandlers() {
   static StatusHandlerRegistry registry;
   return registry;
 }
@@ -121,8 +121,8 @@ StatusHandlerRegistry& ProcessStatusHandlers() {
 // reads are destroyed.
 class StatusHandlerRegistration {
  public:
-  explicit StatusHandlerRegistration(StatusHandler handler) : id_(ProcessStatusHandlers().Add(std::move(handler))) {}
-  ~StatusHandlerRegistration() { ProcessStatusHandlers().Remove(id_); }
+  explicit StatusHandlerRegistration(StatusHandler handler) : id_(GlobalStatusHandlers().Add(std::move(handler))) {}
+  ~StatusHandlerRegistration() { GlobalStatusHandlers().Remove(id_); }
   StatusHandlerRegistration(const StatusHandlerRegistration&) = delete;
   StatusHandlerRegistration& operator=(const StatusHandlerRegistration&) = delete;
 
@@ -135,7 +135,7 @@ class StatusHandlerRegistration {
 
 // The status-changed callback both roles register with GameNetworkingSockets.
 void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t* info) {
-  ProcessStatusHandlers().Dispatch(info->m_info.m_nUserData, info);
+  GlobalStatusHandlers().Dispatch(info->m_info.m_nUserData, info);
 }
 
 TransportState ToTransportState(ESteamNetworkingConnectionState state) {

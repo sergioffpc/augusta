@@ -18,15 +18,15 @@ namespace augusta::renderer {
 namespace {
 
 // The process's GPU crash dump files, as NameGpuCrashDumps last named them,
-// under ProcessFilesMutex. Never destroyed, so a dump during exit still finds
+// under GlobalFilesMutex. Never destroyed, so a dump during exit still finds
 // them; a dump being written keeps the files it started with.
-std::shared_ptr<GpuCrashDumpFiles>& ProcessFiles() {
+std::shared_ptr<GpuCrashDumpFiles>& GlobalFiles() {
   static auto* files = new std::shared_ptr<GpuCrashDumpFiles>(std::make_shared<GpuCrashDumpFiles>(
       [](std::uint32_t n) { return std::filesystem::path(std::format("gpu-crash-{}.nv-gpudmp", n)); }));
   return *files;
 }
 
-std::mutex& ProcessFilesMutex() {
+std::mutex& GlobalFilesMutex() {
   static auto* mutex = new std::mutex;
   return *mutex;
 }
@@ -59,15 +59,15 @@ std::expected<std::filesystem::path, std::filesystem::path> GpuCrashDumpFiles::W
 
 void NameGpuCrashDumps(GpuCrashDumpNaming naming) {
   auto files = std::make_shared<GpuCrashDumpFiles>(std::move(naming));
-  const std::lock_guard<std::mutex> lock(ProcessFilesMutex());
-  ProcessFiles().swap(files);
+  const std::lock_guard<std::mutex> lock(GlobalFilesMutex());
+  GlobalFiles().swap(files);
 }
 
 std::expected<std::filesystem::path, std::filesystem::path> WriteGpuCrashDump(std::span<const std::byte> dump) {
   std::shared_ptr<GpuCrashDumpFiles> files;
   {
-    const std::lock_guard<std::mutex> lock(ProcessFilesMutex());
-    files = ProcessFiles();
+    const std::lock_guard<std::mutex> lock(GlobalFilesMutex());
+    files = GlobalFiles();
   }
   return files->Write(dump);
 }

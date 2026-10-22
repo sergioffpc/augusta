@@ -67,7 +67,7 @@ struct Context {
   std::string suffix;
 };
 
-Context& ProcessContext() {
+Context& GlobalContext() {
   static Context context;
   return context;
 }
@@ -80,7 +80,7 @@ struct FileSinks {
   std::vector<std::pair<std::filesystem::path, boost::shared_ptr<FileSink>>> sinks;
 };
 
-FileSinks& ProcessFileSinks() {
+FileSinks& GlobalFileSinks() {
   static FileSinks file_sinks;
   return file_sinks;
 }
@@ -126,7 +126,7 @@ constexpr std::array<std::pair<ContextField, std::string_view>, 3> kContextKeys{
 
 // Sets or clears field, and remakes the suffix and what CopyContext reads.
 void ChangeContext(ContextField field, std::optional<std::string> value) {
-  Context& context = ProcessContext();
+  Context& context = GlobalContext();
   const std::scoped_lock lock(context.mutex);
   context.fields.at(static_cast<std::size_t>(field)) = std::move(value);
   context.suffix.clear();
@@ -144,7 +144,7 @@ void ChangeContext(ContextField field, std::optional<std::string> value) {
 }
 
 std::string WithContext(std::string_view message) {
-  Context& context = ProcessContext();
+  Context& context = GlobalContext();
   const std::scoped_lock lock(context.mutex);
   std::string line;
   line.reserve(message.size() + context.suffix.size());
@@ -275,14 +275,14 @@ std::expected<void, FileSinkError> AddFileSink(const std::filesystem::path& file
     FormatRecord(record, out, false);
   });
   boost::log::core::get()->add_sink(sink);
-  FileSinks& file_sinks = ProcessFileSinks();
+  FileSinks& file_sinks = GlobalFileSinks();
   const std::scoped_lock lock(file_sinks.mutex);
   file_sinks.sinks.emplace_back(file, sink);
   return {};
 }
 
 void RemoveFileSink(const std::filesystem::path& file) {
-  FileSinks& file_sinks = ProcessFileSinks();
+  FileSinks& file_sinks = GlobalFileSinks();
   const std::scoped_lock lock(file_sinks.mutex);
   // The last sink holding the file's stream, so erasing it closes the file.
   std::erase_if(file_sinks.sinks, [&file](const auto& added) {
