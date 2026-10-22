@@ -738,41 +738,4 @@ TEST(MatchTest, AMatchThatTakesNoReenactmentsRefusesAReenactRequestBeforeAnythin
   EXPECT_TRUE(match.Join(Peer(3), Request(kVersion, kCharacter)).has_value());
 }
 
-#if AUGUSTA_DEBUG_TOOLS
-// A match of player_count that takes Reenact requests.
-MatchConfig ReenactingConfig(std::size_t player_count = kPlayerCount) {
-  MatchConfig config = Config(player_count);
-  config.reenactments = true;
-  return config;
-}
-
-// Requirements: US-21
-TEST(MatchTest, AReenactRequestIsCheckedAsAJoinRequestIs) {
-  Match match(ReenactingConfig(1));
-
-  EXPECT_EQ(match.Join(Peer(1), ReenactRequest("other", Vec3())).error(), JoinRefusal::kVersionMismatch);
-  JoinRequest unknown = ReenactRequest(kVersion, Vec3());
-  unknown.character = "characters/nobody";
-  EXPECT_EQ(match.Join(Peer(2), unknown).error(), JoinRefusal::kUnknownCharacter);
-  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3())).has_value());
-  EXPECT_EQ(match.Join(Peer(4), ReenactRequest(kVersion, Vec3())).error(), JoinRefusal::kLobbyFull);
-}
-
-// Requirements: US-21
-TEST(MatchTest, AMatchStartNamesTheSpawnOfEachPlayerAdmittedThroughAReenactRequestAndNoOneElses) {
-  Match match(ReenactingConfig(3));
-  ASSERT_TRUE(match.Join(Peer(1), Request(kVersion, kCharacter)).has_value());
-  ASSERT_TRUE(match.Join(Peer(2), ReenactRequest(kVersion, Vec3(4.0F, 0.0F, -2.0F))).has_value());
-  ASSERT_TRUE(match.Join(Peer(3), ReenactRequest(kVersion, Vec3(-6.0F, 1.0F, 8.0F))).has_value());
-
-  const auto start = ReadyAndStart(match);
-
-  ASSERT_TRUE(start.has_value());
-  ASSERT_EQ(start->players.size(), 3U);
-  EXPECT_FALSE(start->players[0].spawn.has_value());
-  EXPECT_EQ(start->players[1].spawn, Vec3(4.0F, 0.0F, -2.0F));
-  EXPECT_EQ(start->players[2].spawn, Vec3(-6.0F, 1.0F, 8.0F));
-}
-#endif
-
 }  // namespace

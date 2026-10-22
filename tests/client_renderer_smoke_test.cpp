@@ -14,47 +14,10 @@
 #include "augusta/math.h"
 #include "augusta/renderer.h"
 #include "augusta/window.h"
+#include "renderer_smoke_test.h"
 
-namespace augusta::renderer {
+namespace augusta::renderer::smoke_test {
 namespace {
-
-// Small, so lavapipe draws it fast, but wider than Windows' narrowest window with a
-// title bar.
-constexpr std::uint32_t kWidth = 320;
-constexpr std::uint32_t kHeight = 240;
-
-// The Renderer's near-black clear color, 0.016 in linear light, as an sRGB
-// byte, give or take the GPU's rounding.
-constexpr int kClearChannel = 34;
-constexpr int kTolerance = 1;
-constexpr std::uint8_t kOpaque = 255;
-
-#if AUGUSTA_DEBUG_TOOLS
-// The debug HUD's first line sits in the frame's top rows: its window 10 pixels
-// in, its padding, and one line of text.
-constexpr std::uint32_t kHudBottom = 48;
-#endif
-
-constexpr std::size_t kBytesPerPixel = 4;
-
-bool IsClearColor(std::span<const std::uint8_t> rgba) {
-  const auto near_clear = [](std::uint8_t channel) { return std::abs(channel - kClearChannel) <= kTolerance; };
-  return near_clear(rgba[0]) && near_clear(rgba[1]) && near_clear(rgba[2]) && rgba[3] == kOpaque;
-}
-
-// How many of frame's pixels in rows [first_row, last_row) are not the clear
-// color.
-std::size_t CountOtherPixels(const CapturedFrame& frame, std::uint32_t first_row, std::uint32_t last_row) {
-  const std::size_t row_size = std::size_t{frame.width} * kBytesPerPixel;
-  const auto rows = std::span(frame.pixels).subspan(first_row * row_size, (last_row - first_row) * row_size);
-  std::size_t other_pixels = 0;
-  for (std::size_t i = 0; i < rows.size(); i += kBytesPerPixel) {
-    if (!IsClearColor(rows.subspan(i, kBytesPerPixel))) {
-      ++other_pixels;
-    }
-  }
-  return other_pixels;
-}
 
 // A surface of one pure colour, shaded: lit in that channel alone, whatever the
 // light and checker make of it.
@@ -119,44 +82,13 @@ RemotePlayer PlayerAt(float x, math::Vec3 color, std::string_view character = kC
   return {.position = {x, -0.5F, 0.0F}, .yaw = 0.0F, .color = color, .character = std::string(character)};
 }
 
-// A window that never shows, for a test that only reads frames back.
-window::Config HiddenWindowConfig() {
-  return {.title = "augusta renderer smoke test", .width = kWidth, .height = kHeight, .hidden = true};
+// Gives renderer the scene's blue rectangle, seen from its own default camera
+// until SetCamera moves to kCamera; and the character's mesh.
+void SetWorld(Renderer& renderer) {
+  renderer.SetScene({.meshes = {Rectangle(1.2F, -0.5F, 2.2F, 0.5F, {0.0F, 0.0F, 1.0F})}, .camera = {}});
+  renderer.SetCamera(kCamera);
+  renderer.SetCharacterMesh(std::string(kCharacter), CharacterMesh());
 }
-
-// What CI's runner, which has no GPU, can run, with every misuse of Vulkan an
-// error the Renderer throws.
-Config SoftwareConfig() { return {.adapter = Adapter::kSoftware, .validation = Validation::kRequired}; }
-
-class RendererSmokeTest : public ::testing::Test {
- protected:
-  // The scene's blue rectangle, seen from its own default camera until
-  // SetCamera moves to kCamera; and the character's mesh.
-  void SetWorld() {
-    renderer_->SetScene({.meshes = {Rectangle(1.2F, -0.5F, 2.2F, 0.5F, {0.0F, 0.0F, 1.0F})}, .camera = {}});
-    renderer_->SetCamera(kCamera);
-    renderer_->SetCharacterMesh(std::string(kCharacter), CharacterMesh());
-  }
-
-  // More frames than are in flight, so that every region of the per-frame
-  // upload buffers and every swapchain image comes round, each with players,
-  // effects and overlay.
-  CapturedFrame RenderFrames(std::span<const RemotePlayer> players = {}, const CombatEffects& effects = {},
-                             const Overlay& overlay = {}) {
-    for (int i = 0; i < 4; ++i) {
-      static_cast<void>(window_.Poll());
-      renderer_->SetRemotePlayers(players);
-      renderer_->SetCombatEffects(effects);
-      renderer_->SetOverlay(overlay);
-      renderer_->RenderFrame();
-    }
-    return renderer_->CaptureFrame();
-  }
-
-  // Declared first, so that it outlives the Renderer drawing into it.
-  window::Window window_{HiddenWindowConfig()};
-  std::unique_ptr<Renderer> renderer_ = std::make_unique<Renderer>(window_, SoftwareConfig());
-};
 
 TEST_F(RendererSmokeTest, OpensItsWindowAtTheConfiguredSize) {
   const window::Size size = window_.GetSize();
@@ -173,44 +105,8 @@ TEST_F(RendererSmokeTest, CapturesNothingBeforeTheFirstFrame) {
   EXPECT_TRUE(frame.pixels.empty());
 }
 
-// The debug HUD is in a Development build only (ADR-0074).
-#if AUGUSTA_DEBUG_TOOLS
-TEST_F(RendererSmokeTest, ClearsEveryPixelBelowTheDebugHudToTheClearColor) {
-  renderer_->SetTextLines({"FPS: 144 (6.9ms) | RTT: --"});
-  RenderFrames();
-
-  const CapturedFrame frame = renderer_->CaptureFrame();
-
-  ASSERT_EQ(frame.width, kWidth);
-  ASSERT_EQ(frame.height, kHeight);
-  ASSERT_EQ(frame.pixels.size(), std::size_t{kWidth} * kHeight * kBytesPerPixel);
-  EXPECT_EQ(CountOtherPixels(frame, kHudBottom, kHeight), 0U);
-}
-#endif
-
-TEST_F(RendererSmokeTest, DrawsNoDebugHudBeforeItHasLines) {
-  const CapturedFrame frame = RenderFrames();
-
-  ASSERT_EQ(frame.height, kHeight);
-  EXPECT_EQ(CountOtherPixels(frame, 0, kHeight), 0U);
-}
-
-#if AUGUSTA_DEBUG_TOOLS
-TEST_F(RendererSmokeTest, DrawsTheDebugHudsLinesInItsRegion) {
-  renderer_->SetTextLines({"FPS: --"});
-  const std::size_t short_line = CountOtherPixels(RenderFrames(), 0, kHudBottom);
-
-  renderer_->SetTextLines({"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.0KB/s | Out: 512B/s"});
-  const CapturedFrame frame = RenderFrames();
-
-  ASSERT_EQ(frame.height, kHeight);
-  EXPECT_GT(short_line, 0U);
-  EXPECT_GT(CountOtherPixels(frame, 0, kHudBottom), short_line);
-}
-#endif
-
 TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
-  SetWorld();
+  SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
 
   const CapturedFrame frame = RenderFrames(players);
@@ -223,7 +119,7 @@ TEST_F(RendererSmokeTest, DrawsTheSceneAndARemotePlayerFromTheCamera) {
 }
 
 TEST_F(RendererSmokeTest, HidesAPlayerBehindTheScene) {
-  SetWorld();
+  SetWorld(*renderer_);
   RemotePlayer behind = PlayerAt(1.7F, {1.0F, 0.0F, 0.0F});
   behind.position.z = -1.0F;
   const std::vector<RemotePlayer> players{behind};
@@ -235,7 +131,7 @@ TEST_F(RendererSmokeTest, HidesAPlayerBehindTheScene) {
 }
 
 TEST_F(RendererSmokeTest, DrawsEveryPlayerOnceMoreArriveThanEverBefore) {
-  SetWorld();
+  SetWorld(*renderer_);
   const std::vector<RemotePlayer> one{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
   const std::vector<RemotePlayer> two{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F}), PlayerAt(-1.7F, {0.0F, 1.0F, 0.0F})};
   RenderFrames(one);
@@ -248,7 +144,7 @@ TEST_F(RendererSmokeTest, DrawsEveryPlayerOnceMoreArriveThanEverBefore) {
 }
 
 TEST_F(RendererSmokeTest, DrawsNoPlayersForAnEmptySpan) {
-  SetWorld();
+  SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
   RenderFrames(players);
 
@@ -260,7 +156,7 @@ TEST_F(RendererSmokeTest, DrawsNoPlayersForAnEmptySpan) {
 }
 
 TEST_F(RendererSmokeTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
-  SetWorld();
+  SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F}, "characters/unknown"),
                                           PlayerAt(-1.7F, {0.0F, 1.0F, 0.0F})};
 
@@ -272,7 +168,7 @@ TEST_F(RendererSmokeTest, SkipsAPlayerWhoseCharacterHasNoMesh) {
 }
 
 TEST_F(RendererSmokeTest, AddsATracersGlowToTheSceneBehindIt) {
-  SetWorld();
+  SetWorld(*renderer_);
   const CapturedFrame without = RenderFrames();
   const std::span<const std::uint8_t> scene = Pixel(without, kRightX, kCentreY);
   // Across the blue rectangle, a little in front of it, its head past it.
@@ -292,7 +188,7 @@ TEST_F(RendererSmokeTest, AddsATracersGlowToTheSceneBehindIt) {
 }
 
 TEST_F(RendererSmokeTest, DrawsTheCrosshairOverAPlayerAtTheFramesCentre) {
-  SetWorld();
+  SetWorld(*renderer_);
   const std::vector<RemotePlayer> players{PlayerAt(0.0F, {1.0F, 0.0F, 0.0F})};
 
   const CapturedFrame frame = RenderFrames(players, {}, {.crosshair = true, .hit_marker = false});
@@ -327,4 +223,4 @@ TEST_F(RendererSmokeTest, TearsDownSoThatAnotherRendererCanStart) {
 }
 
 }  // namespace
-}  // namespace augusta::renderer
+}  // namespace augusta::renderer::smoke_test

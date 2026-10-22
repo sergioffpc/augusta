@@ -556,39 +556,6 @@ TEST(ParseClientConfigTest, RejectsAnEmptyCharacter) {
   EXPECT_EQ(config.error().subject, "player.character");
 }
 
-#if AUGUSTA_DEBUG_TOOLS
-// The `debug` section exists only in a Development build (ADR-0074); a
-// Shipping build refuses it (shipping_config_test.cpp).
-TEST(ParseClientConfigTest, TheDebugHudIsOnByDefault) {
-  const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_TRUE(config->debug.hud);
-}
-
-TEST(ParseClientConfigTest, DebugHudFalseTurnsTheHudOff) {
-  const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
-      "k.pub\ndebug:\n  hud: false\n",
-      kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->debug.hud);
-}
-
-TEST(ParseClientConfigTest, RejectsADebugHudThatIsNotTrueOrFalse) {
-  const auto config = ParseClientConfig(
-      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
-      "k.pub\ndebug:\n  hud: maybe\n",
-      kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "debug.hud");
-}
-#endif
-
 TEST(ParseClientConfigTest, TheTickRateIsNotAClientKey) {
   // The server decides it and tells each client when it joins (ADR-0039), so
   // the client has no simulation section at all.

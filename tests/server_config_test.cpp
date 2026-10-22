@@ -115,36 +115,6 @@ TEST(ParseServerConfigTest, SimulationReenactmentsIsAnUnknownKey) {
   EXPECT_EQ(config.error().subject, "simulation.reenactments");
 }
 
-#if AUGUSTA_DEBUG_TOOLS
-// Requirements: US-21
-TEST(ParseServerConfigTest, TakesNoReenactmentsByDefault) {
-  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->reenactments);
-}
-
-// Requirements: US-21
-TEST(ParseServerConfigTest, ReadsWhetherReenactmentsAreTaken) {
-  const auto on = ParseServerConfig(ServerConfigWith("debug:\n  reenactments: true\n"), kFileDir);
-  const auto off = ParseServerConfig(ServerConfigWith("debug:\n  reenactments: false\n"), kFileDir);
-
-  ASSERT_TRUE(on.has_value());
-  EXPECT_TRUE(on->reenactments);
-  ASSERT_TRUE(off.has_value());
-  EXPECT_FALSE(off->reenactments);
-}
-
-TEST(ParseServerConfigTest, RejectsReenactmentsThatAreNeitherTrueNorFalse) {
-  const auto config = ParseServerConfig(ServerConfigWith("debug:\n  reenactments: yes\n"), kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "debug.reenactments");
-  EXPECT_EQ(DescribeServerConfigError(config.error()), "'debug.reenactments' must be true or false");
-}
-#endif
-
 // Requirements: US-21
 TEST(ParseServerConfigTest, ServesNoReplaysByDefault) {
   const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
@@ -197,18 +167,6 @@ TEST(ParseServerConfigTest, RejectsCapturingOnAReplayServer) {
   EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
   EXPECT_EQ(config.error().subject, "simulation.capture");
 }
-
-#if AUGUSTA_DEBUG_TOOLS
-// Nor any player to reenact.
-TEST(ParseServerConfigTest, RejectsReenactmentsOnAReplayServer) {
-  const auto config =
-      ParseServerConfig(ServerConfigWith("debug:\n  reenactments: true\nreplay:\n  captures: captures\n"), kFileDir);
-
-  ASSERT_FALSE(config.has_value());
-  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
-  EXPECT_EQ(config.error().subject, "debug.reenactments");
-}
-#endif
 
 TEST(ParseServerConfigTest, RejectsACaptureRetentionOnAReplayServer) {
   const auto config =

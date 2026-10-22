@@ -799,6 +799,9 @@ if(AUGUSTA_CLIENT)
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)
   target_include_directories(augusta_client_net_stats_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+  # NOMINMAX, as augusta_client_net_stats has it: net_stats.h's includes pull in
+  # <windows.h>, whose min/max macros would break the headers included after it.
+  target_compile_definitions(augusta_client_net_stats_tests PRIVATE NOMINMAX)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
@@ -902,14 +905,23 @@ if(AUGUSTA_CLIENT)
   gtest_discover_tests(augusta_client_window_tests)
 endif()
 
-# Which test executables a build's kind carries (ADR-0074), decided here: a debug
-# tool's tests only in a Development build, which carries the tool; in a
-# Shipping build, which carries none, the one test that the config readers
-# refuse a `debug` section. A debug tool's test cases inside an executable both
-# kinds build, such as the reenactments' in the Match, Session and server config
-# tests, are left out by `#if AUGUSTA_DEBUG_TOOLS` in their file instead.
+# Which tests a build's kind carries (ADR-0074), decided here and nowhere else:
+# a debug tool's tests only in a Development build, which carries the tool; in
+# a Shipping build, which carries none, the one test that the config readers
+# refuse a `debug` section. A debug tool's cases for a module both kinds test
+# sit in a file of their own, added to that module's test executable here, so
+# no test file leaves a case out by `#if AUGUSTA_DEBUG_TOOLS`.
 if(AUGUSTA_DEBUG_TOOLS)
-  # Each debug tool's tests go here.
+  target_sources(augusta_client_config_tests PRIVATE client_config_debug_test.cpp)
+  target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
+  target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
+  target_sources(augusta_session_tests PRIVATE session_reenactment_test.cpp)
+  if(TARGET augusta_client_net_stats_tests)
+    target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
+  endif()
+  if(TARGET augusta_client_renderer_smoke_tests)
+    target_sources(augusta_client_renderer_smoke_tests PRIVATE client_renderer_debug_hud_smoke_test.cpp)
+  endif()
 
   # What the DebugHud shows (augusta_hud), free of any GPU API.
   add_executable(augusta_hud_tests hud_test.cpp)
