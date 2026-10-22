@@ -450,8 +450,17 @@ jobs:
         # packs ctest loads, byte for byte, on either platform.
         working-directory: tools/pack
         run: uv run --locked --no-default-groups --group agent --group pack pytest
+      - name: Build the Agents' native module as a Shipping build
+        # The confinement job's Agents Join the image container-verify built,
+        # which is a Shipping build but on a push to develop (ADR-0074), and a
+        # Development build's +dev version is refused at Join. It overwrites
+        # the Development module, which the pytest steps above are done with.
+        if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/develop') }}
+        run: |
+          cmake --preset linux-shipping -DAUGUSTA_CLIENT=OFF "-DPYTHON_EXECUTABLE=$PWD/tools/.venv/bin/python"
+          cmake --build --preset linux-shipping --target augusta_agent_py
       - name: Upload the Agents' native module
-        # For the confinement job's Agents, built here with the rest.
+        # For the confinement job's Agents, of the image's kind.
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: agents-native
