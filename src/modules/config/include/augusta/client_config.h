@@ -59,7 +59,8 @@ struct ClientConfig {
   /// `input.keys` (control name -> key name, e.g. `sprint: Space`), both
   /// optional: how the player's controls respond and which key triggers each.
   /// Controls the section leaves out keep their input::kDefaultKeymap key; no
-  /// two controls may share a key, and none may use input::kReleaseCursorKey.
+  /// two controls may share a key, and none may use input::kReleaseCursorKey or
+  /// input::kReservedKey, in either kind of build (ADR-0074).
   /// An `input.keys` entry it rejects is a kInvalidEntry error, its subject the
   /// entry (`input.keys.jump`) and its reason what is wrong with it.
   input::Config input{};
