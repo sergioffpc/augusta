@@ -54,6 +54,7 @@
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
+#include "profiling_panel.h"
 #endif
 
 namespace augusta::client {
@@ -64,10 +65,16 @@ namespace {
 // The Debug index's entry for the Debug HUD, its first (`debug.hud`).
 constexpr std::string_view kDebugHudEntry = "hud";
 
+// The NVTX range, in the default domain, that `nsys profile
+// --capture-range=nvtx --nvtx-capture=augusta.capture` records alone.
+constexpr const char* kCaptureRange = "augusta.capture";
+
 // The Debug index's entries, in the `debug` section's fixed order, as config
-// starts them.
+// starts them: the Debug HUD, then each Debug panel, the Profiling panel's
+// (`debug.profiling.panel`) by its panel's id.
 std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
-  return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud}};
+  return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
+          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel}};
 }
 #endif
 
@@ -191,6 +198,10 @@ struct ClientRuntime::Impl {
   // until the client exits.
   debug::DebugInteraction debug_interaction{{.toggle = input::kReservedKey, .leave = input::kReleaseCursorKey}};
   debug::DebugIndex debug_index{DebugIndexEntries(config)};
+  // Main/Render thread only: the Profiling panel, after the Renderer, whose
+  // Aftermath status it shows, and the capture window it has open, if any.
+  ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
+  std::optional<nvtx3::unique_range> capture_range;
 
   std::optional<hud::NetStats> GetLatestHudNet() {
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
@@ -211,14 +222,38 @@ struct ClientRuntime::Impl {
   }
 
   // Main/Render thread only: the frame's Debug panels, the Debug index in
-  // Debug interaction only.
+  // Debug interaction only, then each panel the index has on, in or out of it.
   [[nodiscard]] debug::Panels DebugPanels() const {
     debug::Panels panels;
     if (debug_interaction.In()) {
       panels.push_back(debug_index.BuildPanel());
     }
+    if (debug_index.IsOn(kProfilingPanelId)) {
+      panels.push_back(profiling_panel.BuildPanel());
+    }
     return panels;
   }
+
+  // Main/Render thread only: opens or closes the capture window's NVTX range
+  // as the Profiling panel says.
+  void ApplyCaptureChange(CaptureChange change) {
+    switch (change) {
+      case CaptureChange::kNone:
+        break;
+      case CaptureChange::kOpens:
+        capture_range.emplace(kCaptureRange);
+        LOG_INFO("subsystem=clientruntime event=profiling_capture_opened");
+        break;
+      case CaptureChange::kCloses:
+        capture_range.reset();
+        LOG_INFO("subsystem=clientruntime event=profiling_capture_closed");
+        break;
+    }
+  }
+
+  // Main/Render thread only, once per frame after RenderFrame: the frame has
+  // ended for the Profiling panel's capture window.
+  void TickProfilingPanel() { ApplyCaptureChange(profiling_panel.Tick()); }
 
   // Main/Render thread only: routes each control event the last RenderFrame's
   // panels gave to the area whose panel it names.
@@ -226,6 +261,8 @@ struct ClientRuntime::Impl {
     for (const debug::ControlEvent& event : renderer.TakeDebugControlEvents()) {
       if (event.panel == debug::kDebugIndexPanelId) {
         debug_index.Update(event);
+      } else if (event.panel == kProfilingPanelId) {
+        ApplyCaptureChange(profiling_panel.Update(event));
       }
     }
   }
@@ -666,6 +703,9 @@ std::optional<failure::Failure> ClientRuntime::Run() {
     impl_->StageRenderFrame(frame_state);
     impl_->renderer.RenderFrame();
 #if AUGUSTA_DEBUG_TOOLS
+    // The frame ends before the events are routed: a window opened by them
+    // starts with the next frame.
+    impl_->TickProfilingPanel();
     impl_->RouteDebugControlEvents();
 #endif
   }

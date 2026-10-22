@@ -39,6 +39,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // The debug tools' keys, in a Development build only (ADR-0074): a
     // Shipping build refuses them as unknown.
     "debug.hud",
+    "debug.profiling.panel",
 #endif
 });
 
@@ -111,7 +112,13 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 #if AUGUSTA_DEBUG_TOOLS
 // The `debug` section (ADR-0074): which debug tools start on.
 std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
-  return OptionalFlag(values, "debug.hud", true).transform([](bool hud) { return ClientDebugConfig{.hud = hud}; });
+  const auto hud = OptionalFlag(values, "debug.hud", true);
+  if (!hud) {
+    return std::unexpected(hud.error());
+  }
+  return OptionalFlag(values, "debug.profiling.panel", false).transform([&hud](bool profiling_panel) {
+    return ClientDebugConfig{.hud = *hud, .profiling_panel = profiling_panel};
+  });
 }
 #endif
 

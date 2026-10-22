@@ -2,6 +2,7 @@
 #define AUGUSTA_RENDERER_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -39,8 +40,9 @@
 /// (SetDebugPanels), operated by the window's events the client Runtime hands
 /// it in Debug interaction (HandleDebugPanelInput), and their changes come
 /// back from their own call (TakeDebugControlEvents), not from RenderFrame;
-/// Dear ImGui, which draws them, stays inside the Renderer. A Shipping build
-/// (ADR-0074) has none of them.
+/// Dear ImGui, which draws them, stays inside the Renderer. It reports whether
+/// Aftermath watches its device (GpuCrashDumps). A Shipping build (ADR-0074)
+/// has none of them.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -89,6 +91,21 @@ struct CapturedFrame {
   std::uint32_t height = 0;
   std::vector<std::uint8_t> pixels;
 };
+
+#if AUGUSTA_DEBUG_TOOLS
+/// Whether Nsight Aftermath watches the GPU for crash dumps, and where one
+/// lands: what the Profiling Debug panel shows.
+struct GpuCrashDumpStatus {
+  /// Aftermath started: false in a build without its SDK, or without an NVIDIA
+  /// driver.
+  bool enabled = false;
+  /// The device has VK_NV_device_diagnostics_config, so a dump says what the
+  /// GPU was doing: false off an NVIDIA GPU, lavapipe's included.
+  bool attached = false;
+  /// The absolute directory the next dump lands in (gpu_crash_dump_files.h).
+  std::filesystem::path directory;
+};
+#endif
 
 /// One triangle-list mesh with its positions already in world space (Y-up,
 /// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
@@ -299,6 +316,10 @@ class Renderer {
   /// control: none for a greyed-out control. Cheap enough to call every frame,
   /// after RenderFrame. From the Main/Render thread.
   [[nodiscard]] std::vector<debug::ControlEvent> TakeDebugControlEvents();
+
+  /// Whether Aftermath watches this Renderer's device, and where a dump would
+  /// land now. From the Main/Render thread.
+  [[nodiscard]] GpuCrashDumpStatus GpuCrashDumps() const;
 #endif
 
  private:

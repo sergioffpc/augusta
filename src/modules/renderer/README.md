@@ -18,8 +18,10 @@ and under the overlay and the debug HUD (ADR-0075), and the Debug panels it is
 handed each frame (`SetDebugPanels`) over everything, through Dear ImGui, which
 it feeds the window's events the client runtime hands it in Debug interaction
 (`HandleDebugPanelInput`) and whose control changes it hands back as debug's
-events (`TakeDebugControlEvents`). A Shipping build compiles none of them: no
-HUD, panels or shapes pass, no ImGui, no embedded font and no debug (ADR-0074).
+events (`TakeDebugControlEvents`), and it reports whether Aftermath watches its
+device and where a dump would land (`GpuCrashDumps`), for the Profiling Debug
+panel. A Shipping build compiles none of them: no HUD, panels or shapes pass, no
+ImGui, no embedded font and no debug (ADR-0074).
 
 ## Not its responsibility
 
