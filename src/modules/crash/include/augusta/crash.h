@@ -28,38 +28,42 @@ inline constexpr std::size_t kLineCapacity = 512;
 /// One crash log line, newline included; a longer one is cut to fit.
 using Line = std::array<char, kLineCapacity>;
 
+// Each line below ends in context, the log's context fields as every other
+// line ends in them (logging::CopyContext): ` run=<id> session=<id>
+// match=<id>`, those that are set, or nothing.
+
 /// Writes into line `<time> CRITICAL subsystem=<subsystem> event=crash
 /// signal=<name>`, the signal's name (SIGSEGV) or, for one without, its number,
-/// then ` core="<core>"` and ` run=<run_id>` for each not empty. time is from
-/// the epoch to the year 9999. Async-signal-safe. Returns the line written.
+/// then ` core="<core>"` when it is not empty, then context. time is from the
+/// epoch to the year 9999. Async-signal-safe. Returns the line written.
 std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal,
-                                  std::string_view core = {}, std::string_view run_id = {});
+                                  std::string_view core = {}, std::string_view context = {});
 
 /// Writes into line the frame at index of a crash's stack:
 /// `... event=crash_frame index=<index> pc=0x<pc> symbol="<symbol>"`, without
-/// symbol when it is nullptr (unresolved), then ` run=<run_id>` when it is not
-/// empty. A symbol too long for the line is cut, still quoted. Async-signal-safe.
+/// symbol when it is nullptr (unresolved), then context. A symbol too long for
+/// the line is cut, still quoted, the context kept whole. Async-signal-safe.
 /// Returns the line written.
 std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
-                                 std::uintptr_t pc, const char* symbol, std::string_view run_id = {});
+                                 std::uintptr_t pc, const char* symbol, std::string_view context = {});
 
 /// Writes into line the frame at index of a Windows crash's stack:
 /// `... event=crash_frame index=<index> pc=0x<pc> module="<module>"
 /// offset=0x<offset>`, the file name of the module pc is in and pc's offset
 /// into it, without either when module is nullptr (no module holds pc), then
-/// ` run=<run_id>` when it is not empty. The release's PDB symbolizes it later
-/// (ADR-0055). A module too long for the line is cut, still quoted, its offset
-/// and the Run kept whole. Async-signal-safe. Returns the line written.
+/// context. The release's PDB symbolizes it later (ADR-0055). A module too long
+/// for the line is cut, still quoted, its offset and the context kept whole.
+/// Async-signal-safe. Returns the line written.
 std::string_view FormatModuleFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
                                        std::uintptr_t pc, const char* module, std::uintptr_t offset,
-                                       std::string_view run_id = {});
+                                       std::string_view context = {});
 
 /// Writes into line `<time> CRITICAL subsystem=<subsystem> event=crash
 /// exception=0x<code>`, the unhandled Windows exception's code in lowercase
 /// hexadecimal, eight digits (0xc0000005 for an access violation), then
-/// ` run=<run_id>` when it is not empty. Returns the line written.
+/// context. Returns the line written.
 std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time,
-                                     std::uint32_t code, std::string_view run_id = {});
+                                     std::uint32_t code, std::string_view context = {});
 
 /// The type of the minidump's user stream that holds the Run ID, in its
 /// canonical form with no terminator: above the stream types dbghelp reserves
@@ -73,8 +77,9 @@ struct Settings {
   /// the client's `dumps/augustac-<run-id>.dmp` (ADR-0055). None on Linux,
   /// where the kernel keeps the core.
   std::optional<std::filesystem::path> minidump_file;
-  /// The Run's ID, in its canonical form, which every crash line then ends in
-  /// as `run=<id>`, where the log's context puts it (ADR-0029).
+  /// The Run's ID, in its canonical form, which the Windows minidump holds in
+  /// its kRunIdStreamType user stream. The lines' `run=` is the log's context's
+  /// (logging::SetContext), as on every other line.
   std::optional<std::string> run_id;
   /// The Run's log file, which the crash lines then reach as well as stdout,
   /// appended to. Opened by Install, since the handler cannot open it.
@@ -85,7 +90,8 @@ struct Settings {
 };
 
 /// Makes a fatal signal (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT) write its
-/// crash lines, naming subsystem, to stdout and to the settings' log file,
+/// crash lines, naming subsystem and ending in the log's context as it is at
+/// the crash (logging::CopyContext), to stdout and to the settings' log file,
 /// then end the process as it would have, core dump included; on Linux it also
 /// raises the core size limit to the hard limit. On Windows a crash is an
 /// exception no handler took, in any thread, which an unhandled-exception

@@ -7,11 +7,11 @@
 #include <string>
 #include <vector>
 
-#include "augusta/config.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/hardware.h"
 #include "augusta/logging.h"
 #include "augusta/run_files.h"
+#include "augusta/utf8.h"
 #include "augusta/uuid.h"
 #include "augusta/version.h"
 
@@ -19,19 +19,13 @@ namespace augusta::client {
 
 namespace {
 
-// path in UTF-8, which, unlike path.string() on Windows, never throws for a
-// character the code page lacks.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.u8string();
-  return {utf8.begin(), utf8.end()};
-}
-
 // Adds the Run's log file as a second sink and returns it, or warns why it
 // could not.
 std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& directory, const uuid::Uuid& run_id) {
   std::filesystem::path file = LogPath(directory, run_id);
   if (auto added = logging::AddFileSink(file); !added) {
-    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", Utf8(file), added.error());
+    LOG_WARN("subsystem=client event=log_file_unavailable path=\"{}\" reason=\"{}\"", utf8::FromPath(file),
+             logging::DescribeFileSinkError(added.error()));
     return std::nullopt;
   }
   return file;
@@ -41,16 +35,16 @@ std::optional<std::filesystem::path> StartLogFile(const std::filesystem::path& d
 // could not.
 void PruneOldRuns(const std::filesystem::path& directory) {
   for (const UndeletedFile& file : PruneRuns(directory, kKeptRuns)) {
-    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", Utf8(file.path), file.reason);
+    LOG_WARN("subsystem=client event=run_file_undeleted path=\"{}\" reason=\"{}\"", utf8::FromPath(file.path),
+             file.reason.message());
   }
 }
 
 }  // namespace
 
-Run BeginRun() {
+Run BeginRun(const std::optional<std::filesystem::path>& directory) {
   Run run{.id = uuid::Generate(), .log_file = std::nullopt, .minidump_file = std::nullopt};
   logging::SetContext(logging::ContextField::kRun, run.id.ToString());
-  const auto directory = config::ExecutableDirectory();
   if (directory) {
     run.log_file = StartLogFile(*directory, run.id);
     run.minidump_file = MinidumpPath(*directory, run.id);
@@ -61,11 +55,14 @@ Run BeginRun() {
   }
   LOG_INFO("subsystem=client event=starting version={} {}", EngineVersion(), DescribeBuild());
   LOG_INFO("subsystem=client event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+  return run;
+}
+
+void ReportAndPruneRuns(const std::optional<std::filesystem::path>& directory, const uuid::Uuid& current) {
   if (directory) {
-    ReportPreviousRun(*directory, run.id);
+    ReportPreviousRun(*directory, current);
     PruneOldRuns(*directory);
   }
-  return run;
 }
 
 void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid& current) {
@@ -86,7 +83,7 @@ void ReportPreviousRun(const std::filesystem::path& directory, const uuid::Uuid&
     files += (files.empty() ? "" : " ") + name;
   }
   LOG_WARN("subsystem=client event=previous_run_crashed crashed_run={} directory=\"{}\" files=\"{}\"", previous->id,
-           Utf8(directory), files);
+           utf8::FromPath(directory), files);
 }
 
 SessionLogContext::SessionLogContext(const uuid::Uuid& session) {
@@ -94,5 +91,15 @@ SessionLogContext::SessionLogContext(const uuid::Uuid& session) {
 }
 
 SessionLogContext::~SessionLogContext() { logging::ClearContext(logging::ContextField::kSession); }
+
+MatchLogContext::~MatchLogContext() { logging::ClearContext(logging::ContextField::kMatch); }
+
+void MatchLogContext::Hold(const uuid::Uuid& match) {
+  if (match == uuid::kNil) {
+    logging::ClearContext(logging::ContextField::kMatch);
+  } else {
+    logging::SetContext(logging::ContextField::kMatch, match.ToString());
+  }
+}
 
 }  // namespace augusta::client

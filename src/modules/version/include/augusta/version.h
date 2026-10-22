@@ -7,7 +7,9 @@
 /// \file
 /// The engine's version, shared by both executables: each prints it for
 /// `--version` and logs it at startup, a client presents it when it joins, and
-/// the server admits only clients of its own version.
+/// the server admits only clients of its own version. And which build of it is
+/// running, what ties a Crash dump of the executable to that build's symbols:
+/// its PDB's GUID and age on Windows, its GNU build ID on Linux (ADR-0055).
 namespace augusta {
 
 /// The engine's semantic version, tracked by hand until releases exist (see

@@ -1356,9 +1356,11 @@ class LoopbackMatch : public ::testing::Test {
   // Connects a new client and runs the network until the server has answered
   // it, admitted or not. The client's own stamina rules are none: any it uses
   // came from the server.
-  Session& Connect() {
-    sessions_.push_back(
-        std::make_unique<Session>(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kFloorY)));
+  Session& Connect() { return Connect(TestSessionConfig(host_.ListenEndpoint())); }
+
+  // Connect, with config in place of the test's own.
+  Session& Connect(const SessionConfig& config) {
+    sessions_.push_back(std::make_unique<Session>(config, WorldWithFloorAt(kFloorY)));
     Session& client = *sessions_.back();
     client.Connect();
     ExchangeUntil(host_, Pointers(sessions_), [&] {
@@ -1979,26 +1981,44 @@ TEST_F(MatchCycleTest, TheServersMatchLinesNameTheMatchIdAndItsStartLineEveryPla
   EXPECT_NE(log.find("subsystem=serverruntime event=match_ended match=" + match), std::string::npos) << log;
 }
 
-// The client's logging context holds the Match while it is on (ADR-0029).
-TEST_F(MatchCycleTest, DuringAMatchEveryLineTheClientWritesCarriesItsMatchIdAndAfterMatchEndNoneDoes) {
+// A Session tells its owner of its Match (SessionConfig::on_match), which the
+// client holds in its logging context (ADR-0029): the Match ID at Match start,
+// the nil ID at Match end.
+TEST_F(MatchCycleTest, ASessionTellsItsOwnerOfItsMatchAtItsStartAndOfNoneAtItsEnd) {
+  std::vector<augusta::uuid::Uuid> told;
+  SessionConfig config = TestSessionConfig(host_.ListenEndpoint());
+  config.on_match = [&told](const augusta::uuid::Uuid& match) { told.push_back(match); };
+  Session& client = Connect(config);
+  ASSERT_TRUE(client.GetServerView()->accepted.has_value());
+  Join();
+  ASSERT_TRUE(StartMatch());
+  const augusta::uuid::Uuid match = client.GetServerView()->match_start->match;
+
+  ASSERT_TRUE(EndMatchIntoTheLobby(host_, All()));
+
+  EXPECT_NE(match, augusta::uuid::kNil);
+  EXPECT_EQ(told, (std::vector<augusta::uuid::Uuid>{match, augusta::uuid::kNil}));
+}
+
+// A Session outside the client, as each of the Agent's many is, sets no Match
+// in the process-wide logging context: its Match is told to no one, so another
+// Session's lines never carry it.
+TEST_F(MatchCycleTest, ASessionWithNoOwnerToTellPutsNoMatchInTheLogContext) {
   augusta::logging::Init();
+  augusta::logging::SetLogLevel(augusta::logging::Severity::kInfo);
   Session& client = Join();
   Join();
   ASSERT_TRUE(StartMatch());
-  const std::string match = client.GetServerView()->match_start->match.ToString();
 
   testing::internal::CaptureStdout();
   LOG_INFO("subsystem=test event=in_match");
   const std::string in_match = testing::internal::GetCapturedStdout();
-  const bool ended = EndMatchIntoTheLobby(host_, All());
-  testing::internal::CaptureStdout();
-  LOG_INFO("subsystem=test event=in_lobby");
-  const std::string in_lobby = testing::internal::GetCapturedStdout();
 
-  ASSERT_TRUE(ended);
-  EXPECT_NE(in_match.find("event=in_match match=" + match), std::string::npos) << in_match;
-  EXPECT_NE(in_lobby.find("event=in_lobby"), std::string::npos) << in_lobby;
-  EXPECT_EQ(in_lobby.find("match="), std::string::npos) << in_lobby;
+  // In a Match that has an ID to name.
+  ASSERT_TRUE(client.GetServerView()->in_match);
+  ASSERT_NE(client.GetServerView()->match_start->match, augusta::uuid::kNil);
+  EXPECT_NE(in_match.find("event=in_match"), std::string::npos) << in_match;
+  EXPECT_EQ(in_match.find("match="), std::string::npos) << in_match;
 }
 
 // Requirements: US-14

@@ -8,6 +8,10 @@ add_executable(augusta_logging_tests logging_test.cpp)
 target_link_libraries(augusta_logging_tests PRIVATE augusta_logging GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_logging_tests)
 
+add_executable(augusta_utf8_tests utf8_test.cpp)
+target_link_libraries(augusta_utf8_tests PRIVATE augusta_utf8 GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_utf8_tests)
+
 add_executable(augusta_uuid_tests uuid_test.cpp)
 target_link_libraries(augusta_uuid_tests PRIVATE augusta_uuid GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_uuid_tests)
@@ -780,7 +784,6 @@ if(AUGUSTA_CLIENT)
     PRIVATE
       augusta_client_run
       augusta_client_run_files
-      augusta_config
       augusta_logging
       augusta_renderer_gpu_crash_dump_files
       GTest::gtest

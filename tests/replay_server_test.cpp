@@ -468,10 +468,14 @@ TEST_F(ReplayServerTest, AReplayListRequestIsAnsweredWithEveryCaptureItReplaysTh
 // A name is matched against the listing, never opened as a path (ADR-0051).
 // Requirements: US-21
 TEST_F(ReplayServerTest, AReplayRequestNamingAnythingNotInTheListingIsRefused) {
-  const std::string name = CaptureAKill(directory_.Path());
-  if (name.empty()) {
+  const std::string captured = CaptureAKill(directory_.Path());
+  if (captured.empty()) {
     return;  // CaptureAKill reported the missing capture.
   }
+  // Under a shorter name than a live server's, so that every path around it
+  // still fits in a Replay request.
+  const std::string name = CaptureNamed("kill");
+  std::filesystem::rename(directory_.Path() / captured, directory_.Path() / name);
   std::filesystem::create_directories(directory_.Path() / "inner");
   std::filesystem::copy_file(directory_.Path() / name, directory_.Path() / "inner" / name);
   const std::unique_ptr<ReplayServer> server = Serve();

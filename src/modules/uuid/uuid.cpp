@@ -18,8 +18,7 @@ namespace {
 
 constexpr std::string_view kHexDigits = "0123456789abcdef";
 
-// The canonical form's length, and where its hyphens fall (RFC 9562, 4).
-constexpr std::size_t kTextLength = 36;
+// Where the canonical form's hyphens fall (RFC 9562, 4).
 constexpr std::array<std::size_t, 4> kHyphens{8, 13, 18, 23};
 
 // A hex digit's value past 9 counts from 10, and a byte's low digit is its low

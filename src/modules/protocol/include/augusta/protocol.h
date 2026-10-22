@@ -513,9 +513,8 @@ struct DeathWire {
 };
 
 /// Longest Match capture name a Replay message may carry, in bytes: a
-/// capture's file name (host::CaptureFileName's) is 61 of them, so a name with
-/// a path around it still fits, and is refused as no name the server lists.
-inline constexpr std::size_t kMaxCaptureNameLength = 128;
+/// capture's file name (host::CaptureFileName's) is 61 of them.
+inline constexpr std::size_t kMaxCaptureNameLength = 64;
 
 /// The most captures a Replay list names.
 inline constexpr std::size_t kMaxReplayListings = 255;

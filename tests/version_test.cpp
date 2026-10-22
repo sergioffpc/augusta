@@ -11,6 +11,7 @@ TEST(EngineVersion, IsNotEmpty) { EXPECT_FALSE(augusta::EngineVersion().empty())
 // PDB's GUID and age, which a Debug build links this test with (a Release one
 // only augustac, ADR-0055); on Linux its build ID, which only the executables
 // are linked with (cmake/AugustaDebugInfo.cmake).
+// Requirements: NFR-10
 TEST(BuildIdentity, NamesWhatMatchesTheRunningExecutableToItsSymbols) {
   const std::string described = augusta::DescribeBuild();
 #ifdef _WIN32

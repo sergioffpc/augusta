@@ -705,7 +705,8 @@ Measure:     Every such crash leaves a crash line and one line per frame in
              ADR-0029's format, a core or minidump, and debug info whose build
              ID, or PDB whose GUID and age, matches the binary, kept as long as
              the image or the release. The client's lines end in the Run's
-             run=, end the Run's log file; the Linux crash line names
+             run= and, while set, its session= and match=, end the Run's log
+             file; the Linux crash line names
              coredumpctl as where the core is, and the Windows client's
              minidump is dumps/augustac-<run-id>.dmp, holding the Run ID in a
              user stream

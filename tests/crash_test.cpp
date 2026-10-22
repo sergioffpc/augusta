@@ -74,17 +74,17 @@ TEST(CrashFormat, LinesNameTheSubsystemTheyAreGiven) {
 // The client's crash lines end in the Run's run=, as its context gives every
 // other line (ADR-0029), and its crash line says where the core is.
 // Requirements: NFR-10
-TEST(CrashFormat, ClientLinesNameTheCoreAndTheRun) {
+TEST(CrashFormat, ClientLinesNameTheCoreAndEndInTheLogsContext) {
   Line line{};
-  constexpr std::string_view kRun = "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f";
-  EXPECT_EQ(FormatSignalLine(line, "client", kFixedTime, SIGSEGV, "coredumpctl dump augustac", kRun),
+  constexpr std::string_view kContext = " run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f session=s1 match=m1";
+  EXPECT_EQ(FormatSignalLine(line, "client", kFixedTime, SIGSEGV, "coredumpctl dump augustac", kContext),
             LoggedLine(kFixedTime,
                        "subsystem=client event=crash signal=SIGSEGV core=\"coredumpctl dump augustac\" "
-                       "run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
-  EXPECT_EQ(FormatFrameLine(line, "client", kFixedTime, 2, 0x30U, "main", kRun),
+                       "run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f session=s1 match=m1"));
+  EXPECT_EQ(FormatFrameLine(line, "client", kFixedTime, 2, 0x30U, "main", kContext),
             LoggedLine(kFixedTime,
                        "subsystem=client event=crash_frame index=2 pc=0x30 symbol=\"main\" "
-                       "run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
+                       "run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f session=s1 match=m1"));
 }
 
 // Requirements: NFR-10
@@ -117,7 +117,7 @@ TEST(CrashFormat, QuotesAndBackslashesInASymbolAreEscaped) {
 TEST(CrashFormat, WindowsFrameLineNamesModuleAndOffset) {
   Line line{};
   EXPECT_EQ(FormatModuleFrameLine(line, "client", kFixedTime, 4, 0x7ff6a0011a2bU, "augustac.exe", 0x11a2bU,
-                                  "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
+                                  " run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
             LoggedLine(kFixedTime,
                        "subsystem=client event=crash_frame index=4 pc=0x7ff6a0011a2b module=\"augustac.exe\" "
                        "offset=0x11a2b run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
@@ -135,7 +135,7 @@ TEST(CrashFormat, ModuleTooLongForTheLineKeepsOffsetAndRunWhole) {
   Line line{};
   const std::string module(line.size() * 2, 'm');
   const std::string_view written = FormatModuleFrameLine(line, "client", kFixedTime, 0, 0x10U, module.c_str(), 0x20U,
-                                                         "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
+                                                         " run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
   EXPECT_EQ(written.size(), line.size());
   EXPECT_TRUE(written.ends_with("mm\" offset=0x20 run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f\n")) << written;
 }
@@ -144,7 +144,7 @@ TEST(CrashFormat, ModuleTooLongForTheLineKeepsOffsetAndRunWhole) {
 // Requirements: NFR-10
 TEST(CrashFormat, ExceptionLineNamesItsCode) {
   Line line{};
-  EXPECT_EQ(FormatExceptionLine(line, "client", kFixedTime, 0xC0000005U, "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
+  EXPECT_EQ(FormatExceptionLine(line, "client", kFixedTime, 0xC0000005U, " run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"),
             LoggedLine(kFixedTime,
                        "subsystem=client event=crash exception=0xc0000005 run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f"));
 }
@@ -162,8 +162,8 @@ TEST(CrashFormat, SymbolTooLongForTheLineIsCutButStillClosed) {
 TEST(CrashFormat, SymbolTooLongForTheLineKeepsTheRunWhole) {
   Line line{};
   const std::string symbol(line.size() * 2, 'x');
-  const std::string_view written =
-      FormatFrameLine(line, "client", kFixedTime, 0, 0x10U, symbol.c_str(), "0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
+  const std::string_view written = FormatFrameLine(line, "client", kFixedTime, 0, 0x10U, symbol.c_str(),
+                                                   " run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f");
   EXPECT_EQ(written.size(), line.size());
   EXPECT_TRUE(written.ends_with("xx\" run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f\n"));
 }
@@ -190,7 +190,8 @@ constexpr std::string_view kCrashEvent = "event=crash signal=SIGSEGV";
 
 // The handler writes where the log sink does, stdout; a death test reads
 // stderr, so the dying child points one at the other first. Installed as
-// subsystem with settings, then crashes by crash.
+// subsystem with settings, then crashes by crash. Given a Run, its ID is in the
+// log's context first, as the client's BeginRun puts it.
 void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::crash::Settings settings = {},
                              void (*crash)() = Crash) {
 #ifdef _WIN32
@@ -198,6 +199,9 @@ void CrashWithStdoutOnStderr(std::string_view subsystem = kServer, augusta::cras
 #else
   dup2(STDERR_FILENO, STDOUT_FILENO);
 #endif
+  if (settings.run_id) {
+    augusta::logging::SetContext(augusta::logging::ContextField::kRun, *settings.run_id);
+  }
   augusta::crash::Install("augusta_crash_tests", subsystem, std::move(settings));
   crash();
 }
@@ -240,6 +244,33 @@ TEST(CrashHandlerDeathTest, FatalSignalLogsTheStack) {
 TEST(CrashHandlerDeathTest, AbortIsLoggedBeforeTheProcessDies) {
   EXPECT_DEATH(CrashWithStdoutOnStderr(kServer, {}, [] { std::abort(); }),
                "CRITICAL subsystem=server event=crash signal=SIGABRT");
+}
+
+// A client's crash lines end in every field of the log's context, as its
+// other lines do (ADR-0029), so a crash maps to its Session and Match.
+// Requirements: NFR-10
+TEST(CrashHandlerDeathTest, ACrashsLinesEndInTheLogsContext) {
+  const std::filesystem::path log = EmptyDirectory("ACrashsLinesEndInTheLogsContext") / "run.log";
+
+  EXPECT_DEATH(
+      {
+        augusta::logging::SetContext(augusta::logging::ContextField::kSession, "0190f2a4-1b2c-7d3e-8f40-000000000001");
+        augusta::logging::SetContext(augusta::logging::ContextField::kMatch, "0190f2a4-1b2c-7d3e-8f40-000000000002");
+        CrashWithStdoutOnStderr("client", {.minidump_file = std::nullopt,
+                                           .run_id = std::string(kRunId),
+                                           .log_file = log,
+                                           .core_location = std::nullopt});
+      },
+      std::string(kCrashEvent));
+
+  const std::vector<std::string> lines = ReadLines(log);
+  ASSERT_GE(lines.size(), 2U);
+  for (const std::string& line : lines) {
+    EXPECT_TRUE(
+        line.ends_with(" run=0190f2a4-1b2c-7d3e-8f40-5a6b7c8d9e0f session=0190f2a4-1b2c-7d3e-8f40-000000000001 "
+                       "match=0190f2a4-1b2c-7d3e-8f40-000000000002"))
+        << line;
+  }
 }
 
 #ifdef _WIN32

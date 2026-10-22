@@ -30,9 +30,9 @@
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
+#include "augusta/utf8.h"
 #include "augusta/version.h"
 #include "host_impl.h"
-#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -51,10 +51,10 @@ std::unique_ptr<Capturer> BuildCapturer(const HostConfig& config, const assets::
   if (error) {
     throw failure::ClassifiedFailure(
         failure::Failure{.code = failure::Code::kInvalidConfiguration,
-                         .context = {{.key = "directory", .value = Utf8(config.capture_directory)}},
+                         .context = {{.key = "directory", .value = utf8::FromPath(config.capture_directory)}},
                          .detail = error.message()});
   }
-  LOG_INFO("subsystem=capture event=capture_enabled directory={} mode={}", Utf8(config.capture_directory),
+  LOG_INFO("subsystem=capture event=capture_enabled directory={} mode={}", utf8::FromPath(config.capture_directory),
            CaptureModeName(config.capture_mode));
   observer.SetRetention(config.capture_retention);
   return std::make_unique<Capturer>(config.capture_directory,

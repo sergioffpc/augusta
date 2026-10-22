@@ -65,7 +65,7 @@ struct Session::Impl {
                                      .run = config.run};
         })),
         channel(config.faults),
-        inbox(config.replay.has_value()),
+        inbox(config.replay.has_value(), config.on_match),
         commands(std::move(world)) {}
 
   // Whether either failure has been recorded, taken or not: the runtime has

@@ -3,13 +3,16 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
+#include "augusta/uuid.h"
 #include "pending.h"
 
 /// \file
@@ -18,17 +21,18 @@
 /// out, or a state of a body not in the match, is dropped as a malformed message
 /// is), and kept, either in the ServerView it publishes or, for what is handed
 /// out once, until it is taken. No connection of its own: Session hands it each
-/// message the Link received. It holds the Match in progress in the logging
-/// context (ADR-0029) from its Match start to its Match end, or until the Inbox
-/// goes. Private to the harness module.
+/// message the Link received. It tells the Session's owner of each Match start
+/// and Match end it takes (SessionConfig::on_match). Private to the harness
+/// module.
 namespace augusta::harness {
 
 /// The server's messages, as a Session reads them.
 class Inbox {
  public:
   /// viewer: whether the Session is a Replay viewer (ADR-0051), which is in
-  /// no Match start it is sent.
-  explicit Inbox(bool viewer = false) : viewer_(viewer) {}
+  /// no Match start it is sent. on_match: SessionConfig::on_match, or null.
+  explicit Inbox(bool viewer = false, std::function<void(const uuid::Uuid& match)> on_match = nullptr)
+      : viewer_(viewer), on_match_(std::move(on_match)) {}
 
   /// Not copyable or movable: the view and the pending events are shared with
   /// the threads that read them.
@@ -36,7 +40,7 @@ class Inbox {
   Inbox& operator=(const Inbox&) = delete;
   Inbox(Inbox&&) = delete;
   Inbox& operator=(Inbox&&) = delete;
-  ~Inbox();
+  ~Inbox() = default;
 
   /// Takes in one message the server sent. Network I/O thread only: it alone
   /// publishes the view.
@@ -75,8 +79,8 @@ class Inbox {
   }
 
   const bool viewer_;
-  // Whether the logging context holds this Inbox's Match. Network I/O thread only.
-  bool match_in_context_ = false;
+  // Network I/O thread only.
+  const std::function<void(const uuid::Uuid& match)> on_match_;
   // The published view, swapped whole under view_mutex_ and copied out under it:
   // libc++ has no std::atomic<std::shared_ptr>.
   mutable std::mutex view_mutex_;

@@ -34,8 +34,8 @@
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/tick.h"
+#include "augusta/utf8.h"
 #include "augusta/uuid.h"
-#include "utf8_path.h"
 
 namespace augusta::host {
 
@@ -352,17 +352,17 @@ class Capturer::Writer {
   // Makes room in the directory for the magic and the header, then creates
   // the file with them.
   std::optional<Failed> OpenFile(const Item& item) {
-    if (!directory_.Open(item.match, Utf8(item.path.filename()), item.encoded->SizeOnDisk())) {
+    if (!directory_.Open(item.match, utf8::FromPath(item.path.filename()), item.encoded->SizeOnDisk())) {
       return Failed{.step = CaptureStep::kRetentionBudget, .detail = {}};
     }
     file_ = std::ofstream(item.path, std::ios::binary | std::ios::trunc);
     if (!file_) {
-      return Failed{.step = CaptureStep::kCreate, .detail = Utf8(item.path)};
+      return Failed{.step = CaptureStep::kCreate, .detail = utf8::FromPath(item.path)};
     }
     file_match_ = item.match;
     path_ = item.path;
     records_ = 0;
-    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, Utf8(path_));
+    LOG_INFO("subsystem=capture event=capture_started match={} path={}", item.match, utf8::FromPath(path_));
     observer_->OnStarted();
     return Write(*item.encoded);
   }
@@ -388,7 +388,7 @@ class Capturer::Writer {
     }
     capture::Write(file_, encoded);
     if (!file_) {
-      return Failed{.step = CaptureStep::kWrite, .detail = Utf8(path_)};
+      return Failed{.step = CaptureStep::kWrite, .detail = utf8::FromPath(path_)};
     }
     if (std::optional<std::string> fault = Trip(failure::Site::kCaptureFlush)) {
       file_.setstate(std::ios::badbit);
@@ -396,7 +396,7 @@ class Capturer::Writer {
     }
     file_.flush();
     if (!file_) {
-      return Failed{.step = CaptureStep::kFlush, .detail = Utf8(path_)};
+      return Failed{.step = CaptureStep::kFlush, .detail = utf8::FromPath(path_)};
     }
     ++records_;
     observer_->OnWritten(encoded.SizeOnDisk());
@@ -417,7 +417,8 @@ class Capturer::Writer {
     file_match_ = uuid::kNil;
     // A capture that stopped said so once already.
     if (!stopped) {
-      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, Utf8(path_), records_);
+      LOG_INFO("subsystem=capture event=capture_completed match={} path={} records={}", match, utf8::FromPath(path_),
+               records_);
       observer_->OnCompleted();
     }
   }

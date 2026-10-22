@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/utf8.h"
 #include "augusta/uuid.h"
 
 namespace augusta::client {
@@ -29,18 +30,9 @@ constexpr std::string_view kPrefix = "augustac-";
 constexpr std::string_view kLogExtension = ".log";
 constexpr std::string_view kMinidumpExtension = ".dmp";
 constexpr std::string_view kGpuDumpExtension = ".nv-gpudmp";
-// The canonical form's length, which uuid::Parse alone accepts.
-constexpr std::size_t kRunIdLength = 36;
 // How much of a log's end ReadRunEnd reads: a last line longer than this is
 // not one it classifies, and no crash or terminal line is.
 constexpr std::streamoff kTailBytes = 64 * 1024;
-
-// path's file name in UTF-8, which, unlike path.string() on Windows, never
-// throws for a character the code page lacks.
-std::string FileName(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.filename().u8string();
-  return {utf8.begin(), utf8.end()};
-}
 
 // The Run ID name starts with after kPrefix, and what follows it, or nullopt.
 struct NamedRun {
@@ -49,14 +41,14 @@ struct NamedRun {
 };
 
 std::optional<NamedRun> SplitName(std::string_view name) {
-  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + kRunIdLength) {
+  if (!name.starts_with(kPrefix) || name.size() < kPrefix.size() + uuid::kTextLength) {
     return std::nullopt;
   }
-  const auto run = uuid::Parse(name.substr(kPrefix.size(), kRunIdLength));
+  const auto run = uuid::Parse(name.substr(kPrefix.size(), uuid::kTextLength));
   if (!run) {
     return std::nullopt;
   }
-  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + kRunIdLength)};
+  return NamedRun{.run = *run, .rest = name.substr(kPrefix.size() + uuid::kTextLength)};
 }
 
 // The Run a log's name names, if it is one LogPath makes.
@@ -94,7 +86,7 @@ std::map<uuid::Uuid, std::vector<std::filesystem::path>> ScanRuns(const std::fil
       if (!it->is_regular_file(status_error)) {
         continue;
       }
-      if (const auto run = run_of(FileName(it->path()))) {
+      if (const auto run = run_of(utf8::FromPath(it->path().filename()))) {
         runs[*run].push_back(it->path());
       }
     }
@@ -173,7 +165,7 @@ std::vector<UndeletedFile> PruneRuns(const std::filesystem::path& directory, std
     for (const auto& file : run->second) {
       std::error_code error;
       if (!std::filesystem::remove(file, error) && error) {
-        undeleted.push_back({.path = file, .reason = error.message()});
+        undeleted.push_back({.path = file, .reason = error});
       }
     }
   }

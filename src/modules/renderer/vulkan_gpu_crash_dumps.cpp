@@ -19,6 +19,7 @@
 
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
+#include "augusta/utf8.h"
 #include "augusta/version.h"
 
 #endif
@@ -44,13 +45,6 @@ std::filesystem::path ExecutablePath() {
   return {executable.native()};
 }
 
-// path in UTF-8, which, unlike path.string() on Windows, never throws for a
-// character the code page lacks: Aftermath's callbacks must not throw.
-std::string Utf8(const std::filesystem::path& path) {
-  const std::u8string utf8 = path.u8string();
-  return {utf8.begin(), utf8.end()};
-}
-
 // Writes a dump where the process's GPU crash dumps are named
 // (gpu_crash_dump_files.h): a fault can be reported more than once. Logged as a
 // warning, not an error: the device lost is thrown, and the boundary that
@@ -58,14 +52,14 @@ std::string Utf8(const std::filesystem::path& path) {
 void WriteDump(const void* dump, std::uint32_t size, void* /*user_data*/) {
   const auto written = WriteGpuCrashDump(std::span(static_cast<const std::byte*>(dump), size));
   if (!written) {
-    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", Utf8(written.error()));
+    LOG_WARN("subsystem=renderer event=gpu_crash_dump_failed path=\"{}\"", utf8::FromPath(written.error()));
     return;
   }
-  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", Utf8(*written));
+  LOG_WARN("subsystem=renderer event=gpu_crash_dump path=\"{}\"", utf8::FromPath(*written));
 }
 
 void DescribeDump(PFN_GFSDK_Aftermath_AddGpuCrashDumpDescription add, void* /*user_data*/) {
-  add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, Utf8(ExecutablePath().stem()).c_str());
+  add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationName, utf8::FromPath(ExecutablePath().stem()).c_str());
   add(GFSDK_Aftermath_GpuCrashDumpDescriptionKey_ApplicationVersion, std::string(EngineVersion()).c_str());
 }
 

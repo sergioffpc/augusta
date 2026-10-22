@@ -85,7 +85,7 @@ target_link_libraries(
     augusta_metrics
     augusta_uuid
     prometheus-cpp::core
-  PRIVATE augusta_logging augusta_version
+  PRIVATE augusta_logging augusta_utf8 augusta_version
 )
 augusta_set_module_scope(augusta_host SERVER_ONLY)
 
@@ -95,5 +95,5 @@ augusta_set_module_scope(augusta_host SERVER_ONLY)
 # out is a later decision.
 add_library(augusta_host_replay STATIC replay_server.cpp)
 target_include_directories(augusta_host_replay PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_version)
+target_link_libraries(augusta_host_replay PUBLIC augusta_host PRIVATE augusta_logging augusta_utf8 augusta_version)
 augusta_set_module_scope(augusta_host_replay SERVER_ONLY)

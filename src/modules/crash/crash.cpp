@@ -1,6 +1,7 @@
 #include "augusta/crash.h"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
@@ -13,10 +14,11 @@
 #include <string_view>
 #include <utility>
 
+#include "augusta/logging.h"
+
 #ifdef _WIN32
 #include <windows.h>
 // After <windows.h>, whose types it uses.
-#include <atomic>
 #include <system_error>
 
 #include <dbghelp.h>
@@ -30,6 +32,8 @@
 #include <fcntl.h>
 #include <signal.h>  // NOLINT(modernize-deprecated-headers)
 #include <sys/resource.h>
+#include <sys/types.h>
+#include <time.h>  // NOLINT(modernize-deprecated-headers) - POSIX's nanosleep.
 #include <unistd.h>
 #include <unwind.h>
 #endif
@@ -49,8 +53,8 @@ using Descriptor = int;
 
 // What Install was given, set before any handler is: the subsystem a literal,
 // the settings never freed, so a crash during exit still reads them. The Run
-// ID and core location are views into them, empty where not given, and the
-// log file opened ahead of any crash, if given.
+// ID (for the minidump) and core location are views into them, empty where not
+// given, and the log file opened ahead of any crash, if given.
 std::string_view g_subsystem;
 const Settings* g_settings = nullptr;
 std::string_view g_run_id;
@@ -61,8 +65,7 @@ std::optional<Descriptor> g_log_file;
 // The minidump's path, from the settings, or nullptr if none.
 const wchar_t* g_minidump_file = nullptr;
 // Set by the first crash to report, so a second - in another thread, or in the
-// report itself - ends the process at once, as the default action does on
-// Linux.
+// report itself - ends the process at once.
 std::atomic_flag g_reporting;
 
 // Only SIGABRT is a signal there: a fault is an exception, which the
@@ -72,6 +75,13 @@ std::atomic_flag g_reporting;
 constexpr std::array kFatalSignals{SIGABRT};
 #else
 constexpr std::array kFatalSignals{SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
+
+// The thread reporting a crash, or 0 until one does. A second thread that
+// crashes meanwhile waits for that report to end the process, so the two
+// threads' lines never interleave; a fault in the report itself ends the
+// process at once. Lock-free, as a handler needs.
+std::atomic<pid_t> g_reporter{0};
+static_assert(std::atomic<pid_t>::is_always_lock_free, "the fatal-signal handler takes the report");
 #endif
 
 constexpr int kMaxFrames = 64;
@@ -191,10 +201,16 @@ void PutCrashPrefix(LineWriter& writer, std::string_view subsystem, std::chrono:
   writer.Put(' ');
 }
 
-constexpr std::string_view kRunKey = " run=";
-
-// How many characters PutRun writes for run_id.
-std::size_t RunLength(std::string_view run_id) { return run_id.empty() ? 0 : kRunKey.size() + run_id.size(); }
+// What every frame line starts with: `... event=crash_frame index=<index>
+// pc=0x<pc>`.
+void PutFramePrefix(LineWriter& writer, std::string_view subsystem, std::chrono::sys_seconds time, int index,
+                    std::uintptr_t pc) {
+  PutCrashPrefix(writer, subsystem, time);
+  writer.Put("event=crash_frame index=");
+  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
+  writer.Put(" pc=0x");
+  writer.PutDigits(pc, kHexadecimal);
+}
 
 // How many digits PutDigits writes for value in hexadecimal.
 std::size_t HexLength(std::uint64_t value) {
@@ -204,14 +220,6 @@ std::size_t HexLength(std::uint64_t value) {
     ++length;
   }
   return length;
-}
-
-// The Run's field, where logging's context puts it: last (ADR-0029).
-void PutRun(LineWriter& writer, std::string_view run_id) {
-  if (!run_id.empty()) {
-    writer.Put(kRunKey);
-    writer.Put(run_id);
-  }
 }
 
 std::string_view SignalName(int signal) {
@@ -340,13 +348,14 @@ const char* ModuleOf(void* pc, std::span<char> name, std::uintptr_t& base) {
 
 // One line per frame, each naming its module and offset, for the release's
 // PDB to symbolize (ADR-0055).
-void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, Line& line) {
+void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, std::string_view context,
+                     Line& line) {
   std::array<char, kSymbolCapacity> module{};
   for (std::size_t index = 0; index < frames.size(); ++index) {
     const auto pc = reinterpret_cast<std::uintptr_t>(frames[index]);
     std::uintptr_t base = 0;
     const char* const name = ModuleOf(frames[index], module, base);
-    WriteLine(FormatModuleFrameLine(line, g_subsystem, now, static_cast<int>(index), pc, name, pc - base, g_run_id));
+    WriteLine(FormatModuleFrameLine(line, g_subsystem, now, static_cast<int>(index), pc, name, pc - base, context));
   }
 }
 
@@ -404,13 +413,14 @@ int CaptureFrames(std::span<void*> frames) {
 
 // One line per frame, each naming its function, from the symbol table the
 // binary keeps.
-void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, Line& line) {
+void WriteFrameLines(std::span<void* const> frames, std::chrono::sys_seconds now, std::string_view context,
+                     Line& line) {
   std::array<char, kSymbolCapacity> symbol{};
   for (std::size_t index = 0; index < frames.size(); ++index) {
     void* const pc = frames[index];
     const bool resolved = absl::Symbolize(pc, symbol.data(), static_cast<int>(symbol.size()));
     WriteLine(FormatFrameLine(line, g_subsystem, now, static_cast<int>(index), reinterpret_cast<std::uintptr_t>(pc),
-                              resolved ? symbol.data() : nullptr, g_run_id));
+                              resolved ? symbol.data() : nullptr, context));
   }
 }
 #endif
@@ -420,8 +430,10 @@ std::chrono::sys_seconds Now() { return std::chrono::sys_seconds{std::chrono::se
 
 void ReportCrash(int signal) {
   const std::chrono::sys_seconds now = Now();
+  logging::ContextText context_text{};
+  const std::string_view log_context = logging::CopyContext(context_text);
   Line line{};
-  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, g_run_id));
+  WriteLine(FormatSignalLine(line, g_subsystem, now, signal, g_core_location, log_context));
 
   std::array<void*, kMaxFrames> frames{};
 #ifdef _WIN32
@@ -431,7 +443,7 @@ void ReportCrash(int signal) {
 #else
   const int depth = CaptureFrames(frames);
 #endif
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, line);
+  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, log_context, line);
 #ifdef _WIN32
   WriteMinidump(nullptr);
 #endif
@@ -444,11 +456,13 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exception) {
     return EXCEPTION_EXECUTE_HANDLER;
   }
   const std::chrono::sys_seconds now = Now();
+  logging::ContextText context_text{};
+  const std::string_view context = logging::CopyContext(context_text);
   Line line{};
-  WriteLine(FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, g_run_id));
+  WriteLine(FormatExceptionLine(line, g_subsystem, now, exception->ExceptionRecord->ExceptionCode, context));
   std::array<void*, kMaxFrames> frames{};
   const int depth = CaptureFrames(*exception->ContextRecord, frames);
-  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, line);
+  WriteFrameLines(std::span<void* const>(frames.data(), static_cast<std::size_t>(depth)), now, context, line);
   WriteMinidump(exception);
   // Ends the process with the exception's code, as Windows would have, but
   // without Windows Error Reporting: the dump is written.
@@ -456,18 +470,49 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exception) {
 }
 #endif
 
-extern "C" void HandleFatalSignal(int signal) {
-  // Back to the default first, so a second fault - in another thread, or in
-  // this report - ends the process at once instead of reporting again.
+// Every fatal signal back to its default action.
+void RestoreDefaultActions() {
   for (const int fatal : kFatalSignals) {
     std::signal(fatal, SIG_DFL);
   }
+}
+
+#ifndef _WIN32
+// Until the process ends, which the report another thread is writing ends it
+// in. nanosleep, not pause: it is async-signal-safe, and the server's seccomp
+// profile allows the clock_nanosleep it makes (ADR-0057).
+[[noreturn]] void WaitForTheReport() {
+  for (;;) {
+    const timespec second{.tv_sec = 1, .tv_nsec = 0};
+    nanosleep(&second, nullptr);
+  }
+}
+#endif
+
+extern "C" void HandleFatalSignal(int signal) {
 #ifdef _WIN32
+  // Back to the default first, so a second fault - in another thread, or in
+  // this report - ends the process at once instead of reporting again.
+  RestoreDefaultActions();
   if (!g_reporting.test_and_set()) {
     ReportCrash(signal);
   }
 #else
+  const pid_t self = gettid();
+  pid_t reporter = 0;
+  if (!g_reporter.compare_exchange_strong(reporter, self)) {
+    if (reporter != self) {
+      WaitForTheReport();
+    }
+    // A fault in the report itself, of another signal than the one reported
+    // (that one is blocked while it is handled, so the kernel ends the process
+    // of it): its default action ends the process at once.
+    RestoreDefaultActions();
+    std::raise(signal);
+    return;
+  }
   ReportCrash(signal);
+  RestoreDefaultActions();
 #endif
   // Pending until the handler returns, then delivered to the default action:
   // the process dies of it and the kernel dumps its core. Not as PID 1, whose
@@ -491,7 +536,7 @@ void RaiseCoreLimit() {
 }  // namespace
 
 std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int signal,
-                                  std::string_view core, std::string_view run_id) {
+                                  std::string_view core, std::string_view context) {
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash signal=");
@@ -502,59 +547,51 @@ std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::c
   }
   if (!core.empty()) {
     writer.Put(" core=");
-    writer.PutQuoted(core, RunLength(run_id));
+    writer.PutQuoted(core, context.size());
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
-                                 std::uintptr_t pc, const char* symbol, std::string_view run_id) {
+                                 std::uintptr_t pc, const char* symbol, std::string_view context) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash_frame index=");
-  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
-  writer.Put(" pc=0x");
-  writer.PutDigits(pc, kHexadecimal);
+  PutFramePrefix(writer, subsystem, time, index, pc);
   if (symbol != nullptr) {
     writer.Put(" symbol=");
-    // The Run's field kept whole: a line that loses it no longer says its Run.
-    writer.PutQuoted(symbol, RunLength(run_id));
+    // The context kept whole: a line that loses it no longer says its Run.
+    writer.PutQuoted(symbol, context.size());
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatModuleFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
                                        std::uintptr_t pc, const char* module, std::uintptr_t offset,
-                                       std::string_view run_id) {
+                                       std::string_view context) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash_frame index=");
-  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
-  writer.Put(" pc=0x");
-  writer.PutDigits(pc, kHexadecimal);
+  PutFramePrefix(writer, subsystem, time, index, pc);
   if (module != nullptr) {
-    // The offset and the Run kept whole: a frame without its offset names no
-    // instruction.
+    // The offset and the context kept whole: a frame without its offset names
+    // no instruction.
     constexpr std::string_view kOffsetKey = " offset=0x";
     writer.Put(" module=");
-    writer.PutQuoted(module, kOffsetKey.size() + HexLength(offset) + RunLength(run_id));
+    writer.PutQuoted(module, kOffsetKey.size() + HexLength(offset) + context.size());
     writer.Put(kOffsetKey);
     writer.PutDigits(offset, kHexadecimal);
   }
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 
 std::string_view FormatExceptionLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time,
-                                     std::uint32_t code, std::string_view run_id) {
+                                     std::uint32_t code, std::string_view context) {
   constexpr int kCodeDigits = 8;
   LineWriter writer(line);
   PutCrashPrefix(writer, subsystem, time);
   writer.Put("event=crash exception=0x");
   writer.PutDigits(code, kHexadecimal, kCodeDigits);
-  PutRun(writer, run_id);
+  writer.Put(context);
   return writer.Finish();
 }
 

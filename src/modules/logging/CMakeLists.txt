@@ -4,7 +4,7 @@ find_package(boost_log CONFIG REQUIRED)
 
 add_library(augusta_logging STATIC logging.cpp)
 target_include_directories(augusta_logging PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(augusta_logging PRIVATE Boost::log)
+target_link_libraries(augusta_logging PRIVATE Boost::log augusta_utf8)
 
 # AUGUSTA_LOG_ACTIVE_LEVEL must reach every translation unit that expands the
 # logging macros (they compile away under it - see logging.h), so it is a
