@@ -33,6 +33,10 @@ namespace augusta::input {
 /// The key that releases the captured cursor. Reserved: no control may be bound to it.
 inline constexpr window::Key kReleaseCursorKey = window::Key::kEscape;
 
+/// A key kept from the controls in every build, for a use outside input. Reserved:
+/// no control may be bound to it, and Input does nothing with it.
+inline constexpr window::Key kReservedKey = window::Key::kF1;
+
 /// key's name as augustac.yaml spells it: "W", "7", "LeftShift", "Space", "F12", "MouseRight".
 [[nodiscard]] std::string_view NameOf(window::Key key);
 
@@ -68,7 +72,8 @@ inline constexpr std::size_t kControlCount = static_cast<std::size_t>(Control::k
 [[nodiscard]] std::optional<Control> ControlNamed(std::string_view name);
 
 /// Which key triggers each control, indexed by Control. Each control has its
-/// own key, never kReleaseCursorKey; augusta::config checks both.
+/// own key, never one of the two reserved keys, kReleaseCursorKey (Escape) and
+/// kReservedKey (F1); augusta::config checks both.
 using Keymap = std::array<window::Key, kControlCount>;
 
 /// The bindings a player gets without a `keys` section: WASD, LeftShift sprints,
