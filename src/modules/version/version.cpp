@@ -117,7 +117,7 @@ std::string DescribeBuildId() {
 
 }  // namespace
 
-std::string_view EngineVersion() { return "5.0.0"; }
+std::string_view EngineVersion() { return "6.0.0"; }
 
 std::string DescribeBuild() {
 #ifdef _WIN32
