@@ -191,6 +191,17 @@ void PutCrashPrefix(LineWriter& writer, std::string_view subsystem, std::chrono:
   writer.Put(' ');
 }
 
+// What every frame line starts with: `... event=crash_frame index=<index>
+// pc=0x<pc>`.
+void PutFramePrefix(LineWriter& writer, std::string_view subsystem, std::chrono::sys_seconds time, int index,
+                    std::uintptr_t pc) {
+  PutCrashPrefix(writer, subsystem, time);
+  writer.Put("event=crash_frame index=");
+  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
+  writer.Put(" pc=0x");
+  writer.PutDigits(pc, kHexadecimal);
+}
+
 constexpr std::string_view kRunKey = " run=";
 
 // How many characters PutRun writes for run_id.
@@ -511,11 +522,7 @@ std::string_view FormatSignalLine(Line& line, std::string_view subsystem, std::c
 std::string_view FormatFrameLine(Line& line, std::string_view subsystem, std::chrono::sys_seconds time, int index,
                                  std::uintptr_t pc, const char* symbol, std::string_view run_id) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash_frame index=");
-  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
-  writer.Put(" pc=0x");
-  writer.PutDigits(pc, kHexadecimal);
+  PutFramePrefix(writer, subsystem, time, index, pc);
   if (symbol != nullptr) {
     writer.Put(" symbol=");
     // The Run's field kept whole: a line that loses it no longer says its Run.
@@ -529,11 +536,7 @@ std::string_view FormatModuleFrameLine(Line& line, std::string_view subsystem, s
                                        std::uintptr_t pc, const char* module, std::uintptr_t offset,
                                        std::string_view run_id) {
   LineWriter writer(line);
-  PutCrashPrefix(writer, subsystem, time);
-  writer.Put("event=crash_frame index=");
-  writer.PutDigits(static_cast<std::uint64_t>(index), kDecimal);
-  writer.Put(" pc=0x");
-  writer.PutDigits(pc, kHexadecimal);
+  PutFramePrefix(writer, subsystem, time, index, pc);
   if (module != nullptr) {
     // The offset and the Run kept whole: a frame without its offset names no
     // instruction.
