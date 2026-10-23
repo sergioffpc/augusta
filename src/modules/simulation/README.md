@@ -17,7 +17,8 @@ round was judged against (its Shot judgement).
 - Screening commands, encoding and sending state: the server (`host::Host`).
 - Whether Shot judgements are built, and which peer is sent each: the server
   (`host::Host`), from `debug.shot_judgements` and the peer's Debug subscribe.
-- The movement, weapon and ballistics rules: physics and gameplay.
+- The movement, weapon and ballistics rules, and placing a player's Hitboxes at
+  a Hitbox pose: physics and gameplay.
 - Game policy's hooks, their views and reading their answers: policy.
 
 ## Decisions

@@ -6,6 +6,7 @@
 #include <expected>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
@@ -44,6 +45,9 @@
 #include <format>
 #include <string>
 
+#include <PxVisualizationParameter.h>
+#include <common/PxRenderBuffer.h>
+#include <foundation/PxBounds3.h>
 #include <pvdruntime/OmniPvdFileWriteStream.h>
 #include <pvdruntime/OmniPvdWriter.h>
 #endif
@@ -59,11 +63,13 @@
 // resize (crouch/prone) and sweep-based move() without the caller having
 // to hand-roll collision response.
 //
-// A World only ever runs PxController::move() - it never calls
-// PxScene::simulate()/fetchResults(). CCT movement is sweep-based and
-// self-contained; nothing here needs the rigid-body dynamics loop, since
-// every body is player-controlled and the only other geometry is the
-// map's collision meshes (AddCollisionMesh), which never move.
+// A World moves its bodies with PxController::move() alone. CCT movement is
+// sweep-based and self-contained; nothing here needs the rigid-body dynamics
+// loop, since every body is player-controlled and the only other geometry is
+// the map's collision meshes (AddCollisionMesh), which never move. The one
+// PxScene::simulate()/fetchResults() a World runs is its visualization's step
+// (StepVisualization, Development build only), which moves nothing a body's
+// movement sees.
 //
 // Engine convention (not yet pinned down project-wide - see
 // augusta::command::Command's yaw/pitch comment): Y is up, matching both
@@ -134,8 +140,9 @@ constexpr float kStaticFriction = 0.5F;
 constexpr float kDynamicFriction = 0.5F;
 constexpr float kRestitution = 0.1F;
 constexpr float kMinMoveDistance = 0.001F;  // PxController::move's own minDist parameter.
-// PxSceneDesc rejects a scene without a CPU dispatcher, but nothing here ever
-// calls PxScene::simulate() (see the header comment), so it needs no threads.
+// PxSceneDesc rejects a scene without a CPU dispatcher, but the only
+// PxScene::simulate() here is the visualization's (see the header comment),
+// which a dispatcher without threads runs on the calling thread.
 constexpr int kWorkerThreadCount = 0;
 
 // A stance change that grows the capsule is tested for headroom with a capsule
@@ -358,6 +365,13 @@ math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance) {
   return {standing_point.x, standing_point.y * scale, standing_point.z};
 }
 
+Capsule CapsuleOf(const BodyState& state) {
+  const math::Vec3 bottom = state.position + math::Vec3(0.0F, kCapsuleRadius, 0.0F);
+  return {.bottom = bottom,
+          .top = bottom + math::Vec3(0.0F, HeightForStance(state.stance), 0.0F),
+          .radius = kCapsuleRadius};
+}
+
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
 // and caches it each Step from positional delta / delta_time; stance and
@@ -389,6 +403,10 @@ struct World::Impl {
   StaminaConfig stamina_config;
   std::unordered_map<BodyHandle, BodyRecord> bodies;
   std::uint32_t next_handle = 1;
+#if AUGUSTA_DEBUG_TOOLS
+  // Whether SetVisualization last turned the visualization on.
+  bool visualizing = false;
+#endif
 
   explicit Impl(const StaminaConfig& config) : stamina_config(config) {
     PxSceneDesc scene_desc(physics->getTolerancesScale());
@@ -767,6 +785,79 @@ std::expected<Recording, std::string> StartRecording(std::string_view executable
   }
   LOG_INFO("subsystem=physics event=recording_started path=\"{}\"", file.string());
   return Recording(std::make_unique<Recording::Impl>(*handles, std::move(file)));
+}
+
+namespace {
+
+float Switch(bool on) { return on ? 1.0F : 0.0F; }
+
+void CopyLines(const physx::PxRenderBuffer& buffer, std::vector<VisualizationLine>& lines) {
+  const physx::PxDebugLine* const begin = buffer.getLines();
+  for (PxU32 i = 0; i < buffer.getNbLines(); ++i) {
+    const physx::PxDebugLine& line = begin[i];
+    lines.push_back(VisualizationLine{.from = FromPx(line.pos0), .to = FromPx(line.pos1), .argb = line.color0});
+  }
+  // A shape PhysX draws as triangles is drawn by its edges.
+  const physx::PxDebugTriangle* const triangles = buffer.getTriangles();
+  for (PxU32 i = 0; i < buffer.getNbTriangles(); ++i) {
+    const physx::PxDebugTriangle& triangle = triangles[i];
+    const math::Vec3 a = FromPx(triangle.pos0);
+    const math::Vec3 b = FromPx(triangle.pos1);
+    const math::Vec3 c = FromPx(triangle.pos2);
+    lines.push_back(VisualizationLine{.from = a, .to = b, .argb = triangle.color0});
+    lines.push_back(VisualizationLine{.from = b, .to = c, .argb = triangle.color0});
+    lines.push_back(VisualizationLine{.from = c, .to = a, .argb = triangle.color0});
+  }
+}
+
+}  // namespace
+
+void World::SetVisualization(const Visualization& visualization) {
+  using physx::PxVisualizationParameter;
+  PxScene& scene = *impl_->scene;
+  impl_->visualizing = visualization.on;
+  // Scale 0 is PhysX's own master switch: off, the scene computes nothing to draw.
+  scene.setVisualizationParameter(PxVisualizationParameter::eSCALE, Switch(visualization.on));
+  scene.setVisualizationParameter(PxVisualizationParameter::eCOLLISION_SHAPES, Switch(visualization.collision_shapes));
+  scene.setVisualizationParameter(PxVisualizationParameter::eCOLLISION_AABBS, Switch(visualization.bounds));
+  scene.setVisualizationParameter(PxVisualizationParameter::eCONTACT_POINT, Switch(visualization.contacts));
+  scene.setVisualizationParameter(PxVisualizationParameter::eCONTACT_NORMAL, Switch(visualization.contacts));
+  scene.setVisualizationParameter(PxVisualizationParameter::eJOINT_LOCAL_FRAMES, Switch(visualization.joints));
+  scene.setVisualizationParameter(PxVisualizationParameter::eJOINT_LIMITS, Switch(visualization.joints));
+  const PxVec3 half_extent(visualization.cull_half_extent);
+  scene.setVisualizationCullingBox(
+      physx::PxBounds3(ToPx(visualization.cull_center) - half_extent, ToPx(visualization.cull_center) + half_extent));
+  impl_->controller_manager->setDebugRenderingFlags(
+      visualization.on && visualization.controller_volumes
+          ? physx::PxControllerDebugRenderFlags(physx::PxControllerDebugRenderFlag::eTEMPORAL_BV |
+                                                physx::PxControllerDebugRenderFlag::eCACHED_BV)
+          : physx::PxControllerDebugRenderFlags(physx::PxControllerDebugRenderFlag::eNONE));
+  impl_->controller_manager->getRenderBuffer().clear();
+}
+
+std::optional<std::vector<VisualizationLine>> World::StepVisualization(float delta_time) {
+  if (!impl_->visualizing || delta_time <= 0.0F) {
+    return std::nullopt;
+  }
+  PxScene& scene = *impl_->scene;
+  // PhysX draws a scene as simulate() finds it, before it moves a kinematic
+  // actor to its target, so each body's actor is put where its body last
+  // moved first: its capsule is drawn where the body is on this tick, not the
+  // last one.
+  for (const auto& [handle, record] : impl_->bodies) {
+    physx::PxRigidDynamic* const actor = record.controller->getActor();
+    if (PxTransform target; actor->getKinematicTarget(target)) {
+      actor->setGlobalPose(target);
+    }
+  }
+  scene.simulate(delta_time);
+  scene.fetchResults(true);
+  std::vector<VisualizationLine> lines;
+  CopyLines(scene.getRenderBuffer(), lines);
+  physx::PxRenderBuffer& controllers = impl_->controller_manager->getRenderBuffer();
+  CopyLines(controllers, lines);
+  controllers.clear();
+  return lines;
 }
 #endif
 

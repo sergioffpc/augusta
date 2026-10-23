@@ -5,8 +5,7 @@
 #include <deque>
 #include <optional>
 
-#include "augusta/math.h"
-#include "augusta/physics.h"
+#include "augusta/hitbox.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -16,16 +15,8 @@
 /// private to the simulation module: nothing but SimulationWorld judges a hit.
 namespace augusta::simulation {
 
-/// Where a player's body was on one tick, as that tick's Authoritative State
-/// reported it: all that places its hitboxes.
-struct Pose {
-  math::Vec3 position{};
-  /// Where it faced, in radians.
-  float yaw = 0.0F;
-  physics::Stance stance = physics::Stance::kStanding;
-};
-
-/// One player's poses of its most recent ticks.
+/// One player's Hitbox poses of its most recent ticks, each as that tick's
+/// Authoritative State reported it.
 class PoseHistory {
  public:
   /// A history that keeps the poses of the newest capacity ticks.
@@ -33,7 +24,7 @@ class PoseHistory {
 
   /// Keeps pose as that of tick, the tick after the newest kept; beyond the
   /// capacity, the oldest goes.
-  void Record(tick::Tick tick, const Pose& pose);
+  void Record(tick::Tick tick, const hitbox::Pose& pose);
 
   /// The pose at time, a moment between ticks counted in ticks: position and
   /// yaw interpolated between the two ticks around it, the yaw along the
@@ -41,12 +32,12 @@ class PoseHistory {
   /// a position and a stance between two updates (presentation's
   /// RemoteInterpolator). A time before the oldest tick kept or after the
   /// newest gives that tick's pose. nullopt while none is kept.
-  [[nodiscard]] std::optional<Pose> At(double time) const;
+  [[nodiscard]] std::optional<hitbox::Pose> At(double time) const;
 
  private:
   std::size_t capacity_;
   // Oldest first; the last is newest_tick_'s.
-  std::deque<Pose> poses_;
+  std::deque<hitbox::Pose> poses_;
   tick::Tick newest_tick_ = 0;
 };
 
