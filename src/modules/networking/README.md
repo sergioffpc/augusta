@@ -10,7 +10,10 @@ Wraps GameNetworkingSockets for direct client-server connections over UDP: a
 Client dials one server, a Server listens for a handful of peers. It moves raw
 framed payloads, each send naming its Reliability, and every send and receive
 says whether the transport accepted it, dropped it for its peer or failed
-locally. Safe from any thread.
+locally. Safe from any thread. It also imposes simulated network conditions on
+the whole process, through the transport's own fake-packet settings: latency,
+jitter, loss and reorder on what the process sends or, when asked, on what it
+receives as well.
 
 ## Not its responsibility
 

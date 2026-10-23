@@ -39,6 +39,9 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
       .reorder_percent = conditions.reorder_percent,
       .reorder_delay_ms = conditions.reorder_delay_ms,
       .timeout_ms = conditions.timeout_ms,
+      .applies_to = conditions.applies_to == SimulatedTraffic::kSentAndReceived
+                        ? networking::SimulatedTraffic::kSentAndReceived
+                        : networking::SimulatedTraffic::kSent,
   });
 }
 
