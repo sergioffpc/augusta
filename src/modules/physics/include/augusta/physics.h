@@ -50,6 +50,19 @@ enum class Stance {
 /// camera and the server's Shots alike.
 [[nodiscard]] math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance);
 
+/// A body's collision capsule: the points within radius of the segment between
+/// the centres of its two hemispherical caps.
+struct Capsule {
+  /// World space, as BodyState::position: the lower cap's centre, radius above
+  /// the feet.
+  math::Vec3 bottom{};
+  /// The upper cap's centre, radius below the top of the body in its stance
+  /// (StanceHeight).
+  math::Vec3 top{};
+  /// In metres.
+  float radius = 0.0F;
+};
+
 /// Opaque handle to a body created by World::CreateBody. Valid only for the
 /// World instance that created it; passing a handle from one World to
 /// another is undefined behavior.
@@ -112,6 +125,11 @@ struct BodyState {
 
   bool operator==(const BodyState&) const = default;
 };
+
+/// The collision capsule of a body in state: standing on its position in its
+/// stance, as World holds the body's controller. What a client draws a body
+/// the server reported as.
+[[nodiscard]] Capsule CapsuleOf(const BodyState& state);
 
 /// Tunable balance values governing stamina depletion/recovery (US-05).
 /// These are data, not mechanism or policy (ARCHITECTURE.md §8's third

@@ -59,6 +59,37 @@ TEST(LowerToStanceTest, ThePointStaysInsideTheBodyInEveryStance) {
   }
 }
 
+// A body's capsule stands on its feet and reaches the top of its body in its
+// stance, wherever the body is.
+TEST(CapsuleOfTest, ABodysCapsuleSpansItsStanceFromItsFeet) {
+  const Vec3 feet(2.0F, 1.0F, -3.0F);
+
+  for (const Stance stance : {Stance::kStanding, Stance::kCrouching, Stance::kProne}) {
+    const augusta::physics::Capsule capsule =
+        augusta::physics::CapsuleOf(BodyState{.position = feet, .velocity = {}, .stance = stance});
+
+    EXPECT_FLOAT_EQ(capsule.radius, 0.3F);
+    EXPECT_FLOAT_EQ(capsule.bottom.y - capsule.radius, feet.y);
+    EXPECT_FLOAT_EQ(capsule.top.y + capsule.radius, feet.y + augusta::physics::StanceHeight(stance));
+    EXPECT_EQ(capsule.bottom.x, feet.x);
+    EXPECT_EQ(capsule.bottom.z, feet.z);
+    EXPECT_EQ(capsule.top.x, feet.x);
+    EXPECT_EQ(capsule.top.z, feet.z);
+  }
+}
+
+// A crouching body's capsule is shorter than a standing one's, and a prone
+// one's shorter still: what Server bodies shows of a player's stance.
+TEST(CapsuleOfTest, ACapsuleIsLowerCrouchingThanStandingAndLowerProneThanCrouching) {
+  const auto top = [](Stance stance) {
+    return augusta::physics::CapsuleOf(BodyState{.position = {}, .velocity = {}, .stance = stance}).top.y;
+  };
+
+  EXPECT_FLOAT_EQ(top(Stance::kStanding), 1.8F);
+  EXPECT_LT(top(Stance::kCrouching), top(Stance::kStanding));
+  EXPECT_LT(top(Stance::kProne), top(Stance::kCrouching));
+}
+
 // Requirements: US-04
 TEST(PhysicsWorldTest, StepMovesBodyAlongInputDirection) {
   World world{StaminaConfig{}};

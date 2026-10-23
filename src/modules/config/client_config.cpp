@@ -40,6 +40,8 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // Shipping build refuses them as unknown.
     "debug.hud",
     "debug.profiling.panel",
+    "debug.physics.panel",
+    "debug.physics.server_bodies",
 #endif
 });
 
@@ -110,14 +112,29 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 }
 
 #if AUGUSTA_DEBUG_TOOLS
+// The `debug.physics` section: the Physics panel and which of its overlays start on.
+std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(const ConfigValues& values) {
+  const auto panel = OptionalFlag(values, "debug.physics.panel", false);
+  if (!panel) {
+    return std::unexpected(panel.error());
+  }
+  return OptionalFlag(values, "debug.physics.server_bodies", false).transform([&panel](bool server_bodies) {
+    return ClientPhysicsDebugConfig{.panel = *panel, .server_bodies = server_bodies};
+  });
+}
+
 // The `debug` section (ADR-0074): which debug tools start on.
 std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
   const auto hud = OptionalFlag(values, "debug.hud", true);
   if (!hud) {
     return std::unexpected(hud.error());
   }
-  return OptionalFlag(values, "debug.profiling.panel", false).transform([&hud](bool profiling_panel) {
-    return ClientDebugConfig{.hud = *hud, .profiling_panel = profiling_panel};
+  const auto profiling_panel = OptionalFlag(values, "debug.profiling.panel", false);
+  if (!profiling_panel) {
+    return std::unexpected(profiling_panel.error());
+  }
+  return ParsePhysicsDebugConfig(values).transform([&](const ClientPhysicsDebugConfig& physics) {
+    return ClientDebugConfig{.hud = *hud, .profiling_panel = *profiling_panel, .physics = physics};
   });
 }
 #endif

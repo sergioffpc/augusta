@@ -28,6 +28,16 @@ inline constexpr std::string_view kClientConfigFileName = "augustac.yaml";
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 
 #if AUGUSTA_DEBUG_TOOLS
+/// augustac.yaml's `debug.physics` section: whether the Physics Debug panel and
+/// each of its Debug overlays start on, each a switch (true or false) off by
+/// default.
+struct ClientPhysicsDebugConfig {
+  /// Key `debug.physics.panel`: whether the Physics Debug panel is shown.
+  bool panel = false;
+  /// Key `debug.physics.server_bodies`: whether the Server bodies overlay is drawn.
+  bool server_bodies = false;
+};
+
 /// augustac.yaml's `debug` section: which of the client's debug tools start on
 /// (ADR-0074). It exists only in a Development build, so a Shipping build
 /// refuses the section as an unknown key.
@@ -39,6 +49,7 @@ struct ClientDebugConfig {
   /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
   /// by default.
   bool profiling_panel = false;
+  ClientPhysicsDebugConfig physics{};
 };
 #endif
 

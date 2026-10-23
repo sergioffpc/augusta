@@ -62,6 +62,12 @@ struct RuntimeConfig {
   /// Whether the Profiling Debug panel is shown at first
   /// (`debug.profiling.panel`), until the Debug index switches it.
   bool debug_profiling_panel = false;
+  /// Whether the Physics Debug panel is shown at first (`debug.physics.panel`),
+  /// until the Debug index switches it; a Replay viewer's index never lists it.
+  bool debug_physics_panel = false;
+  /// Whether the Server bodies overlay is drawn at first
+  /// (`debug.physics.server_bodies`), until the Physics panel switches it.
+  bool debug_physics_server_bodies = false;
 #endif
 };
 

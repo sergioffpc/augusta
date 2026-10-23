@@ -21,3 +21,10 @@ target_link_libraries(
   PRIVATE nvtx3-cpp $<IF:$<TARGET_EXISTS:flecs::flecs>,flecs::flecs,flecs::flecs_static>
 )
 augusta_set_module_scope(augusta_presentation CLIENT_ONLY)
+# The Physics Debug overlays and their panel (see physics_overlays.h), in a
+# Development build only (ADR-0074, ADR-0075): the one place presentation
+# depends on augusta_debug.
+if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_presentation PRIVATE physics_overlays.cpp)
+  target_link_libraries(augusta_presentation PUBLIC augusta_debug)
+endif()

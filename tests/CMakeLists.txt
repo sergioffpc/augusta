@@ -353,6 +353,11 @@ target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gt
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_hitbox_tests hitbox_test.cpp)
+target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on
@@ -949,6 +954,23 @@ if(AUGUSTA_DEBUG_TOOLS)
     target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
     gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
   endif()
+  # Which debug tools the client's Debug index lists (debug_index_entries.h),
+  # private to the client Runtime, as profiling_panel.h is.
+  if(TARGET augusta_client_debug_index_entries)
+    add_executable(augusta_client_debug_index_entries_tests client_debug_index_entries_test.cpp)
+    target_link_libraries(
+      augusta_client_debug_index_entries_tests
+      PRIVATE
+        augusta_client_debug_index_entries
+        augusta_client_profiling_panel
+        augusta_presentation
+        GTest::gtest
+        GTest::gtest_main
+    )
+    target_include_directories(augusta_client_debug_index_entries_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
+    gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
+  endif()
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(
       augusta_client_renderer_smoke_tests
@@ -969,6 +991,13 @@ if(AUGUSTA_DEBUG_TOOLS)
   add_executable(augusta_debug_tests debug_test.cpp debug_index_test.cpp debug_interaction_test.cpp)
   target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_debug_tests)
+
+  # The Physics Debug overlays, their panel and their shapes (presentation's
+  # physics_overlays.h), free of any GPU API.
+  add_executable(augusta_physics_overlays_tests physics_overlays_test.cpp)
+  target_link_libraries(augusta_physics_overlays_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+  # Links augusta_prediction publicly (so PhysX), as augusta_tracers_tests does.
+  gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints

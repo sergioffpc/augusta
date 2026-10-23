@@ -60,6 +60,18 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_include_directories(augusta_client_profiling_panel PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include)
   target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
   augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
+
+  # Which debug tools the Debug index lists, by the client's mode (see
+  # debug_index_entries.h), in a Development build only: each panel's entry is
+  # named by its panel's id, the Profiling panel's and presentation's Physics
+  # panel's.
+  add_library(augusta_client_debug_index_entries STATIC debug_index_entries.cpp)
+  target_link_libraries(
+    augusta_client_debug_index_entries
+    PUBLIC augusta_debug
+    PRIVATE augusta_client_profiling_panel augusta_presentation
+  )
+  augusta_set_module_scope(augusta_client_debug_index_entries CLIENT_ONLY)
 endif()
 
 # What the client loads in the Lobby before it reports Ready, and for which
@@ -112,7 +124,10 @@ target_link_libraries(
 # Debug index and Debug interaction, in a Development build only (ADR-0074,
 # ADR-0075).
 if(AUGUSTA_DEBUG_TOOLS)
-  target_link_libraries(augusta_client PRIVATE augusta_client_profiling_panel augusta_debug augusta_hud)
+  target_link_libraries(
+    augusta_client
+    PRIVATE augusta_client_debug_index_entries augusta_client_profiling_panel augusta_debug augusta_hud
+  )
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.
