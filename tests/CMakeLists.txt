@@ -905,6 +905,9 @@ if(AUGUSTA_CLIENT)
   gtest_discover_tests(augusta_client_window_tests)
 endif()
 
+# Before the build's kind decides below which sources its fuzz seeds test takes.
+add_subdirectory(fuzz)
+
 # Which tests a build's kind carries (ADR-0074), decided here and nowhere else:
 # a debug tool's tests only in a Development build, which carries the tool; in
 # a Shipping build, which carries none, the one test that the config readers
@@ -917,9 +920,26 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
   target_sources(augusta_server_application_tests PRIVATE server_application_debug_test.cpp)
   target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
-  target_sources(augusta_session_tests PRIVATE session_reenactment_test.cpp session_tap_test.cpp)
+  target_sources(
+    augusta_session_tests
+    PRIVATE
+      session_reenactment_test.cpp
+      session_debug_subscribe_test.cpp
+      session_shot_judgement_test.cpp
+      session_tap_test.cpp
+  )
   # The pcapng writer each tapped end of session_tap_test.cpp writes through.
   target_link_libraries(augusta_session_tests PRIVATE augusta_pcapng augusta_version)
+  target_sources(augusta_protocol_tests PRIVATE protocol_debug_test.cpp)
+  target_sources(augusta_protocol_property_tests PRIVATE protocol_property_debug_test.cpp)
+  target_sources(augusta_link_messages_tests PRIVATE link_messages_debug_test.cpp)
+  target_sources(augusta_link_transport_tests PRIVATE link_transport_debug_test.cpp)
+  target_sources(augusta_host_metrics_tests PRIVATE host_metrics_debug_test.cpp)
+  target_sources(augusta_tick_messages_tests PRIVATE tick_messages_debug_test.cpp)
+  target_sources(augusta_replay_server_tests PRIVATE replay_server_debug_test.cpp)
+  target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_debug.cpp)
+  target_sources(augusta_simulation_tests PRIVATE simulation_shot_judgement_test.cpp)
+  target_link_libraries(augusta_simulation_tests PRIVATE augusta_limits)
   target_sources(augusta_renderer_gpu_crash_dump_files_tests PRIVATE renderer_gpu_crash_dump_files_debug_test.cpp)
   if(TARGET augusta_client_net_stats_tests)
     target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
@@ -965,17 +985,20 @@ if(AUGUSTA_DEBUG_TOOLS)
   # only so that its file has a compile command for clang-tidy, which lints
   # against a Development build's.
   add_library(augusta_shipping_config_tests OBJECT EXCLUDE_FROM_ALL shipping_config_test.cpp)
+  # The same for the protocol_decode seeds of a Shipping build, which has none
+  # of a Development build's messages.
+  add_library(augusta_protocol_decode_seeds_shipping OBJECT EXCLUDE_FROM_ALL fuzz/protocol_decode_seeds_shipping.cpp)
+  target_link_libraries(augusta_protocol_decode_seeds_shipping PRIVATE augusta_protocol)
 else()
   add_executable(augusta_shipping_config_tests shipping_config_test.cpp)
   # Links PhysX through augusta_input, as augusta_client_config_tests does.
   gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30)
+  target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_shipping.cpp)
 endif()
 target_link_libraries(
   augusta_shipping_config_tests
   PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
 )
-
-add_subdirectory(fuzz)
 
 # Every executable here and in fuzz/, and in each tool's tests/ (kept next to
 # the tool) when AUGUSTA_TOOLS builds the tools:

@@ -47,6 +47,18 @@ constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted;
 constexpr unsigned kBodyFlagsShift = 2U;
 constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift);
 
+#if AUGUSTA_DEBUG_TOOLS
+// A Shot judgement's bitfield (ADR-0038): what the round struck in bits 0-1,
+// the Body part in bits 2-3, its flags from bit 4.
+constexpr std::uint32_t kStruckMask = 0x03U;
+constexpr unsigned kJudgementPartShift = 2U;
+constexpr std::uint32_t kPartMask = 0x03U;
+constexpr unsigned kJudgementFlagsShift = 4U;
+constexpr std::uint8_t kJudgementFlagsMask = ShotJudgementWire::kEntriesLeftOut;
+constexpr std::uint32_t kJudgementBitsMask =
+    kStruckMask | (kPartMask << kJudgementPartShift) | (std::uint32_t{kJudgementFlagsMask} << kJudgementFlagsShift);
+#endif
+
 // The first block of each call's arena, on the stack: more than an
 // Authoritative State or a Commands message as large as the protocol allows
 // builds or parses into, so neither touches the heap but for an encode's
@@ -384,6 +396,44 @@ struct Encoder {
     request.set_spawn_z(Steps(wire.spawn.z, math::kPositionGrid));
     request.set_run(BytesOf(wire.run));
   }
+
+#if AUGUSTA_DEBUG_TOOLS
+  void operator()(const DebugSubscribeWire& wire) const { message.mutable_debug_subscribe()->set_flags(wire.flags); }
+
+  void operator()(const ShotJudgementWire& wire) const {
+    pb::ShotJudgement& judgement = *message.mutable_shot_judgement();
+    judgement.set_shot_tick(wire.shot_tick);
+    judgement.set_delay_ticks(wire.delay_ticks);
+    judgement.set_delay_fraction(UnsignedSteps(wire.delay_fraction, math::kFractionGrid));
+    const std::uint32_t struck = out.FromEnum(wire.struck, StruckWire::kNothing, StruckWire::kHitbox);
+    const std::uint32_t part = out.FromEnum(wire.part, BodyPartWire::kHead, BodyPartWire::kLimb);
+    const std::uint32_t flags = out.FromFlags(wire.flags, kJudgementFlagsMask);
+    judgement.set_bits(struck | (part << kJudgementPartShift) | (flags << kJudgementFlagsShift));
+    judgement.set_point_x(Steps(wire.point.x, math::kPositionGrid));
+    judgement.set_point_y(Steps(wire.point.y, math::kPositionGrid));
+    judgement.set_point_z(Steps(wire.point.z, math::kPositionGrid));
+    judgement.set_target(static_cast<std::uint32_t>(wire.target));
+    if (!out.Fits(wire.entries.size(), limits::kMaxShotJudgementEntries)) {
+      return;
+    }
+    for (const ShotJudgementEntryWire& entry : wire.entries) {
+      pb::ShotJudgementEntry& written = *judgement.add_entries();
+      written.set_ticks_after_shot(entry.ticks_after_shot);
+      if (!out.Fits(entry.players.size(), limits::kMaxPlayers)) {
+        return;
+      }
+      for (const JudgedPlayerWire& player : entry.players) {
+        pb::JudgedPlayer& judged = *written.add_players();
+        judged.set_entity(static_cast<std::uint32_t>(player.entity));
+        judged.set_position_x(Steps(player.position.x, math::kPositionGrid));
+        judged.set_position_y(Steps(player.position.y, math::kPositionGrid));
+        judged.set_position_z(Steps(player.position.z, math::kPositionGrid));
+        judged.set_bits(out.FromEnum(player.stance, StanceWire::kStanding, StanceWire::kProne));
+        judged.set_yaw(Steps(player.yaw, math::kAngleGrid));
+      }
+    }
+  }
+#endif
 };
 
 // What Decode maps a parsed message to its *Wire with. The first value it meets
@@ -406,13 +456,15 @@ class Inbound {
     return {FromSteps(x, grid), FromSteps(y, grid), FromSteps(z, grid)};
   }
 
-  // value, which its varint carries wider than its *Wire field's one byte.
-  std::uint8_t Narrow(std::uint32_t value) {
-    if (value > std::numeric_limits<std::uint8_t>::max()) {
+  // value, which its varint carries wider than its *Wire field, Field: one
+  // byte unless said otherwise.
+  template <typename Field = std::uint8_t>
+  Field Narrow(std::uint32_t value) {
+    if (value > std::numeric_limits<Field>::max()) {
       Fail(DecodeError::kOutOfRange);
       return 0;
     }
-    return static_cast<std::uint8_t>(value);
+    return static_cast<Field>(value);
   }
 
   // value as an enumerator between first and last, which must be consecutive.
@@ -694,6 +746,36 @@ ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {
       })};
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+JudgedPlayerWire Read(const pb::JudgedPlayer& player, Inbound& in) {
+  return JudgedPlayerWire{
+      .position = in.FromSteps(player.position_x(), player.position_y(), player.position_z(), math::kPositionGrid),
+      .entity = static_cast<EntityIdWire>(player.entity()),
+      .yaw = in.FromSteps(player.yaw(), math::kAngleGrid),
+      .stance = in.ToEnum(in.ToBits(player.bits(), kStanceMask), StanceWire::kStanding, StanceWire::kProne)};
+}
+
+ShotJudgementWire Read(const pb::ShotJudgement& judgement, Inbound& in) {
+  const std::uint32_t bits = in.ToBits(judgement.bits(), kJudgementBitsMask);
+  return ShotJudgementWire{
+      .shot_tick = judgement.shot_tick(),
+      .entries = ReadList(judgement.entries(), limits::kMaxShotJudgementEntries, in,
+                          [&in](const pb::ShotJudgementEntry& entry) {
+                            return ShotJudgementEntryWire{
+                                .players = ReadList(entry.players(), limits::kMaxPlayers, in,
+                                                    [&in](const pb::JudgedPlayer& player) { return Read(player, in); }),
+                                .ticks_after_shot = in.Narrow<std::uint16_t>(entry.ticks_after_shot())};
+                          }),
+      .point = in.FromSteps(judgement.point_x(), judgement.point_y(), judgement.point_z(), math::kPositionGrid),
+      .target = static_cast<EntityIdWire>(judgement.target()),
+      .delay_fraction = in.FromSteps(judgement.delay_fraction(), math::kFractionGrid),
+      .delay_ticks = in.Narrow(judgement.delay_ticks()),
+      .struck = static_cast<StruckWire>(bits & kStruckMask),
+      .part = in.ToEnum((bits >> kJudgementPartShift) & kPartMask, BodyPartWire::kHead, BodyPartWire::kLimb),
+      .flags = static_cast<std::uint8_t>(bits >> kJudgementFlagsShift)};
+}
+#endif
+
 // message's body, or nullopt when it sets no member this build knows.
 std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
   switch (message.body_case()) {
@@ -732,6 +814,19 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
       return Read(message.replay_view(), in);
     case pb::Message::kReenactRequest:
       return Read(message.reenact_request(), in);
+    case pb::Message::kDebugSubscribe:
+#if AUGUSTA_DEBUG_TOOLS
+      return DebugSubscribeWire{.flags = in.Narrow(message.debug_subscribe().flags())};
+#else
+      // A Development build's message, which a Shipping one lacks (ADR-0074).
+      return std::nullopt;
+#endif
+    case pb::Message::kShotJudgement:
+#if AUGUSTA_DEBUG_TOOLS
+      return Read(message.shot_judgement(), in);
+#else
+      return std::nullopt;
+#endif
     case pb::Message::BODY_NOT_SET:
       return std::nullopt;
   }
@@ -1001,6 +1096,10 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
     MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
     MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
+#if AUGUSTA_DEBUG_TOOLS
+    MessageTypeWire operator()(const DebugSubscribeWire& /*wire*/) const { return MessageTypeWire::kDebugSubscribe; }
+    MessageTypeWire operator()(const ShotJudgementWire& /*wire*/) const { return MessageTypeWire::kShotJudgement; }
+#endif
   };
   return std::visit(Type{}, message);
 }

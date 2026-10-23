@@ -71,6 +71,11 @@ struct ServerConfig {
   /// each. A debug tool's (ADR-0074): only a Development build knows the key,
   /// and it is never on for a server open to players.
   bool reenactments = false;
+  /// Key `debug.shot_judgements`: "true" to send each shooter that subscribes
+  /// to them (Debug subscribe's bit 0) the Shot judgements of its rounds
+  /// (ADR-0038), "false", the default, to send none and ignore the bit. Read
+  /// at startup only; a debug tool's, as `debug.reenactments` is.
+  bool shot_judgements = false;
   /// Key `debug.network.pcapng`: the directory each run writes a pcapng of
   /// the messages it sends and receives into, every peer's, one file per run
   /// (ADR-0076), created if missing; read at startup only, on a live or a

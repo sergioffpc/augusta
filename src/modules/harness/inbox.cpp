@@ -69,6 +69,10 @@ void Inbox::Receive(link::ServerMessage message) {
           OnMatchEnd(said);
         } else if constexpr (std::is_same_v<Said, ReplayView>) {
           OnReplayView(std::forward<Message>(said));
+#if AUGUSTA_DEBUG_TOOLS
+        } else if constexpr (std::is_same_v<Said, ShotJudgement>) {
+          OnShotJudgement(said);
+#endif
         } else {
           // A Replay list, which a replay server sends only a client that asked for it.
           LOG_WARN_LIMITED(drop_warnings_, "subsystem=harness event=dropped reason=\"replay list unasked for\"");
@@ -89,6 +93,12 @@ std::vector<HitConfirmation> Inbox::TakeHitConfirmations(std::uint32_t matches_s
 }
 
 std::vector<Death> Inbox::TakeDeaths(std::uint32_t matches_started) { return deaths_.Take(matches_started); }
+
+#if AUGUSTA_DEBUG_TOOLS
+std::vector<ShotJudgement> Inbox::TakeShotJudgements(std::uint32_t matches_started) {
+  return shot_judgements_.Take(matches_started);
+}
+#endif
 
 // A server whose tick rate or parameters the simulation cannot run on (a rate
 // of zero would be divided by) is not a usable one: the message is dropped, as
@@ -197,6 +207,20 @@ void Inbox::OnHitConfirmation(const HitConfirmation& hit) {
   }
   hit_confirmations_.Add(current->matches_started, hit);
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+// Keeps judgement for TakeShotJudgements if it is of the match in progress, as
+// OnShot does a Shot. What it struck may be a Prop, not a body, so it is not
+// checked against the match's players.
+void Inbox::OnShotJudgement(const ShotJudgement& judgement) {
+  const std::shared_ptr<const ServerView> current = View();
+  if (!current->in_match) {
+    LOG_TRACE("subsystem=harness event=dropped tick={} reason=\"shot judgement outside a match\"", judgement.shot_tick);
+    return;
+  }
+  shot_judgements_.Add(current->matches_started, judgement);
+}
+#endif
 
 // Keeps death for TakeDeaths, and its victim as dead for the rest of the
 // match, if it is of the match in progress, as OnShot does a Shot. Both its

@@ -19,6 +19,7 @@
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -112,6 +113,14 @@ struct Bullet {
   float yaw = 0.0F;
   float pitch = 0.0F;
 };
+
+#if AUGUSTA_DEBUG_TOOLS
+// What a bullet fired while Shot judgements are on records of its flight: its
+// Shot judgement, as far as the flight has gone.
+struct ShotRecord {
+  ShotJudgement judgement;
+};
+#endif
 
 // A bullet that struck a player this tick, for Damage to resolve.
 struct PlayerHit {
@@ -213,6 +222,12 @@ struct World::Impl {
   // The players the tick's bullets struck, for Damage. Kept between ticks for
   // its storage only.
   std::vector<PlayerHit> player_hits;
+#if AUGUSTA_DEBUG_TOOLS
+  // Whether the bullets fired from now on record their Shot judgements.
+  bool judge_shots = false;
+  // The Shot judgements of the bullets whose flight ended this tick, for Tick to return.
+  std::vector<ShotJudgement> shot_judgements;
+#endif
 
   Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy)
       : parameters(params),
@@ -334,8 +349,14 @@ struct World::Impl {
     shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
     const ballistics::BulletHandle bullet = ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
                                                             parameters.rifle.muzzle_velocity, parameters.ammo.flight);
-    ecs.entity().set<Bullet>(
+    [[maybe_unused]] const flecs::entity entity = ecs.entity().set<Bullet>(
         {.handle = bullet, .shooter = shot.shooter, .shooters_delay = delay, .yaw = shot.yaw, .pitch = shot.pitch});
+#if AUGUSTA_DEBUG_TOOLS
+    if (judge_shots) {
+      entity.set<ShotRecord>(
+          {.judgement = {.shooter = shot.shooter, .shot_tick = tick, .shooters_delay = delay, .entries = {}}});
+    }
+#endif
   }
 
   // The hitboxes of every player but bullet's shooter, which a bullet never
@@ -361,6 +382,11 @@ struct World::Impl {
   void OnBallistics(float delta_time, flecs::entity entity, const Bullet& bullet) {
     const ballistics::StepResult result = ballistics.Step(
         bullet.handle, delta_time, physics, HitboxesFor(bullet, ballistics.NextSegment(bullet.handle, delta_time)));
+#if AUGUSTA_DEBUG_TOOLS
+    if (auto* record = entity.try_get_mut<ShotRecord>()) {
+      Record(record->judgement, result);
+    }
+#endif
     switch (result.outcome) {
       case ballistics::Outcome::kInFlight:
         ++committed.bullets_in_flight;
@@ -385,6 +411,59 @@ struct World::Impl {
     // The handle is gone with the bullet (ballistics::World::Step).
     entity.destruct();
   }
+
+#if AUGUSTA_DEBUG_TOOLS
+  // Records in judgement the tick its bullet just flew, result, and once that
+  // has ended its flight, hands judgement on in the tick's result.
+  void Record(ShotJudgement& judgement, const ballistics::StepResult& result) {
+    RecordCrossed(judgement);
+    if (result.outcome == ballistics::Outcome::kInFlight) {
+      return;
+    }
+    RecordEnd(judgement, result);
+    shot_judgements.push_back(std::move(judgement));
+  }
+
+  // Records the players this tick's segment of the bullet reached as an entry
+  // of judgement, if it reached any: those it was just tested against, as
+  // posed for it.
+  void RecordCrossed(ShotJudgement& judgement) const {
+    const std::span<const PosedTarget> targets = posing.BulletTargets();
+    if (targets.empty()) {
+      return;
+    }
+    if (judgement.entries.size() == limits::kMaxShotJudgementEntries) {
+      judgement.entries_left_out = true;
+      return;
+    }
+    ShotJudgementEntry entry{.ticks_after_shot = static_cast<std::uint32_t>(tick - judgement.shot_tick), .players = {}};
+    entry.players.reserve(targets.size());
+    for (const PosedTarget& target : targets) {
+      entry.players.push_back(JudgedPlayer{.entity = target.target,
+                                           .position = target.pose.position,
+                                           .stance = target.pose.stance,
+                                           .yaw = target.pose.yaw});
+    }
+    std::ranges::sort(entry.players, {}, &JudgedPlayer::entity);
+    judgement.entries.push_back(std::move(entry));
+  }
+
+  // Records in judgement what ended its flight, result: nothing, unless it struck.
+  void RecordEnd(ShotJudgement& judgement, const ballistics::StepResult& result) const {
+    if (result.outcome != ballistics::Outcome::kStruck) {
+      return;
+    }
+    judgement.point = result.impact_point;
+    if (result.surface == kMapSurface) {
+      judgement.struck = Struck::kMap;
+      return;
+    }
+    const StruckHitbox struck = posing.Struck(result.surface);
+    judgement.struck = Struck::kHitbox;
+    judgement.part = struck.part;
+    judgement.target = struck.target;
+  }
+#endif
 
   // Keeps one player's pose of this tick in its Hitbox history. The test
   // itself is folded into OnBallistics's ballistics::World::Step call - see
@@ -581,6 +660,9 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   impl.actions.clear();
   impl.shooters_delays.clear();
   impl.player_hits.clear();
+#if AUGUSTA_DEBUG_TOOLS
+  impl.shot_judgements.clear();
+#endif
   impl.posing.Clear();
   impl.ecs.progress(delta_time);
   // The ECS visits players in storage order; the state is ordered by id.
@@ -589,7 +671,19 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
   std::ranges::sort(impl.committed.deaths, {}, &Death::victim);
   std::ranges::sort(impl.committed.shots, {}, &Shot::shooter);
   std::ranges::stable_sort(impl.committed.hits, {}, &Hit::target);
+#if AUGUSTA_DEBUG_TOOLS
+  std::ranges::stable_sort(impl.shot_judgements, {}, &ShotJudgement::shooter);
+  return TickResult{.state = impl.committed,
+                    .actions = impl.actions,
+                    .shooters_delays = impl.shooters_delays,
+                    .shot_judgements = impl.shot_judgements};
+#else
   return TickResult{.state = impl.committed, .actions = impl.actions, .shooters_delays = impl.shooters_delays};
+#endif
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+void World::JudgeShots(bool on) { impl_->judge_shots = on; }
+#endif
 
 }  // namespace augusta::simulation

@@ -72,6 +72,10 @@ logging:
 #   # it, which the server takes on trust; false refuses it with "reenactments
 #   # not accepted" (ADR-0050). Never on for a server open to players.
 #   reenactments: false
+#   # Whether Shot judgements are sent (optional, default false): true sends
+#   # each shooter whose client subscribes to them how the server judged each of
+#   # its rounds (ADR-0038); false sends none, and logs a client asking once.
+#   shot_judgements: false
 #   network:
 #     # The directory each run writes a pcapng of the messages it sends to and
 #     # receives from every peer into, decrypted, for Wireshark with
@@ -88,7 +92,7 @@ logging:
 # Match end that differs from its capture's. A live server can capture into the
 # same directory: they are two processes. A replay server captures nothing and
 # reenacts no one, so simulation.capture and its other keys, and
-# debug.reenactments, must be left unset.
+# debug.reenactments and debug.shot_judgements, must be left unset.
 # replay:
 #   # The directory of Match captures to replay (required for replay mode); it
 #   # must exist.

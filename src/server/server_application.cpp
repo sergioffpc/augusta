@@ -109,6 +109,7 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
                                                       [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
 #if AUGUSTA_DEBUG_TOOLS
       .reenactments = file_config.reenactments,
+      .shot_judgements = file_config.shot_judgements,
 #endif
       .faults = faults,
       .transport = {.faults = faults},

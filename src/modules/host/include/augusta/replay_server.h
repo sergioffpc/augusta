@@ -42,7 +42,8 @@
 /// accepted, it starts a Replay of its own for that viewer from its first tick.
 /// Every Join request is refused with _replay server_, by the one path that
 /// refuses whatever asks to play here (RefuseToPlay); a Reenact request
-/// (ADR-0050) is to be refused by it too.
+/// (ADR-0050) is to be refused by it too. It serves no debug stream (ADR-0074):
+/// a Debug subscribe, from a viewer or not, is ignored, never misbehaviour.
 ///
 /// A Replay viewer is sent what a Match's Spectator is: Join accepted with the
 /// tick rate and Parameters (and session 0, which no player has), the Match

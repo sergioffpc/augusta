@@ -24,6 +24,9 @@ protocol or networking, which `checks/core_boundary.cmake` checks. A tick's
 Authoritative State is encoded once and readdressed to each player, so only each
 one's own fields are encoded per player.
 
+In a Development build it serves the debug streams its `debug` keys switch on to
+the peers that subscribe to them.
+
 ## Not its responsibility
 
 - Threads, the clock, the metrics endpoint and the lifecycle around a Host:
@@ -42,4 +45,5 @@ one's own fields are encoded per player.
 [ADR-0049](../../../docs/adr/0049-metrics-and-liveness.md),
 [ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md),
 [ADR-0051](../../../docs/adr/0051-replay.md),
-[ADR-0060](../../../docs/adr/0060-executables-are-glue.md).
+[ADR-0060](../../../docs/adr/0060-executables-are-glue.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

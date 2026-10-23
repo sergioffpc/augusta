@@ -109,6 +109,10 @@ SendResult Client::Send(ReplayListRequest request) { return impl_->Send(ToWire(r
 
 SendResult Client::Send(Ready ready) { return impl_->Send(ToWire(ready)); }
 
+#if AUGUSTA_DEBUG_TOOLS
+SendResult Client::Send(DebugSubscribe subscribe) { return impl_->Send(ToWire(subscribe)); }
+#endif
+
 SendResult Client::Send(std::span<const SequencedCommand> commands) { return impl_->Send(ToWire(commands)); }
 
 std::expected<std::vector<ServerMessage>, failure::Failure> Client::Receive() {
@@ -192,6 +196,12 @@ std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view) { retur
 std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings) {
   return OutgoingAccess::Make(ToWire(listings));
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+std::expected<Outgoing, failure::Failure> Encode(const ShotJudgement& judgement) {
+  return OutgoingAccess::Make(ToWire(judgement));
+}
+#endif
 
 std::expected<Outgoing, failure::Failure> Readdressed(const Outgoing& state, const AuthoritativeState& recipient) {
   return OutgoingAccess::Readdressed(state, recipient);

@@ -53,6 +53,10 @@
 /// parse never logs a peer's bad text (NFR-05).
 /// The server's Match captures (ADR-0050) are written as records of their own
 /// (CaptureRecordWire).
+/// A Development build's messages, Debug subscribe and Shot judgement, are in
+/// the one schema in every build, but their *Wire types and mapping are
+/// compiled only with AUGUSTA_DEBUG_TOOLS (ADR-0074), so a Shipping build's
+/// codec refuses each as a type it lacks.
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
 /// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
 /// there, and if it carries an outcome (a position, a hit, an ammo count), a
@@ -106,7 +110,20 @@ enum class MessageTypeWire : std::uint8_t {
   kReplayView = 16,
   /// Client to server: asks to join the Lobby as a Captured player, naming its spawn (ADR-0050).
   kReenactRequest = 17,
+#if AUGUSTA_DEBUG_TOOLS
+  // A Development build's alone (ADR-0038, ADR-0074): a Shipping build has no
+  // such type, and refuses its member as one it lacks.
+  /// Client to server: which streams of the server's state the client wants from now on.
+  kDebugSubscribe = 18,
+  /// Server to client: how the server judged one round the recipient fired, once its flight ended.
+  kShotJudgement = 19,
+#endif
 };
+
+/// The most bytes one payload holds: the largest message the transport sends
+/// (GameNetworkingSockets' k_cbMaxSteamNetworkingSocketsMessageSizeSend,
+/// ADR-0003). Every message the protocol bounds encodes within it.
+inline constexpr std::size_t kMaxPayloadSize = std::size_t{512} * 1024;
 
 /// Longest engine version string a JoinRequestWire may carry, in bytes.
 inline constexpr std::size_t kMaxEngineVersionLength = 32;
@@ -595,11 +612,91 @@ struct ReplayViewWire {
   bool operator==(const ReplayViewWire&) const = default;
 };
 
-/// Any message of the protocol.
+#if AUGUSTA_DEBUG_TOOLS
+/// Client to server, in a Development build: which streams of the server's
+/// state the client wants from now on, each a bit, a cleared one stopping its
+/// stream (ADR-0038). Any byte is a valid one: the server ignores a bit no
+/// stream uses, so a later stream's never makes a message malformed.
+struct DebugSubscribeWire {
+  /// The bit of flags that asks for Shot judgements.
+  static constexpr std::uint8_t kShotJudgements = 1U << 0U;
+
+  std::uint8_t flags = 0;
+
+  bool operator==(const DebugSubscribeWire&) const = default;
+};
+
+/// What ended a round's flight, as its Shot judgement tells it.
+enum class StruckWire : std::uint8_t {
+  /// Nothing: it flew past its range or its flight time.
+  kNothing = 0,
+  kMap = 1,
+  kProp = 2,
+  kHitbox = 3,
+};
+
+/// One player a round was judged against on one tick of its flight, as the
+/// Hitbox history held it: what places its Hitboxes, with its Character.
+struct JudgedPlayerWire {
+  /// Where its feet were, on the position grid.
+  math::Vec3 position{};
+  EntityIdWire entity{};
+  /// Where it faced, in radians, on the angle grid.
+  float yaw = 0.0F;
+  StanceWire stance = StanceWire::kStanding;
+
+  bool operator==(const JudgedPlayerWire&) const = default;
+};
+
+/// One tick of a round's flight whose segment crossed some player's bounds.
+struct ShotJudgementEntryWire {
+  /// Every player whose bounds it crossed, at most limits::kMaxPlayers.
+  std::vector<JudgedPlayerWire> players;
+  /// How many ticks after its Shot's this one is.
+  std::uint16_t ticks_after_shot = 0;
+
+  bool operator==(const ShotJudgementEntryWire&) const = default;
+};
+
+/// Server to client, in a Development build, to the round's shooter alone:
+/// how the server judged one round it fired, once its flight ended (ADR-0038).
+struct ShotJudgementWire {
+  /// The bits of flags: more ticks crossed some player's bounds than entries holds.
+  static constexpr std::uint8_t kEntriesLeftOut = 1U << 0U;
+
+  /// The server tick its Shot was fired on.
+  tick::Tick shot_tick = 0;
+  /// The ticks of its flight whose segment crossed some player's bounds,
+  /// oldest first, at most limits::kMaxShotJudgementEntries.
+  std::vector<ShotJudgementEntryWire> entries;
+  /// Where it struck, on the position grid.
+  math::Vec3 point{};
+  /// The Prop or body it struck; 0 when it struck neither.
+  EntityIdWire target{};
+  /// Its Shooter's delay's fraction of a tick, on the Seen fraction grid.
+  float delay_fraction = 0.0F;
+  /// Its Shooter's delay's whole ticks.
+  std::uint8_t delay_ticks = 0;
+  StruckWire struck = StruckWire::kNothing;
+  /// The Body part struck, meaningful only when struck is kHitbox.
+  BodyPartWire part = BodyPartWire::kTorso;
+  /// kEntriesLeftOut or not; no other bit.
+  std::uint8_t flags = 0;
+
+  bool operator==(const ShotJudgementWire&) const = default;
+};
+#endif
+
+/// Any message of the protocol: in a Development build, its messages too.
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
                  ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire,
-                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire>;
+                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire
+#if AUGUSTA_DEBUG_TOOLS
+                 ,
+                 DebugSubscribeWire, ShotJudgementWire
+#endif
+                 >;
 
 /// A payload is this many bytes, the same type networking::Payload names.
 using BytesWire = std::vector<std::byte>;
