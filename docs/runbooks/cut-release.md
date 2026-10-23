@@ -90,13 +90,21 @@ cut that release first and the hotfix off it.
     git switch -c release/vX.Y.Z origin/develop
     ```
 
-3. Bump the version in its three places, then commit:
+3. Bump the version in its three places, rewrite the fixture that names it, then
+   commit:
 
     - `src/modules/version/version.cpp`: `EngineVersion()`'s release is
       `"X.Y.Z"`, which a Development build returns with `+dev` appended
       (ADR-0074). Join refuses a client of another engine version (ADR-0038).
     - `vcpkg.json`: `"version": "X.Y.Z"`.
     - `charts/augustad/Chart.yaml`: `version: X.Y.Z` and `appVersion: "X.Y.Z"`.
+
+    Then rewrite the dissector's fixture, which names the engine version
+    (`tests/fuzz/README.md`), with a Development build of the bump:
+
+    ```sh
+    cmake --build --preset linux --target augusta_protocol_decode_seeds_pcapng
+    ```
 
     ```sh
     git commit -am "chore(release): bump the engine, manifest and chart to X.Y.Z"
