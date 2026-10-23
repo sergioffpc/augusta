@@ -185,7 +185,10 @@ bool StartedOver(const link::Traffic& earlier, const link::Traffic& later) {
       return true;
     }
   }
-  return false;
+  const link::AuthoritativeStateTally& before = earlier.authoritative_state;
+  const link::AuthoritativeStateTally& after = later.authoritative_state;
+  return after.updates < before.updates || after.ticks_missing < before.ticks_missing ||
+         after.ticks_out_of_order < before.ticks_out_of_order;
 }
 
 double PerSecond(std::uint64_t earlier, std::uint64_t later, double seconds) {
@@ -270,6 +273,7 @@ void NetworkPanel::Sample(const NetworkSample& sample, Clock::time_point now) {
   }
   SampleConnection(sample.connection.stats);
   SampleTraffic(sample.connection.traffic, now);
+  SampleAuthoritativeState(sample);
   SampleCorrections(sample.corrections, now);
   SampleFrames(now);
 }
@@ -378,6 +382,35 @@ void NetworkPanel::SampleTraffic(const link::Traffic& traffic, Clock::time_point
   }
 }
 
+void NetworkPanel::SampleAuthoritativeState(const NetworkSample& sample) {
+  AuthoritativeState& state = authoritative_state_;
+  const auto& [oldest_time, oldest] = traffic_window_.front();
+  const auto& [newest_time, newest] = traffic_window_.back();
+  const double seconds = std::chrono::duration<double>(newest_time - oldest_time).count();
+  const link::AuthoritativeStateTally& before = oldest.authoritative_state;
+  const link::AuthoritativeStateTally& tally = newest.authoritative_state;
+  if (!sample.receives_authoritative_state || seconds <= 0.0) {
+    state.updates.Set(std::nullopt);
+    state.ticks_missing.Set(std::nullopt);
+    state.ticks_out_of_order.Set(std::nullopt);
+  } else {
+    state.updates.Set(PerSecond(before.updates, tally.updates, seconds));
+    state.ticks_missing.Set(PerSecond(before.ticks_missing, tally.ticks_missing, seconds));
+    state.ticks_out_of_order.Set(PerSecond(before.ticks_out_of_order, tally.ticks_out_of_order, seconds));
+  }
+  state.received = sample.receives_authoritative_state;
+  state.tick_rate_hz = sample.tick_rate_hz;
+  if (!sample.receives_authoritative_state || tally.updates == 0) {
+    state.last_bytes.Set(std::nullopt);
+    state.average_bytes.Set(std::nullopt);
+    state.largest_bytes.Set(std::nullopt);
+  } else {
+    state.last_bytes.Set(static_cast<double>(tally.last_bytes));
+    state.average_bytes.Set(static_cast<double>(tally.total_bytes) / static_cast<double>(tally.updates));
+    state.largest_bytes.Set(static_cast<double>(tally.largest_bytes));
+  }
+}
+
 debug::Panel NetworkPanel::BuildPanel() const {
   debug::Panel panel{.id = std::string(kNetworkPanelId), .title = "Network", .elements = {}};
   const std::optional<link::ConnectionStats>& stats = connection_.stats;
@@ -428,10 +461,36 @@ debug::Panel NetworkPanel::BuildPanel() const {
                           FormatWatched(rates.bytes_out.Now(), rates.bytes_out.Peak(), rate)});
   }
   panel.elements.emplace_back(std::move(table));
+  AddAuthoritativeState(panel);
   AddPredictionGroup(panel);
   AddImpairmentGroup(panel);
   panel.elements.emplace_back(debug::Button{.id = std::string(kResetPeaksButton), .label = "Reset peaks"});
   return panel;
+}
+
+void NetworkPanel::AddAuthoritativeState(debug::Panel& panel) const {
+  const AuthoritativeState& state = authoritative_state_;
+  const auto bytes = [](double value) { return FormatBytes(value); };
+  const auto per_second = [](double value) { return std::format("{:.1f}/s", value); };
+  const auto line = [&panel](std::string_view label, const Watched& watched, const auto& format) {
+    panel.elements.emplace_back(debug::Text{
+        .text = std::format("{}: {}", label, FormatWatched(watched.Now(), watched.Peak(), format, "peak"))});
+  };
+
+  panel.elements.emplace_back(debug::Text{.text = "Authoritative State"});
+  if (state.received) {
+    panel.elements.emplace_back(debug::Text{
+        .text = std::format(
+            "Updates: {}, tick rate {}", FormatWatched(state.updates.Now(), state.updates.Peak(), per_second, "peak"),
+            state.tick_rate_hz.has_value() ? std::format("{}Hz", *state.tick_rate_hz) : std::string("--"))});
+  } else {
+    panel.elements.emplace_back(debug::Text{.text = "Updates: --"});
+  }
+  line("Last size", state.last_bytes, bytes);
+  line("Average size", state.average_bytes, bytes);
+  line("Largest size", state.largest_bytes, bytes);
+  line("Ticks missing", state.ticks_missing, per_second);
+  line("Ticks out of order", state.ticks_out_of_order, per_second);
 }
 
 void NetworkPanel::AddImpairmentGroup(debug::Panel& panel) const {
@@ -531,6 +590,12 @@ void NetworkPanel::ResetPeaks() {
     rates.messages_out.ResetPeak();
     rates.bytes_out.ResetPeak();
   }
+  authoritative_state_.updates.ResetPeak();
+  authoritative_state_.last_bytes.ResetPeak();
+  authoritative_state_.average_bytes.ResetPeak();
+  authoritative_state_.largest_bytes.ResetPeak();
+  authoritative_state_.ticks_missing.ResetPeak();
+  authoritative_state_.ticks_out_of_order.ResetPeak();
   prediction_.corrections_per_sec.ResetPeak();
   prediction_.correction_m.ResetPeak();
   prediction_.rifle_corrections_per_sec.ResetPeak();
