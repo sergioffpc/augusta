@@ -4,14 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "augusta/math.h"
+#include "augusta/correction_tally.h"
 #include "augusta/prediction.h"
 
 /// \file
 /// What one player's prediction and fire came to over a run, from the
 /// Prediction States its Session's Ticks left: how often and how far
 /// reconciliation (ADR-0004) moved its body, and how many of its rounds the
-/// server confirmed as hits (ADR-0044). What a test of the netcode under an
+/// server confirmed as hits (ADR-0044); a correction is what
+/// prediction::CorrectionTally counts. What a test of the netcode under an
 /// impaired link judges, and what a load test reports at the end of a run.
 /// Counts only; the bounds they are held to are the caller's.
 namespace augusta::harness {
@@ -48,11 +49,11 @@ class NetcodeTally {
   /// The Hit confirmations the player was handed since the last call.
   void RecordHitConfirmations(std::size_t count);
 
-  [[nodiscard]] NetcodeStats Stats() const { return stats_; }
+  [[nodiscard]] NetcodeStats Stats() const;
 
  private:
   NetcodeStats stats_;
-  math::Vec3 last_total_correction_{};
+  prediction::CorrectionTally corrections_;
   std::uint32_t last_total_rounds_fired_ = 0;
 };
 

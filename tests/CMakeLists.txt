@@ -584,6 +584,15 @@ target_link_libraries(
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
 
+# How often and how far Reconciliation moved the body, from Prediction States built by hand.
+add_executable(augusta_correction_tally_tests correction_tally_test.cpp)
+target_link_libraries(
+  augusta_correction_tally_tests
+  PRIVATE augusta_math augusta_prediction GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_correction_tally_tests DISCOVERY_TIMEOUT 30)
+
 # The Command each Intent yields and how it ends, from Server views built by hand.
 add_executable(augusta_intent_tests intent_test.cpp)
 target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math GTest::gtest GTest::gtest_main)
