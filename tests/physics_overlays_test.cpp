@@ -1,5 +1,6 @@
 #include "augusta/physics_overlays.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -153,6 +154,165 @@ TEST(ServerBodiesTest, TheBodiesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
   for (const Capsule& capsule : shapes.capsules) {
     EXPECT_TRUE(capsule.through_walls);
   }
+}
+
+PhysicsOverlays CollisionOn() { return PhysicsOverlays(PhysicsOverlaysStart{.collision = true}); }
+
+// A frame whose newest Prediction State carries lines, as Commit leaves them
+// with Collision on.
+FrameInput FrameWithLines(std::vector<physics::VisualizationLine> lines) {
+  FrameInput input = FrameOf({});
+  input.ticks.latest.collision_lines =
+      std::make_shared<const std::vector<physics::VisualizationLine>>(std::move(lines));
+  return input;
+}
+
+ControlEvent SliderEvent(std::string control, float value) {
+  return ControlEvent{.panel = std::string(kPhysicsPanelId), .control = std::move(control), .value = value};
+}
+
+const debug::Slider* SliderOf(const Panel& panel, const std::string& id) {
+  for (const debug::Element& element : panel.elements) {
+    if (const auto* slider = std::get_if<debug::Slider>(&element); slider != nullptr && slider->id == id) {
+      return slider;
+    }
+  }
+  return nullptr;
+}
+
+TEST(CollisionTest, ThePredictionStatesLinesAreSegmentsInTheirOwnColours) {
+  const FrameInput input = FrameWithLines({
+      {.from = Vec3(0.0F, 0.0F, 0.0F), .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFFFF0000U},
+      {.from = Vec3(0.0F, 1.0F, 0.0F), .to = Vec3(0.0F, 1.0F, 2.0F), .argb = 0xFF00FF00U},
+      {.from = Vec3(3.0F, 0.0F, 0.0F), .to = Vec3(3.0F, 3.0F, 0.0F), .argb = 0xFF0000FFU},
+  });
+
+  const Shapes shapes = CollisionOn().BuildShapes(input);
+
+  ASSERT_EQ(shapes.segments.size(), 3U);
+  EXPECT_EQ(shapes.segments[0].from, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[0].to, Vec3(1.0F, 0.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[0].color, Vec3(1.0F, 0.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[1].color, Vec3(0.0F, 1.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[2].from, Vec3(3.0F, 0.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[2].to, Vec3(3.0F, 3.0F, 0.0F));
+  EXPECT_EQ(shapes.segments[2].color, Vec3(0.0F, 0.0F, 1.0F));
+  for (const debug::Segment& segment : shapes.segments) {
+    EXPECT_FLOAT_EQ(segment.alpha, 1.0F);
+    EXPECT_FALSE(segment.through_walls);
+  }
+}
+
+TEST(CollisionTest, AGreyLineKeepsItsShade) {
+  const Shapes shapes =
+      CollisionOn().BuildShapes(FrameWithLines({{.from = {}, .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFF336699U}}));
+
+  ASSERT_EQ(shapes.segments.size(), 1U);
+  EXPECT_FLOAT_EQ(shapes.segments[0].color.x, 0x33 / 255.0F);
+  EXPECT_FLOAT_EQ(shapes.segments[0].color.y, 0x66 / 255.0F);
+  EXPECT_FLOAT_EQ(shapes.segments[0].color.z, 0x99 / 255.0F);
+}
+
+TEST(CollisionTest, NothingIsDrawnWhileCollisionIsOff) {
+  const FrameInput input = FrameWithLines({{.from = {}, .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFFFF0000U}});
+  // The control: on, the same frame draws.
+  ASSERT_FALSE(CollisionOn().BuildShapes(input).segments.empty());
+
+  EXPECT_EQ(PhysicsOverlays(PhysicsOverlaysStart{}).BuildShapes(input), Shapes{});
+}
+
+TEST(CollisionTest, NothingIsDrawnWhileThePredictionStateCarriesNoLines) {
+  EXPECT_EQ(CollisionOn().BuildShapes(FrameOf({})), Shapes{});
+}
+
+TEST(CollisionTest, ThroughWallsDrawsTheLinesOverTheWorld) {
+  PhysicsOverlays overlays = CollisionOn();
+  overlays.Update(PanelEvent("collision.through_walls", true));
+
+  const Shapes shapes =
+      overlays.BuildShapes(FrameWithLines({{.from = {}, .to = Vec3(1.0F, 0.0F, 0.0F), .argb = 0xFFFF0000U}}));
+
+  ASSERT_EQ(shapes.segments.size(), 1U);
+  EXPECT_TRUE(shapes.segments[0].through_walls);
+}
+
+TEST(CollisionTest, TheVisualizationIsOnWithItsFlagsAndABoxOfTheRadiusAroundTheCamera) {
+  const physics::Visualization visualization = CollisionOn().Visualization(Vec3(4.0F, 1.5F, -2.0F));
+
+  EXPECT_TRUE(visualization.on);
+  EXPECT_TRUE(visualization.collision_shapes);
+  EXPECT_FALSE(visualization.bounds);
+  EXPECT_FALSE(visualization.contacts);
+  EXPECT_FALSE(visualization.joints);
+  EXPECT_TRUE(visualization.controller_volumes);
+  EXPECT_EQ(visualization.cull_center, Vec3(4.0F, 1.5F, -2.0F));
+  EXPECT_FLOAT_EQ(visualization.cull_half_extent, 20.0F);
+}
+
+TEST(CollisionTest, WithTheOverlayClosedTheVisualizationIsOff) {
+  PhysicsOverlays overlays = CollisionOn();
+  // The control: open, it is on.
+  ASSERT_TRUE(overlays.Visualization(Vec3(4.0F, 1.5F, -2.0F)).on);
+
+  overlays.Update(PanelEvent("collision", false));
+
+  EXPECT_FALSE(overlays.Visualization(Vec3(4.0F, 1.5F, -2.0F)).on);
+  EXPECT_FALSE(PhysicsOverlays(PhysicsOverlaysStart{}).Visualization(Vec3(4.0F, 1.5F, -2.0F)).on);
+}
+
+TEST(PhysicsPanelTest, TheCollisionFlagsComeBackAsStateChanges) {
+  PhysicsOverlays overlays = CollisionOn();
+
+  overlays.Update(PanelEvent("collision.shapes", false));
+  overlays.Update(PanelEvent("collision.bounds", true));
+  overlays.Update(PanelEvent("collision.contacts", true));
+  overlays.Update(PanelEvent("collision.joints", true));
+  overlays.Update(PanelEvent("collision.controller_volumes", false));
+
+  const physics::Visualization visualization = overlays.Visualization({});
+  EXPECT_FALSE(visualization.collision_shapes);
+  EXPECT_TRUE(visualization.bounds);
+  EXPECT_TRUE(visualization.contacts);
+  EXPECT_TRUE(visualization.joints);
+  EXPECT_FALSE(visualization.controller_volumes);
+  const Panel panel = overlays.BuildPanel();
+  for (const char* flag : {"collision.bounds", "collision.contacts", "collision.joints"}) {
+    ASSERT_NE(ToggleOf(panel, flag), nullptr) << flag;
+    EXPECT_TRUE(ToggleOf(panel, flag)->on) << flag;
+  }
+  for (const char* flag : {"collision.shapes", "collision.controller_volumes"}) {
+    ASSERT_NE(ToggleOf(panel, flag), nullptr) << flag;
+    EXPECT_FALSE(ToggleOf(panel, flag)->on) << flag;
+  }
+}
+
+TEST(PhysicsPanelTest, ShowsTheCollisionToggleAndItsRadiusSliderFrom1To100Metres) {
+  const Panel panel = CollisionOn().BuildPanel();
+
+  const Toggle* on = ToggleOf(panel, "collision");
+  ASSERT_NE(on, nullptr);
+  EXPECT_EQ(on->label, "Collision");
+  EXPECT_TRUE(on->on);
+  ASSERT_NE(ToggleOf(panel, "collision.through_walls"), nullptr);
+  const debug::Slider* radius = SliderOf(panel, "collision.radius");
+  ASSERT_NE(radius, nullptr);
+  EXPECT_FLOAT_EQ(radius->value, 20.0F);
+  EXPECT_FLOAT_EQ(radius->min, 1.0F);
+  EXPECT_FLOAT_EQ(radius->max, 100.0F);
+}
+
+TEST(PhysicsPanelTest, TheRadiusComesBackAsAStateChangeKeptWithin1To100Metres) {
+  PhysicsOverlays overlays = CollisionOn();
+
+  overlays.Update(SliderEvent("collision.radius", 35.0F));
+  EXPECT_FLOAT_EQ(overlays.Visualization({}).cull_half_extent, 35.0F);
+  EXPECT_FLOAT_EQ(SliderOf(overlays.BuildPanel(), "collision.radius")->value, 35.0F);
+
+  overlays.Update(SliderEvent("collision.radius", 0.2F));
+  EXPECT_FLOAT_EQ(overlays.Visualization({}).cull_half_extent, 1.0F);
+
+  overlays.Update(SliderEvent("collision.radius", 500.0F));
+  EXPECT_FLOAT_EQ(overlays.Visualization({}).cull_half_extent, 100.0F);
 }
 
 TEST(PhysicsPanelTest, ShowsEachOverlaysToggleAndThroughWallsToggleAsTheStateHasThem) {

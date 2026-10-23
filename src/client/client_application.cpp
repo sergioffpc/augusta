@@ -95,6 +95,7 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .debug_hud = file_config.debug.hud,
       .debug_profiling_panel = file_config.debug.profiling_panel,
       .debug_physics_panel = file_config.debug.physics.panel,
+      .debug_physics_collision = file_config.debug.physics.collision,
       .debug_physics_server_bodies = file_config.debug.physics.server_bodies,
 #endif
   };

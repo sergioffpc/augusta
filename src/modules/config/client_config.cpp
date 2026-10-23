@@ -41,6 +41,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     "debug.hud",
     "debug.profiling.panel",
     "debug.physics.panel",
+    "debug.physics.collision",
     "debug.physics.server_bodies",
 #endif
 });
@@ -118,8 +119,12 @@ std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(con
   if (!panel) {
     return std::unexpected(panel.error());
   }
-  return OptionalFlag(values, "debug.physics.server_bodies", false).transform([&panel](bool server_bodies) {
-    return ClientPhysicsDebugConfig{.panel = *panel, .server_bodies = server_bodies};
+  const auto collision = OptionalFlag(values, "debug.physics.collision", false);
+  if (!collision) {
+    return std::unexpected(collision.error());
+  }
+  return OptionalFlag(values, "debug.physics.server_bodies", false).transform([&](bool server_bodies) {
+    return ClientPhysicsDebugConfig{.panel = *panel, .collision = *collision, .server_bodies = server_bodies};
   });
 }
 

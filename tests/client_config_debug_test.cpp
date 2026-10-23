@@ -121,6 +121,7 @@ TEST_P(PhysicsSwitchTest, RejectsAValueThatIsNotTrueOrFalse) {
 INSTANTIATE_TEST_SUITE_P(
     ParseClientConfigTest, PhysicsSwitchTest,
     testing::Values(PhysicsSwitch{.key = "panel", .read = &augusta::config::ClientPhysicsDebugConfig::panel},
+                    PhysicsSwitch{.key = "collision", .read = &augusta::config::ClientPhysicsDebugConfig::collision},
                     PhysicsSwitch{.key = "server_bodies",
                                   .read = &augusta::config::ClientPhysicsDebugConfig::server_bodies}),
     [](const testing::TestParamInfo<PhysicsSwitch>& info) { return std::string(info.param.key); });

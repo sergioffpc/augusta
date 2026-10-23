@@ -92,7 +92,7 @@ presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& c
   if (ModeOf(config) == ClientMode::kReplayViewer) {
     return {};
   }
-  return {.server_bodies = config.debug_physics_server_bodies};
+  return {.collision = config.debug_physics_collision, .server_bodies = config.debug_physics_server_bodies};
 }
 #endif
 
@@ -654,6 +654,12 @@ struct ClientRuntime::Impl {
     // Shapes and panels live one frame (ADR-0075).
     renderer.SetDebugShapes(physics_overlays.BuildShapes(input));
     renderer.SetDebugPanels(DebugPanels());
+    // What the Prediction thread's next ticks draw of the client's World,
+    // culled around this frame's camera; off while Collision is, so a closed
+    // overlay costs nothing.
+    if (runner.has_value()) {
+      runner->SetVisualization(physics_overlays.Visualization(frame_state.camera.position));
+    }
 #endif
   }
 

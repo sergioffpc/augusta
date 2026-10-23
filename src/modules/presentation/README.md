@@ -12,7 +12,10 @@ visual correction, tracers and effects, the animation engine and which audio
 cues play. In a Development build (ADR-0074) it also holds the Physics Debug
 overlays (ADR-0075): which are on, the Physics Debug panel that switches them,
 and each frame's shapes, built from the plain values physics hands it, such as
-every body the newest Authoritative State update reported, as its capsule.
+every body the newest Authoritative State update reported, as its capsule, and
+the Collision lines the Prediction State carries, in PhysX's colours. It also
+gives the visualization settings Collision asks of the client's World: off while
+the overlay is, or its flags and culling box around the camera.
 
 ## Not its responsibility
 
