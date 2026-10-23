@@ -383,6 +383,8 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
   return impl_->map.AddCollisionMesh(mesh, kMapSurface);
 }
 
+const physics::World& World::Map() const { return impl_->map; }
+
 void World::SetParameters(const parameters::Parameters& parameters, float tick_duration) {
   impl_->tracer_rules = TracerRulesOf(parameters, tick_duration);
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;

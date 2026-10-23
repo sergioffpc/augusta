@@ -13,7 +13,7 @@
 #include "augusta/renderer.h"
 
 #if AUGUSTA_DEBUG_TOOLS
-#include "augusta/physics_overlays.h"
+#include "augusta/judged_rounds.h"
 #endif
 
 /// \file

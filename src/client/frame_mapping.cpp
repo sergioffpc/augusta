@@ -18,8 +18,8 @@
 #include "augusta/tracers.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/judged_rounds.h"
 #include "augusta/link_types.h"
-#include "augusta/physics_overlays.h"
 #endif
 
 namespace augusta::client {

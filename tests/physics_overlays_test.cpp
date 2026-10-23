@@ -7,6 +7,7 @@
 #include <numbers>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "augusta/debug_shapes.h"
 #include "augusta/hitbox.h"
 #include "augusta/interpolation.h"
+#include "augusta/judged_rounds.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -257,6 +259,8 @@ TEST(HitboxesTest, APlayerWhoseCharacterHasNoHitboxesKnownDrawsNothing) {
 }
 
 TEST(HitboxesTest, NothingIsDrawnWhileTheOverlayIsOff) {
+  // The control: on, the same frame draws.
+  ASSERT_FALSE(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({})).segments.empty());
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
   overlays.SetCharacterHitboxes("soldier", kSoldierHitboxes);
 
@@ -492,6 +496,10 @@ TEST(PhysicsPanelTest, TheHitboxesTogglesComeBackAsStateChanges) {
 }
 
 TEST(PhysicsPanelTest, AnotherPanelsEventChangesNothing) {
+  // The control: the same event of the Physics panel switches it.
+  PhysicsOverlays control(PhysicsOverlaysStart{});
+  control.Update(PanelEvent("server_bodies", true));
+  ASSERT_TRUE(control.IsOn(PhysicsOverlay::kServerBodies));
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
 
   overlays.Update(ControlEvent{.panel = "profiling", .control = "server_bodies", .value = true});
@@ -518,6 +526,13 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 
 const Clock::time_point kNow{seconds{1000}};
+
+// The Map a judgement's flight is flown against: none, so it flies on to the
+// point struck.
+const physics::World& NoMap() {
+  static const physics::World map{physics::StaminaConfig{}};
+  return map;
+}
 constexpr tick::Tick kShotTick = 100;
 // The other player as the match named it.
 const std::vector<PlayerCharacter> kCharacters{{.entity = kOther, .character = "soldier"}};
@@ -573,6 +588,16 @@ ShotJudgement JudgedPast(const Vec3& position, float delay) {
   };
 }
 
+// Whether panel shows text on a line of its own.
+bool Shows(const Panel& panel, std::string_view text) {
+  for (const debug::Element& element : panel.elements) {
+    if (const auto* line = std::get_if<debug::Text>(&element); line != nullptr && line->text == text) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // The segments of shapes in color.
 std::vector<Segment> SegmentsIn(const Shapes& shapes, const Vec3& color) {
   std::vector<Segment> in;
@@ -592,7 +617,7 @@ TEST(ShotJudgementsTest, ARoundFiredKeepsTheSeenHitboxesBesideTheJudgedOnes) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(3.0F, 0.0F, -1.0F), 98), kNow);
 
-  overlays.Judge(JudgedPast(Vec3(3.5F, 0.0F, -1.0F), 2.0F), kNow + milliseconds{200});
+  overlays.Judge(JudgedPast(Vec3(3.5F, 0.0F, -1.0F), 2.0F), NoMap(), kNow + milliseconds{200});
   overlays.Advance(FiredSoFar(1), State{}, kNow + milliseconds{210});
   const Shapes shapes = overlays.BuildShapes(FiredSoFar(1), State{});
 
@@ -607,7 +632,7 @@ TEST(ShotJudgementsTest, AJudgementPairsWithTheRecordOfItsSeenTime) {
   FireOneRound(overlays, SeenAt(Vec3(3.0F, 0.0F, 0.0F), 99, 0.5F), kNow + milliseconds{32}, 2);
 
   // Fired on tick 100, seen 1.4 ticks before: nearest the round seen at 98.5.
-  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.4F), kNow + milliseconds{200});
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.4F), NoMap(), kNow + milliseconds{200});
 
   ExpectOutlinesOf(SegmentsIn(overlays.BuildShapes(FiredSoFar(3), State{}), kSeenHitboxColor),
                    SoldierAt(Vec3(2.0F, 0.0F, 0.0F)));
@@ -617,7 +642,7 @@ TEST(ShotJudgementsTest, AJudgementWithNoRecordWithinATickIsDrawnJudgedOnly) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 90), kNow);
 
-  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), kNow + milliseconds{200});
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + milliseconds{200});
 
   const Shapes shapes = overlays.BuildShapes(FiredSoFar(1), State{});
   EXPECT_TRUE(SegmentsIn(shapes, kSeenHitboxColor).empty());
@@ -625,12 +650,17 @@ TEST(ShotJudgementsTest, AJudgementWithNoRecordWithinATickIsDrawnJudgedOnly) {
 }
 
 TEST(ShotJudgementsTest, ARoundFiredWithTheOverlayOffKeepsNoSeenHitboxes) {
+  // The control: fired with it on, the round keeps them.
+  PhysicsOverlays control = ShotJudgementsOn();
+  FireOneRound(control, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
+  control.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + milliseconds{200});
+  ASSERT_FALSE(SegmentsIn(control.BuildShapes(FiredSoFar(1), State{}), kSeenHitboxColor).empty());
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
   overlays.SetCharacterHitboxes("soldier", kSoldierHitboxes);
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
   overlays.Update(PanelEvent("shot_judgements", true));
 
-  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), kNow + milliseconds{200});
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + milliseconds{200});
 
   const Shapes shapes = overlays.BuildShapes(FiredSoFar(1), State{});
   EXPECT_TRUE(SegmentsIn(shapes, kSeenHitboxColor).empty());
@@ -653,7 +683,7 @@ ShotJudgement StruckHead(const Vec3& position, const Vec3& point) {
 TEST(ShotJudgementsTest, TheStruckHitboxIsFilled) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
-  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), kNow);
+  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
 
   const Shapes shapes = overlays.BuildShapes(FiredSoFar(0), State{});
   const hitbox::PlacedHitbox head = SoldierAt(Vec3(2.0F, 0.0F, 0.0F))[0];
@@ -668,9 +698,13 @@ TEST(ShotJudgementsTest, TheStruckHitboxIsFilled) {
 }
 
 TEST(ShotJudgementsTest, AMissFillsNoHitbox) {
+  // The control: a round that struck the head fills it.
+  PhysicsOverlays control = ShotJudgementsOn();
+  control.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
+  ASSERT_FALSE(control.BuildShapes(FiredSoFar(0), State{}).triangles.empty());
   PhysicsOverlays overlays = ShotJudgementsOn();
 
-  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), kNow);
+  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
 
   EXPECT_TRUE(overlays.BuildShapes(FiredSoFar(0), State{}).triangles.empty());
 }
@@ -678,7 +712,7 @@ TEST(ShotJudgementsTest, AMissFillsNoHitbox) {
 TEST(ShotJudgementsTest, ThePointStruckIsASmallSphere) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
-  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), kNow);
+  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
 
   const Shapes shapes = overlays.BuildShapes(FiredSoFar(0), State{});
   ASSERT_EQ(shapes.spheres.size(), 1U);
@@ -695,18 +729,26 @@ parameters::Parameters LevelFlight() {
   return parameters;
 }
 
-TEST(ShotJudgementsTest, TheRoundsFlightIsFlownFromItsShotToThePointStruck) {
+// Shot judgements on, flying level, after a frame announcing the local
+// player's Shot of kShotTick from (0, 1.5, 0) down -Z, where a view of yaw 0
+// looks, beside another player's.
+PhysicsOverlays FlyingOwnShot() {
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.SetParameters(LevelFlight(), 1.0F / 60.0F);
   FrameInput shot = FiredSoFar(0);
   shot.shots = {{.shooter = kLocal, .tick = kShotTick, .origin = Vec3(0.0F, 1.5F, 0.0F), .yaw = 0.0F, .pitch = 0.0F},
                 {.shooter = kOther, .tick = kShotTick, .origin = Vec3(9.0F, 1.5F, 0.0F), .yaw = 0.0F, .pitch = 0.0F}};
   overlays.Advance(shot, State{}, kNow);
+  return overlays;
+}
+
+TEST(ShotJudgementsTest, TheRoundsFlightIsFlownFromItsShotToThePointStruck) {
+  PhysicsOverlays overlays = FlyingOwnShot();
 
   ShotJudgement judgement = JudgedPast(Vec3(0.0F, 0.0F, -3.5F), 0.0F);
   judgement.struck = Struck::kMap;
   judgement.point = Vec3(0.0F, 1.5F, -3.5F);
-  overlays.Judge(judgement, kNow + milliseconds{100});
+  overlays.Judge(judgement, NoMap(), kNow + milliseconds{100});
 
   // Down -Z, where a view of yaw 0 looks, a metre a tick, to the point struck.
   const std::vector<Segment> flight = SegmentsIn(overlays.BuildShapes(FiredSoFar(0), State{}), kFlightColor);
@@ -720,19 +762,54 @@ TEST(ShotJudgementsTest, TheRoundsFlightIsFlownFromItsShotToThePointStruck) {
 }
 
 TEST(ShotJudgementsTest, NoFlightIsDrawnWithoutItsShot) {
+  // The control: with its Shot announced, the same judgement draws one.
+  PhysicsOverlays control = FlyingOwnShot();
+  control.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
+  ASSERT_FALSE(SegmentsIn(control.BuildShapes(FiredSoFar(0), State{}), kFlightColor).empty());
   PhysicsOverlays overlays = ShotJudgementsOn();
   overlays.SetParameters(LevelFlight(), 1.0F / 60.0F);
 
-  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), kNow);
+  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
 
   EXPECT_TRUE(SegmentsIn(overlays.BuildShapes(FiredSoFar(0), State{}), kFlightColor).empty());
+}
+
+// A wall across the flight of FlyingOwnShot's round, facing it, 3.5 m away.
+physics::World WallAhead() {
+  physics::World map{physics::StaminaConfig{}};
+  const physics::CollisionMesh wall{
+      .points = {Vec3(-5.0F, 0.0F, -3.5F), Vec3(5.0F, 0.0F, -3.5F), Vec3(5.0F, 5.0F, -3.5F), Vec3(-5.0F, 5.0F, -3.5F)},
+      .indices = {0, 1, 2, 0, 2, 3}};
+  EXPECT_TRUE(map.AddCollisionMesh(wall, physics::SurfaceId{1}).has_value());
+  return map;
+}
+
+// The flight a judgement that struck nothing is drawn with, flown against map.
+std::vector<Segment> MissFlownAgainst(const physics::World& map) {
+  PhysicsOverlays overlays = FlyingOwnShot();
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 0.0F), map, kNow + milliseconds{100});
+  return SegmentsIn(overlays.BuildShapes(FiredSoFar(0), State{}), kFlightColor);
+}
+
+// The Map a tracer meets, as Tracers fly it: a miss is not drawn through walls.
+TEST(ShotJudgementsTest, AMissIsFlownOnlyAsFarAsTheMap) {
+  // The control: with no Map, it flies on past where the wall would be.
+  const std::vector<Segment> open = MissFlownAgainst(NoMap());
+  ASSERT_FALSE(open.empty());
+  ASSERT_LT(open.back().to.z, -10.0F);
+  const physics::World wall = WallAhead();
+
+  const std::vector<Segment> flight = MissFlownAgainst(wall);
+
+  ASSERT_FALSE(flight.empty());
+  ExpectNear(flight.back().to, Vec3(0.0F, 1.5F, -3.5F));
 }
 
 TEST(ShotJudgementsTest, AtMostTheNewest8RoundsAreKept) {
   PhysicsOverlays overlays = ShotJudgementsOn();
 
   for (int i = 0; i < 9; ++i) {
-    overlays.Judge(JudgedPast(Vec3(static_cast<float>(i), 0.0F, 0.0F), 0.0F), kNow + milliseconds{i});
+    overlays.Judge(JudgedPast(Vec3(static_cast<float>(i), 0.0F, 0.0F), 0.0F), NoMap(), kNow + milliseconds{i});
   }
 
   const std::vector<Segment> judged = SegmentsIn(overlays.BuildShapes(FiredSoFar(0), State{}), kJudgedHitboxColor);
@@ -743,8 +820,8 @@ TEST(ShotJudgementsTest, AtMostTheNewest8RoundsAreKept) {
 
 TEST(ShotJudgementsTest, EachRoundIsGoneAfter5Seconds) {
   PhysicsOverlays overlays = ShotJudgementsOn();
-  overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), kNow);
-  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), kNow + seconds{1});
+  overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
+  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow + seconds{1});
 
   overlays.Advance(FiredSoFar(0), State{}, kNow + milliseconds{4999});
   EXPECT_EQ(SegmentsIn(overlays.BuildShapes(FiredSoFar(0), State{}), kJudgedHitboxColor).size(), 12U);
@@ -759,7 +836,7 @@ TEST(ShotJudgementsTest, ASeenRecordNeverPairedIsDroppedOnceItExpires) {
   FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
 
   overlays.Advance(FiredSoFar(1), State{}, kNow + kSeenHitboxesWait);
-  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), kNow + kSeenHitboxesWait);
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + kSeenHitboxesWait);
 
   EXPECT_TRUE(SegmentsIn(overlays.BuildShapes(FiredSoFar(1), State{}), kSeenHitboxColor).empty());
 }
@@ -767,7 +844,7 @@ TEST(ShotJudgementsTest, ASeenRecordNeverPairedIsDroppedOnceItExpires) {
 TEST(ShotJudgementsTest, IsDrawnThroughWallsByDefault) {
   PhysicsOverlays overlays = ShotJudgementsOn();
   ASSERT_TRUE(overlays.ThroughWalls(PhysicsOverlay::kShotJudgements));
-  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), kNow);
+  overlays.Judge(StruckHead(Vec3(2.0F, 0.0F, 0.0F), Vec3(2.1F, 1.7F, 0.0F)), NoMap(), kNow);
 
   const Shapes shown = overlays.BuildShapes(FiredSoFar(0), State{});
   ASSERT_FALSE(shown.segments.empty());
@@ -782,24 +859,29 @@ TEST(ShotJudgementsTest, IsDrawnThroughWallsByDefault) {
   EXPECT_FALSE(hidden.spheres.front().through_walls);
 }
 
+TEST(ShotJudgementsTest, AJudgedRoundIsGoneOnceTheOverlayIsSwitchedOffAndOnAgain) {
+  PhysicsOverlays overlays = ShotJudgementsOn();
+  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
+  // The control: within its 5 seconds, it is drawn.
+  ASSERT_NE(overlays.BuildShapes(FiredSoFar(0), State{}), Shapes{});
+
+  overlays.Update(PanelEvent("shot_judgements", false));
+  overlays.Advance(FiredSoFar(0), State{}, kNow + seconds{1});
+  overlays.Update(PanelEvent("shot_judgements", true));
+  overlays.Advance(FiredSoFar(0), State{}, kNow + seconds{2});
+
+  EXPECT_EQ(overlays.BuildShapes(FiredSoFar(0), State{}), Shapes{});
+  EXPECT_TRUE(Shows(overlays.BuildPanel(), "Shot judgements kept: 0"));
+}
+
 TEST(ShotJudgementsTest, NothingIsDrawnWhileTheOverlayIsOff) {
   PhysicsOverlays overlays = ShotJudgementsOn();
-  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), kNow);
+  overlays.Judge(JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
   ASSERT_NE(overlays.BuildShapes(FiredSoFar(0), State{}), Shapes{});
 
   overlays.Update(PanelEvent("shot_judgements", false));
 
   EXPECT_EQ(overlays.BuildShapes(FiredSoFar(0), State{}), Shapes{});
-}
-
-// Whether panel shows text on a line of its own.
-bool Shows(const Panel& panel, std::string_view text) {
-  for (const debug::Element& element : panel.elements) {
-    if (const auto* line = std::get_if<debug::Text>(&element); line != nullptr && line->text == text) {
-      return true;
-    }
-  }
-  return false;
 }
 
 TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterAnUnansweredRound) {
@@ -819,22 +901,37 @@ TEST(ShotJudgementsTest, TheNoJudgementsLineClearsOnTheNextJudgement) {
   overlays.Advance(FiredSoFar(1), State{}, kNow + seconds{3});
   ASSERT_TRUE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
 
-  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), kNow + seconds{3});
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + seconds{3});
   overlays.Advance(FiredSoFar(1), State{}, kNow + seconds{4});
 
   EXPECT_FALSE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
 }
 
+// Each judgement answers the oldest round unanswered: one fired after it is
+// still timed.
+TEST(ShotJudgementsTest, TheNoJudgementsLineShows2SecondsAfterARoundFiredAfterTheJudgedOne) {
+  PhysicsOverlays overlays = ShotJudgementsOn();
+  FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow);
+  FireOneRound(overlays, SeenAt(Vec3(1.0F, 0.0F, 0.0F), 99), kNow + milliseconds{100}, 1);
+  overlays.Judge(JudgedPast(Vec3(9.0F, 0.0F, 0.0F), 1.0F), NoMap(), kNow + milliseconds{200});
+
+  overlays.Advance(FiredSoFar(2), State{}, kNow + milliseconds{2099});
+  EXPECT_FALSE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
+
+  overlays.Advance(FiredSoFar(2), State{}, kNow + milliseconds{2100});
+  EXPECT_TRUE(Shows(overlays.BuildPanel(), kNoShotJudgementsLine));
+}
+
 TEST(ShotJudgementsTest, ThePanelShowsTheRoundsKeptAndWhenAJudgementLeftPosesOut) {
   PhysicsOverlays overlays = ShotJudgementsOn();
-  overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), kNow);
+  overlays.Judge(JudgedPast(Vec3(1.0F, 0.0F, 0.0F), 0.0F), NoMap(), kNow);
   const Panel whole = overlays.BuildPanel();
   EXPECT_TRUE(Shows(whole, "Shot judgements kept: 1"));
   EXPECT_FALSE(Shows(whole, "A Shot judgement left Hitbox poses out"));
 
   ShotJudgement partial = JudgedPast(Vec3(2.0F, 0.0F, 0.0F), 0.0F);
   partial.entries_left_out = true;
-  overlays.Judge(partial, kNow);
+  overlays.Judge(partial, NoMap(), kNow);
 
   const Panel after = overlays.BuildPanel();
   EXPECT_TRUE(Shows(after, "Shot judgements kept: 2"));

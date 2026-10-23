@@ -687,7 +687,7 @@ struct ClientRuntime::Impl {
     const auto now = presentation::PhysicsOverlays::Clock::now();
     physics_overlays.Advance(input, frame_state, now);
     for (const harness::ShotJudgement& judgement : session->TakeShotJudgements(*session->GetServerView())) {
-      physics_overlays.Judge(ToPresentation(judgement), now);
+      physics_overlays.Judge(ToPresentation(judgement), presentation.Map(), now);
     }
     renderer.SetDebugShapes(physics_overlays.BuildShapes(input, frame_state));
     renderer.SetDebugPanels(DebugPanels());
