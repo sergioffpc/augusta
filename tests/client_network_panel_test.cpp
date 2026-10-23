@@ -10,13 +10,15 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/correction_tally.h"
 #include "augusta/debug_panels.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "network_panel.h"
 
-// The Network Debug panel (ADR-0075): the client's connection and its traffic
-// per message type, built from plain samples without drawing anything.
+// The Network Debug panel (ADR-0075): the client's connection, its traffic per
+// message type, and its prediction and presentation, built from plain samples
+// without drawing anything.
 namespace {
 
 using augusta::client::ConnectionReading;
@@ -36,6 +38,7 @@ using augusta::link::kMessageTypeCount;
 using augusta::link::MessageType;
 using augusta::link::NameOf;
 using augusta::link::Traffic;
+using augusta::prediction::Corrections;
 using std::chrono::milliseconds;
 
 const NetworkPanel::Clock::time_point kStart{};
@@ -51,8 +54,11 @@ ConnectionStats Measured() {
 }
 
 NetworkSample Connected(const ConnectionStats& stats, const Traffic& traffic = {}) {
-  return {.connection = {.stats = stats, .traffic = traffic}};
+  return {.connection = {.stats = stats, .traffic = traffic}, .corrections = std::nullopt};
 }
+
+// The Prediction thread's corrections so far, and no connection.
+NetworkSample Corrected(const Corrections& corrections) { return {.connection = {}, .corrections = corrections}; }
 
 // Commands sent: messages and their bytes, so far.
 Traffic CommandsSent(std::uint64_t messages, std::uint64_t bytes) {
@@ -322,6 +328,130 @@ TEST(NetworkPanelTest, ClosingMakesTheNextSampleDue) {
   network.Close();
 
   EXPECT_TRUE(network.SampleDue(kStart + milliseconds(50)));
+}
+
+TEST(NetworkPanelTest, CorrectionRatesComeFromTheCountsOverTheLastSecond) {
+  NetworkPanel network;
+  network.Sample(Corrected({.count = 0, .rifle = 0}), kStart);
+  network.Sample(Corrected({.count = 3, .rifle = 1}), kStart + milliseconds(500));
+  network.Sample(Corrected({.count = 9, .rifle = 4}), kStart + milliseconds(1000));
+  // Over the last second only: 6 corrections and 3 rifle ones since 500 ms.
+  network.Sample(Corrected({.count = 9, .rifle = 4}), kStart + milliseconds(1500));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Corrections/s: 6.0 (peak 9.0)"));
+  EXPECT_TRUE(HasText(panel, "Rifle corrections/s: 3.0 (peak 4.0)"));
+}
+
+TEST(NetworkPanelTest, TheCorrectionSizeIsTheLastWithTheLargestSinceTheReset) {
+  NetworkPanel network;
+  network.Sample(Corrected({.count = 1, .last_m = 0.4F, .largest_m = 0.4F}), kStart);
+  network.Sample(Corrected({.count = 2, .last_m = 0.25F, .largest_m = 0.4F}), kStart + milliseconds(100));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Correction: 0.25m (largest 0.40m)"));
+
+  network.Update(ResetPeaks());
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Correction: 0.25m (largest 0.25m)"));
+
+  // A larger one between two samples, not the last, is still the largest.
+  network.Sample(Corrected({.count = 4, .last_m = 0.1F, .largest_m = 0.5F}), kStart + milliseconds(200));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Correction: 0.10m (largest 0.50m)"));
+}
+
+TEST(NetworkPanelTest, NoPredictionStateReadsDashesForTheCorrections) {
+  NetworkPanel network;
+  network.Sample(Connected(Measured()), kStart);
+  network.Sample(Connected(Measured()), kStart + milliseconds(100));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Corrections/s: --"));
+  EXPECT_TRUE(HasText(panel, "Correction: --"));
+  EXPECT_TRUE(HasText(panel, "Rifle corrections/s: --"));
+  EXPECT_TRUE(Plot(panel, "Correction (m)").values.empty());
+}
+
+TEST(NetworkPanelTest, CorrectionSizeIsPlottedAsTheLargestOfEachSampleOrZero) {
+  NetworkPanel network;
+  network.Sample(Corrected({.count = 0}), kStart);
+  network.Sample(Corrected({.count = 1, .last_m = 0.3F, .largest_m = 0.3F}), kStart + milliseconds(100));
+  network.Sample(Corrected({.count = 1, .last_m = 0.3F, .largest_m = 0.3F}), kStart + milliseconds(200));
+  // Two in one sample, the smaller last: the larger is plotted.
+  network.Sample(Corrected({.count = 3, .last_m = 0.1F, .largest_m = 0.5F}), kStart + milliseconds(300));
+  // Two in one sample, neither the largest so far: the last stands for them.
+  network.Sample(Corrected({.count = 5, .last_m = 0.2F, .largest_m = 0.5F}), kStart + milliseconds(400));
+
+  EXPECT_EQ(Plot(network.BuildPanel(), "Correction (m)").values, (std::vector<float>{0.0F, 0.3F, 0.0F, 0.5F, 0.2F}));
+}
+
+TEST(NetworkPanelTest, TheCorrectionPlotKeepsTheLastHundredPointsOldestDropped) {
+  NetworkPanel network;
+  for (std::uint32_t i = 0; i < 105; ++i) {
+    const float size = static_cast<float>(i + 1) / 1000.0F;
+    network.Sample(Corrected({.count = i + 1, .last_m = size, .largest_m = size}),
+                   kStart + (static_cast<int>(i) * NetworkPanel::kSamplePeriod));
+  }
+
+  const std::vector<float> sizes = Plot(network.BuildPanel(), "Correction (m)").values;
+
+  ASSERT_EQ(sizes.size(), NetworkPanel::kPlotPoints);
+  EXPECT_FLOAT_EQ(sizes.front(), 0.006F);
+  EXPECT_FLOAT_EQ(sizes.back(), 0.105F);
+}
+
+TEST(NetworkPanelTest, TheSlackIsTheSmallestOverTheLastSecondBesideTheInterpolationDelay) {
+  NetworkPanel network;
+  network.Sample({}, kStart);
+  network.RecordFrame(0.010);
+  network.Sample({}, kStart + milliseconds(500));
+  network.RecordFrame(0.060);
+  network.RecordFrame(0.040);
+  network.Sample({}, kStart + milliseconds(1000));
+  network.RecordFrame(0.080);
+  // The 10 ms frame was before the last second.
+  network.Sample({}, kStart + milliseconds(1500));
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Slack: 40.0ms (worst 10.0ms), delay 100ms"));
+}
+
+TEST(NetworkPanelTest, DryFramesAreTheFramesPerSecondWhoseSlackWasZeroOrBelow) {
+  NetworkPanel network;
+  network.Sample({}, kStart);
+  network.RecordFrame(0.0);
+  network.RecordFrame(-0.020);
+  network.RecordFrame(0.030);
+  network.Sample({}, kStart + milliseconds(500));
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Dry frames/s: 4.0 (peak 4.0)"));
+}
+
+TEST(NetworkPanelTest, NoSlackReadsDashesForTheInterpolation) {
+  NetworkPanel network;
+  network.Sample({}, kStart);
+  network.RecordFrame(std::nullopt);
+  network.Sample({}, kStart + milliseconds(100));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Slack: --, delay 100ms"));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Dry frames/s: --"));
+
+  // Control: a frame with a slack reads as itself.
+  network.RecordFrame(0.050);
+  network.Sample({}, kStart + milliseconds(200));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Slack: 50.0ms (worst 50.0ms), delay 100ms"));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Dry frames/s: 0.0 (peak 0.0)"));
+}
+
+TEST(NetworkPanelTest, ClosingDropsTheCorrectionsAndTheFramesNotSampledYet) {
+  NetworkPanel network;
+  network.Sample(Corrected({.count = 1, .last_m = 0.3F, .largest_m = 0.3F}), kStart);
+  network.RecordFrame(0.0);
+
+  network.Close();
+
+  network.Sample({}, kStart + milliseconds(100));
+  network.RecordFrame(0.050);
+  network.Sample({}, kStart + milliseconds(200));
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Correction: --"));
+  EXPECT_TRUE(Plot(panel, "Correction (m)").values.empty());
+  EXPECT_TRUE(HasText(panel, "Dry frames/s: 0.0 (peak 0.0)"));
 }
 
 TEST(ConnectionReadingsTest, TakesTheNewestReadingWithThePeakJitterSinceTheLastTake) {

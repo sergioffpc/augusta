@@ -25,12 +25,13 @@ starts each tool as the `debug` section says and switches it until the client
 exits, and routes each panel's control events to the area that built it. Its own
 are the Profiling panel, a window of frames it marks with the NVTX range Nsight
 Systems captures, and Aftermath's status as the renderer reports it, and the
-Network panel, the client's connection and its traffic per message type as
-rates, plots and peaks, built here because its numbers come from modules that
-ship in every build (ADR-0075). It starts each Run: takes its Run ID and opens
-its log file beside the executable, then writes its first lines. It decides over
-the files Runs leave there: their names from the Run ID, which Runs are kept,
-and how the previous Run ended, which a launch reports when it was a crash.
+Network panel, the client's connection, its traffic per message type,
+Reconciliation's corrections and the interpolation buffer's slack as rates,
+plots and peaks, built here because its numbers come from modules that ship in
+every build (ADR-0075). It starts each Run: takes its Run ID and opens its log
+file beside the executable, then writes its first lines. It decides over the
+files Runs leave there: their names from the Run ID, which Runs are kept, and
+how the previous Run ended, which a launch reports when it was a crash.
 
 ## Not its responsibility
 
