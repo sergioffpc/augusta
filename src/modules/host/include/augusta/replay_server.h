@@ -16,7 +16,6 @@
 #include "augusta/connection_sample.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
-#include "augusta/faults.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
 #include "augusta/match.h"
@@ -68,16 +67,12 @@ struct ReplayServerConfig {
   std::filesystem::path captures;
   /// How many Replays run at once, at least 1.
   std::size_t max_viewers = 1;
-  /// For a test: asked at listener setup and at every send and receive; null
-  /// otherwise. Must outlive the ReplayServer.
-  failure::Faults* faults = nullptr;
-#if AUGUSTA_DEBUG_TOOLS
-  /// The endpoint's tap, such as the pcapng writer: reported every message it
-  /// sends to and receives from every viewer (link::TransportOptions::tap,
-  /// ADR-0076); null, the default, reports none. Must outlive the
-  /// ReplayServer. A Shipping build has none (ADR-0074).
-  link::Tap* tap = nullptr;
-#endif
+  /// What the endpoint's transport is built with (augusta/link.h): for a
+  /// test, the faults asked at listener setup and at every send and receive;
+  /// in a Development build, the tap, such as the pcapng writer, reported
+  /// every message it sends to and receives from every viewer (ADR-0076). Each
+  /// null by default; each must outlive the ReplayServer.
+  link::TransportOptions transport{};
 };
 
 /// What a Replay viewer is sent for tick of its Replay, in order, each with the

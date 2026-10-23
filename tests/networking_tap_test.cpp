@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/failure.h"
 #include "augusta/networking.h"
 
 // The transport's tap (ADR-0074, Development build only), over loopback: what
@@ -33,6 +34,7 @@ using augusta::networking::Tap;
 using augusta::networking::TapDirection;
 using augusta::networking::TapEndpoint;
 using augusta::networking::TappedMessage;
+using augusta::networking::UnspecifiedEndpointLike;
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kPollDeadline = std::chrono::seconds(5);
@@ -198,6 +200,45 @@ TEST_F(NetworkingTapTest, ASendTheTransportDropsIsNotReported) {
   ASSERT_EQ(server_reports.size(), 1U);
   EXPECT_EQ(server_reports[0].payload, "somebody");
   EXPECT_TRUE(client_tap_.Reports().empty());
+}
+
+TEST(UnspecifiedEndpointLikeTest, IsTheUnspecifiedAddressOfTheEndpointsFamilyOnPortZero) {
+  const Ipv6Address ipv6_loopback{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+
+  EXPECT_EQ(UnspecifiedEndpointLike(TapEndpoint{.address = kLoopback, .port = 27015}),
+            (TapEndpoint{.address = Ipv4Address{}, .port = 0}));
+  EXPECT_EQ(UnspecifiedEndpointLike(TapEndpoint{.address = ipv6_loopback, .port = 27015}),
+            (TapEndpoint{.address = Ipv6Address{}, .port = 0}));
+}
+
+// The IPv4 tests above are the control: there the client's local end is 0.0.0.0.
+TEST(NetworkingTapIpv6Test, AClientOfAnIpv6ServerReportsTheUnspecifiedIpv6AddressAsItsLocalEnd) {
+  RecordingTap tap;
+  std::unique_ptr<Server> server;
+  try {
+    server = std::make_unique<Server>(Endpoint{.address = "[::1]:0"});
+  } catch (const augusta::failure::ClassifiedFailure& error) {
+    GTEST_SKIP() << "no IPv6 loopback here: " << error.what();
+  }
+  Client client(nullptr, &tap);
+  client.Connect(server->LocalEndpoint());
+  ASSERT_TRUE(PollUntil(
+      [&] {
+        client.PumpEvents();
+        for (const auto& event : server->PumpEvents()) {
+          if (event.type == PeerEventType::kConnectRequested) {
+            server->Accept(event.peer);
+          }
+        }
+      },
+      [&] { return client.GetState() == ConnectionState::kConnected; }));
+
+  ASSERT_EQ(client.Send(MakePayload("ping"), Reliability::kReliable), SendOutcome::kAccepted);
+
+  const std::vector<Report> reports = tap.Reports();
+  ASSERT_EQ(reports.size(), 1U);
+  EXPECT_EQ(reports[0].local, (TapEndpoint{.address = Ipv6Address{}, .port = 0}));
+  EXPECT_TRUE(std::holds_alternative<Ipv6Address>(reports[0].remote.address));
 }
 
 }  // namespace

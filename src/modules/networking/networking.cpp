@@ -16,6 +16,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <steam/isteamnetworkingsockets.h>
@@ -385,6 +386,15 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
       conditions.reorder_percent, conditions.reorder_delay_ms);
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+TapEndpoint UnspecifiedEndpointLike(const TapEndpoint& endpoint) {
+  if (std::holds_alternative<Ipv6Address>(endpoint.address)) {
+    return TapEndpoint{.address = Ipv6Address{}, .port = 0};
+  }
+  return TapEndpoint{.address = Ipv4Address{}, .port = 0};
+}
+#endif
+
 // ---- Client ----
 
 struct Client::Impl {
@@ -405,9 +415,11 @@ struct Client::Impl {
   // Filled by the status-changed callback, drained by PumpEvents.
   TransportEventQueue transport_events;
 #if AUGUSTA_DEBUG_TOOLS
-  // Null unless a Tap was given; remote is the server last connected to,
-  // guarded by mutex. The local end is unspecified: GNS gives none.
+  // Null unless a Tap was given; remote is the server last connected to and
+  // local the unspecified address in its family (GNS gives none), guarded by
+  // mutex.
   Tap* tap = nullptr;
+  TapEndpoint local;
   TapEndpoint remote;
 #endif
 
@@ -417,7 +429,7 @@ struct Client::Impl {
     const int count = ReceiveBatch(connection, into);
 #if AUGUSTA_DEBUG_TOOLS
     for (std::size_t index = into.size() - static_cast<std::size_t>(std::max(count, 0)); index < into.size(); ++index) {
-      ReportToTap(tap, TapDirection::kInbound, TapEndpoint{}, remote, into[index]);
+      ReportToTap(tap, TapDirection::kInbound, local, remote, into[index]);
     }
 #endif
     return count;
@@ -483,6 +495,7 @@ void Client::Connect(const Endpoint& server) {
   impl_->received_before_close.clear();
 #if AUGUSTA_DEBUG_TOOLS
   impl_->remote = ToTapEndpoint(addr);
+  impl_->local = UnspecifiedEndpointLike(impl_->remote);
 #endif
   impl_->connection =
       SteamNetworkingSockets()->ConnectByIPAddress(addr, static_cast<int>(options.size()), options.data());
@@ -541,7 +554,7 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
     case SendVerdict::kAccepted:
       LOG_TRACE("subsystem=networking event=send role=client bytes={}", payload.size());
 #if AUGUSTA_DEBUG_TOOLS
-      ReportToTap(impl_->tap, TapDirection::kOutbound, TapEndpoint{}, impl_->remote, payload);
+      ReportToTap(impl_->tap, TapDirection::kOutbound, impl_->local, impl_->remote, payload);
 #endif
       return SendOutcome::kAccepted;
     case SendVerdict::kDropped:

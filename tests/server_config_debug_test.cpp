@@ -118,4 +118,24 @@ TEST(ParseServerConfigTest, RejectsAPcapngDirectoryThatCannotBeCreated) {
             "'debug.network.pcapng' must name a directory that can be written");
 }
 
+// An existing directory no file can be written in is refused as one that
+// can't be created: here a directory, which it can't remove, stands where the
+// write probe's file would go. Without it, the same directory is taken.
+TEST(ParseServerConfigTest, RejectsAnExistingPcapngDirectoryThatCannotBeWritten) {
+  const std::filesystem::path file_dir = FreshDirectory();
+  const std::filesystem::path directory = file_dir / "content" / "net";
+  std::filesystem::create_directories(directory);
+  const std::string yaml = ServerConfigWith("debug:\n  network:\n    pcapng: net\n");
+  ASSERT_TRUE(ParseServerConfig(yaml, file_dir).has_value());
+  std::filesystem::create_directories(directory / ".augusta-write-probe" / "in-the-way");
+
+  const auto config = ParseServerConfig(yaml, file_dir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.network.pcapng");
+  EXPECT_EQ(DescribeServerConfigError(config.error()),
+            "'debug.network.pcapng' must name a directory that can be written");
+}
+
 }  // namespace

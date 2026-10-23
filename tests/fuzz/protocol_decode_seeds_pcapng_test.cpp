@@ -18,8 +18,9 @@
 // The pcapng of the protocol_decode seeds (tests/fuzz/README.md), a Development
 // build's fixture for tools/wireshark's dissector test (ADR-0076): what the
 // pcapng encoder writes of every seed in corpus/protocol_decode, one packet per
-// seed in name order, so it fails here until the fixture is regenerated when a
-// seed or the encoder changes. Its packets are on a fixed clock between fixed
+// seed in name order, naming this build's engine version, so it fails here
+// until the fixture is regenerated when a seed, the encoder or the version
+// changes. Its packets are on a fixed clock between fixed
 // endpoints, the nth (from 0) outbound when n is even and inbound when it is odd.
 namespace {
 
@@ -76,8 +77,7 @@ std::vector<std::byte> SeedsPcapng(std::string_view version) {
 }
 
 // The version a fixture's shb_userappl names, after the executable: the
-// version of the build that wrote it, so the fixture need not be rewritten
-// each time the engine's version changes. Empty when there is none.
+// version of the build that wrote it. Empty when there is none.
 std::string WrittenVersion(const std::vector<std::byte>& fixture) {
   // The Section Header Block's fixed fields, then its first option: shb_userappl.
   constexpr std::size_t kOption = 24;
@@ -107,6 +107,14 @@ TEST(ProtocolDecodeSeedsPcapngTest, IsWhatTheEncoderWritesOfTheSeeds) {
 
   ASSERT_FALSE(version.empty()) << kFixturePath << " names no version; regenerate it (tests/fuzz/README.md)";
   EXPECT_EQ(fixture, SeedsPcapng(version)) << "regenerate " << kFixturePath << " (tests/fuzz/README.md)";
+}
+
+// What tools/wireshark's test checks capinfos shows: the fixture is of this
+// engine version, so a bump means regenerating it, as the cut-release
+// runbook's step 3 does.
+TEST(ProtocolDecodeSeedsPcapngTest, NamesThisBuildsEngineVersion) {
+  EXPECT_EQ(WrittenVersion(ReadFile(kFixturePath)), augusta::EngineVersion())
+      << "regenerate " << kFixturePath << " (tests/fuzz/README.md)";
 }
 
 // Not a check: rewrites the fixture from the seeds, naming this build's version,

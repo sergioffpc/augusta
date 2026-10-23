@@ -363,7 +363,7 @@ class ReplayServerTest : public ::testing::Test {
                                                              .server_pack = {},
                                                              .captures = directory_.Path(),
                                                              .max_viewers = max_viewers,
-                                                             .faults = nullptr},
+                                                             .transport = {}},
                                           TwoInALine(), Policy);
   }
 
@@ -970,7 +970,7 @@ TEST(ReplayServerConfigTest, AReplayServerRefusesACapturesDirectoryThatIsNone) {
                                     .captures = std::filesystem::temp_directory_path() /
                                                 "augusta_replay_server_no_such_directory",
                                     .max_viewers = 1,
-                                    .faults = nullptr},
+                                    .transport = {}},
                  TwoInALine(), Policy);
     FAIL() << "a replay server started on a captures directory that is none";
   } catch (const augusta::failure::ClassifiedFailure& thrown) {

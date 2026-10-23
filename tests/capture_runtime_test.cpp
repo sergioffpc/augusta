@@ -111,7 +111,8 @@ class CaptureFailureTest : public ::testing::Test {
   CaptureFailureTest& operator=(CaptureFailureTest&&) = delete;
 
   // A server on the loopback capturing in mode, or capturing nothing, with
-  // faults_ asked at the capture's write and flush. Its Match has no players.
+  // faults_ asked at the capture's write and flush and by its transport. Its
+  // Match has no players.
   HostConfig Config(std::optional<CaptureMode> mode) {
     augusta::parameters::Parameters parameters{};
     parameters.player_count = 0;
@@ -123,6 +124,7 @@ class CaptureFailureTest : public ::testing::Test {
         .capture_directory = mode.has_value() ? directory_ : std::filesystem::path{},
         .capture_mode = mode.value_or(CaptureMode::kOptional),
         .faults = &faults_,
+        .transport = {.faults = &faults_},
     };
   }
 
@@ -212,7 +214,7 @@ TEST_F(CaptureFailureTest, AStrictCaptureThatFailsStopsTheRuntimeOnceWithItsFail
   std::optional<augusta::failure::Failure> cause;
   testing::internal::CaptureStdout();
   {
-    ServerRuntime runtime(Config(CaptureMode::kStrict), 0, EmptyScenario());
+    ServerRuntime runtime(Config(CaptureMode::kStrict), EmptyScenario());
     // Bounds a runtime that never stops on its own, which fails the test below.
     std::atomic<bool> returned = false;
     std::thread watchdog([&] {
@@ -241,7 +243,7 @@ TEST_F(CaptureFailureTest, AnOptionalCaptureThatFailsLeavesTheRuntimeRunningUnti
   std::optional<augusta::failure::Failure> cause;
   testing::internal::CaptureStdout();
   {
-    ServerRuntime runtime(Config(CaptureMode::kOptional), 0, EmptyScenario());
+    ServerRuntime runtime(Config(CaptureMode::kOptional), EmptyScenario());
     std::thread stopper([&] {
       // Long past the header's failed write, many ticks in.
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -266,7 +268,7 @@ TEST_F(CaptureFailureTest, ARuntimeStopsItsCapturesBeforeRunReturns) {
   constexpr std::string_view kReturned = "run_returned";
   testing::internal::CaptureStdout();
   {
-    ServerRuntime runtime(Config(CaptureMode::kOptional), 0, EmptyScenario());
+    ServerRuntime runtime(Config(CaptureMode::kOptional), EmptyScenario());
     const std::optional<augusta::failure::Failure> cause = runtime.Run();
     std::cout << kReturned << std::endl;
     EXPECT_TRUE(cause.has_value());
@@ -286,7 +288,7 @@ TEST_F(CaptureFailureTest, ARunWhoseSimulationNeverStartsStopsItsCapturesBeforeR
   constexpr std::string_view kReturned = "run_returned";
   testing::internal::CaptureStdout();
   {
-    ServerRuntime runtime(Config(CaptureMode::kOptional), 0, EmptyScenario());
+    ServerRuntime runtime(Config(CaptureMode::kOptional), EmptyScenario());
     runtime.Stop();
     const std::optional<augusta::failure::Failure> cause = runtime.Run();
     std::cout << kReturned << std::endl;

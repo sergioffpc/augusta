@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -101,6 +102,25 @@ TEST(ServerApplicationDebugTest, AReplayServerWritesOnePcapngPerRunIntoThePcapng
   const std::vector<std::string> names = FileNamesIn(config.network_pcapng);
   ASSERT_EQ(names.size(), 1U);
   EXPECT_TRUE(IsAugustadPcapng(names.front())) << names.front();
+}
+
+// Without the key a run writes no pcapng anywhere: not into the working
+// directory, where a file named from an empty directory would go. The tests
+// above, with it, are the control.
+TEST(ServerApplicationDebugTest, AServerWritesNoPcapngWithoutThePcapngDirectory) {
+  const auto pcapngs_here = [] {
+    return std::ranges::count_if(std::filesystem::directory_iterator(std::filesystem::current_path()),
+                                 [](const auto& entry) { return IsAugustadPcapng(entry.path().filename().string()); });
+  };
+  const auto before = pcapngs_here();
+  ServerConfig config = ExampleConfig();
+  ASSERT_TRUE(config.network_pcapng.empty());
+
+  const Outcome outcome = ServedOnce(config);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kWorkerFailed);
+  EXPECT_EQ(pcapngs_here(), before);
 }
 
 }  // namespace

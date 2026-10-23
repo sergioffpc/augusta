@@ -66,6 +66,13 @@ class FileWriter final : public networking::Tap {
   std::unique_ptr<Impl> impl_;
 };
 
+/// The writer of this run's pcapng in directory, started now, its path logged
+/// at INFO; null when directory is empty, which `debug.network.pcapng` leaves
+/// it when it is not set. What each executable's runtime taps its transport
+/// with, naming itself as executable and the engine's version.
+std::unique_ptr<FileWriter> RunWriter(const std::filesystem::path& directory, std::string_view executable,
+                                      std::string_view version);
+
 }  // namespace augusta::pcapng
 
 #endif  // AUGUSTA_PCAPNG_FILE_WRITER_H_

@@ -47,6 +47,15 @@ tshark -X lua_script:tools/wireshark/augusta.lua \
 Not both: with the shim installed, a second `-X lua_script:` of it registers
 `augusta` twice, which Wireshark refuses with a Lua error.
 
+On Ubuntu, `/usr/bin/tshark` runs under an enforcing AppArmor profile
+(`/etc/apparmor.d/tshark`) that lets it read only `/usr/share/wireshark` and
+`/tmp`: it refuses the shim, the schema and a capture in your home or checkout
+with "You don't have permission to read the file". Put the profile in complain
+mode with `sudo aa-complain /usr/bin/tshark` (`apparmor-utils`), or let it read
+the checkout with a local override, such as `owner @{HOME}/** r,` in
+`/etc/apparmor.d/local/tshark`, then
+`sudo apparmor_parser -r /etc/apparmor.d/tshark`.
+
 ## Which build's schema
 
 A file's Section Header Block names the executable and engine version that wrote

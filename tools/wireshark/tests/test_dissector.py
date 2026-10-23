@@ -31,8 +31,8 @@ REQUIRE_TSHARK = "AUGUSTA_REQUIRE_TSHARK"
 # The fixture's nth packet is the seed whose name is nth in name order, and
 # that name is the augusta.Message oneof member it holds.
 SEEDS = sorted(path.name for path in SEEDS_DIR.iterdir())
-# An engine version (augusta/version.h): SemVer, +dev in a Development build.
-ENGINE_VERSION = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
+# Where EngineVersion()'s release is set, which the cut-release runbook bumps.
+VERSION_SOURCE = REPO_ROOT / "src" / "modules" / "version" / "version.cpp"
 
 
 def _wireshark_tool(name: str) -> str:
@@ -159,7 +159,17 @@ def test_each_packet_shows_its_direction(packets, number):
     assert packets[number]["augusta"]["augusta.direction"] == expected
 
 
+def _engine_version() -> str:
+    """The engine version a Development build writes: its release, +dev."""
+    source = VERSION_SOURCE.read_text(encoding="utf-8")
+    release = re.search(r'kRelease = "(\d+\.\d+\.\d+)"', source)
+    assert release, f"no kRelease in {VERSION_SOURCE}"
+    return f"{release.group(1)}+dev"
+
+
 def test_the_section_header_names_the_engine_version(wireshark_env):
+    # A stale fixture names an older version: regenerate it
+    # (tests/fuzz/README.md).
     capinfos = _wireshark_tool("capinfos")
     run = subprocess.run(
         [capinfos, str(FIXTURE)],
@@ -171,7 +181,7 @@ def test_the_section_header_names_the_engine_version(wireshark_env):
     )
 
     assert re.search(
-        rf"^Capture application:\s+augustad {ENGINE_VERSION}$",
+        rf"^Capture application:\s+augustad {re.escape(_engine_version())}$",
         run.stdout,
         re.MULTILINE,
     ), run.stdout

@@ -41,10 +41,9 @@ nth (from 0) is outbound (`10.0.0.1` to `10.0.0.2`) when n is even and inbound
 (`10.0.0.2` to `10.0.0.1`) when it is odd.
 [protocol_decode_seeds_pcapng_test.cpp](protocol_decode_seeds_pcapng_test.cpp),
 built only with `AUGUSTA_DEBUG_TOOLS` on, fails when the fixture drifts from the
-seeds or the encoder, though not when only the engine's version changed: it
-compares against the encoder's bytes with the version the fixture names. After
-rewriting the seeds, or a deliberate change to the encoder, rewrite it with this
-build's version:
+seeds, the encoder or the engine's version (a Development build's, `+dev`).
+After rewriting the seeds, a deliberate change to the encoder, or a version
+bump, rewrite it with this build's version:
 
 ```bash
 cmake --build --preset linux --target augusta_protocol_decode_seeds_pcapng

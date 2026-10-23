@@ -80,15 +80,6 @@ std::filesystem::path RequireDirectory(const std::filesystem::path& directory) {
   return directory;
 }
 
-// The Link's options for a replay server's endpoint: its faults and, in a Development build, its tap.
-link::TransportOptions TransportOptionsOf(const ReplayServerConfig& config) {
-#if AUGUSTA_DEBUG_TOOLS
-  return {.faults = config.faults, .tap = config.tap};
-#else
-  return {.faults = config.faults};
-#endif
-}
-
 }  // namespace
 
 std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(const ReplayTick& tick) {
@@ -163,7 +154,7 @@ struct ReplayServer::Impl {
         catalog(RequireDirectory(config.captures), ReplayTerms{.server_pack = config.server_pack,
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
-        network(ListenOnceTheMapBuilds(config.listen), TransportOptionsOf(config)) {
+        network(ListenOnceTheMapBuilds(config.listen), config.transport) {
     LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
              max_viewers);
   }

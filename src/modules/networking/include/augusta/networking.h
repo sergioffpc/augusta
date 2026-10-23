@@ -163,6 +163,11 @@ struct TapEndpoint {
   bool operator==(const TapEndpoint&) const = default;
 };
 
+/// The unspecified address in endpoint's family, port 0: 0.0.0.0 for an IPv4
+/// endpoint, :: for an IPv6 one. A Client's local end, which the transport
+/// does not give, so a pcapng never pairs an IPv4 end with an IPv6 one.
+TapEndpoint UnspecifiedEndpointLike(const TapEndpoint& endpoint);
+
 /// Which way a tapped message went, from this process's side.
 enum class TapDirection : std::uint8_t {
   /// Received from the remote end.
@@ -174,8 +179,8 @@ enum class TapDirection : std::uint8_t {
 /// One message a Client or Server reports to its Tap.
 struct TappedMessage {
   TapDirection direction;
-  /// A Server's listen address and port; unspecified for a Client, since the
-  /// transport does not give a connection's local address.
+  /// A Server's listen address and port; for a Client, since the transport
+  /// does not give a connection's local address, UnspecifiedEndpointLike(remote).
   TapEndpoint local;
   TapEndpoint remote;
   /// The message's bytes, valid only during the Tap::Report call.
