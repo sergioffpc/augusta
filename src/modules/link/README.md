@@ -18,15 +18,18 @@ to each recipient without encoding its bodies again; it reads each connection's
 round trip, loss and queue in its own types and keeps a Replay list within what
 the protocol carries. The client's end also counts, in every build, the messages
 and bytes it sends and receives by message type since it connected (`Traffic`,
-read by `Client::GetTraffic` beside `GetStats`); the server's traffic is the
-Host's to count. Its conversions, which keep only the newest of a tick's
-unacknowledged Commands within the protocol's bound and turn a Match capture's
-records into their bytes and back, are stateless and have no transport beneath,
-so the Host and capture convert without opening a connection. It owns the
-transport's process-wide setup, its simulated network conditions (latency,
-jitter, loss and reorder on what the process sends or, when asked, on what it
-receives too: for tests, and the Network Debug panel's impairment) and, for
-tests only, raw ends that carry bytes as they are. Only it links networking
+read by `Client::GetTraffic` beside `GetStats`), and keeps a tally of the
+Authoritative State updates among them: their sizes, and the ticks missing and
+out of order against the newest tick seen, which it forgets at each connection
+and Match start (`AuthoritativeStateTally`); the server's traffic is the Host's
+to count. Its conversions, which keep only the newest of a tick's unacknowledged
+Commands within the protocol's bound and turn a Match capture's records into
+their bytes and back, are stateless and have no transport beneath, so the Host
+and capture convert without opening a connection. It owns the transport's
+process-wide setup, its simulated network conditions (latency, jitter, loss and
+reorder on what the process sends or, when asked, on what it receives too: for
+tests, and the Network Debug panel's impairment) and, for tests only, raw ends
+that carry bytes as they are. Only it links networking
 (`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
 speaks to it reaches neither. A Development build's messages are in the Link
 only with `AUGUSTA_DEBUG_TOOLS`.
