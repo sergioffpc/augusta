@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
 #include "augusta/raw_link.h"
+#include "augusta/tick.h"
 #include "connection_stats.h"
 #include "peer_message.h"
 #include "reliability.h"
@@ -350,6 +352,80 @@ TEST_F(ClientTrafficTest, ANewConnectionStartsFromZero) {
   client_.Disconnect();
   ASSERT_TRUE(Connect());
   EXPECT_EQ(client_.GetTraffic(), augusta::link::Traffic{});
+}
+
+// The bytes of an Authoritative State update from tick, carrying bodies
+// bodies so that two updates can differ in size.
+augusta::link::RawPayload StateBytes(augusta::tick::Tick tick, std::uint32_t bodies = 0) {
+  augusta::link::AuthoritativeState state;
+  state.tick = tick;
+  for (std::uint32_t index = 1; index <= bodies; ++index) {
+    augusta::link::EntityBody body;
+    body.entity = augusta::link::EntityId{index};
+    state.bodies.push_back(body);
+  }
+  return BytesOf(augusta::link::ToWire(state));
+}
+
+// Each update adds its bytes to the total; the last is the newest to arrive,
+// the largest the biggest so far, whichever came later.
+TEST_F(ClientTrafficTest, AnAuthoritativeStateUpdateCountsItsSize) {
+  const augusta::link::RawPayload large = StateBytes(1, 3);
+  const augusta::link::RawPayload small = StateBytes(2);
+  ASSERT_LT(small.size(), large.size());
+  ASSERT_TRUE(ServeUntilReceived({large, small}, 2));
+
+  const augusta::link::AuthoritativeStateTally tally = client_.GetTraffic().authoritative_state;
+  EXPECT_EQ(tally.updates, 2U);
+  EXPECT_EQ(tally.total_bytes, large.size() + small.size());
+  EXPECT_EQ(tally.last_bytes, small.size());
+  EXPECT_EQ(tally.largest_bytes, large.size());
+}
+
+// Ticks one after another miss nothing; a skip counts the ticks between, by
+// the gap: 10, 11, then 15 misses 12, 13 and 14.
+TEST_F(ClientTrafficTest, ASkippedTickCountsAsMissingByTheGap) {
+  ASSERT_TRUE(ServeUntilReceived({StateBytes(10), StateBytes(11), StateBytes(15)}, 3));
+
+  const augusta::link::AuthoritativeStateTally tally = client_.GetTraffic().authoritative_state;
+  EXPECT_EQ(tally.ticks_missing, 3U);
+  EXPECT_EQ(tally.ticks_out_of_order, 0U);
+}
+
+// A tick before the newest seen, and the newest again, are each out of order,
+// and neither moves the newest: 21 after them is one past 20, missing nothing.
+TEST_F(ClientTrafficTest, AnOlderOrRepeatedTickCountsAsOutOfOrder) {
+  ASSERT_TRUE(ServeUntilReceived({StateBytes(20), StateBytes(18), StateBytes(20), StateBytes(21)}, 4));
+
+  const augusta::link::AuthoritativeStateTally tally = client_.GetTraffic().authoritative_state;
+  EXPECT_EQ(tally.ticks_out_of_order, 2U);
+  EXPECT_EQ(tally.ticks_missing, 0U);
+  EXPECT_EQ(tally.updates, 4U);
+}
+
+// A Match start begins a new tick sequence: neither a tick far past the last
+// Match's nor one before it counts, and the counts so far stay.
+TEST_F(ClientTrafficTest, AMatchStartForgetsTheNewestTick) {
+  const augusta::link::RawPayload start = BytesOf(augusta::link::ToWire(augusta::link::MatchStart{}));
+  ASSERT_TRUE(ServeUntilReceived({StateBytes(100), StateBytes(102), start, StateBytes(500), StateBytes(501)}, 5));
+  ASSERT_TRUE(ServeUntilReceived({start, StateBytes(7)}, 2));
+
+  const augusta::link::AuthoritativeStateTally tally = client_.GetTraffic().authoritative_state;
+  EXPECT_EQ(tally.ticks_missing, 1U);
+  EXPECT_EQ(tally.ticks_out_of_order, 0U);
+}
+
+// A new connection forgets the newest tick with the rest of its counts, so
+// its first tick counts nothing, however far from the last connection's.
+TEST_F(ClientTrafficTest, ANewConnectionForgetsTheNewestTick) {
+  ASSERT_TRUE(ServeUntilReceived({StateBytes(40)}, 1));
+  client_.Disconnect();
+  ASSERT_TRUE(Connect());
+  ASSERT_TRUE(ServeUntilReceived({StateBytes(30), StateBytes(90)}, 2));
+
+  const augusta::link::AuthoritativeStateTally tally = client_.GetTraffic().authoritative_state;
+  EXPECT_EQ(tally.ticks_out_of_order, 0U);
+  EXPECT_EQ(tally.ticks_missing, 59U);
 }
 
 }  // namespace

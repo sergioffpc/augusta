@@ -155,6 +155,24 @@ struct TypeTraffic {
 /// How many of MessageType's values this build has.
 inline constexpr std::size_t kMessageTypeCount = static_cast<std::size_t>(kLastMessageType) + 1;
 
+/// The Authoritative State updates a Client received, sizes as the transport
+/// carried them, and what their ticks say of what the server sent: a tick
+/// more than one past the newest seen adds the ticks between to
+/// ticks_missing; a tick at or before it is out of order. The newest tick seen
+/// is forgotten at Connect and at each Match start, so a new tick sequence
+/// counts nothing missing.
+struct AuthoritativeStateTally {
+  std::uint64_t updates = 0;
+  std::uint64_t total_bytes = 0;
+  /// The size of the update that arrived last, whatever its tick; 0 before the first.
+  std::uint64_t last_bytes = 0;
+  std::uint64_t largest_bytes = 0;
+  std::uint64_t ticks_missing = 0;
+  std::uint64_t ticks_out_of_order = 0;
+
+  bool operator==(const AuthoritativeStateTally&) const = default;
+};
+
 /// What a Client's connection has carried since its last Connect, counted by
 /// the Link itself, by message type: cumulative, so a reader takes rates by
 /// difference. Sent counts only what the transport accepted; received, only
@@ -163,6 +181,8 @@ inline constexpr std::size_t kMessageTypeCount = static_cast<std::size_t>(kLastM
 struct Traffic {
   /// Indexed by MessageType: every type, those that never travelled at zero.
   std::array<TypeTraffic, kMessageTypeCount> by_type{};
+  /// The Authoritative State updates among what was received.
+  AuthoritativeStateTally authoritative_state;
 
   [[nodiscard]] const TypeTraffic& Of(MessageType type) const { return by_type.at(static_cast<std::size_t>(type)); }
 
@@ -221,7 +241,8 @@ class Client {
   /// nor does I/O, so it is safe to read every round.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
 
-  /// What the connection has carried since the last Connect, by message type;
+  /// What the connection has carried since the last Connect, by message type,
+  /// with its Authoritative State tally;
   /// all zero before the first. Safe from any thread, and neither blocks nor
   /// does I/O, so it is safe to read every round.
   [[nodiscard]] Traffic GetTraffic() const;
