@@ -396,10 +396,16 @@ jobs:
       - name: Install tshark
         # For the Wireshark dissector's test (ADR-0076). Preseeded, so
         # wireshark-common neither asks whether non-root users may capture
-        # nor installs dumpcap setuid.
+        # nor installs dumpcap setuid. Ubuntu's enforcing AppArmor profile for
+        # /usr/bin/tshark lets it read only /usr/share/wireshark and /tmp, so
+        # it would refuse the shim and the fixture in the checkout: unloaded,
+        # if the runner has it.
         run: |
           echo "wireshark-common wireshark-common/install-setuid boolean false" | sudo debconf-set-selections
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
+          if [ -f /etc/apparmor.d/tshark ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/tshark
+          fi
       - name: Configure
         # Without the client: pull requests build and test it on Windows alone,
         # and the Linux client is the nightly's (nightly-jobs.yml,
