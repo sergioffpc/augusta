@@ -190,6 +190,25 @@ TEST(NetworkPanelTest, TheConnectionGroupShowsTheReading) {
   EXPECT_TRUE(HasText(panel, "Pending: 300B (peak 300B)"));
 }
 
+// The Debug HUD's jitter is the peak over HudNetStats::kJitterWindow, a
+// second; the panel's line shows the same, while its plot keeps each sample's.
+TEST(NetworkPanelTest, TheJitterIsThePeakOverTheLastSecondAsTheHudShowsIt) {
+  NetworkPanel network;
+  ConnectionStats stats = Measured();
+  stats.max_jitter_us = 7000;
+  network.Sample(Connected(stats), kStart);
+  stats.max_jitter_us = 2000;
+  network.Sample(Connected(stats), kStart + milliseconds(500));
+  ASSERT_TRUE(HasText(network.BuildPanel(), "Jitter: 7.0ms"));
+
+  stats.max_jitter_us = 3000;
+  network.Sample(Connected(stats), kStart + milliseconds(1500));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Jitter: 3.0ms"));
+  EXPECT_EQ(Plot(panel, "Jitter (ms)").values, (std::vector<float>{7.0F, 2.0F, 3.0F}));
+}
+
 TEST(NetworkPanelTest, AValueNotMeasuredYetReadsDashes) {
   NetworkPanel network;
   EXPECT_TRUE(HasText(network.BuildPanel(), "RTT: --"));
@@ -690,11 +709,11 @@ TEST(NetworkPanelImpairmentTest, OutlivesClosingThePanel) {
 
 TEST(NetworkPanelTest, CorrectionRatesComeFromTheCountsOverTheLastSecond) {
   NetworkPanel network;
-  network.Sample(Corrected({.count = 0, .rifle = 0}), kStart);
-  network.Sample(Corrected({.count = 3, .rifle = 1}), kStart + milliseconds(500));
-  network.Sample(Corrected({.count = 9, .rifle = 4}), kStart + milliseconds(1000));
+  network.Sample(Corrected({.count = 0, .rifle_count = 0}), kStart);
+  network.Sample(Corrected({.count = 3, .rifle_count = 1}), kStart + milliseconds(500));
+  network.Sample(Corrected({.count = 9, .rifle_count = 4}), kStart + milliseconds(1000));
   // Over the last second only: 6 corrections and 3 rifle ones since 500 ms.
-  network.Sample(Corrected({.count = 9, .rifle = 4}), kStart + milliseconds(1500));
+  network.Sample(Corrected({.count = 9, .rifle_count = 4}), kStart + milliseconds(1500));
 
   const Panel panel = network.BuildPanel();
   EXPECT_TRUE(HasText(panel, "Corrections/s: 6.0 (peak 9.0)"));

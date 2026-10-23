@@ -18,7 +18,7 @@ void CorrectionTally::RecordTick(const State& state, bool counts) {
   if (!counts) {
     return;
   }
-  totals_.rifle += rifle;
+  totals_.rifle_count += rifle;
   if (jump > 0.0F) {
     ++totals_.count;
     totals_.last_m = jump;

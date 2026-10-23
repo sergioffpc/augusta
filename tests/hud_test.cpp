@@ -21,24 +21,25 @@ NetStats MeasuredNet() {
 }
 
 TEST(LinesTest, ReadsDashesBeforeAnyFrameAndWhileNotConnected) {
-  EXPECT_EQ(Lines(0.0, std::nullopt), Text{"FPS: -- | RTT: --"});
+  EXPECT_EQ(Lines(0.0, std::nullopt, false), Text{"FPS: -- | RTT: --"});
 }
 
 TEST(LinesTest, ReadsTheFrameRateAndFrameTime) {
-  EXPECT_EQ(Lines(1.0 / 144.0, std::nullopt), Text{"FPS: 144 (6.9ms) | RTT: --"});
+  EXPECT_EQ(Lines(1.0 / 144.0, std::nullopt, false), Text{"FPS: 144 (6.9ms) | RTT: --"});
 }
 
 TEST(LinesTest, ReadsTheConnectionsNumbers) {
-  EXPECT_EQ(Lines(0.0, MeasuredNet()),
+  EXPECT_EQ(Lines(0.0, MeasuredNet(), false),
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s"});
 }
 
 TEST(LinesTest, EndsTheNetworkLineInImpairedWhileTheLinkIsImpaired) {
-  NetStats net = MeasuredNet();
-  net.impaired = true;
-
-  EXPECT_EQ(Lines(0.0, net),
+  EXPECT_EQ(Lines(0.0, MeasuredNet(), true),
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s | IMPAIRED"});
+}
+
+TEST(LinesTest, EndsTheNetworkLineInImpairedWhileTheLinkIsImpairedAndNotConnected) {
+  EXPECT_EQ(Lines(0.0, std::nullopt, true), Text{"FPS: -- | RTT: -- | IMPAIRED"});
 }
 
 TEST(LinesTest, ReadsDashesForWhatIsNotMeasuredYet) {
@@ -46,14 +47,22 @@ TEST(LinesTest, ReadsDashesForWhatIsNotMeasuredYet) {
   net.jitter_ms.reset();
   net.loss_percent.reset();
 
-  EXPECT_EQ(Lines(0.0, net), Text{"FPS: -- | RTT: 12ms | Jitter: -- | Loss: -- | In: 1.2KB/s | Out: 512B/s"});
+  EXPECT_EQ(Lines(0.0, net, false), Text{"FPS: -- | RTT: 12ms | Jitter: -- | Loss: -- | In: 1.2KB/s | Out: 512B/s"});
 }
 
 TEST(LinesTest, ReadsMegabytesPerSecond) {
   NetStats net = MeasuredNet();
   net.in_bytes_per_sec = 3.5F * 1024.0F * 1024.0F;
 
-  EXPECT_EQ(Lines(0.0, net), Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 3.5MB/s | Out: 512B/s"});
+  EXPECT_EQ(Lines(0.0, net, false),
+            Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 3.5MB/s | Out: 512B/s"});
+}
+
+TEST(FormatBytesTest, ReadsBytesKilobytesAndMegabytesInStepsOf1024) {
+  EXPECT_EQ(FormatBytes(300.0), "300B");
+  EXPECT_EQ(FormatBytes(2048.0), "2.0KB");
+  EXPECT_EQ(FormatBytes(3.4 * 1024.0 * 1024.0), "3.4MB");
+  EXPECT_EQ(FormatRate(512.0), "512B/s");
 }
 
 TEST(FrameTimeWindowTest, AveragesNothingBeforeTheFirstFrameEnds) {

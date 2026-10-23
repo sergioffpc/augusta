@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <format>
+#include <functional>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -18,6 +19,7 @@
 
 #include "augusta/correction_tally.h"
 #include "augusta/debug_panels.h"
+#include "augusta/hud.h"
 #include "augusta/interpolation.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
@@ -30,8 +32,6 @@ namespace {
 constexpr std::string_view kResetPeaksButton = "reset_peaks";
 constexpr double kMicrosecondsPerMillisecond = 1000.0;
 constexpr double kPercent = 100.0;
-constexpr double kKiB = 1024.0;
-constexpr double kMiB = kKiB * 1024.0;
 constexpr double kMillisecondsPerSecond = 1000.0;
 
 // One of the Impairment group's sliders: the value it sets and its range,
@@ -127,40 +127,24 @@ constexpr std::array kImpairmentProfiles{
 
 constexpr std::string_view kImpairmentOffButton = "impairment_off";
 
-// Bytes -> "300B", "2.0KB" or "3.4MB", with suffix after the unit.
-std::string FormatBytes(double bytes, std::string_view suffix = "") {
-  if (bytes >= kMiB) {
-    return std::format("{:.1f}MB{}", bytes / kMiB, suffix);
-  }
-  if (bytes >= kKiB) {
-    return std::format("{:.1f}KB{}", bytes / kKiB, suffix);
-  }
-  return std::format("{:.0f}B{}", bytes, suffix);
-}
+std::string FormatBytes(double bytes) { return hud::FormatBytes(bytes); }
 
-// Bytes per second as the Debug HUD shows them: "512B/s", "1.2KB/s", "3.4MB/s".
-std::string FormatRate(double bytes_per_sec) { return FormatBytes(bytes_per_sec, "/s"); }
+std::string FormatRate(double bytes_per_sec) { return hud::FormatRate(bytes_per_sec); }
 
-std::string FormatMessageRate(double messages_per_sec) { return std::format("{:.1f}", messages_per_sec); }
+std::string FormatPerSecond(double per_second) { return std::format("{:.1f}", per_second); }
 
 std::string FormatPercent(double percent) { return std::format("{:.1f}%", percent); }
 
+std::string FormatMilliseconds(double ms) { return std::format("{:.1f}ms", ms); }
+
 // "--" while unmeasured.
-template <typename Format>
-std::string FormatOrDashes(const std::optional<double>& value, Format format) {
+std::string FormatOrDashes(const std::optional<double>& value, std::string (*format)(double)) {
   return value.has_value() ? format(*value) : "--";
 }
 
-// A value and its peak, "300B (peak 2.0KB)", the peak labelled by peak_label
-// when there is one; "--" for either not measured, alone when neither is.
-template <typename Format>
-std::string FormatWatched(const std::optional<double>& now, const std::optional<double>& peak, Format format,
-                          std::string_view peak_label = "") {
-  if (!now.has_value() && !peak.has_value()) {
-    return "--";
-  }
-  const std::string label = peak_label.empty() ? std::string() : std::format("{} ", peak_label);
-  return std::format("{} ({}{})", FormatOrDashes(now, format), label, FormatOrDashes(peak, format));
+// The connection's RTT, "42ms", or "--" while not connected.
+std::string RttText(const std::optional<link::ConnectionStats>& stats) {
+  return stats.has_value() ? std::format("{}ms", stats->ping_ms) : "--";
 }
 
 // Quality 0..1 as a percent; nullopt while not measured (negative).
@@ -174,14 +158,18 @@ std::optional<double> JitterMs(const link::ConnectionStats& stats) {
              : std::nullopt;
 }
 
+// A type's counts in TypeRates' column order: messages and bytes in, then out.
+std::array<std::uint64_t, 4> CountsOf(const link::TypeTraffic& traffic) {
+  return {traffic.received.messages, traffic.received.bytes, traffic.sent.messages, traffic.sent.bytes};
+}
+
 // Whether any of later's counts is below earlier's: the counts started over,
 // at a new connection.
 bool StartedOver(const link::Traffic& earlier, const link::Traffic& later) {
   for (std::size_t i = 0; i < link::kMessageTypeCount; ++i) {
-    const link::TypeTraffic& before = earlier.by_type.at(i);
-    const link::TypeTraffic& after = later.by_type.at(i);
-    if (after.sent.messages < before.sent.messages || after.sent.bytes < before.sent.bytes ||
-        after.received.messages < before.received.messages || after.received.bytes < before.received.bytes) {
+    const std::array<std::uint64_t, 4> before = CountsOf(earlier.by_type.at(i));
+    const std::array<std::uint64_t, 4> after = CountsOf(later.by_type.at(i));
+    if (!std::ranges::equal(before, after, std::ranges::less_equal{})) {
       return true;
     }
   }
@@ -230,6 +218,14 @@ double LargestBetween(const prediction::Corrections& earlier, const prediction::
   return later.largest_m > earlier.largest_m ? later.largest_m : later.last_m;
 }
 
+// Each of watched unmeasured now, its peak kept.
+template <typename Group>
+void Unmeasure(const Group& watched) {
+  for (auto* each : watched) {
+    each->Set(std::nullopt);
+  }
+}
+
 }  // namespace
 
 void ConnectionReadings::Record(const std::optional<link::ConnectionStats>& stats, const link::Traffic& traffic) {
@@ -248,6 +244,55 @@ ConnectionReading ConnectionReadings::Take() {
   return taken;
 }
 
+void Impairment::AddGroup(debug::Panel& panel, std::string_view measured_rtt) const {
+  panel.elements.emplace_back(debug::Text{.text = "Impairment, both ways"});
+  panel.elements.emplace_back(debug::Text{.text = std::format("Measured RTT: {}", measured_rtt)});
+  for (const ImpairmentSlider& slider : kImpairmentSliders) {
+    panel.elements.emplace_back(debug::Slider{.id = std::string(slider.id),
+                                              .label = std::string(slider.label),
+                                              .value = slider.get(values_),
+                                              .min = 0.0F,
+                                              .max = slider.max,
+                                              .whole_numbers = slider.whole_numbers});
+  }
+  for (const ImpairmentProfile& profile : kImpairmentProfiles) {
+    panel.elements.emplace_back(debug::Button{.id = std::string(profile.id), .label = std::string(profile.label)});
+  }
+  panel.elements.emplace_back(debug::Button{.id = std::string(kImpairmentOffButton), .label = "Off"});
+}
+
+void Impairment::Update(const debug::ControlEvent& event) {
+  if (const auto* value = std::get_if<float>(&event.value)) {
+    const auto slider = std::ranges::find(kImpairmentSliders, event.control, &ImpairmentSlider::id);
+    if (slider != kImpairmentSliders.end()) {
+      slider->set(values_, std::clamp(*value, 0.0F, slider->max));
+    }
+    return;
+  }
+  if (!std::holds_alternative<debug::ButtonPress>(event.value)) {
+    return;
+  }
+  if (event.control == kImpairmentOffButton) {
+    values_ = {};
+    return;
+  }
+  const auto profile = std::ranges::find(kImpairmentProfiles, event.control, &ImpairmentProfile::id);
+  if (profile != kImpairmentProfiles.end()) {
+    values_ = profile->conditions;
+  }
+}
+
+link::SimulatedConditions Impairment::WantedConditions() const {
+  if (values_ == link::SimulatedConditions{}) {
+    return {};
+  }
+  link::SimulatedConditions wanted = values_;
+  wanted.applies_to = link::SimulatedTraffic::kSentAndReceived;
+  return wanted;
+}
+
+bool Impairment::Impaired() const { return WantedConditions() != link::SimulatedConditions{}; }
+
 void NetworkPanel::Watched::Set(std::optional<double> value) {
   now_ = value;
   if (!value.has_value()) {
@@ -262,16 +307,27 @@ void NetworkPanel::Watched::RaisePeak(double value) {
   }
 }
 
-bool NetworkPanel::SampleDue(Clock::time_point now) const { return !next_sample_.has_value() || now >= *next_sample_; }
+std::string NetworkPanel::Watched::Format(std::string (*format)(double), std::string_view peak_label) const {
+  if (!now_.has_value() && !peak_.has_value()) {
+    return "--";
+  }
+  const std::string label = peak_label.empty() ? std::string() : std::format("{} ", peak_label);
+  return std::format("{} ({}{})", FormatOrDashes(now_, format), label, FormatOrDashes(peak_, format));
+}
+
+bool NetworkPanel::SampleDue(Clock::time_point now) const {
+  return !readout_.next_sample.has_value() || now >= *readout_.next_sample;
+}
 
 void NetworkPanel::Sample(const NetworkSample& sample, Clock::time_point now) {
-  if (!next_sample_.has_value()) {
-    next_sample_ = now + kSamplePeriod;
-  } else if (now >= *next_sample_) {
+  std::optional<Clock::time_point>& next_sample = readout_.next_sample;
+  if (!next_sample.has_value()) {
+    next_sample = now + kSamplePeriod;
+  } else if (now >= *next_sample) {
     // The first boundary after now, however many frames skipped.
-    next_sample_ = *next_sample_ + (((now - *next_sample_) / kSamplePeriod) + 1) * kSamplePeriod;
+    next_sample = *next_sample + (((now - *next_sample) / kSamplePeriod) + 1) * kSamplePeriod;
   }
-  SampleConnection(sample.connection.stats);
+  SampleConnection(sample.connection.stats, now);
   SampleTraffic(sample.connection.traffic, now);
   SampleAuthoritativeState(sample);
   SampleCorrections(sample.corrections, now);
@@ -282,117 +338,109 @@ void NetworkPanel::RecordFrame(std::optional<double> interpolation_slack_s) {
   if (!interpolation_slack_s.has_value()) {
     return;
   }
-  pending_frames_.smallest_slack_s =
-      std::min(pending_frames_.smallest_slack_s.value_or(*interpolation_slack_s), *interpolation_slack_s);
+  Frames& pending = readout_.pending_frames;
+  pending.smallest_slack_s =
+      std::min(pending.smallest_slack_s.value_or(*interpolation_slack_s), *interpolation_slack_s);
   if (*interpolation_slack_s <= 0.0) {
-    ++pending_frames_.dry;
+    ++pending.dry;
   }
 }
 
 void NetworkPanel::SampleCorrections(const std::optional<prediction::Corrections>& corrections, Clock::time_point now) {
+  Prediction& group = readout_.prediction;
+  auto& window = readout_.corrections_window;
   if (!corrections.has_value()) {
-    corrections_window_.clear();
-    prediction_.corrections_per_sec.Set(std::nullopt);
-    prediction_.correction_m.Set(std::nullopt);
-    prediction_.rifle_corrections_per_sec.Set(std::nullopt);
+    window.clear();
+    Unmeasure(group.Corrections());
     return;
   }
-  prediction_.correction_m.Set(corrections->last_m);
+  group.correction_m.Set(corrections->last_m);
   // A first sample has nothing before it to tell what is new.
-  const double largest_new =
-      corrections_window_.empty() ? 0.0 : LargestBetween(corrections_window_.back().second, *corrections);
-  prediction_.correction_m.RaisePeak(largest_new);
-  Plot(prediction_.correction_plot, largest_new);
+  const double largest_new = window.empty() ? 0.0 : LargestBetween(window.back().second, *corrections);
+  group.correction_m.RaisePeak(largest_new);
+  Plot(group.correction_plot, largest_new);
 
-  const double seconds = Slide(corrections_window_, now, *corrections);
+  const double seconds = Slide(window, now, *corrections);
   if (seconds <= 0.0) {
-    prediction_.corrections_per_sec.Set(std::nullopt);
-    prediction_.rifle_corrections_per_sec.Set(std::nullopt);
+    group.corrections_per_sec.Set(std::nullopt);
+    group.rifle_corrections_per_sec.Set(std::nullopt);
     return;
   }
-  const prediction::Corrections& oldest = corrections_window_.front().second;
-  prediction_.corrections_per_sec.Set(PerSecond(oldest.count, corrections->count, seconds));
-  prediction_.rifle_corrections_per_sec.Set(PerSecond(oldest.rifle, corrections->rifle, seconds));
+  const prediction::Corrections& oldest = window.front().second;
+  group.corrections_per_sec.Set(PerSecond(oldest.count, corrections->count, seconds));
+  group.rifle_corrections_per_sec.Set(PerSecond(oldest.rifle_count, corrections->rifle_count, seconds));
 }
 
 void NetworkPanel::SampleFrames(Clock::time_point now) {
-  const double seconds = Slide(frames_window_, now, std::exchange(pending_frames_, {}));
+  auto& window = readout_.frames_window;
+  const double seconds = Slide(window, now, std::exchange(readout_.pending_frames, {}));
   // The frames since the oldest sample: those recorded before it are older
   // than the window.
   std::optional<double> smallest;
   std::uint32_t dry = 0;
-  for (auto frames = std::next(frames_window_.begin()); frames != frames_window_.end(); ++frames) {
+  for (auto frames = std::next(window.begin()); frames != window.end(); ++frames) {
     if (const std::optional<double>& slack = frames->second.smallest_slack_s; slack.has_value()) {
       smallest = std::min(smallest.value_or(*slack), *slack);
     }
     dry += frames->second.dry;
   }
+  Prediction& group = readout_.prediction;
   if (seconds <= 0.0 || !smallest.has_value()) {
-    prediction_.smallest_slack_s.Set(std::nullopt);
-    prediction_.dry_frames_per_sec.Set(std::nullopt);
+    Unmeasure(group.Frames());
     return;
   }
-  prediction_.smallest_slack_s.Set(smallest);
-  prediction_.dry_frames_per_sec.Set(static_cast<double>(dry) / seconds);
+  group.smallest_slack_s.Set(smallest);
+  group.dry_frames_per_sec.Set(static_cast<double>(dry) / seconds);
 }
 
-void NetworkPanel::SampleConnection(const std::optional<link::ConnectionStats>& stats) {
-  connection_.stats = stats;
+void NetworkPanel::SampleConnection(const std::optional<link::ConnectionStats>& stats, Clock::time_point now) {
+  Connection& connection = readout_.connection;
+  connection.stats = stats;
   if (!stats.has_value()) {
-    connection_.quality_local.Set(std::nullopt);
-    connection_.quality_remote.Set(std::nullopt);
-    connection_.pending_bytes.Set(std::nullopt);
+    // No connection starts the jitter's peak over, as the Debug HUD's.
+    connection.jitter_window.clear();
+    Unmeasure(connection.All());
     return;
   }
-  connection_.quality_local.Set(QualityPercent(stats->quality_local));
-  connection_.quality_remote.Set(QualityPercent(stats->quality_remote));
-  connection_.pending_bytes.Set(static_cast<double>(stats->pending_bytes));
-  Plot(plots_.rtt_ms, static_cast<double>(stats->ping_ms));
-  Plot(plots_.jitter_ms, JitterMs(*stats));
-  Plot(plots_.loss_percent, PacketLossPercent(*stats));
-  Plot(plots_.in_bytes_per_sec, static_cast<double>(stats->in_bytes_per_sec));
-  Plot(plots_.out_bytes_per_sec, static_cast<double>(stats->out_bytes_per_sec));
+  Slide(connection.jitter_window, now, JitterMs(*stats));
+  connection.quality_local.Set(QualityPercent(stats->quality_local));
+  connection.quality_remote.Set(QualityPercent(stats->quality_remote));
+  connection.pending_bytes.Set(static_cast<double>(stats->pending_bytes));
+  Plots& plots = readout_.plots;
+  Plot(plots.rtt_ms, static_cast<double>(stats->ping_ms));
+  Plot(plots.jitter_ms, JitterMs(*stats));
+  Plot(plots.loss_percent, PacketLossPercent(*stats));
+  Plot(plots.in_bytes_per_sec, static_cast<double>(stats->in_bytes_per_sec));
+  Plot(plots.out_bytes_per_sec, static_cast<double>(stats->out_bytes_per_sec));
 }
 
 void NetworkPanel::SampleTraffic(const link::Traffic& traffic, Clock::time_point now) {
-  if (!traffic_window_.empty() && StartedOver(traffic_window_.back().second, traffic)) {
-    traffic_window_.clear();
+  auto& window = readout_.traffic_window;
+  if (!window.empty() && StartedOver(window.back().second, traffic)) {
+    window.clear();
   }
-  traffic_window_.emplace_back(now, traffic);
-  while (now - traffic_window_.front().first > kRateWindow) {
-    traffic_window_.pop_front();
-  }
-  const auto& [oldest_time, oldest] = traffic_window_.front();
-  const double seconds = std::chrono::duration<double>(now - oldest_time).count();
+  const double seconds = Slide(window, now, traffic);
+  const link::Traffic& oldest = window.front().second;
   for (std::size_t i = 0; i < link::kMessageTypeCount; ++i) {
-    TypeRates& rates = rates_.at(i);
-    if (seconds <= 0.0) {
-      rates.messages_in.Set(std::nullopt);
-      rates.bytes_in.Set(std::nullopt);
-      rates.messages_out.Set(std::nullopt);
-      rates.bytes_out.Set(std::nullopt);
-      continue;
+    TypeRates& rates = readout_.rates.at(i);
+    const std::array<std::uint64_t, 4> before = CountsOf(oldest.by_type.at(i));
+    const std::array<std::uint64_t, 4> after = CountsOf(traffic.by_type.at(i));
+    for (std::size_t column = 0; column < rates.size(); ++column) {
+      rates.at(column).Set(seconds > 0.0 ? std::optional(PerSecond(before.at(column), after.at(column), seconds))
+                                         : std::nullopt);
     }
-    const link::TypeTraffic& before = oldest.by_type.at(i);
-    const link::TypeTraffic& after = traffic.by_type.at(i);
-    rates.messages_in.Set(PerSecond(before.received.messages, after.received.messages, seconds));
-    rates.bytes_in.Set(PerSecond(before.received.bytes, after.received.bytes, seconds));
-    rates.messages_out.Set(PerSecond(before.sent.messages, after.sent.messages, seconds));
-    rates.bytes_out.Set(PerSecond(before.sent.bytes, after.sent.bytes, seconds));
   }
 }
 
 void NetworkPanel::SampleAuthoritativeState(const NetworkSample& sample) {
-  AuthoritativeState& state = authoritative_state_;
-  const auto& [oldest_time, oldest] = traffic_window_.front();
-  const auto& [newest_time, newest] = traffic_window_.back();
+  AuthoritativeState& state = readout_.authoritative_state;
+  const auto& [oldest_time, oldest] = readout_.traffic_window.front();
+  const auto& [newest_time, newest] = readout_.traffic_window.back();
   const double seconds = std::chrono::duration<double>(newest_time - oldest_time).count();
   const link::AuthoritativeStateTally& before = oldest.authoritative_state;
   const link::AuthoritativeStateTally& tally = newest.authoritative_state;
   if (!sample.receives_authoritative_state || seconds <= 0.0) {
-    state.updates.Set(std::nullopt);
-    state.ticks_missing.Set(std::nullopt);
-    state.ticks_out_of_order.Set(std::nullopt);
+    Unmeasure(state.Rates());
   } else {
     state.updates.Set(PerSecond(before.updates, tally.updates, seconds));
     state.ticks_missing.Set(PerSecond(before.ticks_missing, tally.ticks_missing, seconds));
@@ -401,9 +449,7 @@ void NetworkPanel::SampleAuthoritativeState(const NetworkSample& sample) {
   state.received = sample.receives_authoritative_state;
   state.tick_rate_hz = sample.tick_rate_hz;
   if (!sample.receives_authoritative_state || tally.updates == 0) {
-    state.last_bytes.Set(std::nullopt);
-    state.average_bytes.Set(std::nullopt);
-    state.largest_bytes.Set(std::nullopt);
+    Unmeasure(state.Sizes());
   } else {
     state.last_bytes.Set(static_cast<double>(tally.last_bytes));
     state.average_bytes.Set(static_cast<double>(tally.total_bytes) / static_cast<double>(tally.updates));
@@ -413,128 +459,104 @@ void NetworkPanel::SampleAuthoritativeState(const NetworkSample& sample) {
 
 debug::Panel NetworkPanel::BuildPanel() const {
   debug::Panel panel{.id = std::string(kNetworkPanelId), .title = "Network", .elements = {}};
-  const std::optional<link::ConnectionStats>& stats = connection_.stats;
-  const auto rate = [](double value) { return FormatRate(value); };
-  const auto bytes = [](double value) { return FormatBytes(value); };
-  const auto percent = [](double value) { return FormatPercent(value); };
-
-  panel.elements.emplace_back(debug::Text{.text = "Connection"});
-  panel.elements.emplace_back(
-      debug::Text{.text = "RTT: " + (stats.has_value() ? std::format("{}ms", stats->ping_ms) : std::string("--"))});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Jitter: " + FormatOrDashes(stats.has_value() ? JitterMs(*stats) : std::nullopt,
-                                                      [](double value) { return std::format("{:.1f}ms", value); })});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Quality local: " + FormatWatched(connection_.quality_local.Now(),
-                                                            connection_.quality_local.Peak(), percent, "worst")});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Quality remote: " + FormatWatched(connection_.quality_remote.Now(),
-                                                             connection_.quality_remote.Peak(), percent, "worst")});
-  panel.elements.emplace_back(
-      debug::Text{.text = "In: " + FormatOrDashes(stats.transform([](const link::ConnectionStats& s) {
-                            return static_cast<double>(s.in_bytes_per_sec);
-                          }),
-                                                  rate)});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Out: " + FormatOrDashes(stats.transform([](const link::ConnectionStats& s) {
-                            return static_cast<double>(s.out_bytes_per_sec);
-                          }),
-                                                   rate)});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Pending: " + FormatWatched(connection_.pending_bytes.Now(), connection_.pending_bytes.Peak(),
-                                                      bytes, "peak")});
-  panel.elements.emplace_back(PlotOf("RTT (ms)", plots_.rtt_ms));
-  panel.elements.emplace_back(PlotOf("Jitter (ms)", plots_.jitter_ms));
-  panel.elements.emplace_back(PlotOf("Loss (%)", plots_.loss_percent));
-  panel.elements.emplace_back(PlotOf("In (B/s)", plots_.in_bytes_per_sec));
-  panel.elements.emplace_back(PlotOf("Out (B/s)", plots_.out_bytes_per_sec));
-
-  panel.elements.emplace_back(debug::Text{.text = "Traffic per message type, now (peak)"});
-  debug::Table table{.header = {"Type", "Msgs/s in", "Bytes/s in", "Msgs/s out", "Bytes/s out"}, .rows = {}};
-  const auto messages = [](double value) { return FormatMessageRate(value); };
-  for (std::size_t i = 0; i < link::kMessageTypeCount; ++i) {
-    const TypeRates& rates = rates_.at(i);
-    table.rows.push_back({std::string(link::NameOf(static_cast<link::MessageType>(i))),
-                          FormatWatched(rates.messages_in.Now(), rates.messages_in.Peak(), messages),
-                          FormatWatched(rates.bytes_in.Now(), rates.bytes_in.Peak(), rate),
-                          FormatWatched(rates.messages_out.Now(), rates.messages_out.Peak(), messages),
-                          FormatWatched(rates.bytes_out.Now(), rates.bytes_out.Peak(), rate)});
-  }
-  panel.elements.emplace_back(std::move(table));
+  AddConnectionGroup(panel);
+  AddTrafficTable(panel);
   AddAuthoritativeState(panel);
   AddPredictionGroup(panel);
-  AddImpairmentGroup(panel);
+  impairment_.AddGroup(panel, RttText(readout_.connection.stats));
   panel.elements.emplace_back(debug::Button{.id = std::string(kResetPeaksButton), .label = "Reset peaks"});
   return panel;
 }
 
+void NetworkPanel::AddConnectionGroup(debug::Panel& panel) const {
+  const Connection& connection = readout_.connection;
+  const std::optional<link::ConnectionStats>& stats = connection.stats;
+  // The peak over the last kRateWindow, as the Debug HUD shows it.
+  std::optional<double> jitter_ms;
+  for (const auto& [time, sample_ms] : connection.jitter_window) {
+    if (sample_ms.has_value()) {
+      jitter_ms = std::max(jitter_ms.value_or(*sample_ms), *sample_ms);
+    }
+  }
+  const auto stat = [&stats](float link::ConnectionStats::* field) {
+    return stats.transform([field](const link::ConnectionStats& s) { return static_cast<double>(s.*field); });
+  };
+
+  panel.elements.emplace_back(debug::Text{.text = "Connection"});
+  panel.elements.emplace_back(debug::Text{.text = "RTT: " + RttText(stats)});
+  panel.elements.emplace_back(debug::Text{.text = "Jitter: " + FormatOrDashes(jitter_ms, FormatMilliseconds)});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Quality local: " + connection.quality_local.Format(FormatPercent, "worst")});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Quality remote: " + connection.quality_remote.Format(FormatPercent, "worst")});
+  panel.elements.emplace_back(
+      debug::Text{.text = "In: " + FormatOrDashes(stat(&link::ConnectionStats::in_bytes_per_sec), FormatRate)});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Out: " + FormatOrDashes(stat(&link::ConnectionStats::out_bytes_per_sec), FormatRate)});
+  panel.elements.emplace_back(debug::Text{.text = "Pending: " + connection.pending_bytes.Format(FormatBytes, "peak")});
+  const Plots& plots = readout_.plots;
+  panel.elements.emplace_back(PlotOf("RTT (ms)", plots.rtt_ms));
+  panel.elements.emplace_back(PlotOf("Jitter (ms)", plots.jitter_ms));
+  panel.elements.emplace_back(PlotOf("Loss (%)", plots.loss_percent));
+  panel.elements.emplace_back(PlotOf("In (B/s)", plots.in_bytes_per_sec));
+  panel.elements.emplace_back(PlotOf("Out (B/s)", plots.out_bytes_per_sec));
+}
+
+void NetworkPanel::AddTrafficTable(debug::Panel& panel) const {
+  // Each column's format, in TypeRates' order.
+  constexpr std::array<std::string (*)(double), 4> kColumnFormats{FormatPerSecond, FormatRate, FormatPerSecond,
+                                                                  FormatRate};
+  panel.elements.emplace_back(debug::Text{.text = "Traffic per message type, now (peak)"});
+  debug::Table table{.header = {"Type", "Msgs/s in", "Bytes/s in", "Msgs/s out", "Bytes/s out"}, .rows = {}};
+  for (std::size_t i = 0; i < link::kMessageTypeCount; ++i) {
+    std::vector<std::string>& row = table.rows.emplace_back();
+    row.emplace_back(link::NameOf(static_cast<link::MessageType>(i)));
+    const TypeRates& rates = readout_.rates.at(i);
+    for (std::size_t column = 0; column < rates.size(); ++column) {
+      row.push_back(rates.at(column).Format(kColumnFormats.at(column)));
+    }
+  }
+  panel.elements.emplace_back(std::move(table));
+}
+
 void NetworkPanel::AddAuthoritativeState(debug::Panel& panel) const {
-  const AuthoritativeState& state = authoritative_state_;
-  const auto bytes = [](double value) { return FormatBytes(value); };
+  const AuthoritativeState& state = readout_.authoritative_state;
   const auto per_second = [](double value) { return std::format("{:.1f}/s", value); };
-  const auto line = [&panel](std::string_view label, const Watched& watched, const auto& format) {
-    panel.elements.emplace_back(debug::Text{
-        .text = std::format("{}: {}", label, FormatWatched(watched.Now(), watched.Peak(), format, "peak"))});
+  const auto line = [&panel](std::string_view label, const Watched& watched, std::string (*format)(double)) {
+    panel.elements.emplace_back(debug::Text{.text = std::format("{}: {}", label, watched.Format(format, "peak"))});
   };
 
   panel.elements.emplace_back(debug::Text{.text = "Authoritative State"});
   if (state.received) {
     panel.elements.emplace_back(debug::Text{
-        .text = std::format(
-            "Updates: {}, tick rate {}", FormatWatched(state.updates.Now(), state.updates.Peak(), per_second, "peak"),
-            state.tick_rate_hz.has_value() ? std::format("{}Hz", *state.tick_rate_hz) : std::string("--"))});
+        .text = std::format("Updates: {}, tick rate {}", state.updates.Format(per_second, "peak"),
+                            state.tick_rate_hz.has_value() ? std::format("{}Hz", *state.tick_rate_hz) : "--")});
   } else {
     panel.elements.emplace_back(debug::Text{.text = "Updates: --"});
   }
-  line("Last size", state.last_bytes, bytes);
-  line("Average size", state.average_bytes, bytes);
-  line("Largest size", state.largest_bytes, bytes);
+  line("Last size", state.last_bytes, FormatBytes);
+  line("Average size", state.average_bytes, FormatBytes);
+  line("Largest size", state.largest_bytes, FormatBytes);
   line("Ticks missing", state.ticks_missing, per_second);
   line("Ticks out of order", state.ticks_out_of_order, per_second);
 }
 
-void NetworkPanel::AddImpairmentGroup(debug::Panel& panel) const {
-  const std::optional<link::ConnectionStats>& stats = connection_.stats;
-  panel.elements.emplace_back(debug::Text{.text = "Impairment, both ways"});
-  panel.elements.emplace_back(debug::Text{
-      .text = "Measured RTT: " + (stats.has_value() ? std::format("{}ms", stats->ping_ms) : std::string("--"))});
-  for (const ImpairmentSlider& slider : kImpairmentSliders) {
-    panel.elements.emplace_back(debug::Slider{.id = std::string(slider.id),
-                                              .label = std::string(slider.label),
-                                              .value = slider.get(impairment_),
-                                              .min = 0.0F,
-                                              .max = slider.max,
-                                              .whole_numbers = slider.whole_numbers});
-  }
-  for (const ImpairmentProfile& profile : kImpairmentProfiles) {
-    panel.elements.emplace_back(debug::Button{.id = std::string(profile.id), .label = std::string(profile.label)});
-  }
-  panel.elements.emplace_back(debug::Button{.id = std::string(kImpairmentOffButton), .label = "Off"});
-}
-
 void NetworkPanel::AddPredictionGroup(debug::Panel& panel) const {
-  const auto per_sec = [](double value) { return std::format("{:.1f}", value); };
+  const Prediction& prediction = readout_.prediction;
   const auto metres = [](double value) { return std::format("{:.2f}m", value); };
-  const auto ms = [](double value) { return std::format("{:.1f}ms", value * kMillisecondsPerSecond); };
+  const auto ms = [](double value) { return FormatMilliseconds(value * kMillisecondsPerSecond); };
   panel.elements.emplace_back(debug::Text{.text = "Prediction and presentation"});
   panel.elements.emplace_back(
-      debug::Text{.text = "Corrections/s: " + FormatWatched(prediction_.corrections_per_sec.Now(),
-                                                            prediction_.corrections_per_sec.Peak(), per_sec, "peak")});
-  panel.elements.emplace_back(
-      debug::Text{.text = "Correction: " + FormatWatched(prediction_.correction_m.Now(),
-                                                         prediction_.correction_m.Peak(), metres, "largest")});
+      debug::Text{.text = "Corrections/s: " + prediction.corrections_per_sec.Format(FormatPerSecond, "peak")});
+  panel.elements.emplace_back(debug::Text{.text = "Correction: " + prediction.correction_m.Format(metres, "largest")});
   panel.elements.emplace_back(debug::Text{
-      .text = "Rifle corrections/s: " + FormatWatched(prediction_.rifle_corrections_per_sec.Now(),
-                                                      prediction_.rifle_corrections_per_sec.Peak(), per_sec, "peak")});
+      .text = "Rifle corrections/s: " + prediction.rifle_corrections_per_sec.Format(FormatPerSecond, "peak")});
   panel.elements.emplace_back(
-      debug::Text{.text = std::format("Slack: {}, delay {:.0f}ms",
-                                      FormatWatched(prediction_.smallest_slack_s.Now(),
-                                                    prediction_.smallest_slack_s.Peak(), ms, "worst"),
+      debug::Text{.text = std::format("Slack: {}, delay {:.0f}ms", prediction.smallest_slack_s.Format(ms, "worst"),
                                       presentation::kInterpolationDelay * kMillisecondsPerSecond)});
   panel.elements.emplace_back(
-      debug::Text{.text = "Dry frames/s: " + FormatWatched(prediction_.dry_frames_per_sec.Now(),
-                                                           prediction_.dry_frames_per_sec.Peak(), per_sec, "peak")});
-  panel.elements.emplace_back(PlotOf("Correction (m)", prediction_.correction_plot));
+      debug::Text{.text = "Dry frames/s: " + prediction.dry_frames_per_sec.Format(FormatPerSecond, "peak")});
+  panel.elements.emplace_back(PlotOf("Correction (m)", prediction.correction_plot));
 }
 
 void NetworkPanel::Update(const debug::ControlEvent& event) {
@@ -545,68 +567,25 @@ void NetworkPanel::Update(const debug::ControlEvent& event) {
     ResetPeaks();
     return;
   }
-  UpdateImpairment(event);
+  impairment_.Update(event);
 }
-
-void NetworkPanel::UpdateImpairment(const debug::ControlEvent& event) {
-  if (const auto* value = std::get_if<float>(&event.value)) {
-    const auto slider = std::ranges::find(kImpairmentSliders, event.control, &ImpairmentSlider::id);
-    if (slider != kImpairmentSliders.end()) {
-      slider->set(impairment_, std::clamp(*value, 0.0F, slider->max));
-    }
-    return;
-  }
-  if (!std::holds_alternative<debug::ButtonPress>(event.value)) {
-    return;
-  }
-  if (event.control == kImpairmentOffButton) {
-    impairment_ = {};
-    return;
-  }
-  const auto profile = std::ranges::find(kImpairmentProfiles, event.control, &ImpairmentProfile::id);
-  if (profile != kImpairmentProfiles.end()) {
-    impairment_ = profile->conditions;
-  }
-}
-
-link::SimulatedConditions NetworkPanel::WantedConditions() const {
-  if (impairment_ == link::SimulatedConditions{}) {
-    return {};
-  }
-  link::SimulatedConditions wanted = impairment_;
-  wanted.applies_to = link::SimulatedTraffic::kSentAndReceived;
-  return wanted;
-}
-
-bool NetworkPanel::Impaired() const { return WantedConditions() != link::SimulatedConditions{}; }
 
 void NetworkPanel::ResetPeaks() {
-  connection_.quality_local.ResetPeak();
-  connection_.quality_remote.ResetPeak();
-  connection_.pending_bytes.ResetPeak();
-  for (TypeRates& rates : rates_) {
-    rates.messages_in.ResetPeak();
-    rates.bytes_in.ResetPeak();
-    rates.messages_out.ResetPeak();
-    rates.bytes_out.ResetPeak();
+  const auto reset = [](const auto& group) {
+    for (Watched* watched : group) {
+      watched->ResetPeak();
+    }
+  };
+  reset(readout_.connection.All());
+  for (TypeRates& rates : readout_.rates) {
+    for (Watched& watched : rates) {
+      watched.ResetPeak();
+    }
   }
-  authoritative_state_.updates.ResetPeak();
-  authoritative_state_.last_bytes.ResetPeak();
-  authoritative_state_.average_bytes.ResetPeak();
-  authoritative_state_.largest_bytes.ResetPeak();
-  authoritative_state_.ticks_missing.ResetPeak();
-  authoritative_state_.ticks_out_of_order.ResetPeak();
-  prediction_.corrections_per_sec.ResetPeak();
-  prediction_.correction_m.ResetPeak();
-  prediction_.rifle_corrections_per_sec.ResetPeak();
-  prediction_.smallest_slack_s.ResetPeak();
-  prediction_.dry_frames_per_sec.ResetPeak();
-}
-
-void NetworkPanel::Close() {
-  const link::SimulatedConditions impairment = impairment_;
-  *this = NetworkPanel{};
-  impairment_ = impairment;
+  reset(readout_.authoritative_state.Rates());
+  reset(readout_.authoritative_state.Sizes());
+  reset(readout_.prediction.Corrections());
+  reset(readout_.prediction.Frames());
 }
 
 }  // namespace augusta::client

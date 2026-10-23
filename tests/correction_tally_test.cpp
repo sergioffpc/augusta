@@ -32,7 +32,7 @@ TEST(CorrectionTallyTest, NoMovementIsNoCorrection) {
   EXPECT_EQ(corrections.count, 0U);
   EXPECT_EQ(corrections.last_m, 0.0F);
   EXPECT_EQ(corrections.largest_m, 0.0F);
-  EXPECT_EQ(corrections.rifle, 0U);
+  EXPECT_EQ(corrections.rifle_count, 0U);
 }
 
 TEST(CorrectionTallyTest, ATickWhoseTotalCorrectionMovedIsOneCorrectionOfThatLength) {
@@ -72,7 +72,7 @@ TEST(CorrectionTallyTest, RifleCorrectionsFollowTheirRunningTotal) {
   tally.RecordTick(StateAt({}, 1), true);
   tally.RecordTick(StateAt({}, 3), true);
 
-  EXPECT_EQ(tally.Totals().rifle, 3U);
+  EXPECT_EQ(tally.Totals().rifle_count, 3U);
 }
 
 TEST(CorrectionTallyTest, TicksNotCountedFollowTheTotalsButAddNothing) {
@@ -88,7 +88,7 @@ TEST(CorrectionTallyTest, TicksNotCountedFollowTheTotalsButAddNothing) {
   EXPECT_EQ(corrections.count, 1U);
   EXPECT_FLOAT_EQ(corrections.last_m, 1.0F);
   EXPECT_FLOAT_EQ(corrections.largest_m, 1.0F);
-  EXPECT_EQ(corrections.rifle, 1U);
+  EXPECT_EQ(corrections.rifle_count, 1U);
 }
 
 }  // namespace

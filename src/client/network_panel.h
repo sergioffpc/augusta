@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -21,15 +22,16 @@
 /// it receives, Reconciliation's corrections and the interpolation buffer's
 /// slack, as rates, plots and peaks. Its numbers come from modules that ship in
 /// every build (link, prediction, presentation), so its builder lives here
-/// rather than in them, which may not depend on augusta_debug. It takes plain values only: the Network I/O thread
-/// records each round's reading into ConnectionReadings, the Prediction thread
-/// publishes its CorrectionTally's counts with its tick, and the Main/Render
-/// thread records each frame's slack (RecordFrame) and takes the rest into a
-/// NetworkSample whenever the panel says one is due, so the panel's state is
-/// the Main/Render thread's alone. What only the server knows stays in
-/// Grafana (ADR-0049). Its Impairment group says which of the transport's
-/// simulated conditions the developer wants on the client's link, both ways,
-/// which the client Runtime applies; the server is never told.
+/// rather than in them, which may not depend on augusta_debug. It takes plain
+/// values only: the Network I/O thread records each round's reading into
+/// ConnectionReadings, the Prediction thread publishes its CorrectionTally's
+/// counts with its tick, and the Main/Render thread records each frame's slack
+/// (RecordFrame) and takes the rest into a NetworkSample whenever the panel
+/// says one is due, so the panel's state is the Main/Render thread's alone.
+/// What only the server knows stays in Grafana (ADR-0049). Its Impairment
+/// group says which of the transport's simulated conditions the developer
+/// wants on the client's link, both ways, which the client Runtime applies;
+/// the server is never told.
 namespace augusta::client {
 
 /// The Network panel's Panel id, which its ControlEvents name.
@@ -75,6 +77,34 @@ struct NetworkSample {
   std::optional<prediction::Corrections> corrections;
 };
 
+/// The Network panel's Impairment group: which of the transport's simulated
+/// conditions the developer wants on the client's link, both ways. The client
+/// Runtime applies them; the server is never told. Its values are the
+/// developer's alone, never written to a config, so they last until Off or
+/// the client exits, however often the panel is closed.
+class Impairment {
+ public:
+  /// The group's lines and controls, the measured RTT among them as given
+  /// ("42ms" or "--").
+  void AddGroup(debug::Panel& panel, std::string_view measured_rtt) const;
+
+  /// A slider sets its one value, within its range; a profile's button sets
+  /// them all to the profile's, and Off to none. Any other control changes
+  /// nothing. The event is the Network panel's: the panel checks.
+  void Update(const debug::ControlEvent& event);
+
+  /// Its values on what the client sends and what it receives, or default
+  /// conditions (the real network) while every value is zero.
+  [[nodiscard]] link::SimulatedConditions WantedConditions() const;
+
+  /// Whether it wants any condition on the link.
+  [[nodiscard]] bool Impaired() const;
+
+ private:
+  // applies_to left at its default: WantedConditions says both ways.
+  link::SimulatedConditions values_;
+};
+
 class NetworkPanel {
  public:
   using Clock = std::chrono::steady_clock;
@@ -82,7 +112,8 @@ class NetworkPanel {
   static constexpr std::chrono::milliseconds kSamplePeriod{100};
   /// Each plot's points: the last 10 s at kSamplePeriod.
   static constexpr std::size_t kPlotPoints = 100;
-  /// What a rate is taken over.
+  /// What a rate is taken over, and the jitter's peak, as the Debug HUD takes
+  /// it (HudNetStats::kJitterWindow).
   static constexpr std::chrono::seconds kRateWindow{1};
 
   /// Whether a frame at now crosses the next kSamplePeriod boundary since the
@@ -102,23 +133,20 @@ class NetworkPanel {
   /// group, with its plot, the Impairment group, and a "Reset peaks" button.
   [[nodiscard]] debug::Panel BuildPanel() const;
 
-  /// "Reset peaks" restarts every peak from its current value. An Impairment
-  /// slider sets its one value, within its range; a profile's button sets
-  /// them all to the profile's, and Off to none. Any other event, another
+  /// "Reset peaks" restarts every peak from its current value; the Impairment
+  /// group's controls go to it (Impairment::Update). Any other event, another
   /// panel's included, changes nothing.
   void Update(const debug::ControlEvent& event);
 
-  /// The conditions the Impairment group wants on the client's link: its
-  /// values on what the client sends and what it receives, or default
-  /// conditions (the real network) while every value is zero.
-  [[nodiscard]] link::SimulatedConditions WantedConditions() const;
+  /// The Impairment group's (Impairment::WantedConditions).
+  [[nodiscard]] link::SimulatedConditions WantedConditions() const { return impairment_.WantedConditions(); }
 
   /// Whether the Impairment group wants any condition on the link.
-  [[nodiscard]] bool Impaired() const;
+  [[nodiscard]] bool Impaired() const { return impairment_.Impaired(); }
 
   /// The panel is turned off: drops its samples, plots and peaks. The
   /// impairment stays, until Off or the client exits.
-  void Close();
+  void Close() { readout_ = {}; }
 
  private:
   // A number and its peak since the panel opened or its peaks were reset;
@@ -134,8 +162,9 @@ class NetworkPanel {
     void RaisePeak(double value);
     void ResetPeak() { peak_ = now_; }
 
-    [[nodiscard]] const std::optional<double>& Now() const { return now_; }
-    [[nodiscard]] const std::optional<double>& Peak() const { return peak_; }
+    // "300B (peak 2.0KB)", each by format, the peak labelled by peak_label
+    // when there is one; "--" for either not measured, alone when neither is.
+    [[nodiscard]] std::string Format(std::string (*format)(double), std::string_view peak_label = "") const;
 
    private:
     bool lower_is_worse_ = false;
@@ -143,20 +172,21 @@ class NetworkPanel {
     std::optional<double> peak_;
   };
 
-  // One message type's rates, per second, each way.
-  struct TypeRates {
-    Watched messages_in;
-    Watched bytes_in;
-    Watched messages_out;
-    Watched bytes_out;
-  };
+  // One message type's rates, per second, in the table's column order:
+  // messages and bytes in, then messages and bytes out.
+  using TypeRates = std::array<Watched, 4>;
 
   // The connection's numbers the group shows as lines.
   struct Connection {
     std::optional<link::ConnectionStats> stats;
+    // Each sample's peak jitter in milliseconds, nullopt for not measured,
+    // over the last kRateWindow, oldest first.
+    std::deque<std::pair<Clock::time_point, std::optional<double>>> jitter_window;
     Watched quality_local{true};
     Watched quality_remote{true};
     Watched pending_bytes;
+
+    std::array<Watched*, 3> All() { return {&quality_local, &quality_remote, &pending_bytes}; }
   };
 
   // The Authoritative State updates' numbers: rates per second over
@@ -166,11 +196,14 @@ class NetworkPanel {
     bool received = true;
     std::optional<std::uint8_t> tick_rate_hz;
     Watched updates;
+    Watched ticks_missing;
+    Watched ticks_out_of_order;
     Watched last_bytes;
     Watched average_bytes;
     Watched largest_bytes;
-    Watched ticks_missing;
-    Watched ticks_out_of_order;
+
+    std::array<Watched*, 3> Rates() { return {&updates, &ticks_missing, &ticks_out_of_order}; }
+    std::array<Watched*, 3> Sizes() { return {&last_bytes, &average_bytes, &largest_bytes}; }
   };
 
   // The plotted series, oldest first, each at most kPlotPoints long.
@@ -192,6 +225,9 @@ class NetworkPanel {
     Watched dry_frames_per_sec;
     // The largest correction of each sample, 0 for none, oldest first.
     std::deque<float> correction_plot;
+
+    std::array<Watched*, 3> Corrections() { return {&corrections_per_sec, &correction_m, &rifle_corrections_per_sec}; }
+    std::array<Watched*, 2> Frames() { return {&smallest_slack_s, &dry_frames_per_sec}; }
   };
 
   // The frames recorded between two samples.
@@ -200,35 +236,38 @@ class NetworkPanel {
     std::uint32_t dry = 0;
   };
 
-  std::optional<Clock::time_point> next_sample_;
-  Connection connection_;
-  Plots plots_;
-  // The samples' traffic over the last kRateWindow, oldest first.
-  std::deque<std::pair<Clock::time_point, link::Traffic>> traffic_window_;
-  std::array<TypeRates, link::kMessageTypeCount> rates_{};
-  AuthoritativeState authoritative_state_;
-  Prediction prediction_;
-  // The samples' corrections and frames over the last kRateWindow, oldest
-  // first: the corrections window empty while there are none.
-  std::deque<std::pair<Clock::time_point, prediction::Corrections>> corrections_window_;
-  std::deque<std::pair<Clock::time_point, Frames>> frames_window_;
-  // The frames recorded since the last sample.
-  Frames pending_frames_;
-  // The Impairment group's values, applies_to left at its default:
-  // WantedConditions says both ways.
-  link::SimulatedConditions impairment_;
+  // What the panel measured since it was turned on, which Close drops.
+  struct Readout {
+    std::optional<Clock::time_point> next_sample;
+    Connection connection;
+    Plots plots;
+    // The samples' traffic over the last kRateWindow, oldest first.
+    std::deque<std::pair<Clock::time_point, link::Traffic>> traffic_window;
+    std::array<TypeRates, link::kMessageTypeCount> rates{};
+    AuthoritativeState authoritative_state;
+    Prediction prediction;
+    // The samples' corrections and frames over the last kRateWindow, oldest
+    // first: the corrections window empty while there are none.
+    std::deque<std::pair<Clock::time_point, prediction::Corrections>> corrections_window;
+    std::deque<std::pair<Clock::time_point, Frames>> frames_window;
+    // The frames recorded since the last sample.
+    Frames pending_frames;
+  };
 
-  void SampleConnection(const std::optional<link::ConnectionStats>& stats);
+  Readout readout_;
+  Impairment impairment_;
+
+  void SampleConnection(const std::optional<link::ConnectionStats>& stats, Clock::time_point now);
   void SampleTraffic(const link::Traffic& traffic, Clock::time_point now);
   // After SampleTraffic, whose window it takes its rates over.
   void SampleAuthoritativeState(const NetworkSample& sample);
-  void AddAuthoritativeState(debug::Panel& panel) const;
   void SampleCorrections(const std::optional<prediction::Corrections>& corrections, Clock::time_point now);
   void SampleFrames(Clock::time_point now);
+  void AddConnectionGroup(debug::Panel& panel) const;
+  void AddTrafficTable(debug::Panel& panel) const;
+  void AddAuthoritativeState(debug::Panel& panel) const;
   void AddPredictionGroup(debug::Panel& panel) const;
   void ResetPeaks();
-  void AddImpairmentGroup(debug::Panel& panel) const;
-  void UpdateImpairment(const debug::ControlEvent& event);
 };
 
 }  // namespace augusta::client

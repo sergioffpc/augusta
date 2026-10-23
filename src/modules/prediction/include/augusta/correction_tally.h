@@ -26,7 +26,7 @@ struct Corrections {
   float largest_m = 0.0F;
   /// The times, on counted ticks, Reconciliation put the rifle at a server's
   /// state that differed from the one predicted.
-  std::uint32_t rifle = 0;
+  std::uint32_t rifle_count = 0;
 };
 
 /// Adds up Corrections tick by tick from State::total_correction and

@@ -190,15 +190,16 @@ struct ClientRuntime::Impl {
   NetStatsCounters net_stats_counters;
 
 #if AUGUSTA_DEBUG_TOOLS
-  // Connection numbers for the debug HUD: written by the Network
-  // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
-  // frame. They should be consistent with each other, so - like
-  // latest_tick above - a mutex-guarded copy.
-  std::mutex hud_net_mutex;
+  // Guards the connection's readings below, the debug HUD's and the Network
+  // panel's: written by the Network I/O thread (SampleNetworkStats), read by
+  // the Main/Render thread. They should be consistent with each other, so -
+  // like latest_tick above - mutex-guarded copies.
+  std::mutex connection_readings_mutex;
+  // Connection numbers for the debug HUD, read once per frame.
   std::optional<hud::NetStats> latest_hud_net;
   // The Network panel's readings of the connection, from the same rounds as
-  // latest_hud_net and guarded with it, recorded only while network_panel_on:
-  // a closed panel costs nothing beyond the Link's counting.
+  // latest_hud_net, recorded only while network_panel_on: a closed panel
+  // costs nothing beyond the Link's counting.
   ConnectionReadings connection_readings;
   std::atomic<bool> network_panel_on{false};
 
@@ -225,18 +226,9 @@ struct ClientRuntime::Impl {
   // an Agent counts them; published with each tick (LatestTick).
   prediction::CorrectionTally correction_tally;
 
-  // The HUD's connection numbers, impaired while the Network panel's
-  // Impairment group says so, shown or not.
   std::optional<hud::NetStats> GetLatestHudNet() {
-    std::optional<hud::NetStats> net;
-    {
-      const std::lock_guard<std::mutex> lock(hud_net_mutex);
-      net = latest_hud_net;
-    }
-    if (net.has_value()) {
-      net->impaired = network_panel.Impaired();
-    }
-    return net;
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
+    return latest_hud_net;
   }
 
   // Main/Render thread only: applies the conditions the Network panel's
@@ -260,7 +252,9 @@ struct ClientRuntime::Impl {
       renderer.SetTextLines({});
       return;
     }
-    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet()));
+    // Impaired while the Network panel's Impairment group says so, the panel
+    // shown or not, connected or not.
+    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet(), network_panel.Impaired()));
   }
 
   // Main/Render thread only: the frame's Debug panels, the Debug index in
@@ -280,7 +274,7 @@ struct ClientRuntime::Impl {
   }
 
   ConnectionReading TakeConnectionReading() {
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     return connection_readings.Take();
   }
 
@@ -292,7 +286,7 @@ struct ClientRuntime::Impl {
     if (on != network_panel_on.load()) {
       if (on) {
         // Readings left from before it was last closed are stale.
-        const std::lock_guard<std::mutex> lock(hud_net_mutex);
+        const std::lock_guard<std::mutex> lock(connection_readings_mutex);
         connection_readings = {};
       } else {
         network_panel.Close();
@@ -305,17 +299,16 @@ struct ClientRuntime::Impl {
                             .tick_rate_hz = view->accepted.transform(
                                 [](const harness::Admission& admission) { return admission.tick_rate_hz; }),
                             .receives_authoritative_state = !config.replay.has_value(),
-                            .corrections = PanelCorrections()},
+                            .corrections = PanelCorrections(*view)},
                            now);
     }
   }
 
   // Main/Render thread only: the Prediction thread's corrections so far, or
   // nullopt with no Prediction State: a Replay viewer, or a spectator since
-  // its Death.
-  std::optional<prediction::Corrections> PanelCorrections() {
-    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
-    if (config.replay.has_value() || (view->in_match && !view->OwnAlive())) {
+  // its Death, as view says.
+  std::optional<prediction::Corrections> PanelCorrections(const harness::ServerView& view) {
+    if (config.replay.has_value() || (view.in_match && !view.OwnAlive())) {
       return std::nullopt;
     }
     return GetLatestTick().corrections;
@@ -416,7 +409,7 @@ struct ClientRuntime::Impl {
     // The Network panel's reading is this round's, the HUD's: the two never disagree.
     const bool network_panel_reads = network_panel_on.load();
     const link::Traffic traffic = network_panel_reads ? session->GetTraffic() : link::Traffic{};
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     latest_hud_net = net;
     if (network_panel_reads) {
       connection_readings.Record(stats, traffic);
