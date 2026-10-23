@@ -83,6 +83,8 @@ struct SimulatedConditions {
   int timeout_ms = 0;
   /// Which packets the conditions above reach: by default only those the process sends.
   SimulatedTraffic applies_to = SimulatedTraffic::kSent;
+
+  bool operator==(const SimulatedConditions&) const = default;
 };
 
 /// Imposes conditions on every connection of the process from now on; a

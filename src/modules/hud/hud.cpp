@@ -43,8 +43,9 @@ std::string FormatNet(const std::optional<NetStats>& net) {
   }
   const std::string jitter = net->jitter_ms.has_value() ? std::format("{:.1f}ms", *net->jitter_ms) : "--";
   const std::string loss = net->loss_percent.has_value() ? std::format("{:.1f}%", *net->loss_percent) : "--";
-  return std::format("RTT: {}ms | Jitter: {} | Loss: {} | In: {} | Out: {}", net->rtt_ms, jitter, loss,
-                     FormatRate(net->in_bytes_per_sec), FormatRate(net->out_bytes_per_sec));
+  return std::format("RTT: {}ms | Jitter: {} | Loss: {} | In: {} | Out: {}{}", net->rtt_ms, jitter, loss,
+                     FormatRate(net->in_bytes_per_sec), FormatRate(net->out_bytes_per_sec),
+                     net->impaired ? " | IMPAIRED" : "");
 }
 
 }  // namespace

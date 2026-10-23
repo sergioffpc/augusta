@@ -1,7 +1,9 @@
 #include "network_panel.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -27,6 +29,99 @@ constexpr double kMicrosecondsPerMillisecond = 1000.0;
 constexpr double kPercent = 100.0;
 constexpr double kKiB = 1024.0;
 constexpr double kMiB = kKiB * 1024.0;
+
+// One of the Impairment group's sliders: the value it sets and its range,
+// from zero.
+struct ImpairmentSlider {
+  std::string_view id;
+  std::string_view label;
+  float max;
+  bool whole_numbers;
+  float (*get)(const link::SimulatedConditions&);
+  void (*set)(link::SimulatedConditions&, float);
+};
+
+int WholeMilliseconds(float value) { return static_cast<int>(std::lround(value)); }
+
+constexpr std::array kImpairmentSliders{
+    ImpairmentSlider{.id = "latency_ms",
+                     .label = "Latency, each way (ms)",
+                     .max = 250.0F,
+                     .whole_numbers = true,
+                     .get = [](const link::SimulatedConditions& c) { return static_cast<float>(c.latency_ms); },
+                     .set = [](link::SimulatedConditions& c, float value) { c.latency_ms = WholeMilliseconds(value); }},
+    ImpairmentSlider{
+        .id = "jitter_mean_ms",
+        .label = "Jitter mean (ms)",
+        .max = 100.0F,
+        .whole_numbers = true,
+        .get = [](const link::SimulatedConditions& c) { return static_cast<float>(c.jitter_mean_ms); },
+        .set = [](link::SimulatedConditions& c, float value) { c.jitter_mean_ms = WholeMilliseconds(value); }},
+    ImpairmentSlider{
+        .id = "jitter_max_ms",
+        .label = "Jitter max (ms)",
+        .max = 100.0F,
+        .whole_numbers = true,
+        .get = [](const link::SimulatedConditions& c) { return static_cast<float>(c.jitter_max_ms); },
+        .set = [](link::SimulatedConditions& c, float value) { c.jitter_max_ms = WholeMilliseconds(value); }},
+    ImpairmentSlider{.id = "loss_percent",
+                     .label = "Loss (%)",
+                     .max = 50.0F,
+                     .whole_numbers = false,
+                     .get = [](const link::SimulatedConditions& c) { return c.loss_percent; },
+                     .set = [](link::SimulatedConditions& c, float value) { c.loss_percent = value; }},
+    ImpairmentSlider{.id = "reorder_percent",
+                     .label = "Reorder (%)",
+                     .max = 50.0F,
+                     .whole_numbers = false,
+                     .get = [](const link::SimulatedConditions& c) { return c.reorder_percent; },
+                     .set = [](link::SimulatedConditions& c, float value) { c.reorder_percent = value; }},
+    ImpairmentSlider{
+        .id = "reorder_delay_ms",
+        .label = "Reorder delay (ms)",
+        .max = 100.0F,
+        .whole_numbers = true,
+        .get = [](const link::SimulatedConditions& c) { return static_cast<float>(c.reorder_delay_ms); },
+        .set = [](link::SimulatedConditions& c, float value) { c.reorder_delay_ms = WholeMilliseconds(value); }},
+};
+
+// A named link, one click away: the impaired-link tests' profiles
+// (tools/agent/tests/netcode_test.cpp), from a good broadband link up to the
+// agreed worst case (ADR-0013).
+struct ImpairmentProfile {
+  std::string_view id;
+  std::string_view label;
+  link::SimulatedConditions conditions;
+};
+
+constexpr std::array kImpairmentProfiles{
+    ImpairmentProfile{.id = "profile_broadband",
+                      .label = "Broadband",
+                      .conditions = {.latency_ms = 20,
+                                     .jitter_mean_ms = 5,
+                                     .jitter_max_ms = 20,
+                                     .loss_percent = 1.0F,
+                                     .reorder_percent = 1.0F,
+                                     .reorder_delay_ms = 10}},
+    ImpairmentProfile{.id = "profile_nfr02",
+                      .label = "NFR-02",
+                      .conditions = {.latency_ms = 50,
+                                     .jitter_mean_ms = 10,
+                                     .jitter_max_ms = 30,
+                                     .loss_percent = 5.0F,
+                                     .reorder_percent = 2.0F,
+                                     .reorder_delay_ms = 20}},
+    ImpairmentProfile{.id = "profile_worst_case",
+                      .label = "Worst case",
+                      .conditions = {.latency_ms = 75,
+                                     .jitter_mean_ms = 10,
+                                     .jitter_max_ms = 30,
+                                     .loss_percent = 10.0F,
+                                     .reorder_percent = 5.0F,
+                                     .reorder_delay_ms = 20}},
+};
+
+constexpr std::string_view kImpairmentOffButton = "impairment_off";
 
 // Bytes -> "300B", "2.0KB" or "3.4MB", with suffix after the unit.
 std::string FormatBytes(double bytes, std::string_view suffix = "") {
@@ -278,6 +373,7 @@ debug::Panel NetworkPanel::BuildPanel() const {
   }
   panel.elements.emplace_back(std::move(table));
   AddAuthoritativeState(panel);
+  AddImpairmentGroup(panel);
   panel.elements.emplace_back(debug::Button{.id = std::string(kResetPeaksButton), .label = "Reset peaks"});
   return panel;
 }
@@ -307,12 +403,67 @@ void NetworkPanel::AddAuthoritativeState(debug::Panel& panel) const {
   line("Ticks out of order", state.ticks_out_of_order, per_second);
 }
 
+void NetworkPanel::AddImpairmentGroup(debug::Panel& panel) const {
+  const std::optional<link::ConnectionStats>& stats = connection_.stats;
+  panel.elements.emplace_back(debug::Text{.text = "Impairment, both ways"});
+  panel.elements.emplace_back(debug::Text{
+      .text = "Measured RTT: " + (stats.has_value() ? std::format("{}ms", stats->ping_ms) : std::string("--"))});
+  for (const ImpairmentSlider& slider : kImpairmentSliders) {
+    panel.elements.emplace_back(debug::Slider{.id = std::string(slider.id),
+                                              .label = std::string(slider.label),
+                                              .value = slider.get(impairment_),
+                                              .min = 0.0F,
+                                              .max = slider.max,
+                                              .whole_numbers = slider.whole_numbers});
+  }
+  for (const ImpairmentProfile& profile : kImpairmentProfiles) {
+    panel.elements.emplace_back(debug::Button{.id = std::string(profile.id), .label = std::string(profile.label)});
+  }
+  panel.elements.emplace_back(debug::Button{.id = std::string(kImpairmentOffButton), .label = "Off"});
+}
+
 void NetworkPanel::Update(const debug::ControlEvent& event) {
-  if (event.panel == kNetworkPanelId && event.control == kResetPeaksButton &&
-      std::holds_alternative<debug::ButtonPress>(event.value)) {
+  if (event.panel != kNetworkPanelId) {
+    return;
+  }
+  if (event.control == kResetPeaksButton && std::holds_alternative<debug::ButtonPress>(event.value)) {
     ResetPeaks();
+    return;
+  }
+  UpdateImpairment(event);
+}
+
+void NetworkPanel::UpdateImpairment(const debug::ControlEvent& event) {
+  if (const auto* value = std::get_if<float>(&event.value)) {
+    const auto slider = std::ranges::find(kImpairmentSliders, event.control, &ImpairmentSlider::id);
+    if (slider != kImpairmentSliders.end()) {
+      slider->set(impairment_, std::clamp(*value, 0.0F, slider->max));
+    }
+    return;
+  }
+  if (!std::holds_alternative<debug::ButtonPress>(event.value)) {
+    return;
+  }
+  if (event.control == kImpairmentOffButton) {
+    impairment_ = {};
+    return;
+  }
+  const auto profile = std::ranges::find(kImpairmentProfiles, event.control, &ImpairmentProfile::id);
+  if (profile != kImpairmentProfiles.end()) {
+    impairment_ = profile->conditions;
   }
 }
+
+link::SimulatedConditions NetworkPanel::WantedConditions() const {
+  if (impairment_ == link::SimulatedConditions{}) {
+    return {};
+  }
+  link::SimulatedConditions wanted = impairment_;
+  wanted.applies_to = link::SimulatedTraffic::kSentAndReceived;
+  return wanted;
+}
+
+bool NetworkPanel::Impaired() const { return WantedConditions() != link::SimulatedConditions{}; }
 
 void NetworkPanel::ResetPeaks() {
   connection_.quality_local.ResetPeak();
@@ -332,6 +483,10 @@ void NetworkPanel::ResetPeaks() {
   authoritative_state_.ticks_out_of_order.ResetPeak();
 }
 
-void NetworkPanel::Close() { *this = NetworkPanel{}; }
+void NetworkPanel::Close() {
+  const link::SimulatedConditions impairment = impairment_;
+  *this = NetworkPanel{};
+  impairment_ = impairment;
+}
 
 }  // namespace augusta::client
