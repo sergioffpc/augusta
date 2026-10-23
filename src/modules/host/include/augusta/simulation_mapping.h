@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/body_part.h"
 #include "augusta/content.h"
+#include "augusta/hitbox.h"
 #include "augusta/match.h"
 #include "augusta/parameters.h"
 #include "augusta/policy.h"
@@ -29,15 +29,11 @@ namespace augusta::host {
 /// A SimulationWorld body's entity as Match named it; the inverse of ToSimulation.
 [[nodiscard]] EntityId FromSimulation(simulation::EntityId entity);
 
-/// part, in the blob's numbering, as the Body part every module names, the way
-/// the link's FromWire takes one off the protocol's wire enum.
-[[nodiscard]] body_part::BodyPart FromBlob(assets::BodyPart part);
-
 /// hitbox, of the character at path, as the triangles a bullet is tested
-/// against. Throws failure::ClassifiedFailure (failure::Code::kInvalidContent),
-/// naming the character, if its mesh is not a whole, in-range triangle list: a
-/// pack's mesh blob is not checked for that when it is decoded.
-[[nodiscard]] simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path);
+/// against, converted as the client converts it (hitbox::FromPack). Throws
+/// failure::ClassifiedFailure (failure::Code::kInvalidContent), naming the
+/// character, if its mesh is not a whole, in-range triangle list.
+[[nodiscard]] hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path);
 
 /// Each of characters as SimulationWorld takes it, by its path. Throws as the
 /// hitbox overload does.

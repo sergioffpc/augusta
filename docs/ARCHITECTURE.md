@@ -169,6 +169,10 @@ policy (ADR-0060).
       each client's PresentationWorld draws every announced Shot's tracer and
       Map impact with it, a visual only. Deciding a bullet's outcome (hit
       detection, damage) stays server-side (ADR-0024, ADR-0044).
+    - Hitbox — the Hitbox pose and a Character's Hitboxes, the function that
+      places them at it, and their conversion from a pack (augusta/hitbox.h):
+      the server's Lag compensation and a client's Debug overlay place them
+      alike (ADR-0044); the Hitbox history and judging stay SimulationWorld's
 - Networking Protocol — message definitions, serialized as Protocol Buffers
   (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the

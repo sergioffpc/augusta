@@ -14,6 +14,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/command.h"
+#include "augusta/hitbox.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -65,7 +66,7 @@ inline simulation::Character SquaresCharacter() {
   simulation::Character character{.eye = math::Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
   for (const auto& square : kBodySquares) {
     character.hitboxes.push_back(
-        simulation::CharacterHitbox{.part = square.part, .triangles = Triangles(square, math::Vec3(0.0F))});
+        hitbox::CharacterHitbox{.part = square.part, .triangles = Triangles(square, math::Vec3(0.0F))});
   }
   return character;
 }

@@ -7,15 +7,19 @@
 The gameplay rules both Worlds apply identically, a header and namespace per
 concept: the Command (one tick's player intent), the Parameters (only the
 aggregate of its sections and its validation: each section is typed by the
-concept it configures), the rifle and its ammunition, the Body part and bullet
-trajectories. Pure, deterministic mechanism with no world or state of its own.
+concept it configures), the rifle and its ammunition, the Body part, bullet
+trajectories, and placing a Character's Hitboxes at a Hitbox pose, converted
+from a pack alike on both sides. Pure, deterministic mechanism with no world or
+state of its own.
 
 ## Not its responsibility
 
 - Running the rules over a tick's entities: simulation (server) and prediction
   (client).
 - Sampling a device into a Command: input.
-- Deciding which player a bullet hits and for what damage: simulation.
+- Deciding which player a bullet hits and for what damage, the Hitbox history
+  and which players' Hitboxes a bullet is tested against: simulation.
+- Drawing Hitboxes: presentation.
 - Where the Parameters' values come from: the server.
 - The Tick, the command Sequence and the fixed tick schedule: tick.
 - The player and recoil-kick bounds: limits.
