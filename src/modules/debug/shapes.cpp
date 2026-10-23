@@ -12,6 +12,11 @@ namespace augusta::debug {
 
 namespace {
 
+template <typename Shape>
+void AppendKind(std::vector<Shape>& to, const std::vector<Shape>& shapes) {
+  to.insert(to.end(), shapes.begin(), shapes.end());
+}
+
 // A shape's colour and alpha, which every vertex it is drawn with carries.
 struct Paint {
   math::Vec3 color;
@@ -190,6 +195,15 @@ void AddCapsule(Primitives& primitives, const Rings& rings, Style style, const P
 }
 
 }  // namespace
+
+void Append(Shapes& to, const Shapes& shapes) {
+  AppendKind(to.segments, shapes.segments);
+  AppendKind(to.triangles, shapes.triangles);
+  AppendKind(to.boxes, shapes.boxes);
+  AppendKind(to.spheres, shapes.spheres);
+  AppendKind(to.capsules, shapes.capsules);
+  AppendKind(to.voxels, shapes.voxels);
+}
 
 Tessellation Tessellate(const Shapes& shapes) {
   Tessellation tessellation;

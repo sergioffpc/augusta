@@ -309,6 +309,22 @@ Shapes ASphereAt(float x) {
   return shapes;
 }
 
+TEST(AppendTest, AppendsEachKindAfterWhatIsThere) {
+  Shapes to;
+  to.segments.push_back(SegmentAt(0.0F, false));
+  Shapes more;
+  more.segments.push_back(SegmentAt(1.0F, true));
+  more.triangles.push_back(TriangleAt(2.0F, false));
+  more.spheres.push_back({.center = {}, .radius = 1.0F});
+
+  Append(to, more);
+
+  EXPECT_EQ(to.segments, (std::vector<Segment>{SegmentAt(0.0F, false), SegmentAt(1.0F, true)}));
+  EXPECT_EQ(to.triangles, more.triangles);
+  EXPECT_EQ(to.spheres, more.spheres);
+  EXPECT_TRUE(to.boxes.empty());
+}
+
 TEST(KeptShapesTest, ReturnsShapesKeptUntilATimeBeforeThatTime) {
   KeptShapes kept;
   Shapes shapes = ASphereAt(1.0F);

@@ -120,6 +120,9 @@ struct Shapes {
   bool operator==(const Shapes&) const = default;
 };
 
+/// Appends every shape of shapes to to, kind by kind, after what to holds.
+void Append(Shapes& to, const Shapes& shapes);
+
 /// One corner of a drawn line or triangle, in world space, with its shape's
 /// colour and alpha.
 struct Vertex {
