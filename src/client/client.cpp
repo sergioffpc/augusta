@@ -92,7 +92,7 @@ presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& c
   if (ModeOf(config) == ClientMode::kReplayViewer) {
     return {};
   }
-  return {.server_bodies = config.debug_physics_server_bodies};
+  return {.server_bodies = config.debug_physics_server_bodies, .hitboxes = config.debug_physics_hitboxes};
 }
 #endif
 
@@ -476,11 +476,23 @@ struct ClientRuntime::Impl {
     previous_tick = tick.state;
   }
 
-  // In the Lobby, once per Roster version: uploads the mesh of every other
-  // player's character not loaded yet and hands PresentationWorld its eye, then
-  // reports Ready for that Roster (ADR-0043). Nothing is loaded during a match.
-  // Main/Render thread only, as the upload is. Returns why a character could
-  // not be loaded, if one could not.
+  // Hands what was loaded of character to whatever draws it: the renderer its
+  // mesh, PresentationWorld its eye, and in a Development build the Physics
+  // overlays its Hitboxes. Main/Render thread only, as the upload is.
+  void TakeCharacter(const std::string& character, LoadedCharacter& loaded) {
+    renderer.SetCharacterMesh(character, loaded.mesh);
+    presentation.SetCharacterEye(character, loaded.eye);
+#if AUGUSTA_DEBUG_TOOLS
+    physics_overlays.SetCharacterHitboxes(character, std::move(loaded.hitboxes));
+#endif
+    LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+  }
+
+  // In the Lobby, once per Roster version: loads every other player's character
+  // not loaded yet and hands it on (TakeCharacter), then reports Ready for that
+  // Roster (ADR-0043). Nothing is loaded during a match. Main/Render thread
+  // only, as the upload is. Returns why a character could not be loaded, if
+  // one could not.
   std::optional<CharacterError> GetReadyForLobby() {
     const std::optional<ReadyPlan> plan = lobby_readiness.Plan(*session->GetServerView());
     if (!plan.has_value()) {
@@ -491,9 +503,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(character, loaded->mesh);
-      presentation.SetCharacterEye(character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+      TakeCharacter(character, *loaded);
       lobby_readiness.MarkLoaded(character);
     }
     session->ReportReady(plan->version);
@@ -519,9 +529,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(player.character, loaded->mesh);
-      presentation.SetCharacterEye(player.character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", player.character);
+      TakeCharacter(player.character, *loaded);
       replay_characters.insert(player.character);
     }
     return std::nullopt;
@@ -637,7 +645,8 @@ struct ClientRuntime::Impl {
   // drawing it. The local player's own position isn't drawn yet (renderer.h) -
   // only remote players, each as its character. In the Lobby there are none,
   // so the map is drawn empty. In a Development build, the Debug overlays are
-  // built from what the frame was shown from (input).
+  // built from what the frame was shown from (input) and what it showed
+  // (frame_state).
   void StageRenderFrame([[maybe_unused]] const presentation::FrameInput& input,
                         const presentation::State& frame_state) {
     renderer.SetCamera(ToRenderer(frame_state.camera));
@@ -652,7 +661,7 @@ struct ClientRuntime::Impl {
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
     // Shapes and panels live one frame (ADR-0075).
-    renderer.SetDebugShapes(physics_overlays.BuildShapes(input));
+    renderer.SetDebugShapes(physics_overlays.BuildShapes(input, frame_state));
     renderer.SetDebugPanels(DebugPanels());
 #endif
   }

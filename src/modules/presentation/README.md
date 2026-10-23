@@ -11,8 +11,10 @@ owns the local view and camera, remote-player interpolation, reconciliation's
 visual correction, tracers and effects, the animation engine and which audio
 cues play. In a Development build (ADR-0074) it also holds the Physics Debug
 overlays (ADR-0075): which are on, the Physics Debug panel that switches them,
-and each frame's shapes, built from the plain values physics hands it, such as
-every body the newest Authoritative State update reported, as its capsule.
+and each frame's shapes, built from the plain values physics and gameplay hand
+it: every body the newest Authoritative State update reported, as its capsule,
+and every other player's Hitboxes where the frame shows that player, placed by
+gameplay's shared placing and outlined in one colour per body part.
 
 ## Not its responsibility
 
@@ -20,7 +22,8 @@ every body the newest Authoritative State update reported, as its capsule.
 - The shape and panel vocabulary, and which tools the Debug index lists: debug,
   and the client runtime.
 - Predicting the local player: prediction.
-- Deciding hits on players: simulation; a tracer is a visual only.
+- Deciding hits on players: simulation; a tracer is a visual only. Where a
+  Hitbox stands: gameplay, which the server judges with too.
 - Cosmetic bodies and Props' kinematic poses: the client-only dynamics module,
   which arrives with the client's first dynamic body, as does the Dynamics phase
   that calls it.

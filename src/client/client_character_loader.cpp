@@ -6,11 +6,19 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "augusta/assets.h"
 #include "augusta/client_scene_loader.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "augusta/renderer.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hitbox.h"
+#endif
 
 namespace augusta::client {
 
@@ -24,6 +32,12 @@ std::string DescribeCharacterError(const CharacterError& error) {
     case CharacterErrorCode::kEyeUnresolved:
       return std::format("eye {} of character {} {}", error.subject, error.character,
                          assets::DescribeResolveError(error.resolve_error, "eye"));
+    case CharacterErrorCode::kHitboxesUnresolved:
+      return std::format("hitboxes of character {} {}", error.character,
+                         assets::DescribeResolveError(error.resolve_error, "hitbox"));
+    case CharacterErrorCode::kHitboxRejected:
+      return std::format("{} hitbox of character {} rejected: {}", error.subject, error.character,
+                         physics::DescribeCollisionMeshError(error.mesh_error));
   }
   return "unknown character error";
 }
@@ -59,5 +73,32 @@ std::expected<math::Vec3, CharacterError> LoadCharacterEye(std::string_view char
   }
   return eye->position;
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+std::expected<std::vector<hitbox::CharacterHitbox>, CharacterError> LoadCharacterHitboxes(
+    std::string_view character, const HitboxesResolver& resolve_hitboxes) {
+  const auto resolved = resolve_hitboxes(character);
+  if (!resolved) {
+    return std::unexpected(CharacterError{.code = CharacterErrorCode::kHitboxesUnresolved,
+                                          .character = std::string(character),
+                                          .subject = {},
+                                          .resolve_error = resolved.error()});
+  }
+  std::vector<hitbox::CharacterHitbox> hitboxes;
+  hitboxes.reserve(resolved->size());
+  for (const assets::HitboxData& data : *resolved) {
+    auto converted = hitbox::FromPack(data);
+    if (!converted) {
+      return std::unexpected(CharacterError{.code = CharacterErrorCode::kHitboxRejected,
+                                            .character = std::string(character),
+                                            .subject = std::string(assets::BodyPartName(data.part)),
+                                            .resolve_error = {},
+                                            .mesh_error = converted.error()});
+    }
+    hitboxes.push_back(*std::move(converted));
+  }
+  return hitboxes;
+}
+#endif
 
 }  // namespace augusta::client

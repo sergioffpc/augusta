@@ -72,3 +72,7 @@ input:
 #     # Authoritative State update put it, the player's own beside its
 #     # predicted body - is drawn (optional, default false): true or false.
 #     server_bodies: false
+#     # Whether the Hitboxes overlay - every other player's Hitboxes where the
+#     # client shows that player, placed as the server places them, one colour
+#     # per body part - is drawn (optional, default false): true or false.
+#     hitboxes: false

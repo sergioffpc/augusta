@@ -5,10 +5,15 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
+#include "augusta/ballistics.h"
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
+#include "augusta/hitbox.h"
+#include "augusta/interpolation.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/presentation.h"
@@ -29,6 +34,7 @@ struct OverlayControls {
 // In PhysicsOverlay's order.
 constexpr std::array<OverlayControls, kPhysicsOverlayCount> kOverlays{{
     {.id = "server_bodies", .label = "Server bodies", .through_walls_by_default = false},
+    {.id = "hitboxes", .label = "Hitboxes", .through_walls_by_default = false},
 }};
 
 constexpr std::string_view kThroughWallsSuffix = ".through_walls";
@@ -62,6 +68,25 @@ void AddServerBodies(const FrameInput& input, bool through_walls, debug::Shapes&
   }
 }
 
+// Where body's Hitboxes stand.
+hitbox::Pose PoseOf(const RemoteBody& body) {
+  return hitbox::Pose{.position = body.position, .yaw = body.yaw, .stance = body.stance};
+}
+
+// Each of placed's triangles outlined: its three edges in its Body part's colour.
+void AddOutlines(const std::vector<hitbox::PlacedHitbox>& placed, bool through_walls, debug::Shapes& shapes) {
+  for (const hitbox::PlacedHitbox& hitbox : placed) {
+    const math::Vec3 color = HitboxColorOf(hitbox.part);
+    for (const ballistics::Triangle& triangle : hitbox.triangles) {
+      for (const auto& [from, to] :
+           {std::pair{triangle.a, triangle.b}, std::pair{triangle.b, triangle.c}, std::pair{triangle.c, triangle.a}}) {
+        shapes.segments.push_back(
+            debug::Segment{.from = from, .to = to, .color = color, .alpha = 1.0F, .through_walls = through_walls});
+      }
+    }
+  }
+}
+
 }  // namespace
 
 PhysicsOverlays::PhysicsOverlays(const PhysicsOverlaysStart& start) {
@@ -69,6 +94,7 @@ PhysicsOverlays::PhysicsOverlays(const PhysicsOverlaysStart& start) {
     switches_.at(i).through_walls = kOverlays.at(i).through_walls_by_default;
   }
   switches_.at(IndexOf(PhysicsOverlay::kServerBodies)).on = start.server_bodies;
+  switches_.at(IndexOf(PhysicsOverlay::kHitboxes)).on = start.hitboxes;
 }
 
 debug::Panel PhysicsOverlays::BuildPanel() const {
@@ -106,10 +132,24 @@ bool PhysicsOverlays::ThroughWalls(PhysicsOverlay overlay) const {
   return switches_.at(IndexOf(overlay)).through_walls;
 }
 
-debug::Shapes PhysicsOverlays::BuildShapes(const FrameInput& input) const {
+void PhysicsOverlays::SetCharacterHitboxes(const std::string& character,
+                                           std::vector<hitbox::CharacterHitbox> hitboxes) {
+  hitboxes_.insert_or_assign(character, std::move(hitboxes));
+}
+
+debug::Shapes PhysicsOverlays::BuildShapes(const FrameInput& input, const State& state) const {
   debug::Shapes shapes;
   if (IsOn(PhysicsOverlay::kServerBodies)) {
     AddServerBodies(input, ThroughWalls(PhysicsOverlay::kServerBodies), shapes);
+  }
+  if (IsOn(PhysicsOverlay::kHitboxes)) {
+    for (const RemotePlayer& player : state.remote_players) {
+      const auto hitboxes = hitboxes_.find(player.character);
+      if (hitboxes != hitboxes_.end()) {
+        AddOutlines(hitbox::Place(hitboxes->second, PoseOf(player.body)), ThroughWalls(PhysicsOverlay::kHitboxes),
+                    shapes);
+      }
+    }
   }
   return shapes;
 }

@@ -42,6 +42,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     "debug.profiling.panel",
     "debug.physics.panel",
     "debug.physics.server_bodies",
+    "debug.physics.hitboxes",
 #endif
 });
 
@@ -118,8 +119,12 @@ std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(con
   if (!panel) {
     return std::unexpected(panel.error());
   }
-  return OptionalFlag(values, "debug.physics.server_bodies", false).transform([&panel](bool server_bodies) {
-    return ClientPhysicsDebugConfig{.panel = *panel, .server_bodies = server_bodies};
+  const auto server_bodies = OptionalFlag(values, "debug.physics.server_bodies", false);
+  if (!server_bodies) {
+    return std::unexpected(server_bodies.error());
+  }
+  return OptionalFlag(values, "debug.physics.hitboxes", false).transform([&](bool hitboxes) {
+    return ClientPhysicsDebugConfig{.panel = *panel, .server_bodies = *server_bodies, .hitboxes = hitboxes};
   });
 }
 

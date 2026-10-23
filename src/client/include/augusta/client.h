@@ -68,6 +68,9 @@ struct RuntimeConfig {
   /// Whether the Server bodies overlay is drawn at first
   /// (`debug.physics.server_bodies`), until the Physics panel switches it.
   bool debug_physics_server_bodies = false;
+  /// Whether the Hitboxes overlay is drawn at first (`debug.physics.hitboxes`),
+  /// until the Physics panel switches it.
+  bool debug_physics_hitboxes = false;
 #endif
 };
 

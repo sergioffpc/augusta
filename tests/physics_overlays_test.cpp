@@ -1,5 +1,7 @@
 #include "augusta/physics_overlays.h"
 
+#include <cstddef>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <utility>
@@ -8,9 +10,12 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
 #include "augusta/debug_index.h"
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
+#include "augusta/hitbox.h"
 #include "augusta/interpolation.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
@@ -22,9 +27,11 @@
 namespace augusta::presentation {
 namespace {
 
+using body_part::BodyPart;
 using debug::Capsule;
 using debug::ControlEvent;
 using debug::Panel;
+using debug::Segment;
 using debug::Shapes;
 using debug::Toggle;
 using math::Vec3;
@@ -80,7 +87,7 @@ TEST(ServerBodiesTest, EveryBodyIsItsCapsuleAtTheNewestUpdateNotBetweenTheUpdate
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}}),
   };
 
-  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates));
+  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates), State{});
 
   ASSERT_EQ(shapes.capsules.size(), 1U);
   ExpectCapsuleOf(shapes.capsules.front(), BodyAt(Vec3(2.0F, 0.0F, 0.0F)));
@@ -93,7 +100,7 @@ TEST(ServerBodiesTest, EachPlayerIsDrawnInItsStance) {
                   {.entity = EntityId{3}, .state = BodyAt(Vec3(-2.0F, 0.0F, 0.0F), Stance::kProne), .yaw = 0.0F}}),
   };
 
-  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates));
+  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates), State{});
 
   ASSERT_EQ(shapes.capsules.size(), 2U);
   ExpectCapsuleOf(shapes.capsules[0], BodyAt(Vec3(2.0F, 0.0F, 0.0F), Stance::kCrouching));
@@ -105,7 +112,7 @@ TEST(ServerBodiesTest, TheLocalPlayersServerBodyIsDrawnBesideItsPredictedOne) {
   const BodyState predicted = BodyAt(Vec3(5.5F, 0.0F, 0.0F), Stance::kCrouching);
   const std::vector<WorldSnapshot> updates{Update(11, {{.entity = kLocal, .state = server, .yaw = 0.0F}})};
 
-  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates, predicted));
+  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates, predicted), State{});
 
   ASSERT_EQ(shapes.capsules.size(), 2U);
   ExpectCapsuleOf(shapes.capsules[0], server);
@@ -118,29 +125,29 @@ TEST(ServerBodiesTest, NoPredictedBodyIsDrawnForALocalPlayerTheUpdateNoLongerLis
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}})};
 
-  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates, BodyAt(Vec3(5.0F, 0.0F, 0.0F))));
+  const Shapes shapes = ServerBodiesOn().BuildShapes(FrameOf(updates, BodyAt(Vec3(5.0F, 0.0F, 0.0F))), State{});
 
   ASSERT_EQ(shapes.capsules.size(), 1U);
   EXPECT_EQ(shapes.capsules.front().color, kServerBodyColor);
 }
 
 TEST(ServerBodiesTest, NothingIsDrawnWithoutAnUpdate) {
-  EXPECT_EQ(ServerBodiesOn().BuildShapes(FrameOf({})), Shapes{});
+  EXPECT_EQ(ServerBodiesOn().BuildShapes(FrameOf({}), State{}), Shapes{});
 }
 
 TEST(ServerBodiesTest, NothingIsDrawnWhileTheOverlayIsOff) {
   const std::vector<WorldSnapshot> updates{
       Update(11, {{.entity = kOther, .state = BodyAt(Vec3(2.0F, 0.0F, 0.0F)), .yaw = 0.0F}})};
   // The control: on, the same frame draws.
-  ASSERT_FALSE(ServerBodiesOn().BuildShapes(FrameOf(updates)).capsules.empty());
+  ASSERT_FALSE(ServerBodiesOn().BuildShapes(FrameOf(updates), State{}).capsules.empty());
 
-  EXPECT_EQ(PhysicsOverlays(PhysicsOverlaysStart{}).BuildShapes(FrameOf(updates)), Shapes{});
+  EXPECT_EQ(PhysicsOverlays(PhysicsOverlaysStart{}).BuildShapes(FrameOf(updates), State{}), Shapes{});
 }
 
 TEST(ServerBodiesTest, TheBodiesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
   const std::vector<WorldSnapshot> updates{Update(11, {{.entity = kLocal, .state = BodyAt({}), .yaw = 0.0F}})};
   PhysicsOverlays overlays = ServerBodiesOn();
-  const Shapes hidden = overlays.BuildShapes(FrameOf(updates));
+  const Shapes hidden = overlays.BuildShapes(FrameOf(updates), State{});
   ASSERT_EQ(hidden.capsules.size(), 2U);
   for (const Capsule& capsule : hidden.capsules) {
     EXPECT_FALSE(capsule.through_walls);
@@ -148,10 +155,124 @@ TEST(ServerBodiesTest, TheBodiesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
 
   overlays.Update(PanelEvent("server_bodies.through_walls", true));
 
-  const Shapes shapes = overlays.BuildShapes(FrameOf(updates));
+  const Shapes shapes = overlays.BuildShapes(FrameOf(updates), State{});
   ASSERT_EQ(shapes.capsules.size(), 2U);
   for (const Capsule& capsule : shapes.capsules) {
     EXPECT_TRUE(capsule.through_walls);
+  }
+}
+
+// A Character's Hitboxes, standing in its root space: one triangle each, the
+// head's high and the limb's low.
+const std::vector<hitbox::CharacterHitbox> kSoldierHitboxes{
+    {.part = BodyPart::kHead,
+     .triangles = {{.a = Vec3(0.0F, 1.7F, 0.0F), .b = Vec3(0.2F, 1.7F, 0.0F), .c = Vec3(0.0F, 1.7F, 0.2F)}}},
+    {.part = BodyPart::kLimb,
+     .triangles = {{.a = Vec3(0.0F, 0.3F, 0.0F), .b = Vec3(0.2F, 0.3F, 0.0F), .c = Vec3(0.0F, 0.3F, 0.2F)}}},
+};
+
+PhysicsOverlays HitboxesOn() {
+  PhysicsOverlays overlays(PhysicsOverlaysStart{.hitboxes = true});
+  overlays.SetCharacterHitboxes("soldier", kSoldierHitboxes);
+  return overlays;
+}
+
+// A frame's Presentation State showing one other player as character, at body.
+State ShowingOther(const RemoteBody& body, std::string character = "soldier") {
+  State state;
+  state.remote_players.push_back({.entity = kOther, .body = body, .character = std::move(character)});
+  return state;
+}
+
+void ExpectNear(const Vec3& actual, const Vec3& expected) {
+  constexpr float kTolerance = 1e-5F;
+  EXPECT_NEAR(actual.x, expected.x, kTolerance);
+  EXPECT_NEAR(actual.y, expected.y, kTolerance);
+  EXPECT_NEAR(actual.z, expected.z, kTolerance);
+}
+
+// segments, in order, are the three edges of each of placed's triangles,
+// Hitbox by Hitbox.
+void ExpectOutlinesOf(const std::vector<Segment>& segments, const std::vector<hitbox::PlacedHitbox>& placed) {
+  std::vector<std::pair<Vec3, Vec3>> edges;
+  for (const hitbox::PlacedHitbox& hitbox : placed) {
+    for (const ballistics::Triangle& triangle : hitbox.triangles) {
+      edges.insert(edges.end(), {{triangle.a, triangle.b}, {triangle.b, triangle.c}, {triangle.c, triangle.a}});
+    }
+  }
+  ASSERT_EQ(segments.size(), edges.size());
+  for (std::size_t i = 0; i < edges.size(); ++i) {
+    ExpectNear(segments[i].from, edges[i].first);
+    ExpectNear(segments[i].to, edges[i].second);
+  }
+}
+
+TEST(HitboxesTest, AnotherPlayersHitboxesAreOutlinedWhereItsInterpolatedPoseStands) {
+  const Shapes shapes =
+      HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({.position = Vec3(3.0F, 0.0F, -1.0F), .velocity = {}}));
+
+  // Standing and facing where a view of yaw 0 looks, the Hitboxes are only moved.
+  ASSERT_EQ(shapes.segments.size(), 6U);
+  ExpectNear(shapes.segments[0].from, Vec3(3.0F, 1.7F, -1.0F));
+  ExpectNear(shapes.segments[0].to, Vec3(3.2F, 1.7F, -1.0F));
+  ExpectNear(shapes.segments[1].to, Vec3(3.0F, 1.7F, -0.8F));
+  ExpectNear(shapes.segments[3].from, Vec3(3.0F, 0.3F, -1.0F));
+}
+
+TEST(HitboxesTest, TheHitboxesAreTurnedAndLoweredAsTheServerPlacesThem) {
+  const RemoteBody body{.position = Vec3(-2.0F, 0.5F, 4.0F),
+                        .velocity = Vec3(1.0F, 0.0F, 0.0F),
+                        .yaw = std::numbers::pi_v<float> / 2.0F,
+                        .stance = Stance::kCrouching};
+
+  const Shapes shapes = HitboxesOn().BuildShapes(FrameOf({}), ShowingOther(body));
+
+  // The server's Lag compensation places them with this one function (ADR-0044).
+  ExpectOutlinesOf(shapes.segments, hitbox::Place(kSoldierHitboxes,
+                                                  {.position = body.position, .yaw = body.yaw, .stance = body.stance}));
+}
+
+TEST(HitboxesTest, EachHitboxIsColouredByItsBodyPart) {
+  const Shapes shapes = HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({}));
+
+  ASSERT_EQ(shapes.segments.size(), 6U);
+  for (std::size_t i = 0; i < 3; ++i) {
+    EXPECT_EQ(shapes.segments[i].color, HitboxColorOf(BodyPart::kHead));
+    EXPECT_EQ(shapes.segments[3 + i].color, HitboxColorOf(BodyPart::kLimb));
+  }
+  EXPECT_NE(HitboxColorOf(BodyPart::kHead), HitboxColorOf(BodyPart::kTorso));
+  EXPECT_NE(HitboxColorOf(BodyPart::kTorso), HitboxColorOf(BodyPart::kLimb));
+  EXPECT_NE(HitboxColorOf(BodyPart::kLimb), HitboxColorOf(BodyPart::kHead));
+}
+
+TEST(HitboxesTest, APlayerWhoseCharacterHasNoHitboxesKnownDrawsNothing) {
+  // The control: the soldier's are drawn.
+  ASSERT_FALSE(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({})).segments.empty());
+
+  EXPECT_EQ(HitboxesOn().BuildShapes(FrameOf({}), ShowingOther({}, "medic")), Shapes{});
+}
+
+TEST(HitboxesTest, NothingIsDrawnWhileTheOverlayIsOff) {
+  PhysicsOverlays overlays(PhysicsOverlaysStart{});
+  overlays.SetCharacterHitboxes("soldier", kSoldierHitboxes);
+
+  EXPECT_EQ(overlays.BuildShapes(FrameOf({}), ShowingOther({})), Shapes{});
+}
+
+TEST(HitboxesTest, TheHitboxesAreHiddenBehindTheWorldUntilThroughWallsIsOn) {
+  PhysicsOverlays overlays = HitboxesOn();
+  const Shapes hidden = overlays.BuildShapes(FrameOf({}), ShowingOther({}));
+  ASSERT_FALSE(hidden.segments.empty());
+  for (const Segment& segment : hidden.segments) {
+    EXPECT_FALSE(segment.through_walls);
+  }
+
+  overlays.Update(PanelEvent("hitboxes.through_walls", true));
+
+  const Shapes shapes = overlays.BuildShapes(FrameOf({}), ShowingOther({}));
+  ASSERT_FALSE(shapes.segments.empty());
+  for (const Segment& segment : shapes.segments) {
+    EXPECT_TRUE(segment.through_walls);
   }
 }
 
@@ -187,6 +308,26 @@ TEST(PhysicsPanelTest, ItsTogglesComeBackAsStateChanges) {
   EXPECT_TRUE(overlays.ThroughWalls(PhysicsOverlay::kServerBodies));
 }
 
+TEST(PhysicsPanelTest, TheHitboxesTogglesComeBackAsStateChanges) {
+  PhysicsOverlays overlays(PhysicsOverlaysStart{});
+  const Panel before = overlays.BuildPanel();
+  ASSERT_NE(ToggleOf(before, "hitboxes"), nullptr);
+  ASSERT_NE(ToggleOf(before, "hitboxes.through_walls"), nullptr);
+  EXPECT_EQ(ToggleOf(before, "hitboxes")->label, "Hitboxes");
+  EXPECT_FALSE(ToggleOf(before, "hitboxes")->on);
+  EXPECT_FALSE(ToggleOf(before, "hitboxes.through_walls")->on);
+
+  overlays.Update(PanelEvent("hitboxes", true));
+  overlays.Update(PanelEvent("hitboxes.through_walls", true));
+
+  EXPECT_TRUE(overlays.IsOn(PhysicsOverlay::kHitboxes));
+  EXPECT_TRUE(overlays.ThroughWalls(PhysicsOverlay::kHitboxes));
+  EXPECT_FALSE(overlays.IsOn(PhysicsOverlay::kServerBodies));
+  const Panel after = overlays.BuildPanel();
+  EXPECT_TRUE(ToggleOf(after, "hitboxes")->on);
+  EXPECT_TRUE(ToggleOf(after, "hitboxes.through_walls")->on);
+}
+
 TEST(PhysicsPanelTest, AnotherPanelsEventChangesNothing) {
   PhysicsOverlays overlays(PhysicsOverlaysStart{});
 
@@ -206,7 +347,7 @@ TEST(PhysicsPanelTest, AnOverlayStaysDrawnWithThePanelClosed) {
       .panel = std::string(debug::kDebugIndexPanelId), .control = std::string(kPhysicsPanelId), .value = false});
 
   ASSERT_FALSE(index.IsOn(kPhysicsPanelId));
-  EXPECT_EQ(overlays.BuildShapes(FrameOf(updates)).capsules.size(), 1U);
+  EXPECT_EQ(overlays.BuildShapes(FrameOf(updates), State{}).capsules.size(), 1U);
 }
 
 }  // namespace
