@@ -80,3 +80,9 @@ input:
 #     # client shows that player, placed as the server places them, one colour
 #     # per body part - is drawn (optional, default false): true or false.
 #     hitboxes: false
+#     # Whether the Shot judgements overlay - for each of the player's own
+#     # rounds, the Hitboxes the client showed when it fired beside those the
+#     # server judged it against, with its flight and the point struck - is
+#     # drawn (optional, default false): true or false. The server sends Shot
+#     # judgements only with its own `debug.shot_judgements` on.
+#     shot_judgements: false

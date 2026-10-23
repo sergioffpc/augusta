@@ -40,6 +40,9 @@ struct ClientPhysicsDebugConfig {
   bool server_bodies = false;
   /// Key `debug.physics.hitboxes`: whether the Hitboxes overlay is drawn.
   bool hitboxes = false;
+  /// Key `debug.physics.shot_judgements`: whether the Shot judgements overlay
+  /// is drawn, which asks the server for Shot judgements.
+  bool shot_judgements = false;
 };
 
 /// augustac.yaml's `debug` section: which of the client's debug tools start on

@@ -150,6 +150,8 @@ struct PlayerCharacter {
 struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
+  /// The server tick it was fired on.
+  tick::Tick tick = 0;
   /// Where the round left from: the shooter's eye.
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw in radians (command::Command).

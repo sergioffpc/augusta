@@ -2,6 +2,8 @@
 #define AUGUSTA_DEBUG_KEPT_SHAPES_H_
 
 #include <chrono>
+#include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "augusta/debug_shapes.h"
@@ -20,7 +22,11 @@ class KeptShapes {
  public:
   using Clock = std::chrono::steady_clock;
 
-  /// Keeps shapes until, after which Alive no longer returns them.
+  /// Keeps at most capacity of what Keep is given at a time.
+  explicit KeptShapes(std::size_t capacity = std::numeric_limits<std::size_t>::max());
+
+  /// Keeps shapes until, after which Alive no longer returns them; at capacity,
+  /// first drops what was kept first.
   void Keep(const Shapes& shapes, Clock::time_point until);
 
   /// The shapes kept until after now, in the order they were kept; drops the
@@ -28,12 +34,17 @@ class KeptShapes {
   /// earlier time.
   Shapes Alive(Clock::time_point now);
 
+  /// How many of what Keep was given the store holds: what the last Alive left
+  /// and what was kept since.
+  [[nodiscard]] std::size_t Count() const;
+
  private:
   struct Kept {
     Shapes shapes;
     Clock::time_point until;
   };
 
+  std::size_t capacity_;
   std::vector<Kept> kept_;
 };
 

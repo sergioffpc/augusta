@@ -44,6 +44,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     "debug.physics.collision",
     "debug.physics.server_bodies",
     "debug.physics.hitboxes",
+    "debug.physics.shot_judgements",
 #endif
 });
 
@@ -128,9 +129,16 @@ std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(con
   if (!server_bodies) {
     return std::unexpected(server_bodies.error());
   }
-  return OptionalFlag(values, "debug.physics.hitboxes", false).transform([&](bool hitboxes) {
-    return ClientPhysicsDebugConfig{
-        .panel = *panel, .collision = *collision, .server_bodies = *server_bodies, .hitboxes = hitboxes};
+  const auto hitboxes = OptionalFlag(values, "debug.physics.hitboxes", false);
+  if (!hitboxes) {
+    return std::unexpected(hitboxes.error());
+  }
+  return OptionalFlag(values, "debug.physics.shot_judgements", false).transform([&](bool shot_judgements) {
+    return ClientPhysicsDebugConfig{.panel = *panel,
+                                    .collision = *collision,
+                                    .server_bodies = *server_bodies,
+                                    .hitboxes = *hitboxes,
+                                    .shot_judgements = shot_judgements};
   });
 }
 

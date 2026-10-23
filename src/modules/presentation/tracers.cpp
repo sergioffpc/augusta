@@ -6,9 +6,18 @@
 #include "augusta/ballistics.h"
 #include "augusta/effects.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 namespace augusta::presentation {
+
+TracerRules TracerRulesOf(const parameters::Parameters& parameters, float tick_duration) {
+  return TracerRules{
+      .muzzle_velocity = parameters.rifle.muzzle_velocity,
+      .bullet = parameters.ammo.flight,
+      .tick_duration = tick_duration,
+  };
+}
 
 Tracers::Tracers(const physics::World& map) : map_(map) {}
 

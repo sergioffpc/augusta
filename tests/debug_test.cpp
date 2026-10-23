@@ -346,5 +346,28 @@ TEST(KeptShapesTest, DropsShapesWhoseTimeHasComeFromTheStore) {
   EXPECT_EQ(kept.Alive(kStart + seconds{1}), ASphereAt(2.0F));
 }
 
+TEST(KeptShapesTest, KeepsAtMostItsCapacityDroppingTheFirstKept) {
+  KeptShapes kept(2);
+  kept.Keep(ASphereAt(1.0F), kStart + seconds{9});
+  kept.Keep(ASphereAt(2.0F), kStart + seconds{9});
+  kept.Keep(ASphereAt(3.0F), kStart + seconds{9});
+
+  Shapes newest = ASphereAt(2.0F);
+  newest.spheres.push_back(ASphereAt(3.0F).spheres[0]);
+  EXPECT_EQ(kept.Alive(kStart), newest);
+  EXPECT_EQ(kept.Count(), 2U);
+}
+
+TEST(KeptShapesTest, CountsWhatTheLastAliveLeftKept) {
+  KeptShapes kept;
+  kept.Keep(ASphereAt(1.0F), kStart + seconds{3});
+  kept.Keep(ASphereAt(2.0F), kStart + seconds{5});
+  EXPECT_EQ(kept.Count(), 2U);
+
+  static_cast<void>(kept.Alive(kStart + seconds{4}));
+
+  EXPECT_EQ(kept.Count(), 1U);
+}
+
 }  // namespace
 }  // namespace augusta::debug

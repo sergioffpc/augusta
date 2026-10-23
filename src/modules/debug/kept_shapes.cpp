@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <vector>
 
 #include "augusta/debug_kept_shapes.h"
@@ -14,7 +15,15 @@ void Append(std::vector<Shape>& to, const std::vector<Shape>& shapes) {
 
 }  // namespace
 
+KeptShapes::KeptShapes(std::size_t capacity) : capacity_(capacity) {}
+
 void KeptShapes::Keep(const Shapes& shapes, Clock::time_point until) {
+  if (capacity_ == 0) {
+    return;
+  }
+  if (kept_.size() == capacity_) {
+    kept_.erase(kept_.begin());
+  }
   kept_.push_back({.shapes = shapes, .until = until});
 }
 
@@ -31,5 +40,7 @@ Shapes KeptShapes::Alive(Clock::time_point now) {
   }
   return alive;
 }
+
+std::size_t KeptShapes::Count() const { return kept_.size(); }
 
 }  // namespace augusta::debug

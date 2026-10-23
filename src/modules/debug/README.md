@@ -10,16 +10,17 @@ The vocabulary the client Runtime and the Renderer share for debug tools
 to be drawn into the world (segments, triangles, and oriented boxes, spheres,
 capsules and voxels drawn as a wireframe or filled), with their tessellation
 into the lines and triangles the Renderer draws and a keep-until helper that
-keeps a one-off event's shapes drawn until a time the producer gives; the Debug
-panels an area asks to be shown (text, tables, history plots, toggles, sliders
-and buttons), with the control events a developer's change to one comes back as,
-naming the panel and the control; Debug interaction, the state F1 enters and
-leaves in which the panels take the mouse and keyboard and the game gets
-neither, with which of the window's events go to the game and which to the
-panels, and what entering and leaving ask of the game's input; and the Debug
-index, the panel the client shows in Debug interaction listing its debug tools,
-each switched on or off from it. It depends on `augusta_math` and the window's
-event types alone, never on an area module, the Renderer, ImGui or a thread.
+keeps a one-off event's shapes drawn until a time the producer gives, at most as
+many as its capacity; the Debug panels an area asks to be shown (text, tables,
+history plots, toggles, sliders and buttons), with the control events a
+developer's change to one comes back as, naming the panel and the control; Debug
+interaction, the state F1 enters and leaves in which the panels take the mouse
+and keyboard and the game gets neither, with which of the window's events go to
+the game and which to the panels, and what entering and leaving ask of the
+game's input; and the Debug index, the panel the client shows in Debug
+interaction listing its debug tools, each switched on or off from it. It depends
+on `augusta_math` and the window's event types alone, never on an area module,
+the Renderer, ImGui or a thread.
 
 ## Not its responsibility
 

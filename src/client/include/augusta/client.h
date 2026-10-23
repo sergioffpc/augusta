@@ -74,6 +74,10 @@ struct RuntimeConfig {
   /// Whether the Hitboxes overlay is drawn at first (`debug.physics.hitboxes`),
   /// until the Physics panel switches it.
   bool debug_physics_hitboxes = false;
+  /// Whether the Shot judgements overlay is drawn, and Shot judgements asked
+  /// for, at first (`debug.physics.shot_judgements`), until the Physics panel
+  /// switches it.
+  bool debug_physics_shot_judgements = false;
 #endif
 };
 

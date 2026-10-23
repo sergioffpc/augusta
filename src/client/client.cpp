@@ -94,7 +94,8 @@ presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& c
   }
   return {.collision = config.debug_physics_collision,
           .server_bodies = config.debug_physics_server_bodies,
-          .hitboxes = config.debug_physics_hitboxes};
+          .hitboxes = config.debug_physics_hitboxes,
+          .shot_judgements = config.debug_physics_shot_judgements};
 }
 #endif
 
@@ -281,6 +282,12 @@ struct ClientRuntime::Impl {
   // closes: the frame has ended for the Profiling panel's capture window.
   void TickProfilingPanel() { ApplyCaptureChange(profiling_panel.Tick()); }
 
+  // Asks the server for the Debug streams the overlays want: Shot judgements
+  // while their overlay is on (ADR-0074).
+  void SubscribeDebug() {
+    session->SubscribeDebug(physics_overlays.WantsShotJudgements() ? link::DebugSubscribe::kShotJudgements : 0U);
+  }
+
   // Main/Render thread only: routes each control event the last RenderFrame's
   // panels gave to the area whose panel it names.
   void RouteDebugControlEvents() {
@@ -290,7 +297,11 @@ struct ClientRuntime::Impl {
       } else if (event.panel == kProfilingPanelId) {
         ApplyCaptureChange(profiling_panel.Update(event));
       } else if (event.panel == presentation::kPhysicsPanelId) {
+        const bool wanted = physics_overlays.WantsShotJudgements();
         physics_overlays.Update(event);
+        if (physics_overlays.WantsShotJudgements() != wanted) {
+          SubscribeDebug();
+        }
       }
     }
   }
@@ -581,6 +592,14 @@ struct ClientRuntime::Impl {
           }
         }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+#if AUGUSTA_DEBUG_TOOLS
+        physics_overlays.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+        // The overlay's startup key: the Session keeps no subscription, so it
+        // is asked for once admitted.
+        if (physics_overlays.WantsShotJudgements()) {
+          SubscribeDebug();
+        }
+#endif
         return std::nullopt;
       }
       input.Handle(window.Poll());
@@ -662,7 +681,13 @@ struct ClientRuntime::Impl {
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
-    // Shapes and panels live one frame (ADR-0075).
+    // Shapes and panels live one frame (ADR-0075); the judged rounds are kept
+    // by the overlay, which takes the frame's seen Hitboxes first.
+    const auto now = presentation::PhysicsOverlays::Clock::now();
+    physics_overlays.Advance(input, frame_state, now);
+    for (const harness::ShotJudgement& judgement : session->TakeShotJudgements(*session->GetServerView())) {
+      physics_overlays.Judge(ToPresentation(judgement), now);
+    }
     renderer.SetDebugShapes(physics_overlays.BuildShapes(input, frame_state));
     renderer.SetDebugPanels(DebugPanels());
     // What the Prediction thread's next ticks draw of the client's World,

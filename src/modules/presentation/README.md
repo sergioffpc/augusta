@@ -15,9 +15,15 @@ and each frame's shapes, built from the plain values physics and gameplay hand
 it: every body the newest Authoritative State update reported, as its capsule,
 the Collision lines the Prediction State carries, in PhysX's colours, and every
 other player's Hitboxes where the frame shows that player, placed by gameplay's
-shared placing and outlined in one colour per body part. It also gives the
-visualization settings Collision asks of the client's World: off while the
-overlay is, or its flags and culling box around the camera.
+shared placing and outlined in one colour per body part. For Shot judgements it
+keeps, when the local player fires, the Hitboxes the frame showed (seen) by its
+Seen time, pairs each Shot judgement the client Runtime hands it with the seen
+Hitboxes nearest its own Seen time, and draws the last rounds beside the judged
+Hitboxes, the struck one filled, the round's flight as Tracers fly it, and the
+point struck; it reports whether the Debug subscribe should ask for Shot
+judgements, which the client Runtime sends. It also gives the visualization
+settings Collision asks of the client's World: off while the overlay is, or its
+flags and culling box around the camera.
 
 ## Not its responsibility
 
