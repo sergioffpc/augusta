@@ -34,6 +34,35 @@ add_custom_target(
   VERBATIM
 )
 
+# The seeds as a pcapng, tools/wireshark's dissector fixture (ADR-0076): a
+# Development build's alone, since only it has augusta_pcapng (ADR-0074). It
+# sits beside the corpus, never in it, so the replay above never reads it.
+if(AUGUSTA_DEBUG_TOOLS)
+  add_executable(augusta_protocol_decode_seeds_pcapng_tests protocol_decode_seeds_pcapng_test.cpp)
+  target_link_libraries(
+    augusta_protocol_decode_seeds_pcapng_tests
+    PRIVATE augusta_pcapng augusta_version GTest::gtest GTest::gtest_main
+  )
+  target_compile_definitions(
+    augusta_protocol_decode_seeds_pcapng_tests
+    PRIVATE
+      AUGUSTA_PROTOCOL_DECODE_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/corpus/protocol_decode"
+      AUGUSTA_PROTOCOL_DECODE_SEEDS_PCAPNG="${CMAKE_CURRENT_SOURCE_DIR}/protocol_decode_seeds.pcapng"
+  )
+  gtest_discover_tests(augusta_protocol_decode_seeds_pcapng_tests)
+  # After the seeds are rewritten, or the encoder changes on purpose, one step
+  # rewrites the fixture from them:
+  #   cmake --build --preset <preset> --target augusta_protocol_decode_seeds_pcapng
+  add_custom_target(
+    augusta_protocol_decode_seeds_pcapng
+    COMMAND
+      augusta_protocol_decode_seeds_pcapng_tests --gtest_also_run_disabled_tests
+      --gtest_filter=ProtocolDecodeSeedsPcapngTest.DISABLED_RegenerateFixture
+    COMMENT "Rewriting tests/fuzz/protocol_decode_seeds.pcapng"
+    VERBATIM
+  )
+endif()
+
 # capture::ReadCapture, a Match capture file
 # that may have been cut short or corrupted (ADR-0050).
 add_executable(augusta_capture_read_replay capture_read_fuzz.cpp replay_main.cpp)
