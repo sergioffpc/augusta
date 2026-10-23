@@ -3,7 +3,7 @@
 # editable, their test runner, and what the documentation site is built with
 # (ADR-0046). The agent and pack groups alone are what the C++ CI jobs sync:
 # the interpreter the root build builds the tools' modules against, the two
-# packages and pytest.
+# packages and pytest; the Linux one syncs the wireshark group too.
 [project]
 name = "augusta-tools"
 version = "0.1.0"
@@ -14,6 +14,8 @@ dependencies = []
 dev = ["augusta-agent", "augusta-pack", "pytest>=8"]
 agent = ["augusta-agent", "pytest>=8"]
 pack = ["augusta-pack", "pytest>=8"]
+# The Wireshark dissector's test, which needs no package (tools/wireshark).
+wireshark = ["pytest>=8"]
 docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.7"]
 
 [tool.uv]
@@ -21,7 +23,7 @@ package = false
 default-groups = ["dev", "docs"]
 
 [tool.uv.workspace]
-members = ["agent", "pack"]
+members = ["agent", "pack", "wireshark"]
 
 [tool.uv.sources]
 augusta-agent = { workspace = true }

@@ -1,8 +1,8 @@
--- luacheck's configuration for the scenarios' Lua scripts (ADR-0022, ADR-0039).
--- They run in the engine's sandbox (scripting::MakeSandbox, lua_sandbox.cpp),
--- not a stock Lua, so the standard library below is that sandbox's, written
--- out in full: Lua's base, math, string and table libraries, less what the
--- sandbox takes out. A global missing from it - print, pcall, load, io, os,
+-- luacheck's configuration for the scenarios' Lua scripts (ADR-0022, ADR-0039),
+-- and, at the end, the Wireshark dissector's. The scripts run in the engine's
+-- sandbox (scripting::MakeSandbox, lua_sandbox.cpp), not a stock Lua, so the
+-- standard library below is that sandbox's, written out in full: Lua's base,
+-- math, string and table libraries, less what the sandbox takes out. A global missing from it - print, pcall, load, io, os,
 -- math.random... - is one a script cannot reach, so using it is a warning.
 -- The engine embeds Lua 5.5; luacheck parses 5.4, which these scripts do not
 -- tell apart.
@@ -94,3 +94,10 @@ files["**/scripts/parameters/*.lua"] = {
 
 -- The hooks a rules script defines and SimulationWorld calls (ADR-0022).
 files["**/scripts/rules/*.lua"] = { globals = { "on_tick", "assign_spawns" } }
+
+-- The Wireshark dissector runs in Wireshark's Lua 5.4, with its Lua API
+-- (wslua) as globals (tools/wireshark, ADR-0076).
+files["tools/wireshark/*.lua"] = {
+  std = "lua54",
+  read_globals = { "Dissector", "Proto", "ProtoField" },
+}

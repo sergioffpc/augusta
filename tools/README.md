@@ -4,26 +4,28 @@ This directory contains every tool, apart from the runtime in `src/`: `pack`
 cooks authored content into signed runtime packs, `composer` sets up the
 optional USD authoring application and its launcher (both Windows), and `agent`
 is the `augusta_agent` package a Python script controls Agents with, for load
-and end-to-end tests among other things. Each tool's tests live beside it.
-`docs` is not a tool of its own: it holds how the documentation site is built
-(ADR-0046).
+and end-to-end tests among other things, and `wireshark` is the dissector that
+reads a Development build's pcapng of messages. Each tool's tests live beside
+it. `docs` is not a tool of its own: it holds how the documentation site is
+built (ADR-0046).
 
-| Tool                     | Purpose                                                                    |
-| ------------------------ | -------------------------------------------------------------------------- |
-| [`pack/`](pack/)         | Python asset cooker, signing utilities, and native cooking modules.        |
-| [`composer/`](composer/) | Optional NVIDIA USD Composer setup, playback definition, and launcher.     |
-| [`agent/`](agent/)       | `augusta_agent`: Agents, players a Python script controls through Intents. |
-| [`docs/`](docs/)         | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`.  |
+| Tool                       | Purpose                                                                    |
+| -------------------------- | -------------------------------------------------------------------------- |
+| [`pack/`](pack/)           | Python asset cooker, signing utilities, and native cooking modules.        |
+| [`composer/`](composer/)   | Optional NVIDIA USD Composer setup, playback definition, and launcher.     |
+| [`agent/`](agent/)         | `augusta_agent`: Agents, players a Python script controls through Intents. |
+| [`wireshark/`](wireshark/) | The `augusta` Lua dissector, its install script and its `tshark` test.     |
+| [`docs/`](docs/)           | The documentation site's MkDocs hooks and Doxyfile, built by `make docs`.  |
 
 ## Python environment
 
 The Python tools share one environment: [`pyproject.toml`](pyproject.toml) here
-is a uv workspace with `pack` and `agent` as its members and one lock,
-`uv.lock`. `uv sync`, run from this directory, creates `tools/.venv` with the
-cooker and `augusta_agent` installed editable, pytest, and MkDocs (the `docs`
-group, which `make docs` runs alone). The editor uses it as the workspace's
-interpreter. Run `uv sync` here, not in a member, where it would sync that
-member alone and drop the rest.
+is a uv workspace with `pack`, `agent` and `wireshark` (tests only, no package)
+as its members and one lock, `uv.lock`. `uv sync`, run from this directory,
+creates `tools/.venv` with the cooker and `augusta_agent` installed editable,
+pytest, and MkDocs (the `docs` group, which `make docs` runs alone). The editor
+uses it as the workspace's interpreter. Run `uv sync` here, not in a member,
+where it would sync that member alone and drop the rest.
 
 ## Composer
 
