@@ -1,11 +1,12 @@
 # Debug Tools Are Compiled Out of Shipping Builds
 
 Every debug tool - the Debug HUD, Debug overlays, Debug panels, Debug views, the
-benchmark mode, reenactments, the pcapng of messages - is for developers only,
-and a Shipping build leaves it out of the binary rather than switching it off: a
-collision or Hitbox overlay, or a server that hands its state to whoever asks,
-is a wallhack in a player's hands. Developers still run optimised builds, so
-whether the tools are in is its own axis, not the CMake build type.
+benchmark mode, reenactments, the pcapng of messages (ADR-0076) - is for
+developers only, and a Shipping build leaves it out of the binary rather than
+switching it off: a collision or Hitbox overlay, or a server that hands its
+state to whoever asks, is a wallhack in a player's hands. Developers still run
+optimised builds, so whether the tools are in is its own axis, not the CMake
+build type.
 
 **One CMake option.** `AUGUSTA_DEBUG_TOOLS`, on by default, compiles every debug
 tool of `augustac` and `augustad` in; the code tests one macro of the same name.
