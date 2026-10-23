@@ -34,6 +34,8 @@ inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 struct ClientPhysicsDebugConfig {
   /// Key `debug.physics.panel`: whether the Physics Debug panel is shown.
   bool panel = false;
+  /// Key `debug.physics.collision`: whether the Collision overlay is drawn.
+  bool collision = false;
   /// Key `debug.physics.server_bodies`: whether the Server bodies overlay is drawn.
   bool server_bodies = false;
   /// Key `debug.physics.hitboxes`: whether the Hitboxes overlay is drawn.

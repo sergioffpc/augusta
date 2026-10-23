@@ -68,6 +68,10 @@ input:
 #     # collision Debug overlays - is shown (optional, default false): true or
 #     # false. Not offered to a Replay viewer.
 #     panel: false
+#     # Whether the Collision overlay - PhysX's own view of the client's World,
+#     # the Map's collision, the player's capsule and the controller volumes,
+#     # around the camera - is drawn (optional, default false): true or false.
+#     collision: false
 #     # Whether the Server bodies overlay - every body as the newest
 #     # Authoritative State update put it, the player's own beside its
 #     # predicted body - is drawn (optional, default false): true or false.
