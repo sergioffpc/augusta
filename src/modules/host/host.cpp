@@ -122,8 +122,7 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
       })
 #if AUGUSTA_DEBUG_TOOLS
       ,
-      debug_subscriptions(ServedStreams(config)),
-      shot_judgements(config.shot_judgements)
+      debug_subscriptions(ServedStreams(config))
 #endif
 {
 #if AUGUSTA_DEBUG_TOOLS

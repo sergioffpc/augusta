@@ -16,6 +16,7 @@
 // tests.
 namespace {
 
+using augusta::limits::kMaxShotJudgementEntries;
 using augusta::math::Vec3;
 using augusta::protobuf_bytes::Cat;
 using augusta::protobuf_bytes::LengthField;
@@ -30,7 +31,6 @@ using augusta::protocol::Encode;
 using augusta::protocol::EncodeError;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::JudgedPlayerWire;
-using augusta::protocol::kMaxShotJudgementEntries;
 using augusta::protocol::MessageTypeWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::ShotJudgementEntryWire;

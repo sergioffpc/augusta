@@ -44,6 +44,7 @@ void showValue(const ShotJudgementWire& judgement, std::ostream& out) {
 
 namespace {
 
+using augusta::limits::kMaxShotJudgementEntries;
 using augusta::math::FromSteps;
 using augusta::math::Grid;
 using augusta::math::kAngleGrid;
@@ -56,7 +57,6 @@ using augusta::protocol::Decode;
 using augusta::protocol::Encode;
 using augusta::protocol::EntityIdWire;
 using augusta::protocol::JudgedPlayerWire;
-using augusta::protocol::kMaxShotJudgementEntries;
 using augusta::protocol::MessageWire;
 using augusta::protocol::ShotJudgementEntryWire;
 using augusta::protocol::ShotJudgementWire;

@@ -413,7 +413,7 @@ struct Encoder {
     judgement.set_point_y(Steps(wire.point.y, math::kPositionGrid));
     judgement.set_point_z(Steps(wire.point.z, math::kPositionGrid));
     judgement.set_target(static_cast<std::uint32_t>(wire.target));
-    if (!out.Fits(wire.entries.size(), kMaxShotJudgementEntries)) {
+    if (!out.Fits(wire.entries.size(), limits::kMaxShotJudgementEntries)) {
       return;
     }
     for (const ShotJudgementEntryWire& entry : wire.entries) {
@@ -759,7 +759,7 @@ ShotJudgementWire Read(const pb::ShotJudgement& judgement, Inbound& in) {
   const std::uint32_t bits = in.ToBits(judgement.bits(), kJudgementBitsMask);
   return ShotJudgementWire{
       .shot_tick = judgement.shot_tick(),
-      .entries = ReadList(judgement.entries(), kMaxShotJudgementEntries, in,
+      .entries = ReadList(judgement.entries(), limits::kMaxShotJudgementEntries, in,
                           [&in](const pb::ShotJudgementEntry& entry) {
                             return ShotJudgementEntryWire{
                                 .players = ReadList(entry.players(), limits::kMaxPlayers, in,

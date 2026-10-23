@@ -4,10 +4,8 @@
 #include <expected>
 #include <functional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-#include "augusta/debug_subscriptions.h"
 #include "augusta/failure.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
@@ -15,6 +13,12 @@
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include <unordered_set>
+
+#include "augusta/debug_subscriptions.h"
+#endif
 
 /// \file
 /// What Host sends its players after each tick (ADR-0044): each one's update,

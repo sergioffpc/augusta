@@ -24,13 +24,8 @@ protocol or networking, which `checks/core_boundary.cmake` checks. A tick's
 Authoritative State is encoded once and readdressed to each player, so only each
 one's own fields are encoded per player.
 
-In a Development build it keeps each peer's last Debug subscribe, from its
-connection to its disconnect, against the streams its `debug` keys serve, never
-counting one as misbehaviour and logging once per peer each bit it does not
-serve; a Replay server serves no stream and ignores the message. While
-`debug.shot_judgements` is on, it has SimulationWorld build each Match's Shot
-judgements and sends each, after the tick's Shots, Hit confirmations and Deaths,
-to its shooter's peer alone if that peer asked for them.
+In a Development build it serves the debug streams its `debug` keys switch on to
+the peers that subscribe to them.
 
 ## Not its responsibility
 

@@ -31,6 +31,9 @@ class DebugSubscriptions {
   /// before: each to be logged, once.
   [[nodiscard]] std::uint8_t Subscribe(link::PeerId peer, std::uint8_t flags);
 
+  /// Whether the server sends stream, one bit, to whoever asks for it.
+  [[nodiscard]] bool Serves(std::uint8_t stream) const { return (served_ & stream) != 0; }
+
   /// Whether stream, one bit, goes to peer: the server serves it, and peer's
   /// last Debug subscribe set it.
   [[nodiscard]] bool Wants(link::PeerId peer, std::uint8_t stream) const;

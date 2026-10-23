@@ -3,11 +3,9 @@
 #include <expected>
 #include <functional>
 #include <optional>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include "augusta/debug_subscriptions.h"
 #include "augusta/failure.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
@@ -17,6 +15,12 @@
 #include "augusta/simulation.h"
 #include "augusta/simulation_mapping.h"
 #include "augusta/tick.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include <unordered_set>
+
+#include "augusta/debug_subscriptions.h"
+#endif
 
 namespace augusta::host {
 

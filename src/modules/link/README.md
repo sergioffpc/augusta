@@ -23,9 +23,8 @@ so the Host and capture convert without opening a connection. It owns the
 transport's process-wide setup and, for tests only, its simulated network
 conditions and raw ends that carry bytes as they are. Only it links networking
 (`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
-speaks to it reaches neither. A Development build's messages, Debug subscribe
-and Shot judgement, have their Link type, conversions and reliability only with
-`AUGUSTA_DEBUG_TOOLS`.
+speaks to it reaches neither. A Development build's messages are in the Link
+only with `AUGUSTA_DEBUG_TOOLS`.
 
 ## Not its responsibility
 

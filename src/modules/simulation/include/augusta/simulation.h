@@ -47,6 +47,9 @@
 /// CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
 /// and Ballistics and HitDetection on bullets, which end on the Map, on a
 /// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
+/// In a Development build, while World::JudgeShots switches them on, it builds
+/// each round's Shot judgement from the players its hit test selected, handed
+/// on in the tick's result once the round's flight ends (ADR-0074).
 /// What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
@@ -268,10 +271,6 @@ enum class Struck : std::uint8_t {
   kHitbox,
 };
 
-/// How many ticks of a round's flight its Shot judgement tells at most
-/// (ADR-0038): a round flies ballistics::kMaxFlightTime at most, far more ticks.
-inline constexpr std::size_t kMaxShotJudgementEntries = 16;
-
 /// One player a round was judged against on one tick of its flight, by the
 /// Hitbox pose the Hitbox history gave for that tick's judging moment (its
 /// Shooter's delay before it): what, with its Character, places its Hitboxes.
@@ -315,7 +314,7 @@ struct ShotJudgement {
   /// The body or Prop it struck; nullopt when it struck neither.
   std::optional<EntityId> target = std::nullopt;
   /// The ticks of its flight whose segment reached some player's bounds, oldest
-  /// first: the first kMaxShotJudgementEntries of them. Empty for a round that
+  /// first: the first limits::kMaxShotJudgementEntries of them. Empty for a round that
   /// passed no player.
   std::vector<ShotJudgementEntry> entries;
   /// Whether more ticks reached some player's bounds than entries holds.

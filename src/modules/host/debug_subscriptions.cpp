@@ -20,7 +20,7 @@ std::uint8_t DebugSubscriptions::Subscribe(link::PeerId peer, std::uint8_t flags
 
 bool DebugSubscriptions::Wants(link::PeerId peer, std::uint8_t stream) const {
   const auto found = peers_.find(peer);
-  return (served_ & stream) != 0 && found != peers_.end() && (found->second.flags & stream) != 0;
+  return Serves(stream) && found != peers_.end() && (found->second.flags & stream) != 0;
 }
 
 void DebugSubscriptions::Forget(link::PeerId peer) { peers_.erase(peer); }

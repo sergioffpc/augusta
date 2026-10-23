@@ -1,7 +1,6 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <limits>
 #include <mutex>
 #include <optional>
 #include <string_view>
@@ -13,7 +12,6 @@
 
 #include "augusta/command_queue.h"
 #include "augusta/connection_sample.h"
-#include "augusta/debug_subscriptions.h"
 #include "augusta/host.h"
 #include "augusta/host_log.h"
 #include "augusta/host_metrics.h"
@@ -25,6 +23,12 @@
 #include "augusta/misbehaviour.h"
 #include "augusta/peer_gate.h"
 #include "host_impl.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include <limits>
+
+#include "augusta/debug_subscriptions.h"
+#endif
 
 namespace augusta::host {
 

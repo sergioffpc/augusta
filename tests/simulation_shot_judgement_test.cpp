@@ -9,6 +9,7 @@
 
 #include "augusta/body_part.h"
 #include "augusta/command.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -21,6 +22,7 @@ namespace {
 
 using augusta::body_part::BodyPart;
 using augusta::command::Command;
+using augusta::limits::kMaxShotJudgementEntries;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
@@ -29,7 +31,6 @@ using augusta::simulation::Character;
 using augusta::simulation::CharacterHitbox;
 using augusta::simulation::EntityId;
 using augusta::simulation::JudgedPlayer;
-using augusta::simulation::kMaxShotJudgementEntries;
 using augusta::simulation::PlayerCommand;
 using augusta::simulation::ShotJudgement;
 using augusta::simulation::Struck;
@@ -319,7 +320,9 @@ TEST_F(SlowRoundTest, AFlightCrossingMoreTicksThanTheEntriesHoldKeepsTheFirstAnd
   EXPECT_TRUE(judgements[0].entries_left_out);
 }
 
+// The same flight, its match left running, is judged once it ends.
 TEST_F(SlowRoundTest, ARoundStillInFlightWhenItsMatchEndsHasNoJudgement) {
+  ASSERT_EQ(Shoot(FiringAway(), kFlightTicks + 6).size(), 1U);
   ASSERT_TRUE(Tick(FiringAway()).shot_judgements.empty());
 
   world_.EndMatch();

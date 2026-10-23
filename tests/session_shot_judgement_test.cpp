@@ -273,12 +273,15 @@ TEST_F(ShotJudgementMatchTest, AShooterThatNeverSubscribedIsHandedNone) {
 
   ShootAtTarget();
 
+  ASSERT_FALSE(shooter.TakeShots(*shooter.GetServerView()).empty());
   EXPECT_TRUE(JudgementsOf(shooter).empty());
 }
 
 TEST_F(ShotJudgementMatchTest, AShooterThatSubscribedThenClearedTheBitIsHandedNone) {
   Session& shooter = Standing(0);
   Subscribe(shooter, DebugSubscribe::kShotJudgements);
+  ShootAtTarget();
+  ASSERT_EQ(JudgementsOf(shooter).size(), 1U);
   Subscribe(shooter, 0);
 
   ShootAtTarget();

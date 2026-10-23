@@ -19,6 +19,7 @@
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -431,7 +432,7 @@ struct World::Impl {
     if (targets.empty()) {
       return;
     }
-    if (judgement.entries.size() == kMaxShotJudgementEntries) {
+    if (judgement.entries.size() == limits::kMaxShotJudgementEntries) {
       judgement.entries_left_out = true;
       return;
     }

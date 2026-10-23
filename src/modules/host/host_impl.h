@@ -12,7 +12,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <boost/uuid/nil_generator.hpp>
@@ -21,7 +20,6 @@
 #include "augusta/admission.h"
 #include "augusta/capturer.h"
 #include "augusta/command_queue.h"
-#include "augusta/debug_subscriptions.h"
 #include "augusta/failure.h"
 #include "augusta/failure_latch.h"
 #include "augusta/heartbeat.h"
@@ -39,6 +37,10 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_subscriptions.h"
+#endif
 
 /// \file
 /// Host's state, shared by the files that each implement one side of it:
@@ -127,9 +129,6 @@ struct Host::Impl {
   // Each connected peer's last Debug subscribe, against the streams the
   // server's `debug` keys serve (ADR-0038).
   DebugSubscriptions debug_subscriptions;
-  // Whether SimulationWorld builds Shot judgements in each Match
-  // (`debug.shot_judgements`); never changes, so needs no lock.
-  const bool shot_judgements;
 #endif
 
   Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy);

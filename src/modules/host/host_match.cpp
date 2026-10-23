@@ -34,6 +34,11 @@
 #include "augusta/tick_messages.h"
 #include "host_impl.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_subscriptions.h"
+#include "augusta/link_types.h"
+#endif
+
 namespace augusta::host {
 
 // Every queue length fits the byte an Authoritative State update tells it in.
@@ -126,7 +131,7 @@ void Host::Impl::StartMatchIfReady() {
   }
 #if AUGUSTA_DEBUG_TOOLS
   // Before its first tick, so every round of the Match is judged or none.
-  simulation.JudgeShots(shot_judgements);
+  simulation.JudgeShots(debug_subscriptions.Serves(link::DebugSubscribe::kShotJudgements));
 #endif
   const std::vector<math::Vec3> spawns = simulation.StartMatch(entrants, spawn_points);
   simulating_match = true;

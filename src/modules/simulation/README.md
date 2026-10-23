@@ -9,10 +9,8 @@ per tick on the Simulation thread, with players and bullets as entities, hit
 detection against hitboxes as they were the Shooter's delay ago, and the
 Scripts/Behaviours phase, which calls Game policy and hands its typed actions
 (`augusta/policy_actions.h`) on in the tick's result. It decides what each
-client is sent (`augusta/replication.h`). In a Development build, while
-`World::JudgeShots` switches them on, it builds each round's Shot judgement from
-the players its hit test selected, handed on in the tick's result once the
-round's flight ends.
+client is sent (`augusta/replication.h`), and, in a Development build, what each
+round was judged against (its Shot judgement).
 
 ## Not its responsibility
 

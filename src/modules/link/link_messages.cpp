@@ -649,6 +649,9 @@ protocol::ReadyWire ToWire(const Ready& ready) { return protocol::ReadyWire{.ver
 protocol::ReplayListRequestWire ToWire(ReplayListRequest /*request*/) { return protocol::ReplayListRequestWire{}; }
 
 #if AUGUSTA_DEBUG_TOOLS
+// The flags travel as they are: the protocol's bits are the Link's.
+static_assert(DebugSubscribe::kShotJudgements == protocol::DebugSubscribeWire::kShotJudgements);
+
 protocol::DebugSubscribeWire ToWire(DebugSubscribe subscribe) {
   return protocol::DebugSubscribeWire{.flags = subscribe.flags};
 }

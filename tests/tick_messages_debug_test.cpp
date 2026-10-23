@@ -142,6 +142,15 @@ std::vector<Sent> ShotJudgementsOf(const std::vector<Sent>& sent) {
   return judgements;
 }
 
+// The peers sent's Shot judgements went to, in the order they were sent.
+std::vector<PeerId> ShotJudgementPeersOf(const std::vector<Sent>& sent) {
+  std::vector<PeerId> peers;
+  for (const Sent& message : ShotJudgementsOf(sent)) {
+    peers.push_back(message.peer);
+  }
+  return peers;
+}
+
 // Every subscribed peer's own rounds alone: body 1's goes to peer 1 though
 // all three asked, after the tick's Deaths.
 TEST(TickMessagesDebugTest, AShotJudgementGoesToItsShootersPeerAloneAfterTheTicksDeaths) {
@@ -158,15 +167,22 @@ TEST(TickMessagesDebugTest, AShotJudgementGoesToItsShootersPeerAloneAfterTheTick
 }
 
 TEST(TickMessagesDebugTest, AShotJudgementIsNotSentWhileTheServerDoesNotServeThem) {
+  const std::vector<Sent> served =
+      SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(true, {kPeer1}, DebugSubscribe::kShotJudgements)));
+  ASSERT_EQ(ShotJudgementPeersOf(served), std::vector<PeerId>{kPeer1});
+
   const std::vector<Sent> sent =
       SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(false, {kPeer1}, DebugSubscribe::kShotJudgements)));
 
-  EXPECT_FALSE(sent.empty());
   EXPECT_TRUE(ShotJudgementsOf(sent).empty());
 }
 
 // Bit 0 cleared, whatever else is set: the stream is not asked for.
 TEST(TickMessagesDebugTest, AShotJudgementIsNotSentToAShooterThatDidNotAskForThem) {
+  const std::vector<Sent> asked =
+      SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(true, {kPeer1}, DebugSubscribe::kShotJudgements)));
+  ASSERT_EQ(ShotJudgementPeersOf(asked), std::vector<PeerId>{kPeer1});
+
   for (const std::uint8_t flags : {std::uint8_t{0}, std::uint8_t{0xFE}}) {
     const std::vector<Sent> sent = SendAll(ATickWithAShotJudgement(), ThreePlayers(Subscribed(true, {kPeer1}, flags)));
 
@@ -181,11 +197,12 @@ TEST(TickMessagesDebugTest, AShotJudgementIsNotSentToAShooterThatDidNotAskForThe
 TEST(TickMessagesDebugTest, AShotJudgementWhoseShooterHasNoPeerIsNotSent) {
   TickResult result = ATickWithAShotJudgement();
   result.shot_judgements.front().shooter = EntityId{4};
+  const TickRecipients everyone =
+      ThreePlayers(Subscribed(true, {kPeer1, kPeer2, kPeer3}, DebugSubscribe::kShotJudgements));
+  ASSERT_EQ(ShotJudgementPeersOf(SendAll(ATickWithAShotJudgement(), everyone)), std::vector<PeerId>{kPeer1});
 
-  const std::vector<Sent> sent =
-      SendAll(result, ThreePlayers(Subscribed(true, {kPeer1, kPeer2, kPeer3}, DebugSubscribe::kShotJudgements)));
+  const std::vector<Sent> sent = SendAll(result, everyone);
 
-  EXPECT_FALSE(sent.empty());
   EXPECT_TRUE(ShotJudgementsOf(sent).empty());
 }
 

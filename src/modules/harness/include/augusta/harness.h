@@ -293,8 +293,8 @@ class Session {
   void ReportReady(std::uint32_t version);
 
 #if AUGUSTA_DEBUG_TOOLS
-  /// Asks the server for the streams of its state flags names
-  /// (DebugSubscribe's bits), from now on, in a Development build alone
+  /// Asks the server, from now on, for each stream of its state whose bit
+  /// (one of DebugSubscribe's) is set in flags, in a Development build alone
   /// (ADR-0038, ADR-0074): a cleared bit stops its stream. Sent as it is, at
   /// any point of the connection; the Session keeps no subscription of its
   /// own, so a new connection asks again. Safe to call from any thread.

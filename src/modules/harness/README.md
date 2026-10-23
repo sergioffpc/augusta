@@ -9,10 +9,7 @@ connection and PredictionWorld without a window or a GPU, so the client, a
 scripted Agent and an automated test play the same way. It holds the Runner that
 runs a Session in real time, the Intents an Agent acts through, the Captured
 player's reenactment and the netcode statistics a run leaves. In a Development
-build a Session sends a Debug subscribe (`SubscribeDebug`) for whoever asks for
-the server's streams, keeping no subscription of its own, and hands out the Shot
-judgements of the Match its Server view is of (`TakeShotJudgements`), as it
-hands out Hit confirmations.
+build, a Session is the client's end of the server's debug streams.
 
 ## Not its responsibility
 

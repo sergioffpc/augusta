@@ -30,7 +30,9 @@
 /// builds them from its own Match, replication and Replay types, which name a
 /// player and a body by the server's own IDs, and takes in the ones a client
 /// sends. Plain values over the shared core's types; no protocol type, no
-/// transport.
+/// transport. A Development build's messages, Debug subscribe and Shot
+/// judgement, have their type here, their conversions and their reliability
+/// only with AUGUSTA_DEBUG_TOOLS (ADR-0074).
 namespace augusta::link {
 
 /// The server's name for one connected player (GLOSSARY.md, "Session ID"), as

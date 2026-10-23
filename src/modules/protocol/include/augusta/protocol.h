@@ -53,6 +53,10 @@
 /// parse never logs a peer's bad text (NFR-05).
 /// The server's Match captures (ADR-0050) are written as records of their own
 /// (CaptureRecordWire).
+/// A Development build's messages, Debug subscribe and Shot judgement, are in
+/// the one schema in every build, but their *Wire types and mapping are
+/// compiled only with AUGUSTA_DEBUG_TOOLS (ADR-0074), so a Shipping build's
+/// codec refuses each as a type it lacks.
 /// A client message carries intent, never an outcome: tests/impossible_actions.md
 /// (US-15, NFR-05) lists what bounds each of its fields. A new one needs a line
 /// there, and if it carries an outcome (a position, a hit, an ammo count), a
@@ -631,9 +635,6 @@ enum class StruckWire : std::uint8_t {
   kHitbox = 3,
 };
 
-/// The most ticks of a round's flight one Shot judgement tells.
-inline constexpr std::size_t kMaxShotJudgementEntries = 16;
-
 /// One player a round was judged against on one tick of its flight, as the
 /// Hitbox history held it: what places its Hitboxes, with its Character.
 struct JudgedPlayerWire {
@@ -666,7 +667,7 @@ struct ShotJudgementWire {
   /// The server tick its Shot was fired on.
   tick::Tick shot_tick = 0;
   /// The ticks of its flight whose segment crossed some player's bounds,
-  /// oldest first, at most kMaxShotJudgementEntries.
+  /// oldest first, at most limits::kMaxShotJudgementEntries.
   std::vector<ShotJudgementEntryWire> entries;
   /// Where it struck, on the position grid.
   math::Vec3 point{};

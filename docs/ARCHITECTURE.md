@@ -178,8 +178,9 @@ policy (ADR-0060).
   and the fixed schedule the server's Simulation loop and the client's
   Prediction loop both keep (ADR-0005)
 - Limits — the bounds the rules and the protocol share (augusta_limits): the
-  players a Lobby or a Match holds, the kicks a recoil pattern holds. Tick and
-  Limits depend on no other module, so neither side needs the other's for them
+  players a Lobby or a Match holds, the kicks a recoil pattern holds, the ticks
+  a Shot judgement tells. Tick and Limits depend on no other module, so neither
+  side needs the other's for them
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
   by the shared Physics module (augusta_physics), so PredictionWorld and
