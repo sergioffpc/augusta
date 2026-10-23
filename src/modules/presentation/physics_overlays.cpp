@@ -58,8 +58,8 @@ constexpr std::string_view kCollisionRadiusId = "collision.radius";
 
 // A channel of a PhysX colour (0xAARRGGBB) as a fraction.
 constexpr float Channel(std::uint32_t argb, int shift) {
-  constexpr float kMax = 255.0F;
-  return static_cast<float>((argb >> shift) & 0xFFU) / kMax;
+  constexpr std::uint32_t kMax = 0xFFU;
+  return static_cast<float>((argb >> shift) & kMax) / static_cast<float>(kMax);
 }
 
 // Collision: the newest Prediction State's lines, in PhysX's colours.
