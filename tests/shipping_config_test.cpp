@@ -56,4 +56,14 @@ TEST(ShippingConfigTest, NeitherConfigKnowsThePhysicsRecordingKey) {
   EXPECT_EQ(client.error().code, ConfigErrorCode::kUnknownKey);
 }
 
+TEST(ShippingConfigTest, TheClientConfigKnowsNoPhysicsDebugKey) {
+  for (const char* key : {"panel", "collision", "server_bodies", "hitboxes", "shot_judgements"}) {
+    const auto config = ParseClientConfig(kClientConfig + "debug:\n  physics:\n    " + key + ": true\n", kFileDir);
+
+    ASSERT_FALSE(config.has_value()) << key;
+    EXPECT_EQ(config.error().code, ConfigErrorCode::kUnknownKey) << key;
+    EXPECT_EQ(config.error().subject, "debug") << key;
+  }
+}
+
 }  // namespace

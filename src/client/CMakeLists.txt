@@ -62,15 +62,16 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
   augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
 
-  # Which debug tools the Debug index lists, by the client's mode (see
-  # debug_index_entries.h), in a Development build only: each panel's entry is
-  # named by its panel's id, the Profiling panel's and presentation's Physics
-  # panel's.
+  # Which debug tools the Debug index lists, and which Physics overlays start
+  # on, by the client's mode (see debug_index_entries.h), in a Development
+  # build only: each panel's entry is named by its panel's id, the Profiling
+  # panel's and presentation's Physics panel's, and the overlays start from
+  # the config's `debug.physics` section.
   add_library(augusta_client_debug_index_entries STATIC debug_index_entries.cpp)
   target_link_libraries(
     augusta_client_debug_index_entries
-    PUBLIC augusta_debug
-    PRIVATE augusta_client_profiling_panel augusta_presentation
+    PUBLIC augusta_client_config augusta_debug augusta_presentation
+    PRIVATE augusta_client_profiling_panel
   )
   augusta_set_module_scope(augusta_client_debug_index_entries CLIENT_ONLY)
 endif()
@@ -129,6 +130,8 @@ if(AUGUSTA_DEBUG_TOOLS)
     augusta_client
     PRIVATE augusta_client_debug_index_entries augusta_client_profiling_panel augusta_debug augusta_hud
   )
+  # RuntimeConfig carries the config's `debug.physics` section.
+  target_link_libraries(augusta_client PUBLIC augusta_client_config)
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.

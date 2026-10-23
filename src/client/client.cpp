@@ -70,10 +70,7 @@ constexpr const char* kCaptureRange = "augusta.capture";
 
 // What config runs the client as, for which debug tools it carries.
 ClientMode ModeOf(const RuntimeConfig& config) {
-  if (config.replay.has_value()) {
-    return ClientMode::kReplayViewer;
-  }
-  return config.reenactment.has_value() ? ClientMode::kCapturedPlayer : ClientMode::kPlayer;
+  return client::ModeOf(config.replay.has_value(), config.reenactment.has_value());
 }
 
 // The Debug index's entries for config's mode, as config starts them.
@@ -82,21 +79,14 @@ std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
       DebugIndexStart{
           .hud = config.debug_hud,
           .profiling_panel = config.debug_profiling_panel,
-          .physics_panel = config.debug_physics_panel,
+          .physics_panel = config.debug_physics.panel,
       },
       ModeOf(config));
 }
 
-// Which Physics overlays start on: none for a Replay viewer, whose Debug index
-// lists no Physics panel to switch them (ADR-0075).
+// Which Physics overlays start on for config's mode.
 presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& config) {
-  if (ModeOf(config) == ClientMode::kReplayViewer) {
-    return {};
-  }
-  return {.collision = config.debug_physics_collision,
-          .server_bodies = config.debug_physics_server_bodies,
-          .hitboxes = config.debug_physics_hitboxes,
-          .shot_judgements = config.debug_physics_shot_judgements};
+  return client::PhysicsOverlaysStartOf(config.debug_physics, ModeOf(config));
 }
 #endif
 

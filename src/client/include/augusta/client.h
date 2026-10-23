@@ -13,6 +13,9 @@
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/client_config.h"
+#endif
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
@@ -62,22 +65,11 @@ struct RuntimeConfig {
   /// Whether the Profiling Debug panel is shown at first
   /// (`debug.profiling.panel`), until the Debug index switches it.
   bool debug_profiling_panel = false;
-  /// Whether the Physics Debug panel is shown at first (`debug.physics.panel`),
-  /// until the Debug index switches it; a Replay viewer's index never lists it.
-  bool debug_physics_panel = false;
-  /// Whether the Collision overlay is drawn at first
-  /// (`debug.physics.collision`), until the Physics panel switches it.
-  bool debug_physics_collision = false;
-  /// Whether the Server bodies overlay is drawn at first
-  /// (`debug.physics.server_bodies`), until the Physics panel switches it.
-  bool debug_physics_server_bodies = false;
-  /// Whether the Hitboxes overlay is drawn at first (`debug.physics.hitboxes`),
-  /// until the Physics panel switches it.
-  bool debug_physics_hitboxes = false;
-  /// Whether the Shot judgements overlay is drawn, and Shot judgements asked
-  /// for, at first (`debug.physics.shot_judgements`), until the Physics panel
-  /// switches it.
-  bool debug_physics_shot_judgements = false;
+  /// Whether the Physics Debug panel is shown, and each of its overlays drawn,
+  /// at first (`debug.physics`), until the Debug index and the panel switch
+  /// them; a Replay viewer's index never lists the panel, and none of its
+  /// overlays starts on.
+  config::ClientPhysicsDebugConfig debug_physics{};
 #endif
 };
 

@@ -3,11 +3,19 @@
 #include <string>
 #include <vector>
 
+#include "augusta/client_config.h"
 #include "augusta/debug_index.h"
 #include "augusta/physics_overlays.h"
 #include "profiling_panel.h"
 
 namespace augusta::client {
+
+ClientMode ModeOf(bool watches_replay, bool reenacts) {
+  if (watches_replay) {
+    return ClientMode::kReplayViewer;
+  }
+  return reenacts ? ClientMode::kCapturedPlayer : ClientMode::kPlayer;
+}
 
 std::vector<debug::IndexEntry> DebugIndexEntries(const DebugIndexStart& start, ClientMode mode) {
   std::vector<debug::IndexEntry> entries{
@@ -17,6 +25,17 @@ std::vector<debug::IndexEntry> DebugIndexEntries(const DebugIndexStart& start, C
     entries.push_back({.id = std::string(presentation::kPhysicsPanelId), .name = "Physics", .on = start.physics_panel});
   }
   return entries;
+}
+
+presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const config::ClientPhysicsDebugConfig& configured,
+                                                          ClientMode mode) {
+  if (mode == ClientMode::kReplayViewer) {
+    return {};
+  }
+  return {.collision = configured.collision,
+          .server_bodies = configured.server_bodies,
+          .hitboxes = configured.hitboxes,
+          .shot_judgements = configured.shot_judgements};
 }
 
 }  // namespace augusta::client
