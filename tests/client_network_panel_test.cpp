@@ -29,12 +29,15 @@ using augusta::debug::ButtonPress;
 using augusta::debug::ControlEvent;
 using augusta::debug::HistoryPlot;
 using augusta::debug::Panel;
+using augusta::debug::Slider;
 using augusta::debug::Table;
 using augusta::debug::Text;
 using augusta::link::ConnectionStats;
 using augusta::link::kMessageTypeCount;
 using augusta::link::MessageType;
 using augusta::link::NameOf;
+using augusta::link::SimulatedConditions;
+using augusta::link::SimulatedTraffic;
 using augusta::link::Traffic;
 using std::chrono::milliseconds;
 
@@ -63,6 +66,14 @@ Traffic CommandsSent(std::uint64_t messages, std::uint64_t bytes) {
 
 ControlEvent ResetPeaks() {
   return {.panel = std::string(kNetworkPanelId), .control = "reset_peaks", .value = ButtonPress{}};
+}
+
+ControlEvent Press(std::string_view button) {
+  return {.panel = std::string(kNetworkPanelId), .control = std::string(button), .value = ButtonPress{}};
+}
+
+ControlEvent Drag(std::string_view slider, float value) {
+  return {.panel = std::string(kNetworkPanelId), .control = std::string(slider), .value = value};
 }
 
 std::vector<std::string> Texts(const Panel& panel) {
@@ -109,6 +120,21 @@ HistoryPlot Plot(const Panel& panel, std::string_view label) {
   ADD_FAILURE() << "the panel has no plot " << label;
   return {};
 }
+
+template <typename Control>
+Control ControlOf(const Panel& panel, std::string_view id) {
+  for (const auto& element : panel.elements) {
+    if (const auto* control = std::get_if<Control>(&element); control != nullptr && control->id == id) {
+      return *control;
+    }
+  }
+  ADD_FAILURE() << "the panel has no control " << id;
+  return {};
+}
+
+Slider SliderOf(const Panel& panel, std::string_view id) { return ControlOf<Slider>(panel, id); }
+
+Button ButtonOf(const Panel& panel, std::string_view id) { return ControlOf<Button>(panel, id); }
 
 TEST(NetworkPanelTest, IsTheNetworkPanel) {
   const NetworkPanel network;
@@ -322,6 +348,195 @@ TEST(NetworkPanelTest, ClosingMakesTheNextSampleDue) {
   network.Close();
 
   EXPECT_TRUE(network.SampleDue(kStart + milliseconds(50)));
+}
+
+TEST(NetworkPanelImpairmentTest, WantsTheRealNetworkUntilImpaired) {
+  const NetworkPanel network;
+
+  EXPECT_EQ(network.WantedConditions(), SimulatedConditions{});
+  EXPECT_FALSE(network.Impaired());
+}
+
+// The impaired-link tests' profiles (tools/agent/tests/netcode_test.cpp), there
+// applied once each way by both ends in one process, here by the client's
+// conditions on what it sends and what it receives.
+struct ProfileCase {
+  std::string_view button;
+  SimulatedConditions conditions;
+};
+
+class NetworkPanelProfileTest : public ::testing::TestWithParam<ProfileCase> {};
+
+TEST_P(NetworkPanelProfileTest, AProfileWantsTheImpairedLinkTestsConditionsBothWays) {
+  NetworkPanel network;
+
+  network.Update(Press(GetParam().button));
+
+  EXPECT_EQ(network.WantedConditions(), GetParam().conditions);
+  EXPECT_TRUE(network.Impaired());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Profiles, NetworkPanelProfileTest,
+    ::testing::Values(ProfileCase{.button = "profile_broadband",
+                                  .conditions = {.latency_ms = 20,
+                                                 .jitter_mean_ms = 5,
+                                                 .jitter_max_ms = 20,
+                                                 .loss_percent = 1.0F,
+                                                 .reorder_percent = 1.0F,
+                                                 .reorder_delay_ms = 10,
+                                                 .applies_to = SimulatedTraffic::kSentAndReceived}},
+                      ProfileCase{.button = "profile_nfr02",
+                                  .conditions = {.latency_ms = 50,
+                                                 .jitter_mean_ms = 10,
+                                                 .jitter_max_ms = 30,
+                                                 .loss_percent = 5.0F,
+                                                 .reorder_percent = 2.0F,
+                                                 .reorder_delay_ms = 20,
+                                                 .applies_to = SimulatedTraffic::kSentAndReceived}},
+                      ProfileCase{.button = "profile_worst_case",
+                                  .conditions = {.latency_ms = 75,
+                                                 .jitter_mean_ms = 10,
+                                                 .jitter_max_ms = 30,
+                                                 .loss_percent = 10.0F,
+                                                 .reorder_percent = 5.0F,
+                                                 .reorder_delay_ms = 20,
+                                                 .applies_to = SimulatedTraffic::kSentAndReceived}}),
+    [](const ::testing::TestParamInfo<ProfileCase>& info) { return std::string(info.param.button); });
+
+TEST(NetworkPanelImpairmentTest, OffWantsTheRealNetwork) {
+  NetworkPanel network;
+  network.Update(Press("profile_worst_case"));
+  ASSERT_TRUE(network.Impaired());
+
+  network.Update(Press("impairment_off"));
+
+  EXPECT_EQ(network.WantedConditions(), SimulatedConditions{});
+  EXPECT_FALSE(network.Impaired());
+}
+
+TEST(NetworkPanelImpairmentTest, EachSliderSetsItsValueBothWays) {
+  NetworkPanel network;
+
+  network.Update(Drag("latency_ms", 49.6F));
+  network.Update(Drag("jitter_mean_ms", 4.0F));
+  network.Update(Drag("jitter_max_ms", 12.0F));
+  network.Update(Drag("loss_percent", 2.5F));
+  network.Update(Drag("reorder_percent", 3.0F));
+  network.Update(Drag("reorder_delay_ms", 15.0F));
+
+  EXPECT_EQ(network.WantedConditions(), (SimulatedConditions{.latency_ms = 50,
+                                                             .jitter_mean_ms = 4,
+                                                             .jitter_max_ms = 12,
+                                                             .loss_percent = 2.5F,
+                                                             .reorder_percent = 3.0F,
+                                                             .reorder_delay_ms = 15,
+                                                             .applies_to = SimulatedTraffic::kSentAndReceived}));
+  EXPECT_TRUE(network.Impaired());
+}
+
+TEST(NetworkPanelImpairmentTest, ASliderMovedWhileAProfileIsAppliedChangesOnlyThatValue) {
+  NetworkPanel network;
+  network.Update(Press("profile_nfr02"));
+
+  network.Update(Drag("latency_ms", 100.0F));
+
+  EXPECT_EQ(network.WantedConditions(), (SimulatedConditions{.latency_ms = 100,
+                                                             .jitter_mean_ms = 10,
+                                                             .jitter_max_ms = 30,
+                                                             .loss_percent = 5.0F,
+                                                             .reorder_percent = 2.0F,
+                                                             .reorder_delay_ms = 20,
+                                                             .applies_to = SimulatedTraffic::kSentAndReceived}));
+}
+
+TEST(NetworkPanelImpairmentTest, EverySliderBackAtZeroWantsTheRealNetwork) {
+  NetworkPanel network;
+  network.Update(Drag("latency_ms", 30.0F));
+  network.Update(Drag("loss_percent", 1.0F));
+  ASSERT_TRUE(network.Impaired());
+
+  network.Update(Drag("latency_ms", 0.0F));
+  EXPECT_TRUE(network.Impaired());
+  network.Update(Drag("loss_percent", 0.0F));
+
+  EXPECT_EQ(network.WantedConditions(), SimulatedConditions{});
+  EXPECT_FALSE(network.Impaired());
+}
+
+TEST(NetworkPanelImpairmentTest, ASliderKeepsWithinItsRange) {
+  NetworkPanel network;
+
+  network.Update(Drag("latency_ms", 400.0F));
+  network.Update(Drag("loss_percent", -5.0F));
+
+  EXPECT_EQ(network.WantedConditions().latency_ms, 250);
+  EXPECT_EQ(network.WantedConditions().loss_percent, 0.0F);
+}
+
+TEST(NetworkPanelImpairmentTest, TheSlidersShowTheWantedValuesWithinTheirRanges) {
+  NetworkPanel network;
+  network.Update(Press("profile_broadband"));
+
+  const Panel panel = network.BuildPanel();
+
+  const Slider latency = SliderOf(panel, "latency_ms");
+  EXPECT_EQ(latency.label, "Latency, each way (ms)");
+  EXPECT_EQ(latency.value, 20.0F);
+  EXPECT_EQ(latency.min, 0.0F);
+  EXPECT_EQ(latency.max, 250.0F);
+  EXPECT_EQ(SliderOf(panel, "jitter_mean_ms").value, 5.0F);
+  EXPECT_EQ(SliderOf(panel, "jitter_mean_ms").max, 100.0F);
+  EXPECT_EQ(SliderOf(panel, "jitter_max_ms").value, 20.0F);
+  EXPECT_EQ(SliderOf(panel, "jitter_max_ms").max, 100.0F);
+  EXPECT_EQ(SliderOf(panel, "loss_percent").value, 1.0F);
+  EXPECT_EQ(SliderOf(panel, "loss_percent").max, 50.0F);
+  EXPECT_EQ(SliderOf(panel, "reorder_percent").value, 1.0F);
+  EXPECT_EQ(SliderOf(panel, "reorder_percent").max, 50.0F);
+  EXPECT_EQ(SliderOf(panel, "reorder_delay_ms").value, 10.0F);
+  EXPECT_EQ(SliderOf(panel, "reorder_delay_ms").max, 100.0F);
+}
+
+TEST(NetworkPanelImpairmentTest, HasAButtonPerProfileAndOff) {
+  const NetworkPanel network;
+
+  const Panel panel = network.BuildPanel();
+
+  EXPECT_EQ(ButtonOf(panel, "profile_broadband").label, "Broadband");
+  EXPECT_EQ(ButtonOf(panel, "profile_nfr02").label, "NFR-02");
+  EXPECT_EQ(ButtonOf(panel, "profile_worst_case").label, "Worst case");
+  EXPECT_EQ(ButtonOf(panel, "impairment_off").label, "Off");
+}
+
+TEST(NetworkPanelImpairmentTest, TheGroupShowsTheMeasuredRtt) {
+  NetworkPanel network;
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Measured RTT: --"));
+
+  network.Sample(Connected(Measured()), kStart);
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Measured RTT: 42ms"));
+}
+
+TEST(NetworkPanelImpairmentTest, AnotherPanelsEventImpairsNothing) {
+  NetworkPanel network;
+
+  network.Update({.panel = "profiling", .control = "profile_worst_case", .value = ButtonPress{}});
+  EXPECT_FALSE(network.Impaired());
+
+  // Control: the same event, the Network panel's, impairs the link.
+  network.Update(Press("profile_worst_case"));
+  EXPECT_TRUE(network.Impaired());
+}
+
+TEST(NetworkPanelImpairmentTest, OutlivesClosingThePanel) {
+  NetworkPanel network;
+  network.Update(Press("profile_nfr02"));
+
+  network.Close();
+
+  EXPECT_TRUE(network.Impaired());
+  EXPECT_EQ(network.WantedConditions().latency_ms, 50);
+  EXPECT_EQ(SliderOf(network.BuildPanel(), "latency_ms").value, 50.0F);
 }
 
 TEST(ConnectionReadingsTest, TakesTheNewestReadingWithThePeakJitterSinceTheLastTake) {

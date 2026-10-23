@@ -33,6 +33,14 @@ TEST(LinesTest, ReadsTheConnectionsNumbers) {
             Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s"});
 }
 
+TEST(LinesTest, EndsTheNetworkLineInImpairedWhileTheLinkIsImpaired) {
+  NetStats net = MeasuredNet();
+  net.impaired = true;
+
+  EXPECT_EQ(Lines(0.0, net),
+            Text{"FPS: -- | RTT: 12ms | Jitter: 0.4ms | Loss: 0.0% | In: 1.2KB/s | Out: 512B/s | IMPAIRED"});
+}
+
 TEST(LinesTest, ReadsDashesForWhatIsNotMeasuredYet) {
   NetStats net = MeasuredNet();
   net.jitter_ms.reset();

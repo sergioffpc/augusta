@@ -36,6 +36,21 @@ counts the frames through it. The same panel says whether Aftermath is enabled,
 whether it is attached to the device, and the directory a GPU crash dump would
 land in (below).
 
+## Network impairment
+
+To play on a bad link by hand against a nearby server, turn on a Development
+client's Network Debug panel (`debug.network.panel: true`, or from the Debug
+index F1 opens) and use its Impairment group: sliders for latency (each way),
+jitter, loss and reorder, or one click on a named profile (Broadband, NFR-02,
+Worst case, the impaired-link tests' values), and Off. It applies to the
+client's one connection both ways, through `link::SimulateNetworkConditions`,
+and lasts until Off or the client exits, across a reconnect; nothing about it is
+written to a config. The server is never told and measures the link as a real
+one, so the other players are untouched. The panel shows the measured RTT beside
+the controls, and the Debug HUD's network line ends in `IMPAIRED` while any of
+it is on. For a repeatable session, script it instead with the Agents'
+`impair_links` (ADR-0052).
+
 ## Graphics/GPU debugging
 
 Nsight Graphics is the replacement for augusta_renderer's former full in-app

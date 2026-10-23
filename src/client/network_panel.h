@@ -22,7 +22,9 @@
 /// each round's reading into ConnectionReadings, and the Main/Render thread
 /// takes one into a NetworkSample whenever the panel says one is due, so the
 /// panel's state is the Main/Render thread's alone. What only the server knows
-/// stays in Grafana (ADR-0049).
+/// stays in Grafana (ADR-0049). Its Impairment group says which of the
+/// transport's simulated conditions the developer wants on the client's link,
+/// both ways, which the client Runtime applies; the server is never told.
 namespace augusta::client {
 
 /// The Network panel's Panel id, which its ControlEvents name.
@@ -77,14 +79,25 @@ class NetworkPanel {
   void Sample(const NetworkSample& sample, Clock::time_point now);
 
   /// The panel: the Connection group, with its plots, the traffic per message
-  /// type, and a "Reset peaks" button.
+  /// type, the Impairment group, and a "Reset peaks" button.
   [[nodiscard]] debug::Panel BuildPanel() const;
 
-  /// "Reset peaks" restarts every peak from its current value. Any other
-  /// event, another panel's included, changes nothing.
+  /// "Reset peaks" restarts every peak from its current value. An Impairment
+  /// slider sets its one value, within its range; a profile's button sets
+  /// them all to the profile's, and Off to none. Any other event, another
+  /// panel's included, changes nothing.
   void Update(const debug::ControlEvent& event);
 
-  /// The panel is turned off: drops its samples, plots and peaks.
+  /// The conditions the Impairment group wants on the client's link: its
+  /// values on what the client sends and what it receives, or default
+  /// conditions (the real network) while every value is zero.
+  [[nodiscard]] link::SimulatedConditions WantedConditions() const;
+
+  /// Whether the Impairment group wants any condition on the link.
+  [[nodiscard]] bool Impaired() const;
+
+  /// The panel is turned off: drops its samples, plots and peaks. The
+  /// impairment stays, until Off or the client exits.
   void Close();
 
  private:
@@ -139,10 +152,15 @@ class NetworkPanel {
   // The samples' traffic over the last kRateWindow, oldest first.
   std::deque<std::pair<Clock::time_point, link::Traffic>> traffic_window_;
   std::array<TypeRates, link::kMessageTypeCount> rates_{};
+  // The Impairment group's values, applies_to left at its default:
+  // WantedConditions says both ways.
+  link::SimulatedConditions impairment_;
 
   void SampleConnection(const std::optional<link::ConnectionStats>& stats);
   void SampleTraffic(const link::Traffic& traffic, Clock::time_point now);
   void ResetPeaks();
+  void AddImpairmentGroup(debug::Panel& panel) const;
+  void UpdateImpairment(const debug::ControlEvent& event);
 };
 
 }  // namespace augusta::client
