@@ -16,7 +16,10 @@ with the reliability ADR-0038's table gives its type, a server's message encoded
 once for as many peers as need it and a tick's Authoritative State readdressed
 to each recipient without encoding its bodies again; it reads each connection's
 round trip, loss and queue in its own types and keeps a Replay list within what
-the protocol carries. Its conversions, which keep only the newest of a tick's
+the protocol carries. The client's end also counts, in every build, the messages
+and bytes it sends and receives by message type since it connected (`Traffic`,
+read by `Client::GetTraffic` beside `GetStats`); the server's traffic is the
+Host's to count. Its conversions, which keep only the newest of a tick's
 unacknowledged Commands within the protocol's bound and turn a Match capture's
 records into their bytes and back, are stateless and have no transport beneath,
 so the Host and capture convert without opening a connection. It owns the
