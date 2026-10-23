@@ -39,6 +39,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // The debug tools' keys, in a Development build only (ADR-0074): a
     // Shipping build refuses them as unknown.
     "debug.hud",
+    "debug.profiling.panel",
 #endif
 });
 
@@ -64,8 +65,8 @@ std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& val
 }
 
 // Decision: the keymap the `input.keys` entries of values (control name -> key
-// name) make of the defaults. Each control keeps a key of its own, never the
-// one that releases the cursor; errors name the entry ("input.keys.<control>").
+// name) make of the defaults. Each control keeps a key of its own, never a
+// reserved one; errors name the entry ("input.keys.<control>").
 std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values) {
   const std::string prefix = std::format("{}.", kKeysSection);
   auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
@@ -77,10 +78,13 @@ std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values
     }
     const auto key = input::KeyNamed(key_name);
     if (!key) {
-      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F1 or MouseRight");
+      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F2 or MouseRight");
     }
     if (*key == input::kReleaseCursorKey) {
       return Reject(path, std::format("can't use {}: it releases the cursor", input::NameOf(input::kReleaseCursorKey)));
+    }
+    if (*key == input::kReservedKey) {
+      return Reject(path, std::format("can't use {}: it is reserved", input::NameOf(input::kReservedKey)));
     }
     keymap.at(static_cast<std::size_t>(*control)) = *key;
   }
@@ -108,7 +112,13 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 #if AUGUSTA_DEBUG_TOOLS
 // The `debug` section (ADR-0074): which debug tools start on.
 std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
-  return OptionalFlag(values, "debug.hud", true).transform([](bool hud) { return ClientDebugConfig{.hud = hud}; });
+  const auto hud = OptionalFlag(values, "debug.hud", true);
+  if (!hud) {
+    return std::unexpected(hud.error());
+  }
+  return OptionalFlag(values, "debug.profiling.panel", false).transform([&hud](bool profiling_panel) {
+    return ClientDebugConfig{.hud = *hud, .profiling_panel = profiling_panel};
+  });
 }
 #endif
 

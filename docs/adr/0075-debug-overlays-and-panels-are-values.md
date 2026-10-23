@@ -9,7 +9,8 @@ lines (ADR-0059). Like every debug tool, it exists only in a Development build
 (ADR-0074).
 
 **One vocabulary module.** `augusta_debug`, client-only and compiled only with
-`AUGUSTA_DEBUG_TOOLS`, depends on no other module of the game. It holds the
+`AUGUSTA_DEBUG_TOOLS`, depends on `augusta_math` and the window's event types
+alone, never on an area module, the Renderer, ImGui or a thread. It holds the
 shape and panel types, the tessellation of shapes into lines and triangles, and
 a helper that keeps shapes until a time. The Renderer draws them; the client
 Runtime composes them (ADR-0021).
@@ -41,11 +42,12 @@ server announced once, is its producer's state, kept with the helper.
 
 **Panels.** A Debug panel is a description: a title, then text, tables, history
 plots, toggles, sliders and buttons, each control with an id. The Renderer draws
-it with Dear ImGui, which stays inside the Renderer, and `RenderFrame` returns
-the frame's control changes as events. The client Runtime routes each event to
-the area that built the panel, whose panel is a pure function of its state and
-whose update is a pure function of its state and the event. A change to state
-another thread owns travels by the way that thread already takes orders.
+it with Dear ImGui, which stays inside the Renderer, and hands back the frame's
+control changes as events from a call of their own, so `RenderFrame` is the same
+call in both kinds of build. The client Runtime routes each event to the area
+that built the panel, whose panel is a pure function of its state and whose
+update is a pure function of its state and the event. A change to state another
+thread owns travels by the way that thread already takes orders.
 
 **Shown, or in Debug interaction.** A Debug panel that is on is shown over the
 frame but takes no input: the cursor stays captured and the game plays on. F1
@@ -113,9 +115,9 @@ or how many lights a screen tile traces, is a Debug view.
 
 - An area's debug tool is tested without a GPU: its shapes and its panel are
   pure functions of its state.
-- The Renderer's interface grows a call for the frame's shapes and one for its
-  panels and one for the window's events in Debug interaction, and `RenderFrame`
-  returns the panels' events.
+- The Renderer's interface grows a call for the frame's shapes, one for its
+  panels, one for the window's events in Debug interaction and one that hands
+  back the panels' events; `RenderFrame` keeps its signature.
 - How the server's state reaches a Debug overlay is decided apart (ADR-0038,
   ADR-0044).
 - `input::Input` grows a way to drop the keys and buttons held, and the client

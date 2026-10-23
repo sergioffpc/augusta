@@ -5,11 +5,11 @@
 #include <nvrhi/nvrhi.h>
 
 /// \file
-/// Draws Dear ImGui's output through NVRHI, so the debug HUD takes no
-/// backend-specific ImGui renderer (ADR-0059). Adapted from Donut's
-/// ImGui_NVRHI (MIT, see imgui_renderer.cpp), private to the module, and enough
-/// for the HUD's text alone: it draws every command from the font atlas, and
-/// runs no ImGui user callbacks.
+/// Draws Dear ImGui's output through NVRHI, so the debug HUD and the Debug
+/// panels take no backend-specific ImGui renderer (ADR-0059). Adapted from
+/// Donut's ImGui_NVRHI (MIT, see imgui_renderer.cpp), private to the module,
+/// and enough for text and ImGui's own widgets: it draws every command from the
+/// font atlas, and runs no ImGui user callbacks.
 namespace augusta::renderer {
 
 class ImGuiRenderer final {
@@ -37,7 +37,7 @@ class ImGuiRenderer final {
   nvrhi::BindingSetHandle font_bindings_;
   // Made on the first Render, for its framebuffer's formats.
   nvrhi::GraphicsPipelineHandle pipeline_;
-  // Grown as the HUD's text needs, never shrunk.
+  // Grown as what is drawn needs, never shrunk.
   nvrhi::BufferHandle vertex_buffer_;
   nvrhi::BufferHandle index_buffer_;
 };

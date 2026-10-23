@@ -58,11 +58,33 @@ std::expected<std::filesystem::path, GpuCrashDumpError> GpuCrashDumpFiles::Write
   return path;
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+std::filesystem::path GpuCrashDumpFiles::Directory() const {
+  std::filesystem::path next;
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    next = naming_(count_ + 1);
+  }
+  return std::filesystem::absolute(next).parent_path();
+}
+#endif
+
 void NameGpuCrashDumps(GpuCrashDumpNaming naming) {
   auto files = std::make_shared<GpuCrashDumpFiles>(std::move(naming));
   const std::lock_guard<std::mutex> lock(GlobalFilesMutex());
   GlobalFiles().swap(files);
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+std::filesystem::path GpuCrashDumpDirectory() {
+  std::shared_ptr<GpuCrashDumpFiles> files;
+  {
+    const std::lock_guard<std::mutex> lock(GlobalFilesMutex());
+    files = GlobalFiles();
+  }
+  return files->Directory();
+}
+#endif
 
 std::expected<std::filesystem::path, GpuCrashDumpError> WriteGpuCrashDump(std::span<const std::byte> dump) {
   std::shared_ptr<GpuCrashDumpFiles> files;

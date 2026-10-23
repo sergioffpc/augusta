@@ -35,11 +35,11 @@ input:
   # default 0.0022).
   mouse_sensitivity: 0.0022
   # Which key triggers each control (optional). Leave a control out to keep its
-  # default; no two controls may share a key, and Escape is reserved for
-  # releasing the cursor. Key names: A-Z, 0-9, Space, Tab, Enter, Backspace,
-  # LeftShift, RightShift, LeftControl, RightControl, LeftAlt, RightAlt, Up,
-  # Down, Left, Right, F1-F12, MouseLeft, MouseRight, MouseMiddle. The values
-  # below are the defaults.
+  # default; no two controls may share a key, Escape is reserved for releasing
+  # the cursor and F1 is reserved too. Key names: A-Z, 0-9, Space, Tab, Enter,
+  # Backspace, LeftShift, RightShift, LeftControl, RightControl, LeftAlt,
+  # RightAlt, Up, Down, Left, Right, F2-F12, MouseLeft, MouseRight,
+  # MouseMiddle. The values below are the defaults.
   keys:
     move_forward: W
     move_back: S
@@ -58,3 +58,8 @@ input:
 #   # Whether the Debug HUD - the frame rate and the connection's numbers - is
 #   # drawn (optional, default true): true or false.
 #   hud: true
+#   profiling:
+#     # Whether the Profiling Debug panel - a window of frames for Nsight
+#     # Systems to capture, and Aftermath's status - is shown (optional, default
+#     # false): true or false.
+#     panel: false

@@ -34,6 +34,11 @@ inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 struct ClientDebugConfig {
   /// Key `debug.hud` (true or false, default true): whether the Debug HUD is drawn.
   bool hud = true;
+  /// Key `debug.profiling.panel` (true or false, default false): whether the
+  /// Profiling Debug panel is shown. Each later Debug panel is its area's
+  /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
+  /// by default.
+  bool profiling_panel = false;
 };
 #endif
 
@@ -59,7 +64,8 @@ struct ClientConfig {
   /// `input.keys` (control name -> key name, e.g. `sprint: Space`), both
   /// optional: how the player's controls respond and which key triggers each.
   /// Controls the section leaves out keep their input::kDefaultKeymap key; no
-  /// two controls may share a key, and none may use input::kReleaseCursorKey.
+  /// two controls may share a key, and none may use input::kReleaseCursorKey or
+  /// input::kReservedKey, in either kind of build (ADR-0074).
   /// An `input.keys` entry it rejects is a kInvalidEntry error, its subject the
   /// entry (`input.keys.jump`) and its reason what is wrong with it.
   input::Config input{};

@@ -391,7 +391,7 @@ Then those controls answer to their new keys, their old keys do nothing, and eve
      other control keeps its default
 
 Given an input.keys entry that names an unknown control or key, binds a key another
-      control has, binds Escape, or names a control twice
+      control has, binds Escape or F1, or names a control twice
 When the client starts
 Then it refuses to start and names the offending entry
 

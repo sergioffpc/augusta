@@ -4,7 +4,8 @@
 # only, so they take that header's directory rather than linking
 # augusta_renderer: their tests need neither a GPU nor a window.
 # renderer.h includes window.h, which needs no GLFW, hence
-# augusta_window_events. frame_mapping.h, lobby_readiness.h and net_stats.h are
+# augusta_window_events, and in a Development build debug_shapes.h, hence
+# augusta_debug (ADR-0075). frame_mapping.h, lobby_readiness.h and net_stats.h are
 # private to the Runtime: its tests reach them through this directory, as the
 # renderer's do theirs.
 
@@ -33,6 +34,10 @@ target_link_libraries(
   PUBLIC augusta_gameplay augusta_harness augusta_input augusta_math augusta_presentation augusta_window_events
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug)
+  target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
+endif()
 
 # The connection's numbers as Nsight Systems plots them and, in a Development
 # build (ADR-0074), as the debug HUD shows them (see net_stats.h). nvtx3-cpp
@@ -46,6 +51,16 @@ endif()
 # min/max macros would break std::min/std::max in net_stats.cpp.
 target_compile_definitions(augusta_client_net_stats PRIVATE NOMINMAX)
 augusta_set_module_scope(augusta_client_net_stats CLIENT_ONLY)
+
+# The Profiling Debug panel (see profiling_panel.h), in a Development build
+# only (ADR-0074): its state, which says when the capture window opens and
+# closes; the client Runtime opens and closes the NVTX range.
+if(AUGUSTA_DEBUG_TOOLS)
+  add_library(augusta_client_profiling_panel STATIC profiling_panel.cpp)
+  target_include_directories(augusta_client_profiling_panel PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include)
+  target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
+  augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
+endif()
 
 # What the client loads in the Lobby before it reports Ready, and for which
 # Roster (see lobby_readiness.h): the decision only, so its tests need no
@@ -93,9 +108,11 @@ target_link_libraries(
     augusta_window
     nvtx3-cpp
 )
-# The debug HUD's lines, in a Development build only (ADR-0074).
+# The debug HUD's lines, the Debug overlays' shapes, the Debug panels, the
+# Debug index and Debug interaction, in a Development build only (ADR-0074,
+# ADR-0075).
 if(AUGUSTA_DEBUG_TOOLS)
-  target_link_libraries(augusta_client PRIVATE augusta_hud)
+  target_link_libraries(augusta_client PRIVATE augusta_client_profiling_panel augusta_debug augusta_hud)
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.

@@ -193,10 +193,12 @@ add_subdirectory(src/modules/scripting)
 add_subdirectory(src/modules/policy)
 add_subdirectory(src/modules/audio)
 add_subdirectory(src/modules/window)
-# The Debug HUD's lines: a debug tool, so a Shipping build has no augusta_hud
-# for anything to link (ADR-0074).
+# The Debug HUD's lines and the vocabulary of Debug overlays (ADR-0075): debug
+# tools, so a Shipping build has no augusta_hud or augusta_debug for anything to
+# link (ADR-0074).
 if(AUGUSTA_DEBUG_TOOLS)
   add_subdirectory(src/modules/hud)
+  add_subdirectory(src/modules/debug)
 endif()
 add_subdirectory(src/modules/input)
 add_subdirectory(src/modules/simulation)
