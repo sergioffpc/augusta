@@ -8,14 +8,16 @@ Where anything that plays talks to the server: a Session is the client's network
 connection and PredictionWorld without a window or a GPU, so the client, a
 scripted Agent and an automated test play the same way. It holds the Runner that
 runs a Session in real time, the Intents an Agent acts through, the Captured
-player's reenactment and the netcode statistics a run leaves. In a Development
-build, a Session is the client's end of the server's debug streams.
+player's reenactment and the netcode statistics a run leaves (`NetcodeTally`,
+which counts rounds fired and Hit confirmations and takes its corrections from
+prediction's `CorrectionTally`). In a Development build, a Session is the
+client's end of the server's debug streams.
 
 ## Not its responsibility
 
 - The window, input devices, rendering, audio and PresentationWorld: the client
   Runtime (client) wires those around a Session.
-- Predicting a tick: prediction.
+- Predicting a tick, and what counts as a correction: prediction.
 - The connection, and what it sends and receives as the Networking Protocol's
   messages, with each one's reliability and the newest of a tick's Commands its
   one message carries: link, which the harness speaks to alone, never the

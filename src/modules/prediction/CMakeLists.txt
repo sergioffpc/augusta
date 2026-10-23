@@ -1,4 +1,4 @@
-add_library(augusta_prediction STATIC prediction.cpp reconciliation.cpp)
+add_library(augusta_prediction STATIC correction_tally.cpp prediction.cpp reconciliation.cpp)
 target_include_directories(augusta_prediction PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(
   augusta_prediction
