@@ -6,6 +6,9 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#if AUGUSTA_DEBUG_TOOLS
+#include <mutex>
+#endif
 #include <utility>
 
 #include <nvtx3/nvtx3.hpp>
@@ -15,6 +18,7 @@
 #include "augusta/harness.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
@@ -90,6 +94,18 @@ Runner::~Runner() { workers_.StopAndJoin(); }
 
 std::optional<failure::Failure> Runner::Failure() const { return workers_.Failure(); }
 
+#if AUGUSTA_DEBUG_TOOLS
+void Runner::SetVisualization(const physics::Visualization& visualization) {
+  const std::lock_guard<std::mutex> lock(visualization_mutex_);
+  visualization_ = visualization;
+}
+
+physics::Visualization Runner::CurrentVisualization() {
+  const std::lock_guard<std::mutex> lock(visualization_mutex_);
+  return visualization_;
+}
+#endif
+
 std::optional<float> Runner::WaitForTickRate() {
   constexpr auto kPollInterval = std::chrono::milliseconds(10);
   while (!workers_.StopRequested()) {
@@ -116,6 +132,9 @@ supervisor::WorkerResult Runner::PredictionThreadMain() {
     const tick::Clock::time_point tick_start = tick::Clock::now();
 
     if (const std::optional<command::Command> command = hooks_.next_command()) {
+#if AUGUSTA_DEBUG_TOOLS
+      session_.SetVisualization(CurrentVisualization());
+#endif
       state = session_.Tick(*command, delta_time.count());
     }
     if (supervisor::WorkerResult failed = SessionResult(session_); !failed.has_value()) {
