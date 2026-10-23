@@ -65,9 +65,15 @@ struct RuntimeConfig {
   /// Whether the Physics Debug panel is shown at first (`debug.physics.panel`),
   /// until the Debug index switches it; a Replay viewer's index never lists it.
   bool debug_physics_panel = false;
+  /// Whether the Collision overlay is drawn at first
+  /// (`debug.physics.collision`), until the Physics panel switches it.
+  bool debug_physics_collision = false;
   /// Whether the Server bodies overlay is drawn at first
   /// (`debug.physics.server_bodies`), until the Physics panel switches it.
   bool debug_physics_server_bodies = false;
+  /// Whether the Hitboxes overlay is drawn at first (`debug.physics.hitboxes`),
+  /// until the Physics panel switches it.
+  bool debug_physics_hitboxes = false;
 #endif
 };
 
