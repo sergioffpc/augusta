@@ -43,7 +43,11 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
 }
 
 struct Client::Impl {
+#if AUGUSTA_DEBUG_TOOLS
+  explicit Impl(const TransportOptions& options) : network(options.faults, options.tap) {}
+#else
   explicit Impl(const TransportOptions& options) : network(options.faults) {}
+#endif
 
   // Encodes message and hands it to the transport with its type's reliability.
   SendResult Send(const protocol::MessageWire& message) {
@@ -224,9 +228,14 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
 
 struct Server::Impl {
   Impl(const Endpoint& local, const TransportOptions& options)
-      : network(networking::Endpoint{.address = local.address}, options.faults) {}
+#if AUGUSTA_DEBUG_TOOLS
+      : network(networking::Endpoint{.address = local.address}, options.faults, options.tap){}
+#else
+      : network(networking::Endpoint{.address = local.address}, options.faults) {
+  }
+#endif
 
-  networking::Server network;
+        networking::Server network;
 };
 
 Server::Server(const Endpoint& local, const TransportOptions& options)

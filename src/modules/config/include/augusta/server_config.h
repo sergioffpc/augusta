@@ -71,6 +71,11 @@ struct ServerConfig {
   /// each. A debug tool's (ADR-0074): only a Development build knows the key,
   /// and it is never on for a server open to players.
   bool reenactments = false;
+  /// Key `debug.network.pcapng`: the directory each run writes a pcapng of
+  /// the messages it sends and receives into, every peer's, one file per run
+  /// (ADR-0076), created if missing; read at startup only, on a live or a
+  /// replay server. Empty, the default, writes none.
+  std::filesystem::path network_pcapng;
 #endif
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).

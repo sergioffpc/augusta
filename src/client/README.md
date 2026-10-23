@@ -24,11 +24,13 @@ interaction, to input or to the Debug panels, shows the Debug index, which
 starts each tool as the `debug` section says and switches it until the client
 exits, and routes each panel's control events to the area that built it; its own
 is the Profiling panel, a window of frames it marks with the NVTX range Nsight
-Systems captures, and Aftermath's status as the renderer reports it. It starts
-each Run: takes its Run ID and opens its log file beside the executable, then
-writes its first lines. It decides over the files Runs leave there: their names
-from the Run ID, which Runs are kept, and how the previous Run ended, which a
-launch reports when it was a crash.
+Systems captures, and Aftermath's status as the renderer reports it; and when
+`debug.network.pcapng` names a directory, it builds the pcapng writer its
+Session's connection is tapped with, one file per run (ADR-0076). It starts each
+Run: takes its Run ID and opens its log file beside the executable, then writes
+its first lines. It decides over the files Runs leave there: their names from
+the Run ID, which Runs are kept, and how the previous Run ended, which a launch
+reports when it was a crash.
 
 ## Not its responsibility
 

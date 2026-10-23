@@ -2,6 +2,7 @@
 #define AUGUSTA_SERVER_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 
@@ -36,15 +37,32 @@ class ServerRuntime {
   /// host.h). Does not yet spawn any thread or start the metrics
   /// endpoint; see Run(). faults, for tests only, is asked by its supervisor
   /// at each worker's creation and execution, and must outlive Run().
+  /// In a Development build only (ADR-0074), network_pcapng, when not empty,
+  /// is the directory (`debug.network.pcapng`, which checked it can be
+  /// written) this run writes one pcapng file into, of every message its
+  /// listening socket sends and receives, as config's tap (ADR-0076).
+#if AUGUSTA_DEBUG_TOOLS
+  ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
+                policy::Policy policy = {}, failure::Faults* faults = nullptr,
+                const std::filesystem::path& network_pcapng = {});
+#else
   ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
                 policy::Policy policy = {}, failure::Faults* faults = nullptr);
+#endif
 
   /// A replay server's runtime (ADR-0051): as above, but what it runs is a
   /// ReplayServer on config, scenario and policy (see replay_server.h, which
   /// says what it throws), whose Replays each tick at config.tick_rate_hz. It
-  /// captures nothing, so it has no capture to fail.
+  /// captures nothing, so it has no capture to fail. Its network_pcapng is
+  /// its endpoint's.
+#if AUGUSTA_DEBUG_TOOLS
+  ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
+                policy::PolicyMaker policy, failure::Faults* faults = nullptr,
+                const std::filesystem::path& network_pcapng = {});
+#else
   ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
                 policy::PolicyMaker policy, failure::Faults* faults = nullptr);
+#endif
 
   /// Run() always stops and joins the Network I/O thread it spawned
   /// before returning, so there is nothing left for this destructor to do

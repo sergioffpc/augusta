@@ -25,6 +25,19 @@
 
 namespace augusta::harness {
 
+namespace {
+
+// The Link's options for a Session's connection: its faults and, in a Development build, its tap.
+link::TransportOptions TransportOptionsOf(const SessionConfig& config) {
+#if AUGUSTA_DEBUG_TOOLS
+  return {.faults = config.faults, .tap = config.tap};
+#else
+  return {.faults = config.faults};
+#endif
+}
+
+}  // namespace
+
 struct Session::Impl {
   link::Endpoint server;
   link::JoinRequest join_request;
@@ -64,7 +77,7 @@ struct Session::Impl {
                                      .capture = capture,
                                      .run = config.run};
         })),
-        channel(link::TransportOptions{.faults = config.faults}),
+        channel(TransportOptionsOf(config)),
         inbox(config.replay.has_value(), config.on_match),
         commands(std::move(world)) {}
 

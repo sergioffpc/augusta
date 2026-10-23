@@ -12,20 +12,21 @@ client's end connects to the server; the server's listens and keeps one channel
 per peer, naming each by a peer identity of its own and taking in each payload
 as what a client says; a replay server opens one of its own. Each end is built
 from construction options, which carry what its transport takes when it is made
-(today the faults a test injects) and never reach its message API. Each end
-sends and receives the Link's own message vocabulary, in the engine's types,
-each message with the reliability ADR-0038's table gives its type, a server's
-message encoded once for as many peers as need it and a tick's Authoritative
-State readdressed to each recipient without encoding its bodies again; it reads
-each connection's round trip, loss and queue in its own types and keeps a Replay
-list within what the protocol carries. Its conversions, which keep only the
-newest of a tick's unacknowledged Commands within the protocol's bound and turn
-a Match capture's records into their bytes and back, are stateless and have no
-transport beneath, so the Host and capture convert without opening a connection.
-It owns the transport's process-wide setup and, for tests only, its simulated
-network conditions and raw ends that carry bytes as they are. Only it links
-networking (`checks/core_boundary.cmake`), and privately, with the protocol, so
-whatever speaks to it reaches neither.
+(the faults a test injects and, in a Development build, the tap its messages are
+reported to, ADR-0076) and never reach its message API. Each end sends and
+receives the Link's own message vocabulary, in the engine's types, each message
+with the reliability ADR-0038's table gives its type, a server's message encoded
+once for as many peers as need it and a tick's Authoritative State readdressed
+to each recipient without encoding its bodies again; it reads each connection's
+round trip, loss and queue in its own types and keeps a Replay list within what
+the protocol carries. Its conversions, which keep only the newest of a tick's
+unacknowledged Commands within the protocol's bound and turn a Match capture's
+records into their bytes and back, are stateless and have no transport beneath,
+so the Host and capture convert without opening a connection. It owns the
+transport's process-wide setup and, for tests only, its simulated network
+conditions and raw ends that carry bytes as they are. Only it links networking
+(`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
+speaks to it reaches neither.
 
 ## Not its responsibility
 

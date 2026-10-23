@@ -50,6 +50,12 @@ target_link_libraries(
   PUBLIC augusta_host augusta_host_replay augusta_failure augusta_gameplay augusta_physics augusta_simulation
   PRIVATE augusta_assets augusta_logging augusta_supervisor augusta_server_connection_health augusta_server_metrics
 )
+# In a Development build (ADR-0074), the pcapng writer the Runtime taps its
+# transport with when `debug.network.pcapng` asks for one (ADR-0076), and the
+# engine version its file names.
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_server PRIVATE augusta_pcapng augusta_version)
+endif()
 augusta_set_module_scope(augusta_server SERVER_ONLY)
 
 # augustad's phases behind the application boundary - config, transport,

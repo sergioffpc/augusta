@@ -253,6 +253,32 @@ std::expected<bool, ConfigError> OptionalFlag(const ConfigValues& values, std::s
   return found->second == "true";
 }
 
+std::expected<std::filesystem::path, ConfigError> OptionalWritableDirectory(const ConfigValues& values,
+                                                                            std::string_view key,
+                                                                            const std::filesystem::path& base_dir) {
+  if (!values.contains(key)) {
+    return std::filesystem::path{};
+  }
+  auto directory = RequirePath(values, key, base_dir);
+  if (!directory) {
+    return directory;
+  }
+  // Writing a file is the one sure test that the directory can be written: its
+  // permissions say too little on Windows.
+  std::error_code error;
+  std::filesystem::create_directories(*directory, error);
+  const std::filesystem::path probe = *directory / ".augusta-write-probe";
+  const bool written = !error && std::ofstream(probe, std::ios::binary).good();
+  std::filesystem::remove(probe, error);
+  if (!written) {
+    return std::unexpected(ConfigError{.code = ConfigErrorCode::kInvalidEntry,
+                                       .subject = std::string(key),
+                                       .reason = "must name a directory that can be written",
+                                       .file = {}});
+  }
+  return directory;
+}
+
 // fallback when key is absent; when present, its value must be one
 // augusta::logging::ParseSeverity accepts.
 std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,
