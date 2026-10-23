@@ -49,6 +49,7 @@
 #include "net_stats.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/correction_tally.h"
 #include "augusta/debug_index.h"
 #include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
@@ -149,12 +150,16 @@ struct ClientRuntime::Impl {
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
-  // blends the two by how far through the tick it is.
+  // blends the two by how far through the tick it is; in a Development build,
+  // the corrections counted so far too, for the Network panel.
   struct LatestTick {
     prediction::State previous;
     prediction::State latest;
     tick::Clock::time_point start;
     tick::Clock::duration duration{};
+#if AUGUSTA_DEBUG_TOOLS
+    prediction::Corrections corrections;
+#endif
   };
 
   // Guards latest_tick: written once per Prediction tick,
@@ -216,6 +221,9 @@ struct ClientRuntime::Impl {
   // Main/Render thread only: the conditions last applied to the transport
   // from the Network panel's Impairment group; the real network at start.
   link::SimulatedConditions applied_conditions;
+  // Prediction thread only: the corrections of its ticks, in a Match only, as
+  // an Agent counts them; published with each tick (LatestTick).
+  prediction::CorrectionTally correction_tally;
 
   // The HUD's connection numbers, impaired while the Network panel's
   // Impairment group says so, shown or not.
@@ -296,8 +304,28 @@ struct ClientRuntime::Impl {
       network_panel.Sample({.connection = TakeConnectionReading(),
                             .tick_rate_hz = view->accepted.transform(
                                 [](const harness::Admission& admission) { return admission.tick_rate_hz; }),
-                            .receives_authoritative_state = !config.replay.has_value()},
+                            .receives_authoritative_state = !config.replay.has_value(),
+                            .corrections = PanelCorrections()},
                            now);
+    }
+  }
+
+  // Main/Render thread only: the Prediction thread's corrections so far, or
+  // nullopt with no Prediction State: a Replay viewer, or a spectator since
+  // its Death.
+  std::optional<prediction::Corrections> PanelCorrections() {
+    const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+    if (config.replay.has_value() || (view->in_match && !view->OwnAlive())) {
+      return std::nullopt;
+    }
+    return GetLatestTick().corrections;
+  }
+
+  // Main/Render thread only: the frame's interpolation slack, for the Network
+  // panel's next sample while the Debug index has it on.
+  void RecordNetworkPanelFrame(const presentation::State& frame_state) {
+    if (network_panel_on.load()) {
+      network_panel.RecordFrame(frame_state.interpolation_slack);
     }
   }
 
@@ -516,12 +544,20 @@ struct ClientRuntime::Impl {
   // The Runner's word on each tick: publishes it, with the one before it, for
   // render frames to blend. Prediction thread.
   void PublishTick(const harness::PredictedTick& tick) {
+#if AUGUSTA_DEBUG_TOOLS
+    correction_tally.RecordTick(tick.state, session->GetServerView()->GetPhase() == harness::Phase::kMatch);
+#endif
     {
       const std::lock_guard<std::mutex> lock(latest_tick_mutex);
-      latest_tick = {.previous = previous_tick.value_or(tick.state),
-                     .latest = tick.state,
-                     .start = tick.due,
-                     .duration = tick.duration};
+      latest_tick = {
+          .previous = previous_tick.value_or(tick.state),
+          .latest = tick.state,
+          .start = tick.due,
+          .duration = tick.duration,
+#if AUGUSTA_DEBUG_TOOLS
+          .corrections = correction_tally.Totals(),
+#endif
+      };
     }
     previous_tick = tick.state;
   }
@@ -730,6 +766,9 @@ struct ClientRuntime::Impl {
     SampleNetworkPanel();
 #endif
     const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
+#if AUGUSTA_DEBUG_TOOLS
+    RecordNetworkPanelFrame(frame_state);
+#endif
     SetSeenTime(frame_state.seen_time);
     StageRenderFrame(frame_state);
     renderer.RenderFrame();
