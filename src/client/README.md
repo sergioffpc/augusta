@@ -25,9 +25,10 @@ starts each tool as the `debug` section says and switches it until the client
 exits, and routes each panel's control events to the area that built it. Its own
 are the Profiling panel, a window of frames it marks with the NVTX range Nsight
 Systems captures, and Aftermath's status as the renderer reports it, and the
-Network panel, the client's connection and its traffic per message type as
-rates, plots and peaks, built here because its numbers come from modules that
-ship in every build (ADR-0075). The Network panel's Impairment group applies the
+Network panel, the client's connection, its traffic per message type,
+Reconciliation's corrections and the interpolation buffer's slack as rates,
+plots and peaks, built here because its numbers come from modules that ship in
+every build (ADR-0075). The Network panel's Impairment group applies the
 transport's simulated latency, jitter, loss and reorder to the client's one
 connection, both ways, from sliders or a named profile, until Off or the client
 exits; the server is never told, and the debug HUD's network line ends in

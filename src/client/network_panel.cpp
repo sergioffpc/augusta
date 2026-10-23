@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <format>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,7 +16,9 @@
 #include <variant>
 #include <vector>
 
+#include "augusta/correction_tally.h"
 #include "augusta/debug_panels.h"
+#include "augusta/interpolation.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "net_stats.h"
@@ -29,6 +32,7 @@ constexpr double kMicrosecondsPerMillisecond = 1000.0;
 constexpr double kPercent = 100.0;
 constexpr double kKiB = 1024.0;
 constexpr double kMiB = kKiB * 1024.0;
+constexpr double kMillisecondsPerSecond = 1000.0;
 
 // One of the Impairment group's sliders: the value it sets and its range,
 // from zero.
@@ -202,6 +206,27 @@ debug::HistoryPlot PlotOf(std::string label, const std::deque<float>& series) {
   return {.label = std::move(label), .values = std::vector<float>(series.begin(), series.end())};
 }
 
+// Adds value, at now, to window, drops what is older than the rate window, and
+// returns the seconds from its oldest sample to now.
+template <typename T>
+double Slide(std::deque<std::pair<NetworkPanel::Clock::time_point, T>>& window, NetworkPanel::Clock::time_point now,
+             const T& value) {
+  window.emplace_back(now, value);
+  while (now - window.front().first > NetworkPanel::kRateWindow) {
+    window.pop_front();
+  }
+  return std::chrono::duration<double>(now - window.front().first).count();
+}
+
+// The largest correction between two tallies, 0 for none: a new largest if
+// there was one, else the last stands for them.
+double LargestBetween(const prediction::Corrections& earlier, const prediction::Corrections& later) {
+  if (later.count <= earlier.count) {
+    return 0.0;
+  }
+  return later.largest_m > earlier.largest_m ? later.largest_m : later.last_m;
+}
+
 }  // namespace
 
 void ConnectionReadings::Record(const std::optional<link::ConnectionStats>& stats, const link::Traffic& traffic) {
@@ -225,7 +250,11 @@ void NetworkPanel::Watched::Set(std::optional<double> value) {
   if (!value.has_value()) {
     return;
   }
-  if (!peak_.has_value() || (lower_is_worse_ ? *value < *peak_ : *value > *peak_)) {
+  RaisePeak(*value);
+}
+
+void NetworkPanel::Watched::RaisePeak(double value) {
+  if (!peak_.has_value() || (lower_is_worse_ ? value < *peak_ : value > *peak_)) {
     peak_ = value;
   }
 }
@@ -241,6 +270,66 @@ void NetworkPanel::Sample(const NetworkSample& sample, Clock::time_point now) {
   }
   SampleConnection(sample.connection.stats);
   SampleTraffic(sample.connection.traffic, now);
+  SampleCorrections(sample.corrections, now);
+  SampleFrames(now);
+}
+
+void NetworkPanel::RecordFrame(std::optional<double> interpolation_slack_s) {
+  if (!interpolation_slack_s.has_value()) {
+    return;
+  }
+  pending_frames_.smallest_slack_s =
+      std::min(pending_frames_.smallest_slack_s.value_or(*interpolation_slack_s), *interpolation_slack_s);
+  if (*interpolation_slack_s <= 0.0) {
+    ++pending_frames_.dry;
+  }
+}
+
+void NetworkPanel::SampleCorrections(const std::optional<prediction::Corrections>& corrections, Clock::time_point now) {
+  if (!corrections.has_value()) {
+    corrections_window_.clear();
+    prediction_.corrections_per_sec.Set(std::nullopt);
+    prediction_.correction_m.Set(std::nullopt);
+    prediction_.rifle_corrections_per_sec.Set(std::nullopt);
+    return;
+  }
+  prediction_.correction_m.Set(corrections->last_m);
+  // A first sample has nothing before it to tell what is new.
+  const double largest_new =
+      corrections_window_.empty() ? 0.0 : LargestBetween(corrections_window_.back().second, *corrections);
+  prediction_.correction_m.RaisePeak(largest_new);
+  Plot(prediction_.correction_plot, largest_new);
+
+  const double seconds = Slide(corrections_window_, now, *corrections);
+  if (seconds <= 0.0) {
+    prediction_.corrections_per_sec.Set(std::nullopt);
+    prediction_.rifle_corrections_per_sec.Set(std::nullopt);
+    return;
+  }
+  const prediction::Corrections& oldest = corrections_window_.front().second;
+  prediction_.corrections_per_sec.Set(PerSecond(oldest.count, corrections->count, seconds));
+  prediction_.rifle_corrections_per_sec.Set(PerSecond(oldest.rifle, corrections->rifle, seconds));
+}
+
+void NetworkPanel::SampleFrames(Clock::time_point now) {
+  const double seconds = Slide(frames_window_, now, std::exchange(pending_frames_, {}));
+  // The frames since the oldest sample: those recorded before it are older
+  // than the window.
+  std::optional<double> smallest;
+  std::uint32_t dry = 0;
+  for (auto frames = std::next(frames_window_.begin()); frames != frames_window_.end(); ++frames) {
+    if (const std::optional<double>& slack = frames->second.smallest_slack_s; slack.has_value()) {
+      smallest = std::min(smallest.value_or(*slack), *slack);
+    }
+    dry += frames->second.dry;
+  }
+  if (seconds <= 0.0 || !smallest.has_value()) {
+    prediction_.smallest_slack_s.Set(std::nullopt);
+    prediction_.dry_frames_per_sec.Set(std::nullopt);
+    return;
+  }
+  prediction_.smallest_slack_s.Set(smallest);
+  prediction_.dry_frames_per_sec.Set(static_cast<double>(dry) / seconds);
 }
 
 void NetworkPanel::SampleConnection(const std::optional<link::ConnectionStats>& stats) {
@@ -339,6 +428,7 @@ debug::Panel NetworkPanel::BuildPanel() const {
                           FormatWatched(rates.bytes_out.Now(), rates.bytes_out.Peak(), rate)});
   }
   panel.elements.emplace_back(std::move(table));
+  AddPredictionGroup(panel);
   AddImpairmentGroup(panel);
   panel.elements.emplace_back(debug::Button{.id = std::string(kResetPeaksButton), .label = "Reset peaks"});
   return panel;
@@ -361,6 +451,31 @@ void NetworkPanel::AddImpairmentGroup(debug::Panel& panel) const {
     panel.elements.emplace_back(debug::Button{.id = std::string(profile.id), .label = std::string(profile.label)});
   }
   panel.elements.emplace_back(debug::Button{.id = std::string(kImpairmentOffButton), .label = "Off"});
+}
+
+void NetworkPanel::AddPredictionGroup(debug::Panel& panel) const {
+  const auto per_sec = [](double value) { return std::format("{:.1f}", value); };
+  const auto metres = [](double value) { return std::format("{:.2f}m", value); };
+  const auto ms = [](double value) { return std::format("{:.1f}ms", value * kMillisecondsPerSecond); };
+  panel.elements.emplace_back(debug::Text{.text = "Prediction and presentation"});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Corrections/s: " + FormatWatched(prediction_.corrections_per_sec.Now(),
+                                                            prediction_.corrections_per_sec.Peak(), per_sec, "peak")});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Correction: " + FormatWatched(prediction_.correction_m.Now(),
+                                                         prediction_.correction_m.Peak(), metres, "largest")});
+  panel.elements.emplace_back(debug::Text{
+      .text = "Rifle corrections/s: " + FormatWatched(prediction_.rifle_corrections_per_sec.Now(),
+                                                      prediction_.rifle_corrections_per_sec.Peak(), per_sec, "peak")});
+  panel.elements.emplace_back(
+      debug::Text{.text = std::format("Slack: {}, delay {:.0f}ms",
+                                      FormatWatched(prediction_.smallest_slack_s.Now(),
+                                                    prediction_.smallest_slack_s.Peak(), ms, "worst"),
+                                      presentation::kInterpolationDelay * kMillisecondsPerSecond)});
+  panel.elements.emplace_back(
+      debug::Text{.text = "Dry frames/s: " + FormatWatched(prediction_.dry_frames_per_sec.Now(),
+                                                           prediction_.dry_frames_per_sec.Peak(), per_sec, "peak")});
+  panel.elements.emplace_back(PlotOf("Correction (m)", prediction_.correction_plot));
 }
 
 void NetworkPanel::Update(const debug::ControlEvent& event) {
@@ -416,6 +531,11 @@ void NetworkPanel::ResetPeaks() {
     rates.messages_out.ResetPeak();
     rates.bytes_out.ResetPeak();
   }
+  prediction_.corrections_per_sec.ResetPeak();
+  prediction_.correction_m.ResetPeak();
+  prediction_.rifle_corrections_per_sec.ResetPeak();
+  prediction_.smallest_slack_s.ResetPeak();
+  prediction_.dry_frames_per_sec.ResetPeak();
 }
 
 void NetworkPanel::Close() {
