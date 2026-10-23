@@ -7,11 +7,9 @@
 #include <utility>
 
 #include "augusta/ballistics.h"
-#include "augusta/command.h"
+#include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
-#include "augusta/simulation.h"
-#include "hitbox_history.h"
 
 namespace augusta::simulation {
 
@@ -21,13 +19,6 @@ namespace {
 // the rounding of posing them, or of Reaches, anywhere on the position grid, so
 // culling by it never drops a hitbox a bullet crosses.
 constexpr float kReachMargin = 0.1F;
-
-// point, of a standing character's root space, where it is on a body in pose:
-// lowered for its stance as the eye is, turned about the vertical as the view
-// is, then moved to the body.
-math::Vec3 PosePoint(const math::Vec3& point, const Pose& pose) {
-  return pose.position + (command::ViewRotation(pose.yaw, 0.0F) * physics::LowerToStance(point, pose.stance));
-}
 
 // Whether segment passes within reach of center.
 bool Reaches(const ballistics::Segment& segment, const math::Vec3& center, float reach) {
@@ -56,9 +47,9 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 
 // Measured standing: any other stance only lowers a point
 // (physics::LowerToStance), which brings it no farther from the root.
-float ReachOf(std::span<const CharacterHitbox> hitboxes) {
+float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes) {
   float reach = 0.0F;
-  for (const CharacterHitbox& hitbox : hitboxes) {
+  for (const hitbox::CharacterHitbox& hitbox : hitboxes) {
     for (const ballistics::Triangle& triangle : hitbox.triangles) {
       for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
         reach = std::max(reach, math::Length(point));
@@ -81,7 +72,8 @@ void HitboxPosing::BeginBullet(double time, const ballistics::Segment& segment) 
   bullet_targets_.clear();
 }
 
-void HitboxPosing::Consider(EntityId target, std::span<const CharacterHitbox> standing, float reach, const Pose& pose) {
+void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
+                            const hitbox::Pose& pose) {
   if (!Reaches(bullet_segment_, pose.position, reach)) {
     return;
   }
@@ -89,14 +81,11 @@ void HitboxPosing::Consider(EntityId target, std::span<const CharacterHitbox> st
   const auto [posing, added] = posings_.try_emplace(PosingKey{.target = target, .time = bullet_time_},
                                                     Posing{.first = posed_hitboxes_.size(), .count = standing.size()});
   if (added) {
-    for (const CharacterHitbox& hitbox : standing) {
-      posed_hitboxes_.push_back(PosedHitbox{.struck = {.target = target, .part = hitbox.part},
+    for (const hitbox::PlacedHitbox& placed : hitbox::Place(standing, pose)) {
+      posed_hitboxes_.push_back(PosedHitbox{.struck = {.target = target, .part = placed.part},
                                             .first = posed_triangles_.size(),
-                                            .count = hitbox.triangles.size()});
-      for (const ballistics::Triangle& triangle : hitbox.triangles) {
-        posed_triangles_.push_back(ballistics::Triangle{
-            .a = PosePoint(triangle.a, pose), .b = PosePoint(triangle.b, pose), .c = PosePoint(triangle.c, pose)});
-      }
+                                            .count = placed.triangles.size()});
+      posed_triangles_.insert(posed_triangles_.end(), placed.triangles.begin(), placed.triangles.end());
     }
   }
   bullet_posings_.push_back(posing->second);

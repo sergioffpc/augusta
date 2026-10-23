@@ -19,7 +19,6 @@ namespace {
 using augusta::assets::BodyPart;
 using augusta::assets::HitboxData;
 using augusta::host::EntityId;
-using augusta::host::FromBlob;
 using augusta::host::FromSimulation;
 using augusta::host::ToSimulation;
 using augusta::math::Vec3;
@@ -31,12 +30,6 @@ HitboxData Triangle(BodyPart part) {
 TEST(SimulationMappingTest, MatchAndSimulationWorldNameABodyByTheSameEntity) {
   EXPECT_EQ(FromSimulation(ToSimulation(EntityId{77})), EntityId{77});
   EXPECT_EQ(std::to_underlying(ToSimulation(EntityId{77})), 77U);
-}
-
-TEST(SimulationMappingTest, EveryBodyPartOfTheBlobIsTheSameBodyPart) {
-  EXPECT_EQ(FromBlob(BodyPart::kHead), augusta::body_part::BodyPart::kHead);
-  EXPECT_EQ(FromBlob(BodyPart::kTorso), augusta::body_part::BodyPart::kTorso);
-  EXPECT_EQ(FromBlob(BodyPart::kLimb), augusta::body_part::BodyPart::kLimb);
 }
 
 TEST(SimulationMappingTest, AHitboxIsTheTrianglesItsMeshIndexes) {

@@ -10,7 +10,7 @@
 /// Hitbox stands and so where a round struck them (US-11), the one domain enum
 /// every module naming one uses, from the simulation's damage to the link and
 /// the host's logs and metrics. The assets' blob keeps its own numbering, which
-/// the host converts to this one. ADR-0040 decides the three, one per Hitbox.
+/// augusta/hitbox.h converts to this one. ADR-0040 decides the three, one per Hitbox.
 /// It also holds the damage a round does to each, as the Parameters set it.
 namespace augusta::body_part {
 

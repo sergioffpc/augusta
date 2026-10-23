@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <optional>
 
+#include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
 
@@ -18,7 +19,7 @@ constexpr float kMidpointFraction = 0.5F;
 
 }  // namespace
 
-void PoseHistory::Record(tick::Tick tick, const Pose& pose) {
+void PoseHistory::Record(tick::Tick tick, const hitbox::Pose& pose) {
   poses_.push_back(pose);
   newest_tick_ = tick;
   if (poses_.size() > capacity_) {
@@ -26,7 +27,7 @@ void PoseHistory::Record(tick::Tick tick, const Pose& pose) {
   }
 }
 
-std::optional<Pose> PoseHistory::At(double time) const {
+std::optional<hitbox::Pose> PoseHistory::At(double time) const {
   if (poses_.empty()) {
     return std::nullopt;
   }
@@ -36,14 +37,14 @@ std::optional<Pose> PoseHistory::At(double time) const {
   const double whole = std::floor(held);
   const auto earlier_index = static_cast<std::size_t>(whole - oldest);
   const auto fraction = static_cast<float>(held - whole);
-  const Pose& earlier = poses_[earlier_index];
+  const hitbox::Pose& earlier = poses_[earlier_index];
   if (earlier_index + 1 == poses_.size()) {
     return earlier;
   }
-  const Pose& later = poses_[earlier_index + 1];
-  return Pose{.position = math::Lerp(earlier.position, later.position, fraction),
-              .yaw = math::LerpAngle(earlier.yaw, later.yaw, fraction),
-              .stance = fraction < kMidpointFraction ? earlier.stance : later.stance};
+  const hitbox::Pose& later = poses_[earlier_index + 1];
+  return hitbox::Pose{.position = math::Lerp(earlier.position, later.position, fraction),
+                      .yaw = math::LerpAngle(earlier.yaw, later.yaw, fraction),
+                      .stance = fraction < kMidpointFraction ? earlier.stance : later.stance};
 }
 
 }  // namespace augusta::simulation

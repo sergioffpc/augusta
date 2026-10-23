@@ -353,6 +353,11 @@ target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gt
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_hitbox_tests hitbox_test.cpp)
+target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on

@@ -1,0 +1,68 @@
+#ifndef AUGUSTA_HITBOX_H_
+#define AUGUSTA_HITBOX_H_
+
+#include <expected>
+#include <span>
+#include <vector>
+
+#include "augusta/assets.h"
+#include "augusta/ballistics.h"
+#include "augusta/body_part.h"
+#include "augusta/math.h"
+#include "augusta/physics.h"
+
+/// \file
+/// augusta::hitbox places a player's Hitboxes (GLOSSARY.md) from its Hitbox
+/// pose: the one function the server's Lag compensation tests a round against
+/// and a client's Debug overlay draws with, so both put a Hitbox in the same
+/// place (ADR-0044). It also converts a pack's Hitbox data into a Character's
+/// Hitboxes, the same for the server's content loading and the client's
+/// (ADR-0040 ships them in both packs). Pure: which players are placed, at which
+/// moment, and what a round crossing one means are SimulationWorld's (the
+/// Hitbox history, culling by a Character's reach, judging), and drawing them is
+/// presentation's.
+namespace augusta::hitbox {
+
+/// A player's Hitbox pose: all that places its Hitboxes, until Clips give it
+/// more (#823).
+struct Pose {
+  /// Where its feet are.
+  math::Vec3 position{};
+  /// Where it faces, in radians, as a Command's yaw (command::Command).
+  float yaw = 0.0F;
+  physics::Stance stance = physics::Stance::kStanding;
+};
+
+/// One Hitbox of a Character (ADR-0040), as authored: standing, in the
+/// Character's root space, its feet at the origin, facing where a view of yaw 0
+/// looks.
+struct CharacterHitbox {
+  /// What a round that crosses it hits.
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
+  /// Its surface: a round is tested against each, from either side.
+  std::vector<ballistics::Triangle> triangles;
+};
+
+/// One Hitbox placed at a Pose: its triangles in world space.
+struct PlacedHitbox {
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
+  std::vector<ballistics::Triangle> triangles;
+};
+
+/// hitboxes placed at pose, one per Hitbox and in their order: each point
+/// lowered for the stance as the eye is (physics::LowerToStance), turned about
+/// the vertical by the yaw as the view is (command::ViewRotation), then moved to
+/// the position.
+[[nodiscard]] std::vector<PlacedHitbox> Place(std::span<const CharacterHitbox> hitboxes, const Pose& pose);
+
+/// part, in the pack blob's numbering, as the Body part every module names.
+[[nodiscard]] body_part::BodyPart FromPack(assets::BodyPart part);
+
+/// hitbox, as a pack holds it, as the triangles its mesh indexes. Fails, saying
+/// why, if the mesh is not a whole, in-range triangle list: a pack's mesh blob
+/// is not checked for that when it is decoded.
+[[nodiscard]] std::expected<CharacterHitbox, physics::CollisionMeshError> FromPack(const assets::HitboxData& hitbox);
+
+}  // namespace augusta::hitbox
+
+#endif  // AUGUSTA_HITBOX_H_
