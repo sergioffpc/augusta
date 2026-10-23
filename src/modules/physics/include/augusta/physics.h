@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -186,6 +187,45 @@ struct MapRaycastHit {
   float distance = 0.0F;
 };
 
+#if AUGUSTA_DEBUG_TOOLS
+/// What a World's visualization draws, and where (World::SetVisualization), in
+/// a Development build alone (ADR-0074): PhysX's own view of its collision, for
+/// the Collision Debug overlay.
+struct Visualization {
+  /// Off, a World draws nothing and its visualization costs nothing.
+  bool on = false;
+  /// Every collision shape: the Map's meshes and each body's capsule.
+  bool collision_shapes = true;
+  /// Each collision shape's axis-aligned bounds.
+  bool bounds = false;
+  /// Contact points and their normals.
+  bool contacts = false;
+  /// Joints' frames and limits.
+  bool joints = false;
+  /// The character controllers' own volumes, such as the space a move sweeps.
+  bool controller_volumes = true;
+  /// The culling box: only the scene's shapes in the cube of half-extent
+  /// cull_half_extent metres around cull_center are drawn, so a whole Map of
+  /// triangle edges does not bury the frame or the tick. Controller volumes
+  /// are drawn wherever they are.
+  math::Vec3 cull_center{};
+  float cull_half_extent = 0.0F;
+
+  bool operator==(const Visualization&) const = default;
+};
+
+/// One line of a World's visualization, in world space.
+struct VisualizationLine {
+  math::Vec3 from{};
+  math::Vec3 to{};
+  /// PhysX's colour for it, as PhysX gives it (0xAARRGGBB, PxDebugColor), so
+  /// it reads as PhysX's documentation describes it.
+  std::uint32_t argb = 0;
+
+  bool operator==(const VisualizationLine&) const = default;
+};
+#endif
+
 /// Owns every body's PhysX state for one side (client or server) of the
 /// engine. One World instance is created per process; see
 /// ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
@@ -203,9 +243,10 @@ class World {
   /// physics/scene instance (ADR-0002) - not shared with any other World,
   /// matching the "one World instance per process" contract above.
   ///
-  /// CPU only, and with no worker threads: this World only ever drives
-  /// PxController::move() (see physics.cpp's header comment), never
-  /// PxScene::simulate()/fetchResults(), so neither GPU dynamics nor a
+  /// CPU only, and with no worker threads: this World moves its bodies with
+  /// PxController::move() alone (see physics.cpp's header comment), and its
+  /// only PxScene::simulate()/fetchResults() is StepVisualization's, in a
+  /// Development build, so neither GPU dynamics nor a
   /// simulation thread pool would do anything but cost startup time,
   /// threads and (next to the client's renderer) VRAM. Revisit once a real
   /// rigid-body simulate step (props, ragdolls, projectiles) exists.
@@ -273,7 +314,8 @@ class World {
   ///
   /// A body is not hit where it is: the ray sees it where its PhysX
   /// controller was made (centered on the world origin), however far
-  /// CreateBody, Step, SetState or Restore have put it since (ADR-0002).
+  /// CreateBody, Step, SetState or Restore have put it since (ADR-0002), until
+  /// a StepVisualization moves its actor to where its body is.
   /// Player hit detection does not use this - see RaycastMap.
   [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
 
@@ -283,6 +325,25 @@ class World {
   /// Reports which mesh it struck by the Surface id the mesh was added with.
   [[nodiscard]] MapRaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction,
                                          float max_distance) const;
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches this World's visualization to visualization: off, or on with
+  /// what it draws and its culling box. A World starts with it off, and one
+  /// that never turns it on pays nothing for it. Development build only.
+  void SetVisualization(const Visualization& visualization);
+
+  /// Steps this World's scene once by delta_time seconds, a fixed tick, and
+  /// returns the lines PhysX then draws of it, its character controllers'
+  /// included; nullopt, stepping nothing, while the visualization is off.
+  /// Development build only.
+  ///
+  /// The step is harmless: a World holds the Map's static meshes and each
+  /// body's kinematic actor, nothing dynamic, so it moves only those actors,
+  /// to where their bodies last moved. No body's Step, SetState, Restore or
+  /// Fall sees them, nor RaycastMap; only Raycast sees a body where it is
+  /// rather than where its controller was made, from this call on.
+  [[nodiscard]] std::optional<std::vector<VisualizationLine>> StepVisualization(float delta_time);
+#endif
 
  private:
   struct Impl;

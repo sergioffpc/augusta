@@ -9,6 +9,10 @@ on the Prediction thread, predicting the local player only. It reconciles
 against the server's state by replaying the unacknowledged commands
 (`augusta/reconciliation.h`) and emits an immutable Prediction State each tick.
 
+In a Development build, with Collision switched on, its Commit steps its physics
+World's visualization once per tick, never inside a replay, and the Prediction
+State carries the lines for the Collision Debug overlay (ADR-0075).
+
 ## Not its responsibility
 
 - Remote players and smoothing for display: presentation.
@@ -21,4 +25,5 @@ against the server's state by replaying the unacknowledged commands
 [ADR-0001](../../../docs/adr/0001-ecs-library.md),
 [ADR-0004](../../../docs/adr/0004-reconciliation-model.md),
 [ADR-0005](../../../docs/adr/0005-threading-model.md),
-[ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md).
+[ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md),
+[ADR-0075](../../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

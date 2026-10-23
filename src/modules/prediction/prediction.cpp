@@ -6,6 +6,10 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#if AUGUSTA_DEBUG_TOOLS
+#include <utility>
+#include <vector>
+#endif
 
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
@@ -113,7 +117,9 @@ struct World::Impl {
     ecs.system("WeaponHandlingSystem").kind(phases[kWeaponHandling]).run([this](flecs::iter& sys_iter) {
       OnWeaponHandling(sys_iter.delta_time());
     });
-    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter&) { OnCommit(); });
+    ecs.system("CommitSystem").kind(phases[kCommit]).run([this](flecs::iter& sys_iter) {
+      OnCommit(sys_iter.delta_time());
+    });
   }
 
   void OnCommandIngestion() {
@@ -174,8 +180,16 @@ struct World::Impl {
     tick_state.total_rounds_fired += tick_state.rounds_fired;
   }
 
-  void OnCommit() {
+  void OnCommit([[maybe_unused]] float delta_time) {
     const nvtx3::scoped_range range{"Commit"};
+#if AUGUSTA_DEBUG_TOOLS
+    // Once per tick, here and never in a replay, so the lines show the body
+    // where the tick left it. Null while Collision is off.
+    std::optional<std::vector<physics::VisualizationLine>> lines = physics.StepVisualization(delta_time);
+    tick_state.collision_lines =
+        lines.has_value() ? std::make_shared<const std::vector<physics::VisualizationLine>>(std::move(*lines))
+                          : nullptr;
+#endif
     // tick_state is already set by OnMovement and OnWeaponHandling; what is
     // left is remembering it for the server's answer to this command.
     if (tick_sequence != 0) {
@@ -204,12 +218,13 @@ void World::Start(const math::Vec3& spawn, const parameters::Parameters& paramet
   impl.history = History{};
   // Starting over is not a correction: the running totals are kept, so a
   // reader sees no jump in them (see State::total_correction).
-  impl.tick_state = State{.local_body = start,
-                          .total_correction = impl.tick_state.total_correction,
-                          .rifle = impl.rifle,
-                          .rifle_corrections = impl.tick_state.rifle_corrections,
-                          .total_rounds_fired = impl.tick_state.total_rounds_fired,
-                          .rounds_fired = 0};
+  State& state = impl.tick_state;
+  state.local_body = start;
+  state.rifle = impl.rifle;
+  state.rounds_fired = 0;
+#if AUGUSTA_DEBUG_TOOLS
+  state.collision_lines = nullptr;
+#endif
 }
 
 World::World(World&&) noexcept = default;
@@ -223,5 +238,11 @@ State World::Tick(const command::Command& command, tick::Sequence sequence,
   impl_->ecs.progress(delta_time);
   return impl_->tick_state;
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+void World::SetVisualization(const physics::Visualization& visualization) {
+  impl_->physics.SetVisualization(visualization);
+}
+#endif
 
 }  // namespace augusta::prediction
