@@ -3,10 +3,14 @@
 
 #include <functional>
 #include <optional>
+#if AUGUSTA_DEBUG_TOOLS
+#include <mutex>
+#endif
 
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
@@ -80,15 +84,32 @@ class Runner {
   /// thread.
   [[nodiscard]] std::optional<failure::Failure> Failure() const;
 
+#if AUGUSTA_DEBUG_TOOLS
+  /// Sets the Collision settings the Prediction thread hands PredictionWorld
+  /// with each Tick's Command from now on (Session::SetVisualization), in a
+  /// Development build alone: the client Runtime's, from its Physics Debug
+  /// panel, the culling box centred on the last frame's camera. Off until
+  /// set. Safe from any thread.
+  void SetVisualization(const physics::Visualization& visualization);
+#endif
+
  private:
   supervisor::WorkerResult PredictionThreadMain();
   supervisor::WorkerResult NetworkThreadMain();
   // The server's tick rate once it has admitted the client, or nullopt if
   // the stop came first.
   std::optional<float> WaitForTickRate();
+#if AUGUSTA_DEBUG_TOOLS
+  // What SetVisualization last set.
+  physics::Visualization CurrentVisualization();
+#endif
 
   Session& session_;
   RunnerHooks hooks_;
+#if AUGUSTA_DEBUG_TOOLS
+  std::mutex visualization_mutex_;
+  physics::Visualization visualization_;
+#endif
   // Last, so its threads are joined before anything they use goes.
   supervisor::Supervisor workers_;
 };

@@ -5,6 +5,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "augusta/command.h"
 #include "augusta/parameters.h"
@@ -67,7 +68,10 @@ enum class Phase {
   /// server-authoritative (ADR-0024).
   kWeaponHandling,
   /// Mechanism. Packages the tick's predicted state into the immutable
-  /// Prediction State (State, below).
+  /// Prediction State (State, below). In a Development build, with Collision
+  /// on (World::SetVisualization), it first steps the physics World's
+  /// visualization once, after Movement and any Reconciliation and never
+  /// inside a replay, for State::collision_lines.
   kCommit,
 };
 
@@ -102,6 +106,13 @@ struct State {
   /// How many rounds the rifle fired on this tick, at most one. Never a
   /// bullet's outcome.
   std::uint8_t rounds_fired = 0;
+#if AUGUSTA_DEBUG_TOOLS
+  /// The lines PhysX draws of the client's World as of this tick, the local
+  /// body's capsule where it now is among them, for the Collision Debug
+  /// overlay (Development build only); null while Collision is off. Shared, so
+  /// copying a State stays cheap however many lines it holds.
+  std::shared_ptr<const std::vector<physics::VisualizationLine>> collision_lines;
+#endif
 };
 
 /// What the server has told this client about its own player: its body and
@@ -161,6 +172,14 @@ class World {
   /// tick's Prediction State.
   State Tick(const command::Command& command, tick::Sequence sequence,
              const std::optional<Acknowledgement>& acknowledgement, float delta_time);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches Collision for the ticks to come (Development build only): the
+  /// physics World's visualization (physics::World::SetVisualization), whose
+  /// lines each Tick's State then carries. Off to begin with, and off it costs
+  /// nothing. Neither what is predicted nor Reconciliation changes with it.
+  void SetVisualization(const physics::Visualization& visualization);
+#endif
 
  private:
   struct Impl;

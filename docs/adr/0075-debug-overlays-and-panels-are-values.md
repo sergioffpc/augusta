@@ -36,12 +36,17 @@ smear thin lines, and over whatever the frame shows, a Debug view included.
 **One frame, one thread.** The shapes and panels are assembled on the
 Main/Render thread every frame, after PresentationWorld's Commit and before
 `RenderFrame`, from data that already reaches that thread: the Prediction State,
-the Server view, and the client World's visualization, copied out there because
-Presentation runs `simulate()` (ADR-0024). There is no new channel between
-threads: a producer on another thread hands what it shows through the channel it
-already publishes on, in a Development build only. A shape lives one frame; the
-Renderer keeps nothing between frames. What must stay longer, such as a shot the
-server announced once, is its producer's state, kept with the helper.
+the Server view, and the client World's visualization. There is no new channel
+between threads: a producer on another thread hands what it shows through the
+channel it already publishes on, in a Development build only. Until the client
+World has a Dynamics phase (#819), it is PredictionWorld's, so its visualization
+comes from the Prediction thread: PredictionWorld's Commit steps it once per
+tick, never inside a replay, and the Prediction State carries its lines, and the
+settings that switch it reach PredictionWorld with each tick's input. Once
+Presentation runs the client World's `simulate()` (ADR-0024), the copy follows
+it onto the Main/Render thread. A shape lives one frame; the Renderer keeps
+nothing between frames. What must stay longer, such as a shot the server
+announced once, is its producer's state, kept with the helper.
 
 **Panels.** A Debug panel is a description: a title, then text, tables, history
 plots, toggles, sliders and buttons, each control with an id. The Renderer draws
