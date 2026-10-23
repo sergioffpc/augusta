@@ -8,6 +8,12 @@
 #include <optional>
 #include <string>
 #include <vector>
+#if AUGUSTA_DEBUG_TOOLS
+#include <array>
+#include <chrono>
+#include <span>
+#include <variant>
+#endif
 
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -139,6 +145,67 @@ struct Endpoint {
 /// buffer so callers don't have to reason about its lifetime.
 using Payload = std::vector<std::byte>;
 
+#if AUGUSTA_DEBUG_TOOLS
+inline constexpr std::size_t kIpv4AddressBytes = 4;
+inline constexpr std::size_t kIpv6AddressBytes = 16;
+/// An IPv4 address's bytes, in network order (192.168.1.10 is {192, 168, 1, 10}).
+using Ipv4Address = std::array<std::uint8_t, kIpv4AddressBytes>;
+/// An IPv6 address's bytes, in network order.
+using Ipv6Address = std::array<std::uint8_t, kIpv6AddressBytes>;
+
+/// One end of a tapped message: an address and a port, as values rather than
+/// Endpoint's "host:port" text. A default one is unspecified: IPv4 0.0.0.0, port 0.
+struct TapEndpoint {
+  std::variant<Ipv4Address, Ipv6Address> address;
+  /// In host order.
+  std::uint16_t port = 0;
+
+  bool operator==(const TapEndpoint&) const = default;
+};
+
+/// Which way a tapped message went, from this process's side.
+enum class TapDirection : std::uint8_t {
+  /// Received from the remote end.
+  kInbound,
+  /// Sent to the remote end.
+  kOutbound,
+};
+
+/// One message a Client or Server reports to its Tap.
+struct TappedMessage {
+  TapDirection direction;
+  /// A Server's listen address and port; unspecified for a Client, since the
+  /// transport does not give a connection's local address.
+  TapEndpoint local;
+  TapEndpoint remote;
+  /// The message's bytes, valid only during the Tap::Report call.
+  std::span<const std::byte> payload;
+  /// When the transport took the message to send, or handed it over received.
+  std::chrono::system_clock::time_point time;
+};
+
+/// What a Client or Server reports every message it moves to, in a Development
+/// build only (ADR-0074): each send the transport accepted (kAccepted, never a
+/// dropped or failed one), and each message received, as it is taken off the
+/// transport and before anyone decodes it. Report is called on whichever
+/// thread sends or receives, the Network I/O thread or a tick's, often with
+/// the transport's own lock held, so it must not block: an implementation
+/// that writes somewhere slow only enqueues. What is done with the messages (such
+/// as a pcapng file) is the tap's, not this module's.
+class Tap {
+ public:
+  virtual ~Tap() = default;
+  virtual void Report(const TappedMessage& message) = 0;
+
+ protected:
+  Tap() = default;
+  Tap(const Tap&) = default;
+  Tap& operator=(const Tap&) = default;
+  Tap(Tap&&) = default;
+  Tap& operator=(Tap&&) = default;
+};
+#endif
+
 // ---- Client ----
 
 /// A client's connection to the one server it dials. Mirrors the
@@ -195,6 +262,11 @@ class Client {
   /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
   /// Client.
   explicit Client(failure::Faults* faults = nullptr);
+#if AUGUSTA_DEBUG_TOOLS
+  /// As above, reporting every message to tap when it is not null; tap must
+  /// outlive the Client.
+  Client(failure::Faults* faults, Tap* tap);
+#endif
 
   /// Closes the connection, if any, and releases the underlying
   /// transport connection.
@@ -313,6 +385,11 @@ class Server {
   /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
   /// must outlive the Server.
   explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr);
+#if AUGUSTA_DEBUG_TOOLS
+  /// As above, reporting every message to tap when it is not null; tap must
+  /// outlive the Server.
+  Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap);
+#endif
 
   /// Closes the listen socket and every connected peer's connection.
   ~Server();

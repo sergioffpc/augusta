@@ -912,6 +912,7 @@ endif()
 # sit in a file of their own, added to that module's test executable here, so
 # no test file leaves a case out by `#if AUGUSTA_DEBUG_TOOLS`.
 if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_networking_tests PRIVATE networking_tap_test.cpp)
   target_sources(augusta_client_config_tests PRIVATE client_config_debug_test.cpp)
   target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
   target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
