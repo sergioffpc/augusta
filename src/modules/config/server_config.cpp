@@ -28,6 +28,7 @@ constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max
 constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
 #if AUGUSTA_DEBUG_TOOLS
 constexpr std::string_view kReenactmentsKey = "debug.reenactments";
+constexpr std::string_view kNetworkPcapngKey = "debug.network.pcapng";
 #endif
 constexpr std::string_view kReplayCapturesKey = "replay.captures";
 constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
@@ -165,13 +166,6 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
-#if AUGUSTA_DEBUG_TOOLS
-  // The `debug` section (ADR-0074): whether Reenact requests are taken.
-  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
-  if (!reenactments) {
-    return std::unexpected(reenactments.error());
-  }
-#endif
   return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -183,12 +177,34 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
 #if AUGUSTA_DEBUG_TOOLS
-      .reenactments = *reenactments,
+      // Read last, by ReadDebug.
+      .reenactments = false,
+      .network_pcapng = {},
 #endif
       .metrics_port = *metrics_port,
       .replay_captures = {},
   };
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+// Reads the `debug` section (ADR-0074) into config: whether Reenact requests
+// are taken, and the directory the pcapng goes in (ADR-0076), relative to root.
+// Last, so that a config refused for anything else creates no directory.
+std::expected<ServerConfig, ConfigError> ReadDebug(const ConfigValues& values, const std::filesystem::path& root,
+                                                   ServerConfig config) {
+  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
+  }
+  config.reenactments = *reenactments;
+  auto directory = OptionalWritableDirectory(values, kNetworkPcapngKey, root);
+  if (!directory) {
+    return std::unexpected(directory.error());
+  }
+  config.network_pcapng = *std::move(directory);
+  return config;
+}
+#endif
 
 }  // namespace
 
@@ -212,6 +228,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       kReplayMaxViewersKey,
 #if AUGUSTA_DEBUG_TOOLS
       kReenactmentsKey,
+      kNetworkPcapngKey,
 #endif
   });
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
@@ -224,9 +241,14 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  return ServerConfigFrom(*values, *root).and_then([&](ServerConfig config) {
-    return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
+  auto config = ServerConfigFrom(*values, *root).and_then([&](ServerConfig read) {
+    return ReadReplay(*values, *root, read).transform([&read] { return std::move(read); });
   });
+#if AUGUSTA_DEBUG_TOOLS
+  return std::move(config).and_then([&](ServerConfig read) { return ReadDebug(*values, *root, std::move(read)); });
+#else
+  return config;
+#endif
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {

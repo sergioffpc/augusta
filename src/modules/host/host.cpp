@@ -91,6 +91,15 @@ std::vector<std::string> CharacterPaths(const std::vector<scenario::Character>& 
   return paths;
 }
 
+// The Link's options for the Host's listening socket: its faults and, in a Development build, its tap.
+link::TransportOptions TransportOptionsOf(const HostConfig& config) {
+#if AUGUSTA_DEBUG_TOOLS
+  return {.faults = config.faults, .tap = config.tap};
+#else
+  return {.faults = config.faults};
+#endif
+}
+
 }  // namespace
 
 Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy)
@@ -101,7 +110,7 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen, link::TransportOptions{.faults = config.faults}),
+      network(config.listen, TransportOptionsOf(config)),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,

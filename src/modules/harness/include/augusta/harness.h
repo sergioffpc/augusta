@@ -189,6 +189,13 @@ struct SessionConfig {
   /// For a test: asked at every send and receive (link.h), so the
   /// transport fails there; null otherwise. Must outlive the Session.
   failure::Faults* faults = nullptr;
+#if AUGUSTA_DEBUG_TOOLS
+  /// The connection's tap, such as the pcapng writer: reported every message
+  /// it sends to and receives from the server (link::TransportOptions::tap,
+  /// ADR-0076); null, the default, reports none. Must outlive the Session. A
+  /// Shipping build has none (ADR-0074).
+  link::Tap* tap = nullptr;
+#endif
   /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
   /// asks a replay server to replay the capture of this name, by its name in
   /// the server's Replay list. It is then a Spectator from the first tick: it

@@ -71,6 +71,13 @@ struct ReplayServerConfig {
   /// For a test: asked at listener setup and at every send and receive; null
   /// otherwise. Must outlive the ReplayServer.
   failure::Faults* faults = nullptr;
+#if AUGUSTA_DEBUG_TOOLS
+  /// The endpoint's tap, such as the pcapng writer: reported every message it
+  /// sends to and receives from every viewer (link::TransportOptions::tap,
+  /// ADR-0076); null, the default, reports none. Must outlive the
+  /// ReplayServer. A Shipping build has none (ADR-0074).
+  link::Tap* tap = nullptr;
+#endif
 };
 
 /// What a Replay viewer is sent for tick of its Replay, in order, each with the

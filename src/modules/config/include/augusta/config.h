@@ -171,6 +171,14 @@ std::string OptionalString(const ConfigValues& values, std::string_view key, std
 /// kInvalidEntry, its subject key, if it is neither.
 std::expected<bool, ConfigError> OptionalFlag(const ConfigValues& values, std::string_view key, bool fallback);
 
+/// key's value as a directory under base_dir, as RequirePath reads it, created
+/// if missing; empty if values lacks it. kInvalidEntry, its subject key, if
+/// the directory can't be created or a file can't be written in it: a key
+/// naming where a run writes is checked once, at startup.
+std::expected<std::filesystem::path, ConfigError> OptionalWritableDirectory(const ConfigValues& values,
+                                                                            std::string_view key,
+                                                                            const std::filesystem::path& base_dir);
+
 /// key's value, or fallback if values lacks it; kInvalidLogLevel if it is not
 /// one augusta::logging::ParseSeverity accepts.
 std::expected<std::string, ConfigError> OptionalLogLevel(const ConfigValues& values, std::string_view key,

@@ -55,8 +55,13 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayR
       .max_viewers = file_config.replay_max_viewers,
       .faults = faults,
   };
+#if AUGUSTA_DEBUG_TOOLS
+  return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
+                                         *std::move(policy), faults, file_config.network_pcapng);
+#else
   return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
                                          *std::move(policy), faults);
+#endif
 }
 
 // Verifies the pack the file's settings name, loads its content and constructs
@@ -101,8 +106,13 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
 #endif
       .faults = faults,
   };
+#if AUGUSTA_DEBUG_TOOLS
+  return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
+                                         std::move(content->policy), faults, file_config.network_pcapng);
+#else
   return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
                                          std::move(content->policy), faults);
+#endif
 }
 
 }  // namespace
