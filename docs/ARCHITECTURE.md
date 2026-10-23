@@ -683,6 +683,9 @@ not affect numbering.
 - [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
   overlays and panels: values each area builds and the Renderer draws, ImGui
   inside the Renderer
+- [ADR-0076](./adr/0076-wireshark-reads-the-games-own-pcapng.md) — Wireshark:
+  the game's own `exported_pdu` pcapng of decrypted messages, read by a fixed
+  Lua shim over the `protobuf` dissector
 
 ### Tooling & Build
 
