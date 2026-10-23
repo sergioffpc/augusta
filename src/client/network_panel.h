@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string_view>
@@ -15,7 +16,8 @@
 /// \file
 /// The client's Network Debug panel (ADR-0075), private to the client Runtime
 /// and compiled only in a Development build (ADR-0074): the client's own
-/// connection and its traffic per message type, as rates, plots and peaks.
+/// connection, its traffic per message type and the Authoritative State
+/// updates it receives, as rates, plots and peaks.
 /// Its numbers come from modules that ship in every build (link), so its
 /// builder lives here rather than in them, which may not depend on
 /// augusta_debug. It takes plain values only: the Network I/O thread records
@@ -57,6 +59,12 @@ class ConnectionReadings {
 /// What the client Runtime hands the panel at each sample.
 struct NetworkSample {
   ConnectionReading connection;
+  /// The server's tick rate, at which Authoritative State updates should
+  /// arrive; nullopt until the server admits the client.
+  std::optional<std::uint8_t> tick_rate_hz;
+  /// Whether the mode receives Authoritative State: a Replay viewer does not,
+  /// and the Authoritative State group reads "--".
+  bool receives_authoritative_state = true;
 };
 
 class NetworkPanel {
@@ -77,7 +85,7 @@ class NetworkPanel {
   void Sample(const NetworkSample& sample, Clock::time_point now);
 
   /// The panel: the Connection group, with its plots, the traffic per message
-  /// type, and a "Reset peaks" button.
+  /// type, the Authoritative State updates, and a "Reset peaks" button.
   [[nodiscard]] debug::Panel BuildPanel() const;
 
   /// "Reset peaks" restarts every peak from its current value. Any other
@@ -124,6 +132,20 @@ class NetworkPanel {
     Watched pending_bytes;
   };
 
+  // The Authoritative State updates' numbers: rates per second over
+  // kRateWindow, sizes in bytes; all nullopt in a mode that receives none.
+  struct AuthoritativeState {
+    // Whether the mode receives Authoritative State.
+    bool received = true;
+    std::optional<std::uint8_t> tick_rate_hz;
+    Watched updates;
+    Watched last_bytes;
+    Watched average_bytes;
+    Watched largest_bytes;
+    Watched ticks_missing;
+    Watched ticks_out_of_order;
+  };
+
   // The plotted series, oldest first, each at most kPlotPoints long.
   struct Plots {
     std::deque<float> rtt_ms;
@@ -139,9 +161,13 @@ class NetworkPanel {
   // The samples' traffic over the last kRateWindow, oldest first.
   std::deque<std::pair<Clock::time_point, link::Traffic>> traffic_window_;
   std::array<TypeRates, link::kMessageTypeCount> rates_{};
+  AuthoritativeState authoritative_state_;
 
   void SampleConnection(const std::optional<link::ConnectionStats>& stats);
   void SampleTraffic(const link::Traffic& traffic, Clock::time_point now);
+  // After SampleTraffic, whose window it takes its rates over.
+  void SampleAuthoritativeState(const NetworkSample& sample);
+  void AddAuthoritativeState(debug::Panel& panel) const;
   void ResetPeaks();
 };
 

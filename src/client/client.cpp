@@ -269,7 +269,12 @@ struct ClientRuntime::Impl {
       network_panel_on.store(on);
     }
     if (const auto now = NetworkPanel::Clock::now(); on && network_panel.SampleDue(now)) {
-      network_panel.Sample({.connection = TakeConnectionReading()}, now);
+      const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+      network_panel.Sample({.connection = TakeConnectionReading(),
+                            .tick_rate_hz = view->accepted.transform(
+                                [](const harness::Admission& admission) { return admission.tick_rate_hz; }),
+                            .receives_authoritative_state = !config.replay.has_value()},
+                           now);
     }
   }
 

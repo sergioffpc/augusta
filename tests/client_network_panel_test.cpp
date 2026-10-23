@@ -31,6 +31,7 @@ using augusta::debug::HistoryPlot;
 using augusta::debug::Panel;
 using augusta::debug::Table;
 using augusta::debug::Text;
+using augusta::link::AuthoritativeStateTally;
 using augusta::link::ConnectionStats;
 using augusta::link::kMessageTypeCount;
 using augusta::link::MessageType;
@@ -51,7 +52,9 @@ ConnectionStats Measured() {
 }
 
 NetworkSample Connected(const ConnectionStats& stats, const Traffic& traffic = {}) {
-  return {.connection = {.stats = stats, .traffic = traffic}};
+  NetworkSample sample;
+  sample.connection = {.stats = stats, .traffic = traffic};
+  return sample;
 }
 
 // Commands sent: messages and their bytes, so far.
@@ -59,6 +62,23 @@ Traffic CommandsSent(std::uint64_t messages, std::uint64_t bytes) {
   Traffic traffic;
   traffic.by_type.at(static_cast<std::size_t>(MessageType::kCommands)).sent = {.messages = messages, .bytes = bytes};
   return traffic;
+}
+
+constexpr std::uint8_t kTickRateHz = 30;
+
+// Authoritative State updates received so far, the rest of the tally as given.
+Traffic UpdatesReceived(std::uint64_t updates, AuthoritativeStateTally tally = {}) {
+  Traffic traffic;
+  tally.updates = updates;
+  traffic.authoritative_state = tally;
+  return traffic;
+}
+
+// A playing client's sample, admitted by a server ticking at kTickRateHz.
+NetworkSample Received(const Traffic& traffic) {
+  NetworkSample sample = Connected(Measured(), traffic);
+  sample.tick_rate_hz = kTickRateHz;
+  return sample;
 }
 
 ControlEvent ResetPeaks() {
@@ -253,6 +273,125 @@ TEST(NetworkPanelTest, TrafficRatesStartOverWhenTheCountsDo) {
   network.Sample(Connected(Measured(), CommandsSent(20, 200)), kStart + milliseconds(200));
 
   EXPECT_EQ(RowOf(network.BuildPanel(), MessageType::kCommands).at(3), "100.0 (100.0)");
+}
+
+TEST(NetworkPanelTest, AuthoritativeStateArrivalsComeFromTheCountsOverTheLastSecond) {
+  NetworkPanel network;
+  network.Sample(Received(UpdatesReceived(0)), kStart);
+  network.Sample(Received(UpdatesReceived(15)), kStart + milliseconds(500));
+  network.Sample(Received(UpdatesReceived(40)), kStart + milliseconds(1000));
+  // Over the last second only: 25 updates since the sample at 500 ms.
+  network.Sample(Received(UpdatesReceived(40)), kStart + milliseconds(1500));
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Updates: 25.0/s (peak 40.0/s), tick rate 30Hz"));
+}
+
+TEST(NetworkPanelTest, AuthoritativeStateSizesAreTheLastTheAverageAndTheLargestEachWithItsPeak) {
+  NetworkPanel network;
+  network.Sample(Received(UpdatesReceived(2, {.total_bytes = 4096, .last_bytes = 3072, .largest_bytes = 3072})),
+                 kStart);
+
+  network.Sample(Received(UpdatesReceived(4, {.total_bytes = 6144, .last_bytes = 512, .largest_bytes = 3072})),
+                 kStart + milliseconds(100));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Last size: 512B (peak 3.0KB)"));
+  // Total bytes over updates received: 6144 / 4, after 4096 / 2.
+  EXPECT_TRUE(HasText(panel, "Average size: 1.5KB (peak 2.0KB)"));
+  EXPECT_TRUE(HasText(panel, "Largest size: 3.0KB (peak 3.0KB)"));
+}
+
+TEST(NetworkPanelTest, AuthoritativeStateSizesReadDashesBeforeTheFirstUpdate) {
+  NetworkPanel network;
+
+  network.Sample(Received(UpdatesReceived(0)), kStart);
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Last size: --"));
+  EXPECT_TRUE(HasText(panel, "Average size: --"));
+  EXPECT_TRUE(HasText(panel, "Largest size: --"));
+}
+
+TEST(NetworkPanelTest, TicksMissingAndOutOfOrderAreRatesEachWithItsPeak) {
+  NetworkPanel network;
+  network.Sample(Received(UpdatesReceived(0)), kStart);
+  network.Sample(Received(UpdatesReceived(10, {.ticks_missing = 3, .ticks_out_of_order = 1})),
+                 kStart + milliseconds(500));
+  network.Sample(Received(UpdatesReceived(20, {.ticks_missing = 4, .ticks_out_of_order = 1})),
+                 kStart + milliseconds(1000));
+  // Over the last second only: one tick missing and none out of order since 500 ms.
+  network.Sample(Received(UpdatesReceived(30, {.ticks_missing = 4, .ticks_out_of_order = 1})),
+                 kStart + milliseconds(1500));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Ticks missing: 1.0/s (peak 6.0/s)"));
+  EXPECT_TRUE(HasText(panel, "Ticks out of order: 0.0/s (peak 2.0/s)"));
+}
+
+TEST(NetworkPanelTest, AReplayViewerReadsDashesForTheAuthoritativeStateGroup) {
+  NetworkPanel network;
+  NetworkSample replay = Received(UpdatesReceived(10, {.total_bytes = 1000, .last_bytes = 100, .ticks_missing = 1}));
+  replay.receives_authoritative_state = false;
+  network.Sample(replay, kStart);
+  replay.connection.traffic = UpdatesReceived(20, {.total_bytes = 2000, .last_bytes = 100, .ticks_missing = 2});
+
+  network.Sample(replay, kStart + milliseconds(100));
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Updates: --"));
+  EXPECT_TRUE(HasText(panel, "Last size: --"));
+  EXPECT_TRUE(HasText(panel, "Average size: --"));
+  EXPECT_TRUE(HasText(panel, "Largest size: --"));
+  EXPECT_TRUE(HasText(panel, "Ticks missing: --"));
+  EXPECT_TRUE(HasText(panel, "Ticks out of order: --"));
+  // Control: the Connection group still reads the connection.
+  EXPECT_TRUE(HasText(panel, "RTT: 42ms"));
+}
+
+TEST(NetworkPanelTest, AuthoritativeStateRatesStartOverWhenTheCountsDo) {
+  NetworkPanel network;
+  network.Sample(Received(UpdatesReceived(40, {.ticks_missing = 9})), kStart);
+  // A new connection counts from zero.
+  network.Sample(Received(UpdatesReceived(5)), kStart + milliseconds(100));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Ticks missing: --"));
+
+  network.Sample(Received(UpdatesReceived(8, {.ticks_missing = 1})), kStart + milliseconds(200));
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Updates: 30.0/s (peak 30.0/s), tick rate 30Hz"));
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Ticks missing: 10.0/s (peak 10.0/s)"));
+}
+
+TEST(NetworkPanelTest, ATickRateNotKnownYetReadsDashes) {
+  NetworkPanel network;
+  NetworkSample sample = Received(UpdatesReceived(0));
+  sample.tick_rate_hz = std::nullopt;
+  network.Sample(sample, kStart);
+
+  network.Sample(sample, kStart + milliseconds(100));
+
+  EXPECT_TRUE(HasText(network.BuildPanel(), "Updates: 0.0/s (peak 0.0/s), tick rate --"));
+}
+
+TEST(NetworkPanelTest, AuthoritativeStatePeaksAreKeptUntilReset) {
+  NetworkPanel network;
+  network.Sample(Received(UpdatesReceived(0)), kStart);
+  network.Sample(Received(UpdatesReceived(
+                     10, {.total_bytes = 20480, .last_bytes = 4096, .largest_bytes = 4096, .ticks_missing = 5})),
+                 kStart + milliseconds(500));
+  network.Sample(Received(UpdatesReceived(
+                     40, {.total_bytes = 49152, .last_bytes = 1024, .largest_bytes = 4096, .ticks_missing = 5})),
+                 kStart + milliseconds(1500));
+  ASSERT_TRUE(HasText(network.BuildPanel(), "Last size: 1.0KB (peak 4.0KB)"));
+
+  network.Update(ResetPeaks());
+
+  const Panel panel = network.BuildPanel();
+  EXPECT_TRUE(HasText(panel, "Updates: 30.0/s (peak 30.0/s), tick rate 30Hz"));
+  EXPECT_TRUE(HasText(panel, "Last size: 1.0KB (peak 1.0KB)"));
+  EXPECT_TRUE(HasText(panel, "Average size: 1.2KB (peak 1.2KB)"));
+  EXPECT_TRUE(HasText(panel, "Largest size: 4.0KB (peak 4.0KB)"));
+  EXPECT_TRUE(HasText(panel, "Ticks missing: 0.0/s (peak 0.0/s)"));
+  EXPECT_TRUE(HasText(panel, "Ticks out of order: 0.0/s (peak 0.0/s)"));
 }
 
 TEST(NetworkPanelTest, PlotsTheConnectionsNumbers) {
