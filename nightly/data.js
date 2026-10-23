@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792656508509,
+  "lastUpdate": 1792742825238,
   "repoUrl": "https://github.com/sergioffpc/augusta",
   "entries": {
     "Hot paths": [
@@ -2048,6 +2048,142 @@ window.BENCHMARK_DATA = {
             "value": 26161.5412593016,
             "unit": "ns/iter",
             "extra": "iterations: 5\ncpu: 26159.575952137937 ns\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Sérgio Carvalho",
+            "username": "sergioffpc",
+            "email": "sergioffpc@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "455b6a259260d1a7a0cc6dd303b05997969a479c",
+          "message": "Merge pull request #1267 from sergioffpc/feature/945-shot-judgements\n\nfeat: Shot judgements, Debug subscribe and debug.shot_judgements",
+          "timestamp": "2026-10-23T06:53:41Z",
+          "url": "https://github.com/sergioffpc/augusta/commit/455b6a259260d1a7a0cc6dd303b05997969a479c"
+        },
+        "date": 1792742824909,
+        "tool": "googlecpp",
+        "benches": [
+          {
+            "name": "BM_BallisticsStep_median",
+            "value": 186.4724956870318,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 186.46322118892098 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/8_median",
+            "value": 66.56414857209192,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 66.5580594144454 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/16_median",
+            "value": 136.32560626496536,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 136.2678993962517 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/64_median",
+            "value": 526.5101398474904,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 526.4626024249892 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/256_median",
+            "value": 2216.538735720891,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 2216.2689387267537 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/1024_median",
+            "value": 8841.342634438599,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 8840.628967145687 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RemoteInterpolationIngest/2048_median",
+            "value": 18653.7667423851,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 18650.46624155012 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/client_median",
+            "value": 62538.819818228854,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 62532.735286331816 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_PackLoad/server_median",
+            "value": 52088.84668884135,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 52083.5795282735 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/unchanged_state_median",
+            "value": 1139.0170257904797,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1138.9464016569232 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_RenderFrame/new_state_median",
+            "value": 1381.811436234412,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1381.7165207569647 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/authoritative_state_median",
+            "value": 304.17914824314374,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 304.1586165697205 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolEncode/commands_median",
+            "value": 271.9808058481039,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 271.9724014739998 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/authoritative_state_median",
+            "value": 282.61815372715125,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 282.6114753898146 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ProtocolDecode/commands_median",
+            "value": 231.51034907407876,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 231.50053711120918 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_ReplayViewerTick_median",
+            "value": 26628.37427123313,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 26626.01432763015 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Replication_median",
+            "value": 1231.6258126650414,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 1231.5766344445587 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTick_median",
+            "value": 26327.61135404808,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 26325.322439585965 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_SimulationTickBetweenStates_median",
+            "value": 27793.869929804023,
+            "unit": "ns/iter",
+            "extra": "iterations: 5\ncpu: 27789.477442610474 ns\nthreads: 1"
           }
         ]
       }
