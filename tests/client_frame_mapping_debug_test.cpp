@@ -5,7 +5,7 @@
 #include "augusta/body_part.h"
 #include "augusta/harness.h"
 #include "augusta/interpolation.h"
-#include "augusta/link.h"
+#include "augusta/link_types.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/physics_overlays.h"

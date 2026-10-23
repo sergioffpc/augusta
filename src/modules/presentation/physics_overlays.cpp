@@ -164,6 +164,21 @@ float DistanceToSegment(const math::Vec3& point, const math::Vec3& from, const m
 // end there: the server flies it with the same steps, so it lies on one.
 constexpr float kStruckPointTolerance = 0.1F;
 
+// Which of judgement's entries its struck Hitbox is on: the last that lists
+// its target, the tick its flight ended on; nullopt unless it struck a Hitbox.
+std::optional<std::size_t> StruckEntryOf(const ShotJudgement& judgement) {
+  if (judgement.struck != Struck::kHitbox || !judgement.target.has_value()) {
+    return std::nullopt;
+  }
+  for (std::size_t i = judgement.entries.size(); i > 0; --i) {
+    if (std::ranges::any_of(judgement.entries[i - 1].players,
+                            [&](const JudgedPlayer& player) { return player.entity == *judgement.target; })) {
+      return i - 1;
+    }
+  }
+  return std::nullopt;
+}
+
 // Every shape of shapes drawn through walls or not.
 void SetThroughWalls(debug::Shapes& shapes, bool through_walls) {
   const auto set = [through_walls](auto& kind) {
@@ -372,36 +387,7 @@ void PhysicsOverlays::Judge(const ShotJudgement& judgement, Clock::time_point no
   if (std::optional<debug::Shapes> seen = TakeSeen(seen_time)) {
     Append(round, *seen);
   }
-  const bool struck_hitbox = judgement.struck == Struck::kHitbox && judgement.target.has_value();
-  // The struck Hitbox is the target's on the last tick that lists it: the one
-  // its flight ended on.
-  std::optional<std::size_t> struck_entry;
-  for (std::size_t i = 0; i < judgement.entries.size(); ++i) {
-    for (const JudgedPlayer& player : judgement.entries[i].players) {
-      if (struck_hitbox && player.entity == *judgement.target) {
-        struck_entry = i;
-      }
-    }
-  }
-  for (std::size_t i = 0; i < judgement.entries.size(); ++i) {
-    for (const JudgedPlayer& player : judgement.entries[i].players) {
-      const auto character = characters_.find(player.entity);
-      if (character == characters_.end()) {
-        continue;
-      }
-      const auto hitboxes = hitboxes_.find(character->second);
-      if (hitboxes == hitboxes_.end()) {
-        continue;
-      }
-      const bool struck_player = struck_entry == i && player.entity == judgement.target;
-      for (const hitbox::PlacedHitbox& hitbox : hitbox::Place(hitboxes->second, player.pose)) {
-        AddOutline(hitbox, kJudgedHitboxColor, true, round);
-        if (struck_player && hitbox.part == judgement.part) {
-          AddFill(hitbox, kJudgedHitboxColor, round);
-        }
-      }
-    }
-  }
+  AddJudgedHitboxes(judgement, round);
   const bool struck = judgement.struck != Struck::kNothing;
   const std::vector<math::Vec3> flight =
       FlightOf(judgement.shot_tick, struck ? std::optional(judgement.point) : std::nullopt);
@@ -417,6 +403,26 @@ void PhysicsOverlays::Judge(const ShotJudgement& judgement, Clock::time_point no
   }
   judged_.Keep(round, now + kShotJudgementSeconds);
   judged_alive_ = judged_.Alive(now);
+}
+
+void PhysicsOverlays::AddJudgedHitboxes(const ShotJudgement& judgement, debug::Shapes& round) const {
+  const std::optional<std::size_t> struck_entry = StruckEntryOf(judgement);
+  for (std::size_t i = 0; i < judgement.entries.size(); ++i) {
+    for (const JudgedPlayer& player : judgement.entries[i].players) {
+      const auto character = characters_.find(player.entity);
+      const auto hitboxes = character == characters_.end() ? hitboxes_.end() : hitboxes_.find(character->second);
+      if (hitboxes == hitboxes_.end()) {
+        continue;
+      }
+      const bool struck_player = struck_entry == i && player.entity == judgement.target;
+      for (const hitbox::PlacedHitbox& hitbox : hitbox::Place(hitboxes->second, player.pose)) {
+        AddOutline(hitbox, kJudgedHitboxColor, true, round);
+        if (struck_player && hitbox.part == judgement.part) {
+          AddFill(hitbox, kJudgedHitboxColor, round);
+        }
+      }
+    }
+  }
 }
 
 std::optional<debug::Shapes> PhysicsOverlays::TakeSeen(double seen_time) {

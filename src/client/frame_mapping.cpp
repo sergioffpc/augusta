@@ -17,6 +17,11 @@
 #include "augusta/renderer.h"
 #include "augusta/tracers.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/link_types.h"
+#include "augusta/physics_overlays.h"
+#endif
+
 namespace augusta::client {
 
 // Neither module names the other (checks/protocol_boundary.cmake), so their

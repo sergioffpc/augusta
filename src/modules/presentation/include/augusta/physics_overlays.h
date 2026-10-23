@@ -293,6 +293,8 @@ class PhysicsOverlays {
     math::Vec3 direction{};
     Clock::time_point received;
   };
+  // judgement's judged Hitboxes, outlined, the struck one filled, into round.
+  void AddJudgedHitboxes(const ShotJudgement& judgement, debug::Shapes& round) const;
   // The seen Hitboxes whose Seen time is nearest seen_time, within a tick,
   // taken from those kept; nullopt if none is.
   std::optional<debug::Shapes> TakeSeen(double seen_time);

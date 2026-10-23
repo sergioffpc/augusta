@@ -53,6 +53,7 @@
 #include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
 #include "augusta/hud.h"
+#include "augusta/link_types.h"
 #include "augusta/physics_overlays.h"
 #include "debug_index_entries.h"
 #include "profiling_panel.h"
