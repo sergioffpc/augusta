@@ -4,7 +4,6 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -61,22 +60,10 @@ std::optional<failure::Failure> FinishCaptureOf(host::Host& host) { return host.
 std::optional<failure::Failure> FinishCaptureOf(host::ReplayServer& /*server*/) { return std::nullopt; }
 
 #if AUGUSTA_DEBUG_TOOLS
-// The writer of this run's pcapng in directory (ADR-0076), or null for none
-// when directory is empty: the config that named it checked it can be written.
-std::unique_ptr<pcapng::FileWriter> PcapngWriter(const std::filesystem::path& directory) {
-  if (directory.empty()) {
-    return nullptr;
-  }
-  auto writer =
-      std::make_unique<pcapng::FileWriter>(directory, "augustad", EngineVersion(), std::chrono::system_clock::now());
-  LOG_INFO("subsystem=serverruntime event=pcapng_writing path={}", writer->Path().string());
-  return writer;
-}
-
 // config, its transport tapped by tap.
 template <typename Config>
 Config Tapped(Config config, link::Tap* tap) {
-  config.tap = tap;
+  config.transport.tap = tap;
   return config;
 }
 #endif
@@ -113,24 +100,18 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // served, so it stops and joins the Network I/O thread before served goes.
   supervisor::Supervisor workers;
 
+  template <typename Config, typename Policy>
+  Running(const Config& config, scenario::Scenario scenario, Policy policy, const RuntimeOptions& options)
+      : tick_rate_hz(config.tick_rate_hz),
+        metrics_port(options.metrics_port),
 #if AUGUSTA_DEBUG_TOOLS
-  template <typename Config, typename Policy>
-  Running(const Config& config, std::uint16_t metrics_port_in, scenario::Scenario scenario, Policy policy,
-          failure::Faults* faults, const std::filesystem::path& network_pcapng)
-      : tick_rate_hz(config.tick_rate_hz),
-        metrics_port(metrics_port_in),
-        pcapng(PcapngWriter(network_pcapng)),
+        pcapng(pcapng::RunWriter(options.network_pcapng, "augustad", EngineVersion())),
         served(Tapped(config, pcapng.get()), std::move(scenario), std::move(policy)),
-        workers(faults != nullptr ? *faults : no_faults) {}
 #else
-  template <typename Config, typename Policy>
-  Running(const Config& config, std::uint16_t metrics_port_in, scenario::Scenario scenario, Policy policy,
-          failure::Faults* faults)
-      : tick_rate_hz(config.tick_rate_hz),
-        metrics_port(metrics_port_in),
         served(config, std::move(scenario), std::move(policy)),
-        workers(faults != nullptr ? *faults : no_faults) {}
 #endif
+        workers(options.faults != nullptr ? *options.faults : no_faults) {
+  }
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
   // can't start keeps running without it, and in the cluster its liveness
@@ -249,29 +230,13 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   void Stop() override { workers.RequestStop(); }
 };
 
-#if AUGUSTA_DEBUG_TOOLS
-ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                             policy::Policy policy, failure::Faults* faults,
-                             const std::filesystem::path& network_pcapng)
-    : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy), faults,
-                                                  network_pcapng)) {}
+ServerRuntime::ServerRuntime(const host::HostConfig& config, scenario::Scenario scenario, policy::Policy policy,
+                             const RuntimeOptions& options)
+    : impl_(std::make_unique<Running<host::Host>>(config, std::move(scenario), std::move(policy), options)) {}
 
-ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port,
-                             scenario::Scenario scenario, policy::PolicyMaker policy, failure::Faults* faults,
-                             const std::filesystem::path& network_pcapng)
-    : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                          faults, network_pcapng)) {}
-#else
-ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                             policy::Policy policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                  faults)) {}
-
-ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port,
-                             scenario::Scenario scenario, policy::PolicyMaker policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                          faults)) {}
-#endif
+ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, scenario::Scenario scenario,
+                             policy::PolicyMaker policy, const RuntimeOptions& options)
+    : impl_(std::make_unique<Running<host::ReplayServer>>(config, std::move(scenario), std::move(policy), options)) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

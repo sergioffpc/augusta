@@ -186,16 +186,12 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
-  /// For a test: asked at every send and receive (link.h), so the
-  /// transport fails there; null otherwise. Must outlive the Session.
-  failure::Faults* faults = nullptr;
-#if AUGUSTA_DEBUG_TOOLS
-  /// The connection's tap, such as the pcapng writer: reported every message
-  /// it sends to and receives from the server (link::TransportOptions::tap,
-  /// ADR-0076); null, the default, reports none. Must outlive the Session. A
-  /// Shipping build has none (ADR-0074).
-  link::Tap* tap = nullptr;
-#endif
+  /// What the connection's transport is built with (link.h): for a test, the
+  /// faults asked at every send and receive, so the transport fails there; in
+  /// a Development build, the tap, such as the pcapng writer, reported every
+  /// message it sends to and receives from the server (ADR-0076). Each null by
+  /// default; each must outlive the Session.
+  link::TransportOptions transport{};
   /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
   /// asks a replay server to replay the capture of this name, by its name in
   /// the server's Replay list. It is then a Spectator from the first tick: it

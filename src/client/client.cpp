@@ -4,7 +4,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <format>
 #include <functional>
 #include <memory>
@@ -79,18 +78,6 @@ std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
   return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
           {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel}};
 }
-
-// The writer of this run's pcapng in directory (ADR-0076), or null for none
-// when directory is empty: the config that named it checked it can be written.
-std::unique_ptr<pcapng::FileWriter> PcapngWriter(const std::filesystem::path& directory) {
-  if (directory.empty()) {
-    return nullptr;
-  }
-  auto writer =
-      std::make_unique<pcapng::FileWriter>(directory, "augustac", EngineVersion(), std::chrono::system_clock::now());
-  LOG_INFO("subsystem=client event=pcapng_writing path={}", writer->Path().string());
-  return writer;
-}
 #endif
 
 // The window the client opens, titled as the game.
@@ -139,7 +126,8 @@ struct ClientRuntime::Impl {
 #if AUGUSTA_DEBUG_TOOLS
   // This run's pcapng, if asked for: declared before the Session, whose
   // connection reports to it until it goes.
-  std::unique_ptr<pcapng::FileWriter> pcapng = PcapngWriter(config.debug_network_pcapng);
+  std::unique_ptr<pcapng::FileWriter> pcapng =
+      pcapng::RunWriter(config.debug_network_pcapng, "augustac", EngineVersion());
 #endif
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
@@ -374,7 +362,7 @@ struct ClientRuntime::Impl {
             .client_pack = cfg.client_pack,
             .character = cfg.character,
 #if AUGUSTA_DEBUG_TOOLS
-            .tap = pcapng.get(),
+            .transport = {.tap = pcapng.get()},
 #endif
             .replay = cfg.replay,
             .spawn = cfg.reenactment.transform([](const harness::Script& script) { return script.spawn; }),

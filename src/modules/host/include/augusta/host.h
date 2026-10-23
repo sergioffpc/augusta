@@ -79,17 +79,15 @@ struct HostConfig {
   /// players; a Shipping build refuses every one (ADR-0074).
   bool reenactments = false;
 #endif
-  /// For a test: asked at listener setup, at every send and receive
-  /// (augusta/link.h) and at the capture's write and flush, so the transport or
-  /// the disk fails there; null otherwise. Must outlive the Host.
+  /// For a test: asked at the capture's write and flush, so the disk fails
+  /// there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
-#if AUGUSTA_DEBUG_TOOLS
-  /// The listening socket's tap, such as the pcapng writer: reported every
-  /// message it sends to and receives from every peer
-  /// (link::TransportOptions::tap, ADR-0076); null, the default, reports none.
-  /// Must outlive the Host. A Shipping build has none (ADR-0074).
-  link::Tap* tap = nullptr;
-#endif
+  /// What the listening socket's transport is built with (augusta/link.h): for
+  /// a test, the faults asked at listener setup and at every send and receive,
+  /// so the transport fails there; in a Development build, the tap, such as
+  /// the pcapng writer, reported every message it sends to and receives from
+  /// every peer (ADR-0076). Each null by default; each must outlive the Host.
+  link::TransportOptions transport{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

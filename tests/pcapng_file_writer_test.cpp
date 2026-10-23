@@ -7,10 +7,12 @@
 #include <fstream>
 #include <ios>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -129,6 +131,33 @@ TEST(PcapngFileName, NamesTheExecutableAndItsStartInUtc) {
   EXPECT_EQ(FileName("augustad", kStarted), "augustad-20231114T221320123Z.pcapng");
 }
 
+TEST(PcapngRunWriter, IsNoneWithoutADirectory) { EXPECT_EQ(RunWriter({}, kExecutable, kVersion), nullptr); }
+
+// A directory name the ANSI code page lacks: Windows' path::string() would
+// throw on it rather than log it.
+TEST(PcapngRunWriter, WritesIntoTheDirectoryAndLogsItsFileInUtf8) {
+  const std::filesystem::path directory = FreshDirectory("run") / std::filesystem::path(u8"日本");
+  std::filesystem::create_directories(directory);
+  const LogLines log("run.log");
+  std::filesystem::path path;
+  {
+    const std::unique_ptr<FileWriter> writer = RunWriter(directory, kExecutable, kVersion);
+    ASSERT_NE(writer, nullptr);
+    path = writer->Path();
+  }
+
+  EXPECT_EQ(path.parent_path(), directory);
+  EXPECT_TRUE(path.filename().string().starts_with("augustac-")) << path.filename().string();
+  const auto blocks = ReadBlocks(path);
+  ASSERT_TRUE(blocks.has_value());
+  ASSERT_EQ(blocks->size(), 2U);
+  EXPECT_EQ((*blocks)[0], EncodeSectionHeader(kExecutable, kVersion));
+  const std::u8string utf8 = path.u8string();
+  const std::vector<std::string> lines = log.Holding("event=pcapng_writing");
+  ASSERT_EQ(lines.size(), 1U);
+  EXPECT_NE(lines[0].find(std::string(utf8.begin(), utf8.end())), std::string::npos) << lines[0];
+}
+
 TEST(PcapngFileWriter, WritesTheHeadersThenEveryReportedMessageInOrder) {
   const std::filesystem::path directory = FreshDirectory("writes");
   const std::vector<std::byte> hello = PayloadOf("hello");
@@ -196,6 +225,33 @@ TEST(PcapngFileWriter, AFailedWriteStopsTheFileThereWithOneWarning) {
   EXPECT_NE(warnings[0].find("WARN"), std::string::npos) << warnings[0];
   EXPECT_NE(warnings[0].find("reason=write_failed"), std::string::npos) << warnings[0];
   EXPECT_NE(warnings[0].find("disk full"), std::string::npos) << warnings[0];
+}
+
+// What was written before the failure stays in the file, whole.
+TEST(PcapngFileWriter, AFailedWriteKeepsTheMessagesWrittenBeforeIt) {
+  const std::filesystem::path directory = FreshDirectory("write_failure_after");
+  Faults faults;
+  const std::vector<std::byte> hello = PayloadOf("hello");
+  const std::vector<std::byte> world = PayloadOf("world!");
+  std::filesystem::path path;
+  {
+    FileWriter writer(directory, kExecutable, kVersion, kStarted, {.faults = &faults});
+    path = writer.Path();
+    writer.Report(MessageOf(hello, networking::TapDirection::kOutbound));
+    // Armed only once the first message is on disk, so only the second fails.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (ReadBlocks(path).value_or(std::vector<std::vector<std::byte>>{}).size() < 3 &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    faults.Arm(Site::kPcapngWrite, "disk full", Faults::kEveryTime);
+    writer.Report(MessageOf(world, networking::TapDirection::kInbound));
+  }
+
+  const auto blocks = ReadBlocks(path);
+  ASSERT_TRUE(blocks.has_value());
+  ASSERT_EQ(blocks->size(), 3U);
+  EXPECT_EQ((*blocks)[2], EncodeEnhancedPacket(MessageOf(hello, networking::TapDirection::kOutbound)));
 }
 
 TEST(PcapngFileWriter, AFullQueueStopsTheFileThereWithOneWarning) {

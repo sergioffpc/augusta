@@ -92,22 +92,37 @@ struct FileWriter::Impl {
       return;
     }
     std::vector<std::byte> block = EncodeEnhancedPacket(message);
+    bool full = false;
+    bool first_stop = false;
     {
       const std::scoped_lock lock(mutex);
-      if (queue.size() >= capacity) {
-        Stop(StopReason::kQueueFull, {});
-        return;
+      full = queue.size() >= capacity;
+      if (full) {
+        // Stopped under the lock, so no later message is queued after one
+        // that was dropped.
+        first_stop = !stopped.exchange(true);
+      } else {
+        queue.push_back(std::move(block));
       }
-      queue.push_back(std::move(block));
     }
-    wake.notify_one();
+    // Logged after the lock is released: the reporting thread is the
+    // transport's, which must not wait on the writer's lock while it logs.
+    if (first_stop) {
+      LogStopped(StopReason::kQueueFull, {});
+    }
+    if (!full) {
+      wake.notify_one();
+    }
   }
 
   // The first stop alone is logged: the file stops once.
   void Stop(StopReason reason, std::string_view detail) {
-    if (stopped.exchange(true)) {
-      return;
+    if (!stopped.exchange(true)) {
+      LogStopped(reason, detail);
     }
+  }
+
+  void LogStopped(StopReason reason, std::string_view detail) const {
     LOG_WARN("subsystem=pcapng event=pcapng_stopped reason={} path=\"{}\" detail=\"{}\"", StopReasonName(reason),
              Utf8(path), detail);
   }
@@ -181,5 +196,15 @@ FileWriter::~FileWriter() = default;
 const std::filesystem::path& FileWriter::Path() const { return impl_->path; }
 
 void FileWriter::Report(const networking::TappedMessage& message) { impl_->Enqueue(message); }
+
+std::unique_ptr<FileWriter> RunWriter(const std::filesystem::path& directory, std::string_view executable,
+                                      std::string_view version) {
+  if (directory.empty()) {
+    return nullptr;
+  }
+  auto writer = std::make_unique<FileWriter>(directory, executable, version, std::chrono::system_clock::now());
+  LOG_INFO("subsystem=pcapng event=pcapng_writing path=\"{}\"", Utf8(writer->Path()));
+  return writer;
+}
 
 }  // namespace augusta::pcapng

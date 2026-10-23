@@ -102,11 +102,11 @@ TEST(SessionTapTest, AClientAndAServerGivenATapEachWriteTheMessagesTheyExchanged
   const std::filesystem::path client_file = client_writer->Path();
   {
     HostConfig host_config = TestHostConfig();
-    host_config.tap = server_writer.get();
+    host_config.transport.tap = server_writer.get();
     Host host(host_config,
               Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
     SessionConfig session_config = TestSessionConfig(host.ListenEndpoint());
-    session_config.tap = client_writer.get();
+    session_config.transport.tap = client_writer.get();
     Session session(session_config, EmptyWorld());
     session.Connect();
 

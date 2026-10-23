@@ -14,8 +14,9 @@ message holding its `exported_pdu` TLVs, its payload and its direction; and the
 file writer that implements the transport's tap over it, one file per run in the
 directory it is given, written on a thread of its own behind a bounded queue,
 which stops with one warning when the queue fills or the disk fails and never
-stops the runtime. It depends on networking's tap types, the failure model's
-fault injection and logging alone.
+stops the runtime, and is started for each executable's run, its file logged, by
+one call when the run's config names a directory. It depends on networking's tap
+types, the failure model's fault injection and logging alone.
 
 ## Not its responsibility
 
