@@ -52,6 +52,7 @@ using augusta::networking::PeerStats;
 using augusta::networking::Reliability;
 using augusta::networking::SendOutcome;
 using augusta::networking::Server;
+using augusta::networking::SimulatedTraffic;
 using augusta::networking::SimulateNetworkConditions;
 
 // How long PollUntil sleeps between polls - short enough not to add
@@ -447,6 +448,55 @@ TEST_F(ConnectedNetworkingTest, InjectedLatencyDelaysDelivery) {
   EXPECT_LT(elapsed, std::chrono::milliseconds(kLatencyMs + 400));
 }
 
+// Both ends live in this one process, so a packet is sent and received by it:
+// conditions on what it receives add to those on what it sends, and the
+// default must add only the latter.
+TEST_F(ConnectedNetworkingTest, ByDefaultTheLatencyDelaysOnlyWhatTheProcessSends) {
+  constexpr int kLatencyMs = 200;
+  SimulateNetworkConditions({.latency_ms = kLatencyMs});
+
+  const auto start = std::chrono::steady_clock::now();
+  EXPECT_EQ(client_->Send(MakePayload("late"), Reliability::kUnreliable), SendOutcome::kAccepted);
+  ASSERT_EQ(ReceiveOnServer(1).size(), 1U);
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  // Once on the way out, never again on the way in.
+  EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) - 20));
+}
+
+TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesDelayWhatTheProcessReceivesToo) {
+  constexpr int kLatencyMs = 100;
+  SimulateNetworkConditions({.latency_ms = kLatencyMs, .applies_to = SimulatedTraffic::kSentAndReceived});
+
+  const auto start = std::chrono::steady_clock::now();
+  EXPECT_EQ(client_->Send(MakePayload("late"), Reliability::kUnreliable), SendOutcome::kAccepted);
+  ASSERT_EQ(ReceiveOnServer(1).size(), 1U);
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  // Once on the way out and once more on the way in.
+  EXPECT_GE(elapsed, std::chrono::milliseconds((2 * kLatencyMs) - 20));
+  EXPECT_LT(elapsed, std::chrono::milliseconds((2 * kLatencyMs) + 400));
+}
+
+TEST_F(ConnectedNetworkingTest, ConditionsOnBothSidesLoseWhatTheProcessReceivesToo) {
+  // Half lost on the way out, and half of the rest on the way in: about a
+  // quarter arrive, where losing on one side alone lets about half through.
+  SimulateNetworkConditions({.loss_percent = 50.0F, .applies_to = SimulatedTraffic::kSentAndReceived});
+
+  // Each padded to fill about a packet, as in UnreliableMessagesCanBeLostButNeverDuplicated.
+  constexpr int kSent = 200;
+  constexpr std::size_t kMessageBytes = 1000;
+  for (const std::string& text : NumberedMessages(kSent)) {
+    EXPECT_TRUE(
+        client_->Send(MakePayload(text + std::string(kMessageBytes, '.')), Reliability::kUnreliable).has_value());
+  }
+  const std::vector<std::string> received = DrainServerFor(kDrainWindow);
+
+  // Midway between a quarter (50) and a half (100), several deviations from either.
+  EXPECT_FALSE(received.empty());
+  EXPECT_LT(received.size(), static_cast<std::size_t>(kSent * 3 / 8));
+}
+
 TEST_F(ConnectedNetworkingTest, InjectedJitterDelaysSomeMessagesMoreThanOthers) {
   constexpr int kJitterMeanMs = 50;
   constexpr int kJitterMaxMs = 100;
@@ -502,6 +552,16 @@ TEST_F(ReorderingNetworkingTest, InjectedJitterAloneKeepsMessagesInOrder) {
 
 TEST_F(ReorderingNetworkingTest, InjectedReorderingDeliversUnreliableMessagesOutOfOrder) {
   SimulateNetworkConditions({.reorder_percent = 50.0F, .reorder_delay_ms = 50});
+
+  const std::vector<int> positions = SendPaddedBurst();
+
+  ASSERT_FALSE(positions.empty());
+  EXPECT_FALSE(std::ranges::is_sorted(positions));
+}
+
+TEST_F(ReorderingNetworkingTest, ConditionsOnBothSidesReorderWhatTheProcessReceivesToo) {
+  SimulateNetworkConditions(
+      {.reorder_percent = 50.0F, .reorder_delay_ms = 50, .applies_to = SimulatedTraffic::kSentAndReceived});
 
   const std::vector<int> positions = SendPaddedBurst();
 

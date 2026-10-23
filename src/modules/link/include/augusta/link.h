@@ -46,36 +46,52 @@ namespace augusta::link {
 /// the transport's still-referenced state reads as a leak under ASan.
 void Shutdown();
 
-/// Network conditions imposed on the real transport, for tests (e.g. NFR-02's 100 ms).
+/// Which of a process's packets SimulatedConditions' latency, jitter, loss and reorder reach.
+enum class SimulatedTraffic : std::uint8_t {
+  /// What the process sends only.
+  kSent,
+  /// What it sends, and again what it receives: each condition applies once
+  /// each way, so a latency of 50 ms adds about 100 ms to a round trip with a
+  /// peer elsewhere.
+  kSentAndReceived,
+};
+
+/// Network conditions imposed on the real transport: for tests (e.g. NFR-02's
+/// 100 ms), and for a developer impairing their own client's link.
 struct SimulatedConditions {
-  /// Extra delay on every packet this process sends, in milliseconds.
+  /// Extra delay on every packet the conditions reach (applies_to), in milliseconds.
   int latency_ms = 0;
-  /// A random delay added on top of latency_ms to every packet this process
-  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// A random delay added on top of latency_ms to every packet the conditions
+  /// reach, drawn from an exponential distribution of this mean and capped at
   /// jitter_max_ms, in milliseconds; 0 adds none. A packet never overtakes one
   /// sent before it, so jitter alone clumps packets but keeps their order.
   int jitter_mean_ms = 0;
   int jitter_max_ms = 0;
-  /// Share of packets this process sends that are dropped, 0..100.
+  /// Share of packets the conditions reach that are dropped, 0..100.
   float loss_percent = 0.0F;
-  /// Share of packets this process sends that are held back a further
-  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  /// Share of packets the conditions reach that are held back a further
+  /// reorder_delay_ms, 0..100, so that those behind them overtake them. The
+  /// transport has one reorder delay for both ways.
   float reorder_percent = 0.0F;
   int reorder_delay_ms = 0;
   /// How long a connection may hear nothing from its peer before it counts as
   /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
   /// transport's own default (about 10 seconds), too long for a test to wait.
-  /// Unlike the others it only reaches connections made after it is set.
+  /// Unlike the others it only reaches connections made after it is set, and
+  /// whatever applies_to says it is one timeout for the connection.
   int timeout_ms = 0;
+  /// Which packets the conditions above reach: by default only those the process sends.
+  SimulatedTraffic applies_to = SimulatedTraffic::kSent;
 };
 
 /// Imposes conditions on every connection of the process from now on; a
 /// default-constructed one restores the real network. Process-wide and at the
 /// packet level: the latency is one-way, so two ends in one process see a round
-/// trip of about twice latency_ms, and loss drops whole packets, which reliable
-/// messages survive by retransmission and unreliable ones do not. Needs Init.
-/// For tests only: set it once the connection is up (the handshake is subject
-/// to it too), and reset it before the next test.
+/// trip of about twice latency_ms (four times, with kSentAndReceived), and loss
+/// drops whole packets, which reliable messages survive by retransmission and
+/// unreliable ones do not. Needs Init. A test sets it once the connection is up
+/// (the handshake is subject to it too) and resets it before the next; a
+/// client, with its one connection, makes it that connection's.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
 // ---- The client's end ----

@@ -20,8 +20,10 @@ the protocol carries. Its conversions, which keep only the newest of a tick's
 unacknowledged Commands within the protocol's bound and turn a Match capture's
 records into their bytes and back, are stateless and have no transport beneath,
 so the Host and capture convert without opening a connection. It owns the
-transport's process-wide setup and, for tests only, its simulated network
-conditions and raw ends that carry bytes as they are. Only it links networking
+transport's process-wide setup, its simulated network conditions (latency,
+jitter, loss and reorder on what the process sends or, when asked, on what it
+receives too: for tests, and the Network Debug panel's impairment) and, for
+tests only, raw ends that carry bytes as they are. Only it links networking
 (`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
 speaks to it reaches neither. A Development build's messages are in the Link
 only with `AUGUSTA_DEBUG_TOOLS`.
