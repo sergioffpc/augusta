@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <print>
@@ -20,9 +21,10 @@
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/link.h"
-#include "augusta/logging.h"
-#include "augusta/physics.h"
 #include "augusta/reenactment.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/physics.h"
+#endif
 
 namespace augusta::client {
 
@@ -109,20 +111,20 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
   return std::make_unique<ClientProcess>(std::move(parts));
 }
 
+// What initialize starts, before any World exists, of the debug tools
+// file_config asks for: in a Development build the physics recording
+// (`debug.physics_recording`), held for as long as what this returns lives;
+// in a Shipping build nothing.
+std::function<void()> DebugToolsStart([[maybe_unused]] const config::ClientConfig& file_config) {
 #if AUGUSTA_DEBUG_TOOLS
-// Starts the physics recording debug.physics_recording asks for into
-// recording, before any World exists; where it cannot, warns once why, and
-// augustac runs on unrecorded.
-void StartPhysicsRecording(std::optional<physics::Recording>& recording) {
-  auto started = physics::StartRecording("augustac");
-  if (!started) {
-    LOG_WARN("subsystem=physics event=recording_unavailable key=debug.physics_recording reason=\"{}\"",
-             started.error());
-    return;
+  if (file_config.debug.physics_recording) {
+    return [recording = std::make_shared<std::optional<physics::Recording>>()] {
+      *recording = physics::StartRecordingOrWarn("augustac", "debug.physics_recording");
+    };
   }
-  recording = *std::move(started);
-}
 #endif
+  return [] {};
+}
 
 }  // namespace
 
@@ -146,21 +148,14 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
     played.character = reenactment->character;
   }
   return {
-  // Once, process-wide, before any ClientRuntime is constructed (link.h).
-#if AUGUSTA_DEBUG_TOOLS
-      // The recording is held by initialize, so it lasts as long as the
-      // Lifecycle: past the process and every World in it.
+      // Once, process-wide, before any ClientRuntime is constructed (link.h).
+      // What the debug tools start is held by initialize, so it lasts as long
+      // as the Lifecycle: past the process and every World in it.
       .initialize =
-          [recording = std::make_shared<std::optional<physics::Recording>>(),
-           record = file_config.debug.physics_recording] {
-            if (record) {
-              StartPhysicsRecording(*recording);
-            }
+          [start_debug_tools = DebugToolsStart(file_config)] {
+            start_debug_tools();
             return link::Init();
           },
-#else
-      .initialize = [] { return link::Init(); },
-#endif
       .construct = [played = std::move(played), reenactment = std::move(reenactment), replay = std::move(replay),
                     run] { return ConstructProcess(played, reenactment, replay, run); },
       .run = [](ClientProcess& process) { return process.Run(); },

@@ -936,6 +936,9 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_replay_server_tests PRIVATE replay_server_debug_test.cpp)
   target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_debug.cpp)
   target_sources(augusta_physics_tests PRIVATE physics_debug_test.cpp)
+  # OmniPVD's runtime beside it in a Debug build (cmake/PvdRuntime.cmake), so
+  # its recording test records where augustac and augustad can.
+  augusta_stage_pvd_runtime(augusta_physics_tests)
   target_sources(augusta_prediction_tests PRIVATE prediction_debug_test.cpp)
   if(TARGET augusta_client_frame_mapping_tests)
     target_sources(augusta_client_frame_mapping_tests PRIVATE client_frame_mapping_debug_test.cpp)

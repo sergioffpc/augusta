@@ -1,5 +1,8 @@
 #include <cstddef>
+#include <expected>
+#include <filesystem>
 #include <optional>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -10,13 +13,15 @@
 
 // A World's visualization (Development build only, ADR-0074): PhysX's own
 // lines of its collision, stepped once and copied out, for the Collision
-// overlay to draw.
+// overlay to draw; and the process's OmniPVD recording.
 namespace {
 
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
 using augusta::physics::MovementInput;
+using augusta::physics::Recording;
+using augusta::physics::RecordingError;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
 using augusta::physics::SurfaceId;
@@ -67,6 +72,9 @@ TEST(PhysicsVisualizationTest, AMeshInsideTheCullingBoxIsDrawnWithinItsBounds) {
 TEST(PhysicsVisualizationTest, AMeshOutsideTheCullingBoxIsNotDrawn) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, 50.0F, 54.0F, -2.0F, 2.0F), kMap).has_value());
+  // The control: a box around it draws it.
+  world.SetVisualization(On(Vec3(52.0F, 0.0F, 0.0F), 10.0F));
+  ASSERT_FALSE(world.StepVisualization(kFixedTick).value_or(std::vector<VisualizationLine>{}).empty());
   world.SetVisualization(On(Vec3(0.0F, 0.0F, 0.0F), 10.0F));
 
   const std::optional<std::vector<VisualizationLine>> lines = world.StepVisualization(kFixedTick);
@@ -121,8 +129,36 @@ TEST(PhysicsVisualizationTest, ControllerVolumesAreDrawnWhenAsked) {
 TEST(PhysicsVisualizationTest, OffSteppingIsRefused) {
   World world{StaminaConfig{}};
   ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, -2.0F, 2.0F, -2.0F, 2.0F), kMap).has_value());
+  // The control: another World alike, on, steps.
+  World on{StaminaConfig{}};
+  ASSERT_TRUE(on.AddCollisionMesh(Floor(0.0F, -2.0F, 2.0F, -2.0F, 2.0F), kMap).has_value());
+  on.SetVisualization(On(Vec3(0.0F, 0.0F, 0.0F), 10.0F));
+  ASSERT_TRUE(on.StepVisualization(kFixedTick).has_value());
 
   EXPECT_FALSE(world.StepVisualization(kFixedTick).has_value());
+}
+
+// The settings are set every tick but applied to PhysX only when they change:
+// the same again keeps what is drawn, and a moved box draws what it now holds.
+TEST(PhysicsVisualizationTest, EachTicksSettingsAreDrawnAsLastSet) {
+  World world{StaminaConfig{}};
+  ASSERT_TRUE(world.AddCollisionMesh(Floor(0.0F, 50.0F, 54.0F, -2.0F, 2.0F), kMap).has_value());
+  world.SetVisualization(On(Vec3(0.0F, 0.0F, 0.0F), 10.0F));
+  world.SetVisualization(On(Vec3(0.0F, 0.0F, 0.0F), 10.0F));
+  const std::optional<std::vector<VisualizationLine>> outside = world.StepVisualization(kFixedTick);
+  ASSERT_TRUE(outside.has_value());
+  ASSERT_TRUE(outside->empty());
+
+  world.SetVisualization(On(Vec3(52.0F, 0.0F, 0.0F), 10.0F));
+  world.SetVisualization(On(Vec3(52.0F, 0.0F, 0.0F), 10.0F));
+  EXPECT_FALSE(world.StepVisualization(kFixedTick).value_or(std::vector<VisualizationLine>{}).empty());
+
+  world.SetVisualization(Visualization{});
+  world.SetVisualization(Visualization{});
+  EXPECT_FALSE(world.StepVisualization(kFixedTick).has_value());
+
+  world.SetVisualization(On(Vec3(52.0F, 0.0F, 0.0F), 10.0F));
+  EXPECT_FALSE(world.StepVisualization(kFixedTick).value_or(std::vector<VisualizationLine>{}).empty());
 }
 
 TEST(PhysicsVisualizationTest, TurnedOffAgainSteppingIsRefused) {
@@ -173,6 +209,50 @@ TEST(PhysicsVisualizationTest, SteppingTheVisualizationChangesNoBodysLaterStep) 
   }
   // The walk did cross the ledge and fall.
   EXPECT_LT(without.back().first.position.y, -0.5F);
+}
+
+// Ends recording, if it records, and removes the file it wrote.
+void Discard(std::expected<Recording, RecordingError> recording) {
+  if (!recording.has_value()) {
+    return;
+  }
+  const std::filesystem::path file = recording->File();
+  recording = std::unexpected(RecordingError::kUnavailable);
+  std::error_code ignored;
+  std::filesystem::remove(file, ignored);
+}
+
+// PhysX's OmniPVD build (ports/physx) linked and called: a Debug build with
+// OmniPVD's runtime beside the executable records, any other refuses it as
+// unavailable; neither crashes, and either way a World runs after it.
+TEST(PhysicsRecordingTest, StartsOrIsUnavailable) {
+  std::expected<Recording, RecordingError> recording = augusta::physics::StartRecording("augusta_physics_tests");
+
+  if (recording.has_value()) {
+    EXPECT_EQ(recording->File().extension(), ".ovd");
+  } else {
+    EXPECT_EQ(recording.error(), RecordingError::kUnavailable);
+    EXPECT_FALSE(augusta::physics::DescribeRecordingError(recording.error()).empty());
+  }
+  {
+    World world{StaminaConfig{}};
+    const auto body = world.CreateBody(Vec3(0.0F, 0.0F, 0.0F));
+    world.Step(body, MovementInput{}, kFixedTick);
+  }
+  Discard(std::move(recording));
+}
+
+TEST(PhysicsRecordingTest, IsRefusedWhileAWorldExists) {
+  // The control: with no World, it is not refused for one.
+  std::expected<Recording, RecordingError> alone = augusta::physics::StartRecording("augusta_physics_tests");
+  ASSERT_TRUE(alone.has_value() || alone.error() != RecordingError::kWorldExists);
+  Discard(std::move(alone));
+  const World world{StaminaConfig{}};
+
+  const std::expected<Recording, RecordingError> recording = augusta::physics::StartRecording("augusta_physics_tests");
+
+  ASSERT_FALSE(recording.has_value());
+  EXPECT_EQ(recording.error(), RecordingError::kWorldExists);
 }
 
 }  // namespace

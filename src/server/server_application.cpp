@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,11 +21,13 @@
 #include "augusta/host.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
-#include "augusta/physics.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
 #include "augusta/server.h"
 #include "augusta/server_config.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/physics.h"
+#endif
 
 namespace augusta::server {
 
@@ -108,20 +111,20 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
                                          std::move(content->policy), faults);
 }
 
+// What initialize starts, before any World exists, of the debug tools
+// file_config asks for: in a Development build the physics recording
+// (`debug.physics_recording`), held for as long as what this returns lives;
+// in a Shipping build nothing.
+std::function<void()> DebugToolsStart([[maybe_unused]] const config::ServerConfig& file_config) {
 #if AUGUSTA_DEBUG_TOOLS
-// Starts the physics recording debug.physics_recording asks for into
-// recording, before any World exists; where it cannot, warns once why, and
-// augustad runs on unrecorded.
-void StartPhysicsRecording(std::optional<physics::Recording>& recording) {
-  auto started = physics::StartRecording("augustad");
-  if (!started) {
-    LOG_WARN("subsystem=physics event=recording_unavailable key=debug.physics_recording reason=\"{}\"",
-             started.error());
-    return;
+  if (file_config.physics_recording) {
+    return [recording = std::make_shared<std::optional<physics::Recording>>()] {
+      *recording = physics::StartRecordingOrWarn("augustad", "debug.physics_recording");
+    };
   }
-  recording = *std::move(started);
-}
 #endif
+  return [] {};
+}
 
 }  // namespace
 
@@ -139,27 +142,16 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
 application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
                                                       failure::Faults* faults) {
   return {
-  // link::Init() must run once, process-wide, before any Server is
-  // constructed - see link.h.
-#if AUGUSTA_DEBUG_TOOLS
-      // The recording is held by initialize, so it lasts as long as the
-      // Lifecycle: past the runtime and every World in it.
+      // link::Init() must run once, process-wide, before any Server is
+      // constructed - see link.h. What the debug tools start is held by
+      // initialize, so it lasts as long as the Lifecycle: past the runtime and
+      // every World in it.
       .initialize =
-          [faults, recording = std::make_shared<std::optional<physics::Recording>>(),
-           record = file_config.physics_recording] {
+          [faults, start_debug_tools = DebugToolsStart(file_config)] {
             LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
-            if (record) {
-              StartPhysicsRecording(*recording);
-            }
+            start_debug_tools();
             return link::Init(faults);
           },
-#else
-      .initialize =
-          [faults] {
-            LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
-            return link::Init(faults);
-          },
-#endif
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };
