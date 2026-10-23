@@ -10,6 +10,7 @@
 #include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/simulation.h"
 
 namespace augusta::simulation {
 
