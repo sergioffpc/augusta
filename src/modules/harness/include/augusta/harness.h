@@ -289,6 +289,11 @@ class Session {
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<link::ConnectionStats> GetConnectionStats() const;
 
+  /// What the connection has carried since the last Connect, by message type
+  /// (link::Client::GetTraffic): cumulative, so rates are the reader's to
+  /// take. Safe from any thread.
+  [[nodiscard]] link::Traffic GetTraffic() const;
+
   /// Tells the server this client has loaded what it needs to draw everyone in
   /// the Roster of version, which makes it Ready. Sends nothing unless version
   /// is that of the newest Roster received: the server would not count an older

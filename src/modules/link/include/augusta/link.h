@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_LINK_H_
 #define AUGUSTA_LINK_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -63,36 +64,54 @@ using Tap = networking::Tap;
 /// the transport's still-referenced state reads as a leak under ASan.
 void Shutdown();
 
-/// Network conditions imposed on the real transport, for tests (e.g. NFR-02's 100 ms).
+/// Which of a process's packets SimulatedConditions' latency, jitter, loss and reorder reach.
+enum class SimulatedTraffic : std::uint8_t {
+  /// What the process sends only.
+  kSent,
+  /// What it sends, and again what it receives: each condition applies once
+  /// each way, so a latency of 50 ms adds about 100 ms to a round trip with a
+  /// peer elsewhere.
+  kSentAndReceived,
+};
+
+/// Network conditions imposed on the real transport: for tests (e.g. NFR-02's
+/// 100 ms), and for a developer impairing their own client's link.
 struct SimulatedConditions {
-  /// Extra delay on every packet this process sends, in milliseconds.
+  /// Extra delay on every packet the conditions reach (applies_to), in milliseconds.
   int latency_ms = 0;
-  /// A random delay added on top of latency_ms to every packet this process
-  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// A random delay added on top of latency_ms to every packet the conditions
+  /// reach, drawn from an exponential distribution of this mean and capped at
   /// jitter_max_ms, in milliseconds; 0 adds none. A packet never overtakes one
   /// sent before it, so jitter alone clumps packets but keeps their order.
   int jitter_mean_ms = 0;
   int jitter_max_ms = 0;
-  /// Share of packets this process sends that are dropped, 0..100.
+  /// Share of packets the conditions reach that are dropped, 0..100.
   float loss_percent = 0.0F;
-  /// Share of packets this process sends that are held back a further
-  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  /// Share of packets the conditions reach that are held back a further
+  /// reorder_delay_ms, 0..100, so that those behind them overtake them. The
+  /// transport has one reorder delay for both ways.
   float reorder_percent = 0.0F;
   int reorder_delay_ms = 0;
   /// How long a connection may hear nothing from its peer before it counts as
   /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
   /// transport's own default (about 10 seconds), too long for a test to wait.
-  /// Unlike the others it only reaches connections made after it is set.
+  /// Unlike the others it only reaches connections made after it is set, and
+  /// whatever applies_to says it is one timeout for the connection.
   int timeout_ms = 0;
+  /// Which packets the conditions above reach: by default only those the process sends.
+  SimulatedTraffic applies_to = SimulatedTraffic::kSent;
+
+  bool operator==(const SimulatedConditions&) const = default;
 };
 
 /// Imposes conditions on every connection of the process from now on; a
 /// default-constructed one restores the real network. Process-wide and at the
 /// packet level: the latency is one-way, so two ends in one process see a round
-/// trip of about twice latency_ms, and loss drops whole packets, which reliable
-/// messages survive by retransmission and unreliable ones do not. Needs Init.
-/// For tests only: set it once the connection is up (the handshake is subject
-/// to it too), and reset it before the next test.
+/// trip of about twice latency_ms (four times, with kSentAndReceived), and loss
+/// drops whole packets, which reliable messages survive by retransmission and
+/// unreliable ones do not. Needs Init. A test sets it once the connection is up
+/// (the handshake is subject to it too) and resets it before the next; a
+/// client, with its one connection, makes it that connection's.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
 /// What a Client or a Server is built with, beyond where it listens: whatever
@@ -152,6 +171,59 @@ struct ConnectionStats {
   int pending_bytes = 0;
 };
 
+/// How many messages, and their bytes as the transport carried them.
+struct MessageCount {
+  std::uint64_t messages = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const MessageCount&) const = default;
+};
+
+/// One message type's traffic, each way.
+struct TypeTraffic {
+  MessageCount sent;
+  MessageCount received;
+
+  bool operator==(const TypeTraffic&) const = default;
+};
+
+/// How many of MessageType's values this build has.
+inline constexpr std::size_t kMessageTypeCount = static_cast<std::size_t>(kLastMessageType) + 1;
+
+/// The Authoritative State updates a Client received, sizes as the transport
+/// carried them, and what their ticks say of what the server sent: a tick
+/// more than one past the newest seen adds the ticks between to
+/// ticks_missing; a tick at or before it is out of order. The newest tick seen
+/// is forgotten at Connect and at each Match start, so a new tick sequence
+/// counts nothing missing.
+struct AuthoritativeStateTally {
+  std::uint64_t updates = 0;
+  std::uint64_t total_bytes = 0;
+  /// The size of the update that arrived last, whatever its tick; 0 before the first.
+  std::uint64_t last_bytes = 0;
+  std::uint64_t largest_bytes = 0;
+  std::uint64_t ticks_missing = 0;
+  std::uint64_t ticks_out_of_order = 0;
+
+  bool operator==(const AuthoritativeStateTally&) const = default;
+};
+
+/// What a Client's connection has carried since its last Connect, counted by
+/// the Link itself, by message type: cumulative, so a reader takes rates by
+/// difference. Sent counts only what the transport accepted; received, only
+/// what Receive returns, so a payload that is no message, or one only a client
+/// sends, counts nowhere.
+struct Traffic {
+  /// Indexed by MessageType: every type, those that never travelled at zero.
+  std::array<TypeTraffic, kMessageTypeCount> by_type{};
+  /// The Authoritative State updates among what was received.
+  AuthoritativeStateTally authoritative_state;
+
+  [[nodiscard]] const TypeTraffic& Of(MessageType type) const { return by_type.at(static_cast<std::size_t>(type)); }
+
+  bool operator==(const Traffic&) const = default;
+};
+
 /// What the Link did with a message it did not fail on.
 enum class SendOutcome : std::uint8_t {
   /// Taken: it travels as its type's reliability says. Only an accepted
@@ -200,6 +272,12 @@ class Client {
   /// The connection's numbers, or nullopt while not connected. Neither blocks
   /// nor does I/O, so it is safe to read every round.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
+
+  /// What the connection has carried since the last Connect, by message type,
+  /// with its Authoritative State tally;
+  /// all zero before the first. Safe from any thread, and neither blocks nor
+  /// does I/O, so it is safe to read every round.
+  [[nodiscard]] Traffic GetTraffic() const;
 
   /// Sends one message to the server: kDropped while not connected.
   [[nodiscard]] SendResult Send(const JoinRequest& request);

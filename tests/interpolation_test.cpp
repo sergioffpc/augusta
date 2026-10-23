@@ -622,6 +622,53 @@ TEST(ServerClockTest, ResetForgetsTheAlignment) {
   EXPECT_DOUBLE_EQ(clock.Now().value(), ServerTime(5));
 }
 
+// The interpolation buffer's slack: how far the newest update leads the point
+// remote players are sampled at, kInterpolationDelay behind the clock.
+TEST(ServerClockTest, HasNoSlackUntilTheFirstUpdate) {
+  ServerClock clock;
+  clock.Advance(1.0);
+  EXPECT_FALSE(clock.Slack().has_value());
+
+  clock.Observe(ServerTime(100));
+
+  EXPECT_TRUE(clock.Slack().has_value());
+}
+
+// An update in step with the clock leaves it running at real time, so the
+// newest update's lead shrinks by each frame's elapsed time.
+TEST(ServerClockTest, WithAnUpdateWaitingTheSlackIsTheNewestUpdatesLead) {
+  ServerClock clock;
+  clock.Observe(ServerTime(100));
+  EXPECT_NEAR(clock.Slack().value(), 0.1, 1e-9);
+
+  clock.Advance(0.04);
+  EXPECT_NEAR(clock.Slack().value(), 0.06, 1e-9);
+
+  clock.Observe(ServerTime(100) + 0.04);
+  EXPECT_NEAR(clock.Slack().value(), 0.1, 1e-9);
+}
+
+TEST(ServerClockTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
+  ServerClock clock;
+  clock.Observe(ServerTime(100));
+
+  clock.Advance(0.1);
+  EXPECT_NEAR(clock.Slack().value(), 0.0, 1e-9);
+
+  clock.Advance(0.05);
+  EXPECT_NEAR(clock.Slack().value(), -0.05, 1e-9);
+}
+
+TEST(ServerClockTest, ResetForgetsTheSlack) {
+  ServerClock clock;
+  clock.Observe(ServerTime(100));
+  EXPECT_TRUE(clock.Slack().has_value());
+
+  clock.Reset();
+
+  EXPECT_FALSE(clock.Slack().has_value());
+}
+
 // The Seen time a Command reports (ADR-0044): which update a frame shows, and how
 // far toward the next.
 // Requirements: NFR-02

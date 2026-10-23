@@ -2,8 +2,8 @@
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
 `augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
-`augusta_client_net_stats`, `augusta_client_phases`,
-`augusta_client_profiling_panel`, `augusta_client_run`,
+`augusta_client_net_stats`, `augusta_client_network_panel`,
+`augusta_client_phases`, `augusta_client_profiling_panel`, `augusta_client_run`,
 `augusta_client_run_files`, and augustac, the executable that runs them.
 Client-only: the headless server never links it.
 
@@ -22,9 +22,17 @@ Nsight Systems and, in a Development build with the debug HUD on (ADR-0074), on
 the debug HUD. In a Development build it routes the window's events by Debug
 interaction, to input or to the Debug panels, shows the Debug index, which
 starts each tool as the `debug` section says and switches it until the client
-exits, and routes each panel's control events to the area that built it; its own
-is the Profiling panel, a window of frames it marks with the NVTX range Nsight
-Systems captures, and Aftermath's status as the renderer reports it; and when
+exits, and routes each panel's control events to the area that built it. Its own
+are the Profiling panel, a window of frames it marks with the NVTX range Nsight
+Systems captures, and Aftermath's status as the renderer reports it, and the
+Network panel, the client's connection, its traffic per message type, the
+Authoritative State updates it receives, Reconciliation's corrections and the
+interpolation buffer's slack as rates, plots and peaks, built here because its
+numbers come from modules that ship in every build (ADR-0075). The Network
+panel's Impairment group applies the transport's simulated latency, jitter, loss
+and reorder to the client's one connection, both ways, from sliders or a named
+profile, until Off or the client exits; the server is never told, and the debug
+HUD's network line ends in `IMPAIRED` while any of it is on. When
 `debug.network.pcapng` names a directory, it builds the pcapng writer its
 Session's connection is tapped with, one file per run (ADR-0076). It starts each
 Run: takes its Run ID and opens its log file beside the executable, then writes

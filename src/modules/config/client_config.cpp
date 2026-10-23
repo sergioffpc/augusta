@@ -40,6 +40,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // Shipping build refuses them as unknown.
     "debug.hud",
     "debug.profiling.panel",
+    "debug.network.panel",
     "debug.network.pcapng",
 #endif
 });
@@ -123,10 +124,16 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
   if (!profiling_panel) {
     return std::unexpected(profiling_panel.error());
   }
+  const auto network_panel = OptionalFlag(values, "debug.network.panel", false);
+  if (!network_panel) {
+    return std::unexpected(network_panel.error());
+  }
   return OptionalWritableDirectory(values, "debug.network.pcapng", root)
       .transform([&](std::filesystem::path network_pcapng) {
-        return ClientDebugConfig{
-            .hud = *hud, .profiling_panel = *profiling_panel, .network_pcapng = std::move(network_pcapng)};
+        return ClientDebugConfig{.hud = *hud,
+                                 .profiling_panel = *profiling_panel,
+                                 .network_panel = *network_panel,
+                                 .network_pcapng = std::move(network_pcapng)};
       });
 }
 #endif

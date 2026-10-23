@@ -49,6 +49,7 @@
 #include "net_stats.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/correction_tally.h"
 #include "augusta/debug_index.h"
 #include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
@@ -56,6 +57,7 @@
 #include "augusta/hud.h"
 #include "augusta/pcapng_file_writer.h"
 #include "augusta/version.h"
+#include "network_panel.h"
 #include "profiling_panel.h"
 #endif
 
@@ -72,11 +74,13 @@ constexpr std::string_view kDebugHudEntry = "hud";
 constexpr const char* kCaptureRange = "augusta.capture";
 
 // The Debug index's entries, in the `debug` section's fixed order, as config
-// starts them: the Debug HUD, then each Debug panel, the Profiling panel's
-// (`debug.profiling.panel`) by its panel's id.
+// starts them: the Debug HUD, then each Debug panel by its panel's id, the
+// Profiling panel's (`debug.profiling.panel`) and the Network panel's
+// (`debug.network.panel`), which every client mode lists: each has a Link.
 std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
   return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
-          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel}};
+          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel},
+          {.id = std::string(kNetworkPanelId), .name = "Network", .on = config.debug_network_panel}};
 }
 #endif
 
@@ -154,12 +158,16 @@ struct ClientRuntime::Impl {
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
-  // blends the two by how far through the tick it is.
+  // blends the two by how far through the tick it is; in a Development build,
+  // the corrections counted so far too, for the Network panel.
   struct LatestTick {
     prediction::State previous;
     prediction::State latest;
     tick::Clock::time_point start;
     tick::Clock::duration duration{};
+#if AUGUSTA_DEBUG_TOOLS
+    prediction::Corrections corrections;
+#endif
   };
 
   // Guards latest_tick: written once per Prediction tick,
@@ -190,12 +198,18 @@ struct ClientRuntime::Impl {
   NetStatsCounters net_stats_counters;
 
 #if AUGUSTA_DEBUG_TOOLS
-  // Connection numbers for the debug HUD: written by the Network
-  // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
-  // frame. They should be consistent with each other, so - like
-  // latest_tick above - a mutex-guarded copy.
-  std::mutex hud_net_mutex;
+  // Guards the connection's readings below, the debug HUD's and the Network
+  // panel's: written by the Network I/O thread (SampleNetworkStats), read by
+  // the Main/Render thread. They should be consistent with each other, so -
+  // like latest_tick above - mutex-guarded copies.
+  std::mutex connection_readings_mutex;
+  // Connection numbers for the debug HUD, read once per frame.
   std::optional<hud::NetStats> latest_hud_net;
+  // The Network panel's readings of the connection, from the same rounds as
+  // latest_hud_net, recorded only while network_panel_on: a closed panel
+  // costs nothing beyond the Link's counting.
+  ConnectionReadings connection_readings;
+  std::atomic<bool> network_panel_on{false};
 
   // Network I/O thread only: what the HUD shows of the connection.
   HudNetStats hud_net_stats;
@@ -210,10 +224,30 @@ struct ClientRuntime::Impl {
   // Aftermath status it shows, and the capture window it has open, if any.
   ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
   std::optional<nvtx3::unique_range> capture_range;
+  // Main/Render thread only: the Network panel, which samples the connection
+  // readings while the Debug index has it on.
+  NetworkPanel network_panel;
+  // Main/Render thread only: the conditions last applied to the transport
+  // from the Network panel's Impairment group; the real network at start.
+  link::SimulatedConditions applied_conditions;
+  // Prediction thread only: the corrections of its ticks, in a Match only, as
+  // an Agent counts them; published with each tick (LatestTick).
+  prediction::CorrectionTally correction_tally;
 
   std::optional<hud::NetStats> GetLatestHudNet() {
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     return latest_hud_net;
+  }
+
+  // Main/Render thread only: applies the conditions the Network panel's
+  // Impairment group wants to the client's one connection, both ways, when
+  // they change. The server is never told: it measures the link as it is.
+  void ApplyImpairment() {
+    const link::SimulatedConditions wanted = network_panel.WantedConditions();
+    if (wanted != applied_conditions) {
+      link::SimulateNetworkConditions(wanted);
+      applied_conditions = wanted;
+    }
   }
 
   // Main/Render thread only: hands the Renderer this frame's HUD lines while
@@ -226,7 +260,9 @@ struct ClientRuntime::Impl {
       renderer.SetTextLines({});
       return;
     }
-    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet()));
+    // Impaired while the Network panel's Impairment group says so, the panel
+    // shown or not, connected or not.
+    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet(), network_panel.Impaired()));
   }
 
   // Main/Render thread only: the frame's Debug panels, the Debug index in
@@ -239,7 +275,59 @@ struct ClientRuntime::Impl {
     if (debug_index.IsOn(kProfilingPanelId)) {
       panels.push_back(profiling_panel.BuildPanel());
     }
+    if (debug_index.IsOn(kNetworkPanelId)) {
+      panels.push_back(network_panel.BuildPanel());
+    }
     return panels;
+  }
+
+  ConnectionReading TakeConnectionReading() {
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
+    return connection_readings.Take();
+  }
+
+  // Main/Render thread only: tells the Network I/O thread whether to record
+  // the Network panel's readings as the Debug index has the panel on, and
+  // hands the panel a sample each frame that crosses one of its boundaries.
+  void SampleNetworkPanel() {
+    const bool on = debug_index.IsOn(kNetworkPanelId);
+    if (on != network_panel_on.load()) {
+      if (on) {
+        // Readings left from before it was last closed are stale.
+        const std::lock_guard<std::mutex> lock(connection_readings_mutex);
+        connection_readings = {};
+      } else {
+        network_panel.Close();
+      }
+      network_panel_on.store(on);
+    }
+    if (const auto now = NetworkPanel::Clock::now(); on && network_panel.SampleDue(now)) {
+      const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+      network_panel.Sample({.connection = TakeConnectionReading(),
+                            .tick_rate_hz = view->accepted.transform(
+                                [](const harness::Admission& admission) { return admission.tick_rate_hz; }),
+                            .receives_authoritative_state = !config.replay.has_value(),
+                            .corrections = PanelCorrections(*view)},
+                           now);
+    }
+  }
+
+  // Main/Render thread only: the Prediction thread's corrections so far, or
+  // nullopt with no Prediction State: a Replay viewer, or a spectator since
+  // its Death, as view says.
+  std::optional<prediction::Corrections> PanelCorrections(const harness::ServerView& view) {
+    if (config.replay.has_value() || (view.in_match && !view.OwnAlive())) {
+      return std::nullopt;
+    }
+    return GetLatestTick().corrections;
+  }
+
+  // Main/Render thread only: the frame's interpolation slack, for the Network
+  // panel's next sample while the Debug index has it on.
+  void RecordNetworkPanelFrame(const presentation::State& frame_state) {
+    if (network_panel_on.load()) {
+      network_panel.RecordFrame(frame_state.interpolation_slack);
+    }
   }
 
   // Main/Render thread only: opens or closes the capture window's NVTX range
@@ -271,8 +359,11 @@ struct ClientRuntime::Impl {
         debug_index.Update(event);
       } else if (event.panel == kProfilingPanelId) {
         ApplyCaptureChange(profiling_panel.Update(event));
+      } else if (event.panel == kNetworkPanelId) {
+        network_panel.Update(event);
       }
     }
+    ApplyImpairment();
   }
 #endif
 
@@ -323,8 +414,14 @@ struct ClientRuntime::Impl {
 #if AUGUSTA_DEBUG_TOOLS
     // Whether the HUD is on or not: the Debug index can switch it on at any frame.
     const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    // The Network panel's reading is this round's, the HUD's: the two never disagree.
+    const bool network_panel_reads = network_panel_on.load();
+    const link::Traffic traffic = network_panel_reads ? session->GetTraffic() : link::Traffic{};
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     latest_hud_net = net;
+    if (network_panel_reads) {
+      connection_readings.Record(stats, traffic);
+    }
 #endif
   }
 
@@ -451,12 +548,20 @@ struct ClientRuntime::Impl {
   // The Runner's word on each tick: publishes it, with the one before it, for
   // render frames to blend. Prediction thread.
   void PublishTick(const harness::PredictedTick& tick) {
+#if AUGUSTA_DEBUG_TOOLS
+    correction_tally.RecordTick(tick.state, session->GetServerView()->GetPhase() == harness::Phase::kMatch);
+#endif
     {
       const std::lock_guard<std::mutex> lock(latest_tick_mutex);
-      latest_tick = {.previous = previous_tick.value_or(tick.state),
-                     .latest = tick.state,
-                     .start = tick.due,
-                     .duration = tick.duration};
+      latest_tick = {
+          .previous = previous_tick.value_or(tick.state),
+          .latest = tick.state,
+          .start = tick.due,
+          .duration = tick.duration,
+#if AUGUSTA_DEBUG_TOOLS
+          .corrections = correction_tally.Totals(),
+#endif
+      };
     }
     previous_tick = tick.state;
   }
@@ -662,8 +767,12 @@ struct ClientRuntime::Impl {
     UpdateCursorLock();
 #if AUGUSTA_DEBUG_TOOLS
     UpdateDebugHud();
+    SampleNetworkPanel();
 #endif
     const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
+#if AUGUSTA_DEBUG_TOOLS
+    RecordNetworkPanelFrame(frame_state);
+#endif
     SetSeenTime(frame_state.seen_time);
     StageRenderFrame(frame_state);
     renderer.RenderFrame();

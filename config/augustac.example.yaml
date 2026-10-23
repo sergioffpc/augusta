@@ -64,6 +64,10 @@ input:
 #     # false): true or false.
 #     panel: false
 #   network:
+#     # Whether the Network Debug panel - the connection's numbers and its
+#     # traffic per message type - is shown (optional, default false): true or
+#     # false.
+#     panel: false
 #     # The directory each run writes a pcapng of the messages it sends and
 #     # receives into, decrypted, for Wireshark with tools/wireshark (optional,
 #     # default none; ADR-0076): one new file per run, augustac-<start in
