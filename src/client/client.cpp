@@ -53,10 +53,12 @@
 #include "augusta/debug_index.h"
 #include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
-#include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
+#include "augusta/link_types.h"
 #include "augusta/pcapng_file_writer.h"
+#include "augusta/physics_overlays.h"
 #include "augusta/version.h"
+#include "debug_index_entries.h"
 #include "network_panel.h"
 #include "profiling_panel.h"
 #endif
@@ -66,21 +68,30 @@ namespace augusta::client {
 namespace {
 
 #if AUGUSTA_DEBUG_TOOLS
-// The Debug index's entry for the Debug HUD, its first (`debug.hud`).
-constexpr std::string_view kDebugHudEntry = "hud";
-
 // The NVTX range, in the default domain, that `nsys profile
 // --capture-range=nvtx --nvtx-capture=augusta.capture` records alone.
 constexpr const char* kCaptureRange = "augusta.capture";
 
-// The Debug index's entries, in the `debug` section's fixed order, as config
-// starts them: the Debug HUD, then each Debug panel by its panel's id, the
-// Profiling panel's (`debug.profiling.panel`) and the Network panel's
-// (`debug.network.panel`), which every client mode lists: each has a Link.
+// What config runs the client as, for which debug tools it carries.
+ClientMode ModeOf(const RuntimeConfig& config) {
+  return client::ModeOf(config.replay.has_value(), config.reenactment.has_value());
+}
+
+// The Debug index's entries for config's mode, as config starts them.
 std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
-  return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
-          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel},
-          {.id = std::string(kNetworkPanelId), .name = "Network", .on = config.debug_network_panel}};
+  return DebugIndexEntries(
+      DebugIndexStart{
+          .hud = config.debug_hud,
+          .profiling_panel = config.debug_profiling_panel,
+          .network_panel = config.debug_network_panel,
+          .physics_panel = config.debug_physics.panel,
+      },
+      ModeOf(config));
+}
+
+// Which Physics overlays start on for config's mode.
+presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& config) {
+  return client::PhysicsOverlaysStartOf(config.debug_physics, ModeOf(config));
 }
 #endif
 
@@ -224,6 +235,9 @@ struct ClientRuntime::Impl {
   // Aftermath status it shows, and the capture window it has open, if any.
   ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
   std::optional<nvtx3::unique_range> capture_range;
+  // Main/Render thread only: which Physics Debug overlays are on, drawn each
+  // frame whether the Physics panel is shown or not.
+  presentation::PhysicsOverlays physics_overlays{PhysicsOverlaysStartOf(config)};
   // Main/Render thread only: the Network panel, which samples the connection
   // readings while the Debug index has it on.
   NetworkPanel network_panel;
@@ -277,6 +291,9 @@ struct ClientRuntime::Impl {
     }
     if (debug_index.IsOn(kNetworkPanelId)) {
       panels.push_back(network_panel.BuildPanel());
+    }
+    if (debug_index.IsOn(presentation::kPhysicsPanelId)) {
+      panels.push_back(physics_overlays.BuildPanel());
     }
     return panels;
   }
@@ -351,6 +368,12 @@ struct ClientRuntime::Impl {
   // closes: the frame has ended for the Profiling panel's capture window.
   void TickProfilingPanel() { ApplyCaptureChange(profiling_panel.Tick()); }
 
+  // Asks the server for the Debug streams the overlays want: Shot judgements
+  // while their overlay is on (ADR-0074).
+  void SubscribeDebug() {
+    session->SubscribeDebug(physics_overlays.WantsShotJudgements() ? link::DebugSubscribe::kShotJudgements : 0U);
+  }
+
   // Main/Render thread only: routes each control event the last RenderFrame's
   // panels gave to the area whose panel it names.
   void RouteDebugControlEvents() {
@@ -361,6 +384,12 @@ struct ClientRuntime::Impl {
         ApplyCaptureChange(profiling_panel.Update(event));
       } else if (event.panel == kNetworkPanelId) {
         network_panel.Update(event);
+      } else if (event.panel == presentation::kPhysicsPanelId) {
+        const bool wanted = physics_overlays.WantsShotJudgements();
+        physics_overlays.Update(event);
+        if (physics_overlays.WantsShotJudgements() != wanted) {
+          SubscribeDebug();
+        }
       }
     }
     ApplyImpairment();
@@ -566,11 +595,23 @@ struct ClientRuntime::Impl {
     previous_tick = tick.state;
   }
 
-  // In the Lobby, once per Roster version: uploads the mesh of every other
-  // player's character not loaded yet and hands PresentationWorld its eye, then
-  // reports Ready for that Roster (ADR-0043). Nothing is loaded during a match.
-  // Main/Render thread only, as the upload is. Returns why a character could
-  // not be loaded, if one could not.
+  // Hands what was loaded of character to whatever draws it: the renderer its
+  // mesh, PresentationWorld its eye, and in a Development build the Physics
+  // overlays its Hitboxes. Main/Render thread only, as the upload is.
+  void TakeCharacter(const std::string& character, LoadedCharacter& loaded) {
+    renderer.SetCharacterMesh(character, loaded.mesh);
+    presentation.SetCharacterEye(character, loaded.eye);
+#if AUGUSTA_DEBUG_TOOLS
+    physics_overlays.SetCharacterHitboxes(character, std::move(loaded.hitboxes));
+#endif
+    LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+  }
+
+  // In the Lobby, once per Roster version: loads every other player's character
+  // not loaded yet and hands it on (TakeCharacter), then reports Ready for that
+  // Roster (ADR-0043). Nothing is loaded during a match. Main/Render thread
+  // only, as the upload is. Returns why a character could not be loaded, if
+  // one could not.
   std::optional<CharacterError> GetReadyForLobby() {
     const std::optional<ReadyPlan> plan = lobby_readiness.Plan(*session->GetServerView());
     if (!plan.has_value()) {
@@ -581,9 +622,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(character, loaded->mesh);
-      presentation.SetCharacterEye(character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+      TakeCharacter(character, *loaded);
       lobby_readiness.MarkLoaded(character);
     }
     session->ReportReady(plan->version);
@@ -609,9 +648,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(player.character, loaded->mesh);
-      presentation.SetCharacterEye(player.character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", player.character);
+      TakeCharacter(player.character, *loaded);
       replay_characters.insert(player.character);
     }
     return std::nullopt;
@@ -661,6 +698,14 @@ struct ClientRuntime::Impl {
           }
         }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+#if AUGUSTA_DEBUG_TOOLS
+        physics_overlays.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+        // The overlay's startup key: the Session keeps no subscription, so it
+        // is asked for once admitted.
+        if (physics_overlays.WantsShotJudgements()) {
+          SubscribeDebug();
+        }
+#endif
         return std::nullopt;
       }
       input.Handle(window.Poll());
@@ -726,8 +771,11 @@ struct ClientRuntime::Impl {
   // Hands the renderer what the next RenderFrame draws of this frame, without
   // drawing it. The local player's own position isn't drawn yet (renderer.h) -
   // only remote players, each as its character. In the Lobby there are none,
-  // so the map is drawn empty.
-  void StageRenderFrame(const presentation::State& frame_state) {
+  // so the map is drawn empty. In a Development build, the Debug overlays are
+  // built from what the frame was shown from (input) and what it showed
+  // (frame_state).
+  void StageRenderFrame([[maybe_unused]] const presentation::FrameInput& input,
+                        const presentation::State& frame_state) {
     renderer.SetCamera(ToRenderer(frame_state.camera));
     std::vector<renderer::RemotePlayer> remote_boxes;
     remote_boxes.reserve(frame_state.remote_players.size());
@@ -739,9 +787,21 @@ struct ClientRuntime::Impl {
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
-    // Shapes and panels live one frame, and no area builds any shapes yet (ADR-0075).
-    renderer.SetDebugShapes(debug::Shapes{});
+    // Shapes and panels live one frame (ADR-0075); the judged rounds are kept
+    // by the overlay, which takes the frame's seen Hitboxes first.
+    const auto now = presentation::PhysicsOverlays::Clock::now();
+    physics_overlays.Advance(input, frame_state, now);
+    for (const harness::ShotJudgement& judgement : session->TakeShotJudgements(*session->GetServerView())) {
+      physics_overlays.Judge(ToPresentation(judgement), presentation.Map(), now);
+    }
+    renderer.SetDebugShapes(physics_overlays.BuildShapes(input, frame_state));
     renderer.SetDebugPanels(DebugPanels());
+    // What the Prediction thread's next ticks draw of the client's World,
+    // culled around this frame's camera; off while Collision is, so a closed
+    // overlay costs nothing.
+    if (runner.has_value()) {
+      runner->SetVisualization(physics_overlays.Visualization(frame_state.camera.position));
+    }
 #endif
   }
 
@@ -769,12 +829,13 @@ struct ClientRuntime::Impl {
     UpdateDebugHud();
     SampleNetworkPanel();
 #endif
-    const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
+    const presentation::FrameInput input = NextFrameInput();
+    const presentation::State frame_state = presentation.RunFrame(input);
 #if AUGUSTA_DEBUG_TOOLS
     RecordNetworkPanelFrame(frame_state);
 #endif
     SetSeenTime(frame_state.seen_time);
-    StageRenderFrame(frame_state);
+    StageRenderFrame(input, frame_state);
     renderer.RenderFrame();
   }
 };

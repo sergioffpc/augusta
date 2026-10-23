@@ -41,6 +41,12 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     "debug.hud",
     "debug.profiling.panel",
     "debug.network.panel",
+    "debug.physics.panel",
+    "debug.physics.collision",
+    "debug.physics.server_bodies",
+    "debug.physics.hitboxes",
+    "debug.physics.shot_judgements",
+    "debug.physics_recording",
     "debug.network.pcapng",
 #endif
 });
@@ -112,6 +118,33 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 }
 
 #if AUGUSTA_DEBUG_TOOLS
+// The `debug.physics` section: the Physics panel and which of its overlays start on.
+std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(const ConfigValues& values) {
+  const auto panel = OptionalFlag(values, "debug.physics.panel", false);
+  if (!panel) {
+    return std::unexpected(panel.error());
+  }
+  const auto collision = OptionalFlag(values, "debug.physics.collision", false);
+  if (!collision) {
+    return std::unexpected(collision.error());
+  }
+  const auto server_bodies = OptionalFlag(values, "debug.physics.server_bodies", false);
+  if (!server_bodies) {
+    return std::unexpected(server_bodies.error());
+  }
+  const auto hitboxes = OptionalFlag(values, "debug.physics.hitboxes", false);
+  if (!hitboxes) {
+    return std::unexpected(hitboxes.error());
+  }
+  return OptionalFlag(values, "debug.physics.shot_judgements", false).transform([&](bool shot_judgements) {
+    return ClientPhysicsDebugConfig{.panel = *panel,
+                                    .collision = *collision,
+                                    .server_bodies = *server_bodies,
+                                    .hitboxes = *hitboxes,
+                                    .shot_judgements = shot_judgements};
+  });
+}
+
 // The `debug` section (ADR-0074): which debug tools start on, and where the
 // pcapng goes, relative to root.
 std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values,
@@ -128,10 +161,20 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
   if (!network_panel) {
     return std::unexpected(network_panel.error());
   }
+  const auto physics = ParsePhysicsDebugConfig(values);
+  if (!physics) {
+    return std::unexpected(physics.error());
+  }
+  const auto physics_recording = OptionalFlag(values, "debug.physics_recording", false);
+  if (!physics_recording) {
+    return std::unexpected(physics_recording.error());
+  }
   return OptionalWritableDirectory(values, "debug.network.pcapng", root)
       .transform([&](std::filesystem::path network_pcapng) {
         return ClientDebugConfig{.hud = *hud,
                                  .profiling_panel = *profiling_panel,
+                                 .physics = *physics,
+                                 .physics_recording = *physics_recording,
                                  .network_panel = *network_panel,
                                  .network_pcapng = std::move(network_pcapng)};
       });

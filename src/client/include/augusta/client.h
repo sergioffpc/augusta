@@ -14,6 +14,9 @@
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/client_config.h"
+#endif
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
@@ -63,6 +66,11 @@ struct RuntimeConfig {
   /// Whether the Profiling Debug panel is shown at first
   /// (`debug.profiling.panel`), until the Debug index switches it.
   bool debug_profiling_panel = false;
+  /// Whether the Physics Debug panel is shown, and each of its overlays drawn,
+  /// at first (`debug.physics`), until the Debug index and the panel switch
+  /// them; a Replay viewer's index never lists the panel, and none of its
+  /// overlays starts on.
+  config::ClientPhysicsDebugConfig debug_physics{};
   /// Whether the Network Debug panel is shown at first
   /// (`debug.network.panel`), until the Debug index switches it.
   bool debug_network_panel = false;

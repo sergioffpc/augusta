@@ -28,6 +28,23 @@ inline constexpr std::string_view kClientConfigFileName = "augustac.yaml";
 inline constexpr std::string_view kDefaultServerAddress = "127.0.0.1:27015";
 
 #if AUGUSTA_DEBUG_TOOLS
+/// augustac.yaml's `debug.physics` section: whether the Physics Debug panel and
+/// each of its Debug overlays start on, each a switch (true or false) off by
+/// default.
+struct ClientPhysicsDebugConfig {
+  /// Key `debug.physics.panel`: whether the Physics Debug panel is shown.
+  bool panel = false;
+  /// Key `debug.physics.collision`: whether the Collision overlay is drawn.
+  bool collision = false;
+  /// Key `debug.physics.server_bodies`: whether the Server bodies overlay is drawn.
+  bool server_bodies = false;
+  /// Key `debug.physics.hitboxes`: whether the Hitboxes overlay is drawn.
+  bool hitboxes = false;
+  /// Key `debug.physics.shot_judgements`: whether the Shot judgements overlay
+  /// is drawn, which asks the server for Shot judgements.
+  bool shot_judgements = false;
+};
+
 /// augustac.yaml's `debug` section: which of the client's debug tools start on
 /// (ADR-0074). It exists only in a Development build, so a Shipping build
 /// refuses the section as an unknown key.
@@ -39,6 +56,11 @@ struct ClientDebugConfig {
   /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
   /// by default.
   bool profiling_panel = false;
+  ClientPhysicsDebugConfig physics{};
+  /// Key `debug.physics_recording` (true or false, default false): whether the
+  /// client's PhysX scenes are recorded to one OmniPVD file from startup to
+  /// exit (physics::StartRecording). Read at startup only.
+  bool physics_recording = false;
   /// Key `debug.network.panel` (true or false, default false): whether the
   /// Network Debug panel is shown.
   bool network_panel = false;

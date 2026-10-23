@@ -7,6 +7,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/effects.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/physics.h"
 
 /// \file
@@ -30,6 +31,10 @@ struct TracerRules {
   /// The server's tick duration, in seconds.
   float tick_duration = 1.0F;
 };
+
+/// How a Shot's bullet flies under parameters, the server's, on its tick of
+/// tick_duration seconds.
+[[nodiscard]] TracerRules TracerRulesOf(const parameters::Parameters& parameters, float tick_duration);
 
 /// One tracer as drawn this frame: a streak along the trajectory from tail,
 /// where the bullet was a tick ago, to head, where it is now - both between

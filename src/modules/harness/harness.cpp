@@ -18,6 +18,7 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "command_stream.h"
@@ -232,6 +233,12 @@ std::vector<ShotJudgement> Session::TakeShotJudgements(const ServerView& view) {
 #endif
 
 tick::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
+
+#if AUGUSTA_DEBUG_TOOLS
+void Session::SetVisualization(const physics::Visualization& visualization) {
+  impl_->commands.SetVisualization(visualization);
+}
+#endif
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

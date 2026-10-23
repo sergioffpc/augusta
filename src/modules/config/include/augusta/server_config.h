@@ -76,6 +76,11 @@ struct ServerConfig {
   /// (ADR-0038), "false", the default, to send none and ignore the bit. Read
   /// at startup only; a debug tool's, as `debug.reenactments` is.
   bool shot_judgements = false;
+  /// Key `debug.physics_recording`: "true" to record the process's PhysX
+  /// scenes to one OmniPVD file from startup to exit (physics::StartRecording),
+  /// "false", the default, to record none. Read at startup only; a debug
+  /// tool's, as `debug.reenactments` is.
+  bool physics_recording = false;
   /// Key `debug.network.pcapng`: the directory each run writes a pcapng of
   /// the messages it sends and receives into, every peer's, one file per run
   /// (ADR-0076), created if missing; read at startup only, on a live or a

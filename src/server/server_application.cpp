@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -23,6 +25,9 @@
 #include "augusta/replay_server.h"
 #include "augusta/server.h"
 #include "augusta/server_config.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/physics.h"
+#endif
 
 namespace augusta::server {
 
@@ -118,6 +123,21 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
                                          RuntimeOptionsOf(file_config, faults));
 }
 
+// What initialize starts, before any World exists, of the debug tools
+// file_config asks for: in a Development build the physics recording
+// (`debug.physics_recording`), held for as long as what this returns lives;
+// in a Shipping build nothing.
+std::function<void()> DebugToolsStart([[maybe_unused]] const config::ServerConfig& file_config) {
+#if AUGUSTA_DEBUG_TOOLS
+  if (file_config.physics_recording) {
+    return [recording = std::make_shared<std::optional<physics::Recording>>()] {
+      *recording = physics::StartRecordingOrWarn("augustad", "debug.physics_recording");
+    };
+  }
+#endif
+  return [] {};
+}
+
 }  // namespace
 
 std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
@@ -135,10 +155,13 @@ application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig
                                                       failure::Faults* faults) {
   return {
       // link::Init() must run once, process-wide, before any Server is
-      // constructed - see link.h.
+      // constructed - see link.h. What the debug tools start is held by
+      // initialize, so it lasts as long as the Lifecycle: past the runtime and
+      // every World in it.
       .initialize =
-          [faults] {
+          [faults, start_debug_tools = DebugToolsStart(file_config)] {
             LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+            start_debug_tools();
             return link::Init(faults);
           },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },

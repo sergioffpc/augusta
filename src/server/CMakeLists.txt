@@ -72,6 +72,7 @@ target_link_libraries(
     augusta_hardware
     augusta_link
     augusta_logging
+    augusta_physics
     augusta_scenario
     augusta_policy_loader
     augusta_host
@@ -92,6 +93,8 @@ augusta_set_module_scope(augustad SERVER_ONLY)
 # it, crash, failure, logging and version - anything else fails the configure
 # (ADR-0060, cmake/AugustaModule.cmake).
 augusta_set_executable_glue(augustad)
+# OmniPVD's runtime beside augustad in a Debug build (cmake/PvdRuntime.cmake).
+augusta_stage_pvd_runtime(augustad)
 
 # On Linux the debug info is split off into augustad.debug beside it (ADR-0047).
 if(NOT WIN32)

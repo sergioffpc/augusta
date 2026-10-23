@@ -173,4 +173,29 @@ TEST(ParseServerConfigTest, RejectsShotJudgementsOnAReplayServer) {
   EXPECT_EQ(config.error().subject, "debug.shot_judgements");
 }
 
+TEST(ParseServerConfigTest, RecordsNoPhysicsByDefault) {
+  const auto config = ParseServerConfig(kMinimalServerConfig, kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->physics_recording);
+}
+
+TEST(ParseServerConfigTest, ReadsWhetherPhysicsIsRecorded) {
+  const auto on = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: true\n"), kFileDir);
+  const auto off = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: false\n"), kFileDir);
+
+  ASSERT_TRUE(on.has_value());
+  EXPECT_TRUE(on->physics_recording);
+  ASSERT_TRUE(off.has_value());
+  EXPECT_FALSE(off->physics_recording);
+}
+
+TEST(ParseServerConfigTest, RejectsAPhysicsRecordingThatIsNeitherTrueNorFalse) {
+  const auto config = ParseServerConfig(ServerConfigWith("debug:\n  physics_recording: on\n"), kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.physics_recording");
+}
+
 }  // namespace

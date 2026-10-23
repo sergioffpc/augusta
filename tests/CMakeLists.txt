@@ -353,6 +353,11 @@ target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gt
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_hitbox_tests hitbox_test.cpp)
+target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on
@@ -955,7 +960,18 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_tick_messages_tests PRIVATE tick_messages_debug_test.cpp)
   target_sources(augusta_replay_server_tests PRIVATE replay_server_debug_test.cpp)
   target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_debug.cpp)
+  target_sources(augusta_physics_tests PRIVATE physics_debug_test.cpp)
+  # OmniPVD's runtime beside it in a Debug build (cmake/PvdRuntime.cmake), so
+  # its recording test records where augustac and augustad can.
+  augusta_stage_pvd_runtime(augusta_physics_tests)
+  target_sources(augusta_prediction_tests PRIVATE prediction_debug_test.cpp)
+  if(TARGET augusta_client_frame_mapping_tests)
+    target_sources(augusta_client_frame_mapping_tests PRIVATE client_frame_mapping_debug_test.cpp)
+  endif()
   target_sources(augusta_simulation_tests PRIVATE simulation_shot_judgement_test.cpp)
+  if(TARGET augusta_client_character_tests)
+    target_sources(augusta_client_character_tests PRIVATE client_character_debug_test.cpp)
+  endif()
   target_link_libraries(augusta_simulation_tests PRIVATE augusta_limits)
   target_sources(augusta_renderer_gpu_crash_dump_files_tests PRIVATE renderer_gpu_crash_dump_files_debug_test.cpp)
   if(TARGET augusta_client_net_stats_tests)
@@ -971,6 +987,24 @@ if(AUGUSTA_DEBUG_TOOLS)
     )
     target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
     gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
+  endif()
+  # Which debug tools the client's Debug index lists (debug_index_entries.h),
+  # private to the client Runtime, as profiling_panel.h is.
+  if(TARGET augusta_client_debug_index_entries)
+    add_executable(augusta_client_debug_index_entries_tests client_debug_index_entries_test.cpp)
+    target_link_libraries(
+      augusta_client_debug_index_entries_tests
+      PRIVATE
+        augusta_client_debug_index_entries
+        augusta_client_network_panel
+        augusta_client_profiling_panel
+        augusta_presentation
+        GTest::gtest
+        GTest::gtest_main
+    )
+    target_include_directories(augusta_client_debug_index_entries_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
+    gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
   endif()
   # The Network Debug panel (network_panel.h), private to the client Runtime,
   # as net_stats.h is.
@@ -1004,6 +1038,12 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_debug_tests)
 
+  # The Physics Debug overlays, their panel and their shapes (presentation's
+  # physics_overlays.h), free of any GPU API.
+  add_executable(augusta_physics_overlays_tests physics_overlays_test.cpp)
+  target_link_libraries(augusta_physics_overlays_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+  # Links augusta_prediction publicly (so PhysX), as augusta_tracers_tests does.
+  gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30)
   # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
   add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
   target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)

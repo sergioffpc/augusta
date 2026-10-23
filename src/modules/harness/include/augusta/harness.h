@@ -21,6 +21,7 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -362,6 +363,14 @@ class Session {
   /// A Replay viewer predicts and sends nothing, ever: its state is the one a
   /// PredictionWorld starts with.
   prediction::State Tick(const command::Command& command, float delta_time);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches Collision for the Ticks to come, in a Development build alone
+  /// (ADR-0074): PredictionWorld's visualization, whose lines each Tick's
+  /// State then carries (prediction::World::SetVisualization). Prediction
+  /// thread, as Tick.
+  void SetVisualization(const physics::Visualization& visualization);
+#endif
 
  private:
   struct Impl;

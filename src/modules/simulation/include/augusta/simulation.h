@@ -16,6 +16,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
+#include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -155,15 +156,6 @@ struct PlayerCommand {
   command::Command command{};
 };
 
-/// One hitbox of a Character (CONTEXT.md's Hitbox, ADR-0040): the body part it
-/// stands for and its triangles, in the character's root space.
-struct CharacterHitbox {
-  /// What a bullet that crosses it hits.
-  body_part::BodyPart part = body_part::BodyPart::kTorso;
-  /// Its surface: a bullet is tested against each, from either side.
-  std::vector<ballistics::Triangle> triangles;
-};
-
 /// What SimulationWorld needs of the Character a player plays (ADR-0040), in
 /// the character's root space: standing, its feet at the origin, facing where a
 /// view of yaw 0 looks (command::Command).
@@ -172,7 +164,7 @@ struct Character {
   math::Vec3 eye{};
   /// What a bullet that reaches its body is judged against. One without any
   /// cannot be hit.
-  std::vector<CharacterHitbox> hitboxes;
+  std::vector<hitbox::CharacterHitbox> hitboxes;
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.

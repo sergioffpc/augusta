@@ -11,16 +11,18 @@
 
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
+#include "augusta/hitbox.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
-#include "hitbox_history.h"
 
 /// \file
 /// Hitbox posing (ADR-0044): placing players' hitboxes where a bullet judges
-/// them, for ballistics::World::Step to test it against, and reading back which
-/// player and BodyPart a struck one is. Pure - no ECS, no physics World, no clock -
-/// and private to the simulation module: SimulationWorld picks the players and
-/// their poses, and decides what a strike means.
+/// them, with gameplay's shared placing (augusta/hitbox.h), for
+/// ballistics::World::Step to test it against, culled by each Character's reach
+/// and numbered as Surfaces, and reading back which player and BodyPart a struck
+/// one is. Pure - no ECS, no physics World, no clock - and private to the
+/// simulation module: SimulationWorld picks the players and their poses, and
+/// decides what a strike means.
 namespace augusta::simulation {
 
 /// The Surface id every mesh of the Map is added with: the whole Map is one
@@ -30,12 +32,12 @@ inline constexpr physics::SurfaceId kMapSurface{0};
 /// How far from its root a character's hitboxes reach, posed in any stance: a
 /// bullet that passes farther from where a pose puts its root crosses none of
 /// them.
-[[nodiscard]] float ReachOf(std::span<const CharacterHitbox> hitboxes);
+[[nodiscard]] float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes);
 
 /// A player a bullet is tested against, and the pose its hitboxes are placed by.
 struct PosedTarget {
   EntityId target{};
-  Pose pose{};
+  hitbox::Pose pose{};
 };
 
 /// What a strike on a posed hitbox means: whose it is, and which part.
@@ -61,7 +63,8 @@ class HitboxPosing {
   /// Adds target's hitboxes, as authored standing in its root space and
   /// reaching reach from it, posed by pose, to the bullet's, if its segment
   /// passes near enough to cross them.
-  void Consider(EntityId target, std::span<const CharacterHitbox> standing, float reach, const Pose& pose);
+  void Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
+                const hitbox::Pose& pose);
 
   /// The bullet's hitboxes, each with its Surface id. Valid until the next
   /// BeginBullet or Clear.

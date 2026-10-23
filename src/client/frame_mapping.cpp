@@ -17,6 +17,11 @@
 #include "augusta/renderer.h"
 #include "augusta/tracers.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/judged_rounds.h"
+#include "augusta/link_types.h"
+#endif
+
 namespace augusta::client {
 
 // Neither module names the other (checks/protocol_boundary.cmake), so their
@@ -72,8 +77,51 @@ presentation::WorldSnapshot ToPresentation(const harness::AuthoritativeState& st
 }
 
 presentation::Shot ToPresentation(const harness::Shot& shot) {
-  return {.shooter = ToPresentation(shot.shooter), .origin = shot.origin, .yaw = shot.yaw, .pitch = shot.pitch};
+  return {.shooter = ToPresentation(shot.shooter),
+          .tick = shot.tick,
+          .origin = shot.origin,
+          .yaw = shot.yaw,
+          .pitch = shot.pitch};
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+presentation::ShotJudgement ToPresentation(const harness::ShotJudgement& judgement) {
+  presentation::ShotJudgement converted{
+      .shot_tick = judgement.shot_tick,
+      .shooters_delay = judgement.shooters_delay,
+      .struck = presentation::Struck::kNothing,
+      .part = judgement.part,
+      .point = judgement.point,
+      .target = judgement.target.transform([](harness::EntityId entity) { return ToPresentation(entity); }),
+      .entries = {},
+      .entries_left_out = judgement.entries_left_out,
+  };
+  switch (judgement.struck) {
+    case link::Struck::kNothing:
+      converted.struck = presentation::Struck::kNothing;
+      break;
+    case link::Struck::kMap:
+      converted.struck = presentation::Struck::kMap;
+      break;
+    case link::Struck::kProp:
+      converted.struck = presentation::Struck::kProp;
+      break;
+    case link::Struck::kHitbox:
+      converted.struck = presentation::Struck::kHitbox;
+      break;
+  }
+  converted.entries.reserve(judgement.entries.size());
+  for (const link::ShotJudgementEntry& entry : judgement.entries) {
+    presentation::ShotJudgementEntry& to = converted.entries.emplace_back();
+    to.players.reserve(entry.players.size());
+    for (const link::JudgedPlayer& player : entry.players) {
+      to.players.push_back({.entity = ToPresentation(player.entity),
+                            .pose = {.position = player.position, .yaw = player.yaw, .stance = player.stance}});
+    }
+  }
+  return converted;
+}
+#endif
 
 presentation::Aim ToPresentation(const input::Aim& aim) { return {.yaw = aim.yaw, .pitch = aim.pitch, .ads = aim.ads}; }
 

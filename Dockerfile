@@ -68,11 +68,12 @@ WORKDIR /workspace
 
 # Only what the vcpkg layers read comes in before them, so they stay cached
 # across source and CMake edits: the bootstrap reads the submodule alone, and
-# the install below it, the manifest, its overlay triplets and the toolchain
-# they chainload.
+# the install below it, the manifest, its overlay ports and triplets and the
+# toolchain they chainload.
 COPY third_party/vcpkg third_party/vcpkg
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 COPY vcpkg.json ./
+COPY ports ports
 COPY triplets triplets
 COPY cmake/LlvmToolchain.cmake cmake/
 

@@ -87,3 +87,20 @@ simulation) - see ADR-0015 for the full pipeline. OmniPVD (the `omni.physx.pvd`
 extension, inside Composer) records/replays a PhysX simulation as USD for
 offline inspection - a debugging aid only, produces no artifact that reaches the
 runtime pack.
+
+The game's own PhysX scenes go to OmniPVD through `debug.physics_recording`, in
+`augustad.yaml` or `augustac.yaml` (a Development build's key, read at startup):
+
+1. Build Debug (`make build PRESET=windows-debug`, or `linux-debug`): only a
+   Debug PhysX has OmniPVD, and only a Debug build stages OmniPVD's runtime,
+   `PVDRuntime_64`, beside `augustad` and `augustac` (`cmake/PvdRuntime.cmake`,
+   from the PhysX overlay port in `ports/physx`).
+2. Set `debug.physics_recording: true` and start the executable. It records
+   every PhysX scene in the process, from startup to exit, into one
+   `<executable>-<UTC time>.ovd` in the system's temporary directory (`%TEMP%`,
+   or `$TMPDIR`/`/tmp`), and logs
+   `subsystem=physics event=recording_started path="..."` at `INFO`. Where it
+   cannot record (a non-Debug build, a runtime that does not load), it logs one
+   `event=recording_unavailable` `WARN` naming the key and why, and runs on.
+3. Stop the executable, so the file is complete, and open it in OmniPVD (the
+   `omni.physx.pvd` extension in USD Composer).

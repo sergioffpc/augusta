@@ -16,9 +16,12 @@ a helper that keeps shapes until a time. The Renderer draws them; the client
 Runtime composes them (ADR-0021).
 
 **Each area builds its own.** The code that turns an area's state into shapes or
-a panel lives in that area's module, such as `physics::DebugShapes(world)`,
-compiled only in a Development build and depending on `augusta_debug` only
-there. The client Runtime calls it and passes the result on; it builds nothing
+a panel lives in a client-only module of that area, compiled only in a
+Development build and depending on `augusta_debug` only there. A shared core
+module, which the server links too, never names `augusta_debug`: physics and
+gameplay hand plain values, such as a body's capsule or a placed Hitbox, and
+presentation, which holds the Physics overlays and their panel, builds their
+shapes. The client Runtime calls it and passes the result on; it builds nothing
 itself. When an area's values come from modules that ship in every build and run
 on several threads, as the network's do (the Link, Prediction and
 PresentationWorld), its panel is built in a client Runtime piece instead, a pure
@@ -37,12 +40,17 @@ smear thin lines, and over whatever the frame shows, a Debug view included.
 **One frame, one thread.** The shapes and panels are assembled on the
 Main/Render thread every frame, after PresentationWorld's Commit and before
 `RenderFrame`, from data that already reaches that thread: the Prediction State,
-the Server view, and the client World's visualization, copied out there because
-Presentation runs `simulate()` (ADR-0024). There is no new channel between
-threads: a producer on another thread hands what it shows through the channel it
-already publishes on, in a Development build only. A shape lives one frame; the
-Renderer keeps nothing between frames. What must stay longer, such as a shot the
-server announced once, is its producer's state, kept with the helper.
+the Server view, and the client World's visualization. There is no new channel
+between threads: a producer on another thread hands what it shows through the
+channel it already publishes on, in a Development build only. Until the client
+World has a Dynamics phase (#819), it is PredictionWorld's, so its visualization
+comes from the Prediction thread: PredictionWorld's Commit steps it once per
+tick, never inside a replay, and the Prediction State carries its lines, and the
+settings that switch it reach PredictionWorld with each tick's input. Once
+Presentation runs the client World's `simulate()` (ADR-0024), the copy follows
+it onto the Main/Render thread. A shape lives one frame; the Renderer keeps
+nothing between frames. What must stay longer, such as a shot the server
+announced once, is its producer's state, kept with the helper.
 
 **Panels.** A Debug panel is a description: a title, then text, tables, history
 plots, toggles, sliders and buttons, each control with an id. The Renderer draws

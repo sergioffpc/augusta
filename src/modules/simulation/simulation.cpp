@@ -19,6 +19,7 @@
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/hitbox.h"
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -80,7 +81,7 @@ struct Health {
 
 // A player's character's hitboxes, as authored: standing, in its root space.
 struct Hitboxes {
-  std::vector<CharacterHitbox> standing;
+  std::vector<hitbox::CharacterHitbox> standing;
   // How far from its root they reach, posed in any stance: a bullet that
   // passes farther from where a pose puts its root crosses none of them.
   float reach = 0.0F;
@@ -132,8 +133,8 @@ struct PlayerHit {
 };
 
 // Where a player's body is and faces this tick, as the tick's State reports it.
-Pose PoseOf(const Body& body, const Facing& facing) {
-  return Pose{.position = body.state.position, .yaw = facing.yaw, .stance = body.state.stance};
+hitbox::Pose PoseOf(const Body& body, const Facing& facing) {
+  return hitbox::Pose{.position = body.state.position, .yaw = facing.yaw, .stance = body.state.stance};
 }
 
 // kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.

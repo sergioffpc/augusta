@@ -150,6 +150,8 @@ struct PlayerCharacter {
 struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
+  /// The server tick it was fired on.
+  tick::Tick tick = 0;
   /// Where the round left from: the shooter's eye.
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw in radians (command::Command).
@@ -303,6 +305,11 @@ class World {
   /// Adds immovable level geometry for tracers to meet, the same Map the
   /// server's bullets meet.
   std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
+
+  /// The Map tracers meet, as AddCollisionMesh made it: what anything else
+  /// flown as a tracer flies, such as a Shot judgement's flight, meets. Never
+  /// ticked, it holds no body.
+  [[nodiscard]] const physics::World& Map() const;
 
   /// Takes the parameters the server sent when it admitted this client and its
   /// tick duration, in seconds: what a Shot's tracer flies by, and the ADS field

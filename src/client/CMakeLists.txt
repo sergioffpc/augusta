@@ -35,7 +35,8 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
 if(AUGUSTA_DEBUG_TOOLS)
-  target_link_libraries(augusta_client_content PUBLIC augusta_debug)
+  # augusta_gameplay: a character's Hitboxes, for the Hitboxes Debug overlay.
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug augusta_gameplay)
   target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
 endif()
 
@@ -60,6 +61,20 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_include_directories(augusta_client_profiling_panel PUBLIC ${CMAKE_SOURCE_DIR}/src/modules/renderer/include)
   target_link_libraries(augusta_client_profiling_panel PUBLIC augusta_debug augusta_window_events)
   augusta_set_module_scope(augusta_client_profiling_panel CLIENT_ONLY)
+
+  # Which debug tools the Debug index lists, and which Physics overlays start
+  # on, by the client's mode (see debug_index_entries.h), in a Development
+  # build only: each panel's entry is named by its panel's id, the Profiling
+  # panel's, the Network panel's and presentation's Physics panel's, and the
+  # overlays start from
+  # the config's `debug.physics` section.
+  add_library(augusta_client_debug_index_entries STATIC debug_index_entries.cpp)
+  target_link_libraries(
+    augusta_client_debug_index_entries
+    PUBLIC augusta_client_config augusta_debug augusta_presentation
+    PRIVATE augusta_client_network_panel augusta_client_profiling_panel
+  )
+  augusta_set_module_scope(augusta_client_debug_index_entries CLIENT_ONLY)
 endif()
 
 # The Network Debug panel (see network_panel.h), in a Development build only
@@ -136,6 +151,7 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(
     augusta_client
     PRIVATE
+      augusta_client_debug_index_entries
       augusta_client_network_panel
       augusta_client_profiling_panel
       augusta_debug
@@ -143,6 +159,8 @@ if(AUGUSTA_DEBUG_TOOLS)
       augusta_pcapng
       augusta_version
   )
+  # RuntimeConfig carries the config's `debug.physics` section.
+  target_link_libraries(augusta_client PUBLIC augusta_client_config)
 endif()
 # NOMINMAX: something in this TU's includes pulls in <windows.h>, whose
 # min/max macros would break std::min/std::max.
@@ -159,7 +177,7 @@ target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness Boost::uuid
-  PRIVATE augusta_assets augusta_client augusta_failure augusta_link
+  PRIVATE augusta_assets augusta_client augusta_failure augusta_link augusta_logging augusta_physics
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 
@@ -209,6 +227,8 @@ augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)
+# OmniPVD's runtime beside augustac in a Debug build (cmake/PvdRuntime.cmake).
+augusta_stage_pvd_runtime(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
 # runtime folder, which a release archives (ADR-0055, ADR-0058).
 if(WIN32)

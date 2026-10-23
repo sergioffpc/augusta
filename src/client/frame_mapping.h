@@ -12,6 +12,10 @@
 #include "augusta/presentation.h"
 #include "augusta/renderer.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/judged_rounds.h"
+#endif
+
 /// \file
 /// The conversions ClientRuntime makes at its edges, each frame and each tick:
 /// what the harness received into presentation's own types, so presentation does
@@ -43,8 +47,15 @@ namespace augusta::client {
                                                          std::uint8_t tick_rate_hz);
 
 /// Maps a Shot as the harness received it into presentation's own, which draws
-/// it: who fired it and where from and for; its tick is the server's business.
+/// it: who fired it, on which tick, and where from and for.
 [[nodiscard]] presentation::Shot ToPresentation(const harness::Shot& shot);
+
+#if AUGUSTA_DEBUG_TOOLS
+/// Maps a Shot judgement as the harness received it into the Shot judgements
+/// overlay's own (Development build only, ADR-0074): every Hitbox pose as
+/// gameplay places it.
+[[nodiscard]] presentation::ShotJudgement ToPresentation(const harness::ShotJudgement& judgement);
+#endif
 
 [[nodiscard]] presentation::Aim ToPresentation(const input::Aim& aim);
 

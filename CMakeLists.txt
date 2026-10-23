@@ -142,6 +142,8 @@ endif()
 find_package(flecs CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(unofficial-omniverse-physx-sdk CONFIG REQUIRED)
+# OmniPVD's runtime, staged beside the executables whose PhysX can record.
+include(cmake/PvdRuntime.cmake)
 # Protocol Buffers: the Networking Protocol's wire (ADR-0007). The full runtime
 # GameNetworkingSockets already links, and protoc with protobuf_generate, which
 # vcpkg builds for the host, so every preset generates the protocol's C++.
