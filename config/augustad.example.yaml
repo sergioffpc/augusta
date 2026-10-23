@@ -81,6 +81,14 @@ logging:
 #   # into one augustad-<time>.ovd in the system's temporary directory, its path
 #   # logged at info. Only a Debug build records; elsewhere it warns and runs on.
 #   physics_recording: false
+#   network:
+#     # The directory each run writes a pcapng of the messages it sends to and
+#     # receives from every peer into, decrypted, for Wireshark with
+#     # tools/wireshark (optional, default none; ADR-0076): one new file per
+#     # run, augustad-<start in UTC>.pcapng, and none is ever deleted. Created
+#     # if missing; one that can't be written fails the startup. Read at startup
+#     # only; a replay server writes one too.
+#     pcapng: pcapng
 # Replay mode (optional, default off; ADR-0051). Set replay.captures and
 # augustad is a replay server: it runs no Lobby and no Match, refuses every Join,
 # and replays the Match captures of that directory made on its own server pack,

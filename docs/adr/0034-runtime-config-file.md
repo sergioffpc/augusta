@@ -46,8 +46,11 @@ which lists them in its usage; every other setting still comes from the file.
 
 **Extended by ADR-0074**: each executable's file may hold a `debug` section,
 which says which debug tools start on, such as the server's `debug.reenactments`
-(ADR-0050). Its keys exist only in a Development build, so a Shipping build
-refuses them as unknown keys like any other.
+(ADR-0050), and where one writes, such as both executables'
+`debug.network.pcapng`, the directory each run writes its pcapng of decrypted
+messages into (ADR-0076), checked at startup that it can be written. Its keys
+exist only in a Development build, so a Shipping build refuses them as unknown
+keys like any other.
 
 YAML because the repository already keeps its configuration in JSON and YAML (CI
 workflows, Helm charts, cluster manifests, `vcpkg.json`, CMake presets): a third

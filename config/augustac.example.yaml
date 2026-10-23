@@ -91,3 +91,10 @@ input:
 #     # drawn (optional, default false): true or false. The server sends Shot
 #     # judgements only with its own `debug.shot_judgements` on.
 #     shot_judgements: false
+#   network:
+#     # The directory each run writes a pcapng of the messages it sends and
+#     # receives into, decrypted, for Wireshark with tools/wireshark (optional,
+#     # default none; ADR-0076): one new file per run, augustac-<start in
+#     # UTC>.pcapng, and none is ever deleted. Created if missing; one that
+#     # can't be written fails the startup. Read at startup only.
+#     pcapng: pcapng

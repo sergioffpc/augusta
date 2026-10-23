@@ -92,7 +92,7 @@ HostConfig HostConfigWith(Faults* faults) {
                     .server_pack = {},
                     .capture_directory = {},
                     .capture_mode = {},
-                    .faults = faults};
+                    .transport = {.faults = faults}};
 }
 
 Scenario TestScenario() {
@@ -137,7 +137,7 @@ class TransportFailureTest : public ::testing::Test {
       : host_(HostConfigWith(&host_faults_), TestScenario()),
         session_(SessionConfig{.server = {.address = host_.ListenEndpoint().address},
                                .character = kCharacter,
-                               .faults = &session_faults_},
+                               .transport = {.faults = &session_faults_}},
                  WorldWithFloor()) {}
 
   // One round of both sides' network work.
@@ -348,8 +348,9 @@ TEST_F(TransportFailureTest, AClientTransportFailureStopsTheRunnerWithATypedFail
 TEST(ServerRuntimeTransportFailureTest, AServerTransportFailureEndsRunWithATypedFailure) {
   Faults faults;
   faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
-  // Port 0: the metrics endpoint takes a free port, and is not what is tested.
-  ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
+  // Metrics port 0, the default: the endpoint takes a free port, and is not
+  // what is tested.
+  ServerRuntime runtime(HostConfigWith(&faults), TestScenario());
 
   const std::optional<Failure> failure = runtime.Run();
 
@@ -376,7 +377,7 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
   {
     Faults faults;
     faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
-    ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
+    ServerRuntime runtime(HostConfigWith(&faults), TestScenario());
     const auto start = std::chrono::steady_clock::now();
     const std::optional<Failure> failure = runtime.Run();
     unstopped_run = std::chrono::steady_clock::now() - start;
@@ -388,7 +389,7 @@ TEST(ServerRuntimeTransportFailureTest, ATransportFailureRacingAStopFromOutsideE
   for (int round = 0; round < kRounds; ++round) {
     Faults faults;
     faults.Arm(Site::kTransportReceive, "poll group gone", Faults::kEveryTime);
-    ServerRuntime runtime(HostConfigWith(&faults), 0, TestScenario());
+    ServerRuntime runtime(HostConfigWith(&faults), TestScenario());
     const auto delay = unstopped_run * 2 * round / (kRounds - 1);
     std::thread outside([&runtime, delay] {
       std::this_thread::sleep_for(delay);

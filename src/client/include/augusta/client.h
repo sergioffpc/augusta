@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_CLIENT_H_
 #define AUGUSTA_CLIENT_H_
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -70,6 +71,10 @@ struct RuntimeConfig {
   /// them; a Replay viewer's index never lists the panel, and none of its
   /// overlays starts on.
   config::ClientPhysicsDebugConfig debug_physics{};
+  /// The directory (`debug.network.pcapng`, which checked it can be written)
+  /// this run writes one pcapng file into, of every message its connection
+  /// sends and receives (ADR-0076); empty, the default, writes none.
+  std::filesystem::path debug_network_pcapng;
 #endif
 };
 

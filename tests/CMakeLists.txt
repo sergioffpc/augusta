@@ -920,13 +920,21 @@ add_subdirectory(fuzz)
 # sit in a file of their own, added to that module's test executable here, so
 # no test file leaves a case out by `#if AUGUSTA_DEBUG_TOOLS`.
 if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_networking_tests PRIVATE networking_tap_test.cpp)
   target_sources(augusta_client_config_tests PRIVATE client_config_debug_test.cpp)
   target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
+  target_sources(augusta_server_application_tests PRIVATE server_application_debug_test.cpp)
   target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
   target_sources(
     augusta_session_tests
-    PRIVATE session_reenactment_test.cpp session_debug_subscribe_test.cpp session_shot_judgement_test.cpp
+    PRIVATE
+      session_reenactment_test.cpp
+      session_debug_subscribe_test.cpp
+      session_shot_judgement_test.cpp
+      session_tap_test.cpp
   )
+  # The pcapng writer each tapped end of session_tap_test.cpp writes through.
+  target_link_libraries(augusta_session_tests PRIVATE augusta_pcapng augusta_version)
   target_sources(augusta_protocol_tests PRIVATE protocol_debug_test.cpp)
   target_sources(augusta_protocol_property_tests PRIVATE protocol_property_debug_test.cpp)
   target_sources(augusta_link_messages_tests PRIVATE link_messages_debug_test.cpp)
@@ -1007,6 +1015,10 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_physics_overlays_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
   # Links augusta_prediction publicly (so PhysX), as augusta_tracers_tests does.
   gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30)
+  # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
+  add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
+  target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_pcapng_tests)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints

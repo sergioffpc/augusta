@@ -1,0 +1,15 @@
+# The Wireshark dissector's tests (ADR-0076): a uv workspace member with no
+# package of its own, since the dissector is a Lua script Wireshark loads. The
+# root's wireshark group is what its pytest runs with.
+[project]
+name = "augusta-wireshark"
+version = "0.1.0"
+description = "Augusta's Wireshark dissector (ADR-0076): a Lua shim over Wireshark's protobuf dissector, and its tshark test."
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

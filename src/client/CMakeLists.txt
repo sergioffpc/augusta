@@ -123,12 +123,19 @@ target_link_libraries(
     nvtx3-cpp
 )
 # The debug HUD's lines, the Debug overlays' shapes, the Debug panels, the
-# Debug index and Debug interaction, in a Development build only (ADR-0074,
-# ADR-0075).
+# Debug index and Debug interaction, and the pcapng writer the connection is
+# tapped with, with the engine version its file names, in a Development build
+# only (ADR-0074, ADR-0075, ADR-0076).
 if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(
     augusta_client
-    PRIVATE augusta_client_debug_index_entries augusta_client_profiling_panel augusta_debug augusta_hud
+    PRIVATE
+      augusta_client_debug_index_entries
+      augusta_client_profiling_panel
+      augusta_debug
+      augusta_hud
+      augusta_pcapng
+      augusta_version
   )
   # RuntimeConfig carries the config's `debug.physics` section.
   target_link_libraries(augusta_client PUBLIC augusta_client_config)

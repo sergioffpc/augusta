@@ -13,7 +13,9 @@ its config and its clock, and runs it behind the application boundary in
 augustad's Lifecycle, each phase classifying its own failure. Beside it, it
 serves `/metrics` and `/livez` from a metrics endpoint, answering the latter by
 whether the tick loop is still running, and reports each client's Connection
-health as metrics.
+health as metrics. In a Development build, when `debug.network.pcapng` names a
+directory, it builds the pcapng writer the Host's listening socket or the replay
+server's endpoint is tapped with, one file per run (ADR-0076).
 
 ## Not its responsibility
 

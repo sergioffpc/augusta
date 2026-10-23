@@ -41,6 +41,17 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
           .detail = std::move(detail)};
 }
 
+// What the runtime runs its server with, from the file's settings.
+RuntimeOptions RuntimeOptionsOf(const config::ServerConfig& file_config, failure::Faults* faults) {
+  return RuntimeOptions{
+      .metrics_port = file_config.metrics_port,
+      .faults = faults,
+#if AUGUSTA_DEBUG_TOOLS
+      .network_pcapng = file_config.network_pcapng,
+#endif
+  };
+}
+
 // A replay server's runtime (ADR-0051), on the content loaded from pack: each
 // Replay's World makes the pack's Game policy afresh, so the policy is kept
 // as what makes it rather than as the one engine content loaded.
@@ -58,10 +69,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayR
       .server_pack = pack.Hash(),
       .captures = file_config.replay_captures,
       .max_viewers = file_config.replay_max_viewers,
-      .faults = faults,
+      .transport = {.faults = faults},
   };
-  return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
-                                         *std::move(policy), faults);
+  return std::make_unique<ServerRuntime>(replay_config, std::move(content.scenario), *std::move(policy),
+                                         RuntimeOptionsOf(file_config, faults));
 }
 
 // Verifies the pack the file's settings name, loads its content and constructs
@@ -106,9 +117,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .shot_judgements = file_config.shot_judgements,
 #endif
       .faults = faults,
+      .transport = {.faults = faults},
   };
-  return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
-                                         std::move(content->policy), faults);
+  return std::make_unique<ServerRuntime>(host_config, std::move(content->scenario), std::move(content->policy),
+                                         RuntimeOptionsOf(file_config, faults));
 }
 
 // What initialize starts, before any World exists, of the debug tools

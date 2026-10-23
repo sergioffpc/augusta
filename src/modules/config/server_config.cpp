@@ -30,6 +30,7 @@ constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::m
 constexpr std::string_view kReenactmentsKey = "debug.reenactments";
 constexpr std::string_view kShotJudgementsKey = "debug.shot_judgements";
 constexpr std::string_view kPhysicsRecordingKey = "debug.physics_recording";
+constexpr std::string_view kNetworkPcapngKey = "debug.network.pcapng";
 #endif
 constexpr std::string_view kReplayCapturesKey = "replay.captures";
 constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
@@ -129,30 +130,6 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
   return {};
 }
 
-#if AUGUSTA_DEBUG_TOOLS
-// The `debug` section (ADR-0074) into config: whether Reenact requests are
-// taken, whether Shot judgements are sent to whoever subscribes to them, and
-// whether the process's physics is recorded.
-std::expected<void, ConfigError> ReadDebugSection(const ConfigValues& values, ServerConfig& config) {
-  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
-  if (!reenactments) {
-    return std::unexpected(reenactments.error());
-  }
-  const auto shot_judgements = OptionalFlag(values, kShotJudgementsKey, false);
-  if (!shot_judgements) {
-    return std::unexpected(shot_judgements.error());
-  }
-  const auto physics_recording = OptionalFlag(values, kPhysicsRecordingKey, false);
-  if (!physics_recording) {
-    return std::unexpected(physics_recording.error());
-  }
-  config.reenactments = *reenactments;
-  config.shot_judgements = *shot_judgements;
-  config.physics_recording = *physics_recording;
-  return {};
-}
-#endif
-
 // The ServerConfig values holds, each relative path in it from root.
 std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
                                                           const std::filesystem::path& root) {
@@ -192,7 +169,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
-  ServerConfig config{
+  return ServerConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
@@ -202,16 +179,49 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .strict_capture = *strict_capture,
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
+#if AUGUSTA_DEBUG_TOOLS
+      // Read last, by ReadDebug.
+      .reenactments = false,
+      .shot_judgements = false,
+      .physics_recording = false,
+      .network_pcapng = {},
+#endif
       .metrics_port = *metrics_port,
       .replay_captures = {},
   };
+}
+
 #if AUGUSTA_DEBUG_TOOLS
-  if (const auto debug = ReadDebugSection(values, config); !debug) {
-    return std::unexpected(debug.error());
+// Reads the `debug` section (ADR-0074) into config: whether Reenact requests
+// are taken, whether Shot judgements are sent to whoever subscribes to them,
+// whether the process's physics is recorded, and the directory the pcapng goes
+// in (ADR-0076), relative to root. Last, so that a config refused for anything
+// else creates no directory.
+std::expected<ServerConfig, ConfigError> ReadDebug(const ConfigValues& values, const std::filesystem::path& root,
+                                                   ServerConfig config) {
+  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
   }
-#endif
+  const auto shot_judgements = OptionalFlag(values, kShotJudgementsKey, false);
+  if (!shot_judgements) {
+    return std::unexpected(shot_judgements.error());
+  }
+  const auto physics_recording = OptionalFlag(values, kPhysicsRecordingKey, false);
+  if (!physics_recording) {
+    return std::unexpected(physics_recording.error());
+  }
+  config.reenactments = *reenactments;
+  config.shot_judgements = *shot_judgements;
+  config.physics_recording = *physics_recording;
+  auto directory = OptionalWritableDirectory(values, kNetworkPcapngKey, root);
+  if (!directory) {
+    return std::unexpected(directory.error());
+  }
+  config.network_pcapng = *std::move(directory);
   return config;
 }
+#endif
 
 }  // namespace
 
@@ -237,6 +247,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       kReenactmentsKey,
       kShotJudgementsKey,
       kPhysicsRecordingKey,
+      kNetworkPcapngKey,
 #endif
   });
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});
@@ -249,9 +260,14 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
   if (!root) {
     return std::unexpected(root.error());
   }
-  return ServerConfigFrom(*values, *root).and_then([&](ServerConfig config) {
-    return ReadReplay(*values, *root, config).transform([&config] { return std::move(config); });
+  auto config = ServerConfigFrom(*values, *root).and_then([&](ServerConfig read) {
+    return ReadReplay(*values, *root, read).transform([&read] { return std::move(read); });
   });
+#if AUGUSTA_DEBUG_TOOLS
+  return std::move(config).and_then([&](ServerConfig read) { return ReadDebug(*values, *root, std::move(read)); });
+#else
+  return config;
+#endif
 }
 
 std::expected<ServerConfig, ConfigError> LoadServerConfig(const std::filesystem::path& file) {
