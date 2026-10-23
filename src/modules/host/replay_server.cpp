@@ -154,7 +154,7 @@ struct ReplayServer::Impl {
         catalog(RequireDirectory(config.captures), ReplayTerms{.server_pack = config.server_pack,
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
-        network(ListenOnceTheMapBuilds(config.listen), config.faults) {
+        network(ListenOnceTheMapBuilds(config.listen), config.transport) {
     LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
              max_viewers);
   }

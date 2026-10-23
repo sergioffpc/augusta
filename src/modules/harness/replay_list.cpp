@@ -32,7 +32,8 @@ struct ReplayListQuery::Impl {
   std::optional<JoinRefusal> refusal;
   failure::FailureLatch transport_failure;
 
-  Impl(link::Endpoint endpoint, failure::Faults* faults) : server(std::move(endpoint)), channel(faults) {}
+  Impl(link::Endpoint endpoint, failure::Faults* faults)
+      : server(std::move(endpoint)), channel(link::TransportOptions{.faults = faults}) {}
 
   // Takes in one message the server sent: its list or its refusal; anything
   // else a replay server sends no one who asked for its list.

@@ -74,12 +74,12 @@ jobs:
           server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
           # The build jobs also build and test the tools (tools/agent,
-          # tools/pack): their native and Python sources, the tools
-          # environment, the example scenario and golden packs the tests load,
-          # and the node's end of augusta-publish, which the cooker's tests run.
-          # tools/docs is the docs workflow's, not theirs.
+          # tools/pack, tools/wireshark): their native and Python sources, the
+          # tools environment, the example scenario and golden packs the tests
+          # load, and the node's end of augusta-publish, which the cooker's
+          # tests run. tools/docs is the docs workflow's, not theirs.
           set_output run_build \
-            "^(${server}|tests/|checks/|tools/agent/|tools/pack/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
+            "^(${server}|tests/|checks/|tools/agent/|tools/pack/|tools/wireshark/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
 
           set_output run_container \
             "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
@@ -389,9 +389,23 @@ jobs:
           cache-dependency-glob: tools/uv.lock
       - uses: ./.github/actions/restore-ctcache-cache
       - name: Install the tools' packages
-        # As the client-x64-windows job does.
+        # As the client-x64-windows job does, and the Wireshark dissector's
+        # test, which this job alone runs.
         working-directory: tools
-        run: uv sync --locked --no-default-groups --group agent --group pack
+        run: uv sync --locked --no-default-groups --group agent --group pack --group wireshark
+      - name: Install tshark
+        # For the Wireshark dissector's test (ADR-0076). Preseeded, so
+        # wireshark-common neither asks whether non-root users may capture
+        # nor installs dumpcap setuid. Ubuntu's enforcing AppArmor profile for
+        # /usr/bin/tshark lets it read only /usr/share/wireshark and /tmp, so
+        # it would refuse the shim and the fixture in the checkout: unloaded,
+        # if the runner has it.
+        run: |
+          echo "wireshark-common wireshark-common/install-setuid boolean false" | sudo debconf-set-selections
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
+          if [ -f /etc/apparmor.d/tshark ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/tshark
+          fi
       - name: Configure
         # Without the client: pull requests build and test it on Windows alone,
         # and the Linux client is the nightly's (nightly-jobs.yml,
@@ -450,6 +464,13 @@ jobs:
         # packs ctest loads, byte for byte, on either platform.
         working-directory: tools/pack
         run: uv run --locked --no-default-groups --group agent --group pack pytest
+      - name: Test the Wireshark dissector (pytest)
+        # tshark with the shim over the C++ writer's pcapng of the fuzz seeds,
+        # required, so a missing tshark fails rather than skips.
+        working-directory: tools/wireshark
+        env:
+          AUGUSTA_REQUIRE_TSHARK: "1"
+        run: uv run --locked --no-default-groups --group agent --group pack --group wireshark pytest
       - name: Build the Agents' native module as a Shipping build
         # The confinement job's Agents Join the image container-verify built,
         # which is a Shipping build but on a push to develop (ADR-0074), and a

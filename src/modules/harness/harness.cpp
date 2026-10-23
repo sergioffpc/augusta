@@ -64,7 +64,7 @@ struct Session::Impl {
                                      .capture = capture,
                                      .run = config.run};
         })),
-        channel(config.faults),
+        channel(config.transport),
         inbox(config.replay.has_value(), config.on_match),
         commands(std::move(world)) {}
 

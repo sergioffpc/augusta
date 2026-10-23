@@ -21,6 +21,11 @@
 #include "augusta/replay_server.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/link.h"
+#include "augusta/pcapng_file_writer.h"
+#include "augusta/version.h"
+#endif
 #include "connection_health.h"
 #include "metrics.h"
 
@@ -54,6 +59,15 @@ std::optional<failure::Failure> CaptureFailureOf(const host::ReplayServer& /*ser
 std::optional<failure::Failure> FinishCaptureOf(host::Host& host) { return host.FinishCapture(); }
 std::optional<failure::Failure> FinishCaptureOf(host::ReplayServer& /*server*/) { return std::nullopt; }
 
+#if AUGUSTA_DEBUG_TOOLS
+// config, its transport tapped by tap.
+template <typename Config>
+Config Tapped(Config config, link::Tap* tap) {
+  config.transport.tap = tap;
+  return config;
+}
+#endif
+
 }  // namespace
 
 // The threads, the metrics endpoint and the supervisor around Served, a Host
@@ -64,6 +78,11 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   // 60 Hz, no missed ticks).
   std::uint8_t tick_rate_hz;
   std::uint16_t metrics_port;
+#if AUGUSTA_DEBUG_TOOLS
+  // This run's pcapng, if asked for: declared before served, whose transport
+  // reports to it until it goes.
+  std::unique_ptr<pcapng::FileWriter> pcapng;
+#endif
   Served served;
   // When the Simulation thread last finished a tick, which the metrics
   // endpoint's /livez reads (ADR-0049). Run() starts it at its own start.
@@ -82,12 +101,17 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   supervisor::Supervisor workers;
 
   template <typename Config, typename Policy>
-  Running(const Config& config, std::uint16_t metrics_port_in, scenario::Scenario scenario, Policy policy,
-          failure::Faults* faults)
+  Running(const Config& config, scenario::Scenario scenario, Policy policy, const RuntimeOptions& options)
       : tick_rate_hz(config.tick_rate_hz),
-        metrics_port(metrics_port_in),
+        metrics_port(options.metrics_port),
+#if AUGUSTA_DEBUG_TOOLS
+        pcapng(pcapng::RunWriter(options.network_pcapng, "augustad", EngineVersion())),
+        served(Tapped(config, pcapng.get()), std::move(scenario), std::move(policy)),
+#else
         served(config, std::move(scenario), std::move(policy)),
-        workers(faults != nullptr ? *faults : no_faults) {}
+#endif
+        workers(options.faults != nullptr ? *options.faults : no_faults) {
+  }
 
   // The endpoint is not a supervised worker (ADR-0049): a server whose endpoint
   // can't start keeps running without it, and in the cluster its liveness
@@ -206,15 +230,13 @@ struct ServerRuntime::Running final : ServerRuntime::Impl {
   void Stop() override { workers.RequestStop(); }
 };
 
-ServerRuntime::ServerRuntime(const host::HostConfig& config, std::uint16_t metrics_port, scenario::Scenario scenario,
-                             policy::Policy policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<host::Host>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                  faults)) {}
+ServerRuntime::ServerRuntime(const host::HostConfig& config, scenario::Scenario scenario, policy::Policy policy,
+                             const RuntimeOptions& options)
+    : impl_(std::make_unique<Running<host::Host>>(config, std::move(scenario), std::move(policy), options)) {}
 
-ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, std::uint16_t metrics_port,
-                             scenario::Scenario scenario, policy::PolicyMaker policy, failure::Faults* faults)
-    : impl_(std::make_unique<Running<host::ReplayServer>>(config, metrics_port, std::move(scenario), std::move(policy),
-                                                          faults)) {}
+ServerRuntime::ServerRuntime(const host::ReplayServerConfig& config, scenario::Scenario scenario,
+                             policy::PolicyMaker policy, const RuntimeOptions& options)
+    : impl_(std::make_unique<Running<host::ReplayServer>>(config, std::move(scenario), std::move(policy), options)) {}
 
 ServerRuntime::~ServerRuntime() = default;
 

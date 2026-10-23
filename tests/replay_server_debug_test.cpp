@@ -48,7 +48,7 @@ class ReplayServerDebugSubscribeTest : public ::testing::Test {
                                                                 .server_pack = {},
                                                                 .captures = directory_,
                                                                 .max_viewers = 1,
-                                                                .faults = nullptr},
+                                                                .transport = {}},
                                              augusta::scenario::Scenario{}, [] { return augusta::policy::Policy{}; });
   }
 

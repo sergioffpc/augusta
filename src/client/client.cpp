@@ -54,6 +54,8 @@
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
+#include "augusta/pcapng_file_writer.h"
+#include "augusta/version.h"
 #include "profiling_panel.h"
 #endif
 
@@ -121,6 +123,12 @@ struct ClientRuntime::Impl {
   // before the Session, so they end after it, its last lines included.
   std::optional<SessionLogContext> session_log;
   MatchLogContext match_log;
+#if AUGUSTA_DEBUG_TOOLS
+  // This run's pcapng, if asked for: declared before the Session, whose
+  // connection reports to it until it goes.
+  std::unique_ptr<pcapng::FileWriter> pcapng =
+      pcapng::RunWriter(config.debug_network_pcapng, "augustac", EngineVersion());
+#endif
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
@@ -353,6 +361,9 @@ struct ClientRuntime::Impl {
             .server = link::Endpoint{.address = cfg.server_address},
             .client_pack = cfg.client_pack,
             .character = cfg.character,
+#if AUGUSTA_DEBUG_TOOLS
+            .transport = {.tap = pcapng.get()},
+#endif
             .replay = cfg.replay,
             .spawn = cfg.reenactment.transform([](const harness::Script& script) { return script.spawn; }),
             .run = cfg.run,
