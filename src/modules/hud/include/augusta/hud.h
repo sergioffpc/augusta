@@ -28,10 +28,13 @@ struct NetStats {
   /// Actual throughput over the connection, in bytes per second.
   float in_bytes_per_sec = 0.0F;
   float out_bytes_per_sec = 0.0F;
+  /// Whether the developer impairs the link from the Network Debug panel.
+  bool impaired = false;
 };
 
 /// The HUD's lines, today one: "FPS: 144 (6.9ms) | RTT: 12ms | Jitter: 0.4ms |
-/// Loss: 0.0% | In: 1.2KB/s | Out: 512B/s". average_frame_time_s is in seconds
+/// Loss: 0.0% | In: 1.2KB/s | Out: 512B/s", ending in " | IMPAIRED" while
+/// net says so. average_frame_time_s is in seconds
 /// (FrameTimeWindow::Average); none measured yet (zero, negative or non-finite)
 /// reads "FPS: --". net is nullopt while not connected, which reads just
 /// "RTT: --"; a connection number not measured yet reads "--".

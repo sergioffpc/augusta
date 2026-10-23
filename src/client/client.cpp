@@ -213,10 +213,33 @@ struct ClientRuntime::Impl {
   // Main/Render thread only: the Network panel, which samples the connection
   // readings while the Debug index has it on.
   NetworkPanel network_panel;
+  // Main/Render thread only: the conditions last applied to the transport
+  // from the Network panel's Impairment group; the real network at start.
+  link::SimulatedConditions applied_conditions;
 
+  // The HUD's connection numbers, impaired while the Network panel's
+  // Impairment group says so, shown or not.
   std::optional<hud::NetStats> GetLatestHudNet() {
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
-    return latest_hud_net;
+    std::optional<hud::NetStats> net;
+    {
+      const std::lock_guard<std::mutex> lock(hud_net_mutex);
+      net = latest_hud_net;
+    }
+    if (net.has_value()) {
+      net->impaired = network_panel.Impaired();
+    }
+    return net;
+  }
+
+  // Main/Render thread only: applies the conditions the Network panel's
+  // Impairment group wants to the client's one connection, both ways, when
+  // they change. The server is never told: it measures the link as it is.
+  void ApplyImpairment() {
+    const link::SimulatedConditions wanted = network_panel.WantedConditions();
+    if (wanted != applied_conditions) {
+      link::SimulateNetworkConditions(wanted);
+      applied_conditions = wanted;
+    }
   }
 
   // Main/Render thread only: hands the Renderer this frame's HUD lines while
@@ -306,6 +329,7 @@ struct ClientRuntime::Impl {
         network_panel.Update(event);
       }
     }
+    ApplyImpairment();
   }
 #endif
 

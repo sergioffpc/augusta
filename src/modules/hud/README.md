@@ -6,8 +6,9 @@ only a Development build has it (ADR-0074).
 ## Responsibility
 
 What the DebugHud shows: the system metrics the client measures - the frame
-rate, averaged over recent frames, and the connection's numbers - turned into
-the HUD's text lines, free of any GPU API.
+rate, averaged over recent frames, and the connection's numbers, ending in
+`IMPAIRED` while the developer impairs the link - turned into the HUD's text
+lines, free of any GPU API.
 
 ## Not its responsibility
 
