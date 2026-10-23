@@ -65,15 +65,36 @@ if(AUGUSTA_DEBUG_TOOLS)
   # Which debug tools the Debug index lists, and which Physics overlays start
   # on, by the client's mode (see debug_index_entries.h), in a Development
   # build only: each panel's entry is named by its panel's id, the Profiling
-  # panel's and presentation's Physics panel's, and the overlays start from
+  # panel's, the Network panel's and presentation's Physics panel's, and the
+  # overlays start from
   # the config's `debug.physics` section.
   add_library(augusta_client_debug_index_entries STATIC debug_index_entries.cpp)
   target_link_libraries(
     augusta_client_debug_index_entries
     PUBLIC augusta_client_config augusta_debug augusta_presentation
-    PRIVATE augusta_client_profiling_panel
+    PRIVATE augusta_client_network_panel augusta_client_profiling_panel
   )
   augusta_set_module_scope(augusta_client_debug_index_entries CLIENT_ONLY)
+endif()
+
+# The Network Debug panel (see network_panel.h), in a Development build only
+# (ADR-0074): its builder, from plain samples of the connection and its traffic
+# per message type, the corrections and the interpolation slack. Its numbers
+# come from link, prediction and presentation, which ship in every build and may
+# not depend on augusta_debug, so the builder is a client Runtime piece
+# (ADR-0075). It takes the HUD's packet-loss percent from net_stats.h, its
+# units for bytes from hud, and the Interpolation delay from presentation.
+if(AUGUSTA_DEBUG_TOOLS)
+  add_library(augusta_client_network_panel STATIC network_panel.cpp)
+  target_link_libraries(
+    augusta_client_network_panel
+    PUBLIC augusta_debug augusta_link augusta_prediction
+    PRIVATE augusta_client_net_stats augusta_hud augusta_presentation
+  )
+  # NOMINMAX, as augusta_client_net_stats has it: net_stats.h's includes pull in
+  # <windows.h>, whose min/max macros would break std::min/std::max.
+  target_compile_definitions(augusta_client_network_panel PRIVATE NOMINMAX)
+  augusta_set_module_scope(augusta_client_network_panel CLIENT_ONLY)
 endif()
 
 # What the client loads in the Lobby before it reports Ready, and for which
@@ -131,6 +152,7 @@ if(AUGUSTA_DEBUG_TOOLS)
     augusta_client
     PRIVATE
       augusta_client_debug_index_entries
+      augusta_client_network_panel
       augusta_client_profiling_panel
       augusta_debug
       augusta_hud

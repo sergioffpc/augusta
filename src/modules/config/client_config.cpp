@@ -40,6 +40,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // Shipping build refuses them as unknown.
     "debug.hud",
     "debug.profiling.panel",
+    "debug.network.panel",
     "debug.physics.panel",
     "debug.physics.collision",
     "debug.physics.server_bodies",
@@ -156,6 +157,10 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
   if (!profiling_panel) {
     return std::unexpected(profiling_panel.error());
   }
+  const auto network_panel = OptionalFlag(values, "debug.network.panel", false);
+  if (!network_panel) {
+    return std::unexpected(network_panel.error());
+  }
   const auto physics = ParsePhysicsDebugConfig(values);
   if (!physics) {
     return std::unexpected(physics.error());
@@ -170,6 +175,7 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
                                  .profiling_panel = *profiling_panel,
                                  .physics = *physics,
                                  .physics_recording = *physics_recording,
+                                 .network_panel = *network_panel,
                                  .network_pcapng = std::move(network_pcapng)};
       });
 }

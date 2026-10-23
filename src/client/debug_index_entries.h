@@ -38,13 +38,15 @@ enum class ClientMode : std::uint8_t {
 struct DebugIndexStart {
   bool hud = true;
   bool profiling_panel = false;
+  bool network_panel = false;
   bool physics_panel = false;
 };
 
 /// The Debug index's entries, in the `debug` section's fixed order: the Debug
-/// HUD, the Profiling panel, then the Physics panel, which only a mode with a
-/// predicted body and a Server view lists (never a Replay viewer). Each panel's
-/// entry is named by its panel's id.
+/// HUD, the Profiling panel, the Network panel, which every mode lists (each has
+/// a Link), then the Physics panel, which only a mode with a predicted body and a
+/// Server view lists (never a Replay viewer). Each panel's entry is named by its
+/// panel's id.
 [[nodiscard]] std::vector<debug::IndexEntry> DebugIndexEntries(const DebugIndexStart& start, ClientMode mode);
 
 /// Which Physics overlays start on in mode, as configured: none for a Replay

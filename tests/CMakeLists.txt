@@ -589,6 +589,15 @@ target_link_libraries(
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
 
+# How often and how far Reconciliation moved the body, from Prediction States built by hand.
+add_executable(augusta_correction_tally_tests correction_tally_test.cpp)
+target_link_libraries(
+  augusta_correction_tally_tests
+  PRIVATE augusta_math augusta_prediction GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_correction_tally_tests DISCOVERY_TIMEOUT 30)
+
 # The Command each Intent yields and how it ends, from Server views built by hand.
 add_executable(augusta_intent_tests intent_test.cpp)
 target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math GTest::gtest GTest::gtest_main)
@@ -632,12 +641,20 @@ gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30)
 
 # What the Link decides about the transport beneath it is in headers private to
 # the link module, tested apart from a live connection through a private
-# include path, as networking's send flags are.
+# include path, as networking's send flags are. What a Client counts it carries
+# is tested over loopback, against a raw server that sends any bytes.
 add_executable(augusta_link_transport_tests link_transport_test.cpp)
 target_include_directories(augusta_link_transport_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
 target_link_libraries(
   augusta_link_transport_tests
-  PRIVATE augusta_link augusta_link_messages augusta_networking augusta_protocol GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_link
+    augusta_link_messages
+    augusta_link_raw
+    augusta_networking
+    augusta_protocol
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
@@ -979,6 +996,7 @@ if(AUGUSTA_DEBUG_TOOLS)
       augusta_client_debug_index_entries_tests
       PRIVATE
         augusta_client_debug_index_entries
+        augusta_client_network_panel
         augusta_client_profiling_panel
         augusta_presentation
         GTest::gtest
@@ -987,6 +1005,17 @@ if(AUGUSTA_DEBUG_TOOLS)
     target_include_directories(augusta_client_debug_index_entries_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
     # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
     gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
+  endif()
+  # The Network Debug panel (network_panel.h), private to the client Runtime,
+  # as net_stats.h is.
+  if(TARGET augusta_client_network_panel)
+    add_executable(augusta_client_network_panel_tests client_network_panel_test.cpp)
+    target_link_libraries(
+      augusta_client_network_panel_tests
+      PRIVATE augusta_client_network_panel GTest::gtest GTest::gtest_main
+    )
+    target_include_directories(augusta_client_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_network_panel_tests DISCOVERY_TIMEOUT 30)
   endif()
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(

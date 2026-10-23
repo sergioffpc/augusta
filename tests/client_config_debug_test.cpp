@@ -95,6 +95,35 @@ TEST(ParseClientConfigTest, RejectsADebugProfilingPanelThatIsNotTrueOrFalse) {
   EXPECT_EQ(config.error().subject, "debug.profiling.panel");
 }
 
+TEST(ParseClientConfigTest, TheNetworkPanelIsOffByDefault) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->debug.network_panel);
+}
+
+TEST(ParseClientConfigTest, DebugNetworkPanelTrueTurnsThePanelOn) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  network:\n    panel: true\n",
+      kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->debug.network_panel);
+}
+
+TEST(ParseClientConfigTest, RejectsADebugNetworkPanelThatIsNotTrueOrFalse) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  network:\n    panel: maybe\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.network.panel");
+}
+
 TEST(ParseClientConfigTest, PhysicsRecordingIsOffByDefault) {
   const auto config = ParseClientConfig(
       "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
@@ -174,6 +203,7 @@ INSTANTIATE_TEST_SUITE_P(
         PhysicsSwitch{.key = "hitboxes", .read = &augusta::config::ClientPhysicsDebugConfig::hitboxes},
         PhysicsSwitch{.key = "shot_judgements", .read = &augusta::config::ClientPhysicsDebugConfig::shot_judgements}),
     [](const testing::TestParamInfo<PhysicsSwitch>& info) { return std::string(info.param.key); });
+
 TEST(ParseClientConfigTest, WritesNoPcapngByDefault) {
   const auto config = ParseClientConfig(kMinimalClientConfig, kFileDir);
 

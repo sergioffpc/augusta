@@ -254,6 +254,12 @@ struct State {
   /// shown at, for the Commands sampled on it to report (ADR-0044); nullopt before the client
   /// has received an Authoritative State and outside a match.
   std::optional<SeenTime> seen_time;
+  /// The interpolation buffer's slack this frame, in seconds (ServerClock::Slack,
+  /// interpolation.h): how far the newest Authoritative State update is ahead
+  /// of the time remote_players are shown at. Positive while updates wait to be
+  /// shown, zero or below once the buffer has run dry and holds the newest;
+  /// nullopt outside a match or with no remote player shown.
+  std::optional<double> interpolation_slack;
   /// Every tracer in flight, as drawn this frame (tracers.h).
   std::vector<Tracer> tracers;
   /// Every impact on the Map still showing.

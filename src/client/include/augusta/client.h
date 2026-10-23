@@ -71,6 +71,9 @@ struct RuntimeConfig {
   /// them; a Replay viewer's index never lists the panel, and none of its
   /// overlays starts on.
   config::ClientPhysicsDebugConfig debug_physics{};
+  /// Whether the Network Debug panel is shown at first
+  /// (`debug.network.panel`), until the Debug index switches it.
+  bool debug_network_panel = false;
   /// The directory (`debug.network.pcapng`, which checked it can be written)
   /// this run writes one pcapng file into, of every message its connection
   /// sends and receives (ADR-0076); empty, the default, writes none.

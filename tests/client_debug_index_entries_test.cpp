@@ -7,6 +7,7 @@
 #include "augusta/debug_index.h"
 #include "augusta/physics_overlays.h"
 #include "debug_index_entries.h"
+#include "network_panel.h"
 #include "profiling_panel.h"
 
 // Which debug tools the client Runtime's Debug index lists, and which Physics
@@ -24,31 +25,33 @@ std::vector<std::string> IdsOf(const std::vector<debug::IndexEntry>& entries) {
   return ids;
 }
 
-const DebugIndexStart kAllOn{.hud = true, .profiling_panel = true, .physics_panel = true};
+const DebugIndexStart kAllOn{.hud = true, .profiling_panel = true, .network_panel = true, .physics_panel = true};
 
 // A player who dies spectates in the same mode, so its Debug index stays.
 TEST(DebugIndexEntriesTest, APlayerAndACapturedPlayerListThePhysicsPanel) {
   for (const ClientMode mode : {ClientMode::kPlayer, ClientMode::kCapturedPlayer}) {
-    EXPECT_EQ(
-        IdsOf(DebugIndexEntries(kAllOn, mode)),
-        (std::vector<std::string>{"hud", std::string(kProfilingPanelId), std::string(presentation::kPhysicsPanelId)}));
+    EXPECT_EQ(IdsOf(DebugIndexEntries(kAllOn, mode)),
+              (std::vector<std::string>{"hud", std::string(kProfilingPanelId), std::string(kNetworkPanelId),
+                                        std::string(presentation::kPhysicsPanelId)}));
   }
 }
 
 TEST(DebugIndexEntriesTest, AReplayViewerListsNoPhysicsPanel) {
   EXPECT_EQ(IdsOf(DebugIndexEntries(kAllOn, ClientMode::kReplayViewer)),
-            (std::vector<std::string>{"hud", std::string(kProfilingPanelId)}));
+            (std::vector<std::string>{"hud", std::string(kProfilingPanelId), std::string(kNetworkPanelId)}));
 }
 
 TEST(DebugIndexEntriesTest, EachEntryStartsAsConfigured) {
-  const std::vector<debug::IndexEntry> entries =
-      DebugIndexEntries({.hud = false, .profiling_panel = false, .physics_panel = true}, ClientMode::kPlayer);
+  const std::vector<debug::IndexEntry> entries = DebugIndexEntries(
+      {.hud = false, .profiling_panel = false, .network_panel = true, .physics_panel = true}, ClientMode::kPlayer);
 
-  ASSERT_EQ(entries.size(), 3U);
+  ASSERT_EQ(entries.size(), 4U);
   EXPECT_FALSE(entries[0].on);
   EXPECT_FALSE(entries[1].on);
   EXPECT_TRUE(entries[2].on);
-  EXPECT_EQ(entries[2].name, "Physics");
+  EXPECT_EQ(entries[2].name, "Network");
+  EXPECT_TRUE(entries[3].on);
+  EXPECT_EQ(entries[3].name, "Physics");
 }
 
 TEST(ModeOfTest, AReplayIsWatchedByAReplayViewerAReenactmentPlayedByACapturedPlayer) {

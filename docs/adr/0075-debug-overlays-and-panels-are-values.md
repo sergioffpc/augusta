@@ -22,7 +22,11 @@ module, which the server links too, never names `augusta_debug`: physics and
 gameplay hand plain values, such as a body's capsule or a placed Hitbox, and
 presentation, which holds the Physics overlays and their panel, builds their
 shapes. The client Runtime calls it and passes the result on; it builds nothing
-itself.
+itself. When an area's values come from modules that ship in every build and run
+on several threads, as the network's do (the Link, Prediction and
+PresentationWorld), its panel is built in a client Runtime piece instead, a pure
+state of its own taking plain values, so those modules never depend on
+`augusta_debug`; the Runtime still only hands it its values and its events.
 
 **Shapes.** A producer asks for segments, oriented boxes, spheres, capsules,
 triangles and voxels, each with a colour and an alpha. `augusta_debug`
@@ -115,9 +119,14 @@ or how many lights a screen tile traces, is a Debug view.
   character callback the Window does not have, for what toggles already do.
 - **Panels that always take input when shown**: one state fewer, but a developer
   could not play with the network panel in view.
-- **The building code in `augusta_debug`, or in the client Runtime**: the first
-  makes the vocabulary module depend on every area, and the second puts reusable
-  logic in an executable, which is glue.
+- **The building code in `augusta_debug`, or always in the client Runtime**: the
+  first makes the vocabulary module depend on every area, and the second moves
+  an area's panel away from the state it reads; only a panel whose values come
+  from modules that ship in every build, on several threads, is built there.
+- **The network panel's parts built by `link`, `prediction` and
+  `presentation`**: each part beside its numbers, but three modules that ship in
+  every build depending on `augusta_debug`, and one panel assembled from three
+  threads.
 
 ## Consequences
 

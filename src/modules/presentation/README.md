@@ -23,6 +23,11 @@ judged Hitboxes, the struck one filled, the round's flight flown as Tracers fly
 it against the same Map, and the point struck; it reports whether the Debug
 subscribe should ask for Shot judgements, which the client Runtime sends.
 
+Each frame it also reports the interpolation buffer's slack: how far the newest
+Authoritative State update is ahead of the time remote players are shown at, in
+seconds, positive while updates wait and zero or below once the buffer has run
+dry. The Network Debug panel reads it against the Interpolation delay.
+
 ## Not its responsibility
 
 - Drawing: renderer. Playing sound: audio.

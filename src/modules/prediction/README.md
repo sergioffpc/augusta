@@ -8,6 +8,10 @@ Orchestrates PredictionWorld: the client's ECS pipeline, run once per fixed tick
 on the Prediction thread, predicting the local player only. It reconciles
 against the server's state by replaying the unacknowledged commands
 (`augusta/reconciliation.h`) and emits an immutable Prediction State each tick.
+It also holds the one definition of a correction: it adds up, from the
+Prediction States' running totals, how often and how far Reconciliation moved
+the body and how often it corrected the rifle, for the harness's netcode
+statistics and the client's Network Debug panel alike.
 
 In a Development build, with Collision switched on, its Commit steps its physics
 World's visualization once per tick, never inside a replay, and the Prediction
