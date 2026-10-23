@@ -63,3 +63,8 @@ input:
 #     # Systems to capture, and Aftermath's status - is shown (optional, default
 #     # false): true or false.
 #     panel: false
+#   network:
+#     # Whether the Network Debug panel - the connection's numbers and its
+#     # traffic per message type - is shown (optional, default false): true or
+#     # false.
+#     panel: false

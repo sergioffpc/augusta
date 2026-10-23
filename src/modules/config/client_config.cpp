@@ -40,6 +40,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     // Shipping build refuses them as unknown.
     "debug.hud",
     "debug.profiling.panel",
+    "debug.network.panel",
 #endif
 });
 
@@ -116,8 +117,12 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
   if (!hud) {
     return std::unexpected(hud.error());
   }
-  return OptionalFlag(values, "debug.profiling.panel", false).transform([&hud](bool profiling_panel) {
-    return ClientDebugConfig{.hud = *hud, .profiling_panel = profiling_panel};
+  const auto profiling_panel = OptionalFlag(values, "debug.profiling.panel", false);
+  if (!profiling_panel) {
+    return std::unexpected(profiling_panel.error());
+  }
+  return OptionalFlag(values, "debug.network.panel", false).transform([&](bool network_panel) {
+    return ClientDebugConfig{.hud = *hud, .profiling_panel = *profiling_panel, .network_panel = network_panel};
   });
 }
 #endif

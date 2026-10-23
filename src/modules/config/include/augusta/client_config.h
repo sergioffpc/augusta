@@ -39,6 +39,9 @@ struct ClientDebugConfig {
   /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
   /// by default.
   bool profiling_panel = false;
+  /// Key `debug.network.panel` (true or false, default false): whether the
+  /// Network Debug panel is shown.
+  bool network_panel = false;
 };
 #endif
 
