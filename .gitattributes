@@ -24,6 +24,9 @@ tests/fixtures/example-packs/*.apak -filter -diff -merge binary
 tests/fuzz/corpus/** binary
 tests/fuzz/regressions/** binary
 
+# A pcapng is bytes (tests/fuzz/protocol_decode_seeds.pcapng).
+*.pcapng binary
+
 # The debug HUD's font is embedded in the client at build time, by jobs that
 # fetch no LFS objects, so it stays plain bytes.
 *.ttf binary
