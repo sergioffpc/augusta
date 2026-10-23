@@ -42,18 +42,28 @@ void ServerClock::Advance(double elapsed) {
 void ServerClock::Observe(double server_time) {
   if (!now_.has_value() || std::abs(server_time - *now_) > kResyncThreshold) {
     now_ = server_time;
+    newest_ = server_time;
     behind_ = 0.0;
     return;
   }
+  newest_ = std::max(newest_, server_time);
   behind_ = server_time - *now_;
 }
 
 void ServerClock::Reset() {
   now_.reset();
+  newest_ = 0.0;
   behind_ = 0.0;
 }
 
 std::optional<double> ServerClock::Now() const { return now_; }
+
+std::optional<double> ServerClock::Slack() const {
+  if (!now_.has_value()) {
+    return std::nullopt;
+  }
+  return newest_ - (*now_ - kInterpolationDelay);
+}
 
 SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_tick, tick::Tick newest_tick) {
   const double ticks =

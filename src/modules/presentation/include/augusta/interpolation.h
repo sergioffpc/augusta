@@ -101,8 +101,18 @@ class ServerClock {
   /// (or since Reset).
   [[nodiscard]] std::optional<double> Now() const;
 
+  /// The interpolation buffer's slack, in seconds: how far the newest server
+  /// time observed since the clock last aligned is ahead of the point remote
+  /// players are sampled at, kInterpolationDelay behind Now(). Positive while
+  /// updates wait to be shown; zero or below once that point has reached the
+  /// newest, which RemoteInterpolator::Sample then holds. Nullopt while Now()
+  /// is.
+  [[nodiscard]] std::optional<double> Slack() const;
+
  private:
   std::optional<double> now_;
+  // The newest server time observed since the clock last aligned.
+  double newest_ = 0.0;
   // How far the newest observed server time was ahead of the clock (negative
   // if behind), less what Advance has since caught up.
   double behind_ = 0.0;

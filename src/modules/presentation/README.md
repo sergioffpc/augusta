@@ -11,6 +11,11 @@ owns the local view and camera, remote-player interpolation, reconciliation's
 visual correction, tracers and effects, the animation engine and which audio
 cues play.
 
+Each frame it also reports the interpolation buffer's slack: how far the newest
+Authoritative State update is ahead of the time remote players are shown at, in
+seconds, positive while updates wait and zero or below once the buffer has run
+dry. The Network Debug panel reads it against the Interpolation delay.
+
 ## Not its responsibility
 
 - Drawing: renderer. Playing sound: audio.
