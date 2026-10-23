@@ -16,9 +16,12 @@ a helper that keeps shapes until a time. The Renderer draws them; the client
 Runtime composes them (ADR-0021).
 
 **Each area builds its own.** The code that turns an area's state into shapes or
-a panel lives in that area's module, such as `physics::DebugShapes(world)`,
-compiled only in a Development build and depending on `augusta_debug` only
-there. The client Runtime calls it and passes the result on; it builds nothing
+a panel lives in a client-only module of that area, compiled only in a
+Development build and depending on `augusta_debug` only there. A shared core
+module, which the server links too, never names `augusta_debug`: physics and
+gameplay hand plain values, such as a body's capsule or a placed Hitbox, and
+presentation, which holds the Physics overlays and their panel, builds their
+shapes. The client Runtime calls it and passes the result on; it builds nothing
 itself.
 
 **Shapes.** A producer asks for segments, oriented boxes, spheres, capsules,

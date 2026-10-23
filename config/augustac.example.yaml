@@ -63,3 +63,12 @@ input:
 #     # Systems to capture, and Aftermath's status - is shown (optional, default
 #     # false): true or false.
 #     panel: false
+#   physics:
+#     # Whether the Physics Debug panel - the switches of the physics and
+#     # collision Debug overlays - is shown (optional, default false): true or
+#     # false. Not offered to a Replay viewer.
+#     panel: false
+#     # Whether the Server bodies overlay - every body as the newest
+#     # Authoritative State update put it, the player's own beside its
+#     # predicted body - is drawn (optional, default false): true or false.
+#     server_bodies: false

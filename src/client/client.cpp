@@ -52,8 +52,9 @@
 #include "augusta/debug_index.h"
 #include "augusta/debug_interaction.h"
 #include "augusta/debug_panels.h"
-#include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
+#include "augusta/physics_overlays.h"
+#include "debug_index_entries.h"
 #include "profiling_panel.h"
 #endif
 
@@ -62,19 +63,36 @@ namespace augusta::client {
 namespace {
 
 #if AUGUSTA_DEBUG_TOOLS
-// The Debug index's entry for the Debug HUD, its first (`debug.hud`).
-constexpr std::string_view kDebugHudEntry = "hud";
-
 // The NVTX range, in the default domain, that `nsys profile
 // --capture-range=nvtx --nvtx-capture=augusta.capture` records alone.
 constexpr const char* kCaptureRange = "augusta.capture";
 
-// The Debug index's entries, in the `debug` section's fixed order, as config
-// starts them: the Debug HUD, then each Debug panel, the Profiling panel's
-// (`debug.profiling.panel`) by its panel's id.
+// What config runs the client as, for which debug tools it carries.
+ClientMode ModeOf(const RuntimeConfig& config) {
+  if (config.replay.has_value()) {
+    return ClientMode::kReplayViewer;
+  }
+  return config.reenactment.has_value() ? ClientMode::kCapturedPlayer : ClientMode::kPlayer;
+}
+
+// The Debug index's entries for config's mode, as config starts them.
 std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
-  return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
-          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel}};
+  return DebugIndexEntries(
+      DebugIndexStart{
+          .hud = config.debug_hud,
+          .profiling_panel = config.debug_profiling_panel,
+          .physics_panel = config.debug_physics_panel,
+      },
+      ModeOf(config));
+}
+
+// Which Physics overlays start on: none for a Replay viewer, whose Debug index
+// lists no Physics panel to switch them (ADR-0075).
+presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& config) {
+  if (ModeOf(config) == ClientMode::kReplayViewer) {
+    return {};
+  }
+  return {.server_bodies = config.debug_physics_server_bodies};
 }
 #endif
 
@@ -202,6 +220,9 @@ struct ClientRuntime::Impl {
   // Aftermath status it shows, and the capture window it has open, if any.
   ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
   std::optional<nvtx3::unique_range> capture_range;
+  // Main/Render thread only: which Physics Debug overlays are on, drawn each
+  // frame whether the Physics panel is shown or not.
+  presentation::PhysicsOverlays physics_overlays{PhysicsOverlaysStartOf(config)};
 
   std::optional<hud::NetStats> GetLatestHudNet() {
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
@@ -230,6 +251,9 @@ struct ClientRuntime::Impl {
     }
     if (debug_index.IsOn(kProfilingPanelId)) {
       panels.push_back(profiling_panel.BuildPanel());
+    }
+    if (debug_index.IsOn(presentation::kPhysicsPanelId)) {
+      panels.push_back(physics_overlays.BuildPanel());
     }
     return panels;
   }
@@ -263,6 +287,8 @@ struct ClientRuntime::Impl {
         debug_index.Update(event);
       } else if (event.panel == kProfilingPanelId) {
         ApplyCaptureChange(profiling_panel.Update(event));
+      } else if (event.panel == presentation::kPhysicsPanelId) {
+        physics_overlays.Update(event);
       }
     }
   }
@@ -610,8 +636,10 @@ struct ClientRuntime::Impl {
   // Hands the renderer what the next RenderFrame draws of this frame, without
   // drawing it. The local player's own position isn't drawn yet (renderer.h) -
   // only remote players, each as its character. In the Lobby there are none,
-  // so the map is drawn empty.
-  void StageRenderFrame(const presentation::State& frame_state) {
+  // so the map is drawn empty. In a Development build, the Debug overlays are
+  // built from what the frame was shown from (input).
+  void StageRenderFrame([[maybe_unused]] const presentation::FrameInput& input,
+                        const presentation::State& frame_state) {
     renderer.SetCamera(ToRenderer(frame_state.camera));
     std::vector<renderer::RemotePlayer> remote_boxes;
     remote_boxes.reserve(frame_state.remote_players.size());
@@ -623,8 +651,8 @@ struct ClientRuntime::Impl {
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
 #if AUGUSTA_DEBUG_TOOLS
-    // Shapes and panels live one frame, and no area builds any shapes yet (ADR-0075).
-    renderer.SetDebugShapes(debug::Shapes{});
+    // Shapes and panels live one frame (ADR-0075).
+    renderer.SetDebugShapes(physics_overlays.BuildShapes(input));
     renderer.SetDebugPanels(DebugPanels());
 #endif
   }
@@ -652,9 +680,10 @@ struct ClientRuntime::Impl {
 #if AUGUSTA_DEBUG_TOOLS
     UpdateDebugHud();
 #endif
-    const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
+    const presentation::FrameInput input = NextFrameInput();
+    const presentation::State frame_state = presentation.RunFrame(input);
     SetSeenTime(frame_state.seen_time);
-    StageRenderFrame(frame_state);
+    StageRenderFrame(input, frame_state);
     renderer.RenderFrame();
   }
 };

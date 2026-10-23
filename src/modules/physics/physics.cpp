@@ -321,6 +321,13 @@ math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance) {
   return {standing_point.x, standing_point.y * scale, standing_point.z};
 }
 
+Capsule CapsuleOf(const BodyState& state) {
+  const math::Vec3 bottom = state.position + math::Vec3(0.0F, kCapsuleRadius, 0.0F);
+  return {.bottom = bottom,
+          .top = bottom + math::Vec3(0.0F, HeightForStance(state.stance), 0.0F),
+          .radius = kCapsuleRadius};
+}
+
 // Per-body bookkeeping PhysX's controller doesn't itself track: a CCT has
 // no notion of "velocity" the way a rigid dynamic does, so World derives
 // and caches it each Step from positional delta / delta_time; stance and

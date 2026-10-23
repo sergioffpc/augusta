@@ -94,6 +94,8 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
 #if AUGUSTA_DEBUG_TOOLS
       .debug_hud = file_config.debug.hud,
       .debug_profiling_panel = file_config.debug.profiling_panel,
+      .debug_physics_panel = file_config.debug.physics.panel,
+      .debug_physics_server_bodies = file_config.debug.physics.server_bodies,
 #endif
   };
   auto parts = std::make_unique<ClientProcess::Parts>();

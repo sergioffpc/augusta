@@ -9,7 +9,9 @@ against the Map, dynamic bodies, and restoring a body to a given state for
 reconciliation. It builds a map's static collision from a verified pack
 (`augusta/map.h`), keeping the opaque Surface id its caller adds each collision
 mesh with and reporting it from the Map raycast, never interpreting it.
-PredictionWorld and SimulationWorld use the same World.
+PredictionWorld and SimulationWorld use the same World. It gives a body's
+collision capsule from its state, as plain values a client's Debug overlay
+draws.
 
 ## Not its responsibility
 
@@ -17,6 +19,7 @@ PredictionWorld and SimulationWorld use the same World.
 - Bit-exact agreement between client and server: not guaranteed; reconciliation
   corrects the client.
 - Particles: renderer.
+- Drawing a body or its capsule in a Debug overlay: presentation.
 
 ## Decisions
 
