@@ -964,6 +964,17 @@ if(AUGUSTA_DEBUG_TOOLS)
     target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
     gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
   endif()
+  # The Network Debug panel (network_panel.h), private to the client Runtime,
+  # as net_stats.h is.
+  if(TARGET augusta_client_network_panel)
+    add_executable(augusta_client_network_panel_tests client_network_panel_test.cpp)
+    target_link_libraries(
+      augusta_client_network_panel_tests
+      PRIVATE augusta_client_network_panel GTest::gtest GTest::gtest_main
+    )
+    target_include_directories(augusta_client_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_network_panel_tests DISCOVERY_TIMEOUT 30)
+  endif()
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(
       augusta_client_renderer_smoke_tests

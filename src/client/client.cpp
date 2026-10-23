@@ -54,6 +54,7 @@
 #include "augusta/debug_panels.h"
 #include "augusta/debug_shapes.h"
 #include "augusta/hud.h"
+#include "network_panel.h"
 #include "profiling_panel.h"
 #endif
 
@@ -70,11 +71,13 @@ constexpr std::string_view kDebugHudEntry = "hud";
 constexpr const char* kCaptureRange = "augusta.capture";
 
 // The Debug index's entries, in the `debug` section's fixed order, as config
-// starts them: the Debug HUD, then each Debug panel, the Profiling panel's
-// (`debug.profiling.panel`) by its panel's id.
+// starts them: the Debug HUD, then each Debug panel by its panel's id, the
+// Profiling panel's (`debug.profiling.panel`) and the Network panel's
+// (`debug.network.panel`), which every client mode lists: each has a Link.
 std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
   return {{.id = std::string(kDebugHudEntry), .name = "Debug HUD", .on = config.debug_hud},
-          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel}};
+          {.id = std::string(kProfilingPanelId), .name = "Profiling", .on = config.debug_profiling_panel},
+          {.id = std::string(kNetworkPanelId), .name = "Network", .on = config.debug_network_panel}};
 }
 #endif
 
@@ -188,6 +191,11 @@ struct ClientRuntime::Impl {
   // latest_tick above - a mutex-guarded copy.
   std::mutex hud_net_mutex;
   std::optional<hud::NetStats> latest_hud_net;
+  // The Network panel's readings of the connection, from the same rounds as
+  // latest_hud_net and guarded with it, recorded only while network_panel_on:
+  // a closed panel costs nothing beyond the Link's counting.
+  ConnectionReadings connection_readings;
+  std::atomic<bool> network_panel_on{false};
 
   // Network I/O thread only: what the HUD shows of the connection.
   HudNetStats hud_net_stats;
@@ -202,6 +210,9 @@ struct ClientRuntime::Impl {
   // Aftermath status it shows, and the capture window it has open, if any.
   ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
   std::optional<nvtx3::unique_range> capture_range;
+  // Main/Render thread only: the Network panel, which samples the connection
+  // readings while the Debug index has it on.
+  NetworkPanel network_panel;
 
   std::optional<hud::NetStats> GetLatestHudNet() {
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
@@ -231,7 +242,35 @@ struct ClientRuntime::Impl {
     if (debug_index.IsOn(kProfilingPanelId)) {
       panels.push_back(profiling_panel.BuildPanel());
     }
+    if (debug_index.IsOn(kNetworkPanelId)) {
+      panels.push_back(network_panel.BuildPanel());
+    }
     return panels;
+  }
+
+  ConnectionReading TakeConnectionReading() {
+    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    return connection_readings.Take();
+  }
+
+  // Main/Render thread only: tells the Network I/O thread whether to record
+  // the Network panel's readings as the Debug index has the panel on, and
+  // hands the panel a sample each frame that crosses one of its boundaries.
+  void SampleNetworkPanel() {
+    const bool on = debug_index.IsOn(kNetworkPanelId);
+    if (on != network_panel_on.load()) {
+      if (on) {
+        // Readings left from before it was last closed are stale.
+        const std::lock_guard<std::mutex> lock(hud_net_mutex);
+        connection_readings = {};
+      } else {
+        network_panel.Close();
+      }
+      network_panel_on.store(on);
+    }
+    if (const auto now = NetworkPanel::Clock::now(); on && network_panel.SampleDue(now)) {
+      network_panel.Sample({.connection = TakeConnectionReading()}, now);
+    }
   }
 
   // Main/Render thread only: opens or closes the capture window's NVTX range
@@ -263,6 +302,8 @@ struct ClientRuntime::Impl {
         debug_index.Update(event);
       } else if (event.panel == kProfilingPanelId) {
         ApplyCaptureChange(profiling_panel.Update(event));
+      } else if (event.panel == kNetworkPanelId) {
+        network_panel.Update(event);
       }
     }
   }
@@ -315,8 +356,14 @@ struct ClientRuntime::Impl {
 #if AUGUSTA_DEBUG_TOOLS
     // Whether the HUD is on or not: the Debug index can switch it on at any frame.
     const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
+    // The Network panel's reading is this round's, the HUD's: the two never disagree.
+    const bool network_panel_reads = network_panel_on.load();
+    const link::Traffic traffic = network_panel_reads ? session->GetTraffic() : link::Traffic{};
     const std::lock_guard<std::mutex> lock(hud_net_mutex);
     latest_hud_net = net;
+    if (network_panel_reads) {
+      connection_readings.Record(stats, traffic);
+    }
 #endif
   }
 
@@ -651,6 +698,7 @@ struct ClientRuntime::Impl {
     UpdateCursorLock();
 #if AUGUSTA_DEBUG_TOOLS
     UpdateDebugHud();
+    SampleNetworkPanel();
 #endif
     const presentation::State frame_state = presentation.RunFrame(NextFrameInput());
     SetSeenTime(frame_state.seen_time);
