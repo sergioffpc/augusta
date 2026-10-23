@@ -41,6 +41,7 @@ constexpr auto kKeys = std::to_array<std::string_view>({
     "debug.hud",
     "debug.profiling.panel",
     "debug.network.panel",
+    "debug.network.pcapng",
 #endif
 });
 
@@ -111,8 +112,10 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-// The `debug` section (ADR-0074): which debug tools start on.
-std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values) {
+// The `debug` section (ADR-0074): which debug tools start on, and where the
+// pcapng goes, relative to root.
+std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values,
+                                                               const std::filesystem::path& root) {
   const auto hud = OptionalFlag(values, "debug.hud", true);
   if (!hud) {
     return std::unexpected(hud.error());
@@ -121,9 +124,17 @@ std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValue
   if (!profiling_panel) {
     return std::unexpected(profiling_panel.error());
   }
-  return OptionalFlag(values, "debug.network.panel", false).transform([&](bool network_panel) {
-    return ClientDebugConfig{.hud = *hud, .profiling_panel = *profiling_panel, .network_panel = network_panel};
-  });
+  const auto network_panel = OptionalFlag(values, "debug.network.panel", false);
+  if (!network_panel) {
+    return std::unexpected(network_panel.error());
+  }
+  return OptionalWritableDirectory(values, "debug.network.pcapng", root)
+      .transform([&](std::filesystem::path network_pcapng) {
+        return ClientDebugConfig{.hud = *hud,
+                                 .profiling_panel = *profiling_panel,
+                                 .network_panel = *network_panel,
+                                 .network_pcapng = std::move(network_pcapng)};
+      });
 }
 #endif
 
@@ -163,7 +174,7 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
     return std::unexpected(input.error());
   }
 #if AUGUSTA_DEBUG_TOOLS
-  const auto debug = ParseDebugConfig(*values);
+  const auto debug = ParseDebugConfig(*values, *root);
   if (!debug) {
     return std::unexpected(debug.error());
   }

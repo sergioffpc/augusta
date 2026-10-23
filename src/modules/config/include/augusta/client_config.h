@@ -42,6 +42,10 @@ struct ClientDebugConfig {
   /// Key `debug.network.panel` (true or false, default false): whether the
   /// Network Debug panel is shown.
   bool network_panel = false;
+  /// Key `debug.network.pcapng`: the directory each run writes a pcapng of
+  /// the messages it sends and receives into, one file per run (ADR-0076),
+  /// created if missing; read at startup only. Empty, the default, writes none.
+  std::filesystem::path network_pcapng;
 };
 #endif
 

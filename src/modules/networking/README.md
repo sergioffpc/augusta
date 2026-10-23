@@ -13,7 +13,10 @@ says whether the transport accepted it, dropped it for its peer or failed
 locally. Safe from any thread. It also imposes simulated network conditions on
 the whole process, through the transport's own fake-packet settings: latency,
 jitter, loss and reorder on what the process sends or, when asked, on what it
-receives as well.
+receives as well. In a Development build a Client or Server given a Tap reports
+to it every send the transport accepted and every message received, before it is
+decoded, with its endpoints and wall-clock time; the tap is called on the
+sending or receiving thread and must not block.
 
 ## Not its responsibility
 
@@ -22,9 +25,11 @@ receives as well.
   screening.
 - Matchmaking, relays and peer-to-peer: out of scope.
 - Retrying a send: the transport's reliable delivery.
+- What a tap does with the messages, such as writing a pcapng file: the tap's.
 
 ## Decisions
 
 [ADR-0003](../../../docs/adr/0003-networking-transport.md),
 [ADR-0033](../../../docs/adr/0033-error-handling.md),
-[ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md).
+[ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

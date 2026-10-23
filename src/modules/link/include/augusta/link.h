@@ -16,6 +16,14 @@
 #include "augusta/faults.h"
 #include "augusta/link_types.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+// The transport's tap, declared only: link::Tap names it without this header
+// reaching networking's.
+namespace augusta::networking {
+class Tap;
+}  // namespace augusta::networking
+#endif
+
 /// \file
 /// The Link (GLOSSARY.md, ADR-0038): the channel through which one Session
 /// exchanges messages with the other side, owning the transport connection
@@ -31,6 +39,15 @@
 /// caller polls them (PumpEvents, Receive), from the Network I/O thread
 /// (ARCHITECTURE.md §8), and may send from another.
 namespace augusta::link {
+
+#if AUGUSTA_DEBUG_TOOLS
+/// What a Client or a Server reports every message it sends and receives to,
+/// in a Development build only (ADR-0074, ADR-0076): the transport's tap
+/// (augusta/networking.h), named here so that a module on the Link alone can
+/// pass one through without naming the transport. Whoever makes one, such as
+/// the pcapng writer (augusta/pcapng_file_writer.h), sees its definition.
+using Tap = networking::Tap;
+#endif
 
 // ---- The transport, process-wide ----
 
@@ -96,6 +113,22 @@ struct SimulatedConditions {
 /// (the handshake is subject to it too) and resets it before the next; a
 /// client, with its one connection, makes it that connection's.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
+
+/// What a Client or a Server is built with, beyond where it listens: whatever
+/// its transport takes at construction, and nothing of what it sends or receives.
+struct TransportOptions {
+  /// When given, asked at every send and receive (failure::Site::kTransportSend,
+  /// kTransportReceive) and, for a Server, at listener setup
+  /// (kListenerSetup); it must outlive the transport.
+  failure::Faults* faults = nullptr;
+#if AUGUSTA_DEBUG_TOOLS
+  /// When given, reported every message the transport accepts to send and
+  /// every one it receives, before it is decoded (augusta/networking.h); it
+  /// must outlive the transport. Nothing of it shows in what the Link sends or
+  /// receives.
+  Tap* tap = nullptr;
+#endif
+};
 
 // ---- The client's end ----
 
@@ -211,10 +244,7 @@ using SendResult = std::expected<SendOutcome, failure::Failure>;
 /// holds one at a time.
 class Client {
  public:
-  /// faults, when given, is asked at every send and receive
-  /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
-  /// Client.
-  explicit Client(failure::Faults* faults = nullptr);
+  explicit Client(const TransportOptions& options = {});
   /// Ends the connection, if any.
   ~Client();
 
@@ -389,11 +419,8 @@ class Server {
   /// Starts listening on local, on a free port of its own choosing if that
   /// names port 0 (LocalEndpoint). Throws failure::ClassifiedFailure:
   /// failure::Code::kInvalidConfiguration if local does not parse,
-  /// kListenerSetupFailed if the transport cannot listen there. faults, when
-  /// given, is asked at listener setup and at every send and receive
-  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
-  /// must outlive the Server.
-  explicit Server(const Endpoint& local, failure::Faults* faults = nullptr);
+  /// kListenerSetupFailed if the transport cannot listen there.
+  explicit Server(const Endpoint& local, const TransportOptions& options = {});
   /// Ends every peer's connection and stops listening.
   ~Server();
 

@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_CLIENT_H_
 #define AUGUSTA_CLIENT_H_
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -65,6 +66,10 @@ struct RuntimeConfig {
   /// Whether the Network Debug panel is shown at first
   /// (`debug.network.panel`), until the Debug index switches it.
   bool debug_network_panel = false;
+  /// The directory (`debug.network.pcapng`, which checked it can be written)
+  /// this run writes one pcapng file into, of every message its connection
+  /// sends and receives (ADR-0076); empty, the default, writes none.
+  std::filesystem::path debug_network_pcapng;
 #endif
 };
 

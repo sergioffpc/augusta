@@ -76,6 +76,11 @@ struct ServerConfig {
   /// (ADR-0038), "false", the default, to send none and ignore the bit. Read
   /// at startup only; a debug tool's, as `debug.reenactments` is.
   bool shot_judgements = false;
+  /// Key `debug.network.pcapng`: the directory each run writes a pcapng of
+  /// the messages it sends and receives into, every peer's, one file per run
+  /// (ADR-0076), created if missing; read at startup only, on a live or a
+  /// replay server. Empty, the default, writes none.
+  std::filesystem::path network_pcapng;
 #endif
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).

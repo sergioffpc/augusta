@@ -95,6 +95,7 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .debug_hud = file_config.debug.hud,
       .debug_profiling_panel = file_config.debug.profiling_panel,
       .debug_network_panel = file_config.debug.network_panel,
+      .debug_network_pcapng = file_config.debug.network_pcapng,
 #endif
   };
   auto parts = std::make_unique<ClientProcess::Parts>();

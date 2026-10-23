@@ -10,7 +10,10 @@ other side, owning the transport connection beneath, and the only place the
 game's state is converted to and from the Networking Protocol's messages. The
 client's end connects to the server; the server's listens and keeps one channel
 per peer, naming each by a peer identity of its own and taking in each payload
-as what a client says; a replay server opens one of its own. Each end sends and
+as what a client says; a replay server opens one of its own. Each end is built
+from construction options, which carry what its transport takes when it is made
+(the faults a test injects and, in a Development build, the tap its messages are
+reported to, ADR-0076) and never reach its message API. Each end sends and
 receives the Link's own message vocabulary, in the engine's types, each message
 with the reliability ADR-0038's table gives its type, a server's message encoded
 once for as many peers as need it and a tick's Authoritative State readdressed

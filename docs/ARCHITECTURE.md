@@ -198,6 +198,9 @@ policy (ADR-0060).
   (augusta_crash, ADR-0047): it logs the signal and the crashing thread's
   symbolized stack under the executable's subsystem, then lets the process die
   of the signal so its core is still dumped
+- Pcapng — a Development build's pcapng of the messages it sends and receives,
+  decrypted (augusta_pcapng, ADR-0076): the encoder of its blocks and the file
+  writer that implements the transport's tap, on a thread of its own
 
 **Client-only** (Windows and Linux)
 
@@ -684,6 +687,9 @@ not affect numbering.
 - [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
   overlays and panels: values each area builds and the Renderer draws, ImGui
   inside the Renderer
+- [ADR-0076](./adr/0076-wireshark-reads-the-games-own-pcapng.md) — Wireshark:
+  the game's own `exported_pdu` pcapng of decrypted messages, read by a fixed
+  Lua shim over the `protobuf` dissector
 
 ### Tooling & Build
 
