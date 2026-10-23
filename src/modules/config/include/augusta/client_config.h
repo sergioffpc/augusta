@@ -39,6 +39,10 @@ struct ClientDebugConfig {
   /// `debug.<area>.panel`, and each Debug overlay `debug.<area>.<overlay>`, off
   /// by default.
   bool profiling_panel = false;
+  /// Key `debug.physics_recording` (true or false, default false): whether the
+  /// client's PhysX scenes are recorded to one OmniPVD file from startup to
+  /// exit (physics::StartRecording). Read at startup only.
+  bool physics_recording = false;
 };
 #endif
 

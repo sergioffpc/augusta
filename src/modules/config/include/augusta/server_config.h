@@ -76,6 +76,11 @@ struct ServerConfig {
   /// (ADR-0038), "false", the default, to send none and ignore the bit. Read
   /// at startup only; a debug tool's, as `debug.reenactments` is.
   bool shot_judgements = false;
+  /// Key `debug.physics_recording`: "true" to record the process's PhysX
+  /// scenes to one OmniPVD file from startup to exit (physics::StartRecording),
+  /// "false", the default, to record none. Read at startup only; a debug
+  /// tool's, as `debug.reenactments` is.
+  bool physics_recording = false;
 #endif
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).

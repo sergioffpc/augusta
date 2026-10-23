@@ -29,7 +29,9 @@ namespace augusta::server {
     const std::expected<config::CommandLine, config::ConfigError>& command_line);
 
 /// augustad's Lifecycle for file_config: initialize starts the transport
-/// (failure::Code::kTransportInitFailed); construct verifies the pack and loads
+/// (failure::Code::kTransportInitFailed), after the physics recording
+/// `debug.physics_recording` asks for in a Development build, which the
+/// Lifecycle holds until it goes (physics::StartRecording); construct verifies the pack and loads
 /// its content (kInvalidContent), then constructs the ServerRuntime, which
 /// throws its failure already classified (a rejected map mesh, a listen address
 /// that can't be parsed or bound, a capture directory that can't be created;

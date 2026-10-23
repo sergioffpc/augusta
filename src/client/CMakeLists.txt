@@ -129,7 +129,7 @@ target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOU
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness Boost::uuid
-  PRIVATE augusta_assets augusta_client augusta_failure augusta_link
+  PRIVATE augusta_assets augusta_client augusta_failure augusta_link augusta_logging augusta_physics
 )
 augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 
@@ -179,6 +179,8 @@ augusta_set_executable_glue(augustac)
 # The Aftermath shared libraries beside augustac, on both platforms, when the
 # build has them (cmake/Aftermath.cmake).
 augusta_stage_aftermath(augustac)
+# OmniPVD's runtime beside augustac in a Debug build (cmake/PvdRuntime.cmake).
+augusta_stage_pvd_runtime(augustac)
 # What each platform's augustac needs beyond its code: its debug info, and its
 # runtime folder, which a release archives (ADR-0055, ADR-0058).
 if(WIN32)

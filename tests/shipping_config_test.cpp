@@ -46,4 +46,14 @@ TEST(ShippingConfigTest, TheClientConfigRefusesADebugSectionAsAnUnknownKey) {
   EXPECT_EQ(config.error().subject, "debug");
 }
 
+TEST(ShippingConfigTest, NeitherConfigKnowsThePhysicsRecordingKey) {
+  const auto server = ParseServerConfig(kServerConfig + "debug:\n  physics_recording: true\n", kFileDir);
+  const auto client = ParseClientConfig(kClientConfig + "debug:\n  physics_recording: true\n", kFileDir);
+
+  ASSERT_FALSE(server.has_value());
+  EXPECT_EQ(server.error().code, ConfigErrorCode::kUnknownKey);
+  ASSERT_FALSE(client.has_value());
+  EXPECT_EQ(client.error().code, ConfigErrorCode::kUnknownKey);
+}
+
 }  // namespace

@@ -20,6 +20,8 @@
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/link.h"
+#include "augusta/logging.h"
+#include "augusta/physics.h"
 #include "augusta/reenactment.h"
 
 namespace augusta::client {
@@ -102,6 +104,21 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
   return std::make_unique<ClientProcess>(std::move(parts));
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// Starts the physics recording debug.physics_recording asks for into
+// recording, before any World exists; where it cannot, warns once why, and
+// augustac runs on unrecorded.
+void StartPhysicsRecording(std::optional<physics::Recording>& recording) {
+  auto started = physics::StartRecording("augustac");
+  if (!started) {
+    LOG_WARN("subsystem=physics event=recording_unavailable key=debug.physics_recording reason=\"{}\"",
+             started.error());
+    return;
+  }
+  recording = *std::move(started);
+}
+#endif
+
 }  // namespace
 
 application::Outcome ListReplays(const config::ClientConfig& file_config) {
@@ -124,8 +141,21 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
     played.character = reenactment->character;
   }
   return {
-      // Once, process-wide, before any ClientRuntime is constructed (link.h).
+  // Once, process-wide, before any ClientRuntime is constructed (link.h).
+#if AUGUSTA_DEBUG_TOOLS
+      // The recording is held by initialize, so it lasts as long as the
+      // Lifecycle: past the process and every World in it.
+      .initialize =
+          [recording = std::make_shared<std::optional<physics::Recording>>(),
+           record = file_config.debug.physics_recording] {
+            if (record) {
+              StartPhysicsRecording(*recording);
+            }
+            return link::Init();
+          },
+#else
       .initialize = [] { return link::Init(); },
+#endif
       .construct = [played = std::move(played), reenactment = std::move(reenactment), replay = std::move(replay),
                     run] { return ConstructProcess(played, reenactment, replay, run); },
       .run = [](ClientProcess& process) { return process.Run(); },

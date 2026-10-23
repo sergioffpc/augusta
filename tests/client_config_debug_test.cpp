@@ -74,4 +74,33 @@ TEST(ParseClientConfigTest, RejectsADebugProfilingPanelThatIsNotTrueOrFalse) {
   EXPECT_EQ(config.error().subject, "debug.profiling.panel");
 }
 
+TEST(ParseClientConfigTest, PhysicsRecordingIsOffByDefault) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: k.pub\n", kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->debug.physics_recording);
+}
+
+TEST(ParseClientConfigTest, DebugPhysicsRecordingTrueRecordsPhysics) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  physics_recording: true\n",
+      kFileDir);
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_TRUE(config->debug.physics_recording);
+}
+
+TEST(ParseClientConfigTest, RejectsADebugPhysicsRecordingThatIsNotTrueOrFalse) {
+  const auto config = ParseClientConfig(
+      "base_dir: content\nplayer:\n  character: soldier\ncontent:\n  pack: a.apak\n  public_key: "
+      "k.pub\ndebug:\n  physics_recording: maybe\n",
+      kFileDir);
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "debug.physics_recording");
+}
+
 }  // namespace

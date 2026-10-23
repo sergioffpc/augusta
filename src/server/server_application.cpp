@@ -4,6 +4,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -19,6 +20,7 @@
 #include "augusta/host.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
+#include "augusta/physics.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
 #include "augusta/server.h"
@@ -106,6 +108,21 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
                                          std::move(content->policy), faults);
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// Starts the physics recording debug.physics_recording asks for into
+// recording, before any World exists; where it cannot, warns once why, and
+// augustad runs on unrecorded.
+void StartPhysicsRecording(std::optional<physics::Recording>& recording) {
+  auto started = physics::StartRecording("augustad");
+  if (!started) {
+    LOG_WARN("subsystem=physics event=recording_unavailable key=debug.physics_recording reason=\"{}\"",
+             started.error());
+    return;
+  }
+  recording = *std::move(started);
+}
+#endif
+
 }  // namespace
 
 std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
@@ -122,13 +139,27 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
 application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
                                                       failure::Faults* faults) {
   return {
-      // link::Init() must run once, process-wide, before any Server is
-      // constructed - see link.h.
+  // link::Init() must run once, process-wide, before any Server is
+  // constructed - see link.h.
+#if AUGUSTA_DEBUG_TOOLS
+      // The recording is held by initialize, so it lasts as long as the
+      // Lifecycle: past the runtime and every World in it.
+      .initialize =
+          [faults, recording = std::make_shared<std::optional<physics::Recording>>(),
+           record = file_config.physics_recording] {
+            LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+            if (record) {
+              StartPhysicsRecording(*recording);
+            }
+            return link::Init(faults);
+          },
+#else
       .initialize =
           [faults] {
             LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
             return link::Init(faults);
           },
+#endif
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },
       .run = [](ServerRuntime& runtime) { return runtime.Run(); },
   };

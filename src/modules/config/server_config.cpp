@@ -29,6 +29,7 @@ constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::m
 #if AUGUSTA_DEBUG_TOOLS
 constexpr std::string_view kReenactmentsKey = "debug.reenactments";
 constexpr std::string_view kShotJudgementsKey = "debug.shot_judgements";
+constexpr std::string_view kPhysicsRecordingKey = "debug.physics_recording";
 #endif
 constexpr std::string_view kReplayCapturesKey = "replay.captures";
 constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
@@ -130,7 +131,8 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
 
 #if AUGUSTA_DEBUG_TOOLS
 // The `debug` section (ADR-0074) into config: whether Reenact requests are
-// taken, and whether Shot judgements are sent to whoever subscribes to them.
+// taken, whether Shot judgements are sent to whoever subscribes to them, and
+// whether the process's physics is recorded.
 std::expected<void, ConfigError> ReadDebugSection(const ConfigValues& values, ServerConfig& config) {
   const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
   if (!reenactments) {
@@ -140,8 +142,13 @@ std::expected<void, ConfigError> ReadDebugSection(const ConfigValues& values, Se
   if (!shot_judgements) {
     return std::unexpected(shot_judgements.error());
   }
+  const auto physics_recording = OptionalFlag(values, kPhysicsRecordingKey, false);
+  if (!physics_recording) {
+    return std::unexpected(physics_recording.error());
+  }
   config.reenactments = *reenactments;
   config.shot_judgements = *shot_judgements;
+  config.physics_recording = *physics_recording;
   return {};
 }
 #endif
@@ -229,6 +236,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
 #if AUGUSTA_DEBUG_TOOLS
       kReenactmentsKey,
       kShotJudgementsKey,
+      kPhysicsRecordingKey,
 #endif
   });
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});

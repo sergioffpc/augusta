@@ -3,7 +3,9 @@
 
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -288,6 +290,43 @@ class World {
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+#if AUGUSTA_DEBUG_TOOLS
+/// A recording of every PhysX scene in the process to one OmniPVD file (`.ovd`),
+/// which OmniPVD opens, made by StartRecording. A debug tool's (ADR-0074): only
+/// a Development build has it. It holds a use of the PhysX state every World
+/// shares for as long as it lives, so the file covers each World the process
+/// makes until the recording goes, and is complete once it has (and every
+/// World with it). OmniPVD has no stop, so a process records one file.
+class Recording {
+ public:
+  ~Recording();
+  Recording(const Recording&) = delete;
+  Recording& operator=(const Recording&) = delete;
+  Recording(Recording&&) noexcept;
+  Recording& operator=(Recording&&) noexcept;
+
+  /// The file the recording writes.
+  [[nodiscard]] const std::filesystem::path& File() const;
+
+ private:
+  struct Impl;
+  explicit Recording(std::unique_ptr<Impl> impl);
+  friend std::expected<Recording, std::string> StartRecording(std::string_view executable);
+
+  std::unique_ptr<Impl> impl_;
+};
+
+/// Starts recording the process's PhysX scenes to
+/// `<executable>-<startup time, UTC>.ovd` in the system's temporary directory,
+/// and logs its path at INFO (`subsystem=physics`). It must come before any
+/// World exists, since PhysX is made with the recording or without it. Fails,
+/// saying why, when it cannot record: a World already exists, this build's
+/// PhysX has no OmniPVD (as every non-Debug build's), or OmniPVD's runtime
+/// (PVDRuntime_64, beside the executable) does not load. The process then runs
+/// on unrecorded.
+[[nodiscard]] std::expected<Recording, std::string> StartRecording(std::string_view executable);
+#endif
 
 }  // namespace augusta::physics
 
