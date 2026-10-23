@@ -293,4 +293,57 @@ TEST_F(PresentationWorldTest, TheSeenTimeIsOfTheUpdatesTheFrameRecorded) {
   EXPECT_NEAR(state.seen_time->fraction, 0.9F, kTolerance);
 }
 
+// The frame samples 0.1 s before tick 3's 3 s, where the newest update is.
+TEST_F(PresentationWorldTest, WithUpdatesWaitingTheSlackIsTheNewestUpdatesLead) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<WorldSnapshot> updates = {SniperAt(1, 0.0F), SniperAt(2, 0.0F), SniperAt(3, 10.0F)};
+
+  const State state = world.RunFrame(InMatch(updates, characters));
+
+  ASSERT_TRUE(state.interpolation_slack.has_value());
+  EXPECT_NEAR(*state.interpolation_slack, 0.1, 1e-9);
+}
+
+// Frames run on, well past kInterpolationDelay, with no newer update.
+TEST_F(PresentationWorldTest, PastTheNewestUpdateTheSlackIsZeroOrBelow) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const std::vector<WorldSnapshot> updates = {SniperAt(3, 10.0F)};
+  const State waiting = world.RunFrame(InMatch(updates, characters));
+  ASSERT_TRUE(waiting.interpolation_slack.has_value());
+  EXPECT_GT(*waiting.interpolation_slack, 0.0);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  const State dry = world.RunFrame(InMatch(updates, characters));
+
+  ASSERT_TRUE(dry.interpolation_slack.has_value());
+  EXPECT_LE(*dry.interpolation_slack, 0.0);
+}
+
+TEST_F(PresentationWorldTest, OutsideAMatchThereIsNoSlack) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const State in_match = world.RunFrame(InMatch(snapshot, characters));
+  EXPECT_TRUE(in_match.interpolation_slack.has_value());
+
+  FrameInput ended;
+  ended.local_entity = kLocal;
+  ended.characters = characters;
+  const State state = world.RunFrame(ended);
+
+  EXPECT_FALSE(state.interpolation_slack.has_value());
+}
+
+// The sniper's update is the control: the same frame with someone to show.
+TEST_F(PresentationWorldTest, WithNoRemotePlayerThereIsNoSlack) {
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  const WorldSnapshot with_sniper = SniperAt(3, 10.0F);
+  const WorldSnapshot alone = {.tick = 3, .tick_duration = kSlowTickDuration, .bodies = {BodyAt(kLocal, 0.0F)}};
+  augusta::presentation::World control{audio, augusta::audio::CueSounds{}, kEye};
+  EXPECT_TRUE(control.RunFrame(InMatch(with_sniper, characters)).interpolation_slack.has_value());
+
+  const State state = world.RunFrame(InMatch(alone, characters));
+
+  EXPECT_FALSE(state.interpolation_slack.has_value());
+}
+
 }  // namespace
