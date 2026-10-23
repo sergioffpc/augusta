@@ -30,7 +30,9 @@
 # own (augusta_link, and augusta_link_raw, its raw ends for tests) links
 # augusta_networking, bar networking's own tests and the Link's test of what it
 # decides about the transport (augusta_link_transport_tests), which reach the
-# private headers each tests. Every other end of the transport, a test's raw
+# private headers each tests, and the pcapng writer (augusta_pcapng, ADR-0076),
+# a Development-only tap that takes networking's tap types and sends nothing.
+# Every other end of the transport, a test's raw
 # one too, is the Link's (augusta/link.h, augusta/raw_link.h). The
 # check proves itself first on a planted violation, so it cannot pass by
 # matching nothing.
@@ -263,6 +265,7 @@ set(
   augusta_send_flags_tests
   augusta_transport_events_tests
   augusta_link_transport_tests
+  augusta_pcapng
 )
 function(check_networking_links listfile where out_violations)
   string(REGEX REPLACE "#[^\n]*" "" listfile "${listfile}")

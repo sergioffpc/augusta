@@ -197,6 +197,9 @@ policy (ADR-0060).
   (augusta_crash, ADR-0047): it logs the signal and the crashing thread's
   symbolized stack under the executable's subsystem, then lets the process die
   of the signal so its core is still dumped
+- Pcapng — a Development build's pcapng of the messages it sends and receives,
+  decrypted (augusta_pcapng, ADR-0076): the encoder of its blocks and the file
+  writer that implements the transport's tap, on a thread of its own
 
 **Client-only** (Windows and Linux)
 
