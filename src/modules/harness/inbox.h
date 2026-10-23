@@ -56,6 +56,10 @@ class Inbox {
   [[nodiscard]] std::vector<Shot> TakeShots(std::uint32_t matches_started);
   [[nodiscard]] std::vector<HitConfirmation> TakeHitConfirmations(std::uint32_t matches_started);
   [[nodiscard]] std::vector<Death> TakeDeaths(std::uint32_t matches_started);
+#if AUGUSTA_DEBUG_TOOLS
+  /// Session's TakeShotJudgements, as TakeShots. Safe to call from any thread.
+  [[nodiscard]] std::vector<ShotJudgement> TakeShotJudgements(std::uint32_t matches_started);
+#endif
 
  private:
   void OnJoinAccepted(const Admission& accepted);
@@ -68,6 +72,9 @@ class Inbox {
   void OnDeath(const Death& death);
   void OnAuthoritativeState(AuthoritativeState state);
   void OnReplayView(ReplayView view);
+#if AUGUSTA_DEBUG_TOOLS
+  void OnShotJudgement(const ShotJudgement& judgement);
+#endif
 
   // Makes the next view from the current one changed by mutate, and publishes it.
   // Only the Network I/O thread publishes, so nothing can intervene between the load and the store.
@@ -86,12 +93,15 @@ class Inbox {
   // libc++ has no std::atomic<std::shared_ptr>.
   mutable std::mutex view_mutex_;
   std::shared_ptr<const ServerView> view_{std::make_shared<const ServerView>()};
-  // The Shots, the Hit confirmations and the Deaths received and not yet taken,
-  // each under the Match it is of. Not part of the view: they are handed out
-  // once, not read.
+  // The Shots, the Hit confirmations, the Deaths and in a Development build the
+  // Shot judgements received and not yet taken, each under the Match it is of.
+  // Not part of the view: they are handed out once, not read.
   Pending<Shot> shots_{kMaxPendingShots};
   Pending<HitConfirmation> hit_confirmations_{kMaxPendingHitConfirmations};
   Pending<Death> deaths_{kMaxPendingDeaths};
+#if AUGUSTA_DEBUG_TOOLS
+  Pending<ShotJudgement> shot_judgements_{kMaxPendingShotJudgements};
+#endif
   // A server can send messages that are refused as fast as it likes, so their
   // warnings are limited.
   logging::Throttle drop_warnings_{std::chrono::seconds{1}};

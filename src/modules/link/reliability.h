@@ -33,6 +33,10 @@ constexpr networking::Reliability ReliabilityOf(MessageType type) {
     case MessageType::kReplayList:
     case MessageType::kReplayRequest:
     case MessageType::kReenactRequest:
+#if AUGUSTA_DEBUG_TOOLS
+    case MessageType::kDebugSubscribe:
+    case MessageType::kShotJudgement:
+#endif
       return networking::Reliability::kReliable;
   }
   // Every type the protocol carries is named above.

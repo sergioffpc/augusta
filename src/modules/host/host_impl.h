@@ -12,7 +12,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <boost/uuid/nil_generator.hpp>
@@ -38,6 +37,10 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/tick_messages.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_subscriptions.h"
+#endif
 
 /// \file
 /// Host's state, shared by the files that each implement one side of it:
@@ -122,6 +125,11 @@ struct Host::Impl {
   // expelled during this PumpNetwork, whose messages still in its batch are
   // ignored (peer_gate.h).
   PeerGate gate{metrics};
+#if AUGUSTA_DEBUG_TOOLS
+  // Each connected peer's last Debug subscribe, against the streams the
+  // server's `debug` keys serve (ADR-0038).
+  DebugSubscriptions debug_subscriptions;
+#endif
 
   Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy);
 
@@ -150,6 +158,9 @@ struct Host::Impl {
   void HandleMessage(const link::PeerMessage& message, std::chrono::steady_clock::time_point now);
   void HandleJoinRequest(link::PeerId peer, const JoinRequest& request, std::chrono::steady_clock::time_point now);
   void HandleReady(link::PeerId peer, std::uint32_t version, std::chrono::steady_clock::time_point now);
+#if AUGUSTA_DEBUG_TOOLS
+  void HandleDebugSubscribe(link::PeerId peer, link::DebugSubscribe subscribe);
+#endif
   void HandleCommands(link::PeerId peer, const std::vector<SequencedCommand>& commands,
                       std::chrono::steady_clock::time_point now);
   void RecordRejection(link::PeerId peer, const SequencedCommand& command, Rejection rejection);
@@ -172,8 +183,8 @@ struct Host::Impl {
   void TakeOutEndedMatch();
   TickInput PrepareTick();
   void CaptureDeaths(const simulation::TickResult& result) const;
-  // Sends state's tick messages to `to`, stopping once the runtime has failed.
-  void SendTick(const simulation::State& state, const TickRecipients& to);
+  // Sends the tick messages of result to `to`, stopping once the runtime has failed.
+  void SendTick(const simulation::TickResult& result, const TickRecipients& to);
 };
 
 }  // namespace augusta::host

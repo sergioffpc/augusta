@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -187,6 +188,12 @@ MessageType Named(protocol::MessageTypeWire type) {
       return MessageType::kReplayView;
     case protocol::MessageTypeWire::kReenactRequest:
       return MessageType::kReenactRequest;
+#if AUGUSTA_DEBUG_TOOLS
+    case protocol::MessageTypeWire::kDebugSubscribe:
+      return MessageType::kDebugSubscribe;
+    case protocol::MessageTypeWire::kShotJudgement:
+      return MessageType::kShotJudgement;
+#endif
   }
   std::unreachable();
 }
@@ -641,6 +648,84 @@ protocol::ReadyWire ToWire(const Ready& ready) { return protocol::ReadyWire{.ver
 
 protocol::ReplayListRequestWire ToWire(ReplayListRequest /*request*/) { return protocol::ReplayListRequestWire{}; }
 
+#if AUGUSTA_DEBUG_TOOLS
+// The flags travel as they are: the protocol's bits are the Link's.
+static_assert(DebugSubscribe::kShotJudgements == protocol::DebugSubscribeWire::kShotJudgements);
+
+protocol::DebugSubscribeWire ToWire(DebugSubscribe subscribe) {
+  return protocol::DebugSubscribeWire{.flags = subscribe.flags};
+}
+
+namespace {
+
+// The protocol numbers what a round struck as the Link does.
+static_assert(static_cast<std::uint8_t>(Struck::kNothing) == static_cast<std::uint8_t>(protocol::StruckWire::kNothing));
+static_assert(static_cast<std::uint8_t>(Struck::kMap) == static_cast<std::uint8_t>(protocol::StruckWire::kMap));
+static_assert(static_cast<std::uint8_t>(Struck::kProp) == static_cast<std::uint8_t>(protocol::StruckWire::kProp));
+static_assert(static_cast<std::uint8_t>(Struck::kHitbox) == static_cast<std::uint8_t>(protocol::StruckWire::kHitbox));
+
+}  // namespace
+
+protocol::ShotJudgementWire ToWire(const ShotJudgement& judgement) {
+  const float delay =
+      std::clamp(judgement.shooters_delay, 0.0F, static_cast<float>(std::numeric_limits<std::uint8_t>::max()));
+  const float whole = std::floor(delay);
+  protocol::ShotJudgementWire result{
+      .shot_tick = judgement.shot_tick,
+      .entries = {},
+      .point = judgement.point,
+      .target = judgement.target.has_value() ? ToWire(*judgement.target) : protocol::EntityIdWire{0},
+      .delay_fraction = delay - whole,
+      .delay_ticks = static_cast<std::uint8_t>(whole),
+      // A value no case names, a corrupted one, travels on as one the protocol
+      // lacks, which Encode refuses.
+      .struck = static_cast<protocol::StruckWire>(judgement.struck),
+      .part = ToWire(judgement.part),
+      .flags = judgement.entries_left_out ? protocol::ShotJudgementWire::kEntriesLeftOut : std::uint8_t{0},
+  };
+  result.entries.reserve(judgement.entries.size());
+  for (const ShotJudgementEntry& entry : judgement.entries) {
+    protocol::ShotJudgementEntryWire& written = result.entries.emplace_back(
+        protocol::ShotJudgementEntryWire{.players = {}, .ticks_after_shot = entry.ticks_after_shot});
+    written.players.reserve(entry.players.size());
+    for (const JudgedPlayer& player : entry.players) {
+      written.players.push_back(protocol::JudgedPlayerWire{.position = player.position,
+                                                           .entity = ToWire(player.entity),
+                                                           .yaw = player.yaw,
+                                                           .stance = ToWire(player.stance)});
+    }
+  }
+  return result;
+}
+
+ShotJudgement FromWire(const protocol::ShotJudgementWire& judgement) {
+  ShotJudgement result{
+      .shot_tick = judgement.shot_tick,
+      .shooters_delay = static_cast<float>(judgement.delay_ticks) + judgement.delay_fraction,
+      .struck = static_cast<Struck>(judgement.struck),
+      .part = FromWire(judgement.part),
+      .point = judgement.point,
+      .target =
+          judgement.target == protocol::EntityIdWire{0} ? std::nullopt : std::optional(FromWire(judgement.target)),
+      .entries = {},
+      .entries_left_out = (judgement.flags & protocol::ShotJudgementWire::kEntriesLeftOut) != 0,
+  };
+  result.entries.reserve(judgement.entries.size());
+  for (const protocol::ShotJudgementEntryWire& entry : judgement.entries) {
+    ShotJudgementEntry& read =
+        result.entries.emplace_back(ShotJudgementEntry{.ticks_after_shot = entry.ticks_after_shot, .players = {}});
+    read.players.reserve(entry.players.size());
+    for (const protocol::JudgedPlayerWire& player : entry.players) {
+      read.players.push_back(JudgedPlayer{.entity = FromWire(player.entity),
+                                          .position = player.position,
+                                          .stance = FromWire(player.stance),
+                                          .yaw = player.yaw});
+    }
+  }
+  return result;
+}
+#endif
+
 std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& message) {
   if (const auto* accepted = std::get_if<protocol::JoinAcceptedWire>(&message)) {
     return FromWire(*accepted);
@@ -675,6 +760,11 @@ std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& 
   if (const auto* list = std::get_if<protocol::ReplayListWire>(&message)) {
     return FromWire(*list);
   }
+#if AUGUSTA_DEBUG_TOOLS
+  if (const auto* judgement = std::get_if<protocol::ShotJudgementWire>(&message)) {
+    return FromWire(*judgement);
+  }
+#endif
   return std::nullopt;
 }
 
@@ -697,6 +787,11 @@ std::optional<ClientMessage> ClientMessageFromWire(const protocol::MessageWire& 
   if (std::holds_alternative<protocol::ReplayListRequestWire>(message)) {
     return ReplayListRequest{};
   }
+#if AUGUSTA_DEBUG_TOOLS
+  if (const auto* subscribe = std::get_if<protocol::DebugSubscribeWire>(&message)) {
+    return DebugSubscribe{.flags = subscribe->flags};
+  }
+#endif
   return std::nullopt;
 }
 

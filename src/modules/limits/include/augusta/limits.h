@@ -22,6 +22,14 @@ inline constexpr std::size_t kMaxPlayers = 8;
 /// The most kicks a rifle's recoil pattern in the Parameters holds.
 inline constexpr std::size_t kMaxRecoilKicks = 64;
 
+#if AUGUSTA_DEBUG_TOOLS
+/// The most ticks of a round's flight one Shot judgement tells, in a
+/// Development build alone (ADR-0038, ADR-0074): SimulationWorld keeps the
+/// first this many, and the protocol carries no more. A round flies
+/// ballistics::kMaxFlightTime at most, far more ticks.
+inline constexpr std::size_t kMaxShotJudgementEntries = 16;
+#endif
+
 }  // namespace augusta::limits
 
 #endif  // AUGUSTA_LIMITS_H_

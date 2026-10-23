@@ -14,6 +14,9 @@ using augusta::limits::kMaxRecoilKicks;
 TEST(LimitsTest, EveryBoundAdmitsAtLeastOne) {
   EXPECT_GE(kMaxPlayers, 1U);
   EXPECT_GE(kMaxRecoilKicks, 1U);
+#if AUGUSTA_DEBUG_TOOLS
+  EXPECT_GE(augusta::limits::kMaxShotJudgementEntries, 1U);
+#endif
 }
 
 }  // namespace

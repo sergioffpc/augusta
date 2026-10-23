@@ -30,7 +30,9 @@
 /// builds them from its own Match, replication and Replay types, which name a
 /// player and a body by the server's own IDs, and takes in the ones a client
 /// sends. Plain values over the shared core's types; no protocol type, no
-/// transport.
+/// transport. A Development build's messages, Debug subscribe and Shot
+/// judgement, have their type here, their conversions and their reliability
+/// only with AUGUSTA_DEBUG_TOOLS (ADR-0074).
 namespace augusta::link {
 
 /// The server's name for one connected player (GLOSSARY.md, "Session ID"), as
@@ -275,16 +277,95 @@ struct Ready {
 /// says nothing more.
 struct ReplayListRequest {};
 
+#if AUGUSTA_DEBUG_TOOLS
+/// A client asks for the streams of the server's state it wants from now on,
+/// in a Development build alone (ADR-0038, ADR-0074): one bit per stream, a
+/// cleared one stopping its stream. A bit no stream uses may be set, and the
+/// server ignores it.
+struct DebugSubscribe {
+  /// The bit of flags that asks for Shot judgements.
+  static constexpr std::uint8_t kShotJudgements = 1U << 0U;
+
+  std::uint8_t flags = 0;
+};
+
+/// What ended a round's flight, as its Shot judgement tells it.
+enum class Struck : std::uint8_t {
+  /// Nothing: it flew past its range or its flight time.
+  kNothing,
+  kMap,
+  kProp,
+  kHitbox,
+};
+
+/// One player a round was judged against on one tick of its flight, by the
+/// pose the server's Hitbox history gave it: what, with its Character, places
+/// its Hitboxes.
+struct JudgedPlayer {
+  EntityId entity{};
+  /// Where its feet were.
+  math::Vec3 position{};
+  physics::Stance stance = physics::Stance::kStanding;
+  /// Where it faced, in radians.
+  float yaw = 0.0F;
+
+  bool operator==(const JudgedPlayer&) const = default;
+};
+
+/// One tick of a round's flight whose segment crossed some player's bounds.
+struct ShotJudgementEntry {
+  /// How many ticks after its Shot's this one is.
+  std::uint16_t ticks_after_shot = 0;
+  /// Every player whose bounds it crossed.
+  std::vector<JudgedPlayer> players;
+
+  bool operator==(const ShotJudgementEntry&) const = default;
+};
+
+/// How the server judged one round a client's player fired, once its flight
+/// ended (GLOSSARY.md's Shot judgement, ADR-0038), as the server tells that
+/// client alone, in a Development build alone (ADR-0074).
+struct ShotJudgement {
+  /// The server tick its Shot was fired on.
+  tick::Tick shot_tick = 0;
+  /// Its Shooter's delay (ADR-0044), in ticks.
+  float shooters_delay = 0.0F;
+  Struck struck = Struck::kNothing;
+  /// The Body part struck; meaningful only when struck is kHitbox.
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
+  /// Where it struck.
+  math::Vec3 point{};
+  /// The body or Prop it struck; nullopt when it struck neither.
+  std::optional<EntityId> target = std::nullopt;
+  /// The ticks of its flight whose segment crossed some player's bounds, oldest first.
+  std::vector<ShotJudgementEntry> entries;
+  /// Whether more ticks crossed some player's bounds than entries holds.
+  bool entries_left_out = false;
+
+  bool operator==(const ShotJudgement&) const = default;
+};
+#endif
+
 /// What a server sends a client: Join accepted (an Admission), Join refused
 /// (its reason), and the rest each as what it says; a Replay list as the
-/// captures it names.
+/// captures it names; in a Development build, a Shot judgement too.
 using ServerMessage = std::variant<Admission, JoinRefusal, Lobby, MatchStart, MatchEnd, AuthoritativeState, Shot,
-                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>>;
+                                   HitConfirmation, Death, ReplayView, std::vector<ReplayListing>
+#if AUGUSTA_DEBUG_TOOLS
+                                   ,
+                                   ShotJudgement
+#endif
+                                   >;
 
 /// What a client sends a server: a join (a Reenact request is one that names
 /// its spawn), a Replay request, a Replay list request, a Ready and a tick's
-/// commands, each as what it says.
-using ClientMessage = std::variant<JoinRequest, ReplayRequest, ReplayListRequest, Ready, std::vector<SequencedCommand>>;
+/// commands, each as what it says; in a Development build, a Debug subscribe too.
+using ClientMessage = std::variant<JoinRequest, ReplayRequest, ReplayListRequest, Ready, std::vector<SequencedCommand>
+#if AUGUSTA_DEBUG_TOOLS
+                                   ,
+                                   DebugSubscribe
+#endif
+                                   >;
 
 /// The Networking Protocol's message types (ADR-0038), in the engine's terms:
 /// what a payload is, for whoever counts what it sends and receives.
@@ -306,7 +387,20 @@ enum class MessageType : std::uint8_t {
   kReplayRequest,
   kReplayView,
   kReenactRequest,
+#if AUGUSTA_DEBUG_TOOLS
+  /// A Development build's alone (ADR-0074).
+  kDebugSubscribe,
+  kShotJudgement,
+#endif
 };
+
+/// The last of MessageType's values in this build: a Development build's
+/// messages follow every other.
+#if AUGUSTA_DEBUG_TOOLS
+inline constexpr MessageType kLastMessageType = MessageType::kShotJudgement;
+#else
+inline constexpr MessageType kLastMessageType = MessageType::kReenactRequest;
+#endif
 
 /// type's name as a log line or a metric labels it, e.g. "authoritative_state".
 [[nodiscard]] constexpr std::string_view NameOf(MessageType type) {
@@ -345,6 +439,12 @@ enum class MessageType : std::uint8_t {
       return "replay_view";
     case MessageType::kReenactRequest:
       return "reenact_request";
+#if AUGUSTA_DEBUG_TOOLS
+    case MessageType::kDebugSubscribe:
+      return "debug_subscribe";
+    case MessageType::kShotJudgement:
+      return "shot_judgement";
+#endif
   }
   return {};
 }

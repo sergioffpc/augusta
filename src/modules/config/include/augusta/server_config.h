@@ -71,6 +71,11 @@ struct ServerConfig {
   /// each. A debug tool's (ADR-0074): only a Development build knows the key,
   /// and it is never on for a server open to players.
   bool reenactments = false;
+  /// Key `debug.shot_judgements`: "true" to send each shooter that subscribes
+  /// to them (Debug subscribe's bit 0) the Shot judgements of its rounds
+  /// (ADR-0038), "false", the default, to send none and ignore the bit. Read
+  /// at startup only; a debug tool's, as `debug.reenactments` is.
+  bool shot_judgements = false;
 #endif
   /// Key `metrics.port`: the TCP port, 1..65535, the metrics endpoint serves
   /// /metrics and /livez on, on every interface (ADR-0049).

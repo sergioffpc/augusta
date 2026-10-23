@@ -17,6 +17,7 @@
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
+#include "augusta/link_messages.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -26,10 +27,10 @@
 #include "augusta/version.h"
 
 // What the Session tests' files share: a real server host and real client
-// sessions over loopback, driven by hand, and a client speaking the protocol
-// by hand. The reenactments' cases, in a Development build only (ADR-0074),
-// sit in a file of their own. session_test.cpp starts and stops the Link once
-// for the whole process.
+// sessions over loopback, driven by hand, and a client and a server speaking
+// the protocol by hand. The Development build's cases (ADR-0074) sit in files
+// of their own. session_test.cpp starts and stops the Link once for the whole
+// process.
 namespace augusta::session_test {
 
 using harness::Phase;
@@ -345,6 +346,118 @@ inline augusta::prediction::World WorldWithFloorAt(float y) {
   EXPECT_TRUE(world.AddCollisionMesh(FloorAt(y)).has_value());
   return world;
 }
+
+// The session a ScriptedServer admits its client under.
+inline constexpr SessionIdWire kScriptedSession =
+    SessionIdWire({0x01, 0x90, 0xA1, 0xB2, 0xC3, 0xD4, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+
+// Another session than kScriptedSession, told apart by its last byte.
+constexpr SessionIdWire OtherScriptedSession(std::uint8_t last) {
+  SessionIdWire session = kScriptedSession;
+  *(session.end() - 1) = last;
+  return session;
+}
+
+// The body a ScriptedServer gives its client in Match start: not its session's number.
+inline constexpr EntityIdWire kScriptedEntity{101};
+
+// A server speaking the protocol by hand to one client, to send what a real
+// one would not: values that fail the checks, messages out of turn, or bytes
+// that are no message.
+class ScriptedServer {
+ public:
+  ScriptedServer() : server_(Endpoint{.address = kLoopbackAnyPort}) {}
+
+  // The address it listens on, for its client to connect to.
+  [[nodiscard]] Endpoint LocalEndpoint() const { return Endpoint{.address = server_.LocalEndpoint().address}; }
+
+  // Connects session and answers its join with parameters, then with a Match
+  // start of it alone if start_match, and reports whether the session was
+  // admitted within wait.
+  bool Admit(Session& session, const Parameters& parameters, std::chrono::milliseconds wait = kPollDeadline,
+             bool start_match = true) {
+    parameters_ = parameters;
+    start_match_ = start_match;
+    session.Connect();
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    while (!session.GetServerView()->accepted.has_value() && std::chrono::steady_clock::now() < deadline) {
+      Pump();
+      session.PumpEvents();
+      session.ExchangeMessages();
+      std::this_thread::sleep_for(kPollInterval);
+    }
+    return session.GetServerView()->accepted.has_value();
+  }
+
+  // Serves the connection and the join, and takes in whatever the client sent.
+  void Pump() {
+    for (const auto& event : server_.PumpEvents()) {
+      if (event.type == augusta::link::PeerEventType::kConnectRequested) {
+        server_.Accept(event.peer);
+      }
+    }
+    const auto messages = server_.Receive().value();
+    for (const auto& message : messages) {
+      peer_ = message.from;
+      const auto decoded = augusta::protocol::Decode(message.payload);
+      if (!decoded.has_value()) {
+        continue;
+      }
+      if (std::holds_alternative<augusta::protocol::JoinRequestWire>(*decoded)) {
+        Send(augusta::protocol::JoinAcceptedWire{.session = kScriptedSession,
+                                                 .tick_rate_hz = kTestTickRate,
+                                                 .parameters = augusta::link::ToWire(parameters_),
+                                                 .character = kCharacter});
+        if (start_match_) {
+          Send(StartOfAlone());
+        }
+      } else if (std::holds_alternative<augusta::protocol::CommandsWire>(*decoded)) {
+        ++commands_received_;
+      } else if (const auto* ready = std::get_if<augusta::protocol::ReadyWire>(&*decoded)) {
+        readies_.push_back(ready->version);
+      }
+    }
+  }
+
+  // A Match start of the admitted client alone, at the origin.
+  static augusta::protocol::MatchStartWire StartOfAlone() {
+    return augusta::protocol::MatchStartWire{
+        .players = {{.spawn = {}, .session = kScriptedSession, .entity = kScriptedEntity, .character = kCharacter}}};
+  }
+
+  // An Authoritative State of tick listing entities, each at the origin, with
+  // the client's player unhurt.
+  static augusta::protocol::AuthoritativeStateWire StateOf(augusta::tick::Tick tick,
+                                                           const std::vector<EntityIdWire>& entities) {
+    augusta::protocol::AuthoritativeStateWire state{
+        .tick = tick, .bodies = {}, .rifle = {}, .health = 100.0F, .acknowledged_sequence = 0};
+    for (const EntityIdWire entity : entities) {
+      state.bodies.push_back({.entity = entity, .body = {}});
+    }
+    return state;
+  }
+
+  void Send(const augusta::protocol::MessageWire& message) { SendPayload(augusta::protocol::Encode(message).value()); }
+
+  // Sends bytes as they are, whether or not they are a message.
+  void SendPayload(const augusta::protocol::BytesWire& payload) {
+    ASSERT_TRUE(server_.Send(*peer_, payload).has_value());
+  }
+
+  // How many CommandsWire messages the client has sent.
+  [[nodiscard]] int CommandsReceived() const { return commands_received_; }
+
+  // The Roster versions the client has reported ReadyWire for, in order.
+  [[nodiscard]] const std::vector<std::uint32_t>& Readies() const { return readies_; }
+
+ private:
+  augusta::link::RawServer server_;
+  std::optional<augusta::link::PeerId> peer_;
+  Parameters parameters_;
+  bool start_match_ = true;
+  int commands_received_ = 0;
+  std::vector<std::uint32_t> readies_;
+};
 
 }  // namespace augusta::session_test
 

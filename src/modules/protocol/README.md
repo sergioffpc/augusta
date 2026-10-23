@@ -15,7 +15,8 @@ checking the grids' ranges, the protocol's limits and its text's UTF-8 as it
 does, on an arena local to each call. An Authoritative State encoded once is
 readdressed to each recipient by keeping the bytes of its shared fields, which
 number first, and splicing the recipient's own fields after them under a fresh
-envelope tag and length.
+envelope tag and length. A Development build's messages are in the codec only
+with `AUGUSTA_DEBUG_TOOLS`.
 
 ## Not its responsibility
 
@@ -28,4 +29,5 @@ envelope tag and length.
 
 [ADR-0007](../../../docs/adr/0007-serialization-format.md),
 [ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
-[ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md).
+[ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

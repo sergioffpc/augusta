@@ -13,6 +13,7 @@
 #include "augusta/parameters.h"
 #include "augusta/replay.h"
 #include "augusta/replication.h"
+#include "augusta/simulation.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -63,6 +64,13 @@ void FillRecipientFields(link::AuthoritativeState& state, const replication::Rec
 
 /// What each player of a Replay looked like on tick, as its viewer's Replay view.
 [[nodiscard]] link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick);
+
+#if AUGUSTA_DEBUG_TOOLS
+/// How SimulationWorld judged a round, as its shooter is told it (ADR-0038):
+/// an entry later in the flight than the Link's 16 bits carry is held to the
+/// most they do.
+[[nodiscard]] link::ShotJudgement ToLink(const simulation::ShotJudgement& judgement);
+#endif
 
 }  // namespace augusta::host
 

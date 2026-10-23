@@ -23,7 +23,8 @@ so the Host and capture convert without opening a connection. It owns the
 transport's process-wide setup and, for tests only, its simulated network
 conditions and raw ends that carry bytes as they are. Only it links networking
 (`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
-speaks to it reaches neither.
+speaks to it reaches neither. A Development build's messages are in the Link
+only with `AUGUSTA_DEBUG_TOOLS`.
 
 ## Not its responsibility
 
@@ -40,4 +41,5 @@ speaks to it reaches neither.
 [ADR-0003](../../../docs/adr/0003-networking-transport.md),
 [ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
 [ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md),
-[ADR-0051](../../../docs/adr/0051-replay.md).
+[ADR-0051](../../../docs/adr/0051-replay.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

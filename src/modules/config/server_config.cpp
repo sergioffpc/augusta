@@ -28,6 +28,7 @@ constexpr std::string_view kCaptureMaxMibKey = "simulation.capture_retention.max
 constexpr std::uint32_t kMaxCaptureLimit = std::numeric_limits<std::uint32_t>::max();
 #if AUGUSTA_DEBUG_TOOLS
 constexpr std::string_view kReenactmentsKey = "debug.reenactments";
+constexpr std::string_view kShotJudgementsKey = "debug.shot_judgements";
 #endif
 constexpr std::string_view kReplayCapturesKey = "replay.captures";
 constexpr std::string_view kReplayMaxViewersKey = "replay.max_viewers";
@@ -107,6 +108,7 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
            kCaptureMaxMibKey,
 #if AUGUSTA_DEBUG_TOOLS
            kReenactmentsKey,
+           kShotJudgementsKey,
 #endif
        }) {
     if (values.contains(key)) {
@@ -125,6 +127,24 @@ std::expected<void, ConfigError> ReadReplay(const ConfigValues& values, const st
   config.replay_max_viewers = max_viewers;
   return {};
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+// The `debug` section (ADR-0074) into config: whether Reenact requests are
+// taken, and whether Shot judgements are sent to whoever subscribes to them.
+std::expected<void, ConfigError> ReadDebugSection(const ConfigValues& values, ServerConfig& config) {
+  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
+  if (!reenactments) {
+    return std::unexpected(reenactments.error());
+  }
+  const auto shot_judgements = OptionalFlag(values, kShotJudgementsKey, false);
+  if (!shot_judgements) {
+    return std::unexpected(shot_judgements.error());
+  }
+  config.reenactments = *reenactments;
+  config.shot_judgements = *shot_judgements;
+  return {};
+}
+#endif
 
 // The ServerConfig values holds, each relative path in it from root.
 std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& values,
@@ -165,14 +185,7 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
   if (!metrics_port) {
     return std::unexpected(metrics_port.error());
   }
-#if AUGUSTA_DEBUG_TOOLS
-  // The `debug` section (ADR-0074): whether Reenact requests are taken.
-  const auto reenactments = OptionalFlag(values, kReenactmentsKey, false);
-  if (!reenactments) {
-    return std::unexpected(reenactments.error());
-  }
-#endif
-  return ServerConfig{
+  ServerConfig config{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
       .tick_rate_hz = *tick_rate_hz,
@@ -182,12 +195,15 @@ std::expected<ServerConfig, ConfigError> ServerConfigFrom(const ConfigValues& va
       .strict_capture = *strict_capture,
       .capture_max_files = *capture_max_files,
       .capture_max_mib = *capture_max_mib,
-#if AUGUSTA_DEBUG_TOOLS
-      .reenactments = *reenactments,
-#endif
       .metrics_port = *metrics_port,
       .replay_captures = {},
   };
+#if AUGUSTA_DEBUG_TOOLS
+  if (const auto debug = ReadDebugSection(values, config); !debug) {
+    return std::unexpected(debug.error());
+  }
+#endif
+  return config;
 }
 
 }  // namespace
@@ -212,6 +228,7 @@ std::expected<ServerConfig, ConfigError> ParseServerConfig(std::string_view yaml
       kReplayMaxViewersKey,
 #if AUGUSTA_DEBUG_TOOLS
       kReenactmentsKey,
+      kShotJudgementsKey,
 #endif
   });
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = {}});

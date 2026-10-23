@@ -5,9 +5,10 @@
 ## Responsibility
 
 The bounds the gameplay rules and the Networking Protocol both need - the
-players a Lobby or a Match holds, the kicks a recoil pattern holds - below both,
-so neither depends on the other for them. Header-only; it depends on nothing but
-the standard library, and nothing defines these again.
+players a Lobby or a Match holds, the kicks a recoil pattern holds, the ticks a
+Shot judgement tells - below both, so neither depends on the other for them.
+Header-only; it depends on nothing but the standard library, and nothing defines
+these again.
 
 ## Not its responsibility
 

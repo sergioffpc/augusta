@@ -78,6 +78,10 @@ struct HostConfig {
   /// names (ADR-0050); without it each is refused. Never for a server open to
   /// players; a Shipping build refuses every one (ADR-0074).
   bool reenactments = false;
+  /// Whether the Shot judgements stream is served (`debug.shot_judgements`,
+  /// ADR-0038): sent to a peer whose last Debug subscribe sets its bit. Off, a
+  /// peer that sets the bit is told nothing, and the server logs it once.
+  bool shot_judgements = false;
 #endif
   /// For a test: asked at listener setup, at every send and receive
   /// (augusta/link.h) and at the capture's write and flush, so the transport or
