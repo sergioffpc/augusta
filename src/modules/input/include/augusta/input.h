@@ -33,6 +33,10 @@ namespace augusta::input {
 /// The key that releases the captured cursor. Reserved: no control may be bound to it.
 inline constexpr window::Key kReleaseCursorKey = window::Key::kEscape;
 
+/// A key kept from the controls in every build, for a use outside input. Reserved:
+/// no control may be bound to it, and Input does nothing with it.
+inline constexpr window::Key kReservedKey = window::Key::kF1;
+
 /// key's name as augustac.yaml spells it: "W", "7", "LeftShift", "Space", "F12", "MouseRight".
 [[nodiscard]] std::string_view NameOf(window::Key key);
 
@@ -68,7 +72,8 @@ inline constexpr std::size_t kControlCount = static_cast<std::size_t>(Control::k
 [[nodiscard]] std::optional<Control> ControlNamed(std::string_view name);
 
 /// Which key triggers each control, indexed by Control. Each control has its
-/// own key, never kReleaseCursorKey; augusta::config checks both.
+/// own key, never one of the two reserved keys, kReleaseCursorKey (Escape) and
+/// kReservedKey (F1); augusta::config checks both.
 using Keymap = std::array<window::Key, kControlCount>;
 
 /// The bindings a player gets without a `keys` section: WASD, LeftShift sprints,
@@ -146,6 +151,21 @@ class Input {
   /// cursor move turns the view by how far the cursor moved since the previous
   /// one, and the first only sets where the cursor starts.
   void Handle(std::span<const window::Event> events);
+
+  /// Lets go of every key and button held, as if each were released, the
+  /// capture unchanged: the next Sample has no move, fire or ADS, and a key
+  /// still down only counts again once pressed again. The next cursor position
+  /// starts a new baseline rather than turning the view, as events the caller
+  /// keeps from Input meanwhile may have moved the cursor. A reload pressed
+  /// since the last Sample still reloads. From the Main/Render thread, safe
+  /// beside a concurrent Sample.
+  void LetGo();
+
+  /// Releases the cursor exactly as pressing kReleaseCursorKey does (see
+  /// CursorCaptured): every held control is let go, and the next click
+  /// captures it again. From the Main/Render thread, safe beside a concurrent
+  /// Sample.
+  void ReleaseCursor();
 
  private:
   // One event of Handle's; callers hold mutex_.

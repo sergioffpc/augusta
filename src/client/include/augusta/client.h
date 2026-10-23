@@ -56,9 +56,12 @@ struct RuntimeConfig {
   /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
   boost::uuids::uuid run = boost::uuids::nil_uuid();
 #if AUGUSTA_DEBUG_TOOLS
-  /// Whether the Debug HUD is drawn (`debug.hud`); a Shipping build has none
-  /// (ADR-0074).
+  /// Whether the Debug HUD is drawn at first (`debug.hud`), until the Debug
+  /// index switches it; a Shipping build has none (ADR-0074).
   bool debug_hud = true;
+  /// Whether the Profiling Debug panel is shown at first
+  /// (`debug.profiling.panel`), until the Debug index switches it.
+  bool debug_profiling_panel = false;
 #endif
 };
 

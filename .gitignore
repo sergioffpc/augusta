@@ -7,6 +7,8 @@ bin/
 obj/
 [Dd]ebug/
 [Rr]elease/
+# The debug module (ADR-0075) is source, not build output.
+!src/modules/debug/
 x64/
 x86/
 

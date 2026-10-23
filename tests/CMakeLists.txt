@@ -916,17 +916,41 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
   target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
   target_sources(augusta_session_tests PRIVATE session_reenactment_test.cpp)
+  target_sources(augusta_renderer_gpu_crash_dump_files_tests PRIVATE renderer_gpu_crash_dump_files_debug_test.cpp)
   if(TARGET augusta_client_net_stats_tests)
     target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
   endif()
+  # The Profiling Debug panel (profiling_panel.h), private to the client
+  # Runtime, as net_stats.h is.
+  if(TARGET augusta_client_profiling_panel)
+    add_executable(augusta_client_profiling_panel_tests client_profiling_panel_test.cpp)
+    target_link_libraries(
+      augusta_client_profiling_panel_tests
+      PRIVATE augusta_client_profiling_panel GTest::gtest GTest::gtest_main
+    )
+    target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
+  endif()
   if(TARGET augusta_client_renderer_smoke_tests)
-    target_sources(augusta_client_renderer_smoke_tests PRIVATE client_renderer_debug_hud_smoke_test.cpp)
+    target_sources(
+      augusta_client_renderer_smoke_tests
+      PRIVATE
+        client_renderer_debug_hud_smoke_test.cpp
+        client_renderer_debug_shapes_smoke_test.cpp
+        client_renderer_debug_panels_smoke_test.cpp
+    )
   endif()
 
   # What the DebugHud shows (augusta_hud), free of any GPU API.
   add_executable(augusta_hud_tests hud_test.cpp)
   target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_hud_tests)
+
+  # The Debug overlays' shapes and their tessellation, the Debug index and
+  # Debug interaction (augusta_debug), free of any GPU API.
+  add_executable(augusta_debug_tests debug_test.cpp debug_index_test.cpp debug_interaction_test.cpp)
+  target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_debug_tests)
 
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints

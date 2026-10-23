@@ -229,6 +229,10 @@ policy (ADR-0060).
 - Audio — Steam Audio; consumes presentation state
 - HUD — what the DebugHud shows, system metrics only, as text lines the client
   Runtime hands the Renderer (augusta_hud, ADR-0059)
+- Debug — the vocabulary of the debug tools: Debug overlay shapes and Debug
+  panels, as values each area builds and the client Runtime hands the Renderer,
+  the shapes' tessellation into lines and triangles, and the panels' control
+  events the Renderer hands back (augusta_debug, ADR-0075)
 
 ```text
 +-------+     +------------+

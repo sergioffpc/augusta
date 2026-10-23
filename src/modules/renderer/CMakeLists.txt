@@ -13,6 +13,13 @@ target_include_directories(augusta_renderer_vulkan_device_choice PUBLIC ${CMAKE_
 target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vulkan_device_choice CLIENT_ONLY)
 
+# renderer.h, which both of the above reach, names augusta_debug's shapes in a
+# Development build (ADR-0075).
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_renderer_vertices PUBLIC augusta_debug)
+  target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_debug)
+endif()
+
 # The files GPU crash dumps are written to (gpu_crash_dump_files.h), apart from
 # Aftermath so it is built and tested on every platform. Public, unlike the two
 # above: the client names the files (client_run.h).
@@ -79,10 +86,18 @@ if(AUGUSTA_CLIENT)
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
 
-  # The debug HUD (debug_hud.h), drawn with Dear ImGui, in a Development build
-  # only (ADR-0074): a Shipping build compiles no HUD pass, ImGui shader or
-  # font.
+  # The debug HUD (debug_hud.h) and the Debug panels (debug_panels_pass.h),
+  # drawn with Dear ImGui, and the Debug overlays' shapes (debug_shapes_pass.h),
+  # the panels and shapes described by augusta_debug, public in renderer.h, in a
+  # Development build only (ADR-0074, ADR-0075): a Shipping build compiles no
+  # HUD, panels or shapes pass, no ImGui or shapes shader, no font and no
+  # augusta_debug.
   if(AUGUSTA_DEBUG_TOOLS)
+    augusta_compile_shader(DebugShapes.3d.slang vsMain vertex kDebugShapesVs)
+    augusta_compile_shader(DebugShapes.3d.slang psMain fragment kDebugShapesPs)
+    target_sources(augusta_renderer PRIVATE debug_shapes_pass.cpp)
+    target_link_libraries(augusta_renderer PUBLIC augusta_debug)
+
     find_package(imgui CONFIG REQUIRED)
     augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
     augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
@@ -101,8 +116,12 @@ if(AUGUSTA_CLIENT)
       VERBATIM
     )
     list(APPEND shader_headers ${font_header})
-    target_sources(augusta_renderer PRIVATE debug_hud.cpp imgui_renderer.cpp)
+    target_sources(augusta_renderer PRIVATE debug_hud.cpp debug_panels_pass.cpp imgui_renderer.cpp)
     target_link_libraries(augusta_renderer PRIVATE imgui::imgui)
+
+    # Where a GPU crash dump would land, with Aftermath or without: what the
+    # Profiling Debug panel shows (Renderer::GpuCrashDumps).
+    target_link_libraries(augusta_renderer PRIVATE augusta_renderer_gpu_crash_dump_files)
   endif()
   target_sources(augusta_renderer PRIVATE ${shader_headers})
 

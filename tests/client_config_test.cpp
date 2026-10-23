@@ -415,6 +415,19 @@ TEST(ParseClientConfigTest, RejectsBindingTheKeyThatReleasesTheCursor) {
   EXPECT_TRUE(Contains(config.error().reason, "Escape")) << config.error().reason;
 }
 
+// Reserved in a Shipping build too, so one config loads in both kinds of build
+// (ADR-0074).
+// Requirements: US-20
+TEST(ParseClientConfigTest, RejectsBindingTheKeyReservedForTheDebugTools) {
+  const auto config = ParseClient("input:\n  keys:\n    crouch: F1\n");
+
+  ASSERT_FALSE(config.has_value());
+  EXPECT_EQ(config.error().code, ConfigErrorCode::kInvalidEntry);
+  EXPECT_EQ(config.error().subject, "input.keys.crouch");
+  EXPECT_TRUE(Contains(config.error().reason, "F1")) << config.error().reason;
+  EXPECT_TRUE(Contains(config.error().reason, "reserved")) << config.error().reason;
+}
+
 // Requirements: US-20
 TEST(ParseClientConfigTest, RejectsAControlNamedTwice) {
   const auto config = ParseClient("input:\n  keys:\n    sprint: Space\n    sprint: Tab\n");

@@ -2,7 +2,8 @@
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
 `augusta_client_frame_mapping`, `augusta_client_lobby_readiness`,
-`augusta_client_net_stats`, `augusta_client_phases`, `augusta_client_run`,
+`augusta_client_net_stats`, `augusta_client_phases`,
+`augusta_client_profiling_panel`, `augusta_client_run`,
 `augusta_client_run_files`, and augustac, the executable that runs them.
 Client-only: the headless server never links it.
 
@@ -17,11 +18,17 @@ verified pack (the scene, the characters other players bring, the map's
 collision and every cue's sound) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
 types, classifies each phase's failure, and shows the connection's numbers to
-Nsight Systems and, in a Development build with `debug.hud` on (ADR-0074), on
-the debug HUD. It starts each Run: takes its Run ID and opens its log file
-beside the executable, then writes its first lines. It decides over the files
-Runs leave there: their names from the Run ID, which Runs are kept, and how the
-previous Run ended, which a launch reports when it was a crash.
+Nsight Systems and, in a Development build with the debug HUD on (ADR-0074), on
+the debug HUD. In a Development build it routes the window's events by Debug
+interaction, to input or to the Debug panels, shows the Debug index, which
+starts each tool as the `debug` section says and switches it until the client
+exits, and routes each panel's control events to the area that built it; its own
+is the Profiling panel, a window of frames it marks with the NVTX range Nsight
+Systems captures, and Aftermath's status as the renderer reports it. It starts
+each Run: takes its Run ID and opens its log file beside the executable, then
+writes its first lines. It decides over the files Runs leave there: their names
+from the Run ID, which Runs are kept, and how the previous Run ended, which a
+launch reports when it was a crash.
 
 ## Not its responsibility
 
@@ -43,4 +50,5 @@ previous Run ended, which a launch reports when it was a crash.
 [ADR-0051](../../docs/adr/0051-replay.md),
 [ADR-0059](../../docs/adr/0059-renderer-nvrhi.md),
 [ADR-0060](../../docs/adr/0060-executables-are-glue.md),
-[ADR-0074](../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).
+[ADR-0074](../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
+[ADR-0075](../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

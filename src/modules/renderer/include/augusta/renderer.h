@@ -2,6 +2,7 @@
 #define AUGUSTA_RENDERER_H_
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -9,6 +10,12 @@
 
 #include "augusta/math.h"
 #include "augusta/window.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_panels.h"
+#include "augusta/debug_shapes.h"
+#include "augusta/window_events.h"
+#endif
 
 /// \file
 /// augusta::renderer draws through NVIDIA's NVRHI on Vulkan (ADR-0059), used
@@ -27,7 +34,15 @@
 /// ClientRuntime's Run() loop decides that split.
 ///
 /// The debug HUD it draws is the text lines it is handed (SetTextLines): what
-/// they say is augusta::hud's. A Shipping build (ADR-0074) has no debug HUD.
+/// they say is augusta::hud's. The Debug overlays it draws are the shapes it is
+/// handed (SetDebugShapes), which augusta::debug describes and tessellates
+/// (ADR-0075). The Debug panels it draws are the ones it is handed
+/// (SetDebugPanels), operated by the window's events the client Runtime hands
+/// it in Debug interaction (HandleDebugPanelInput), and their changes come
+/// back from their own call (TakeDebugControlEvents), not from RenderFrame;
+/// Dear ImGui, which draws them, stays inside the Renderer. It reports whether
+/// Aftermath watches its device (GpuCrashDumps). A Shipping build (ADR-0074)
+/// has none of them.
 ///
 /// Interface scope: draws one static Scene (a list of world-space triangle
 /// meshes seen from one camera), plus, per frame, however many RemotePlayer
@@ -76,6 +91,21 @@ struct CapturedFrame {
   std::uint32_t height = 0;
   std::vector<std::uint8_t> pixels;
 };
+
+#if AUGUSTA_DEBUG_TOOLS
+/// Whether Nsight Aftermath watches the GPU for crash dumps, and where one
+/// lands: what the Profiling Debug panel shows.
+struct GpuCrashDumpStatus {
+  /// Aftermath started: false in a build without its SDK, or without an NVIDIA
+  /// driver.
+  bool enabled = false;
+  /// The device has VK_NV_device_diagnostics_config, so a dump says what the
+  /// GPU was doing: false off an NVIDIA GPU, lavapipe's included.
+  bool attached = false;
+  /// The absolute directory the next dump lands in (gpu_crash_dump_files.h).
+  std::filesystem::path directory;
+};
+#endif
 
 /// One triangle-list mesh with its positions already in world space (Y-up,
 /// right-handed, 1 unit = 1 m - ADR-0032). Winding is counter-clockwise seen
@@ -247,12 +277,50 @@ class Renderer {
   /// frame. From the Main/Render thread.
   void SetOverlay(const Overlay& overlay);
 
+#if AUGUSTA_DEBUG_TOOLS
   /// Replaces the debug HUD's text lines, drawn green in the frame's top left,
   /// one under the other, over everything else, by every RenderFrame from then
   /// on; none until the first call. Cheap enough to call every frame. From the
   /// Main/Render thread.
-#if AUGUSTA_DEBUG_TOOLS
   void SetTextLines(std::vector<std::string> lines);
+
+  /// Replaces the Debug overlay shapes the next RenderFrame draws, tessellated
+  /// by augusta::debug: alpha-blended over the frame at its output resolution,
+  /// after the scene and the fight's effects and before the overlay and the
+  /// debug HUD, each hidden behind what is in front of it unless marked to show
+  /// through walls. Shapes live one frame: the client hands the frame's shapes,
+  /// none included, before every RenderFrame. The buffers they are written to
+  /// grow as a frame needs and never shrink, as SetRemotePlayers' do, so it is
+  /// cheap enough to call every frame. From the Main/Render thread.
+  void SetDebugShapes(const debug::Shapes& shapes);
+
+  /// Replaces the Debug panels the next RenderFrame draws over everything else,
+  /// through Dear ImGui: each opens with its title bar, and no close button (a
+  /// panel closes from the Debug index), at a fixed default position of its
+  /// own, whatever its place in panels: the first panel drawn opens under the
+  /// debug HUD, and each panel drawn for the first time after it one step
+  /// further down and right. It keeps, by its id, the place a
+  /// developer drags it to until the client exits. No layout is saved, so
+  /// every run opens them at their default positions. Panels live one frame:
+  /// the client hands the frame's panels, none included, before every
+  /// RenderFrame. From the Main/Render thread.
+  void SetDebugPanels(debug::Panels panels);
+
+  /// Hands the panels the window's events, oldest first, in Debug interaction
+  /// only: the cursor's position, the mouse buttons and the keys, which reach
+  /// the panels by the next RenderFrame. Out of Debug interaction the client
+  /// hands none, and the panels take no input. From the Main/Render thread.
+  void HandleDebugPanelInput(std::span<const window::Event> events);
+
+  /// The changes the developer made to the panels' controls in the
+  /// RenderFrames since the last call, oldest first, each naming its panel and
+  /// control: none for a greyed-out control. Cheap enough to call every frame,
+  /// after RenderFrame. From the Main/Render thread.
+  [[nodiscard]] std::vector<debug::ControlEvent> TakeDebugControlEvents();
+
+  /// Whether Aftermath watches this Renderer's device, and where a dump would
+  /// land now. From the Main/Render thread.
+  [[nodiscard]] GpuCrashDumpStatus GpuCrashDumps() const;
 #endif
 
  private:
