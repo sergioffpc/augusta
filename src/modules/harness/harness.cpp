@@ -197,6 +197,8 @@ std::optional<failure::Failure> Session::TakeInvariantFailure() { return impl_->
 
 std::optional<link::ConnectionStats> Session::GetConnectionStats() const { return impl_->channel.GetStats(); }
 
+link::Traffic Session::GetTraffic() const { return impl_->channel.GetTraffic(); }
+
 void Session::ReportReady(std::uint32_t version) {
   const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {

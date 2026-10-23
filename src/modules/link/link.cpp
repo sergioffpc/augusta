@@ -1,8 +1,11 @@
 #include "augusta/link.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -45,16 +48,72 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   });
 }
 
+namespace {
+
+// One type's count one way, kept atomic so any thread reads it without a lock
+// while the Network I/O thread and a sender add to it. Each field is read on
+// its own, so a read during a count may see the message without its bytes for
+// that one moment, which a reader taking rates does not notice.
+class AtomicCount {
+ public:
+  void Add(std::size_t bytes) {
+    messages_.fetch_add(1, std::memory_order_relaxed);
+    bytes_.fetch_add(bytes, std::memory_order_relaxed);
+  }
+
+  void Reset() {
+    messages_.store(0, std::memory_order_relaxed);
+    bytes_.store(0, std::memory_order_relaxed);
+  }
+
+  [[nodiscard]] MessageCount Read() const {
+    return MessageCount{.messages = messages_.load(std::memory_order_relaxed),
+                        .bytes = bytes_.load(std::memory_order_relaxed)};
+  }
+
+ private:
+  std::atomic<std::uint64_t> messages_{0};
+  std::atomic<std::uint64_t> bytes_{0};
+};
+
+}  // namespace
+
 struct Client::Impl {
   explicit Impl(failure::Faults* faults) : network(faults) {}
 
-  // Encodes message and hands it to the transport with its type's reliability.
+  // Encodes message and hands it to the transport with its type's reliability,
+  // counting it if the transport took it.
   SendResult Send(const protocol::MessageWire& message) {
     auto payload = EncodeToSend(message);
     if (!payload.has_value()) {
       return std::unexpected(std::move(payload.error()));
     }
-    return ToLink(network.Send(*payload, ReliabilityOf(TypeOf(*payload))));
+    const MessageType type = TypeOf(*payload);
+    SendResult sent = ToLink(network.Send(*payload, ReliabilityOf(type)));
+    if (sent.has_value() && *sent == SendOutcome::kAccepted) {
+      CountOf(sent_counts, type).Add(payload->size());
+    }
+    return sent;
+  }
+
+  static AtomicCount& CountOf(std::array<AtomicCount, kMessageTypeCount>& counts, MessageType type) {
+    return counts.at(static_cast<std::size_t>(type));
+  }
+
+  void ResetTraffic() {
+    for (std::size_t index = 0; index < kMessageTypeCount; ++index) {
+      sent_counts.at(index).Reset();
+      received_counts.at(index).Reset();
+    }
+  }
+
+  [[nodiscard]] Traffic ReadTraffic() const {
+    Traffic traffic;
+    for (std::size_t index = 0; index < kMessageTypeCount; ++index) {
+      traffic.by_type.at(index) =
+          TypeTraffic{.sent = sent_counts.at(index).Read(), .received = received_counts.at(index).Read()};
+    }
+    return traffic;
   }
 
   // payload as what the server said, or nullopt, with a warning, if it is no
@@ -71,11 +130,16 @@ struct Client::Impl {
     if (!message.has_value()) {
       LOG_WARN_LIMITED(drop_warnings, "subsystem=link event=dropped bytes={} reason=\"not a server message\"",
                        payload.size());
+      return std::nullopt;
     }
+    CountOf(received_counts, link::TypeOf(*decoded)).Add(payload.size());
     return message;
   }
 
   networking::Client network;
+  // What the connection carried since Connect, indexed by MessageType.
+  std::array<AtomicCount, kMessageTypeCount> sent_counts;
+  std::array<AtomicCount, kMessageTypeCount> received_counts;
   // A server can send what is no message as fast as it likes, so the warnings
   // for dropping it are limited. Network I/O thread only, as Receive.
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
@@ -86,6 +150,7 @@ Client::Client(failure::Faults* faults) : impl_(std::make_unique<Impl>(faults)) 
 Client::~Client() = default;
 
 void Client::Connect(const Endpoint& server) {
+  impl_->ResetTraffic();
   impl_->network.Connect(networking::Endpoint{.address = server.address});
 }
 
@@ -99,6 +164,8 @@ std::optional<ConnectionStats> Client::GetStats() const {
   return impl_->network.GetStats().transform(
       [](const networking::ConnectionStats& stats) { return FromTransport(stats); });
 }
+
+Traffic Client::GetTraffic() const { return impl_->ReadTraffic(); }
 
 SendResult Client::Send(const JoinRequest& request) { return impl_->Send(ToWire(request)); }
 

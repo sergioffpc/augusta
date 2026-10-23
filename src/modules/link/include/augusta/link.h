@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_LINK_H_
 #define AUGUSTA_LINK_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -135,6 +136,39 @@ struct ConnectionStats {
   int pending_bytes = 0;
 };
 
+/// How many messages, and their bytes as the transport carried them.
+struct MessageCount {
+  std::uint64_t messages = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const MessageCount&) const = default;
+};
+
+/// One message type's traffic, each way.
+struct TypeTraffic {
+  MessageCount sent;
+  MessageCount received;
+
+  bool operator==(const TypeTraffic&) const = default;
+};
+
+/// How many of MessageType's values this build has.
+inline constexpr std::size_t kMessageTypeCount = static_cast<std::size_t>(kLastMessageType) + 1;
+
+/// What a Client's connection has carried since its last Connect, counted by
+/// the Link itself, by message type: cumulative, so a reader takes rates by
+/// difference. Sent counts only what the transport accepted; received, only
+/// what Receive returns, so a payload that is no message, or one only a client
+/// sends, counts nowhere.
+struct Traffic {
+  /// Indexed by MessageType: every type, those that never travelled at zero.
+  std::array<TypeTraffic, kMessageTypeCount> by_type{};
+
+  [[nodiscard]] const TypeTraffic& Of(MessageType type) const { return by_type.at(static_cast<std::size_t>(type)); }
+
+  bool operator==(const Traffic&) const = default;
+};
+
 /// What the Link did with a message it did not fail on.
 enum class SendOutcome : std::uint8_t {
   /// Taken: it travels as its type's reliability says. Only an accepted
@@ -186,6 +220,11 @@ class Client {
   /// The connection's numbers, or nullopt while not connected. Neither blocks
   /// nor does I/O, so it is safe to read every round.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
+
+  /// What the connection has carried since the last Connect, by message type;
+  /// all zero before the first. Safe from any thread, and neither blocks nor
+  /// does I/O, so it is safe to read every round.
+  [[nodiscard]] Traffic GetTraffic() const;
 
   /// Sends one message to the server: kDropped while not connected.
   [[nodiscard]] SendResult Send(const JoinRequest& request);

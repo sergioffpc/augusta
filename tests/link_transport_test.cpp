@@ -1,5 +1,8 @@
+#include <chrono>
 #include <cstddef>
 #include <optional>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -11,6 +14,7 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
+#include "augusta/raw_link.h"
 #include "connection_stats.h"
 #include "peer_message.h"
 #include "reliability.h"
@@ -18,8 +22,18 @@
 // What the Link decides about the transport beneath it, apart from a live
 // connection: which reliability each message travels with (ADR-0038's table),
 // the connection's numbers in the Link's own types, what a payload a peer sent
-// is to its server, and what a server's message is once encoded.
+// is to its server, and what a server's message is once encoded. Then, over a
+// real loopback connection to a raw server, what a Client counts it carried.
 namespace {
+
+class TransportEnvironment : public ::testing::Environment {
+ public:
+  void SetUp() override { ASSERT_TRUE(augusta::link::Init().has_value()); }
+  void TearDown() override { augusta::link::Shutdown(); }
+};
+
+[[maybe_unused]] ::testing::Environment* const kTransportEnvironment =
+    ::testing::AddGlobalTestEnvironment(new TransportEnvironment);
 
 using augusta::link::ConnectionStats;
 using augusta::link::FromTransport;
@@ -174,6 +188,168 @@ TEST(ReaddressedTest, AnyOtherMessageIsABrokenInvariant) {
   ASSERT_EQ(readdressed.error().context.size(), 1U);
   EXPECT_EQ(readdressed.error().context[0].key, "message_type");
   EXPECT_EQ(readdressed.error().context[0].value, "shot");
+}
+
+constexpr auto kPollInterval = std::chrono::milliseconds(5);
+constexpr auto kDeadline = std::chrono::seconds(5);
+
+// Calls poll until done() holds or the deadline passes; returns whether it held.
+template <typename Poll, typename Done>
+bool PollUntil(Poll poll, Done done) {
+  const auto deadline = std::chrono::steady_clock::now() + kDeadline;
+  while (std::chrono::steady_clock::now() < deadline) {
+    poll();
+    if (done()) {
+      return true;
+    }
+    std::this_thread::sleep_for(kPollInterval);
+  }
+  return false;
+}
+
+// The bytes a server's message is on the wire.
+augusta::link::RawPayload BytesOf(const augusta::protocol::MessageWire& message) {
+  return augusta::protocol::Encode(message).value();
+}
+
+// A Client connected over loopback to a raw server, which sends it any bytes
+// and reads what it sent as they are.
+class ClientTrafficTest : public ::testing::Test {
+ protected:
+  ClientTrafficTest() : server_(augusta::link::Endpoint{.address = "127.0.0.1:0"}) {}
+
+  void SetUp() override { ASSERT_TRUE(Connect()); }
+
+  // Connects the client and serves its handshake; returns whether both ends
+  // are connected within the deadline.
+  bool Connect() {
+    peer_.reset();
+    client_.Connect(server_.LocalEndpoint());
+    return PollUntil(
+        [this] {
+          client_.PumpEvents();
+          for (const augusta::link::PeerEvent& event : server_.PumpEvents()) {
+            if (event.type == augusta::link::PeerEventType::kConnectRequested) {
+              server_.Accept(event.peer);
+            } else if (event.type == augusta::link::PeerEventType::kConnected) {
+              peer_ = event.peer;
+            }
+          }
+        },
+        [this] { return peer_.has_value() && client_.GetState() == augusta::link::ConnectionState::kConnected; });
+  }
+
+  // Sends payloads to the client, then receives until it has taken in
+  // expected messages; returns whether it did within the deadline.
+  bool ServeUntilReceived(const std::vector<augusta::link::RawPayload>& payloads, std::size_t expected) {
+    for (const augusta::link::RawPayload& payload : payloads) {
+      if (!server_.Send(*peer_, payload).has_value()) {
+        return false;
+      }
+    }
+    std::size_t received = 0;
+    return PollUntil(
+        [&] {
+          client_.PumpEvents();
+          received += client_.Receive().value().size();
+        },
+        [&] { return received >= expected; });
+  }
+
+  // What the raw server has received from the client, once count payloads
+  // arrived within the deadline; empty if they did not.
+  std::vector<augusta::link::RawPayload> ReceivedByServer(std::size_t count) {
+    std::vector<augusta::link::RawPayload> payloads;
+    PollUntil(
+        [&] {
+          static_cast<void>(server_.PumpEvents());
+          for (augusta::link::RawPeerMessage& message : server_.Receive().value()) {
+            payloads.push_back(std::move(message.payload));
+          }
+        },
+        [&] { return payloads.size() >= count; });
+    return payloads.size() >= count ? payloads : std::vector<augusta::link::RawPayload>{};
+  }
+
+  augusta::link::RawServer server_;
+  std::optional<augusta::link::PeerId> peer_;
+  augusta::link::Client client_;
+};
+
+// Every type but the one named has carried nothing, either way.
+void ExpectOnlyTypeCarried(const augusta::link::Traffic& traffic, MessageType carried) {
+  for (std::size_t index = 0; index < augusta::link::kMessageTypeCount; ++index) {
+    if (index != static_cast<std::size_t>(carried)) {
+      EXPECT_EQ(traffic.by_type.at(index), augusta::link::TypeTraffic{}) << index;
+    }
+  }
+}
+
+// A message the client sent counts once, under its type, as sent, with the
+// bytes the server received.
+TEST_F(ClientTrafficTest, ASentMessageCountsOnceUnderItsTypeAsSent) {
+  ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
+  const std::vector<augusta::link::RawPayload> arrived = ReceivedByServer(1);
+  ASSERT_EQ(arrived.size(), 1U);
+
+  const augusta::link::Traffic traffic = client_.GetTraffic();
+  EXPECT_EQ(traffic.Of(MessageType::kReady).sent,
+            (augusta::link::MessageCount{.messages = 1, .bytes = arrived[0].size()}));
+  EXPECT_EQ(traffic.Of(MessageType::kReady).received, augusta::link::MessageCount{});
+  ExpectOnlyTypeCarried(traffic, MessageType::kReady);
+}
+
+// A message the client received counts once, under its type, as received,
+// with the bytes the server sent.
+TEST_F(ClientTrafficTest, AReceivedMessageCountsOnceUnderItsTypeAsReceived) {
+  const augusta::link::RawPayload shot =
+      BytesOf(augusta::link::ToWire(augusta::link::Shot{.shooter = augusta::link::EntityId{4}, .tick = 90}));
+  ASSERT_TRUE(ServeUntilReceived({shot}, 1));
+
+  const augusta::link::Traffic traffic = client_.GetTraffic();
+  EXPECT_EQ(traffic.Of(MessageType::kShot).received,
+            (augusta::link::MessageCount{.messages = 1, .bytes = shot.size()}));
+  EXPECT_EQ(traffic.Of(MessageType::kShot).sent, augusta::link::MessageCount{});
+  ExpectOnlyTypeCarried(traffic, MessageType::kShot);
+}
+
+// Each message counts on its own: two of a type are two, their bytes summed.
+TEST_F(ClientTrafficTest, MessagesOfOneTypeAddUp) {
+  const augusta::link::RawPayload first = BytesOf(augusta::link::ToWire(augusta::link::Shot{.tick = 1}));
+  const augusta::link::RawPayload second =
+      BytesOf(augusta::link::ToWire(augusta::link::Shot{.shooter = augusta::link::EntityId{70000}, .tick = 90000}));
+  ASSERT_TRUE(ServeUntilReceived({first, second}, 2));
+
+  EXPECT_EQ(client_.GetTraffic().Of(MessageType::kShot).received,
+            (augusta::link::MessageCount{.messages = 2, .bytes = first.size() + second.size()}));
+}
+
+// A payload that is no message, and a message only a client sends, are dropped
+// by the client and count nowhere; the Lobby sent after them, which it takes
+// in, counts.
+TEST_F(ClientTrafficTest, APayloadTheClientDropsCountsNowhere) {
+  const augusta::link::RawPayload garbage{std::byte{0xFF}, std::byte{0xFF}, std::byte{0xFF}};
+  const augusta::link::RawPayload ready = BytesOf(augusta::link::ToWire(augusta::link::Ready{.version = 1}));
+  const augusta::link::RawPayload lobby =
+      BytesOf(augusta::link::ToWire(augusta::link::Lobby{.version = 2, .roster = {}}));
+  // Every raw payload travels reliably, in order, so the Lobby arrives last.
+  ASSERT_TRUE(ServeUntilReceived({garbage, ready, lobby}, 1));
+
+  const augusta::link::Traffic traffic = client_.GetTraffic();
+  EXPECT_EQ(traffic.Of(MessageType::kLobby).received,
+            (augusta::link::MessageCount{.messages = 1, .bytes = lobby.size()}));
+  ExpectOnlyTypeCarried(traffic, MessageType::kLobby);
+}
+
+// A new connection counts from zero, whatever the last one carried.
+TEST_F(ClientTrafficTest, ANewConnectionStartsFromZero) {
+  ASSERT_EQ(client_.Send(augusta::link::Ready{.version = 3}), augusta::link::SendOutcome::kAccepted);
+  ASSERT_TRUE(ServeUntilReceived({BytesOf(augusta::link::ToWire(augusta::link::Shot{}))}, 1));
+  ASSERT_NE(client_.GetTraffic(), augusta::link::Traffic{});
+
+  client_.Disconnect();
+  ASSERT_TRUE(Connect());
+  EXPECT_EQ(client_.GetTraffic(), augusta::link::Traffic{});
 }
 
 }  // namespace
