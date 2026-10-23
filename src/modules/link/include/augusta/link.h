@@ -78,6 +78,15 @@ struct SimulatedConditions {
 /// to it too), and reset it before the next test.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
+/// What a Client or a Server is built with, beyond where it listens: whatever
+/// its transport takes at construction, and nothing of what it sends or receives.
+struct TransportOptions {
+  /// When given, asked at every send and receive (failure::Site::kTransportSend,
+  /// kTransportReceive) and, for a Server, at listener setup
+  /// (kListenerSetup); it must outlive the transport.
+  failure::Faults* faults = nullptr;
+};
+
 // ---- The client's end ----
 
 /// A server's address in "host:port" form (e.g. "192.168.1.10:27015"): a
@@ -139,10 +148,7 @@ using SendResult = std::expected<SendOutcome, failure::Failure>;
 /// holds one at a time.
 class Client {
  public:
-  /// faults, when given, is asked at every send and receive
-  /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
-  /// Client.
-  explicit Client(failure::Faults* faults = nullptr);
+  explicit Client(const TransportOptions& options = {});
   /// Ends the connection, if any.
   ~Client();
 
@@ -305,11 +311,8 @@ class Server {
   /// Starts listening on local, on a free port of its own choosing if that
   /// names port 0 (LocalEndpoint). Throws failure::ClassifiedFailure:
   /// failure::Code::kInvalidConfiguration if local does not parse,
-  /// kListenerSetupFailed if the transport cannot listen there. faults, when
-  /// given, is asked at listener setup and at every send and receive
-  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
-  /// must outlive the Server.
-  explicit Server(const Endpoint& local, failure::Faults* faults = nullptr);
+  /// kListenerSetupFailed if the transport cannot listen there.
+  explicit Server(const Endpoint& local, const TransportOptions& options = {});
   /// Ends every peer's connection and stops listening.
   ~Server();
 
