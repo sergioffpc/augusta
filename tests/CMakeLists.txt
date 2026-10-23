@@ -953,6 +953,11 @@ if(AUGUSTA_DEBUG_TOOLS)
   target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
   gtest_discover_tests(augusta_debug_tests)
 
+  # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
+  add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
+  target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_pcapng_tests)
+
   # The Shipping-only test as an object library that nothing builds or runs:
   # only so that its file has a compile command for clang-tidy, which lints
   # against a Development build's.
