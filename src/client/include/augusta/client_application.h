@@ -55,7 +55,9 @@ class ClientProcess {
 [[nodiscard]] application::Outcome ListReplays(const config::ClientConfig& file_config);
 
 /// augustac's Lifecycle for file_config: initialize starts the transport
-/// (link::Init); construct verifies the pack and loads the content of the
+/// (link::Init), after the physics recording `debug.physics_recording` asks
+/// for in a Development build, which the Lifecycle holds until it goes
+/// (physics::StartRecording); construct verifies the pack and loads the content of the
 /// character to play, then constructs the ClientRuntime - as reenactment's
 /// Captured player if it has one (ADR-0050), playing its capture's Character
 /// rather than the config's, or as the Replay viewer of the capture replay

@@ -38,10 +38,18 @@
 #include <geometry/PxCapsuleGeometry.h>
 #include <geometry/PxTriangleMesh.h>
 #include <geometry/PxTriangleMeshGeometry.h>
+#include <omnipvd/PxOmniPvd.h>
 #if AUGUSTA_DEBUG_TOOLS
+#include <chrono>
+#include <filesystem>
+#include <format>
+#include <string>
+
 #include <PxVisualizationParameter.h>
 #include <common/PxRenderBuffer.h>
 #include <foundation/PxBounds3.h>
+#include <pvdruntime/OmniPvdFileWriteStream.h>
+#include <pvdruntime/OmniPvdWriter.h>
 #endif
 
 #include "augusta/grid.h"
@@ -91,6 +99,7 @@ using physx::PxFoundation;
 using physx::PxHitFlag;
 using physx::PxIdentity;
 using physx::PxMaterial;
+using physx::PxOmniPvd;
 using physx::PxOverlapBuffer;
 using physx::PxPhysics;
 using physx::PxQuat;
@@ -251,6 +260,8 @@ struct PhysxProcessState {
   LogErrorCallback error_callback;
   PxDefaultAllocator allocator;
   PxFoundation* foundation = nullptr;
+  // What samples physics into a recording (StartRecording); null when none does.
+  PxOmniPvd* omni_pvd = nullptr;
   PxPhysics* physics = nullptr;
 };
 
@@ -264,21 +275,46 @@ struct PhysxHandles {
   PxPhysics* physics;
 };
 
+void CreateFoundation(PhysxProcessState& state) {
+  state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
+  if (state.foundation == nullptr) {
+    throw std::runtime_error("physics::World: PxCreateFoundation failed");
+  }
+}
+
+// Releases what the state holds, in the reverse of the order it was made in:
+// physics before what samples it, and the foundation last.
+void ReleaseProcessState(PhysxProcessState& state) {
+  if (state.physics != nullptr) {
+    state.physics->release();
+    state.physics = nullptr;
+  }
+  if (state.omni_pvd != nullptr) {
+    state.omni_pvd->release();
+    state.omni_pvd = nullptr;
+  }
+  if (state.foundation != nullptr) {
+    state.foundation->release();
+    state.foundation = nullptr;
+  }
+}
+
+// Creates physics on the state's foundation, sampled by its omni_pvd if it has one.
+void CreatePhysics(PhysxProcessState& state) {
+  const PxTolerancesScale scale;
+  state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true, nullptr, state.omni_pvd);
+  if (state.physics == nullptr) {
+    ReleaseProcessState(state);
+    throw std::runtime_error("physics::World: PxCreatePhysics failed");
+  }
+}
+
 PhysxHandles AcquirePhysx() {
   PhysxProcessState& state = GlobalState();
   const std::lock_guard<std::mutex> lock(state.mutex);
   if (state.users == 0) {
-    state.foundation = PxCreateFoundation(PX_PHYSICS_VERSION, state.allocator, state.error_callback);
-    if (state.foundation == nullptr) {
-      throw std::runtime_error("physics::World: PxCreateFoundation failed");
-    }
-    const PxTolerancesScale scale;
-    state.physics = PxCreatePhysics(PX_PHYSICS_VERSION, *state.foundation, scale, true);
-    if (state.physics == nullptr) {
-      state.foundation->release();
-      state.foundation = nullptr;
-      throw std::runtime_error("physics::World: PxCreatePhysics failed");
-    }
+    CreateFoundation(state);
+    CreatePhysics(state);
   }
   ++state.users;
   return {.foundation = state.foundation, .physics = state.physics};
@@ -288,10 +324,7 @@ void ReleasePhysx() {
   PhysxProcessState& state = GlobalState();
   const std::lock_guard<std::mutex> lock(state.mutex);
   if (--state.users == 0) {
-    state.physics->release();
-    state.foundation->release();
-    state.physics = nullptr;
-    state.foundation = nullptr;
+    ReleaseProcessState(state);
   }
 }
 
@@ -301,6 +334,8 @@ void ReleasePhysx() {
 class PhysxLease {
  public:
   PhysxLease() : handles_(AcquirePhysx()) {}
+  // Takes over a use already counted (StartRecording's).
+  explicit PhysxLease(PhysxHandles counted) : handles_(counted) {}
   ~PhysxLease() { ReleasePhysx(); }
   PhysxLease(const PhysxLease&) = delete;
   PhysxLease& operator=(const PhysxLease&) = delete;
@@ -676,6 +711,82 @@ MapRaycastHit World::RaycastMap(const math::Vec3& origin, const math::Vec3& dire
 }
 
 #if AUGUSTA_DEBUG_TOOLS
+namespace {
+
+// Why PxCreateOmniPvd made nothing. Only a Debug PhysX has OmniPVD, every other
+// build compiling it out, and the PhysX package hands a Debug build _DEBUG.
+#ifdef _DEBUG
+constexpr std::string_view kNoOmniPvd = "OmniPVD's runtime (PVDRuntime_64) did not load from beside the executable";
+#else
+constexpr std::string_view kNoOmniPvd = "this build's PhysX has no OmniPVD: only a Debug build records";
+#endif
+
+// Points the state's new omni_pvd at a file stream writing file, or says why it cannot.
+std::expected<void, std::string> OpenRecording(PhysxProcessState& state, const std::filesystem::path& file) {
+  state.omni_pvd = PxCreateOmniPvd(*state.foundation);
+  if (state.omni_pvd == nullptr) {
+    return std::unexpected(std::string(kNoOmniPvd));
+  }
+  OmniPvdWriter* writer = state.omni_pvd->getWriter();
+  OmniPvdFileWriteStream* stream = state.omni_pvd->getFileWriteStream();
+  if (writer == nullptr || stream == nullptr) {
+    return std::unexpected(std::string("OmniPVD gave no writer or file stream"));
+  }
+  stream->setFileName(file.string().c_str());
+  writer->setWriteStream(*stream);
+  return {};
+}
+
+// Makes the shared PhysX state recorded into file and counts the recording's
+// use of it, or says why it cannot, leaving the state as it was.
+std::expected<PhysxHandles, std::string> AcquireRecordedPhysx(const std::filesystem::path& file) {
+  PhysxProcessState& state = GlobalState();
+  const std::lock_guard<std::mutex> lock(state.mutex);
+  if (state.users != 0) {
+    return std::unexpected(std::string("a World already exists, and PhysX was made without the recording"));
+  }
+  CreateFoundation(state);
+  if (auto opened = OpenRecording(state, file); !opened) {
+    ReleaseProcessState(state);
+    return std::unexpected(std::move(opened.error()));
+  }
+  CreatePhysics(state);
+  if (!state.omni_pvd->startSampling()) {
+    ReleaseProcessState(state);
+    return std::unexpected(std::string("OmniPVD would not start sampling"));
+  }
+  ++state.users;
+  return PhysxHandles{.foundation = state.foundation, .physics = state.physics};
+}
+
+}  // namespace
+
+struct Recording::Impl {
+  Impl(PhysxHandles counted, std::filesystem::path recorded) : lease(counted), file(std::move(recorded)) {}
+
+  PhysxLease lease;
+  std::filesystem::path file;
+};
+
+Recording::Recording(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
+Recording::~Recording() = default;
+Recording::Recording(Recording&&) noexcept = default;
+Recording& Recording::operator=(Recording&&) noexcept = default;
+
+const std::filesystem::path& Recording::File() const { return impl_->file; }
+
+std::expected<Recording, std::string> StartRecording(std::string_view executable) {
+  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  std::filesystem::path file =
+      std::filesystem::temp_directory_path() / std::format("{}-{:%Y%m%dT%H%M%SZ}.ovd", executable, now);
+  const auto handles = AcquireRecordedPhysx(file);
+  if (!handles) {
+    return std::unexpected(handles.error());
+  }
+  LOG_INFO("subsystem=physics event=recording_started path=\"{}\"", file.string());
+  return Recording(std::make_unique<Recording::Impl>(*handles, std::move(file)));
+}
+
 namespace {
 
 float Switch(bool on) { return on ? 1.0F : 0.0F; }

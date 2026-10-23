@@ -76,6 +76,11 @@ logging:
 #   # each shooter whose client subscribes to them how the server judged each of
 #   # its rounds (ADR-0038); false sends none, and logs a client asking once.
 #   shot_judgements: false
+#   # Whether the server's PhysX scenes are recorded for OmniPVD (optional,
+#   # default false), read at startup: true records them from startup to exit
+#   # into one augustad-<time>.ovd in the system's temporary directory, its path
+#   # logged at info. Only a Debug build records; elsewhere it warns and runs on.
+#   physics_recording: false
 # Replay mode (optional, default off; ADR-0051). Set replay.captures and
 # augustad is a replay server: it runs no Lobby and no Match, refuses every Join,
 # and replays the Match captures of that directory made on its own server pack,

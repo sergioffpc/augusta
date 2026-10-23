@@ -23,6 +23,7 @@
 /CMakePresets.json  @sergioffpc
 /cmake/             @sergioffpc
 /vcpkg.json         @sergioffpc
+/ports/             @sergioffpc
 /triplets/          @sergioffpc
 /third_party/       @sergioffpc
 /Dockerfile         @sergioffpc

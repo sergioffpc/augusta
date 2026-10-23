@@ -63,6 +63,11 @@ input:
 #     # Systems to capture, and Aftermath's status - is shown (optional, default
 #     # false): true or false.
 #     panel: false
+#   # Whether the client's PhysX scenes are recorded for OmniPVD (optional,
+#   # default false), read at startup: true records them from startup to exit
+#   # into one augustac-<time>.ovd in the system's temporary directory, its path
+#   # logged at info. Only a Debug build records; elsewhere it warns and runs on.
+#   physics_recording: false
 #   physics:
 #     # Whether the Physics Debug panel - the switches of the physics and
 #     # collision Debug overlays - is shown (optional, default false): true or

@@ -18,6 +18,12 @@ PhysX draws and a culling box, then stepped once to copy out PhysX's lines of
 the scene and its character controllers as plain values, never a PhysX or
 `augusta_debug` type.
 
+In a Development build (ADR-0074) it also records the process's PhysX scenes to
+one OmniPVD file from startup to exit (`StartRecording`), which
+`debug.physics_recording` asks for on the server and the client. Only a Debug
+build's PhysX records, through OmniPVD's runtime that the PhysX overlay port
+(`ports/physx`) builds; elsewhere the recording is refused, saying why.
+
 ## Not its responsibility
 
 - Bullet trajectories: gameplay (`augusta/ballistics.h`), not PhysX.
