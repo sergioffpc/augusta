@@ -43,7 +43,7 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
 }
 
 struct Client::Impl {
-  explicit Impl(failure::Faults* faults) : network(faults) {}
+  explicit Impl(const TransportOptions& options) : network(options.faults) {}
 
   // Encodes message and hands it to the transport with its type's reliability.
   SendResult Send(const protocol::MessageWire& message) {
@@ -78,7 +78,7 @@ struct Client::Impl {
   logging::Throttle drop_warnings{std::chrono::seconds{1}};
 };
 
-Client::Client(failure::Faults* faults) : impl_(std::make_unique<Impl>(faults)) {}
+Client::Client(const TransportOptions& options) : impl_(std::make_unique<Impl>(options)) {}
 
 Client::~Client() = default;
 
@@ -223,13 +223,14 @@ PeerMessage ReadFrom(PeerId from, std::span<const std::byte> payload) {
 }
 
 struct Server::Impl {
-  Impl(const Endpoint& local, failure::Faults* faults)
-      : network(networking::Endpoint{.address = local.address}, faults) {}
+  Impl(const Endpoint& local, const TransportOptions& options)
+      : network(networking::Endpoint{.address = local.address}, options.faults) {}
 
   networking::Server network;
 };
 
-Server::Server(const Endpoint& local, failure::Faults* faults) : impl_(std::make_unique<Impl>(local, faults)) {}
+Server::Server(const Endpoint& local, const TransportOptions& options)
+    : impl_(std::make_unique<Impl>(local, options)) {}
 
 Server::~Server() = default;
 

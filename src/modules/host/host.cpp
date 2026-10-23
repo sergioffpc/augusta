@@ -101,7 +101,7 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen, config.faults),
+      network(config.listen, link::TransportOptions{.faults = config.faults}),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
