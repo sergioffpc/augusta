@@ -881,13 +881,14 @@ TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
   EXPECT_EQ(augusta::assets::DecodeAnimationSkeletonBlob(*blob), MakeArchive());
 }
 
-// A pack holding a character's animation loads: its entry types are ones the
-// format knows.
-TEST_F(PackTest, APackHoldingACharactersAnimationLoads) {
+// A pack holding a character's animation loads, and resolves each part of it
+// by the character's name and, for a Clip, its role.
+TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTransitions) {
   const auto pack_path = MakePackPath("augusta_assets_test_animation");
   const auto keys = GenerateEd25519KeyPair();
   const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(MakeArchive());
-  const auto clip = augusta::assets::EncodeClipBlob({.stride_length = 0.0F, .foot_contacts = {}, .archive = {}});
+  const auto clip =
+      augusta::assets::EncodeClipBlob({.stride_length = 1.25F, .foot_contacts = {}, .archive = MakeArchive()});
   const auto transitions = augusta::assets::EncodeStanceTransitionsBlob(
       {.standing_crouching = 0.25F, .standing_prone = 0.75F, .crouching_prone = 0.5F});
   ASSERT_TRUE(skeleton.has_value() && clip.has_value() && transitions.has_value());
@@ -908,6 +909,17 @@ TEST_F(PackTest, APackHoldingACharactersAnimationLoads) {
 
   ASSERT_TRUE(pack.has_value());
   EXPECT_EQ(pack->Entries().size(), 3U);
+  EXPECT_EQ(pack->ResolveAnimationSkeleton("soldier"), MakeArchive());
+  const auto idle = pack->ResolveClip("soldier", "standing/idle");
+  ASSERT_TRUE(idle.has_value());
+  EXPECT_FLOAT_EQ(idle->stride_length, 1.25F);
+  EXPECT_EQ(idle->archive, MakeArchive());
+  const auto transitions_resolved = pack->ResolveStanceTransitions("soldier");
+  ASSERT_TRUE(transitions_resolved.has_value());
+  EXPECT_FLOAT_EQ(transitions_resolved->standing_prone, 0.75F);
+  EXPECT_EQ(pack->ResolveClip("soldier", "air").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveAnimationSkeleton("medic").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveStanceTransitions("medic").error(), augusta::assets::ResolveError::kNotFound);
 }
 
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {

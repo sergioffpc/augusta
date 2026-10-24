@@ -358,6 +358,33 @@ target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
 
+# ozz-animation's prebuilt libraries and this build's code, run together on SIMD
+# values held on the stack; the offline libraries author the test's archives.
+add_executable(augusta_animation_ozz_jobs_tests animation_ozz_jobs_test.cpp)
+target_link_libraries(augusta_animation_ozz_jobs_tests PRIVATE ozz::animation_offline GTest::gtest GTest::gtest_main)
+gtest_discover_tests(augusta_animation_ozz_jobs_tests)
+
+# A Character's Clips loaded from packs the test writes, of archives it
+# authors with ozz-animation's offline libraries, as the cooker does.
+add_executable(augusta_clips_tests clips_test.cpp)
+target_link_libraries(
+  augusta_clips_tests
+  PRIVATE augusta_animation augusta_assets ozz::animation_offline GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_clips_tests DISCOVERY_TIMEOUT 30)
+
+# What the server loads at startup, on the golden server pack and on copies of
+# it the test re-signs without an entry.
+add_executable(augusta_server_content_tests server_content_test.cpp)
+target_link_libraries(augusta_server_content_tests PRIVATE augusta_scenario GTest::gtest GTest::gtest_main)
+target_compile_definitions(
+  augusta_server_content_tests
+  PRIVATE AUGUSTA_EXAMPLE_PACKS="${CMAKE_SOURCE_DIR}/tests/fixtures/example-packs"
+)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_server_content_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on

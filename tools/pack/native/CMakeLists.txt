@@ -24,7 +24,6 @@ endif()
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(Ktx CONFIG REQUIRED)
 find_package(Stb REQUIRED)
-find_package(ozz-animation CONFIG REQUIRED)
 
 # Built straight into the package's source directory, so `import
 # augusta_pack._native` works once the package is installed editable (uv sync
