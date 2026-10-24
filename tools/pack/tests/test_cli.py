@@ -53,6 +53,11 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
     }
     assert client.paths_of_type(_native.AssetType.HITBOX) == hitboxes
     assert server.paths_of_type(_native.AssetType.HITBOX) == hitboxes
+    # Its Clips, from their own files under animations/ (ADR-0066).
+    for contents in (client, server):
+        assert "soldier/Character/Clips/standing/forward" in (
+            contents.paths_of_type(_native.AssetType.CLIP)
+        )
     assert server.client_pack_hash == client.hash
     assert server.paths_of_type(_native.AssetType.SCRIPT) == {
         "parameters.lua",

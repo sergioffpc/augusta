@@ -57,7 +57,8 @@ void BindErrors(py::module_& module) {
       .value("TOO_LARGE", assets::EncodeError::kTooLarge)
       .value("UNSUPPORTED_SAMPLE_WIDTH", assets::EncodeError::kUnsupportedSampleWidth)
       .value("PARTIAL_SAMPLE", assets::EncodeError::kPartialSample)
-      .value("INVALID_CUE_SOUND", assets::EncodeError::kInvalidCueSound);
+      .value("INVALID_CUE_SOUND", assets::EncodeError::kInvalidCueSound)
+      .value("INVALID_ANIMATION", assets::EncodeError::kInvalidAnimation);
   py::enum_<assets::WriteError>(module, "WriteErrorReason", "Why a pack was not written: a WriteError's reason.")
       .value("IO_ERROR", assets::WriteError::kIoError)
       .value("DUPLICATE_PATH", assets::WriteError::kDuplicatePath)
@@ -80,11 +81,17 @@ void BindEnums(py::module_& module) {
       .value("CHARACTERS", assets::AssetType::kCharacters)
       .value("EYE", assets::AssetType::kEye)
       .value("CUE_SOUND", assets::AssetType::kCueSound)
-      .value("SKELETON", assets::AssetType::kSkeleton);
+      .value("SKELETON", assets::AssetType::kSkeleton)
+      .value("ANIMATION_SKELETON", assets::AssetType::kAnimationSkeleton)
+      .value("CLIP", assets::AssetType::kClip)
+      .value("STANCE_TRANSITIONS", assets::AssetType::kStanceTransitions);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
       .value("LIMB", assets::BodyPart::kLimb);
+  py::enum_<assets::Foot>(module, "Foot", "The foot a Foot contact lands (ADR-0062).")
+      .value("LEFT", assets::Foot::kLeft)
+      .value("RIGHT", assets::Foot::kRight);
 }
 
 void BindConstants(py::module_& module) {
@@ -276,6 +283,41 @@ void BindEncodeFunctions(py::module_& module) {
       "encode_cue_sound_blob",
       [](const assets::CueSoundData& sound) { return BlobOrThrow(assets::EncodeCueSoundBlob(sound), "cue sound"); },
       py::arg("sound"), "A cue's sound: its gain and its variants' paths (ADR-0041).");
+  module.def(
+      "encode_animation_skeleton_blob",
+      [](const py::bytes& archive) {
+        return BlobOrThrow(assets::EncodeAnimationSkeletonBlob(BytesOf(archive)), "animation skeleton");
+      },
+      py::arg("archive"), "An animation-skeleton blob of an ozz-animation Skeleton archive (ADR-0066).");
+  module.def(
+      "encode_clip_blob",
+      [](float stride_length, const std::vector<std::pair<assets::Foot, float>>& foot_contacts,
+         const py::bytes& archive) {
+        assets::ClipData clip{.stride_length = stride_length, .archive = BytesOf(archive)};
+        for (const auto& [foot, ratio] : foot_contacts) {
+          clip.foot_contacts.push_back({.foot = foot, .ratio = ratio});
+        }
+        return BlobOrThrow(assets::EncodeClipBlob(clip), "clip");
+      },
+      py::arg("stride_length"), py::arg("foot_contacts"), py::arg("archive"),
+      "A clip blob (ADR-0066): its stride length in meters, its Foot contacts as (foot, ratio of its duration) in "
+      "time order, and its ozz-animation Animation archive.");
+  module.def(
+      "encode_stance_transitions_blob",
+      [](float standing_crouching, float standing_prone, float crouching_prone) {
+        return BlobOrThrow(assets::EncodeStanceTransitionsBlob({.standing_crouching = standing_crouching,
+                                                                .standing_prone = standing_prone,
+                                                                .crouching_prone = crouching_prone}),
+                           "stance transitions");
+      },
+      py::arg("standing_crouching"), py::arg("standing_prone"), py::arg("crouching_prone"),
+      "A stance-transitions blob (ADR-0066): each pair of stances' transition duration, in seconds, either way.");
+  module.def("character_animation_skeleton_path", &assets::CharacterAnimationSkeletonPath, py::arg("character"),
+             "The pack-relative path of the character's ozz-animation Skeleton, e.g. soldier/Character/Skeleton.ozz.");
+  module.def("character_clip_path", &assets::CharacterClipPath, py::arg("character"), py::arg("role"),
+             "The pack-relative path of the character's Clip of role, e.g. soldier/Character/Clips/standing/forward.");
+  module.def("character_stance_transitions_path", &assets::CharacterStanceTransitionsPath, py::arg("character"),
+             "The pack-relative path of the character's stance transitions, e.g. soldier/Character/Clips.");
   module.def("cue_sound_path", &assets::CueSoundPath, py::arg("cue"),
              "The pack-relative path of the cue named cue's sound, e.g. sounds/gunshot (ADR-0031).");
   module.def("cue_variant_path", &assets::CueVariantPath, py::arg("cue"), py::arg("variant"),

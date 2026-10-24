@@ -14,8 +14,9 @@ footsteps, and amends ADR-0031, ADR-0032, ADR-0038 and ADR-0041 to match.
   interpolated Authoritative State. No pose is evaluated for it, so it is the
   same for the local and remote players, and a Replay hears the same footsteps.
 - **Foot contacts are authored.** A locomotion clip names its Foot contacts in
-  `augusta:footContacts`: each one a time in the clip and the foot (left or
-  right) that lands. The cooker carries them into the clip and derives none.
+  `augusta:footContacts`, a token time-sampled at each one's time code with the
+  foot that lands, `left` or `right` (ADR-0040). The cooker carries them into
+  the clip, as ratios of it, and derives none.
 - **Stance and gait.** Walking, sprinting and crouching each step at a gain the
   scenario sets; prone steps not at all. A footstep is the first part of US-04's
   stealth.

@@ -16,6 +16,8 @@ tools that show one. It owns the pack's wire format.
   authored stages and links this module, through its native module, to write,
   hash and sign packs, and to read and verify them.
 - Building a map's collision from a pack: physics (`augusta/map.h`).
+- Reading the ozz-animation archives of a Character's Skeleton and Clips, which
+  a pack carries without reading: animation, through ozz-animation's runtime.
 - Playing the sounds a pack holds: audio.
 
 ## Decisions

@@ -434,4 +434,57 @@ std::optional<CueSoundData> DecodeCueSoundBlob(std::span<const std::byte> blob) 
   return sound;
 }
 
+// Animation-skeleton blob wire format: see EncodeAnimationSkeletonBlob. The
+// archive is ozz-animation's to read.
+std::optional<std::vector<std::byte>> DecodeAnimationSkeletonBlob(std::span<const std::byte> blob) {
+  if (blob.size() > kMaxArchiveBytes) {
+    return std::nullopt;
+  }
+  return std::vector<std::byte>(blob.begin(), blob.end());
+}
+
+// Clip blob wire format: see EncodeClipBlob.
+std::optional<ClipData> DecodeClipBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto stride_length = reader.ReadF32();
+  const auto count = reader.ReadU8();
+  if (!stride_length || !IsValidStrideLength(*stride_length) || !count) {
+    return std::nullopt;
+  }
+  ClipData clip{.stride_length = *stride_length};
+  clip.foot_contacts.reserve(*count);
+  for (std::uint8_t i = 0; i < *count; ++i) {
+    const auto foot = reader.ReadU8();
+    const auto ratio = reader.ReadF32();
+    if (!foot || *foot > static_cast<std::uint8_t>(Foot::kRight) || !ratio || !IsValidFootContactRatio(*ratio)) {
+      return std::nullopt;
+    }
+    clip.foot_contacts.push_back({.foot = static_cast<Foot>(*foot), .ratio = *ratio});
+  }
+  const auto archive = reader.ReadRest();
+  if (archive.size() > kMaxArchiveBytes) {
+    return std::nullopt;
+  }
+  clip.archive.assign(archive.begin(), archive.end());
+  return clip;
+}
+
+// Stance-transitions blob wire format: see EncodeStanceTransitionsBlob.
+std::optional<StanceTransitionsData> DecodeStanceTransitionsBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto standing_crouching = reader.ReadF32();
+  const auto standing_prone = reader.ReadF32();
+  const auto crouching_prone = reader.ReadF32();
+  if (!standing_crouching || !standing_prone || !crouching_prone || !reader.ReadRest().empty() ||
+      !IsValidTransitionDuration(*standing_crouching) || !IsValidTransitionDuration(*standing_prone) ||
+      !IsValidTransitionDuration(*crouching_prone)) {
+    return std::nullopt;
+  }
+  return StanceTransitionsData{
+      .standing_crouching = *standing_crouching,
+      .standing_prone = *standing_prone,
+      .crouching_prone = *crouching_prone,
+  };
+}
+
 }  // namespace augusta::assets
