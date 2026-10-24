@@ -1684,6 +1684,108 @@ TEST_F(AnimatedHitTest, AShotAtAWalkingPlayersLegHitsItWhereTheStrideHasIt) {
   EXPECT_EQ(passing_under[0].part, BodyPart::kLimb);
 }
 
+// The Aimer (clips_fixture.h), its Hitboxes on its Joints: a head on its Head
+// Joint and a torso up from its Pelvis, as the Walker's, and an arm 0.6 m down
+// its Arm. Standing upright, its torso is 1 m to 1.6 m up, its arm hangs from
+// 1.45 m, and its head is above 1.6 m.
+Character Aimer() {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kAimerHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kAimerPelvis;
+  CharacterHitbox arm = Box(BodyPart::kLimb, Vec3(-0.05F, -0.6F, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  arm.joint = fixture::kAimerArm;
+  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                   .hitboxes = {head, torso, arm},
+                   .skeleton = fixture::AimerSkeleton(),
+                   .clips = fixture::AimerClips()};
+}
+
+// HitTest's Alice and Bob, Bob playing the Aimer and facing -X, across Alice's
+// line of fire: as his Aim offset bends him ahead or back, or his ADS grip
+// raises his arm ahead, they move to Alice's left or right (ADR-0066).
+class AimedHitTest : public HitTest {
+ protected:
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Aimer());
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+  }
+
+  // Bob looks at pitch, in ADS if ads, from the next tick on.
+  void BobAims(float pitch, bool ads = false) {
+    bob_.pitch = pitch;
+    bob_.ads = ads;
+    Wait(1);
+  }
+
+  // The point along Bob's bent torso, along from his Pelvis, pelvis high,
+  // bent ahead by bend (back, if negative): ahead of him is -X.
+  static Vec3 AlongTorso(float pelvis, float bend, float along) {
+    return Vec3(-along * std::sin(bend), pelvis + (along * std::cos(bend)), 0.0F);
+  }
+};
+
+// Half a metre up his torso, bent 45 degrees ahead or back, the point is 0.35 m
+// ahead of or behind his upright torso, which is 0.1 m deep.
+// Requirements: US-11
+TEST_F(AimedHitTest, APlayerAimingDownIsHitWhereItsTorsoBendsAndAimingUpWhereItLeansBack) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 bent_ahead = AlongTorso(fixture::kPelvisStanding, fixture::kStandingAimBend, 0.5F);
+  const Vec3 leant_back = AlongTorso(fixture::kPelvisStanding, -fixture::kStandingAimBend, 0.5F);
+
+  const std::vector<Hit> level = ShootAt(bent_ahead);
+  BobAims(-augusta::command::kMaxLookPitch);
+  const std::vector<Hit> down = ShootAt(bent_ahead);
+  BobAims(augusta::command::kMaxLookPitch);
+  const std::vector<Hit> up = ShootAt(leant_back);
+
+  EXPECT_TRUE(level.empty());
+  ASSERT_EQ(down.size(), 1U);
+  EXPECT_EQ(down[0].part, BodyPart::kTorso);
+  ASSERT_EQ(up.size(), 1U);
+  EXPECT_EQ(up[0].part, BodyPart::kTorso);
+}
+
+// His ADS grip swings his arm up 90 degrees, straight ahead of his shoulder,
+// 1.45 m up: 0.45 m ahead of it, only the raised arm is there.
+// Requirements: US-11
+TEST_F(AimedHitTest, InADSAPlayersArmIsHitWhereTheGripRaisesIt) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 ahead_of_his_shoulder(-0.45F, fixture::kPelvisStanding + fixture::kAimerShoulderAbovePelvis, 0.0F);
+
+  const std::vector<Hit> hip = ShootAt(ahead_of_his_shoulder);
+  BobAims(0.0F, true);
+  const std::vector<Hit> ads = ShootAt(ahead_of_his_shoulder);
+
+  EXPECT_TRUE(hip.empty());
+  ASSERT_EQ(ads.size(), 1U);
+  EXPECT_EQ(ads[0].part, BodyPart::kLimb);
+}
+
+// Crouched, his Aim offset bends him 75 degrees ahead, where standing's would
+// bend him 45: 0.55 m up his torso, 0.53 m ahead and 0.74 m up, where his
+// standing bend would leave nothing.
+// Requirements: US-11
+TEST_F(AimedHitTest, ACrouchedPlayerAimingDownBendsByItsCrouchingAimOffset) {
+  namespace fixture = augusta::clips_fixture;
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+  BobAims(-augusta::command::kMaxLookPitch);
+
+  const std::vector<Hit> crouching_bend =
+      ShootAt(AlongTorso(fixture::kPelvisCrouching, fixture::kCrouchingAimBend, 0.55F));
+  const std::vector<Hit> standing_bend =
+      ShootAt(AlongTorso(fixture::kPelvisCrouching, fixture::kStandingAimBend, 0.55F));
+
+  ASSERT_EQ(crouching_bend.size(), 1U);
+  EXPECT_EQ(crouching_bend[0].part, BodyPart::kTorso);
+  EXPECT_TRUE(standing_bend.empty());
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);

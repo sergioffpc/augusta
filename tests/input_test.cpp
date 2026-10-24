@@ -242,10 +242,10 @@ TEST_F(InputTest, PitchStopsShortOfStraightUpAndStraightDown) {
   MoveMouse(0.0F, 0.0F);
   MoveMouse(0.0F, -100000.0F);
   const float up = input_.Sample().pitch;
-  EXPECT_FLOAT_EQ(up, augusta::input::kMaxLookPitch);
+  EXPECT_FLOAT_EQ(up, augusta::command::kMaxLookPitch);
   EXPECT_LT(up, std::numbers::pi_v<float> / 2);
   MoveMouse(0.0F, 200000.0F);
-  EXPECT_FLOAT_EQ(input_.Sample().pitch, -augusta::input::kMaxLookPitch);
+  EXPECT_FLOAT_EQ(input_.Sample().pitch, -augusta::command::kMaxLookPitch);
 }
 
 TEST_F(InputTest, YawWrapsSoTurningForeverStaysWithinOneTurn) {

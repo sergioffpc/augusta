@@ -13,7 +13,9 @@
 /// ozz-animation's sampling and blending: its stance's blend space at its
 /// velocity in its own space (augusta/locomotion.h), each Clip sampled where the
 /// Stride puts it between the Clip's two Foot contacts, so two blended Clips
-/// always land the same foot together. The root is where the body's position and
+/// always land the same foot together. On top, the stance's Aim offset bends the
+/// body by the view's pitch and its ADS grip raises the rifle, each an additive
+/// layer of its difference from the level aim. The root is where the body's position and
 /// yaw put it (hitbox::RootOf); how low the body is, is its stance's Clips'.
 ///
 /// A pure function of replicated state: the Poser holds ozz-animation's
@@ -30,6 +32,12 @@ struct PoseInput {
   physics::BodyState body{};
   /// Where it faces, in radians, as a Command's yaw (command::Command).
   float yaw = 0.0F;
+  /// Where its view looks up (+) or down (-), in radians, as a Command's pitch:
+  /// its stance's Aim offset bends the body by it, fully at
+  /// command::kMaxLookPitch either way.
+  float pitch = 0.0F;
+  /// Whether it aims down sights: its stance's ADS grip raises its arms.
+  bool ads = false;
 };
 
 /// Evaluates Hitbox poses from Clips. Move-only: it owns ozz-animation's

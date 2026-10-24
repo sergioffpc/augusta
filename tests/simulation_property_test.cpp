@@ -19,7 +19,6 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
-#include "augusta/input.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
@@ -106,7 +105,7 @@ rc::Gen<Command> RealCommand() {
   const auto yaw = rc::gen::map(rc::gen::inRange(-179'999, 180'001),
                                 [](int millidegrees) { return static_cast<float>(millidegrees) * kPi / 180'000.0F; });
   const auto pitch = rc::gen::map(rc::gen::inRange(-1000, 1001), [](int permille) {
-    return static_cast<float>(permille) * augusta::input::kMaxLookPitch / 1000.0F;
+    return static_cast<float>(permille) * augusta::command::kMaxLookPitch / 1000.0F;
   });
   const auto stance = rc::gen::element(Stance::kStanding, Stance::kCrouching, Stance::kProne);
   return rc::gen::apply(

@@ -407,7 +407,8 @@ struct World::Impl {
       animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
       return;
     }
-    poser.Pose(*clips.clips, skeleton.skeleton, animation::PoseInput{.body = body.state, .yaw = facing.yaw},
+    poser.Pose(*clips.clips, skeleton.skeleton,
+               animation::PoseInput{.body = body.state, .yaw = facing.yaw, .pitch = facing.pitch, .ads = facing.ads},
                posed.posed);
   }
 

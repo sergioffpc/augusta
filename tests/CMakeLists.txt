@@ -159,7 +159,6 @@ target_link_libraries(
     augusta_simulation
     augusta_prediction
     augusta_animation
-    augusta_input
     augusta_logging
     ozz::animation_offline
     rapidcheck_gtest

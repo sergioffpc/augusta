@@ -28,7 +28,8 @@
 // ozz-animation's offline libraries, so a test never depends on the shipped
 // Character's art: TestClips, a Skeleton of its root Joint alone and still
 // Clips, each locomotion Clip with the stride length and duration the test gives
-// it; and the Walker, whose Clips move its Joints, for a test of a pose.
+// it; the Walker, whose Clips move its Joints, for a test of a pose; and the
+// Aimer, whose Aim offset and ADS grip bend and raise it.
 namespace augusta::clips_fixture {
 
 // A still Clip duration seconds long, one track for the root Joint, which a
@@ -266,6 +267,133 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
   clips->stances[static_cast<std::size_t>(physics::Stance::kProne)] =
       WalkerStanceOf(kPelvisProne, kProneForward, kProneBackward, 0.0F, 0.0F, false);
   clips->air = WalkerClip(kPelvisStanding, 1.0F);
+  clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
+  return clips;
+}
+
+// The Aimer: a Character whose Aim offset bends it and whose ADS grip raises
+// its arm. Its Skeleton is a Pelvis above its Root, a Head above the Pelvis and
+// an Arm hanging from its shoulder, to the Pelvis's right and above it. Its
+// aim_down bends the Pelvis forward, its aim_up back, and its ads swings the Arm
+// up ahead of it; every other Clip holds it upright, its Arm down. Each stance
+// bends and raises it by its own angles, so a test can tell whose it took.
+inline constexpr float kAimerShoulderSide = 0.25F;
+inline constexpr float kAimerShoulderAbovePelvis = 0.45F;
+// How far each stance's aim_down bends the Pelvis forward and its aim_up back,
+// and how far its ads swings the Arm up ahead from hanging down, in radians.
+inline constexpr float kStandingAimBend = 0.7853982F;    // 45 degrees
+inline constexpr float kCrouchingAimBend = 1.3089969F;   // 75 degrees
+inline constexpr float kProneAimBend = 0.2617994F;       // 15 degrees
+inline constexpr float kStandingAdsRaise = 1.5707964F;   // 90 degrees
+inline constexpr float kCrouchingAdsRaise = 1.0471976F;  // 60 degrees
+inline constexpr float kProneAdsRaise = 0.5235988F;      // 30 degrees
+
+// The Aimer's Joints, in its assets::Skeleton's order, which is ozz-animation's
+// too.
+inline constexpr std::uint32_t kAimerRoot = 0;
+inline constexpr std::uint32_t kAimerPelvis = 1;
+inline constexpr std::uint32_t kAimerHead = 2;
+inline constexpr std::uint32_t kAimerArm = 3;
+
+// The Aimer's Skeleton, standing upright in its Rest pose, its Arm down.
+inline assets::Skeleton AimerSkeleton() {
+  const math::Quat none(1.0F, 0.0F, 0.0F, 0.0F);
+  const math::Vec3 unit(1.0F);
+  const math::Vec3 shoulder(kAimerShoulderSide, kAimerShoulderAbovePelvis, 0.0F);
+  const math::Mat4 pelvis = math::ToMat4(math::Vec3(0.0F, kPelvisStanding, 0.0F), none, unit);
+  return {
+      .joints = {{.name = "Root"},
+                 {.name = "Root/Pelvis", .parent = kAimerRoot, .translation = {0.0F, kPelvisStanding, 0.0F}},
+                 {.name = "Root/Pelvis/Head", .parent = kAimerPelvis, .translation = {0.0F, kHeadAbovePelvis, 0.0F}},
+                 {.name = "Root/Pelvis/Arm", .parent = kAimerPelvis, .translation = shoulder}},
+      .rest_transforms = {math::Mat4(1.0F), pelvis,
+                          pelvis * math::ToMat4(math::Vec3(0.0F, kHeadAbovePelvis, 0.0F), none, unit),
+                          pelvis * math::ToMat4(shoulder, none, unit)}};
+}
+
+// An Aimer Clip one second long, its Pelvis pelvis high and bent ahead by bend
+// radians (back, if negative), its Arm swung up ahead by raise. With a
+// stride_length, a still walk of it: its left foot lands at its start and its
+// right halfway.
+inline animation::Clip AimerClip(float pelvis, float bend = 0.0F, float raise = 0.0F, float stride_length = 0.0F) {
+  using ozz::math::Float3;
+  using ozz::math::Quaternion;
+  ozz::animation::offline::RawAnimation raw;
+  raw.duration = 1.0F;
+  // ozz-animation's order: Root, Pelvis, Head, Arm.
+  raw.tracks.resize(4);
+  raw.tracks[1].translations.push_back({.time = 0.0F, .value = Float3(0.0F, pelvis, 0.0F)});
+  // A turn about +X tips +Y back, to +Z, and swings -Y ahead, to -Z.
+  raw.tracks[1].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), -bend)});
+  raw.tracks[2].translations.push_back({.time = 0.0F, .value = Float3(0.0F, kHeadAbovePelvis, 0.0F)});
+  raw.tracks[3].translations.push_back(
+      {.time = 0.0F, .value = Float3(kAimerShoulderSide, kAimerShoulderAbovePelvis, 0.0F)});
+  raw.tracks[3].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), raise)});
+  auto built = ozz::animation::offline::AnimationBuilder()(raw);
+  EXPECT_TRUE(built);
+  animation::Clip clip{.animation = std::move(*built), .stride_length = stride_length, .foot_contacts = {}};
+  if (stride_length > 0.0F) {
+    clip.foot_contacts = {{.foot = assets::Foot::kLeft, .ratio = 0.0F}, {.foot = assets::Foot::kRight, .ratio = 0.5F}};
+  }
+  return clip;
+}
+
+// An Aimer stance's Clips, its Pelvis pelvis high: its Aim offset bends it by
+// bend, its ADS grip raises its Arm by raise, and its walks, of these stride
+// lengths, hold it upright.
+inline animation::StanceClips AimerStanceOf(float pelvis, float bend, float raise, float forward, float backward,
+                                            float left, float right, bool sides = true) {
+  animation::StanceClips clips;
+  clips.idle = AimerClip(pelvis);
+  clips.forward = AimerClip(pelvis, 0.0F, 0.0F, forward);
+  clips.backward = AimerClip(pelvis, 0.0F, 0.0F, backward);
+  clips.aim_down = AimerClip(pelvis, bend);
+  clips.aim_center = AimerClip(pelvis);
+  clips.aim_up = AimerClip(pelvis, -bend);
+  clips.ads = AimerClip(pelvis, 0.0F, raise);
+  if (sides) {
+    clips.left = AimerClip(pelvis, 0.0F, 0.0F, left);
+    clips.right = AimerClip(pelvis, 0.0F, 0.0F, right);
+  }
+  return clips;
+}
+
+// The Aimer's Clips, with TestClips' stride lengths.
+inline std::shared_ptr<const animation::CharacterClips> AimerClips() {
+  ozz::animation::offline::RawSkeleton raw;
+  raw.roots.resize(1);
+  auto& root = raw.roots[0];
+  root.name = "Root";
+  root.transform = ozz::math::Transform::identity();
+  root.children.resize(1);
+  auto& pelvis = root.children[0];
+  pelvis.name = "Root/Pelvis";
+  pelvis.transform = ozz::math::Transform::identity();
+  pelvis.transform.translation = ozz::math::Float3(0.0F, kPelvisStanding, 0.0F);
+  pelvis.children.resize(2);
+  pelvis.children[0].name = "Root/Pelvis/Head";
+  pelvis.children[0].transform = ozz::math::Transform::identity();
+  pelvis.children[0].transform.translation = ozz::math::Float3(0.0F, kHeadAbovePelvis, 0.0F);
+  pelvis.children[1].name = "Root/Pelvis/Arm";
+  pelvis.children[1].transform = ozz::math::Transform::identity();
+  pelvis.children[1].transform.translation = ozz::math::Float3(kAimerShoulderSide, kAimerShoulderAbovePelvis, 0.0F);
+  auto skeleton = ozz::animation::offline::SkeletonBuilder()(raw);
+  EXPECT_TRUE(skeleton);
+
+  auto clips = std::make_shared<animation::CharacterClips>();
+  clips->skeleton = std::move(*skeleton);
+  clips->joints = {kAimerRoot, kAimerPelvis, kAimerHead, kAimerArm};
+  animation::StanceClips standing = AimerStanceOf(kPelvisStanding, kStandingAimBend, kStandingAdsRaise,
+                                                  kStandingForward, kStandingBackward, kStandingLeft, kStandingRight);
+  standing.sprint = AimerClip(kPelvisStanding, 0.0F, 0.0F, kStandingSprint);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kStanding)] = std::move(standing);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kCrouching)] =
+      AimerStanceOf(kPelvisCrouching, kCrouchingAimBend, kCrouchingAdsRaise, kCrouchingForward, 1.2F, 1.3F, 1.3F);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kProne)] =
+      AimerStanceOf(kPelvisProne, kProneAimBend, kProneAdsRaise, kProneForward, kProneBackward, 0.0F, 0.0F, false);
+  clips->air = AimerClip(kPelvisStanding);
   clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
   return clips;
 }
