@@ -97,7 +97,7 @@ class ServerContentWithoutTest : public ::testing::Test {
   std::filesystem::path path_;
 };
 
-// Requirements: US-26 (spec #823)
+// Requirements: US-22
 TEST_F(ServerContentWithoutTest, ACharacterMissingAClipIsRefusedNamingTheCharacterAndTheClip) {
   const auto pack = Without(augusta::assets::CharacterClipPath("soldier", "crouching/left"));
 
