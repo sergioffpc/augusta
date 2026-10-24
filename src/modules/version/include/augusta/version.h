@@ -21,8 +21,8 @@ std::string_view EngineVersion();
 /// first line: what matches a Crash dump of this executable to its symbols
 /// (ADR-0055). On Windows its PDB's GUID, uppercase and hyphenated as WinDbg and
 /// dumpbin write it, and age: `pdb_guid=<guid> pdb_age=<n>`. On Linux its GNU
-/// build ID, lowercase hex: `build_id=<hex>`. A value the executable was linked
-/// without is `unknown`.
+/// build ID, lowercase hex: `build_id=<hex>`; on macOS its Mach-O UUID, in the
+/// same form. A value the executable was linked without is `unknown`.
 std::string DescribeBuild();
 
 }  // namespace augusta

@@ -27,7 +27,7 @@ dedicated server.
     - [Development Environment](#development-environment)
         - [Windows (client)](#windows-client)
         - [Linux (server and shared core, Ubuntu 26.04)](#linux-server-and-shared-core-ubuntu-2604)
-        - [macOS (server and shared core, through the dev container)](#macos-server-and-shared-core-through-the-dev-container)
+        - [macOS (client, server and shared core, Apple silicon)](#macos-client-server-and-shared-core-apple-silicon)
         - [Dev container or Codespaces (server and shared core)](#dev-container-or-codespaces-server-and-shared-core)
         - [Uninstall](#uninstall)
     - [Build and Run](#build-and-run)
@@ -174,20 +174,22 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffp
 
 It installs the dev container's toolchain on the host, through sudo.
 
-#### macOS (server and shared core, through the dev container)
+#### macOS (client, server and shared core, Apple silicon)
 
-With [Homebrew](https://brew.sh) installed:
+With the Command Line Tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh) installed:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
 ```
 
-Nothing builds natively: it installs git, Git LFS and Podman (unless Docker is
-already there), starts Podman's machine, and builds the dev container's image
-and the checkout's container. `scripts/dev-container.sh` opens a shell in it (or
-runs the command it's given), and the git hooks run their checks there. Run
-`scripts/dev-container.sh make configure PRESET=linux-debug` once so the
-`pre-push` hook can run clang-tidy.
+Everything builds natively, as on Linux: it installs LLVM 21 (CI's), CMake,
+Ninja, Mesa's Vulkan and the hooks' formatters and linters through Homebrew, and
+the tools Homebrew doesn't keep at CI's versions into `~/.local/bin`, without
+sudo; it puts that and GNU make on PATH in `~/.zprofile` (open a new terminal
+after it). `make` builds the `macos` preset, `make test PRESET=macos-debug` a
+Debug build; configure one once so the `pre-push` hook can run clang-tidy. Xcode
+is not needed.
 
 #### Dev container or Codespaces (server and shared core)
 
@@ -206,9 +208,10 @@ scripts/bootstrap.sh uninstall
 In Git Bash as Administrator on Windows. It removes what the bootstrap installed
 that was not there before, newest first (`uninstall toolchain` alone), and the
 checkout's readying (`uninstall checkout` alone): vcpkg's tool and binary cache,
-the git hooks and the submodules, and on macOS the dev containers. The
-repository's files and your work stay. A machine bootstrapped before the
-bootstrap kept a record of what it installed keeps what it installed then.
+the git hooks and the submodules, and on macOS an earlier bootstrap's dev
+containers. The repository's files and your work stay. A machine bootstrapped
+before the bootstrap kept a record of what it installed keeps what it installed
+then.
 
 ### Build and Run
 

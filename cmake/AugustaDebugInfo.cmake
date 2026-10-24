@@ -2,8 +2,13 @@
 # (ADR-0047): augustad's and augustac's, each published with its release. The
 # executable keeps its symbol table, which augustad's crash handler symbolizes
 # with, and a .gnu_debuglink naming the file. The build ID is what matches a
-# core dump to the executable and its debug info.
+# core dump to the executable and its debug info. On macOS, a development
+# build alone, nothing: lldb reads the debug info from the objects the linker
+# leaves it in.
 function(augusta_split_debug_info target)
+  if(APPLE)
+    return()
+  endif()
   target_link_options(${target} PRIVATE -Wl,--build-id=sha1)
   add_custom_command(
     TARGET ${target}

@@ -83,6 +83,7 @@ TEST(DeviceChoiceTest, ChoosesNothingFromNoDevices) {
 constexpr std::string_view kSwapchain = "VK_KHR_swapchain";
 constexpr std::string_view kDiagnosticsConfig = "VK_NV_device_diagnostics_config";
 constexpr std::string_view kDiagnosticCheckpoints = "VK_NV_device_diagnostic_checkpoints";
+constexpr std::string_view kPortabilitySubset = "VK_KHR_portability_subset";
 
 std::vector<std::string_view> Names(const std::vector<const char*>& extensions) {
   return {extensions.begin(), extensions.end()};
@@ -107,6 +108,14 @@ TEST(DeviceExtensionsTest, WithGpuCrashDumpsAsksForNoExtensionTheDeviceLacks) {
   const std::vector<std::string_view> available{kSwapchain};
 
   EXPECT_EQ(Names(DeviceExtensions(true, available)), std::vector<std::string_view>{kSwapchain});
+}
+
+// MoltenVK's device, on macOS: Vulkan requires the subset turned on wherever a
+// device has it.
+TEST(DeviceExtensionsTest, AsksForThePortabilitySubsetTheDeviceHas) {
+  const std::vector<std::string_view> available{kPortabilitySubset, kSwapchain};
+
+  EXPECT_EQ(Names(DeviceExtensions(false, available)), (std::vector<std::string_view>{kSwapchain, kPortabilitySubset}));
 }
 
 }  // namespace

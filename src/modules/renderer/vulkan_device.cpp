@@ -57,6 +57,13 @@ bool HasValidationLayer() {
   });
 }
 
+bool HasInstanceExtension(std::string_view name) {
+  return std::ranges::any_of(vk::enumerateInstanceExtensionProperties(),
+                             [name](const vk::ExtensionProperties& extension) {
+                               return std::string_view(extension.extensionName.data()) == name;
+                             });
+}
+
 // Whether the instance loads the validation layer, as validation asks, given
 // whether the loader finds it. Throws std::runtime_error if it is required and
 // not found.
@@ -319,7 +326,15 @@ void VulkanDevice::CreateInstance(const window::Window& window, Validation reque
                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
           .setPfnUserCallback(&VulkanDevice::OnValidationMessage)
           .setPUserData(this);
+  // MoltenVK, on macOS, is a portability driver, which the loader lists only
+  // to an instance that asks for them.
+  vk::InstanceCreateFlags flags;
+  if (HasInstanceExtension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+    instance_extensions_.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    flags |= vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+  }
   vk::InstanceCreateInfo info = vk::InstanceCreateInfo()
+                                    .setFlags(flags)
                                     .setPApplicationInfo(&application)
                                     .setPEnabledLayerNames(layers)
                                     .setPEnabledExtensionNames(instance_extensions_);

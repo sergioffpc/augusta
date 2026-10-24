@@ -5,8 +5,8 @@
 
 readonly ZERO_SHA=0000000000000000000000000000000000000000
 
-# Hands the push to Git LFS, unless this run is the checks alone: macOS runs
-# those in the dev container and LFS on the host, with the host's credentials.
+# Hands the push to Git LFS, unless this run is the checks alone (`make
+# prepush`).
 # Arguments:
 #   The pushed refs, then the hook's own arguments.
 lfs_pre_push() {
@@ -27,26 +27,20 @@ main() {
     }
   fi
 
-  # macOS has none of the linters nor a build: the checks run in the dev
-  # container, against its debug build's compile commands.
-  if [[ "$(uname -s)" = Darwin ]]; then
-    printf '%s\n' "${push_refs}" \
-      | scripts/dev-container.sh env PRE_PUSH_CHECKS_ONLY=1 \
-        PRE_PUSH_WORKTREE="${PRE_PUSH_WORKTREE:-}" \
-        .githooks/pre-push "$@" || exit $?
-    lfs_pre_push "${push_refs}" "$@"
-    exit $?
-  fi
-
   # The debug build's compile commands, or the release build's in a checkout
-  # that only ran `make test`, so the push needs no second build.
-  local preset
+  # that only ran `make test`, so the push needs no second build. Each preset's
+  # build directory is the Makefile's BUILD_DIR.
+  local preset arch=x64
   case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*) preset=windows-debug ;;
+    Darwin)
+      preset=macos-debug
+      arch=arm64
+      ;;
     *) preset=linux-debug ;;
   esac
-  if [[ ! -f "build/x64-${preset}/compile_commands.json" &&
-    -f "build/x64-${preset%-debug}/compile_commands.json" ]]; then
+  if [[ ! -f "build/${arch}-${preset}/compile_commands.json" &&
+    -f "build/${arch}-${preset%-debug}/compile_commands.json" ]]; then
     preset=${preset%-debug}
   fi
 

@@ -51,12 +51,14 @@ std::optional<std::size_t> ChooseDevice(std::span<const DeviceCandidate> candida
 constexpr const char* kSwapchainExtension = "VK_KHR_swapchain";
 constexpr const char* kDiagnosticsConfigExtension = "VK_NV_device_diagnostics_config";
 constexpr const char* kDiagnosticCheckpointsExtension = "VK_NV_device_diagnostic_checkpoints";
+constexpr const char* kPortabilitySubsetExtension = "VK_KHR_portability_subset";
 
 /// The device extensions that the Renderer turns on for a device that has
-/// available: the swapchain's, and, when gpu_crash_dumps says Aftermath is
-/// watching (vulkan_gpu_crash_dumps.h), whichever of the two extensions Aftermath
-/// reads the device has, diagnostics config and diagnostic checkpoints. Each
-/// is one of the names above.
+/// available: the swapchain's; the portability subset's, which Vulkan requires
+/// turned on wherever a device has it (MoltenVK's, on macOS); and, when
+/// gpu_crash_dumps says Aftermath is watching (vulkan_gpu_crash_dumps.h),
+/// whichever of the two extensions Aftermath reads the device has, diagnostics
+/// config and diagnostic checkpoints. Each is one of the names above.
 std::vector<const char*> DeviceExtensions(bool gpu_crash_dumps, std::span<const std::string_view> available);
 
 }  // namespace augusta::renderer

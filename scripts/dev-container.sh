@@ -1,9 +1,8 @@
 #!/bin/bash
 # Runs a command in this checkout's Linux dev container (docs/ENGINEERING.md,
 # Developer Environment): the environment of .devcontainer/, from a terminal,
-# for a host that builds nothing natively - macOS. The git hooks run their
-# checks through it there; git itself (identity, signing, credentials, LFS)
-# stays on the host.
+# for a Linux build on a host with its own (macOS builds natively). git itself
+# (identity, signing, credentials, LFS) stays on the host.
 #
 # One container per checkout, kept running between calls. The checkout is
 # mounted at the path it has on the host, not /workspaces/<name> as
