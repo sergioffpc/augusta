@@ -1,4 +1,4 @@
-#include "augusta/client_application.h"
+#include "client_application.h"
 
 #include <chrono>
 #include <expected>
@@ -15,13 +15,13 @@
 
 #include "augusta/application.h"
 #include "augusta/assets.h"
-#include "augusta/client.h"
 #include "augusta/client_config.h"
-#include "augusta/client_phases.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
+#include "client.h"
+#include "client_phases.h"
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/physics.h"
 #endif

@@ -22,7 +22,7 @@ the Run ID before the process ends.
 - Installing it first thing, with the executable's subsystem and, where it has
   them, its Run ID, log file, minidump file and core's location: each
   executable's entry point. The minidump's name is the client's
-  (`augusta/run_files.h`).
+  (`src/client/run_files.h`).
 - Every other log line: logging, whose sink the handler writes past.
 - Where the core goes and the debug info that reads it: the node's or the
   player's `systemd-coredump` and the build (ADR-0047, ADR-0055).

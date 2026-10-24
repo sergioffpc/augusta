@@ -13,7 +13,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
-#include "augusta/run_files.h"
+#include "run_files.h"
 
 // The files a Run of augustac leaves beside its executable (GLOSSARY.md, ADR-0027,
 // ADR-0055): their names from the Run ID, the last Runs kept, and how the

@@ -1,4 +1,4 @@
-#include "augusta/server_application.h"
+#include "server_application.h"
 
 #include <cstdint>
 #include <expected>
@@ -23,8 +23,8 @@
 #include "augusta/logging.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
-#include "augusta/server.h"
 #include "augusta/server_config.h"
+#include "server.h"
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/physics.h"
 #endif

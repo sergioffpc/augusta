@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "augusta/agent.h"
+#include "agent.h"
 #include "augusta/netcode_stats.h"
 
 /// \file

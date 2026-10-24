@@ -10,10 +10,10 @@
 #include <boost/uuid/uuid.hpp>
 
 #include "augusta/assets.h"
-#include "augusta/client_content.h"
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
+#include "client_content.h"
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/client_config.h"
 #endif

@@ -8,10 +8,10 @@
 #include "augusta/config.h"
 #include "augusta/crash.h"
 #include "augusta/logging.h"
-#include "augusta/server.h"
-#include "augusta/server_application.h"
 #include "augusta/server_config.h"
 #include "augusta/version.h"
+#include "server.h"
+#include "server_application.h"
 
 namespace {
 

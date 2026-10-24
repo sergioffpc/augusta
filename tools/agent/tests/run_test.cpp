@@ -8,8 +8,8 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <gtest/gtest.h>
 
-#include "augusta/agent.h"
-#include "augusta/agent_report.h"
+#include "agent.h"
+#include "agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
