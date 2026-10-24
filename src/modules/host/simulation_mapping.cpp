@@ -1,6 +1,7 @@
 #include "augusta/simulation_mapping.h"
 
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <string>
 #include <unordered_map>
@@ -28,8 +29,13 @@ EntityId FromSimulation(simulation::EntityId entity) {
   return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
 }
 
-hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
-  auto converted = hitbox::FromPack(hitbox);
+namespace {
+
+// converted unwrapped: a Hitbox of the character at path as hitbox::FromPack
+// converts it, or, at startup, the failure naming that character thrown if it
+// was refused (ADR-0033).
+hitbox::CharacterHitbox UnwrapHitboxOrThrow(
+    std::expected<hitbox::CharacterHitbox, physics::CollisionMeshError> converted, const std::string& path) {
   if (!converted) {
     throw failure::ClassifiedFailure(failure::Failure{
         .code = failure::Code::kInvalidContent,
@@ -39,14 +45,24 @@ hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std
   return *std::move(converted);
 }
 
+}  // namespace
+
+hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
+  return UnwrapHitboxOrThrow(hitbox::FromPack(hitbox), path);
+}
+
+hitbox::CharacterHitbox ToSimulation(const assets::JointHitbox& hitbox, const std::string& path) {
+  return UnwrapHitboxOrThrow(hitbox::FromPack(hitbox), path);
+}
+
 std::unordered_map<std::string, simulation::Character> ToSimulation(
     const std::vector<scenario::Character>& characters) {
   std::unordered_map<std::string, simulation::Character> result;
   result.reserve(characters.size());
   for (const scenario::Character& character : characters) {
-    simulation::Character converted{.eye = character.eye, .hitboxes = {}};
+    simulation::Character converted{.eye = character.eye, .hitboxes = {}, .skeleton = character.skeleton};
     converted.hitboxes.reserve(character.hitboxes.size());
-    for (const assets::HitboxData& hitbox : character.hitboxes) {
+    for (const assets::JointHitbox& hitbox : character.hitboxes) {
       converted.hitboxes.push_back(ToSimulation(hitbox, character.path));
     }
     result.emplace(character.path, std::move(converted));

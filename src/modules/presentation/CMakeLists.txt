@@ -1,11 +1,9 @@
-# The client's PresentationWorld and its phases (ADR-0024), the animation
-# engine behind its Animation phase among them, turning interpolated
-# movement and weapon state into what the client shows and plays
-# (see presentation.h and animation.h).
+# The client's PresentationWorld and its phases (ADR-0024), turning
+# interpolated movement and weapon state into what the client shows and
+# plays (see presentation.h).
 add_library(
   augusta_presentation
   STATIC
-  animation.cpp
   audio_cues.cpp
   correction.cpp
   effects.cpp

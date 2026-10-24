@@ -15,6 +15,8 @@
 
 #include <flecs.h>
 
+#include "augusta/animation.h"
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -40,13 +42,14 @@ namespace {
 // not by its enum value (Phase isn't contiguous-from-zero by design, see
 // simulation.h), so PhaseIndex below is the single place that mapping is
 // spelled out.
-constexpr std::size_t kPhaseCount = 8;
+constexpr std::size_t kPhaseCount = 9;
 using PhaseEntities = std::array<flecs::entity, kPhaseCount>;
 
 enum PhaseIndex : std::size_t {
   kCommandIngestion = 0,
   kMovement,
   kWeaponHandling,
+  kPosing,
   kBallistics,
   kHitDetection,
   kDamage,
@@ -79,15 +82,27 @@ struct Health {
   float value = 0.0F;
 };
 
-// A player's character's hitboxes, as authored: standing, in its root space.
+// A player's character's hitboxes, each in the space of its Joint.
 struct Hitboxes {
-  std::vector<hitbox::CharacterHitbox> standing;
-  // How far from its root they reach, posed in any stance: a bullet that
-  // passes farther from where a pose puts its root crosses none of them.
-  float reach = 0.0F;
+  std::vector<hitbox::CharacterHitbox> bound;
+  // How far from its root they reach in each stance: a bullet that passes
+  // farther from where a pose puts its root crosses none of them.
+  Reach reach;
 };
 
-// A player's Hitbox history: where the State of each of its recent ticks put it.
+// A player's character's Skeleton, which its hitboxes are bound to.
+struct CharacterSkeleton {
+  assets::Skeleton skeleton;
+};
+
+// A player's Hitbox pose as Posing evaluated it this tick: its root, and each
+// Joint relative to its parent and as its world transform, index for index with
+// its Skeleton's Joints.
+struct PosedJoints {
+  animation::SkeletonPose posed;
+};
+
+// A player's Hitbox history: its Joints as Commit recorded each of its recent ticks.
 struct HitboxHistory {
   PoseHistory poses;
 };
@@ -217,9 +232,12 @@ struct World::Impl {
   std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
   // judges it to be.
-  flecs::query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory> targets;
+  flecs::query<const Player, const Body, const Hitboxes, const PosedJoints, const HitboxHistory> targets;
   // Their hitboxes, posed for the tick's bullets. Cleared each tick.
   HitboxPosing posing;
+  // A target's Joints as the Hitbox history has them where a bullet judges it.
+  // Kept between calls for its storage only.
+  std::vector<math::Mat4> judged_joints;
   // The players the tick's bullets struck, for Damage. Kept between ticks for
   // its storage only.
   std::vector<PlayerHit> player_hits;
@@ -236,12 +254,12 @@ struct World::Impl {
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
         policy_bridge(std::move(game_policy)),
-        targets(ecs.query<const Player, const Body, const Facing, const Hitboxes, const HitboxHistory>()) {
+        targets(ecs.query<const Player, const Body, const Hitboxes, const PosedJoints, const HitboxHistory>()) {
     ChainPhases();
     RegisterSystems();
   }
 
-  // Chains the eight phases in Phase's declared order (ADR-0023): each
+  // Chains the nine phases in Phase's declared order (ADR-0023): each
   // depends_on the previous one, and the first depends on Flecs's
   // built-in OnUpdate phase, so a single ecs.progress() call runs them
   // in exactly this sequence - the built-in phases around OnUpdate
@@ -250,7 +268,8 @@ struct World::Impl {
     phases[kCommandIngestion] = ecs.entity("CommandIngestion").add(flecs::Phase).depends_on(flecs::OnUpdate);
     phases[kMovement] = ecs.entity("Movement").add(flecs::Phase).depends_on(phases[kCommandIngestion]);
     phases[kWeaponHandling] = ecs.entity("WeaponHandling").add(flecs::Phase).depends_on(phases[kMovement]);
-    phases[kBallistics] = ecs.entity("Ballistics").add(flecs::Phase).depends_on(phases[kWeaponHandling]);
+    phases[kPosing] = ecs.entity("Posing").add(flecs::Phase).depends_on(phases[kWeaponHandling]);
+    phases[kBallistics] = ecs.entity("Ballistics").add(flecs::Phase).depends_on(phases[kPosing]);
     phases[kHitDetection] = ecs.entity("HitDetection").add(flecs::Phase).depends_on(phases[kBallistics]);
     phases[kDamage] = ecs.entity("Damage").add(flecs::Phase).depends_on(phases[kHitDetection]);
     phases[kScriptsBehaviours] = ecs.entity("ScriptsBehaviours").add(flecs::Phase).depends_on(phases[kDamage]);
@@ -279,16 +298,18 @@ struct World::Impl {
         .write<Bullet>()
         .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
                      Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
+    ecs.system<const Body, const Facing, const CharacterSkeleton, PosedJoints>("PosingSystem")
+        .kind(phases[kPosing])
+        .each([](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
+          OnPosing(body, facing, skeleton, posed);
+        });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
           OnBallistics(it.delta_time(), it.entity(row), bullet);
         });
-    ecs.system<const Body, const Facing, HitboxHistory>("HitDetectionSystem")
-        .kind(phases[kHitDetection])
-        .each([this](const Body& body, const Facing& facing, HitboxHistory& history) {
-          OnHitDetection(body, facing, history);
-        });
+    // HitDetection registers no system: its test is folded into
+    // BallisticsSystem's Step call (Phase::kHitDetection).
     // Writes Body and Intent, so a player it kills is out of the State Commit
     // packages on the same tick.
     ecs.system<const Player, Health>("DamageSystem")
@@ -299,10 +320,14 @@ struct World::Impl {
     ecs.system("ScriptsBehavioursSystem").kind(phases[kScriptsBehaviours]).run([this](flecs::iter&) {
       OnScriptsBehaviours();
     });
-    ecs.system<const Player, const Body, const Facing, const Health, const Rifle>("CommitSystem")
+    ecs.system<const Player, const Body, const Facing, const Health, const Rifle, const PosedJoints, HitboxHistory>(
+           "CommitSystem")
         .kind(phases[kCommit])
         .each([this](const Player& player, const Body& body, const Facing& facing, const Health& health,
-                     const Rifle& rifle) { OnCommit(player, body, facing, health, rifle); });
+                     const Rifle& rifle, const PosedJoints& posed, HitboxHistory& history) {
+          PackageState(player, body, facing, health, rifle);
+          RecordHitboxHistory(posed, history);
+        });
   }
 
   // A player with no command this tick stops, and keeps the stance it asked
@@ -342,6 +367,11 @@ struct World::Impl {
     Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
   }
 
+  // Poses one player's Skeleton where Movement has just put its body.
+  static void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
+    animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
+  }
+
   // Announces shot in the tick's state and puts its bullet in flight, to be
   // judged against the players as they were delay ticks before each tick of it.
   void Fire(const Shot& shot, float delay) {
@@ -363,17 +393,22 @@ struct World::Impl {
   // The hitboxes of every player but bullet's shooter, which a bullet never
   // hits, each posed as it was bullet's Shooter's delay before this tick, of
   // those segment passes near enough to cross. A player with no tick behind it
-  // yet is judged where it is. Valid until the next call.
+  // yet is judged as Posing posed it this tick. Valid until the next call.
   std::span<const ballistics::Hitbox> HitboxesFor(const Bullet& bullet, const ballistics::Segment& segment) {
     const double time = static_cast<double>(tick) - static_cast<double>(bullet.shooters_delay);
     posing.BeginBullet(time, segment);
-    targets.each([&](const Player& player, const Body& body, const Facing& facing, const Hitboxes& hitboxes,
+    targets.each([&](const Player& player, const Body& body, const Hitboxes& hitboxes, const PosedJoints& posed,
                      const HitboxHistory& history) {
       if (player.entity == bullet.shooter) {
         return;
       }
-      posing.Consider(player.entity, hitboxes.standing, hitboxes.reach,
-                      history.poses.At(time).value_or(PoseOf(body, facing)));
+      const std::optional<hitbox::Pose> seen = history.poses.At(time, judged_joints);
+      if (!seen) {
+        posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.In(body.state.stance), posed.posed.root,
+                        posed.posed.world);
+        return;
+      }
+      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.In(seen->stance), *seen, judged_joints);
     });
     return posing.BulletHitboxes();
   }
@@ -466,14 +501,6 @@ struct World::Impl {
   }
 #endif
 
-  // Keeps one player's pose of this tick in its Hitbox history. The test
-  // itself is folded into OnBallistics's ballistics::World::Step call - see
-  // simulation.h's Phase::kHitDetection doc comment - which has run by now: a
-  // Shooter's delay is a tick or more, so no bullet of this tick needs it.
-  void OnHitDetection(const Body& body, const Facing& facing, HitboxHistory& history) const {
-    history.poses.Record(tick, PoseOf(body, facing));
-  }
-
   // Takes this tick's hits on one player off its health, in the order they struck.
   void OnDamage(const Player& player, Health& health) {
     for (const PlayerHit& hit : player_hits) {
@@ -547,11 +574,20 @@ struct World::Impl {
     return policy_bridge.AssignSpawns(view, spawn_points, tick);
   }
 
-  void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health,
-                const Rifle& rifle) {
+  // Commit, first: packages one living player into the tick's State.
+  void PackageState(const Player& player, const Body& body, const Facing& facing, const Health& health,
+                    const Rifle& rifle) {
     committed.bodies.push_back(EntityState{
         .entity = player.entity, .body = body.state, .yaw = facing.yaw, .health = health.value, .rifle = rifle.state});
     committed.alive.push_back(player.entity);
+  }
+
+  // Commit, then: keeps one living player's Joints as Posing posed them, where
+  // the State puts its body, in its Hitbox history. Every bullet of this tick
+  // has been judged by now, and a Shooter's delay is a tick or more, so none of
+  // them needs this tick's.
+  void RecordHitboxHistory(const PosedJoints& posed, HitboxHistory& history) const {
+    history.poses.Record(tick, posed.posed);
   }
 };
 
@@ -584,8 +620,10 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<Facing>({})
           .set<Health>({.value = impl.parameters.starting_health})
           .set<Eye>({.standing = character.eye})
-          .set<Hitboxes>({.standing = character.hitboxes, .reach = ReachOf(character.hitboxes)})
-          .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks)})
+          .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.skeleton, character.hitboxes)})
+          .set<CharacterSkeleton>({.skeleton = character.skeleton})
+          .set<PosedJoints>({})
+          .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks, character.skeleton, character.hitboxes)})
           .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
   impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }

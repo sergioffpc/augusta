@@ -25,6 +25,7 @@ from pxr import Usd
 from pxr import UsdGeom
 from pxr import UsdPhysics
 from pxr import UsdShade
+from pxr import UsdSkel
 
 from augusta_pack import _native
 from augusta_pack.sounds import CueSounds
@@ -55,6 +56,13 @@ CHARACTER_ROOT_PRIM = "Character"
 # where the local player's camera sits and its Shots leave from (ADR-0040):
 # client and server read it at <character name>/Character/Eye.
 CHARACTER_EYE_PRIM = "Eye"
+# The child of CHARACTER_ROOT_PRIM every character stage has: its UsdSkel
+# Skeleton (ADR-0061), which client and server read at <character
+# name>/Character/Skeleton.
+CHARACTER_SKELETON_PRIM = "Skeleton"
+# How far a root joint's transform may be from the character's root and still
+# be at it: float noise in an authored matrix, not a misplaced skeleton.
+_ROOT_TOLERANCE = 1e-6
 # augusta:textureFormat: selects which BC format a UsdUVTexture prim's KTX2
 # holds (ADR-0017): "bc7", "bc5" or "bc4". The native module cooks any other
 # value, or none, as "bc7".
@@ -655,9 +663,11 @@ def _build_node(
         # kMesh. A guide-purpose prim that is neither is a DCC-only helper
         # and contributes nothing.
         if is_hitbox:
+            # A map's hitbox moves with no Skeleton, so it names no joint.
             blob = _native.encode_hitbox_blob(
                 _native.HitboxData(
                     part=_read_body_part(prim, prim_path),
+                    joint="",
                     mesh=_mesh_of(geometry),
                 )
             )
@@ -723,8 +733,9 @@ def _maybe_cook_texture_prim(
 
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
-# geometry, hitboxes, spawn points and character eyes (the server fires each
-# Shot from its shooter's eye, ADR-0040). Mesh/texture/scene are client-only
+# geometry, hitboxes, spawn points, character eyes (the server fires each
+# Shot from its shooter's eye, ADR-0040) and character skeletons (the same
+# joints on either side, ADR-0061). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
@@ -733,6 +744,7 @@ _SERVER_PACK_ASSET_TYPES = frozenset(
         _native.AssetType.HITBOX,
         _native.AssetType.SPAWN_POINT,
         _native.AssetType.EYE,
+        _native.AssetType.SKELETON,
     }
 )
 
@@ -756,37 +768,261 @@ def _transform_geometry(geometry: _Geometry, matrix: Gf.Matrix4d) -> _Geometry:
     )
 
 
+@dataclass(frozen=True)
+class _Skeleton:
+    """A character's Skeleton as cooked (ADR-0061), and its rest pose."""
+
+    # The prim's path in the pack.
+    path: str
+    # Parents before children, as the pack carries them.
+    joints: list[_native.JointData]
+    # Each joint's rest transform in the character's root space, by name, as
+    # authored: before the stage's up-axis/metersPerUnit correction.
+    rest_to_root: dict[str, Gf.Matrix4d]
+
+
+@dataclass(frozen=True)
+class _OpenedCharacter:
+    """A character stage opened and checked, before its prims are cooked."""
+
+    # Its name in the manifest, which its blobs are addressed under.
+    name: str
+    stage_path: Path
+    # Its stage's up-axis/metersPerUnit correction.
+    correction: Gf.Matrix4d
+    # Pre-order, as cook_scenario walks a map's.
+    prims: list[Usd.Prim]
+    eye_path: Sdf.Path
+    skeleton: _Skeleton
+
+
+def _is_at_root(matrix: Gf.Matrix4d) -> bool:
+    identity = Gf.Matrix4d(1.0)
+    return all(
+        abs(matrix[row][column] - identity[row][column]) <= _ROOT_TOLERANCE
+        for row in range(4)
+        for column in range(4)
+    )
+
+
+def _skeleton_prim(
+    character_name: str, default_prim: Usd.Prim, stage_path: Path
+) -> UsdSkel.Skeleton:
+    """The UsdSkel Skeleton at the Character prim's Skeleton child.
+
+    Raises CookError for a character with none: a Skeleton is mandatory
+    (ADR-0061).
+    """
+    character_path = f"{character_name}/{CHARACTER_ROOT_PRIM}"
+    prim = default_prim.GetChild(CHARACTER_SKELETON_PRIM)
+    if not prim or not prim.IsA(UsdSkel.Skeleton):
+        raise CookError(
+            "character_skeleton_missing",
+            character_path,
+            f"{stage_path}: character {character_name!r} needs a UsdSkel "
+            f"Skeleton prim, {CHARACTER_SKELETON_PRIM!r}, under its "
+            f"{CHARACTER_ROOT_PRIM!r} prim",
+        )
+    return UsdSkel.Skeleton(prim)
+
+
+def _check_joint_count(names: list[str], path: str) -> None:
+    """Raises CookError if names are more joints than a pack carries."""
+    if len(names) > _native.MAX_JOINTS:
+        raise CookError(
+            "skeleton_too_many_joints",
+            path,
+            f"has {len(names)} joints, and a pack carries at most "
+            f"{_native.MAX_JOINTS}",
+        )
+
+
+def _joint_parents(
+    names: list[str], rests: Sequence[Gf.Matrix4d], path: str
+) -> list[int]:
+    """Each joint's parent index, negative for a root, in names' order.
+
+    Raises CookError unless names are a topology UsdSkel can pose, each joint
+    named once and with a rest transform.
+    """
+    topology = UsdSkel.Topology(names)
+    valid, reason = topology.Validate()
+    if not valid or len(set(names)) != len(names) or len(rests) != len(names):
+        raise CookError(
+            "skeleton_invalid",
+            path,
+            reason
+            or "needs a rest transform for each of its joints, each joint "
+            "named once",
+        )
+    return list(topology.GetParentIndices())
+
+
+def _check_root_placement(name: str, local: Gf.Matrix4d, path: str) -> None:
+    """Raises CookError unless root joint name, at local, is at the root.
+
+    The character's root is its feet, facing -Z, with no turn or scale.
+    """
+    if not _is_at_root(local):
+        raise CookError(
+            "skeleton_root_off_origin",
+            path,
+            f"root joint {name!r} must sit at the character's root, "
+            "its feet, facing -Z, with no turn or scale",
+        )
+
+
+def _decompose_joints(
+    names: list[str],
+    rests: Sequence[Gf.Matrix4d],
+    parents: list[int],
+    skeleton_to_root: Gf.Matrix4d,
+    correction: Gf.Matrix4d,
+    path: str,
+) -> tuple[list[_native.JointData], dict[str, Gf.Matrix4d]]:
+    """Each joint as the pack carries it, and its rest transform by name.
+
+    A joint's transform is relative to its parent, or to the character's root
+    for a root joint, corrected like the rest of the character; its rest
+    transform in the character's root space is left uncorrected, as authored.
+    """
+    inverse_correction = correction.GetInverse()
+    joints = []
+    rest_to_root: dict[str, Gf.Matrix4d] = {}
+    for name, rest, parent in zip(names, rests, parents, strict=True):
+        local = Gf.Matrix4d(rest)
+        if parent < 0:
+            local = local * skeleton_to_root
+            _check_root_placement(name, local, path)
+            rest_to_root[name] = local
+        else:
+            rest_to_root[name] = local * rest_to_root[names[parent]]
+        translation, rotation, scale = _decompose(
+            inverse_correction * local * correction
+        )
+        joints.append(
+            _native.JointData(
+                name=name,
+                parent=_native.JOINT_NO_PARENT if parent < 0 else parent,
+                translation=translation,
+                rotation=rotation,
+                scale=scale,
+            )
+        )
+    return joints, rest_to_root
+
+
+def _read_skeleton(
+    character_name: str,
+    default_prim: Usd.Prim,
+    stage_path: Path,
+    correction: Gf.Matrix4d,
+) -> _Skeleton:
+    """The UsdSkel Skeleton at the Character prim's Skeleton child.
+
+    Each joint is named by its path within the Skeleton and carries its rest
+    transform relative to its parent, corrected like the rest of the
+    character, so client and server compose its rest pose from its joints
+    alone. Raises CookError for a character with no Skeleton, one with more
+    joints than the pack allows, one UsdSkel could not pose, and one whose
+    root joints are not at the character's root: its feet, facing -Z.
+    """
+    path = f"{character_name}/{CHARACTER_ROOT_PRIM}/{CHARACTER_SKELETON_PRIM}"
+    skeleton = _skeleton_prim(character_name, default_prim, stage_path)
+    names = [str(name) for name in skeleton.GetJointsAttr().Get() or []]
+    _check_joint_count(names, path)
+    rests = skeleton.GetRestTransformsAttr().Get() or []
+    parents = _joint_parents(names, rests, path)
+    skeleton_to_root = UsdGeom.Xformable(
+        skeleton.GetPrim()
+    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    joints, rest_to_root = _decompose_joints(
+        names, rests, parents, skeleton_to_root, correction, path
+    )
+    return _Skeleton(path=path, joints=joints, rest_to_root=rest_to_root)
+
+
+def _read_hitbox_joint(
+    prim: Usd.Prim, prim_path: str, skeleton: _Skeleton
+) -> str:
+    """The name of the joint a character's hitbox prim is authored under.
+
+    A hitbox is bound rigidly to one joint as UsdSkel binds any prim: a
+    constant primvars:skel:jointIndices of one index, into the prim's
+    skel:joints if it has them, else into its Skeleton's joints.
+    """
+    binding = UsdSkel.BindingAPI(prim)
+    primvar = binding.GetJointIndicesPrimvar()
+    indices = primvar.Get() if primvar and primvar.HasValue() else None
+    order = binding.GetJointsAttr().Get() if binding.GetJointsAttr() else None
+    if order is None:
+        order = [joint.name for joint in skeleton.joints]
+    if (
+        indices is None
+        or len(indices) != 1
+        or primvar.GetInterpolation() != UsdGeom.Tokens.constant
+        or not 0 <= indices[0] < len(order)
+    ):
+        raise CookError(
+            "hitbox_joint_missing",
+            prim_path,
+            "a hitbox must be authored under the joint it moves with: bound "
+            "rigidly to one, by a constant primvars:skel:jointIndices of one "
+            "index into skel:joints",
+        )
+    joint = str(order[indices[0]])
+    if joint not in skeleton.rest_to_root:
+        raise CookError(
+            "hitbox_joint_unknown",
+            prim_path,
+            f"names joint {joint!r}, which {skeleton.path} does not have",
+        )
+    return joint
+
+
 def _cook_character_prim(
     prim: Usd.Prim,
     prim_path: str,
-    matrix: Gf.Matrix4d,
+    local_to_root: Gf.Matrix4d,
+    correction: Gf.Matrix4d,
+    skeleton: _Skeleton,
     entries: list[_native.AssetEntry],
 ) -> _native.BodyPart | None:
     """The geometry half of _build_node's classification (mesh vs.
 
     Collision vs. hitbox - ADR-0040/ADR-0041), for one prim of a character
-    stage: appends at most one AssetEntry, its points already transformed into
-    the character's own root space by matrix. Builds no SceneNode - see
-    _transform_geometry. Returns the body part if the prim is a hitbox.
+    stage: appends at most one AssetEntry, its points transformed by
+    local_to_root then the stage's correction into the character's own root
+    space, or for a hitbox into its joint's (ADR-0061). Builds no SceneNode -
+    see _transform_geometry. Returns the body part if the prim is a hitbox.
     """
     geometry = _read_raw_geometry(prim, prim_path)
     if geometry is None:
         return None
-    transformed = _transform_geometry(geometry, matrix)
     if _read_bool_attr(prim, _HITBOX_ATTR):
         body_part = _read_body_part(prim, prim_path)
+        joint = _read_hitbox_joint(prim, prim_path, skeleton)
+        # Into the joint's rest space, then corrected as its joint is, so
+        # the joint's corrected transform places it back where authored.
+        in_joint = _transform_geometry(
+            geometry,
+            local_to_root
+            * skeleton.rest_to_root[joint].GetInverse()
+            * correction,
+        )
         entries.append(
             _native.AssetEntry(
                 type=_native.AssetType.HITBOX,
                 path=prim_path,
                 data=_native.encode_hitbox_blob(
                     _native.HitboxData(
-                        part=body_part, mesh=_mesh_of(transformed)
+                        part=body_part, joint=joint, mesh=_mesh_of(in_joint)
                     )
                 ),
             )
         )
         return body_part
+    transformed = _transform_geometry(geometry, local_to_root * correction)
     if _has_collision_enabled(prim):
         entries.append(
             _native.AssetEntry(
@@ -955,23 +1191,29 @@ def cook_scenario(
                 f"{stage_path}: a character's {CHARACTER_ROOT_PRIM!r} prim "
                 f"must have an {CHARACTER_EYE_PRIM!r} child",
             )
+        # Every Hitbox moves with a joint of it (ADR-0061).
+        character_correction = _stage_correction_matrix(character_stage)
+        skeleton = _read_skeleton(
+            character_name, default_prim, stage_path, character_correction
+        )
         character_prims = list(
             character_stage.Traverse(
                 Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)
             )
         )
         opened_characters.append(
-            (
-                character_name,
-                stage_path,
-                character_stage,
-                character_prims,
-                eye_prim.GetPath(),
+            _OpenedCharacter(
+                name=character_name,
+                stage_path=stage_path,
+                correction=character_correction,
+                prims=character_prims,
+                eye_path=eye_prim.GetPath(),
+                skeleton=skeleton,
             )
         )
 
     total_prims = len(map_prims) + sum(
-        len(prims) for _, _, _, prims, _ in opened_characters
+        len(character.prims) for character in opened_characters
     )
     done = 0
 
@@ -991,18 +1233,11 @@ def cook_scenario(
         if on_prim is not None:
             on_prim(done, total_prims, prim_path)
 
-    for (
-        character_name,
-        stage_path,
-        character_stage,
-        character_prims,
-        eye_path,
-    ) in opened_characters:
-        character_correction = _stage_correction_matrix(character_stage)
+    for character in opened_characters:
         body_parts: set[_native.BodyPart] = set()
-        for prim in character_prims:
+        for prim in character.prims:
             prim_path = (
-                f"{character_name}/{_sanitize_prim_path(str(prim.GetPath()))}"
+                f"{character.name}/{_sanitize_prim_path(str(prim.GetPath()))}"
             )
             xformable = UsdGeom.Xformable(prim)
             local_to_root = (
@@ -1010,8 +1245,8 @@ def cook_scenario(
                 if xformable
                 else Gf.Matrix4d(1.0)
             )
-            if prim.GetPath() == eye_path:
-                eye = (local_to_root * character_correction).Transform(
+            if prim.GetPath() == character.eye_path:
+                eye = (local_to_root * character.correction).Transform(
                     Gf.Vec3d(0.0, 0.0, 0.0)
                 )
                 entries.append(
@@ -1023,12 +1258,29 @@ def cook_scenario(
                         ),
                     )
                 )
+            if prim_path == character.skeleton.path:
+                entries.append(
+                    _native.AssetEntry(
+                        type=_native.AssetType.SKELETON,
+                        path=prim_path,
+                        data=_native.encode_skeleton_blob(
+                            character.skeleton.joints
+                        ),
+                    )
+                )
             body_part = _cook_character_prim(
-                prim, prim_path, local_to_root * character_correction, entries
+                prim,
+                prim_path,
+                local_to_root,
+                character.correction,
+                character.skeleton,
+                entries,
             )
             if body_part is not None:
                 body_parts.add(body_part)
-            _maybe_cook_texture_prim(prim, prim_path, stage_path, entries)
+            _maybe_cook_texture_prim(
+                prim, prim_path, character.stage_path, entries
+            )
             done += 1
             if on_prim is not None:
                 on_prim(done, total_prims, prim_path)
@@ -1043,8 +1295,8 @@ def cook_scenario(
             raise CookError(
                 "character_hitbox_missing",
                 "",
-                f"{stage_path}: a character needs a hitbox for each body part, "
-                f"and has none for {', '.join(missing)}",
+                f"{character.stage_path}: a character needs a hitbox for each "
+                f"body part, and has none for {', '.join(missing)}",
             )
 
     mesh_count = sum(

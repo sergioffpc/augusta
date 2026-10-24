@@ -42,8 +42,8 @@ spec:
     # (scripts/check-pack-formats.py).
     servers:
       firebase:
-        packVersion: "959b1eb67137"
-        packFormat: 3
+        packVersion: "de3a1d7f8477"
+        packFormat: 4
         # Pinned so this server has a stable address for LAN clients.
         nodePort: 30800
     # develop's release ships the dashboards (charts/augustad values.yaml).

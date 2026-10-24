@@ -58,15 +58,16 @@ using augusta::session_test::TestSessionConfig;
 using augusta::session_test::WithPlayerCount;
 using augusta::session_test::WorldWithFloorAt;
 
-// A hitbox of part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
+// A hitbox of part on RootSkeleton's Joint: the box from low to high, as the
+// twelve triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return augusta::session_test::OnRoot(augusta::assets::HitboxData{
       .part = part,
       .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
                           Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
                           Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
                .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}});
 }
 
 // A match of two standing 10 m apart down -Z on a floor, a view of yaw 0
@@ -103,6 +104,7 @@ class ShotJudgementMatchTest : public ::testing::Test {
                     .characters = {{.path = kCharacter,
                                     .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F),
                                                            Vec3(0.2F, 1.8F, 0.1F))},
+                                    .skeleton = augusta::session_test::RootSkeleton(),
                                     .eye = Vec3(0.0F, kEyeHeight, 0.0F)}}};
   }
 

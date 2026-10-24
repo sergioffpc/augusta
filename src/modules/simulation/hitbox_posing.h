@@ -1,6 +1,8 @@
 #ifndef AUGUSTA_SIMULATION_HITBOX_POSING_H_
 #define AUGUSTA_SIMULATION_HITBOX_POSING_H_
 
+#include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -9,9 +11,11 @@
 #include <utility>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/hitbox.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/simulation.h"
 
@@ -29,10 +33,29 @@ namespace augusta::simulation {
 /// Surface, reserved for it, so a strike on it is never read as anything else.
 inline constexpr physics::SurfaceId kMapSurface{0};
 
-/// How far from its root a character's hitboxes reach, posed in any stance: a
-/// bullet that passes farther from where a pose puts its root crosses none of
-/// them.
-[[nodiscard]] float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes);
+/// How far from its root a character's hitboxes reach in each stance, posed in
+/// the Rest pose (ADR-0061): a bullet that passes farther from where a pose puts
+/// its root crosses none of them. Measured once, when the character is added.
+class Reach {
+ public:
+  /// How far hitboxes, each in the space of its Joint of skeleton, reach in the
+  /// Rest pose in each stance, plus a margin.
+  Reach(const assets::Skeleton& skeleton, std::span<const hitbox::CharacterHitbox> hitboxes);
+  /// Reaching nowhere: what a character with no hitboxes, which cannot be hit,
+  /// would reach, but for the margin.
+  Reach() = default;
+
+  /// How far they reach in stance: as far as the root lowers them with it.
+  [[nodiscard]] float In(physics::Stance stance) const {
+    const auto index = static_cast<std::size_t>(stance);
+    assert(index < by_stance_.size());
+    return by_stance_[index];
+  }
+
+ private:
+  // Index for index with physics::Stance's values.
+  std::array<float, physics::kStanceCount> by_stance_{};
+};
 
 /// A player a bullet is tested against, and the pose its hitboxes are placed by.
 struct PosedTarget {
@@ -60,11 +83,11 @@ class HitboxPosing {
   /// moment counted in ticks, along segment, its path this tick.
   void BeginBullet(double time, const ballistics::Segment& segment);
 
-  /// Adds target's hitboxes, as authored standing in its root space and
-  /// reaching reach from it, posed by pose, to the bullet's, if its segment
-  /// passes near enough to cross them.
-  void Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
-                const hitbox::Pose& pose);
+  /// Adds target's hitboxes, each in the space of its Joint and reaching reach
+  /// from its root at pose, placed by joints, each Joint's world transform at
+  /// pose, to the bullet's, if its segment passes near enough to cross them.
+  void Consider(EntityId target, std::span<const hitbox::CharacterHitbox> hitboxes, float reach,
+                const hitbox::Pose& pose, std::span<const math::Mat4> joints);
 
   /// The bullet's hitboxes, each with its Surface id. Valid until the next
   /// BeginBullet or Clear.

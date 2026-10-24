@@ -138,19 +138,47 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const Sp
   return blob;
 }
 
-// Eye blob wire format: position (3x f32), nothing else.
+// Hitbox blob wire format: the body part (u8), the Joint's name (u32 length,
+// then its bytes), then the geometry as a mesh blob.
 std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox) {
   auto mesh = EncodeMeshBlob(hitbox.mesh);
   if (!mesh) {
     return std::unexpected(mesh.error());
   }
   std::vector<std::byte> blob;
-  blob.reserve(1 + mesh->size());
-  blob.push_back(static_cast<std::byte>(hitbox.part));
-  blob.insert(blob.end(), mesh->begin(), mesh->end());
+  ByteWriter writer(blob);
+  writer.WriteU8(static_cast<std::uint8_t>(hitbox.part));
+  if (!writer.WriteString(hitbox.joint)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  writer.WriteBytes(*mesh);
   return blob;
 }
 
+// Skeleton blob wire format: a u32 Joint count, then each Joint's name (u32
+// length, then its bytes), its parent's index (u32, kJointNoParent for a root)
+// and its transform as a scene node's is: translation (3x f32), rotation as
+// x/y/z/w (4x f32), scale (3x f32).
+std::expected<std::vector<std::byte>, EncodeError> EncodeSkeletonBlob(const SkeletonData& skeleton) {
+  if (skeleton.joints.size() > kMaxJoints) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  writer.WriteU32(static_cast<std::uint32_t>(skeleton.joints.size()));
+  for (const auto& joint : skeleton.joints) {
+    if (!writer.WriteString(joint.name)) {
+      return std::unexpected(EncodeError::kTooLarge);
+    }
+    writer.WriteU32(joint.parent);
+    writer.WriteVec3(joint.translation);
+    writer.WriteQuat(joint.rotation);
+    writer.WriteVec3(joint.scale);
+  }
+  return blob;
+}
+
+// Eye blob wire format: position (3x f32), nothing else.
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);

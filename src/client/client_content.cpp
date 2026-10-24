@@ -57,12 +57,14 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-// The Hitboxes of character from pack, for the Hitboxes Debug overlay, or none
-// with a warning if they do not load: the server refuses such a pack at startup,
-// and a Debug overlay never keeps a character from loading.
+// The Hitboxes of character from pack, for the Hitboxes Debug overlay, in its
+// root space where its Skeleton holds them in the Rest pose, or none with a
+// warning if they do not load: the server refuses such a pack at startup, and a
+// Debug overlay never keeps a character from loading.
 std::vector<hitbox::CharacterHitbox> LoadDebugHitboxes(const assets::Pack& pack, std::string_view character) {
-  auto hitboxes =
-      LoadCharacterHitboxes(character, [&pack](std::string_view name) { return pack.ResolveHitboxes(name); });
+  auto hitboxes = LoadCharacterHitboxes(
+      character, [&pack](std::string_view name) { return pack.ResolveSkeleton(name); },
+      [&pack](std::string_view name) { return pack.ResolveHitboxes(name); });
   if (!hitboxes) {
     LOG_WARN("subsystem=client event=character_hitboxes_skipped character={} reason=\"{}\"", character,
              DescribeCharacterError(hitboxes.error()));

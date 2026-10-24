@@ -34,7 +34,7 @@ namespace augusta::assets {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 3;
+constexpr std::uint32_t kFormatVersion = 4;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -499,6 +499,21 @@ std::optional<BodyPart> FirstMissingBodyPart(std::span<const HitboxData> hitboxe
   return std::nullopt;
 }
 
+std::expected<std::vector<JointHitbox>, UnresolvedJoint> BindHitboxes(const Skeleton& skeleton,
+                                                                      std::vector<HitboxData> hitboxes) {
+  std::vector<JointHitbox> bound;
+  bound.reserve(hitboxes.size());
+  for (HitboxData& hitbox : hitboxes) {
+    const auto joint = std::ranges::find(skeleton.joints, hitbox.joint, &JointData::name);
+    if (joint == skeleton.joints.end()) {
+      return std::unexpected(UnresolvedJoint{.joint = std::move(hitbox.joint)});
+    }
+    bound.push_back(
+        {.joint = static_cast<std::uint32_t>(joint - skeleton.joints.begin()), .hitbox = std::move(hitbox)});
+  }
+  return bound;
+}
+
 bool IsValidAssetType(std::uint8_t value) {
   switch (static_cast<AssetType>(value)) {
     case AssetType::kMesh:
@@ -512,6 +527,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kCharacters:
     case AssetType::kEye:
     case AssetType::kCueSound:
+    case AssetType::kSkeleton:
       return true;
   }
   return false;
@@ -721,6 +737,23 @@ std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::
     hitboxes.push_back(*std::move(hitbox));
   }
   return hitboxes;
+}
+
+std::expected<Skeleton, ResolveError> Pack::ResolveSkeleton(std::string_view character) const {
+  auto stored = ResolveAsset<SkeletonData>(impl_->index, impl_->mapping, CharacterSkeletonPath(character),
+                                           AssetType::kSkeleton, DecodeSkeletonBlob);
+  if (!stored) {
+    return std::unexpected(stored.error());
+  }
+  Skeleton skeleton{.joints = std::move(stored->joints), .rest_transforms = {}};
+  skeleton.rest_transforms.reserve(skeleton.joints.size());
+  // DecodeSkeletonBlob guarantees each parent is listed before its children.
+  for (const JointData& joint : skeleton.joints) {
+    const math::Mat4 local = math::ToMat4(joint.translation, joint.rotation, joint.scale);
+    skeleton.rest_transforms.push_back(joint.parent == kJointNoParent ? local
+                                                                      : skeleton.rest_transforms[joint.parent] * local);
+  }
+  return skeleton;
 }
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {

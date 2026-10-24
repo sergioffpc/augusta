@@ -18,6 +18,7 @@ from conftest import decode_audio
 from conftest import decode_cue_sound
 from conftest import decode_hitbox
 from conftest import decode_mesh
+from conftest import decode_skeleton
 from conftest import decode_spawn_point
 from conftest import decode_texture
 from conftest import encode_png
@@ -30,6 +31,7 @@ from conftest import read_pack_contents
 from conftest import VK_FORMAT_BC4_UNORM_BLOCK
 from conftest import VK_FORMAT_BC5_UNORM_BLOCK
 from conftest import VK_FORMAT_BC7_SRGB_BLOCK
+from pxr import Gf
 import pytest
 
 
@@ -117,15 +119,16 @@ def test_each_prim_kind_goes_to_the_packs_that_need_it(tmp_path, key_pair):
     assert server.paths_of_type(_native.AssetType.TEXTURE) == set()
 
 
-def test_a_map_hitbox_carries_its_body_part(tmp_path, key_pair):
+def test_a_map_hitbox_carries_its_body_part_and_no_joint(tmp_path, key_pair):
     client, server = cook_stage(
         "client_server_split_fixture.usda", tmp_path, key_pair
     )
 
     for contents in (client, server):
-        body_part, points, _ = decode_hitbox(contents.blob("Root/Hitbox"))
-        assert body_part == int(_native.BodyPart.TORSO)
-        assert len(points) == 4
+        hitbox = decode_hitbox(contents.blob("Root/Hitbox"))
+        assert hitbox.body_part == int(_native.BodyPart.TORSO)
+        assert hitbox.joint == ""
+        assert len(hitbox.points) == 4
 
 
 def test_collision_geometry_is_kept_as_authored(tmp_path, key_pair):
@@ -449,8 +452,8 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
     assert raised.value.prim_path == "TestMesh"
 
 
-# A character stage (ADR-0040): the Eye every character has, and the given
-# hitboxes, each a 0.2 m cube at its height above the feet.
+# A character stage (ADR-0040): the Eye every character has, its Skeleton, and
+# the given hitboxes, each a 0.2 m cube at its height above the feet.
 _CHARACTER_STAGE = """#usda 1.0
 (
     defaultPrim = "Character"
@@ -465,29 +468,85 @@ def Xform "Character"
         double3 xformOp:translate = (0, 1.7, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
+SKELETON
 HITBOXES
 }
 """
 
-# Every body part once, and a second limb: (prim name, body part, height).
+
+def _rest(translation, axis=(0, 1, 0), degrees=0.0):
+    """A joint's rest transform: turned degrees about axis, then translated."""
+    matrix = Gf.Matrix4d(1.0)
+    matrix.SetTransform(
+        Gf.Rotation(Gf.Vec3d(*axis), degrees), Gf.Vec3d(*translation)
+    )
+    return matrix
+
+
+# The Skeleton of a standing character, each joint relative to its parent: the
+# root at the feet, and a neck at 1.7 m.
+_JOINTS = [
+    ("Root", _rest((0, 0, 0))),
+    ("Root/Hips", _rest((0, 0.9, 0))),
+    ("Root/Hips/Chest", _rest((0, 0.4, 0))),
+    ("Root/Hips/Chest/Neck", _rest((0, 0.4, 0))),
+]
+
+# Every body part once, and a second limb: (prim name, body part, height, the
+# joint it is authored under).
 _EVERY_BODY_PART = [
-    ("Head", "head", 1.8),
-    ("Torso", "torso", 1.3),
-    ("LeftLeg", "limb", 0.5),
-    ("RightLeg", "limb", 0.5),
+    ("Head", "head", 1.8, "Root/Hips/Chest/Neck"),
+    ("Torso", "torso", 1.3, "Root/Hips/Chest"),
+    ("LeftLeg", "limb", 0.5, "Root/Hips"),
+    ("RightLeg", "limb", 0.5, "Root/Hips"),
 ]
 
 
-def _hitbox_prim(name, body_part, height):
+def _skeleton_prim(joints, translation=None):
+    """A Skeleton prim of joints, (name, rest transform) each."""
+    names = ", ".join(f'"{name}"' for name, _ in joints)
+    rests = ", ".join(str(rest) for _, rest in joints)
+    translate = (
+        f"        double3 xformOp:translate = {translation}\n"
+        '        uniform token[] xformOpOrder = ["xformOp:translate"]\n'
+        if translation is not None
+        else ""
+    )
+    return (
+        '    def Skeleton "Skeleton"\n'
+        "    {\n"
+        f"        uniform token[] joints = [{names}]\n"
+        f"        uniform matrix4d[] restTransforms = [{rests}]\n"
+        f"{translate}"
+        "    }\n"
+    )
+
+
+def _hitbox_prim(name, body_part, height, joint):
+    """A hitbox bound rigidly to joint, as UsdSkel binds one: none if None."""
     body_part_line = (
         f'        custom token augusta:bodyPart = "{body_part}"\n'
         if body_part is not None
         else ""
     )
+    binding_schema = (
+        ' (\n        prepend apiSchemas = ["SkelBindingAPI"]\n    )'
+        if joint is not None
+        else ""
+    )
+    binding = (
+        f'        uniform token[] skel:joints = ["{joint}"]\n'
+        "        int[] primvars:skel:jointIndices = [0] (\n"
+        '            elementSize = 1\n            interpolation = "constant"\n'
+        "        )\n"
+        if joint is not None
+        else ""
+    )
     return (
-        f'    def Cube "{name}"\n'
+        f'    def Cube "{name}"{binding_schema}\n'
         "    {\n        custom bool augusta:hitbox = true\n"
         f"{body_part_line}"
+        f"{binding}"
         "        double size = 0.2\n"
         f"        double3 xformOp:translate = (0, {height}, 0)\n"
         '        uniform token[] xformOpOrder = ["xformOp:translate"]\n'
@@ -495,15 +554,20 @@ def _hitbox_prim(name, body_part, height):
     )
 
 
-def cook_character(hitboxes, tmp_path, key_pair):
+_SKELETON = _skeleton_prim(_JOINTS)
+
+
+def cook_character(hitboxes, tmp_path, key_pair, skeleton=_SKELETON):
     """Cooks a map with one character, named test, holding hitboxes.
+
+    Its Skeleton is the skeleton prim's text, none if it is empty.
 
     Returns:
         (client, server) contents.
     """
     stage_path = tmp_path / "character.usda"
     stage_path.write_text(
-        _CHARACTER_STAGE.replace(
+        _CHARACTER_STAGE.replace("SKELETON", skeleton).replace(
             "HITBOXES", "".join(_hitbox_prim(*hitbox) for hitbox in hitboxes)
         ),
         encoding="utf-8",
@@ -523,21 +587,54 @@ def cook_character(hitboxes, tmp_path, key_pair):
     )
 
 
-def test_a_characters_hitboxes_go_into_both_packs_with_their_body_parts(
+def test_a_characters_hitboxes_go_into_both_packs_with_parts_and_joints(
     tmp_path, key_pair
 ):
     client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
     expected = {
-        "test/Character/Head": int(_native.BodyPart.HEAD),
-        "test/Character/Torso": int(_native.BodyPart.TORSO),
-        "test/Character/LeftLeg": int(_native.BodyPart.LIMB),
-        "test/Character/RightLeg": int(_native.BodyPart.LIMB),
+        "test/Character/Head": (
+            int(_native.BodyPart.HEAD),
+            "Root/Hips/Chest/Neck",
+        ),
+        "test/Character/Torso": (
+            int(_native.BodyPart.TORSO),
+            "Root/Hips/Chest",
+        ),
+        "test/Character/LeftLeg": (int(_native.BodyPart.LIMB), "Root/Hips"),
+        "test/Character/RightLeg": (int(_native.BodyPart.LIMB), "Root/Hips"),
     }
     for contents in (client, server):
         assert contents.paths_of_type(_native.AssetType.HITBOX) == set(expected)
-        for path, body_part in expected.items():
-            assert decode_hitbox(contents.blob(path))[0] == body_part
+        for path, (body_part, joint) in expected.items():
+            hitbox = decode_hitbox(contents.blob(path))
+            assert (hitbox.body_part, hitbox.joint) == (body_part, joint)
+
+
+def test_a_characters_skeleton_goes_into_both_packs_with_every_joint(
+    tmp_path, key_pair
+):
+    client, server = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.SKELETON) == {
+            "test/Character/Skeleton"
+        }
+        joints = decode_skeleton(contents.blob("test/Character/Skeleton"))
+        # Root carries no hitbox, and is a joint all the same.
+        assert [(joint.name, joint.parent) for joint in joints] == [
+            ("Root", _native.JOINT_NO_PARENT),
+            ("Root/Hips", 0),
+            ("Root/Hips/Chest", 1),
+            ("Root/Hips/Chest/Neck", 2),
+        ]
+        chest = joints[2]
+        assert chest.translation == pytest.approx((0, 0.4, 0))
+        assert chest.rotation == pytest.approx((0, 0, 0, 1))
+        assert chest.scale == pytest.approx((1, 1, 1))
+    assert client.blob("test/Character/Skeleton") == server.blob(
+        "test/Character/Skeleton"
+    )
 
 
 def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
@@ -552,12 +649,162 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
         ) == pytest.approx((0, 1.7, 0))
 
 
-def test_a_characters_hitbox_is_placed_relative_to_its_feet(tmp_path, key_pair):
+def test_a_characters_hitbox_is_cooked_into_its_joints_space(
+    tmp_path, key_pair
+):
     client, _ = cook_character(_EVERY_BODY_PART, tmp_path, key_pair)
 
-    _, points, _ = decode_hitbox(client.blob("test/Character/Head"))
-    assert min(y for _, y, _ in points) == pytest.approx(1.7)
-    assert max(y for _, y, _ in points) == pytest.approx(1.9)
+    # 1.7 to 1.9 m above the feet, and the neck at 1.7 m.
+    points = decode_hitbox(client.blob("test/Character/Head")).points
+    assert min(y for _, y, _ in points) == pytest.approx(0.0, abs=1e-6)
+    assert max(y for _, y, _ in points) == pytest.approx(0.2)
+
+
+def test_a_hitbox_under_a_turned_joint_is_cooked_turned_back(
+    tmp_path, key_pair
+):
+    # The neck at 1.3 m, turned a quarter about +X: its +Y is the character's
+    # +Z, so the head 0.5 m above it is 0.5 m along the neck's -Z.
+    joints = [
+        ("Root", _rest((0, 0, 0))),
+        ("Root/Neck", _rest((0, 1.3, 0), axis=(1, 0, 0), degrees=90.0)),
+    ]
+    hitboxes = [
+        ("Head", "head", 1.8, "Root/Neck"),
+        ("Torso", "torso", 1.3, "Root"),
+        ("Leg", "limb", 0.5, "Root"),
+    ]
+
+    client, _ = cook_character(
+        hitboxes, tmp_path, key_pair, skeleton=_skeleton_prim(joints)
+    )
+
+    points = decode_hitbox(client.blob("test/Character/Head")).points
+    for axis, low, high in ((0, -0.1, 0.1), (1, -0.1, 0.1), (2, -0.6, -0.4)):
+        assert min(point[axis] for point in points) == pytest.approx(low)
+        assert max(point[axis] for point in points) == pytest.approx(high)
+
+
+def test_a_character_without_a_skeleton_is_refused(tmp_path, key_pair):
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, skeleton="")
+
+    assert raised.value.code == "character_skeleton_missing"
+    assert raised.value.prim_path == "test/Character"
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+
+
+def test_a_hitbox_authored_under_no_joint_is_refused(tmp_path, key_pair):
+    hitboxes = [*_EVERY_BODY_PART, ("Arm", "limb", 1.3, None)]
+
+    with pytest.raises(CookError) as raised:
+        cook_character(hitboxes, tmp_path, key_pair)
+
+    assert raised.value.code == "hitbox_joint_missing"
+    assert raised.value.prim_path == "test/Character/Arm"
+    assert not (tmp_path / "client.apak").exists()
+
+
+def test_a_hitbox_under_a_joint_its_skeleton_lacks_is_refused(
+    tmp_path, key_pair
+):
+    hitboxes = [*_EVERY_BODY_PART, ("Tail", "limb", 0.9, "Root/Hips/Tail")]
+
+    with pytest.raises(CookError) as raised:
+        cook_character(hitboxes, tmp_path, key_pair)
+
+    assert raised.value.code == "hitbox_joint_unknown"
+    assert raised.value.prim_path == "test/Character/Tail"
+    assert "Root/Hips/Tail" in raised.value.message
+
+
+@pytest.mark.parametrize(
+    "skeleton",
+    [
+        _skeleton_prim([("Root", _rest((0, 0.1, 0))), *_JOINTS[1:]]),
+        _skeleton_prim(
+            [("Root", _rest((0, 0, 0), degrees=90.0)), *_JOINTS[1:]]
+        ),
+        _skeleton_prim(_JOINTS, translation=(0, 0.1, 0)),
+    ],
+    ids=["root_raised", "root_turned", "skeleton_moved"],
+)
+def test_a_skeleton_rooted_away_from_the_characters_origin_is_refused(
+    skeleton, tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, skeleton=skeleton)
+
+    assert raised.value.code == "skeleton_root_off_origin"
+    assert raised.value.prim_path == "test/Character/Skeleton"
+    assert "Root" in raised.value.message
+
+
+def _joints(count):
+    """A skeleton of count joints: a root at the feet, and children of it."""
+    return [
+        ("Root", _rest((0, 0, 0))),
+        *((f"Root/J{i}", _rest((0, 1, 0))) for i in range(count - 1)),
+    ]
+
+
+def test_a_skeleton_with_as_many_joints_as_the_format_allows_cooks(
+    tmp_path, key_pair
+):
+    joints = _joints(_native.MAX_JOINTS)
+
+    client, _ = cook_character(
+        [
+            (name, part, height, "Root")
+            for name, part, height, _ in _EVERY_BODY_PART
+        ],
+        tmp_path,
+        key_pair,
+        skeleton=_skeleton_prim(joints),
+    )
+
+    assert len(decode_skeleton(client.blob("test/Character/Skeleton"))) == 128
+
+
+def test_a_skeleton_with_more_joints_than_the_format_allows_is_refused(
+    tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_character(
+            _EVERY_BODY_PART,
+            tmp_path,
+            key_pair,
+            skeleton=_skeleton_prim(_joints(_native.MAX_JOINTS + 1)),
+        )
+
+    assert raised.value.code == "skeleton_too_many_joints"
+    assert raised.value.prim_path == "test/Character/Skeleton"
+    assert "129" in raised.value.message
+    assert "128" in raised.value.message
+    assert not (tmp_path / "client.apak").exists()
+
+
+@pytest.mark.parametrize(
+    "skeleton",
+    [
+        # A child before its parent.
+        _skeleton_prim([_JOINTS[1], _JOINTS[0], *_JOINTS[2:]]),
+        # One name for two joints.
+        _skeleton_prim([*_JOINTS, _JOINTS[3]]),
+        # A rest transform short.
+        _skeleton_prim(_JOINTS).replace(f", {_JOINTS[3][1]}]", "]"),
+    ],
+    ids=["misordered", "duplicate", "rest_transform_missing"],
+)
+def test_a_skeleton_usdskel_would_not_pose_is_refused(
+    skeleton, tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, skeleton=skeleton)
+
+    assert raised.value.code == "skeleton_invalid"
+    assert raised.value.prim_path == "test/Character/Skeleton"
 
 
 @pytest.mark.parametrize("missing", ["head", "torso", "limb"])
@@ -576,7 +823,7 @@ def test_a_character_without_a_hitbox_for_a_body_part_is_refused(
 
 
 def test_a_hitbox_that_names_no_body_part_is_refused(tmp_path, key_pair):
-    hitboxes = [*_EVERY_BODY_PART, ("Arm", None, 1.3)]
+    hitboxes = [*_EVERY_BODY_PART, ("Arm", None, 1.3, "Root/Hips/Chest")]
 
     with pytest.raises(CookError) as raised:
         cook_character(hitboxes, tmp_path, key_pair)
@@ -586,7 +833,7 @@ def test_a_hitbox_that_names_no_body_part_is_refused(tmp_path, key_pair):
 
 
 def test_a_hitbox_whose_body_part_is_unknown_is_refused(tmp_path, key_pair):
-    hitboxes = [*_EVERY_BODY_PART, ("Tail", "tail", 0.9)]
+    hitboxes = [*_EVERY_BODY_PART, ("Tail", "tail", 0.9, "Root/Hips")]
 
     with pytest.raises(CookError) as raised:
         cook_character(hitboxes, tmp_path, key_pair)

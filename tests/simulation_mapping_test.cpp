@@ -11,6 +11,7 @@
 #include "augusta/failure.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/simulation.h"
 
 // Unit tests for the conversions Host makes at SimulationWorld's edge.
 namespace {
@@ -55,9 +56,19 @@ TEST(SimulationMappingTest, AHitboxThatIsNotAWholeTriangleListIsRejected) {
   }
 }
 
+// A Skeleton of one Joint, raised to height above the character's feet.
+augusta::assets::Skeleton RootAt(float height) {
+  return {.joints = {{.name = "Root", .translation = Vec3(0.0F, height, 0.0F)}},
+          .rest_transforms = {augusta::math::ToMat4(Vec3(0.0F, height, 0.0F),
+                                                    augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F))}};
+}
+
 TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   const std::vector<augusta::scenario::Character> characters = {
-      {.path = "medic", .hitboxes = {Triangle(BodyPart::kHead)}, .eye = Vec3(0.0F, 1.6F, 0.0F)},
+      {.path = "medic",
+       .hitboxes = {{.joint = 0, .hitbox = Triangle(BodyPart::kHead)}},
+       .skeleton = RootAt(0.0F),
+       .eye = Vec3(0.0F, 1.6F, 0.0F)},
       {.path = "sniper", .hitboxes = {}, .eye = Vec3(0.0F, 1.5F, 0.0F)},
   };
 
@@ -67,6 +78,28 @@ TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   EXPECT_EQ(converted.at("medic").eye, Vec3(0.0F, 1.6F, 0.0F));
   EXPECT_EQ(converted.at("medic").hitboxes.size(), 1U);
   EXPECT_TRUE(converted.at("sniper").hitboxes.empty());
+}
+
+// SimulationWorld poses a character's hitboxes by its Skeleton (ADR-0061): it
+// is handed both, each hitbox in its Joint's space and bound to it.
+TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSpace) {
+  const std::vector<augusta::scenario::Character> characters = {
+      {.path = "medic",
+       .hitboxes = {{.joint = 0, .hitbox = Triangle(BodyPart::kHead)}},
+       .skeleton = RootAt(1.5F),
+       .eye = Vec3(0.0F, 1.6F, 0.0F)},
+  };
+
+  const auto converted = ToSimulation(characters);
+
+  const augusta::simulation::Character& medic = converted.at("medic");
+  ASSERT_EQ(medic.skeleton.joints.size(), 1U);
+  EXPECT_EQ(medic.skeleton.joints[0].name, "Root");
+  ASSERT_EQ(medic.hitboxes.size(), 1U);
+  EXPECT_EQ(medic.hitboxes[0].joint, 0U);
+  ASSERT_EQ(medic.hitboxes[0].triangles.size(), 1U);
+  EXPECT_EQ(medic.hitboxes[0].triangles[0].a, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_EQ(medic.hitboxes[0].triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
 }
 
 }  // namespace

@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -1385,6 +1386,114 @@ TEST_F(HitTest, ARoundThroughTheTopOfTheHeadHitsIt) {
 
   ASSERT_EQ(hits.size(), 1U);
   EXPECT_EQ(hits[0].part, BodyPart::kHead);
+}
+
+// Where a character reaching out to its right holds its hand: 2 m to the right
+// of its feet, at 1.4 m, while it stands facing yaw 0.
+constexpr float kHandSide = 2.0F;
+constexpr float kHandHeight = 1.4F;
+
+// A character whose Skeleton (ADR-0061) holds its arm out to its right: its
+// Shoulder Joint, 20 cm right of its feet at 1.4 m, is turned a quarter turn
+// about Z, so the Hand Joint 1.8 m down the arm sits kHandSide to the right of
+// its feet. Its torso is bound to its root Joint and its hand to the Hand
+// Joint, each Hitbox in its own Joint's space.
+Character Reaching() {
+  using augusta::assets::JointData;
+  using augusta::math::Mat4;
+  using augusta::math::Quat;
+  const Quat quarter_turn_about_z = glm::angleAxis(std::numbers::pi_v<float> / 2.0F, Vec3(0.0F, 0.0F, 1.0F));
+  const Mat4 shoulder = augusta::math::ToMat4(Vec3(0.2F, kHandHeight, 0.0F), quarter_turn_about_z, Vec3(1.0F));
+  const Mat4 hand = shoulder * augusta::math::ToMat4(Vec3(0.0F, -1.8F, 0.0F), Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F));
+  CharacterHitbox palm = Box(BodyPart::kLimb, Vec3(-0.1F), Vec3(0.1F));
+  palm.joint = 2;
+  return Character{
+      .eye = Vec3(0.0F, 1.6F, 0.0F),
+      .hitboxes = {Box(BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)), palm},
+      .skeleton = {.joints = {JointData{.name = "Root"},
+                              JointData{.name = "Root/Shoulder",
+                                        .parent = 0,
+                                        .translation = Vec3(0.2F, kHandHeight, 0.0F),
+                                        .rotation = quarter_turn_about_z},
+                              JointData{
+                                  .name = "Root/Shoulder/Hand", .parent = 1, .translation = Vec3(0.0F, -1.8F, 0.0F)}},
+                   .rest_transforms = {Mat4(1.0F), shoulder, hand}},
+  };
+}
+
+// HitTest's Alice and Bob, Bob playing Reaching: Alice's rounds are judged
+// against his Hitboxes as the Posing phase poses them by his Skeleton
+// (ADR-0061).
+class PosedHitTest : public HitTest {
+ protected:
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Reaching());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+};
+
+// The hand is far out of reach of the Hitboxes' own geometry: a round that
+// strikes it was neither placed nor culled by that geometry alone.
+// Requirements: US-11
+TEST_F(PosedHitTest, AHitboxIsJudgedWhereItsJointHoldsIt) {
+  const std::vector<Hit> hand = ShootAt(Vec3(kHandSide, kHandHeight, 0.0F));
+  const std::vector<Hit> torso = ShootAt(Vec3(0.0F, 1.2F, 0.0F));
+
+  ASSERT_EQ(hand.size(), 1U);
+  EXPECT_EQ(hand[0].part, BodyPart::kLimb);
+  ASSERT_EQ(torso.size(), 1U);
+  EXPECT_EQ(torso[0].part, BodyPart::kTorso);
+}
+
+// Crouched, a body 2.1 m tall standing is 1.3 m tall: the Skeleton's root
+// lowers the hand with it, as far out to the side as it was.
+// Requirements: US-11
+TEST_F(PosedHitTest, TheSkeletonsRootLowersItsHitboxesWithACrouchedBody) {
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+
+  EXPECT_TRUE(ShootAt(Vec3(kHandSide, kHandHeight, 0.0F)).empty());
+  const std::vector<Hit> lowered = ShootAt(Vec3(kHandSide, kHandHeight * 1.3F / 2.1F, 0.0F));
+
+  ASSERT_EQ(lowered.size(), 1U);
+  EXPECT_EQ(lowered[0].part, BodyPart::kLimb);
+}
+
+// Requirements: US-11
+TEST_F(PosedHitTest, TheSkeletonsRootTurnsItsHitboxesWithWhereItFaces) {
+  bob_.yaw = std::numbers::pi_v<float>;
+  Wait(1);
+
+  EXPECT_TRUE(ShootAt(Vec3(kHandSide, kHandHeight, 0.0F)).empty());
+  const std::vector<Hit> turned = ShootAt(Vec3(-kHandSide, kHandHeight, 0.0F));
+
+  ASSERT_EQ(turned.size(), 1U);
+  EXPECT_EQ(turned[0].part, BodyPart::kLimb);
+}
+
+// Bob turns a quarter turn on one tick, swinging his hand toward Alice, so a
+// round crosses it on the tick it is fired. Halfway between that tick and the
+// one before, Lag compensation turns his root's facing along the shorter arc
+// and composes his Joints, the Rest pose's on both ticks, onto it (ADR-0044):
+// his hand an eighth of a turn round, still kHandSide from his feet, and not on
+// the chord between where the two ticks held it. The Rest pose being his only
+// pose, no Joint's own interpolation is exercised.
+// Requirements: US-11, NFR-02
+TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsTurnsTheRootAlongTheArcInTheRestPose) {
+  bob_.yaw = -std::numbers::pi_v<float> / 2.0F;
+  const augusta::tick::Tick turned = Tick(Command{}).tick;
+  const float eighth_turn = std::numbers::pi_v<float> / 4.0F;
+  const Vec3 on_the_arc(kHandSide * std::cos(eighth_turn), kHandHeight, kHandSide * std::sin(eighth_turn));
+  const Vec3 on_the_chord(kHandSide / 2.0F, kHandHeight, kHandSide / 2.0F);
+
+  const std::vector<Hit> arc = ShootAt(on_the_arc, turned - 1, 0.5F);
+  const std::vector<Hit> chord = ShootAt(on_the_chord, turned - 1, 0.5F);
+
+  ASSERT_EQ(arc.size(), 1U);
+  EXPECT_EQ(arc[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(chord.empty());
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {

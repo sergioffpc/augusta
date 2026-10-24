@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <span>
 #include <utility>
+#include <vector>
 
+#include "augusta/animation.h"
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/hitbox.h"
 #include "augusta/math.h"
@@ -46,18 +49,23 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 
 }  // namespace
 
-// Measured standing: any other stance only lowers a point
-// (physics::LowerToStance), which brings it no farther from the root.
-float ReachOf(std::span<const hitbox::CharacterHitbox> hitboxes) {
-  float reach = 0.0F;
-  for (const hitbox::CharacterHitbox& hitbox : hitboxes) {
-    for (const ballistics::Triangle& triangle : hitbox.triangles) {
-      for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-        reach = std::max(reach, math::Length(point));
+// Measured with the root at the origin facing yaw 0: a yaw turns every point
+// about the vertical through the root, which brings none of them nearer or
+// farther.
+Reach::Reach(const assets::Skeleton& skeleton, std::span<const hitbox::CharacterHitbox> hitboxes) {
+  for (std::size_t index = 0; index < by_stance_.size(); ++index) {
+    const auto stance = static_cast<physics::Stance>(index);
+    float reach = 0.0F;
+    for (const hitbox::PlacedHitbox& placed :
+         animation::PlaceAtRest(skeleton, hitboxes, hitbox::Pose{.position = {}, .yaw = 0.0F, .stance = stance})) {
+      for (const ballistics::Triangle& triangle : placed.triangles) {
+        for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
+          reach = std::max(reach, math::Length(point));
+        }
       }
     }
+    by_stance_.at(index) = reach + kReachMargin;
   }
-  return reach + kReachMargin;
 }
 
 void HitboxPosing::Clear() {
@@ -73,16 +81,16 @@ void HitboxPosing::BeginBullet(double time, const ballistics::Segment& segment) 
   bullet_targets_.clear();
 }
 
-void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> standing, float reach,
-                            const hitbox::Pose& pose) {
+void HitboxPosing::Consider(EntityId target, std::span<const hitbox::CharacterHitbox> hitboxes, float reach,
+                            const hitbox::Pose& pose, std::span<const math::Mat4> joints) {
   if (!Reaches(bullet_segment_, pose.position, reach)) {
     return;
   }
   // Posed now if no bullet of this tick has asked for them at this moment yet.
   const auto [posing, added] = posings_.try_emplace(PosingKey{.target = target, .time = bullet_time_},
-                                                    Posing{.first = posed_hitboxes_.size(), .count = standing.size()});
+                                                    Posing{.first = posed_hitboxes_.size(), .count = hitboxes.size()});
   if (added) {
-    for (const hitbox::PlacedHitbox& placed : hitbox::Place(standing, pose)) {
+    for (const hitbox::PlacedHitbox& placed : hitbox::Place(hitboxes, joints)) {
       posed_hitboxes_.push_back(PosedHitbox{.struck = {.target = target, .part = placed.part},
                                             .first = posed_triangles_.size(),
                                             .count = placed.triangles.size()});

@@ -56,8 +56,9 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeTextureBlob(std::span<c
 /// own comment).
 std::expected<std::vector<std::byte>, EncodeError> EncodeSpawnPointBlob(const SpawnPointData& spawn_point);
 
-/// Encodes hitbox into the pack's hitbox-blob byte layout (ADR-0040): its body
-/// part as one byte, then its geometry as a mesh blob.
+/// Encodes hitbox into the pack's hitbox-blob byte layout (ADR-0040, ADR-0061):
+/// its body part as one byte, its Joint's name as a length-prefixed string, then
+/// its geometry as a mesh blob.
 std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const HitboxData& hitbox);
 
 /// Encodes eye into the pack's eye-blob byte layout (ADR-0040).
@@ -66,6 +67,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& 
 /// Encodes script, a Lua script's text, into the pack's script-blob byte layout
 /// (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);
+
+/// Encodes skeleton into the pack's skeleton-blob byte layout (ADR-0061):
+/// kTooLarge past kMaxJoints Joints.
+std::expected<std::vector<std::byte>, EncodeError> EncodeSkeletonBlob(const SkeletonData& skeleton);
 
 /// Encodes characters, a scenario's character names in manifest order, into the
 /// pack's character-list blob byte layout (ADR-0042): kTooLarge past
