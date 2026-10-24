@@ -103,12 +103,11 @@ struct MovementInput {
   bool operator==(const MovementInput&) const = default;
 };
 
-/// What World::Step carries from one tick to the next besides BodyState: the fall
-/// and ground tracking. Putting a body back at an earlier state (World::Restore)
-/// puts this back too, or the fall would carry on from the wrong speed.
+/// What World::Step carries from one tick to the next besides BodyState: the
+/// fall's speed. Putting a body back at an earlier state (World::Restore) puts
+/// this back too, or the fall would carry on from the wrong speed.
 struct FallState {
   float vertical_speed = 0.0F;
-  bool grounded = false;
 };
 
 /// A body's full movement-relevant state at a point in time: what
@@ -134,6 +133,10 @@ struct BodyState {
   /// distance the body moves, never by time, so it travels and is restored with
   /// the rest.
   std::uint8_t stride = 0;
+  /// Whether the body stood on something as of its last Step (kGrounded,
+  /// ADR-0062): off the ground, it falls, and its Hitbox pose is its Character's
+  /// air Clip (ADR-0066). The next Step's fall starts over from it.
+  bool grounded = false;
 
   bool operator==(const BodyState&) const = default;
 };
@@ -334,8 +337,8 @@ class World {
   /// body back where it was.
   void SetState(BodyHandle handle, const BodyState& state);
 
-  /// handle's fall and ground tracking as of now: what Restore takes to put the
-  /// body back at the state it has now.
+  /// handle's fall tracking as of now: what Restore takes, with the body's
+  /// state, to put the body back where it is now.
   [[nodiscard]] FallState Fall(BodyHandle handle) const;
 
   /// Puts handle's body back at state (position, stance and the rest) with fall

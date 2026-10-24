@@ -1,5 +1,6 @@
 #include "augusta/pose.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -55,6 +56,13 @@ float RatioAt(const Clip& clip, std::uint8_t stride) {
   return std::fmod(*left + from_left, 1.0F);
 }
 
+// Where the air Clip is at vertical_speed, as a ratio of its duration: its start
+// rising at kAirVerticalSpeed or faster, its end falling as fast, linearly
+// between, so the top of a jump is halfway through it.
+float AirRatio(float vertical_speed) {
+  return std::clamp(0.5F - (vertical_speed / (2.0F * kAirVerticalSpeed)), 0.0F, 1.0F);
+}
+
 // One SoA block's lanes of a SIMD value, read with ozz's own unaligned store.
 std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
   std::array<float, 4> lanes{};
@@ -82,6 +90,20 @@ struct Poser::Buffers {
     }
     blended.resize(soa_joints);
   }
+
+  // clip sampled at ratio into slot's buffer, as a layer of weight to blend.
+  ozz::animation::BlendingJob::Layer Sample(std::size_t slot, const Clip& clip, float ratio, float weight) {
+    std::vector<ozz::math::SoaTransform>& output = sampled.at(slot);
+    ozz::animation::SamplingJob sampling;
+    sampling.animation = &clip.animation;
+    sampling.context = &contexts.at(slot);
+    sampling.ratio = ratio;
+    sampling.output = {output.data(), output.size()};
+    [[maybe_unused]] const bool sampled_ok = sampling.Run();
+    // LoadClips checked every Clip's tracks against the Skeleton.
+    assert(sampled_ok);
+    return {.weight = weight, .transform = {output.data(), output.size()}, .joint_weights = {}};
+  }
 };
 
 Poser::Poser() : buffers_(std::make_unique<Buffers>()) {}
@@ -94,25 +116,27 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
   Buffers& buffers = *buffers_;
   buffers.Fit(clips.skeleton);
 
-  // Each Clip of the stance's blend space at the body's velocity, sampled
-  // where the Stride puts it, then blended by its weight.
-  const LocomotionBlend blend = BlendSpace(clips.Of(input.body.stance), LocalVelocity(input.body.velocity, input.yaw));
   std::array<ozz::animation::BlendingJob::Layer, kMaxBlendedClips> layers{};
-  for (std::size_t slot = 0; slot < blend.count; ++slot) {
-    const ClipWeight& each = blend.clips.at(slot);
-    std::vector<ozz::math::SoaTransform>& sampled = buffers.sampled.at(slot);
-    ozz::animation::SamplingJob sampling;
-    sampling.animation = &each.clip->animation;
-    sampling.context = &buffers.contexts.at(slot);
-    sampling.ratio = RatioAt(*each.clip, input.body.stride);
-    sampling.output = {sampled.data(), sampled.size()};
-    [[maybe_unused]] const bool sampled_ok = sampling.Run();
-    // LoadClips checked every Clip's tracks against the Skeleton.
-    assert(sampled_ok);
-    layers.at(slot) = {.weight = each.weight, .transform = {sampled.data(), sampled.size()}, .joint_weights = {}};
+  std::size_t layer_count = 0;
+  if (input.body.grounded) {
+    // Each Clip of the stance's blend space at the body's velocity, sampled
+    // where the Stride puts it, then blended by its weight.
+    const LocomotionBlend blend =
+        BlendSpace(clips.Of(input.body.stance), LocalVelocity(input.body.velocity, input.yaw));
+    for (std::size_t slot = 0; slot < blend.count; ++slot) {
+      const ClipWeight& each = blend.clips.at(slot);
+      layers.at(slot) = buffers.Sample(slot, *each.clip, RatioAt(*each.clip, input.body.stride), each.weight);
+    }
+    layer_count = blend.count;
+  } else {
+    // Off the ground, the air Clip alone in its place, from the tick the body
+    // leaves the ground to the tick it lands: no crossfade, which would need a
+    // time of its own (ADR-0066).
+    layers.at(0) = buffers.Sample(0, clips.air, AirRatio(input.body.velocity.y), 1.0F);
+    layer_count = 1;
   }
   ozz::animation::BlendingJob blending;
-  blending.layers = {layers.data(), blend.count};
+  blending.layers = {layers.data(), layer_count};
   blending.rest_pose = clips.skeleton.joint_rest_poses();
   blending.output = {buffers.blended.data(), buffers.blended.size()};
   [[maybe_unused]] const bool blended_ok = blending.Run();

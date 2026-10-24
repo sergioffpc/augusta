@@ -43,8 +43,8 @@ constexpr std::uint32_t kStanceMask = 0x03U;
 constexpr std::uint32_t kCommandBitsMask = kCommandFlagsMask | (kStanceMask << kCommandStanceShift);
 
 // A body's stance takes bits 0-1 of its bitfield and its flags the bits from 2
-// up: exhausted bit 2, ADS bit 3 (ADR-0038).
-constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted | BodyStateWire::kAds;
+// up: exhausted bit 2, ADS bit 3, grounded bit 4 (ADR-0038).
+constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted | BodyStateWire::kAds | BodyStateWire::kGrounded;
 constexpr unsigned kBodyFlagsShift = 2U;
 constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift);
 

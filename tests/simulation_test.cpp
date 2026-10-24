@@ -1615,6 +1615,16 @@ class AnimatedHitTest : public HitTest {
     ADD_FAILURE() << "Bob's Stride never neared it";
     return Tick(Command{});
   }
+
+  // Puts Bob back height meters above the floor, 8 m ahead of Alice, facing -X
+  // across her line of fire, to fall: within the 10 m a round flies on the tick
+  // it is fired, so each round is judged on its Seen time's tick alone.
+  void DropBob(float height) {
+    world_.RemovePlayer(kBob);
+    world_.AddPlayer(kBob, Vec3(0.0F, height, -8.0F), Walker());
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+  }
 };
 
 // Requirements: US-11
@@ -1682,6 +1692,53 @@ TEST_F(AnimatedHitTest, AShotAtAWalkingPlayersLegHitsItWhereTheStrideHasIt) {
   EXPECT_TRUE(passing.empty());
   ASSERT_EQ(passing_under.size(), 1U);
   EXPECT_EQ(passing_under[0].part, BodyPart::kLimb);
+}
+
+// Off the ground, Bob's air Clip (clips_fixture.h) tucks his left leg level
+// with his hips, 1 m up, 1 m ahead of him, and swings his right behind him as
+// he falls faster; under his hips, where a standing leg hangs, he has none.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAFallingPlayerHitsTheLegHisAirClipTucksAndMissesWhereAStandingLegHangs) {
+  DropBob(8.0F);
+  // Falling at about 5 m/s, the fall the air Clip ends at.
+  Wait(30);
+  const Vec3 tucked(-0.5F, 1.0F, 0.0F);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> at_the_tuck = ShootAt(tucked);
+  const std::vector<Hit> under = ShootAt(under_his_hips);
+
+  ASSERT_FALSE(Entity(Tick(Command{}), kBob).body.grounded);
+  ASSERT_EQ(at_the_tuck.size(), 1U);
+  EXPECT_EQ(at_the_tuck[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(under.empty());
+}
+
+// Bob falls 3 m to the floor. Each round is judged on the tick its Seen time
+// names: the tick before he lands, in the air, has no leg under his hips; the
+// tick he lands, his idle has both there, with nothing of the air Clip left.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, ThePoseSwitchesToTheGroundsOnTheTickAPlayerLands) {
+  DropBob(3.0F);
+  augusta::tick::Tick landed = 0;
+  bool was_in_the_air = false;
+  for (int i = 0; i < 2 * kTickRate && landed == 0; ++i) {
+    const State state = Tick(Command{});
+    if (!Entity(state, kBob).body.grounded) {
+      was_in_the_air = true;
+    } else if (was_in_the_air) {
+      landed = state.tick;
+    }
+  }
+  ASSERT_NE(landed, 0U);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> landing = ShootAt(under_his_hips, landed, 0.0F);
+  const std::vector<Hit> before = ShootAt(under_his_hips, landed - 1, 0.0F);
+
+  ASSERT_EQ(landing.size(), 1U);
+  EXPECT_EQ(landing[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(before.empty());
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {

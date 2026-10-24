@@ -401,9 +401,8 @@ struct BodyRecord {
   BodyState state;
   // Accumulated vertical speed for the simple constant-acceleration
   // gravity integration in Step - reset to 0 whenever the controller was
-  // grounded as of the previous Step.
+  // grounded as of the previous Step (state.grounded).
   float vertical_speed = 0.0F;
-  bool grounded = false;
 };
 
 struct World::Impl {
@@ -609,7 +608,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   // Simple constant-acceleration gravity: reset the accumulated vertical
   // speed whenever the controller was grounded as of the previous Step,
   // otherwise keep accelerating downward.
-  if (record.grounded) {
+  if (state.grounded) {
     record.vertical_speed = 0.0F;
   }
   record.vertical_speed += kGravity * delta_time;
@@ -619,7 +618,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   const PxControllerFilters filters;
   const PxControllerCollisionFlags flags = record.controller->move(displacement, kMinMoveDistance, delta_time, filters);
-  record.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
+  state.grounded = flags.isSet(PxControllerCollisionFlag::eCOLLISION_DOWN);
 
   // The controller is put back on the grid too, so the next Step starts from
   // exactly the position this one reports.
@@ -646,7 +645,6 @@ void World::SetState(BodyHandle handle, const BodyState& state) {
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = 0.0F;
-  record.grounded = false;
 }
 
 FallState World::Fall(BodyHandle handle) const {
@@ -654,7 +652,7 @@ FallState World::Fall(BodyHandle handle) const {
   if (body_it == impl_->bodies.end()) {
     return {};
   }
-  return FallState{.vertical_speed = body_it->second.vertical_speed, .grounded = body_it->second.grounded};
+  return FallState{.vertical_speed = body_it->second.vertical_speed};
 }
 
 BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallState& fall) {
@@ -674,7 +672,6 @@ BodyState World::Restore(BodyHandle handle, const BodyState& state, const FallSt
   record.controller->setFootPosition(ToFootPosition(on_grid.position));
   record.state = on_grid;
   record.vertical_speed = fall.vertical_speed;
-  record.grounded = fall.grounded;
   return on_grid;
 }
 

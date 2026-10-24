@@ -458,6 +458,24 @@ TEST(StaticGeometryTest, WithoutAFloorABodyKeepsFalling) {
   EXPECT_LT(state.position.y, -3.0F);
 }
 
+// kGrounded (ADR-0062): set every tick a body stands or walks on the floor,
+// clear every tick it falls.
+TEST(StaticGeometryTest, ABodyIsGroundedOnTheFloorAndNotWhileItFalls) {
+  World world = WorldWithFloor();
+  const auto body = world.CreateBody(Vec3(0.0F, 3.0F, 0.0F));
+  MovementInput walk{};
+  walk.direction = Vec3(1.0F, 0.0F, 0.0F);
+
+  const BodyState falling = world.Step(body, MovementInput{}, kFixedTick);
+  Settle(world, body, MovementInput{}, 120);
+  for (int i = 0; i < 60; ++i) {
+    const BodyState walking = world.Step(body, i % 2 == 0 ? walk : MovementInput{}, kFixedTick);
+    ASSERT_TRUE(walking.grounded) << "tick " << i;
+  }
+
+  EXPECT_FALSE(falling.grounded);
+}
+
 class WallTest : public ::testing::TestWithParam<bool> {};
 
 // A cooked map's triangles can face either way, so the wall must stop a body

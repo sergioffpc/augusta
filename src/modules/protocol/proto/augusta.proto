@@ -202,7 +202,7 @@ message Body {
   sint32 velocity_x = 5;
   sint32 velocity_y = 6;
   sint32 velocity_z = 7;
-  // Bits 0-1: the stance; bit 2: exhausted; bit 3: ADS.
+  // Bits 0-1: the stance; bit 2: exhausted; bit 3: ADS; bit 4: grounded.
   uint32 bits = 8;
   // On the stamina grid.
   uint32 stamina = 9;

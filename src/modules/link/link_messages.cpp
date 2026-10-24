@@ -264,7 +264,8 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
       .position = body.position,
       .velocity = body.velocity,
       .stamina = body.stamina,
-      .flags = body.exhausted ? protocol::BodyStateWire::kExhausted : std::uint8_t{0},
+      .flags = static_cast<std::uint8_t>((body.exhausted ? protocol::BodyStateWire::kExhausted : 0U) |
+                                         (body.grounded ? protocol::BodyStateWire::kGrounded : 0U)),
       .stance = ToWire(body.stance),
       .stride = body.stride,
   };
@@ -277,6 +278,7 @@ physics::BodyState FromWire(const protocol::BodyStateWire& body) {
   result.stance = FromWire(body.stance);
   result.stamina = body.stamina;
   result.exhausted = (body.flags & protocol::BodyStateWire::kExhausted) != 0;
+  result.grounded = (body.flags & protocol::BodyStateWire::kGrounded) != 0;
   result.stride = body.stride;
   return result;
 }
