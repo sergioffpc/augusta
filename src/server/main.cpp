@@ -8,10 +8,10 @@
 #include "augusta/config.h"
 #include "augusta/crash.h"
 #include "augusta/logging.h"
-#include "augusta/server.h"
-#include "augusta/server_application.h"
 #include "augusta/server_config.h"
 #include "augusta/version.h"
+#include "server.h"
+#include "server_application.h"
 
 namespace {
 
@@ -74,12 +74,12 @@ int main(int argc, char** argv) {
   augusta::logging::SetLogLevel(*augusta::logging::ParseSeverity(file_config->log_level));
   LOG_INFO("subsystem=server event=starting version={}", augusta::EngineVersion());
 
-  auto lifecycle = augusta::server::ServerLifecycle(*file_config);
-  lifecycle.run = [run = std::move(lifecycle.run)](augusta::server::ServerRuntime& runtime) {
+  auto program = augusta::server::ServerProgram(*file_config);
+  program.run = [run = std::move(program.run)](augusta::server::ServerRuntime& runtime) {
     const SignalTarget target(runtime);
     return run(runtime);
   };
   // The runtime's supervisor logged a runtime failure where it happened; this
   // is the process's one terminal event for it.
-  return augusta::application::Conclude(kSubsystem, augusta::application::Execute(lifecycle));
+  return augusta::application::Conclude(kSubsystem, augusta::application::Execute(program));
 }

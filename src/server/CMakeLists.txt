@@ -44,7 +44,7 @@ augusta_set_module_scope(augusta_server_connection_health SERVER_ONLY)
 # The server Runtime itself (see server.h): the Network I/O and Simulation
 # threads around the Host, its clock, and the metrics endpoint beside them.
 add_library(augusta_server STATIC server.cpp)
-target_include_directories(augusta_server PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_server PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_server
   PUBLIC augusta_host augusta_host_replay augusta_failure augusta_gameplay augusta_physics augusta_simulation
@@ -63,7 +63,7 @@ augusta_set_module_scope(augusta_server SERVER_ONLY)
 # server_application.h, ADR-0033); tested with the golden server pack and
 # injected faults.
 add_library(augusta_server_application STATIC server_application.cpp)
-target_include_directories(augusta_server_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_server_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_server_application
   PUBLIC augusta_application augusta_config augusta_failure augusta_server_config augusta_server

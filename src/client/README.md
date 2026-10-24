@@ -1,19 +1,19 @@
 # client
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
-`augusta_client_debug_index_entries`, `augusta_client_frame_mapping`,
+`augusta_client_debug_index_entries`, `augusta_client_debug_network_panel`,
+`augusta_client_debug_profiling_panel`, `augusta_client_frame_mapping`,
 `augusta_client_lobby_readiness`, `augusta_client_net_stats`,
-`augusta_client_network_panel`, `augusta_client_phases`,
-`augusta_client_profiling_panel`, `augusta_client_run`,
-`augusta_client_run_files`, and augustac, the executable that runs them.
-Client-only: the headless server never links it.
+`augusta_client_phases`, `augusta_client_run`, `augusta_client_run_files`, and
+augustac, the executable that runs them. Client-only: the headless server never
+links it.
 
 ## Responsibility
 
 The client Runtime, augustac's: it owns one of every client module and runs the
 Harness live, with its config, its Main/Render thread and the wiring of the
 Harness to the renderer, the HUD, input, PresentationWorld and audio, and runs
-it behind the application boundary in augustac's Lifecycle, beside listing a
+it behind the application boundary in augustac's Program, beside listing a
 replay server's Replays. It decides at its edges what the client loads from its
 verified pack (the scene, the characters other players bring, the map's
 collision, every cue's sound and the Clips of the character it plays, which its
@@ -46,7 +46,7 @@ how the previous Run ended, which a launch reports when it was a crash.
 ## Not its responsibility
 
 - What augustac's entry point (`main.cpp`) does: read the command line, then run
-  the Lifecycle and conclude its outcome - Glue, tested only end to end
+  the Program and conclude its outcome - Glue, tested only end to end
   (ADR-0060).
 - Playing: the Harness sends commands, receives the server's state and predicts.
 - The window, drawing, input, audio and what the HUD's lines say: window,

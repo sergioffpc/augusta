@@ -1,4 +1,4 @@
-#include "augusta/agent.h"
+#include "agent.h"
 
 #include <cstdint>
 #include <expected>
@@ -17,7 +17,7 @@
 #include <boost/uuid/time_generator_v7.hpp>
 #include <boost/uuid/uuid.hpp>
 
-#include "augusta/agent_report.h"
+#include "agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/clips.h"
 #include "augusta/command.h"

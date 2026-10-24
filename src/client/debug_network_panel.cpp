@@ -1,4 +1,4 @@
-#include "network_panel.h"
+#include "debug_network_panel.h"
 
 #include <algorithm>
 #include <array>

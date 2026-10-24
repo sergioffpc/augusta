@@ -1,4 +1,4 @@
-#include "augusta/server_application.h"
+#include "server_application.h"
 
 #include <cstddef>
 #include <expected>
@@ -40,7 +40,7 @@ using augusta::failure::Failure;
 using augusta::failure::Faults;
 using augusta::failure::Site;
 using augusta::server::ReadServerConfig;
-using augusta::server::ServerLifecycle;
+using augusta::server::ServerProgram;
 
 const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 
@@ -71,9 +71,9 @@ ServerConfig ExampleConfig() {
 // How augustad ends with config, faults armed as the test has them, and the
 // transport the environment initialized.
 Outcome Served(const ServerConfig& config, Faults& faults) {
-  auto lifecycle = ServerLifecycle(config, &faults);
-  lifecycle.initialize = []() -> std::expected<void, Failure> { return {}; };
-  return Execute(lifecycle);
+  auto program = ServerProgram(config, &faults);
+  program.initialize = []() -> std::expected<void, Failure> { return {}; };
+  return Execute(program);
 }
 
 // The value of the failure's context under key, or empty if it has none.
@@ -118,7 +118,7 @@ TEST(ServerApplicationTest, ATransportThatCannotBeInitializedIsATransportFailure
   Faults faults;
   faults.Arm(Site::kDependencyInit, "GameNetworkingSockets_Init failed");
 
-  const Outcome outcome = Execute(ServerLifecycle(ExampleConfig(), &faults));
+  const Outcome outcome = Execute(ServerProgram(ExampleConfig(), &faults));
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kTransportInitFailed);

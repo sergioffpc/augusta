@@ -36,9 +36,7 @@ file(
   "${SOURCE_DIR}/src/modules/link/include/augusta/link_types.h"
   "${SOURCE_DIR}/src/modules/host/include/augusta/*.h"
   "${SOURCE_DIR}/src/modules/host/*.h"
-  "${SOURCE_DIR}/src/server/include/augusta/*.h"
   "${SOURCE_DIR}/src/server/*.h"
-  "${SOURCE_DIR}/src/client/include/augusta/*.h"
   "${SOURCE_DIR}/src/client/*.h"
 )
 if(NOT headers)

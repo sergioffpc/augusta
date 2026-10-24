@@ -2,13 +2,13 @@
 # and the pybind11 module the augusta_agent package wraps it with. Built by the root build with AUGUSTA_TOOLS; the module only
 # with the tools environment's Python (the root CMakeLists.txt).
 
-# The Agent's Runtime (augusta/agent.h, ADR-0060): one harness::Session per
+# The Agent's Runtime (agent.h, ADR-0060): one harness::Session per
 # Agent, run by its harness::Runner and driven by Intents, with no window, GPU
 # or Python. Speaks to the server through the Harness alone, so it links no
 # protocol or networking of its own; physics, whose map collision and bodies
 # agent.h names, it links itself.
 add_library(augusta_agent STATIC agent.cpp agent_report.cpp)
-target_include_directories(augusta_agent PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_agent PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_agent
   PUBLIC augusta_animation augusta_assets augusta_gameplay augusta_harness augusta_physics

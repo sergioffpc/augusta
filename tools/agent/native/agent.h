@@ -13,7 +13,7 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/agent_report.h"
+#include "agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/clips.h"
 #include "augusta/command.h"

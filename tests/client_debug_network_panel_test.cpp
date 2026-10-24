@@ -14,7 +14,7 @@
 #include "augusta/debug_panels.h"
 #include "augusta/link.h"
 #include "augusta/link_types.h"
-#include "network_panel.h"
+#include "debug_network_panel.h"
 
 // The Network Debug panel (ADR-0075): the client's connection, its traffic per
 // message type, and its prediction and presentation, built from plain samples

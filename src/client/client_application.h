@@ -14,11 +14,11 @@
 /// \file
 /// augustac's runs behind the application boundary (application.h, ADR-0033),
 /// once its config file and command line are read (client_phases.h): listing a
-/// replay server's Replays, or the Lifecycle that initializes the transport,
+/// replay server's Replays, or the Program that initializes the transport,
 /// loads the client pack's content, constructs the ClientRuntime (client.h)
 /// from it and runs it. Each classifies its own failure, so main() only
 /// concludes the one Outcome. Each runs at the raised Windows timer resolution
-/// (application::TimerResolution): the Lifecycle through application::Execute,
+/// (application::TimerResolution): the Program through application::Execute,
 /// the listing by holding one itself.
 namespace augusta::client {
 
@@ -27,7 +27,7 @@ namespace augusta::client {
 /// outlives it).
 class ClientProcess {
  public:
-  /// What it holds, made by ClientLifecycle's construct phase.
+  /// What it holds, made by ClientProgram's construct phase.
   struct Parts;
 
   explicit ClientProcess(std::unique_ptr<Parts> parts);
@@ -54,9 +54,9 @@ class ClientProcess {
 /// `phase=list_replays`.
 [[nodiscard]] application::Outcome ListReplays(const config::ClientConfig& file_config);
 
-/// augustac's Lifecycle for file_config: initialize starts the transport
+/// augustac's Program for file_config: initialize starts the transport
 /// (link::Init), after the physics recording `debug.physics_recording` asks
-/// for in a Development build, which the Lifecycle holds until it goes
+/// for in a Development build, which the Program holds until it goes
 /// (physics::StartRecording); construct verifies the pack and loads the content of the
 /// character to play, then constructs the ClientRuntime - as reenactment's
 /// Captured player if it has one (ADR-0050), playing its capture's Character
@@ -67,10 +67,10 @@ class ClientProcess {
 /// reenactment or Replay ends or it fails. With no reconnecting and no
 /// connection screen, it says what happened and exits. Its join, as a player,
 /// a Captured player or a Replay viewer alike, carries run, the Run's ID.
-[[nodiscard]] application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
-                                                                    std::optional<harness::Script> reenactment,
-                                                                    std::optional<std::string> replay,
-                                                                    boost::uuids::uuid run);
+[[nodiscard]] application::Program<ClientProcess> ClientProgram(const config::ClientConfig& file_config,
+                                                                std::optional<harness::Script> reenactment,
+                                                                std::optional<std::string> replay,
+                                                                boost::uuids::uuid run);
 
 }  // namespace augusta::client
 
