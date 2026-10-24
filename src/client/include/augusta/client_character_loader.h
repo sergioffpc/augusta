@@ -40,6 +40,12 @@ enum class CharacterErrorCode {
   /// The character's Hitboxes could not be resolved; resolve_error says why.
   /// Development build only, as loading them is.
   kHitboxesUnresolved,
+  /// The character's Skeleton, which its Hitboxes are placed by, could not be
+  /// resolved; resolve_error says why. Development build only.
+  kSkeletonUnresolved,
+  /// One of the character's Hitboxes names a Joint its Skeleton lacks; subject
+  /// is that Joint's name. Development build only.
+  kJointUnresolved,
   /// One of the character's Hitboxes is not a whole, in-range triangle list;
   /// subject is its Body part's name and mesh_error says why. Development
   /// build only, as loading them is.
@@ -76,18 +82,25 @@ std::expected<renderer::SceneMesh, CharacterError> LoadCharacterMesh(std::span<c
 std::expected<math::Vec3, CharacterError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye);
 
 #if AUGUSTA_DEBUG_TOOLS
+/// Looks up a character's Skeleton by its name, e.g. Pack::ResolveSkeleton.
+using SkeletonResolver = std::function<std::expected<assets::Skeleton, assets::ResolveError>(std::string_view)>;
+
 /// Looks up a character's Hitboxes by its name, each in the space of its Joint
-/// (ADR-0061).
+/// (ADR-0061), e.g. Pack::ResolveHitboxes.
 using HitboxesResolver =
     std::function<std::expected<std::vector<assets::HitboxData>, assets::ResolveError>(std::string_view)>;
 
-/// Resolves through resolve_hitboxes the Hitboxes of character, by its name in
-/// the scenario's manifest, converted as the server's content loading converts
-/// them (hitbox::FromPack), in the pack's order: none for a character that has
-/// none. Development build only: the Hitboxes Debug overlay is all that draws
-/// them, and a client never judges a round.
+/// Resolves through resolve_hitboxes and resolve_skeleton the Hitboxes and the
+/// Skeleton of character, by its name in the scenario's manifest, binds each
+/// Hitbox to its Joint and converts it as the server's content loading does
+/// (assets::BindHitboxes, hitbox::FromPack), and places it in the character's
+/// root space where the Rest pose holds its Joint (animation::PlaceAtRest),
+/// bound to the root: in the pack's order, none for a character that has none.
+/// Development build only: the Hitboxes Debug overlay is all that draws them,
+/// placing them by each player's pose as the root, and a client never judges a
+/// round.
 std::expected<std::vector<hitbox::CharacterHitbox>, CharacterError> LoadCharacterHitboxes(
-    std::string_view character, const HitboxesResolver& resolve_hitboxes);
+    std::string_view character, const SkeletonResolver& resolve_skeleton, const HitboxesResolver& resolve_hitboxes);
 #endif
 
 }  // namespace augusta::client

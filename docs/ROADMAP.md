@@ -475,7 +475,8 @@ the server's: clients draw the same rigid body until The Drawn Body.
   its Joint
 - The server loads the Skeleton and refuses a Joint name that does not resolve
 - A Posing phase poses a player's Hitboxes from its Skeleton; the Hitbox history
-  keeps posed Joints and interpolates them Joint by Joint
+  keeps the root's pose apart from the posed Joints relative to it, and
+  interpolates each
 - The presentation animation stub deleted
 
 **Exercises:** ADR-0040, ADR-0061, ADR-0044, ADR-0023 **Exit criteria:**

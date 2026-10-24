@@ -62,8 +62,9 @@ struct PlacedHitbox {
 
 /// hitboxes placed by joints, a Hitbox pose's world transform of each Joint
 /// (animation::PoseAtRest), one per Hitbox and in their order: each Hitbox's
-/// triangles transformed by its Joint's. A Hitbox whose Joint joints lacks is a
-/// broken binding, checked rather than read past joints.
+/// triangles transformed by its Joint's. Each Hitbox's Joint must be one joints
+/// has: bindings are checked when a Character loads, so one past joints is a
+/// broken invariant, asserted (ADR-0033), never thrown on the tick.
 [[nodiscard]] std::vector<PlacedHitbox> Place(std::span<const CharacterHitbox> hitboxes,
                                               std::span<const math::Mat4> joints);
 

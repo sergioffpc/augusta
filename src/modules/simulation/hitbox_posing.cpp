@@ -53,19 +53,18 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 // about the vertical through the root, which brings none of them nearer or
 // farther.
 Reach::Reach(const assets::Skeleton& skeleton, std::span<const hitbox::CharacterHitbox> hitboxes) {
-  for (const physics::Stance stance :
-       {physics::Stance::kStanding, physics::Stance::kCrouching, physics::Stance::kProne}) {
+  for (std::size_t index = 0; index < by_stance_.size(); ++index) {
+    const auto stance = static_cast<physics::Stance>(index);
     float reach = 0.0F;
-    const std::vector<math::Mat4> joints =
-        animation::PoseAtRest(skeleton, hitbox::Pose{.position = {}, .yaw = 0.0F, .stance = stance});
-    for (const hitbox::PlacedHitbox& placed : hitbox::Place(hitboxes, joints)) {
+    for (const hitbox::PlacedHitbox& placed :
+         animation::PlaceAtRest(skeleton, hitboxes, hitbox::Pose{.position = {}, .yaw = 0.0F, .stance = stance})) {
       for (const ballistics::Triangle& triangle : placed.triangles) {
         for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
           reach = std::max(reach, math::Length(point));
         }
       }
     }
-    by_stance_.at(std::to_underlying(stance)) = reach + kReachMargin;
+    by_stance_.at(index) = reach + kReachMargin;
   }
 }
 

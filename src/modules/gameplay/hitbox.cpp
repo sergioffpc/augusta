@@ -1,9 +1,9 @@
 #include "augusta/hitbox.h"
 
+#include <cassert>
 #include <cstddef>
 #include <expected>
 #include <span>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -26,9 +26,8 @@ std::vector<PlacedHitbox> Place(std::span<const CharacterHitbox> hitboxes, std::
   std::vector<PlacedHitbox> placed;
   placed.reserve(hitboxes.size());
   for (const CharacterHitbox& hitbox : hitboxes) {
-    if (hitbox.joint >= joints.size()) {
-      throw std::out_of_range("hitbox bound to a joint the pose lacks");
-    }
+    // Bound at load to a Joint of the Skeleton the pose is of (assets::BindHitboxes).
+    assert(hitbox.joint < joints.size());
     const math::Mat4& joint = joints[hitbox.joint];
     PlacedHitbox& one = placed.emplace_back(PlacedHitbox{.part = hitbox.part, .triangles = {}});
     one.triangles.reserve(hitbox.triangles.size());

@@ -1,5 +1,6 @@
 #include "augusta/animation.h"
 
+#include <span>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -35,6 +36,12 @@ std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbo
   std::vector<math::Mat4> world;
   WorldAtRest(skeleton, pose, world);
   return world;
+}
+
+std::vector<hitbox::PlacedHitbox> PlaceAtRest(const assets::Skeleton& skeleton,
+                                              std::span<const hitbox::CharacterHitbox> hitboxes,
+                                              const hitbox::Pose& pose) {
+  return hitbox::Place(hitboxes, PoseAtRest(skeleton, pose));
 }
 
 math::Mat4 Compose(const math::Mat4& parent, const JointPose& local, const math::Vec3& scale) {

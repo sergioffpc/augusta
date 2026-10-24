@@ -31,10 +31,11 @@ EntityId FromSimulation(simulation::EntityId entity) {
 
 namespace {
 
-// converted, a Hitbox of the character at path as hitbox::FromPack converts
-// it, or the failure naming that character if it was refused.
-hitbox::CharacterHitbox Converted(std::expected<hitbox::CharacterHitbox, physics::CollisionMeshError> converted,
-                                  const std::string& path) {
+// converted unwrapped: a Hitbox of the character at path as hitbox::FromPack
+// converts it, or, at startup, the failure naming that character thrown if it
+// was refused (ADR-0033).
+hitbox::CharacterHitbox UnwrapHitboxOrThrow(
+    std::expected<hitbox::CharacterHitbox, physics::CollisionMeshError> converted, const std::string& path) {
   if (!converted) {
     throw failure::ClassifiedFailure(failure::Failure{
         .code = failure::Code::kInvalidContent,
@@ -47,11 +48,11 @@ hitbox::CharacterHitbox Converted(std::expected<hitbox::CharacterHitbox, physics
 }  // namespace
 
 hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
-  return Converted(hitbox::FromPack(hitbox), path);
+  return UnwrapHitboxOrThrow(hitbox::FromPack(hitbox), path);
 }
 
 hitbox::CharacterHitbox ToSimulation(const assets::JointHitbox& hitbox, const std::string& path) {
-  return Converted(hitbox::FromPack(hitbox), path);
+  return UnwrapHitboxOrThrow(hitbox::FromPack(hitbox), path);
 }
 
 std::unordered_map<std::string, simulation::Character> ToSimulation(

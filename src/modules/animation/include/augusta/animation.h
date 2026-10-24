@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_ANIMATION_H_
 #define AUGUSTA_ANIMATION_H_
 
+#include <span>
 #include <vector>
 
 #include "augusta/assets.h"
@@ -15,7 +16,10 @@
 /// pose, with the stance and the facing carried by the Skeleton's root exactly
 /// as ADR-0040 has them (hitbox::RootOf). Pure, with no world or state of its
 /// own: which players are posed, when, and what a posed Hitbox is judged
-/// against are SimulationWorld's, its one consumer, in its Posing phase.
+/// against are SimulationWorld's, in its Posing phase. Its one other consumer
+/// is a Development build's client (ADR-0074), whose Hitboxes Debug overlay
+/// places a Character's Hitboxes in its root space once, when the character
+/// loads, by PlaceAtRest; no client World poses a player.
 namespace augusta::animation {
 
 /// One Joint of a pose, relative to its parent, or to the Character's root for
@@ -43,6 +47,13 @@ void PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose, Skel
 
 /// The world transforms of PoseAtRest alone, into a new vector.
 [[nodiscard]] std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose);
+
+/// hitboxes, each in the space of its Joint of skeleton, placed where the Rest
+/// pose at pose holds them: hitbox::Place by PoseAtRest's world transforms. How
+/// far a Character reaches in a stance, and where a Debug overlay draws it.
+[[nodiscard]] std::vector<hitbox::PlacedHitbox> PlaceAtRest(const assets::Skeleton& skeleton,
+                                                            std::span<const hitbox::CharacterHitbox> hitboxes,
+                                                            const hitbox::Pose& pose);
 
 /// The world transform of a Joint posed at local with scale, under a parent
 /// whose world transform is parent, or under hitbox::RootOf for a root Joint:

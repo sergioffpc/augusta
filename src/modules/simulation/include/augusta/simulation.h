@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <boost/uuid/nil_generator.hpp>
@@ -41,8 +42,9 @@
 /// encapsulated behind Impl (simulation.cpp) - Flecs is this module's
 /// implementation detail, not part of its public interface, so no flecs
 /// header leaks in here. Phase's nine values become, in the same order,
-/// nine dependency-chained flecs::Phase entities, each but HitDetection with
-/// one registered flecs::system (named "<Phase>System") - see simulation.cpp.
+/// nine dependency-chained flecs::Phase entities, each with one registered
+/// flecs::system (named "<Phase>System") but HitDetection, whose test runs
+/// inside Ballistics's (see kHitDetection) - see simulation.cpp.
 /// A player is one entity with a physics body, a rifle, its Character's
 /// Skeleton and hitboxes, its Hitbox pose, its Hitbox history and its health,
 /// and a bullet in flight is one entity too.
@@ -97,17 +99,21 @@ enum class Phase {
   /// player's Hitbox pose. They are judged where
   /// the bullet's shooter saw the players (Lag compensation, ADR-0044): as
   /// they were the bullet's Shooter's delay ago, fixed when it was fired and
-  /// kept for its whole flight, composed from the Joints the Hitbox history
-  /// keeps, interpolated Joint by Joint between the two ticks around that
-  /// moment, or as Posing posed them for a player it holds no tick of yet;
-  /// a bullet passing farther from a player's root than its Character's Rest
+  /// kept for its whole flight, from the Hitbox history between the two ticks
+  /// around that moment: the root's position, facing and stance interpolated
+  /// apart from the Joints relative to it, which are composed onto it from the
+  /// root down; or as Posing posed them for a player it holds no tick of yet.
+  /// A bullet passing farther from a player's root than its Character's Rest
   /// pose reaches in its stance is not tested against it. The Map is judged in
   /// the present. A bullet is never tested against its own shooter. The test
   /// itself is folded into the same ballistics::World::Step call as
   /// kBallistics - see ballistics.h - so the hitboxes are posed for each
   /// bullet ahead of it, and one Step call returns the nearest of the Map and
-  /// the players along the tick's segment, with its BodyPart, and this phase
-  /// runs nothing of its own.
+  /// the players along the tick's segment, with its BodyPart. So this phase
+  /// has no system: by the time it would run, Ballistics has judged every
+  /// bullet of the tick and collected the hits Damage takes. It stays in the
+  /// order, between Ballistics and Damage, as the place of that judgement
+  /// (ADR-0023), and Commit, not this phase, records the Hitbox history.
   kHitDetection,
   /// Mechanism, reads Data/Config. Takes the damage the Parameters give the
   /// ammo for the body part hit (US-12) off the target's health, which stops
@@ -129,11 +135,11 @@ enum class Phase {
   /// make, is logged and decides nothing, and the tick goes on. The only phase
   /// not implemented in C++.
   kScriptsBehaviours,
-  /// Mechanism. Packages the tick's resolved state into Authoritative
-  /// State (State, below), which augusta::replication plans into each
-  /// client's update and host::Host sends, and records every living player's
-  /// Joints as Posing posed them in its Hitbox history, for the bullets of the
-  /// ticks to come.
+  /// Mechanism. Two steps, per living player: packages the tick's resolved
+  /// state into Authoritative State (State, below), which
+  /// augusta::replication plans into each client's update and host::Host
+  /// sends; then records its Joints as Posing posed them in its Hitbox
+  /// history, for the bullets of the ticks to come.
   kCommit,
 };
 
@@ -171,6 +177,10 @@ struct PlayerCommand {
   command::Command command{};
 };
 
+/// The name of the one Joint of a Character's default Skeleton
+/// (Character::skeleton), its root.
+inline constexpr std::string_view kDefaultRootJoint = "Root";
+
 /// What SimulationWorld needs of the Character a player plays (ADR-0040,
 /// ADR-0061), in the character's root space: standing, its feet at the origin,
 /// facing where a view of yaw 0 looks (command::Command).
@@ -182,7 +192,8 @@ struct Character {
   std::vector<hitbox::CharacterHitbox> hitboxes;
   /// Its Skeleton, parents before children: by default its root Joint alone,
   /// at the character's root, so a Hitbox bound to joint 0 is in root space.
-  assets::Skeleton skeleton{.joints = {assets::JointData{.name = "Root"}}, .rest_transforms = {math::Mat4(1.0F)}};
+  assets::Skeleton skeleton{.joints = {assets::JointData{.name = std::string(kDefaultRootJoint)}},
+                            .rest_transforms = {math::Mat4(1.0F)}};
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.

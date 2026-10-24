@@ -805,23 +805,15 @@ def _is_at_root(matrix: Gf.Matrix4d) -> bool:
     )
 
 
-def _read_skeleton(
-    character_name: str,
-    default_prim: Usd.Prim,
-    stage_path: Path,
-    correction: Gf.Matrix4d,
-) -> _Skeleton:
+def _skeleton_prim(
+    character_name: str, default_prim: Usd.Prim, stage_path: Path
+) -> UsdSkel.Skeleton:
     """The UsdSkel Skeleton at the Character prim's Skeleton child.
 
-    Each joint is named by its path within the Skeleton and carries its rest
-    transform relative to its parent, corrected like the rest of the
-    character, so client and server compose its rest pose from its joints
-    alone. Raises CookError for a character with no Skeleton, one with more
-    joints than the pack allows, one UsdSkel could not pose, and one whose
-    root joints are not at the character's root: its feet, facing -Z.
+    Raises CookError for a character with none: a Skeleton is mandatory
+    (ADR-0061).
     """
     character_path = f"{character_name}/{CHARACTER_ROOT_PRIM}"
-    path = f"{character_path}/{CHARACTER_SKELETON_PRIM}"
     prim = default_prim.GetChild(CHARACTER_SKELETON_PRIM)
     if not prim or not prim.IsA(UsdSkel.Skeleton):
         raise CookError(
@@ -831,8 +823,11 @@ def _read_skeleton(
             f"Skeleton prim, {CHARACTER_SKELETON_PRIM!r}, under its "
             f"{CHARACTER_ROOT_PRIM!r} prim",
         )
-    skeleton = UsdSkel.Skeleton(prim)
-    names = [str(name) for name in skeleton.GetJointsAttr().Get() or []]
+    return UsdSkel.Skeleton(prim)
+
+
+def _check_joint_count(names: list[str], path: str) -> None:
+    """Raises CookError if names are more joints than a pack carries."""
     if len(names) > _native.MAX_JOINTS:
         raise CookError(
             "skeleton_too_many_joints",
@@ -840,7 +835,16 @@ def _read_skeleton(
             f"has {len(names)} joints, and a pack carries at most "
             f"{_native.MAX_JOINTS}",
         )
-    rests = skeleton.GetRestTransformsAttr().Get() or []
+
+
+def _joint_parents(
+    names: list[str], rests: Sequence[Gf.Matrix4d], path: str
+) -> list[int]:
+    """Each joint's parent index, negative for a root, in names' order.
+
+    Raises CookError unless names are a topology UsdSkel can pose, each joint
+    named once and with a rest transform.
+    """
     topology = UsdSkel.Topology(names)
     valid, reason = topology.Validate()
     if not valid or len(set(names)) != len(names) or len(rests) != len(names):
@@ -851,11 +855,37 @@ def _read_skeleton(
             or "needs a rest transform for each of its joints, each joint "
             "named once",
         )
+    return list(topology.GetParentIndices())
 
-    parents = topology.GetParentIndices()
-    skeleton_to_root = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
-        Usd.TimeCode.Default()
-    )
+
+def _check_root_placement(name: str, local: Gf.Matrix4d, path: str) -> None:
+    """Raises CookError unless root joint name, at local, is at the root.
+
+    The character's root is its feet, facing -Z, with no turn or scale.
+    """
+    if not _is_at_root(local):
+        raise CookError(
+            "skeleton_root_off_origin",
+            path,
+            f"root joint {name!r} must sit at the character's root, "
+            "its feet, facing -Z, with no turn or scale",
+        )
+
+
+def _decompose_joints(
+    names: list[str],
+    rests: Sequence[Gf.Matrix4d],
+    parents: list[int],
+    skeleton_to_root: Gf.Matrix4d,
+    correction: Gf.Matrix4d,
+    path: str,
+) -> tuple[list[_native.JointData], dict[str, Gf.Matrix4d]]:
+    """Each joint as the pack carries it, and its rest transform by name.
+
+    A joint's transform is relative to its parent, or to the character's root
+    for a root joint, corrected like the rest of the character; its rest
+    transform in the character's root space is left uncorrected, as authored.
+    """
     inverse_correction = correction.GetInverse()
     joints = []
     rest_to_root: dict[str, Gf.Matrix4d] = {}
@@ -863,13 +893,7 @@ def _read_skeleton(
         local = Gf.Matrix4d(rest)
         if parent < 0:
             local = local * skeleton_to_root
-            if not _is_at_root(local):
-                raise CookError(
-                    "skeleton_root_off_origin",
-                    path,
-                    f"root joint {name!r} must sit at the character's root, "
-                    "its feet, facing -Z, with no turn or scale",
-                )
+            _check_root_placement(name, local, path)
             rest_to_root[name] = local
         else:
             rest_to_root[name] = local * rest_to_root[names[parent]]
@@ -885,6 +909,36 @@ def _read_skeleton(
                 scale=scale,
             )
         )
+    return joints, rest_to_root
+
+
+def _read_skeleton(
+    character_name: str,
+    default_prim: Usd.Prim,
+    stage_path: Path,
+    correction: Gf.Matrix4d,
+) -> _Skeleton:
+    """The UsdSkel Skeleton at the Character prim's Skeleton child.
+
+    Each joint is named by its path within the Skeleton and carries its rest
+    transform relative to its parent, corrected like the rest of the
+    character, so client and server compose its rest pose from its joints
+    alone. Raises CookError for a character with no Skeleton, one with more
+    joints than the pack allows, one UsdSkel could not pose, and one whose
+    root joints are not at the character's root: its feet, facing -Z.
+    """
+    path = f"{character_name}/{CHARACTER_ROOT_PRIM}/{CHARACTER_SKELETON_PRIM}"
+    skeleton = _skeleton_prim(character_name, default_prim, stage_path)
+    names = [str(name) for name in skeleton.GetJointsAttr().Get() or []]
+    _check_joint_count(names, path)
+    rests = skeleton.GetRestTransformsAttr().Get() or []
+    parents = _joint_parents(names, rests, path)
+    skeleton_to_root = UsdGeom.Xformable(
+        skeleton.GetPrim()
+    ).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    joints, rest_to_root = _decompose_joints(
+        names, rests, parents, skeleton_to_root, correction, path
+    )
     return _Skeleton(path=path, joints=joints, rest_to_root=rest_to_root)
 
 

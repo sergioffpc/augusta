@@ -1,6 +1,7 @@
 #include "hitbox_history.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -58,8 +59,10 @@ void PoseHistory::Record(tick::Tick tick, const animation::SkeletonPose& posed) 
     oldest_slot_ = SlotOf(1);
   }
   roots_[slot] = posed.root;
+  // posed is of the Skeleton the kept Joints were chosen from.
+  assert(posed.local.size() == joint_count_);
   for (std::size_t kept = 0; kept < kept_.size(); ++kept) {
-    joints_[(slot * kept_.size()) + kept] = posed.local.at(kept_[kept].joint);
+    joints_[(slot * kept_.size()) + kept] = posed.local[kept_[kept].joint];
   }
   newest_tick_ = tick;
 }

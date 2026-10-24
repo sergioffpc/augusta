@@ -81,11 +81,17 @@ ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
 - **A Posing phase.** SimulationWorld evaluates every player's Hitbox pose in a
   phase of its own between WeaponHandling and Ballistics, so HitDetection judges
   this tick's Shots against it. Commit records it in the Hitbox history.
-- **What the Hitbox history keeps.** Per tick, the transforms of the joints that
-  carry a Hitbox and the ancestors needed to compose them — not the whole
-  skeleton. Lag compensation interpolates them joint by joint between the two
-  ticks the Seen time falls between: position linearly, rotation along the
-  shorter arc.
+- **What the Hitbox history keeps.** Per tick, where the Hitbox pose put the
+  skeleton's root — its position, facing and stance — and, apart from it, the
+  transforms relative to their parents of the joints that carry a Hitbox and the
+  ancestors needed to compose them: not the whole skeleton, and no scale, which
+  no pose changes. Lag compensation interpolates between the two ticks the Seen
+  time falls between: the root's position linearly, its facing along the shorter
+  arc and its stance the nearer tick's; each joint's position linearly and its
+  rotation along the shorter arc; then composes the joints onto the root from
+  the root down (ADR-0044). The root is kept apart because it carries the
+  stance's lowering, a scale of the vertical alone: composed into a turned joint
+  that is a sheared transform, with no position and rotation to interpolate.
 - **Culling stays conservative.** The reach that discards a candidate before its
   triangles are tested (ADR-0044) is computed when the character is loaded, as
   the furthest a Hitbox can be from the root in the rest pose, plus its margin,
@@ -95,18 +101,22 @@ ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
   the rest pose, the Hitbox bound to its joint, the Posing phase and the
   history, with the pose always the rest pose. Until a clip exists, the stance
   and the facing are carried by the skeleton's root exactly as they are today —
-  the uniform scale by stance height and the rotation by yaw of ADR-0040 — so no
-  shot lands differently on the day the format arrives. ADR-0040's scaling and
-  turning give way to the pose only where a clip replaces them (ADR-0066).
+  the vertical alone scaled by the stance's height, as the eye is lowered, and
+  the rotation by yaw of ADR-0040 — so no shot lands differently on the day the
+  format arrives. ADR-0040's scaling and turning give way to the pose only where
+  a clip replaces them (ADR-0066).
 - **No replicated state is added.** In the rest pose there is nothing to
   remember: position, yaw and stance are already in the Authoritative State. The
   protocol, the Authoritative State update and the Match capture are untouched
   until Clips bring memory of their own (ADR-0066).
 - **No pose on the client at first.** The module is `SHARED` so that it cannot
-  depend on anything client-only, but the first change has one consumer,
-  SimulationWorld. PresentationWorld's Animation phase stays as it is until
-  Clips and skinning arrive, because without skinning nothing the client draws
-  moves with a pose.
+  depend on anything client-only, but in the first change SimulationWorld is the
+  one consumer that poses players. The other is a Development build's client
+  (ADR-0074), which places a character's Hitboxes in its root space by the rest
+  pose once, when the character loads, for the Hitboxes Debug overlay to place
+  by each player's pose as the root: a loader, not a World, posing no player.
+  PresentationWorld's Animation phase stays as it is until Clips and skinning
+  arrive, because without skinning nothing the client draws moves with a pose.
 - **Skinning comes with the Clips.** Drawing a posed character is ADR-0066's,
   not part of the first change. The renderer rebuilds every remote player's
   vertices on the CPU each frame, rotated by yaw and translated, with no
