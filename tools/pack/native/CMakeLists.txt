@@ -1,7 +1,9 @@
 # The cooker's native part (ADR-0030): one pybind11 module,
 # augusta_pack._native, bound in module.cpp - the mesh pass over meshoptimizer
 # (ADR-0016, mesh.h), the texture compression over stb_image,
-# stb_image_resize2 and libktx (ADR-0017, texture.h), and augusta_assets' pack
+# stb_image_resize2 and libktx (ADR-0017, texture.h), a Character's Skeleton and
+# Clips built into archives by ozz-animation's offline libraries (ADR-0066,
+# animation.h), and augusta_assets' pack
 # encoder, which writes every pack the cook makes (encoder_binding.h), its
 # reader, which the inspect, verify and publish tools read packs with
 # (reader_binding.h), and its key generation, which augusta-keygen makes the
@@ -22,6 +24,7 @@ endif()
 find_package(meshoptimizer CONFIG REQUIRED)
 find_package(Ktx CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(ozz-animation CONFIG REQUIRED)
 
 # Built straight into the package's source directory, so `import
 # augusta_pack._native` works once the package is installed editable (uv sync
@@ -31,13 +34,17 @@ set(AUGUSTA_PACK_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../src/augusta_pack")
 pybind11_add_module(
   augusta_pack_py
   module.cpp
+  animation.cpp
   encoder_binding.cpp
   keys_binding.cpp
   mesh.cpp
   reader_binding.cpp
   texture.cpp
 )
-target_link_libraries(augusta_pack_py PRIVATE augusta_assets meshoptimizer::meshoptimizer KTX::ktx)
+target_link_libraries(
+  augusta_pack_py
+  PRIVATE augusta_assets meshoptimizer::meshoptimizer KTX::ktx ozz::animation_offline
+)
 target_include_directories(augusta_pack_py SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 set_target_properties(
   augusta_pack_py

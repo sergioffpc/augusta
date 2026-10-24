@@ -42,6 +42,7 @@ _NO_CPE = {
     "glm": "not in the NVD",
     "libsodium": "not in the NVD: its CVEs have no CPE assigned",
     "nvtx": "not in the NVD",
+    "ozz-animation": "not in the NVD",
     "pffft": "not in the NVD",
     "physx": "not in the NVD (nvidia:physx_system_software is the driver)",
     "prometheus-cpp": "not in the NVD",

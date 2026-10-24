@@ -56,6 +56,9 @@ enum class AssetType : std::uint8_t {
   kEye,
   kCueSound,
   kSkeleton,
+  kAnimationSkeleton,
+  kClip,
+  kStanceTransitions,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -138,6 +141,46 @@ struct Skeleton {
   std::vector<JointData> joints;
   /// Index for index with joints.
   std::vector<math::Mat4> rest_transforms;
+};
+
+/// The foot a Foot contact lands (ADR-0062). Numbered as the clip blob carries
+/// it.
+enum class Foot : std::uint8_t {
+  kLeft = 0,
+  kRight = 1,
+};
+
+/// One Foot contact of a Clip (ADR-0062): the foot that lands, and when, as a
+/// ratio of the Clip's duration from 0 (its start) to 1 (its end).
+struct FootContact {
+  Foot foot = Foot::kLeft;
+  float ratio = 0.0F;
+};
+
+/// A Character's Clip (ADR-0066): its ozz-animation archive and what the cooker
+/// measured of it.
+struct ClipData {
+  /// How far a locomotion Clip's root moved over it as authored, in meters: the
+  /// distance its Stride advances one cycle by. The archive no longer moves the
+  /// root along the ground. 0 for a Clip that is not locomotion.
+  float stride_length = 0.0F;
+  /// Its Foot contacts in time order: one left and one right for a locomotion
+  /// Clip, none for an idle; whatever was authored for any other.
+  // Initialized, so a designated initializer may leave it out.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::vector<FootContact> foot_contacts{};
+  /// An ozz::animation::Animation archive, a track for each Joint of its
+  /// Character's animation Skeleton, in that Skeleton's order.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::vector<std::byte> archive{};
+};
+
+/// How long a change between two stances takes a Character (ADR-0066), in
+/// seconds, either way: one duration for each pair of stances.
+struct StanceTransitionsData {
+  float standing_crouching = 0.0F;
+  float standing_prone = 0.0F;
+  float crouching_prone = 0.0F;
 };
 
 /// A character's Hitbox paired with its Joint (ADR-0061): the Joint's index in
@@ -308,6 +351,29 @@ struct EyeData {
 /// child (ADR-0040, ADR-0061), e.g. "soldier/Character/Skeleton".
 [[nodiscard]] inline std::string CharacterSkeletonPath(std::string_view character) {
   return std::format("{}/Character/Skeleton", character);
+}
+
+/// Pack-relative path of the ozz-animation archive of the Skeleton of the
+/// character named character (ADR-0066), e.g. "soldier/Character/Skeleton.ozz":
+/// beside its Skeleton's, and never a prim's, since no prim name holds a '.'.
+/// Its Joints are the Skeleton's, in the order ozz-animation keeps them.
+[[nodiscard]] inline std::string CharacterAnimationSkeletonPath(std::string_view character) {
+  return std::format("{}/Character/Skeleton.ozz", character);
+}
+
+/// Pack-relative path of the Clip of the character named character that plays
+/// role (ADR-0066): the prim that names it under the `Character` root prim's
+/// `Clips` child, e.g. "soldier/Character/Clips/standing/forward" for the role
+/// "standing/forward", or "soldier/Character/Clips/air".
+[[nodiscard]] inline std::string CharacterClipPath(std::string_view character, std::string_view role) {
+  return std::format("{}/Character/Clips/{}", character, role);
+}
+
+/// Pack-relative path of the stance transitions of the character named
+/// character (ADR-0066): its `Clips` prim, which authors them, e.g.
+/// "soldier/Character/Clips".
+[[nodiscard]] inline std::string CharacterStanceTransitionsPath(std::string_view character) {
+  return std::format("{}/Character/Clips", character);
 }
 
 /// Pack-relative path of the visual mesh of the character named

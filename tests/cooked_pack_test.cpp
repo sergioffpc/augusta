@@ -117,6 +117,27 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
   }
 }
 
+// The example character's pose comes from its Clips (ADR-0066), so both packs
+// hold its animation Skeleton, its Clips and its stance transitions.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersAnimation) {
+  using augusta::assets::AssetType;
+  const std::vector<std::pair<AssetType, std::string>> expected = {
+      {AssetType::kAnimationSkeleton, augusta::assets::CharacterAnimationSkeletonPath("soldier")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "standing/forward")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "prone/idle")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "air")},
+      {AssetType::kStanceTransitions, augusta::assets::CharacterStanceTransitionsPath("soldier")},
+  };
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto entries = pack->Entries();
+    for (const auto& [type, path] : expected) {
+      EXPECT_TRUE(std::ranges::any_of(entries, [&](const augusta::assets::PackEntry& entry) {
+        return entry.type == type && entry.path == path;
+      })) << path;
+    }
+  }
+}
+
 // Both packs carry the same Skeleton (ADR-0061), and it loads with every one of
 // the example character's Hitboxes on a Joint of it.
 TEST_F(CookedPackTest, BothPacksLoadTheSameExampleSkeletonAndEveryHitboxResolvesItsJoint) {

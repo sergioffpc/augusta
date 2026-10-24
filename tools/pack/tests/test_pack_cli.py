@@ -45,7 +45,7 @@ def test_inspect_shows_the_header_index_and_trailer(capsys, signed_pack):
         "",
         "Header (offset 0, 61 bytes)",
         "  magic         AUGP",
-        "  version       4",
+        "  version       5",
         "  data offset   61",
         "  index offset  71",
         "  index count   2",

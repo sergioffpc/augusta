@@ -346,3 +346,34 @@ def decode_cue_sound(blob: bytes) -> tuple[float, list[str]]:
         offset += 4 + length
     assert offset == len(blob)
     return gain_db, variants
+
+
+@dataclass(frozen=True)
+class Clip:
+    stride_length: float
+    # (foot, ratio of the clip's duration), foot 0 left and 1 right.
+    foot_contacts: list[tuple[int, float]]
+    archive: bytes
+
+
+def decode_clip(blob: bytes) -> Clip:
+    """A clip blob: its stride length, Foot contacts and archive.
+
+    The blob is an f32 stride length, a u8 contact count, each contact's u8
+    foot and f32 ratio, then the ozz-animation archive as the rest.
+    """
+    stride_length, count = struct.unpack_from("<fB", blob, 0)
+    offset = 5
+    contacts = []
+    for _ in range(count):
+        contacts.append(struct.unpack_from("<Bf", blob, offset))
+        offset += 5
+    return Clip(stride_length, contacts, blob[offset:])
+
+
+def decode_stance_transitions(blob: bytes) -> tuple[float, float, float]:
+    """A stance-transitions blob's durations, in seconds.
+
+    Standing-crouching, standing-prone, then crouching-prone, each an f32.
+    """
+    return struct.unpack("<3f", blob)
