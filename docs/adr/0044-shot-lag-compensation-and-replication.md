@@ -13,24 +13,35 @@ split of ballistics between client and server.
 carries its Seen time, what the shooter was seeing when it fired: the tick of
 the Authoritative State update being shown and the interpolation fraction
 between it and the next one (0 to 1). The server keeps, for every player, the
-hitboxes of each of its recent ticks, as that tick's Authoritative State
-reported them, enough ticks to cover the cap at its tick rate (18 at 60 Hz). It
-tests the shot against the hitboxes interpolated between those two ticks at that
-fraction: position and facing interpolated, the facing along the shorter arc,
-and the stance of the nearer tick, which is how a client shows a body between
-two updates. The time between that Seen time and the tick the server takes the
-Command in is the Shooter's delay. A delay beyond 300 ms is clamped to 300 ms,
-not refused: the shot is judged against the oldest Seen time the cap allows. A
-real client's Shooter's delay is its round trip, plus the Interpolation delay,
-plus up to two ticks its fire Command waits queued, so the cap is set to cover
-ADR-0013's worst-case round trip (150 ms): 150 + 100 + 2 ticks at 60 Hz is no
-more than 300 ms, and a client on that link is judged exactly where it saw its
-target. A test holds the cap to that budget. The cap bounds how far into the
-past a high-latency player can hit, which is the cost the victim pays (being
-shot after reaching cover). The Seen time is only what a client says, so the
-server holds it within what it can have been shown: a fraction outside 0 to 1 is
-the nearer of the two, and a Seen time newer than the last Authoritative State
-the server emitted is that State, so a delay is never less than a tick.
+Hitbox history: its posed Joints of each of its recent ticks, as that tick's
+Authoritative State posed them (ADR-0061), enough ticks to cover the cap at its
+tick rate (18 at 60 Hz). Commit records, per tick, where the Hitbox pose put the
+Skeleton's root (its position, facing and stance) and the position and rotation,
+relative to its parent, of each Joint that carries a Hitbox or is the ancestor
+of one. No other Joint is kept, so ADR-0061's Joint cap bounds a tick's cost,
+and no scale is kept: a Joint's is its Skeleton's, which no pose changes. The
+server tests the shot against the Hitboxes composed from those Joints between
+those two ticks at that fraction. The root's position and facing are
+interpolated, the facing along the shorter arc, and its stance is the nearer
+tick's, which is how a client shows a body between two updates. Each Joint is
+interpolated relative to its parent, its position linearly and its rotation
+along the shorter arc, then composed onto its parent from the root down. The
+root is interpolated apart from the Joints because it carries the stance's
+lowering, a scale of the vertical alone: composed with a turned Joint, that is a
+sheared transform, which has no position and rotation to interpolate. The time
+between that Seen time and the tick the server takes the Command in is the
+Shooter's delay. A delay beyond 300 ms is clamped to 300 ms, not refused: the
+shot is judged against the oldest Seen time the cap allows. A real client's
+Shooter's delay is its round trip, plus the Interpolation delay, plus up to two
+ticks its fire Command waits queued, so the cap is set to cover ADR-0013's
+worst-case round trip (150 ms): 150 + 100 + 2 ticks at 60 Hz is no more than 300
+ms, and a client on that link is judged exactly where it saw its target. A test
+holds the cap to that budget. The cap bounds how far into the past a
+high-latency player can hit, which is the cost the victim pays (being shot after
+reaching cover). The Seen time is only what a client says, so the server holds
+it within what it can have been shown: a fraction outside 0 to 1 is the nearer
+of the two, and a Seen time newer than the last Authoritative State the server
+emitted is that State, so a delay is never less than a tick.
 
 **A bullet lives in the shooter's time for its whole flight.** At 800 m/s a
 bullet takes several ticks to reach its target. The server fixes the Shooter's

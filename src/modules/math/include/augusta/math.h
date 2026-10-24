@@ -77,6 +77,12 @@ inline float LerpAngle(float from, float to, float t) {
   return from + (std::remainder(to - from, kTurn) * t);
 }
 
+/// The rotation t of the way from from to to along the shorter arc between
+/// them (spherical linear interpolation), as GLM's slerp takes it. t is not
+/// clamped, as for Lerp. How the server turns a Joint between two ticks of the
+/// Hitbox history (ADR-0044).
+inline Quat Slerp(const Quat& from, const Quat& to, float t) { return glm::slerp(from, to, t); }
+
 /// The inverse of transform: maps back what transform mapped. transform must
 /// be invertible (no zero scale) - GLM does not check.
 inline Mat4 Inverse(const Mat4& transform) { return glm::inverse(transform); }
