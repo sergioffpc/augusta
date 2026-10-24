@@ -83,7 +83,7 @@ def test_a_pack_of_another_format_names_both_versions(tmp_path, key_pair):
     path.write_bytes(pack)
 
     with pytest.raises(
-        _native.LoadError, match="is pack format 2; this build reads format 5$"
+        _native.LoadError, match="is pack format 2; this build reads format 6$"
     ) as refused:
         _native.load_pack(path, key_pair.public_key)
     assert refused.value.reason == _native.LoadErrorReason.UNSUPPORTED_VERSION

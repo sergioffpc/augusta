@@ -1,0 +1,37 @@
+#usda 1.0
+(
+    defaultPrim = "Rifle"
+    upAxis = "Y"
+    metersPerUnit = 1
+)
+
+# A rifle stage (ADR-0064): its Grip, Muzzle and Sight, each pointing along its
+# -Z, and a visual mesh the cooker leaves out of both packs.
+def Xform "Rifle"
+{
+    def Xform "Grip"
+    {
+        double3 xformOp:translate = (0, -0.1, 0.1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "Muzzle"
+    {
+        double3 xformOp:translate = (0, 0, -0.7)
+        float3 xformOp:rotateXYZ = (0, 90, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Xform "Sight"
+    {
+        double3 xformOp:translate = (0, 0.07, -0.1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Mesh "Visual"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (0, 0, -0.7), (0, 0.1, 0)]
+    }
+}

@@ -45,8 +45,8 @@ namespace augusta::host {
 [[nodiscard]] std::unordered_map<std::string, simulation::Character> ToSimulation(
     const std::vector<scenario::Character>& characters);
 
-/// SimulationWorld on parameters at tick_rate_hz, with scenario's collision and
-/// the scenario's Game policy. Throws failure::ClassifiedFailure
+/// SimulationWorld on parameters at tick_rate_hz, with scenario's collision, its
+/// rifle's markers and the scenario's Game policy. Throws failure::ClassifiedFailure
 /// (failure::Code::kInvalidContent) if a map mesh is not a whole triangle list.
 [[nodiscard]] simulation::World BuildSimulation(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz,
                                                 const scenario::Scenario& scenario, policy::Policy policy);

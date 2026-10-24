@@ -505,6 +505,7 @@ target_link_libraries(
   PRIVATE
     augusta_server_application
     augusta_application
+    augusta_assets
     augusta_config
     augusta_failure
     augusta_logging

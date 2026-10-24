@@ -68,6 +68,9 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeHitboxBlob(const Hitbox
 /// Encodes eye into the pack's eye-blob byte layout (ADR-0040).
 std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& eye);
 
+/// Encodes rifle into the pack's rifle-blob byte layout (ADR-0064).
+std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle);
+
 /// Encodes script, a Lua script's text, into the pack's script-blob byte layout
 /// (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);

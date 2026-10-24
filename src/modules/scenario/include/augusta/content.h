@@ -14,6 +14,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
+#include "augusta/weapon.h"
 
 /// \file
 /// What the server loads from its verified pack at startup (ADR-0018): the
@@ -46,8 +47,8 @@ struct Character {
 };
 
 /// What a match is played in and with: the map's collision and where players
-/// spawn, as built by augusta::map, the characters players may join as, and the
-/// client pack a player must join with.
+/// spawn, as built by augusta::map, the characters players may join as, the
+/// rifle every player holds, and the client pack a player must join with.
 struct Scenario {
   std::vector<physics::CollisionMesh> collision;
   /// Game policy gives each player one at every match start (US-03), as
@@ -56,6 +57,9 @@ struct Scenario {
   /// The scenario's characters: the only ones a player may join as
   /// (ADR-0042). Empty admits no one.
   std::vector<Character> characters;
+  /// The markers every player's Muzzle and Sight are placed from (ADR-0064);
+  /// by default all at the rifle's origin.
+  weapon::Markers rifle{};
   /// The hash of the client pack cooked with the server's: the only one a
   /// player may join with.
   assets::PackHash client_pack{};
@@ -80,7 +84,9 @@ struct Content {
 /// leaves from its shooter's eye (US-07) and every player is posed by its Clips
 /// (ADR-0066), so the server runs only on characters it can judge, fire for and
 /// pose. A character whose Clips do not load fails with the character as
-/// context, and the Clip's role as `clip` when a Clip is what failed.
+/// context, and the Clip's role as `clip` when a Clip is what failed. The
+/// scenario must have a rifle: every player's Muzzle is placed from its markers
+/// (ADR-0064).
 [[nodiscard]] std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& pack,
                                                                          std::uint8_t tick_rate_hz);
 

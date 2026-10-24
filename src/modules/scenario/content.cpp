@@ -15,10 +15,12 @@
 #include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
 #include "augusta/policy.h"
 #include "augusta/policy_loader.h"
+#include "augusta/weapon.h"
 
 namespace augusta::scenario {
 
@@ -81,6 +83,20 @@ std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const ass
   return characters;
 }
 
+// The scenario's rifle (ADR-0064): its Grip, Muzzle and Sight, each a frame in
+// the rifle's space, as Posing places them.
+std::expected<weapon::Markers, failure::Failure> ReadRifle(const assets::Pack& pack) {
+  const auto rifle = pack.ResolveRifle();
+  if (!rifle) {
+    return std::unexpected(ContentFailure(pack, {{.key = "asset", .value = std::string(assets::kRiflePath)}},
+                                          assets::DescribeResolveError(rifle.error(), "rifle")));
+  }
+  const auto frame = [](const assets::RifleMarker& marker) {
+    return math::ToMat4(marker.translation, marker.rotation, math::Vec3(1.0F));
+  };
+  return weapon::Markers{.grip = frame(rifle->grip), .muzzle = frame(rifle->muzzle), .sight = frame(rifle->sight)};
+}
+
 // The scenario's Parameters script, out of the pack (it was cooked into the
 // server pack with the map and is signed with it), evaluated once for a server
 // ticking at tick_rate_hz. Logs each warning the script gives.
@@ -136,6 +152,10 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   if (!characters) {
     return std::unexpected(std::move(characters.error()));
   }
+  auto rifle = ReadRifle(pack);
+  if (!rifle) {
+    return std::unexpected(std::move(rifle.error()));
+  }
   // The client pack cooked with this one, the only one a player may join with.
   const std::optional<assets::PackHash>& client_pack = pack.ClientPackHash();
   if (!client_pack) {
@@ -160,6 +180,7 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
               .collision = *std::move(collision),
               .spawn_points = *std::move(spawn_points),
               .characters = *std::move(characters),
+              .rifle = *rifle,
               .client_pack = *client_pack,
           },
       .parameters = *std::move(parameters),
