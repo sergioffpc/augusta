@@ -20,6 +20,12 @@ dedicated server.
 - [Status](#status)
 - [Development Setup](#development-setup)
     - [Bootstrap](#bootstrap)
+        - [Windows (client)](#windows-client)
+        - [Linux (server and shared core, Ubuntu 26.04)](#linux-server-and-shared-core-ubuntu-2604)
+        - [macOS (server and shared core, through the dev container)](#macos-server-and-shared-core-through-the-dev-container)
+        - [Dev container or Codespaces (server and shared core)](#dev-container-or-codespaces-server-and-shared-core)
+        - [Uninstall](#uninstall)
+        - [k3s node (the cluster's server, Debian 13)](#k3s-node-the-clusters-server-debian-13)
     - [Build and Run](#build-and-run)
     - [Tests](#tests)
     - [Agent Skills](#agent-skills)
@@ -58,67 +64,89 @@ docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
 ### Bootstrap
 
-[scripts/bootstrap.sh](scripts/bootstrap.sh) installs the toolchain, clones the
-repository into `./augusta` (or `$AUGUSTA_DIR`) and readies the checkout. In an
-existing checkout, run `scripts/bootstrap.sh` instead.
+One command per platform sets up a machine and a checkout ready to build, test
+and commit: it installs the toolchain, clones the repository into `./augusta`
+(or `$AUGUSTA_DIR`) and readies the checkout (submodules, vcpkg, the git hooks).
+In an existing checkout, run `scripts/bootstrap.sh` instead. The reference
+editor is [VS Code](https://code.visualstudio.com): open the checkout's folder
+in it and install the extensions it recommends.
 
-**Windows (client):** in PowerShell as Administrator (Win+X → "Terminal
-(Admin)"). This installs Git for Windows, then runs the bootstrap in its Git
-Bash, which installs Visual Studio Build Tools and GNU make among the rest:
+#### Windows (client)
+
+In PowerShell as Administrator (Win+X → "Terminal (Admin)"):
 
 ```powershell
 winget install --id Git.Git --exact --source winget --accept-package-agreements --accept-source-agreements; & "$env:ProgramFiles\Git\bin\bash.exe" -c "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash"
 ```
 
-Open a new terminal after setup. The Makefile loads the Visual Studio Build
-Tools environment automatically for each command on Windows.
+It installs Git for Windows, then runs the bootstrap in its Git Bash, which
+installs Visual Studio Build Tools, LLVM, GNU make and the rest, and Podman with
+its WSL 2 machine. Open a new terminal afterwards: the Makefile loads the Build
+Tools' environment for each command.
 
-**Linux host (server / shared core, Ubuntu 26.04):** installs the dev
-container's toolchain on the host, through sudo:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
-```
-
-**Dev container (server / shared core):** open the repository in VS Code's Dev
-Containers or in GitHub Codespaces. The container reproduces CI's Linux build
-environment, so `make test` builds and tests the `linux` preset with nothing
-else to install. The first build compiles the vcpkg dependencies; later ones
-reuse them from `.vcpkg-bincache`, and sccache's objects from a volume.
-
-**macOS (server / shared core, through the dev container):** nothing builds
-natively. With [Homebrew](https://brew.sh) installed, this installs git, Git LFS
-and Podman (unless Docker is already there), starts Podman's machine, then
-builds the dev container's image and creates the checkout's container:
+#### Linux (server and shared core, Ubuntu 26.04)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
 ```
 
-`scripts/dev-container.sh` opens a shell in that container from a terminal (or
+It installs the dev container's toolchain on the host, through sudo.
+
+#### macOS (server and shared core, through the dev container)
+
+With [Homebrew](https://brew.sh) installed:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap.sh | bash
+```
+
+Nothing builds natively: it installs git, Git LFS and Podman (unless Docker is
+already there), starts Podman's machine, and builds the dev container's image
+and the checkout's container. `scripts/dev-container.sh` opens a shell in it (or
 runs the command it's given), and the git hooks run their checks there. Run
 `scripts/dev-container.sh make configure PRESET=linux-debug` once so the
 `pre-push` hook can run clang-tidy.
 
-Every bootstrap and the container initialize the vendored submodules and
-configure the Conventional Commits `commit-msg` hook.
+#### Dev container or Codespaces (server and shared core)
 
-**k3s node (the cluster's server, Debian 13):**
+Open the repository in VS Code's Dev Containers or in GitHub Codespaces: there
+is nothing to run. The container reproduces CI's Linux build environment, so
+`make test` builds and tests the `linux` preset. The first build compiles the
+vcpkg dependencies; later ones reuse them from `.vcpkg-bincache`, and sccache's
+objects from a volume.
+
+#### Uninstall
+
+```bash
+scripts/bootstrap.sh uninstall
+```
+
+In Git Bash as Administrator on Windows. It removes what the bootstrap installed
+that was not there before, newest first (`uninstall toolchain` alone), and the
+checkout's readying (`uninstall checkout` alone): vcpkg's tool and binary cache,
+the git hooks and the submodules, and on macOS the dev containers. The
+repository's files and your work stay. A machine bootstrapped before the
+bootstrap kept a record of what it installed keeps what it installed then.
+
+#### k3s node (the cluster's server, Debian 13)
+
+Over SSH, by key, as your own user:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+```
+
 [scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
 runs `develop` and `staging`, through sudo, without a checkout: the crash-core
 handler, Podman and lldb to read a core, the server's `augusta` user, the
 asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
 by key only, unattended security updates, auditd), k3s at the cluster's release,
 and Flux, which then installs the monitoring stack and both environments from
-Git. It skips what the node already has. Run it over SSH, by key, as your own
-user: the firewall then lets only that session's address, or those given with
-`--admin`, reach SSH and the API server. The asset packs are the one state not
-in Git: `augusta-publish` puts them on the node, or `--packs` unpacks a copy
-([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)):
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
-```
+Git. It skips what the node already has. The firewall then lets only the SSH
+session's address, or those given with `--admin`, reach SSH and the API server.
+The asset packs are the one state not in Git: `augusta-publish` puts them on the
+node, or `--packs` unpacks a copy
+([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)).
 
 ### Build and Run
 

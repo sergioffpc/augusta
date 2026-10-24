@@ -520,30 +520,35 @@ no self-hosted GitHub Actions runner in this pipeline).
   with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
   LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy and ctcache (which
   `make tidy` runs it through, at CI's pinned commit), clang-format, GitHub CLI,
-  kubectl, helm, the flux CLI at the cluster's Flux version, Doxygen, the hooks'
-  formatters and linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint,
-  gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and
-  taplo, at CI's pinned versions), and CI's Linux vcpkg binary cache
-  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
-  image builds for the host's architecture (amd64 or arm64) rather than
-  emulating CI's amd64. sccache's cache lives in a volume shared by every
-  container of the repository; the build trees in a volume per container, so
-  they never collide with a Windows build of the same checkout. One recipe, not
-  a container beside a separate host bootstrap: two recipes for the same
-  toolchain drift apart. With them come the Linux client's system packages
-  (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's Vulkan
-  drivers and Xvfb for the Renderer's smoke test), so the `linux` presets build
-  and test `augustac` in the container too. The Windows client has no container
-  equivalent (see below).
+  kubectl, helm, the flux CLI at the cluster's Flux version, cosign at the
+  version CI signs with and jq (for a release's wait on its signed image),
+  Podman (the container engine), tshark (the Wireshark dissector's test), auditd
+  (`scripts/augustad-seccomp.sh record`), the tools CI's own jobs run at CI's
+  versions (trivy, kubeconform, the Kyverno CLI, promtool, amtool, hadolint,
+  oras, syft, grype, and mikefarah's yq), Doxygen, the hooks' formatters and
+  linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
+  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
+  CI's pinned versions), and CI's Linux vcpkg binary cache configuration (a
+  files provider in the checkout's `.vcpkg-bincache`). The image builds for the
+  host's architecture (amd64 or arm64) rather than emulating CI's amd64.
+  sccache's cache lives in a volume shared by every container of the repository;
+  the build trees in a volume per container, so they never collide with a
+  Windows build of the same checkout. One recipe, not a container beside a
+  separate host bootstrap: two recipes for the same toolchain drift apart. With
+  them come the Linux client's system packages (ADR-0008: X11, Wayland and
+  xkbcommon development files, and Mesa's Vulkan drivers and Xvfb for the
+  Renderer's smoke test), so the `linux` presets build and test `augustac` in
+  the container too. The Windows client has no container equivalent (see below).
 - **macOS (through the dev container):** nothing builds natively on macOS (the
   presets are Linux's and Windows'), and nothing is installed there but git, Git
-  LFS and Docker or Podman, which `scripts/bootstrap.sh` installs through
-  Homebrew (its macOS half, `scripts/bootstrap/macos.sh`, which also creates the
-  container). `scripts/dev-container.sh [command]` runs a command (a shell by
-  default) in the dev container's image from a terminal: one container per
-  checkout, kept running, with the checkout mounted at its host path so a git
-  worktree's `.git` resolves inside too, a `build/` volume of its own, and
-  sccache's and vcpkg's caches in volumes every checkout shares.
+  LFS and Podman (or a Docker already there, which the scripts take where there
+  is no Podman), which `scripts/bootstrap.sh` installs through Homebrew (its
+  macOS half, `scripts/bootstrap/macos.sh`, which also creates the container).
+  `scripts/dev-container.sh [command]` runs a command (a shell by default) in
+  the dev container's image from a terminal: one container per checkout, kept
+  running, with the checkout mounted at its host path so a git worktree's `.git`
+  resolves inside too, a `build/` volume of its own, and sccache's and vcpkg's
+  caches in volumes every checkout shares.
   `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
   the compile commands clang-tidy needs. On macOS the `pre-commit` and
   `pre-push` hooks run their formatters and linters through it; git itself
@@ -570,10 +575,20 @@ no self-hosted GitHub Actions runner in this pipeline).
   and LLVM (`clang-cl` and `lld-link` for the build, `clang-format`/`clang-tidy`
   for the hooks below), pinned to the LLVM version CI's Ubuntu runner ships and
   CI's Windows jobs install, so a local build and the hooks agree with CI's
-  gates, and kubectl, helm and the flux CLI, for the cluster. It also puts Git's
-  `bin` directory on PATH, so `bash scripts/<script>.sh` runs from PowerShell
-  and cmd, and the workspace's VS Code settings point the Kubernetes extension
-  and its terminals at the day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  gates, kubectl, helm and the flux CLI, for the cluster, and cosign, jq, tshark
+  (through Wireshark) and the tools CI's own jobs run, as the Linux half's, with
+  Podman and its WSL 2 machine; auditd, which records a Linux kernel's syscalls,
+  has no Windows counterpart. It also puts Git's `bin` directory on PATH, so
+  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
+  VS Code settings point the Kubernetes extension and its terminals at the
+  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+- **Uninstall:** `scripts/bootstrap.sh uninstall` undoes a bootstrap on every
+  platform: what its toolchain step installed that was not there before, which
+  it records in a manifest of the machine's (each package, file, PATH entry,
+  Visual Studio component, winget pin and Podman machine), newest first, and its
+  checkout step's readying, never the repository's files. Only what the
+  bootstrap itself installed goes: a tool that was there before stays, as does
+  what a machine bootstrapped before the manifest installed then.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
@@ -591,11 +606,16 @@ no self-hosted GitHub Actions runner in this pipeline).
   build dependencies (a small pybind11 module, no OpenUSD - see ADR-0030) — the
   root `vcpkg.json`'s `pack` feature (ADR-0025), like the rest of the codebase,
   not fetched by this script.
-- **Editor experience:** a committed `.vscode/extensions.json` lists recommended
-  extensions (C++ tools, CMake Tools, clangd/clang-format, EditorConfig, Lua,
-  YAML/Helm, GitHub Actions) — VS Code prompts to install these whenever the
-  folder is opened, on either side (dev container or native Windows); the dev
-  container installs the Linux-relevant subset itself.
+- **Editor experience:** VS Code is the reference editor: the repository's
+  editor configuration (`.vscode/`: settings, tasks, launch configurations and
+  recommended extensions) and the dev container are written for it and kept
+  working with it; another editor works from the same `compile_commands.json`,
+  `.editorconfig` and formatters, without that configuration. The committed
+  `.vscode/extensions.json` lists recommended extensions (C++ tools, CMake
+  Tools, clangd/clang-format, EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS
+  Code prompts to install these whenever the folder is opened, on either side
+  (dev container or native Windows); the dev container installs the
+  Linux-relevant subset itself.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
   actually makes dependency acquisition reproducible on both sides — not a
   container.

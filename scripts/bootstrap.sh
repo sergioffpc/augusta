@@ -7,9 +7,16 @@
 # its post-create.sh the checkout step; a host runs both.
 #
 # Usage: scripts/bootstrap.sh [toolchain|checkout]
+#        scripts/bootstrap.sh uninstall [toolchain|checkout]
 #
 # Piped from curl outside a checkout (README.md, Bootstrap), it first clones
 # the repository into ${AUGUSTA_DIR:-./augusta} and runs that clone's copy.
+#
+# uninstall undoes them: the checkout step's readying (vcpkg's tool and binary
+# cache, the hooks, the submodules; never the repository's files), and what
+# the toolchain step installed that was not there before, as its manifest
+# records it, newest first. A machine bootstrapped before the manifest has
+# none: what it installed then stays.
 set -euo pipefail
 
 readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
@@ -24,6 +31,23 @@ readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
 # together, with the platform files' checksums.
 # shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
 readonly FLUX_VERSION=2.9.5
+# cosign at the release .github/actions/sign-artifact's cosign-installer
+# installs, so that a local cosign verify (docs/runbooks/cut-release.md) reads
+# the signatures CI writes; bump them together, with the platform files'
+# checksums.
+# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
+readonly COSIGN_VERSION=3.0.6
+# The tools CI's own jobs run, at the versions they install, so each job can
+# be run locally: trivy (.github/actions/build-server-image), kubeconform, the
+# Kyverno CLI, promtool, amtool and hadolint (ci.yml), oras (setup-oras's
+# default), syft (sbom-action's) and grype (scan-action's). yq is
+# mikefarah's, which the runner image has unpinned and Ubuntu doesn't package
+# (its yq is another tool). Bump each with its CI pin, and with the platform
+# files' checksums.
+# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
+readonly TRIVY_VERSION=0.75.0 KUBECONFORM_VERSION=0.8.0 KYVERNO_VERSION=1.19.1 \
+  PROMETHEUS_VERSION=3.15.0 ALERTMANAGER_VERSION=0.34.1 HADOLINT_VERSION=2.15.1 \
+  ORAS_VERSION=1.3.1 SYFT_VERSION=1.54.0 GRYPE_VERSION=0.118.0 YQ_VERSION=4.53.6
 # ctcache, which the Makefile's tidy target runs clang-tidy through, at the
 # commit .github/actions/restore-ctcache-cache installs; bump them together. A
 # commit, as ctcache isn't on PyPI.
@@ -72,13 +96,91 @@ require_commands() {
   fi
 }
 
+# The manifest: one line per thing the bootstrap installed that was not there
+# before, its kind and then its fields, tab-separated (a path may hold
+# spaces). Each platform's manifest_file and manifest_append say where it is.
+
+# Arguments:
+#   The entry's kind and fields.
+# Returns:
+#   0 when the manifest holds that entry.
+manifest_has() {
+  local line
+  line="$(
+    IFS=$'\t'
+    printf '%s' "$*"
+  )"
+  [[ -f "$(manifest_file)" ]] && grep -qxF -- "${line}" "$(manifest_file)"
+}
+
+# Records an entry, once.
+# Arguments:
+#   The entry's kind and fields.
+manifest_add() {
+  manifest_has "$@" && return
+  (
+    IFS=$'\t'
+    printf '%s\n' "$*"
+  ) | manifest_append
+}
+
+# Undoes the manifest's entries, newest first, then removes it. The kinds
+# every platform shares are undone here, the rest by its undo_entry.
+uninstall_toolchain() {
+  local file
+  file="$(manifest_file)"
+  if [[ ! -f "${file}" ]]; then
+    echo "bootstrap: ${file} does not exist: this machine's bootstrap" \
+      "recorded nothing to uninstall."
+    return
+  fi
+  require_uninstall_rights
+  # No mapfile: macOS's bash 3.2 runs this.
+  local lines=() line i
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && lines+=("${line}")
+  done <"${file}"
+  for ((i = ${#lines[@]} - 1; i >= 0; i--)); do
+    local fields=()
+    IFS=$'\t' read -r -a fields <<<"${lines[i]}"
+    echo "bootstrap: undoing ${fields[*]}"
+    case "${fields[0]}" in
+      lfs-filters) git lfs uninstall --skip-repo ;;
+      *) undo_entry "${fields[@]}" ;;
+    esac
+  done
+  remove_manifest
+  echo "bootstrap: uninstalled what this machine's bootstrap installed."
+}
+
 ready_checkout() {
   cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
   # LFS's filters only: .githooks' pre-push already runs git lfs pre-push.
+  # Machine-wide (the global config), so the manifest's.
+  git config --global --get filter.lfs.process >/dev/null \
+    || manifest_add lfs-filters
   git lfs install --skip-repo
   update_submodules
   bootstrap_vcpkg
   git config core.hooksPath .githooks
+}
+
+# Undoes ready_checkout but for LFS's filters, the toolchain's: the
+# repository's files and any work in them stay.
+unready_checkout() {
+  cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+  if [[ "$(git config --get core.hooksPath || true)" = .githooks ]]; then
+    git config --unset core.hooksPath
+  fi
+  unbootstrap_vcpkg
+  # Without --force: a submodule with changes of its own stays, and says so.
+  if ! git submodule deinit third_party/vcpkg third_party/nvtx; then
+    echo "bootstrap: a submodule has changes of its own and was kept; to" \
+      "discard them, git submodule deinit --force third_party/vcpkg" \
+      "third_party/nvtx." >&2
+    exit 1
+  fi
+  echo "bootstrap: the checkout is as cloned."
 }
 
 # Clones the repository and runs the clone's bootstrap, then fetches the LFS
@@ -119,11 +221,25 @@ main() {
       ready_checkout
       bootstrap_done
       ;;
-    *)
-      echo "usage: $0 [toolchain|checkout]" >&2
-      exit 2
+    uninstall)
+      case "${2:-}" in
+        toolchain) uninstall_toolchain ;;
+        checkout) unready_checkout ;;
+        "")
+          unready_checkout
+          uninstall_toolchain
+          ;;
+        *) usage ;;
+      esac
       ;;
+    *) usage ;;
   esac
+}
+
+usage() {
+  echo "usage: $0 [toolchain|checkout]" >&2
+  echo "       $0 uninstall [toolchain|checkout]" >&2
+  exit 2
 }
 
 main "$@"
