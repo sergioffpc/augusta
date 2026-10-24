@@ -16,7 +16,7 @@
 add_library(augusta_client_content STATIC client_scene_loader.cpp client_character_loader.cpp client_content.cpp)
 target_include_directories(
   augusta_client_content
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src/modules/renderer/include
 )
 target_link_libraries(
   augusta_client_content
@@ -109,7 +109,7 @@ augusta_set_module_scope(augusta_client_lobby_readiness CLIENT_ONLY)
 # boundary (see client_phases.h, ADR-0033): no window or GPU, so its tests need
 # no renderer.
 add_library(augusta_client_phases STATIC client_phases.cpp)
-target_include_directories(augusta_client_phases PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_phases PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_phases
   PUBLIC augusta_client_content augusta_assets augusta_client_config augusta_config augusta_failure augusta_harness
@@ -121,7 +121,7 @@ augusta_set_module_scope(augusta_client_phases CLIENT_ONLY)
 # wiring of the Harness to the renderer, the HUD, input, PresentationWorld and
 # audio. It links publicly only what its header names.
 add_library(augusta_client STATIC client.cpp)
-target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client
   PUBLIC augusta_client_content augusta_assets augusta_failure augusta_harness augusta_input Boost::uuid
@@ -174,7 +174,7 @@ augusta_set_module_scope(augusta_client CLIENT_ONLY)
 # entry point links of the Runtime: the Runtime and the transport are linked
 # privately, so it reaches neither.
 add_library(augusta_client_application STATIC client_application.cpp)
-target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_application
   PUBLIC augusta_application augusta_client_config augusta_client_phases augusta_harness Boost::uuid
@@ -185,7 +185,7 @@ augusta_set_module_scope(augusta_client_application CLIENT_ONLY)
 # The files a Run leaves beside the executable (see run_files.h): their names
 # from the Run ID, which Runs are kept, and how the previous one ended.
 add_library(augusta_client_run_files STATIC run_files.cpp)
-target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_run_files PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # It reads a log's last line for the events crash and application write.
 target_link_libraries(augusta_client_run_files PUBLIC Boost::uuid PRIVATE augusta_application augusta_crash)
 augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
@@ -193,7 +193,7 @@ augusta_set_module_scope(augusta_client_run_files CLIENT_ONLY)
 # The start of one Run (see client_run.h): its Run ID, its log file and its
 # first lines, before augustac reads its config.
 add_library(augusta_client_run STATIC client_run.cpp)
-target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(augusta_client_run PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   augusta_client_run
   PUBLIC augusta_crash Boost::uuid

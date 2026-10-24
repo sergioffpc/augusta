@@ -8,8 +8,8 @@
 
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
-#include "augusta/client_character_loader.h"
 #include "augusta/math.h"
+#include "client_character_loader.h"
 
 // A character's Hitboxes as a Development-build client loads them, for the
 // Hitboxes Debug overlay (ADR-0074, ADR-0075): bound to their Joints and

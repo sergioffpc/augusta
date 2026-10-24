@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-#include "augusta/agent_report.h"
+#include "agent_report.h"
 #include "augusta/assets.h"
 #include "augusta/command.h"
 #include "augusta/harness.h"

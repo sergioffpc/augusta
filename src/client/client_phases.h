@@ -6,13 +6,13 @@
 #include <optional>
 
 #include "augusta/assets.h"
-#include "augusta/client_character_loader.h"
 #include "augusta/client_config.h"
-#include "augusta/client_content.h"
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
 #include "augusta/reenactment.h"
+#include "client_character_loader.h"
+#include "client_content.h"
 
 /// \file
 /// How augustac's phases classify their failures behind the application

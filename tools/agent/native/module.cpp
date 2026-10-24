@@ -1,7 +1,7 @@
-// augusta_agent._native: the pybind11 bindings of an Agent (augusta/agent.h)
+// augusta_agent._native: the pybind11 bindings of an Agent (agent.h)
 // and of the test-only in-process server (testing_server.h), wrapped by the
 // augusta_agent package, and the dispatch thread that hands Agents' Reports
-// (augusta/agent_report.h) to it. Every value a script reads is a copy:
+// (agent_report.h) to it. Every value a script reads is a copy:
 // nothing it holds changes under it.
 
 #include <cstdint>
@@ -23,8 +23,8 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
-#include "augusta/agent.h"
-#include "augusta/agent_report.h"
+#include "agent.h"
+#include "agent_report.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"

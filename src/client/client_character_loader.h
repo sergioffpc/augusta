@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/client_scene_loader.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
+#include "client_scene_loader.h"
 
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/hitbox.h"

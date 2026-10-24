@@ -284,7 +284,7 @@ struct State {
 class World {
  public:
   /// audio_engine must outlive this World, which references it, not owns it:
-  /// ClientRuntime (augusta/client.h) constructs the client's one
+  /// ClientRuntime (src/client/client.h) constructs the client's one
   /// audio::Engine and wires it to this World's AudioCues phase, which plays
   /// cue_sounds, loaded into audio_engine here. eye is the local player's character's eye
   /// standing, in that character's root space (its feet at the origin,

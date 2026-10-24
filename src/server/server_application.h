@@ -7,8 +7,8 @@
 #include "augusta/config.h"
 #include "augusta/failure.h"
 #include "augusta/faults.h"
-#include "augusta/server.h"
 #include "augusta/server_config.h"
+#include "server.h"
 
 /// \file
 /// augustad's phases behind the application boundary (application.h,
