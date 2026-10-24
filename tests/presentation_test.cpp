@@ -28,7 +28,6 @@ using augusta::presentation::DynamicBody;
 using augusta::presentation::EntityId;
 using augusta::presentation::FrameInput;
 using augusta::presentation::PlayerCharacter;
-using augusta::presentation::PlayerView;
 using augusta::presentation::RemotePlayer;
 using augusta::presentation::State;
 using augusta::presentation::WorldSnapshot;
@@ -115,13 +114,11 @@ TEST_F(PresentationWorldTest, ASpectatorWatchesTheLivingPlayersInSessionOrder) {
 }
 
 // The three players as a Replay viewer, which plays none of them, is shown them.
-FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters,
-                    const std::vector<PlayerView>& views) {
+FrameInput Watching(const WorldSnapshot& snapshot, const std::vector<PlayerCharacter>& characters) {
   FrameInput input;
   input.replay_viewer = true;
   input.updates = std::span(&snapshot, 1);
   input.characters = characters;
-  input.views = views;
   return input;
 }
 
@@ -132,34 +129,47 @@ TEST_F(PresentationWorldTest, AReplayViewerWatchesTheFirstPlayerFromTheStartAndM
   const WorldSnapshot snapshot = ThreePlayersAt(5);
   const std::vector<PlayerCharacter> characters = SessionOrder();
 
-  const State first = world.RunFrame(Watching(snapshot, characters, {}));
+  const State first = world.RunFrame(Watching(snapshot, characters));
   EXPECT_NEAR(first.camera.position.x, 0.0F, kTolerance);
   EXPECT_EQ(first.remote_players.size(), 3U);
   EXPECT_FALSE(first.crosshair);
   EXPECT_FALSE(first.hit_marker);
 
-  FrameInput fire = Watching(snapshot, characters, {});
+  FrameInput fire = Watching(snapshot, characters);
   fire.fire = true;
   const State next = world.RunFrame(fire);
   EXPECT_NEAR(next.camera.position.x, 100.0F, kTolerance);
 }
 
+// The three players, the local and the sniper each looking and aiming as given.
+WorldSnapshot ThreePlayersLooking(float local_pitch, bool local_ads, float sniper_pitch, bool sniper_ads) {
+  WorldSnapshot snapshot = ThreePlayersAt(5);
+  for (DynamicBody& body : snapshot.bodies) {
+    if (body.entity == kLocal) {
+      body.pitch = local_pitch;
+      body.ads = local_ads;
+    } else if (body.entity == kSniper) {
+      body.pitch = sniper_pitch;
+      body.ads = sniper_ads;
+    }
+  }
+  return snapshot;
+}
+
 // The camera looks where the watched player looked, and zooms with its ADS,
-// as the Replay view of the tick says (ADR-0051).
+// as the replayed state of the tick says (ADR-0066).
 // Requirements: US-21
 TEST_F(PresentationWorldTest, AReplayViewersCameraTakesTheWatchedPlayersPitchAndAdsZoom) {
   augusta::parameters::Parameters parameters;
   parameters.rifle.ads_field_of_view = 0.5F;
   world.SetParameters(parameters, static_cast<float>(kTickDuration));
-  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const WorldSnapshot snapshot = ThreePlayersLooking(0.25F, true, -0.5F, false);
   const std::vector<PlayerCharacter> characters = SessionOrder();
-  const std::vector<PlayerView> views = {{.entity = kLocal, .pitch = 0.25F, .ads = true},
-                                         {.entity = kSniper, .pitch = -0.5F, .ads = false}};
 
   // The zoom takes its time, as frames measure it: past AdsZoom's transition.
   State shown{};
   for (int frame = 0; frame < 12; ++frame) {
-    shown = world.RunFrame(Watching(snapshot, characters, views));
+    shown = world.RunFrame(Watching(snapshot, characters));
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
 
@@ -167,11 +177,12 @@ TEST_F(PresentationWorldTest, AReplayViewersCameraTakesTheWatchedPlayersPitchAnd
   EXPECT_NEAR(shown.camera.vertical_fov, 0.5F, kTolerance);
 }
 
-// A dead player's own spectating, on a live server, still looks level from the
-// hip: no Replay view is sent to a player.
+// A dead player's own spectating, on a live server, looks where the watched
+// player looks too, never where its own aim would: every Authoritative State
+// carries each body's pitch and ADS (ADR-0066).
 // Requirements: US-13
-TEST_F(PresentationWorldTest, ASpectatorWithoutAReplayViewLooksLevelFromTheHip) {
-  const WorldSnapshot snapshot = ThreePlayersAt(5);
+TEST_F(PresentationWorldTest, ASpectatorLooksAtTheWatchedPlayersPitchNotItsOwnAim) {
+  const WorldSnapshot snapshot = ThreePlayersLooking(0.0F, false, -0.5F, false);
   const std::vector<PlayerCharacter> characters = SessionOrder();
   FrameInput died = InMatch(snapshot, characters);
   died.deaths = {kLocal};
@@ -179,7 +190,7 @@ TEST_F(PresentationWorldTest, ASpectatorWithoutAReplayViewLooksLevelFromTheHip) 
 
   const State state = world.RunFrame(died);
 
-  EXPECT_EQ(state.camera.rotation, augusta::command::ViewRotation(0.0F, 0.0F));
+  EXPECT_EQ(state.camera.rotation, augusta::command::ViewRotation(0.0F, -0.5F));
   EXPECT_FLOAT_EQ(state.camera.vertical_fov, augusta::presentation::kHipFieldOfView);
 }
 

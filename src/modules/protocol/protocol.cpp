@@ -42,8 +42,9 @@ constexpr unsigned kCommandStanceShift = 4U;
 constexpr std::uint32_t kStanceMask = 0x03U;
 constexpr std::uint32_t kCommandBitsMask = kCommandFlagsMask | (kStanceMask << kCommandStanceShift);
 
-// A body's stance takes bits 0-1 of its bitfield and its exhausted flag bit 2.
-constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted;
+// A body's stance takes bits 0-1 of its bitfield and its flags the bits from 2
+// up: exhausted bit 2, ADS bit 3 (ADR-0038).
+constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted | BodyStateWire::kAds;
 constexpr unsigned kBodyFlagsShift = 2U;
 constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift);
 
@@ -171,6 +172,7 @@ void Write(const EntityStateWire& wire, pb::Body& body, Outbound& out) {
   body.set_bits(stance | (flags << kBodyFlagsShift));
   body.set_stamina(UnsignedSteps(wire.body.stamina, math::kStaminaGrid));
   body.set_yaw(Steps(wire.yaw, math::kAngleGrid));
+  body.set_pitch(Steps(wire.pitch, math::kAngleGrid));
 }
 
 // An Authoritative State's shared fields: what every recipient of a tick is told alike.
@@ -215,6 +217,9 @@ void Write(const ParametersWire& wire, pb::Parameters& parameters, Outbound& out
   rifle.set_recoil_recovery_per_second(wire.rifle.recoil_recovery_per_second);
   rifle.set_ads_recoil_scale(wire.rifle.ads_recoil_scale);
   rifle.set_ads_field_of_view(wire.rifle.ads_field_of_view);
+  rifle.set_hip_offset_right(wire.rifle.hip_offset_right);
+  rifle.set_hip_offset_up(wire.rifle.hip_offset_up);
+  rifle.set_hip_offset_back(wire.rifle.hip_offset_back);
   if (out.Fits(wire.rifle.recoil_pattern.size(), limits::kMaxRecoilKicks)) {
     for (const RecoilKickWire& kick : wire.rifle.recoil_pattern) {
       pb::RecoilKick& written = *rifle.add_recoil_pattern();
@@ -371,19 +376,6 @@ struct Encoder {
     request.set_client_pack(BytesOf(wire.client_pack));
     request.set_capture(out.Text(wire.capture, kMaxCaptureNameLength));
     request.set_run(BytesOf(wire.run));
-  }
-
-  void operator()(const ReplayViewWire& wire) const {
-    pb::ReplayView& view = *message.mutable_replay_view();
-    view.set_tick(wire.tick);
-    if (out.Fits(wire.players.size(), limits::kMaxPlayers)) {
-      for (const PlayerViewWire& player : wire.players) {
-        pb::PlayerView& written = *view.add_players();
-        written.set_entity(static_cast<std::uint32_t>(player.entity));
-        written.set_pitch(Steps(player.pitch, math::kAngleGrid));
-        written.set_bits(out.FromFlags(player.flags, PlayerViewWire::kAds));
-      }
-    }
   }
 
   void operator()(const ReenactRequestWire& wire) const {
@@ -589,6 +581,7 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
   wire.body.flags = static_cast<std::uint8_t>(bits >> kBodyFlagsShift);
   wire.body.stamina = in.FromSteps(body.stamina(), math::kStaminaGrid);
   wire.yaw = in.FromSteps(body.yaw(), math::kAngleGrid);
+  wire.pitch = in.FromSteps(body.pitch(), math::kAngleGrid);
   return wire;
 }
 
@@ -619,7 +612,10 @@ RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
                                               [](const pb::RecoilKick& kick) {
                                                 return RecoilKickWire{.pitch = kick.pitch(), .yaw = kick.yaw()};
                                               }),
-                   .magazine_capacity = in.Narrow(rifle.magazine_capacity())};
+                   .magazine_capacity = in.Narrow(rifle.magazine_capacity()),
+                   .hip_offset_right = rifle.hip_offset_right(),
+                   .hip_offset_up = rifle.hip_offset_up(),
+                   .hip_offset_back = rifle.hip_offset_back()};
 }
 
 ParametersWire Read(const pb::Parameters& parameters, Inbound& in) {
@@ -736,16 +732,6 @@ ReplayRequestWire Read(const pb::ReplayRequest& request, Inbound& in) {
                            .run = in.Uuid(request.run())};
 }
 
-ReplayViewWire Read(const pb::ReplayView& view, Inbound& in) {
-  return ReplayViewWire{
-      .tick = view.tick(),
-      .players = ReadList(view.players(), limits::kMaxPlayers, in, [&in](const pb::PlayerView& player) {
-        return PlayerViewWire{.pitch = in.FromSteps(player.pitch(), math::kAngleGrid),
-                              .entity = static_cast<EntityIdWire>(player.entity()),
-                              .flags = static_cast<std::uint8_t>(in.ToBits(player.bits(), PlayerViewWire::kAds))};
-      })};
-}
-
 #if AUGUSTA_DEBUG_TOOLS
 JudgedPlayerWire Read(const pb::JudgedPlayer& player, Inbound& in) {
   return JudgedPlayerWire{
@@ -810,8 +796,6 @@ std::optional<MessageWire> ReadBody(const pb::Message& message, Inbound& in) {
                                                 [&in](const pb::ReplayListing& listing) { return Read(listing, in); })};
     case pb::Message::kReplayRequest:
       return Read(message.replay_request(), in);
-    case pb::Message::kReplayView:
-      return Read(message.replay_view(), in);
     case pb::Message::kReenactRequest:
       return Read(message.reenact_request(), in);
     case pb::Message::kDebugSubscribe:
@@ -1094,7 +1078,6 @@ MessageTypeWire TypeOf(const MessageWire& message) {
     }
     MessageTypeWire operator()(const ReplayListWire& /*wire*/) const { return MessageTypeWire::kReplayList; }
     MessageTypeWire operator()(const ReplayRequestWire& /*wire*/) const { return MessageTypeWire::kReplayRequest; }
-    MessageTypeWire operator()(const ReplayViewWire& /*wire*/) const { return MessageTypeWire::kReplayView; }
     MessageTypeWire operator()(const ReenactRequestWire& /*wire*/) const { return MessageTypeWire::kReenactRequest; }
 #if AUGUSTA_DEBUG_TOOLS
     MessageTypeWire operator()(const DebugSubscribeWire& /*wire*/) const { return MessageTypeWire::kDebugSubscribe; }

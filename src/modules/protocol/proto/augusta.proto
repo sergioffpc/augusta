@@ -31,6 +31,8 @@ package augusta;
 
 // One message of the protocol: one transport payload.
 message Message {
+  reserved 16;
+
   // Numbered from 1, each as its protocol::MessageTypeWire, disjoint from
   // augusta.CaptureRecord's members (1000 onward), so a payload of one
   // envelope sets no member of the other.
@@ -50,7 +52,7 @@ message Message {
     ReplayListRequest replay_list_request = 13;
     ReplayList replay_list = 14;
     ReplayRequest replay_request = 15;
-    ReplayView replay_view = 16;
+    // 16 was the Replay view, gone: its pitch and ADS are each Body's.
     ReenactRequest reenact_request = 17;
     // A Development build's alone (ADR-0038, ADR-0074): a Shipping build's
     // codec reads it as a member it lacks.
@@ -124,6 +126,10 @@ message Rifle {
   float ads_field_of_view = 6;
   repeated RecoilKick recoil_pattern = 7;
   uint32 magazine_capacity = 8;
+  // Along the view's own axes: right, up and back.
+  float hip_offset_right = 9;
+  float hip_offset_up = 10;
+  float hip_offset_back = 11;
 }
 
 message Ammo {
@@ -196,12 +202,14 @@ message Body {
   sint32 velocity_x = 5;
   sint32 velocity_y = 6;
   sint32 velocity_z = 7;
-  // Bits 0-1: the stance; bit 2: exhausted.
+  // Bits 0-1: the stance; bit 2: exhausted; bit 3: ADS.
   uint32 bits = 8;
   // On the stamina grid.
   uint32 stamina = 9;
   // Where it faces, on the angle grid.
   sint32 yaw = 10;
+  // Where its view looks up or down, on the angle grid.
+  sint32 pitch = 11;
 }
 
 // Server to client: the Authoritative State of one server tick.
@@ -376,20 +384,6 @@ message ReplayRequest {
   bytes capture = 3;
   // The Replay viewer's Run ID, as a JoinRequest's.
   bytes run = 4;
-}
-
-message PlayerView {
-  uint32 entity = 1;
-  // On the angle grid.
-  sint32 pitch = 2;
-  // Bit 0: ADS.
-  uint32 bits = 3;
-}
-
-// Server to client: what each player saw on one tick of a Replay.
-message ReplayView {
-  uint64 tick = 1;
-  repeated PlayerView players = 2;
 }
 
 // One record of a Match capture (ADR-0050): never a Message.

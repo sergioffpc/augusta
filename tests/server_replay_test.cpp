@@ -128,7 +128,7 @@ TEST(CaptureReplayTest, TheMatchStartsWithTheCapturesPlayersWhereItHasThemWithou
 }
 
 // The queue holds a player's last Command over a tick the capture has nothing
-// new for, as the live server's did: the view keeps its pitch and ADS.
+// new for, as the live server's did: the body keeps its pitch and ADS.
 // Requirements: US-21
 TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid) {
   Command aiming;
@@ -141,12 +141,11 @@ TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid)
 
   ASSERT_EQ(ticks.size(), 41U);
   for (const ReplayTick& tick : ticks) {
-    ASSERT_EQ(tick.views.size(), 2U);
-    EXPECT_EQ(tick.views[0].entity, EntityId{1});
-    EXPECT_FLOAT_EQ(tick.views[0].pitch, 0.5F);
-    EXPECT_TRUE(tick.views[0].ads);
-    EXPECT_FLOAT_EQ(tick.views[1].pitch, 0.0F);
-    EXPECT_FALSE(tick.views[1].ads);
+    ASSERT_NE(BodyOf(tick, 1), nullptr);
+    EXPECT_FLOAT_EQ(BodyOf(tick, 1)->pitch, 0.5F);
+    EXPECT_TRUE(BodyOf(tick, 1)->ads);
+    EXPECT_FLOAT_EQ(BodyOf(tick, 2)->pitch, 0.0F);
+    EXPECT_FALSE(BodyOf(tick, 2)->ads);
   }
   // The movement is held for kMaxHeldTime, then the body stops, as live.
   EXPECT_GT(BodyOf(ticks[10], 1)->body.position.x, 10.0F);
@@ -154,7 +153,7 @@ TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid)
 }
 
 // A Command the capture has on a tick reaches the World on that tick, and the
-// view the viewer is shown is its pitch.
+// state the viewer is shown carries its pitch.
 // Requirements: US-21
 TEST(CaptureReplayTest, EachCapturedCommandReachesTheWorldOnItsTick) {
   Command up;
@@ -166,10 +165,10 @@ TEST(CaptureReplayTest, EachCapturedCommandReachesTheWorldOnItsTick) {
   const std::vector<ReplayTick> ticks = RunToEnd(replay);
 
   ASSERT_EQ(ticks.size(), 7U);
-  EXPECT_FLOAT_EQ(ticks[1].views[1].pitch, 0.0F);
-  EXPECT_FLOAT_EQ(ticks[2].views[1].pitch, 0.25F);
-  EXPECT_FLOAT_EQ(ticks[4].views[1].pitch, 0.25F);
-  EXPECT_FLOAT_EQ(ticks[5].views[1].pitch, -0.75F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[1], 2)->pitch, 0.0F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[2], 2)->pitch, 0.25F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[4], 2)->pitch, 0.25F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[5], 2)->pitch, -0.75F);
 }
 
 // A round fired at offset 10 whose Seen time was 2 ticks older is judged 2
@@ -196,7 +195,6 @@ TEST(CaptureReplayTest, APlayerWhoLeftIsTakenOutBeforeTheTickOfItsLeave) {
   ASSERT_EQ(ticks.size(), 6U);
   EXPECT_NE(BodyOf(ticks[2], 2), nullptr);
   EXPECT_EQ(BodyOf(ticks[3], 2), nullptr);
-  EXPECT_EQ(ticks[3].views.size(), 1U);
   EXPECT_NE(BodyOf(ticks[3], 1), nullptr);
 }
 

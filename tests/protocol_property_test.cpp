@@ -76,7 +76,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << ", rifle{capacity " << +rifle.magazine_capacity << ", rpm " << rifle.rounds_per_minute << ", velocity "
           << rifle.muzzle_velocity << ", reload " << rifle.reload_seconds << ", recovery "
           << rifle.recoil_recovery_per_second << ", ads_scale " << rifle.ads_recoil_scale << ", ads_fov "
-          << rifle.ads_field_of_view << ", kicks";
+          << rifle.ads_field_of_view << ", hip " << rifle.hip_offset_right << " " << rifle.hip_offset_up << " "
+          << rifle.hip_offset_back << ", kicks";
       for (const RecoilKickWire& kick : rifle.recoil_pattern) {
         out << " (" << kick.pitch << " " << kick.yaw << ")";
       }
@@ -102,7 +103,7 @@ void showValue(const MessageWire& message, std::ostream& out) {
       for (const EntityStateWire& body : state.bodies) {
         out << static_cast<std::uint32_t>(body.entity) << ": ";
         showValue(body.body, out);
-        out << ", yaw " << body.yaw << "; ";
+        out << ", yaw " << body.yaw << ", pitch " << body.pitch << "; ";
       }
       out << "rifle{cooldown " << state.rifle.cooldown << ", reload_remaining " << state.rifle.reload_remaining
           << ", recoil " << state.rifle.recoil_pitch << " " << state.rifle.recoil_yaw << ", rounds "
@@ -167,14 +168,6 @@ void showValue(const MessageWire& message, std::ostream& out) {
         out << " " << std::to_integer<int>(byte);
       }
       out << ", capture " << rc::toString(request.capture) << ", run " << boost::uuids::to_string(request.run) << "}";
-    }
-    void operator()(const ReplayViewWire& view) const {
-      out << "ReplayView{tick " << view.tick << ", ";
-      for (const PlayerViewWire& player : view.players) {
-        out << static_cast<std::uint32_t>(player.entity) << ": pitch " << player.pitch << ", flags " << +player.flags
-            << "; ";
-      }
-      out << "}";
     }
     void operator()(const ReenactRequestWire& request) const {
       out << "ReenactRequest{engine_version " << rc::toString(request.engine_version) << ", client_pack";
@@ -241,7 +234,6 @@ using augusta::protocol::MatchStartWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
-using augusta::protocol::PlayerViewWire;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::RecoilKickWire;
 using augusta::protocol::ReenactRequestWire;
@@ -249,7 +241,6 @@ using augusta::protocol::ReplayListingWire;
 using augusta::protocol::ReplayListRequestWire;
 using augusta::protocol::ReplayListWire;
 using augusta::protocol::ReplayRequestWire;
-using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -340,7 +331,7 @@ rc::Gen<BodyStateWire> Body() {
       rc::gen::set(&BodyStateWire::position, Vec3OnGrid(kPositionGrid)),
       rc::gen::set(&BodyStateWire::velocity, Vec3OnGrid(kVelocityGrid)),
       rc::gen::set(&BodyStateWire::stamina, OnGrid(kStaminaGrid)),
-      rc::gen::set(&BodyStateWire::flags, rc::gen::element<std::uint8_t>(0, BodyStateWire::kExhausted)),
+      rc::gen::set(&BodyStateWire::flags, rc::gen::inRange<std::uint8_t>(0, BodyStateWire::kAds << 1U)),
       rc::gen::set(&BodyStateWire::stance, Stance()));
 }
 
@@ -373,7 +364,9 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
       rc::gen::set(&RifleWire::ads_recoil_scale, FiniteFloat()),
       rc::gen::set(&RifleWire::ads_field_of_view, FiniteFloat()),
       rc::gen::set(&RifleWire::recoil_pattern, UpTo<std::vector<RecoilKickWire>>(kMaxRecoilKicks, kick)),
-      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()));
+      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&RifleWire::hip_offset_right, FiniteFloat()), rc::gen::set(&RifleWire::hip_offset_up, FiniteFloat()),
+      rc::gen::set(&RifleWire::hip_offset_back, FiniteFloat()));
   const auto ammo = rc::gen::build<AmmoWire>(
       rc::gen::set(&AmmoWire::gravity, FiniteFloat()), rc::gen::set(&AmmoWire::max_range, FiniteFloat()),
       rc::gen::set(&AmmoWire::head_damage, FiniteFloat()), rc::gen::set(&AmmoWire::torso_damage, FiniteFloat()),
@@ -409,7 +402,8 @@ rc::Gen<CommandsWire> Commands() {
 rc::Gen<AuthoritativeStateWire> AuthoritativeState() {
   const auto entity = rc::gen::build<EntityStateWire>(rc::gen::set(&EntityStateWire::entity, AnyId<EntityIdWire>()),
                                                       rc::gen::set(&EntityStateWire::body, Body()),
-                                                      rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)));
+                                                      rc::gen::set(&EntityStateWire::yaw, OnGrid(kAngleGrid)),
+                                                      rc::gen::set(&EntityStateWire::pitch, OnGrid(kAngleGrid)));
   const auto rifle =
       rc::gen::build<WeaponStateWire>(rc::gen::set(&WeaponStateWire::cooldown, FiniteFloat()),
                                       rc::gen::set(&WeaponStateWire::reload_remaining, FiniteFloat()),
@@ -498,16 +492,6 @@ rc::Gen<ReplayRequestWire> ReplayRequest() {
       rc::gen::set(&ReplayRequestWire::capture, CaptureName()), rc::gen::set(&ReplayRequestWire::run, AnyUuid()));
 }
 
-rc::Gen<ReplayViewWire> ReplayView() {
-  const auto player = rc::gen::build<PlayerViewWire>(
-      rc::gen::set(&PlayerViewWire::pitch, OnGrid(kAngleGrid)),
-      rc::gen::set(&PlayerViewWire::entity, AnyId<EntityIdWire>()),
-      rc::gen::set(&PlayerViewWire::flags, rc::gen::element<std::uint8_t>(0, PlayerViewWire::kAds)));
-  return rc::gen::build<ReplayViewWire>(
-      rc::gen::set(&ReplayViewWire::tick, rc::gen::arbitrary<augusta::tick::Tick>()),
-      rc::gen::set(&ReplayViewWire::players, UpTo<std::vector<PlayerViewWire>>(kMaxPlayers, player)));
-}
-
 // Any message of the protocol, within its limits.
 rc::Gen<MessageWire> Message() {
   return rc::gen::oneOf(rc::gen::cast<MessageWire>(JoinRequest()), rc::gen::cast<MessageWire>(JoinAccepted()),
@@ -517,8 +501,7 @@ rc::Gen<MessageWire> Message() {
                         rc::gen::cast<MessageWire>(MatchEnd()), rc::gen::cast<MessageWire>(Shot()),
                         rc::gen::cast<MessageWire>(HitConfirmation()), rc::gen::cast<MessageWire>(Death()),
                         rc::gen::just(MessageWire{ReplayListRequestWire{}}), rc::gen::cast<MessageWire>(ReplayList()),
-                        rc::gen::cast<MessageWire>(ReplayRequest()), rc::gen::cast<MessageWire>(ReplayView()),
-                        rc::gen::cast<MessageWire>(ReenactRequest()));
+                        rc::gen::cast<MessageWire>(ReplayRequest()), rc::gen::cast<MessageWire>(ReenactRequest()));
 }
 
 RC_GTEST_PROP(ProtocolPropertyTest, EveryMessageSurvivesEncodeThenDecode, ()) {

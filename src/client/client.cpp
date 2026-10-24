@@ -191,11 +191,9 @@ struct ClientRuntime::Impl {
 
   // Main/Render thread only: the Server view's recent Authoritative State updates and Match
   // start as presentation's types, converted when they change and lent to
-  // every render frame in between (NextFrameInput); a Replay viewer's views
-  // of the newest tick, lent to the frame they are converted for; and the
-  // characters a Replay viewer has loaded.
+  // every render frame in between (NextFrameInput); and the characters a
+  // Replay viewer has loaded.
   ConvertedServerView converted_view;
-  std::vector<presentation::PlayerView> replay_views;
   std::set<std::string, std::less<>> replay_characters;
 
   // What the last render frame showed the other players at, or nullopt while
@@ -730,7 +728,6 @@ struct ClientRuntime::Impl {
     const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
     converted_view.Update(*view);
     const auto [aim, fire] = CurrentAim();
-    replay_views = ViewsOf(*view);
     const bool viewer = config.replay.has_value();
     presentation::FrameInput frame{
         .ticks = {.previous = latest.previous,
@@ -750,7 +747,6 @@ struct ClientRuntime::Impl {
                                [](const harness::AuthoritativeState& state) { return state.health; }),
         .match_end = MatchEndOf(*view),
         .replay_viewer = viewer,
-        .views = replay_views,
     };
     frame.local_entity = view->OwnEntity().transform([](harness::EntityId entity) { return ToPresentation(entity); });
     for (const harness::Shot& shot : session->TakeShots(*view)) {

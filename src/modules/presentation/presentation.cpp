@@ -245,7 +245,8 @@ struct World::Impl {
         continue;
       }
       present.push_back(body.entity);
-      remote_interpolator.Record(body.entity, server_time, body.state, body.yaw);
+      remote_interpolator.Record(body.entity, server_time, body.state,
+                                 Aim{.yaw = body.yaw, .pitch = body.pitch, .ads = body.ads});
     }
     remote_interpolator.Sync(present);
     if (!first_recorded_tick.has_value()) {
@@ -289,9 +290,8 @@ struct World::Impl {
   }
 
   // A spectator's camera: at the eye of the living player it watches, as
-  // remote_players shows it this frame, at its pitch and zoomed by its ADS if
-  // the frame has its view (a Replay viewer's), looking level from the hip
-  // otherwise. With no one left alive it holds where it was, from the hip.
+  // remote_players shows it this frame, at its pitch and zoomed by its ADS.
+  // With no one left alive it holds where it was, from the hip.
   void WatchLivingPlayer(float delta_time) {
     std::vector<EntityId> players;
     players.reserve(input->characters.size());
@@ -307,17 +307,15 @@ struct World::Impl {
     const std::optional<EntityId> watched = spectator.Update(players, living, input->fire);
     const auto shown_watched =
         std::ranges::find_if(remote_players, [&](const RemotePlayer& remote) { return remote.entity == watched; });
-    const auto view =
-        std::ranges::find_if(input->views, [&](const PlayerView& seen) { return seen.entity == watched; });
-    const bool viewed = shown_watched != remote_players.end() && view != input->views.end();
-    // Let go of ADS with no view to hold it, so the next match starts from the hip.
-    const float zoomed = ads_zoom.Update(viewed && view->ads, ads_field_of_view, delta_time);
-    if (shown_watched == remote_players.end()) {
+    const bool shown = shown_watched != remote_players.end();
+    // Let go of ADS with no one watched to hold it, so the next match starts from the hip.
+    const float zoomed = ads_zoom.Update(shown && shown_watched->body.ads, ads_field_of_view, delta_time);
+    if (!shown) {
       camera.vertical_fov = kHipFieldOfView;
       return;
     }
-    camera = WatchedCamera(shown_watched->body, EyeOf(shown_watched->character), viewed ? view->pitch : 0.0F);
-    camera.vertical_fov = viewed ? zoomed : kHipFieldOfView;
+    camera = WatchedCamera(shown_watched->body, EyeOf(shown_watched->character));
+    camera.vertical_fov = zoomed;
   }
 
   // The eye standing of character, or the local player's character's if it was never set.

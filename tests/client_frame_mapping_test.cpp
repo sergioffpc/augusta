@@ -23,7 +23,6 @@ using augusta::client::CharactersOf;
 using augusta::client::CombatEffectsOf;
 using augusta::client::ConvertedServerView;
 using augusta::client::MatchEndOf;
-using augusta::client::ViewsOf;
 using augusta::client::WithSeenTime;
 using augusta::harness::EntityId;
 using augusta::harness::SessionId;
@@ -81,28 +80,6 @@ TEST(MatchEndOfTest, IsNoneWhileNoMatchHasEnded) {
   view.match_start = TwoPlayerMatch();
 
   EXPECT_FALSE(MatchEndOf(view).has_value());
-}
-
-// Requirements: US-19
-// Requirements: US-21
-TEST(ViewsOfTest, AreEachPlayersPitchAndAdsOfTheNewestReplayView) {
-  augusta::harness::ServerView view;
-  view.replay_view = augusta::harness::ReplayView{
-      .tick = 9,
-      .players = {{.entity = EntityId{1}, .pitch = 0.25F, .ads = true}, {.entity = EntityId{2}, .pitch = -0.5F}}};
-
-  const std::vector<augusta::presentation::PlayerView> views = ViewsOf(view);
-
-  ASSERT_EQ(views.size(), 2U);
-  EXPECT_EQ(views[0].entity, augusta::presentation::EntityId{1});
-  EXPECT_FLOAT_EQ(views[0].pitch, 0.25F);
-  EXPECT_TRUE(views[0].ads);
-  EXPECT_FLOAT_EQ(views[1].pitch, -0.5F);
-  EXPECT_FALSE(views[1].ads);
-}
-
-TEST(ViewsOfTest, AreNoneForAClientThatIsNoReplayViewer) {
-  EXPECT_TRUE(ViewsOf(augusta::harness::ServerView{}).empty());
 }
 
 TEST(CombatEffectsOfTest, FadesEachEffectByItsAgeOverItsLifetime) {
@@ -195,6 +172,24 @@ TEST(ConvertedServerViewTest, CarriesTheNewestAuthoritativeStateAtTheServersTick
   ASSERT_EQ(update.bodies.size(), 2U);
   EXPECT_EQ(update.bodies[0].entity, augusta::presentation::EntityId{4});
   EXPECT_FLOAT_EQ(update.bodies[0].yaw, 1.5F);
+}
+
+// Every body's pitch and ADS reach presentation, which a spectator's camera
+// takes (ADR-0066).
+// Requirements: US-13, US-21
+TEST(ConvertedServerViewTest, CarriesEachBodysPitchAndAds) {
+  ConvertedServerView converted;
+
+  converted.Update(
+      InMatch(1, 12, {{.entity = EntityId{4}, .pitch = 0.25F, .ads = true}, {.entity = EntityId{9}, .pitch = -0.5F}}));
+
+  ASSERT_EQ(converted.Updates().size(), 1U);
+  const augusta::presentation::WorldSnapshot& update = converted.Updates()[0];
+  ASSERT_EQ(update.bodies.size(), 2U);
+  EXPECT_FLOAT_EQ(update.bodies[0].pitch, 0.25F);
+  EXPECT_TRUE(update.bodies[0].ads);
+  EXPECT_FLOAT_EQ(update.bodies[1].pitch, -0.5F);
+  EXPECT_FALSE(update.bodies[1].ads);
 }
 
 // A render frame below the tick rate is handed every update that arrived since

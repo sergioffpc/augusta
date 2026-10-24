@@ -89,7 +89,12 @@ enum class Phase {
   /// pose, its root lowered for the stance as the eye is and turned by the yaw
   /// (hitbox::RootOf). What HitDetection judges this tick's Shots against when
   /// the Hitbox history holds no tick of the player yet, and what Commit keeps
-  /// in it.
+  /// in it. Then places its rifle (ADR-0064, World::HeldRifleOf): its holding
+  /// hand a Desktop player's (weapon::DesktopHand), from its eye lowered for
+  /// its stance and its last Command's view and ADS, the view turned by the
+  /// Recoil offset WeaponHandling left its rifle with; and its Muzzle and Sight
+  /// where that hand holds them (weapon::PlaceMuzzle). Rounds still leave the
+  /// Eye.
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -209,6 +214,15 @@ struct MatchPlayer {
   std::optional<math::Vec3> spawn = std::nullopt;
 };
 
+/// Where a player's rifle is, as Posing placed it (ADR-0064): its Muzzle and its
+/// Sight, each a world transform pointing along its -Z (weapon::Markers).
+struct HeldRifle {
+  math::Mat4 muzzle{1.0F};
+  math::Mat4 sight{1.0F};
+
+  bool operator==(const HeldRifle&) const = default;
+};
+
 /// One dynamic body as of the end of a tick.
 struct EntityState {
   EntityId entity{};
@@ -217,6 +231,11 @@ struct EntityState {
   /// (command::Command), in radians, on the grid the Networking Protocol sends
   /// it on (ADR-0038). Its hitboxes turn with it.
   float yaw = 0.0F;
+  /// Where it looks up or down: the pitch of the same Command, in radians, on
+  /// the same grid.
+  float pitch = 0.0F;
+  /// Whether the same Command aimed down sights.
+  bool ads = false;
   /// What is left of its player's health: the Parameters' starting health at
   /// Match start, less the damage taken since, never below 0. Its own player
   /// alone is told it (ADR-0038).
@@ -415,9 +434,11 @@ class World {
   /// empty physics::World (its stamina rules for every player body) and an
   /// empty ballistics::World (no bullets in flight yet), policy, the scenario's
   /// Game policy (ADR-0022) as the server loaded it from its pack (none by
-  /// default), and the Flecs world with Phase's nine phases and their systems
-  /// registered (see header comment).
-  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {});
+  /// default), rifle, the markers of the rifle every player holds (ADR-0064;
+  /// all at its origin by default), and the Flecs world with Phase's nine
+  /// phases and their systems registered (see header comment).
+  World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {},
+        const weapon::Markers& rifle = {});
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way PredictionWorld does.
@@ -473,6 +494,10 @@ class World {
   /// kMaxShootersDelay. Returns the tick's Authoritative State and the actions
   /// Game policy took on it.
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
+
+  /// Where entity's rifle is, as the last tick's Posing placed it; nullopt for
+  /// a player not in the world, dead, or not yet posed by a tick.
+  [[nodiscard]] std::optional<HeldRifle> HeldRifleOf(EntityId entity) const;
 
 #if AUGUSTA_DEBUG_TOOLS
   /// Whether Tick builds the Shot judgements of the rounds fired from now on:

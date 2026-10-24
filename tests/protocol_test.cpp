@@ -110,7 +110,6 @@ using augusta::protocol::MessageTypeWire;
 using augusta::protocol::MessageWire;
 using augusta::protocol::PackHashWire;
 using augusta::protocol::ParametersWire;
-using augusta::protocol::PlayerViewWire;
 using augusta::protocol::Readdress;
 using augusta::protocol::ReadyWire;
 using augusta::protocol::ReenactRequestWire;
@@ -118,7 +117,6 @@ using augusta::protocol::ReplayListingWire;
 using augusta::protocol::ReplayListRequestWire;
 using augusta::protocol::ReplayListWire;
 using augusta::protocol::ReplayRequestWire;
-using augusta::protocol::ReplayViewWire;
 using augusta::protocol::RifleWire;
 using augusta::protocol::RosterEntryWire;
 using augusta::protocol::SequencedCommandWire;
@@ -222,7 +220,6 @@ std::vector<MessageWire> EveryMessage() {
           ReplayListRequestWire{},
           ReplayListWire{},
           ReplayRequestWire{},
-          ReplayViewWire{},
           ReenactRequestWire{}};
 }
 
@@ -393,7 +390,10 @@ TEST(ProtocolTest, JoinAcceptedRoundTrips) {
                                .ads_recoil_scale = 0.5F,
                                .ads_field_of_view = 0.7F,
                                .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.008F, .yaw = -0.002F}},
-                               .magazine_capacity = 30},
+                               .magazine_capacity = 30,
+                               .hip_offset_right = 0.15F,
+                               .hip_offset_up = -0.2F,
+                               .hip_offset_back = 0.05F},
                      .ammo = {.gravity = 9.81F,
                               .max_range = 1000.0F,
                               .head_damage = 100.0F,
@@ -703,8 +703,7 @@ TEST(ProtocolTest, EveryTruncationOfEveryMessageIsMalformedNotACrash) {
       DeathWire{.victim = static_cast<EntityIdWire>(7), .killer = static_cast<EntityIdWire>(8)},
       MatchEndWire{.winner = Session(3)},
       ReplayListWire{.replays = {ReplayListingWire{.characters = {"soldier"}, .name = "a.acap", .ticks = 9}}},
-      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.acap"},
-      ReplayViewWire{.tick = 4, .players = {PlayerViewWire{.pitch = 0.5F, .entity = static_cast<EntityIdWire>(1)}}}};
+      ReplayRequestWire{.engine_version = "0.1.0", .capture = "a.acap"}};
   for (const MessageWire& message : messages) {
     const BytesWire whole = Encode(message).value();
     for (std::size_t length = 1; length < whole.size(); ++length) {
@@ -854,28 +853,11 @@ TEST(ProtocolTest, AReplayRequestsCaptureNameLongerThanAllowedIsTooLong) {
             DecodeError::kFieldTooLong);
 }
 
-// Requirements: US-21
-TEST(ProtocolTest, AReplayViewRoundTripsEveryPlayersPitchAndAds) {
-  const ReplayViewWire view{
-      .tick = 0x1'0000'0002ULL,
-      .players = {
-          PlayerViewWire{
-              .pitch = SnapAngle(-0.75F), .entity = static_cast<EntityIdWire>(1), .flags = PlayerViewWire::kAds},
-          PlayerViewWire{.pitch = SnapAngle(1.25F), .entity = static_cast<EntityIdWire>(2), .flags = 0}}};
-
-  EXPECT_EQ(RoundTrip(view), MessageWire{view});
-}
-
+// The Replay view is gone, its pitch and ADS each body's (ADR-0038): a payload
+// of its old member is one this build lacks.
 // Requirements: NFR-12
-TEST(ProtocolTest, AReplayViewsUnusedFlagBitsAndExtraPlayersAreRefused) {
-  EXPECT_EQ(Encode(ReplayViewWire{.players = {PlayerViewWire{.flags = 0x02}}}).error(), EncodeError::kReservedBits);
-  ReplayViewWire crowded;
-  crowded.players.resize(kMaxPlayers + 1);
-  EXPECT_EQ(Encode(crowded).error(), EncodeError::kFieldTooLong);
-
-  EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kReplayView, LengthField(2, VarintField(3, 0x01)))).has_value());
-  EXPECT_EQ(Decode(Envelope(MessageTypeWire::kReplayView, LengthField(2, VarintField(3, 0x02)))).error(),
-            DecodeError::kReservedBits);
+TEST(ProtocolTest, TheReplayViewsOldMemberIsUnknown) {
+  EXPECT_EQ(Decode(LengthField(16, VarintField(1, 4))).error(), DecodeError::kUnknownType);
 }
 
 // A command with every field set to something other than its default.
@@ -1090,6 +1072,40 @@ EntityStateWire BodyOf(const BytesWire& payload) {
 // Where a body faces travels on the grid a command's view does (ADR-0038).
 TEST(ProtocolTest, ABodysYawTravelsAsACountOfTheAngleGrid) {
   EXPECT_EQ(BodyOf(OneBody(SignedField(10, 2097152))).yaw, 1.0F);
+}
+
+// Where a body's view looks up or down travels on the grid its yaw does
+// (ADR-0038), over the grid's whole range.
+TEST(ProtocolTest, ABodysPitchTravelsAsACountOfTheAngleGrid) {
+  constexpr std::int32_t kAngleMax = (1 << 23) - 1;
+  EXPECT_EQ(BodyOf(OneBody(SignedField(11, 2097152))).pitch, 1.0F);
+  EXPECT_EQ(BodyOf(OneBody(SignedField(11, kAngleMax))).pitch, 4.0F - kAngleStep);
+  EXPECT_EQ(BodyOf(OneBody(SignedField(11, -kAngleMax - 1))).pitch, -4.0F);
+  EXPECT_EQ(Decode(OneBody(SignedField(11, kAngleMax + 1))).error(), DecodeError::kOutOfRange);
+}
+
+// A pitch past the angle grid's range travels as its bound.
+TEST(ProtocolTest, ABodysPitchAndAdsRoundTripAtBothEndsOfTheRange) {
+  AuthoritativeStateWire sent;
+  EntityStateWire up = BodyAt(1, 1.0F);
+  up.pitch = 1.5F;
+  up.body.flags = BodyStateWire::kAds;
+  EntityStateWire down = BodyAt(2, 2.0F);
+  down.pitch = -1.5F;
+  EntityStateWire beyond = BodyAt(3, 3.0F);
+  beyond.pitch = 9.0F;
+  beyond.body.flags = BodyStateWire::kExhausted | BodyStateWire::kAds;
+  sent.bodies = {up, down, beyond};
+
+  const auto received = std::get<AuthoritativeStateWire>(RoundTrip(sent));
+
+  ASSERT_EQ(received.bodies.size(), 3U);
+  EXPECT_EQ(received.bodies[0].pitch, SnapAngle(1.5F));
+  EXPECT_EQ(received.bodies[0].body.flags, BodyStateWire::kAds);
+  EXPECT_EQ(received.bodies[1].pitch, SnapAngle(-1.5F));
+  EXPECT_EQ(received.bodies[1].body.flags, 0);
+  EXPECT_EQ(received.bodies[2].pitch, 4.0F - kAngleStep);
+  EXPECT_EQ(received.bodies[2].body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds);
 }
 
 // Each Encode builds its message on an arena local to the call, whose first
@@ -1307,9 +1323,20 @@ TEST(ProtocolTest, ABodysExhaustedFlagSharesTheStanceBitfield) {
   EXPECT_EQ(rested.body.flags, 0);
 }
 
+// ADS in the bit above the exhausted flag (ADR-0038).
+TEST(ProtocolTest, ABodysAdsFlagIsTheBitAboveItsExhaustedFlag) {
+  const EntityStateWire aiming = BodyOf(OneBody(VarintField(8, 0b1001)));
+  const EntityStateWire both = BodyOf(OneBody(VarintField(8, 0b1100)));
+
+  EXPECT_EQ(aiming.body.stance, StanceWire::kCrouching);
+  EXPECT_EQ(aiming.body.flags, BodyStateWire::kAds);
+  EXPECT_EQ(both.body.stance, StanceWire::kStanding);
+  EXPECT_EQ(both.body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds);
+}
+
 // Requirements: NFR-12
-TEST(ProtocolTest, ABodysBitsAboveItsStanceAndFlagAreReserved) {
-  for (unsigned bit = 3; bit < 32; ++bit) {
+TEST(ProtocolTest, ABodysBitsAboveItsStanceAndFlagsAreReserved) {
+  for (unsigned bit = 4; bit < 32; ++bit) {
     EXPECT_EQ(Decode(OneBody(VarintField(8, 1ULL << bit))).error(), DecodeError::kReservedBits) << bit;
   }
 }
@@ -1498,7 +1525,7 @@ TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
   CommandWire command;
   command.flags = CommandWire::kReload << 1U;
   EntityStateWire body;
-  body.body.flags = BodyStateWire::kExhausted << 1U;
+  body.body.flags = BodyStateWire::kAds << 1U;
 
   EXPECT_EQ(RefusalOf(CommandsWire{.commands = {SequencedCommandWire{.sequence = 1, .command = command}}}),
             EncodeError::kReservedBits);

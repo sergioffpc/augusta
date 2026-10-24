@@ -53,15 +53,6 @@ struct Camera {
   float vertical_fov = kHipFieldOfView;
 };
 
-/// Where the local player aims as of a render frame: its view's yaw and pitch
-/// (command::Command's), and whether it holds ADS - newer than its latest
-/// Command's, which is only as new as the last tick.
-struct Aim {
-  float yaw = 0.0F;
-  float pitch = 0.0F;
-  bool ads = false;
-};
-
 /// The Prediction State fraction of the way from previous to latest: position,
 /// velocity, total_correction and the rifle's Recoil offset linearly
 /// interpolated, the stance (discrete) of whichever of the two is nearer, and
@@ -84,10 +75,8 @@ struct Aim {
 /// A spectator's camera watching body, a living player as shown this frame, of
 /// a character whose eye standing is standing_eye: at that eye lowered for the
 /// body's stance, as LocalCamera puts it, facing where the body faces and
-/// looking at pitch, in radians, from the hip. A Replay viewer knows the
-/// watched player's pitch (ADR-0051); any other spectator does not, since
-/// remote pitch is not replicated, and looks level, at 0.
-[[nodiscard]] Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye, float pitch);
+/// looking where its view does, from the hip.
+[[nodiscard]] Camera WatchedCamera(const RemoteBody& body, const math::Vec3& standing_eye);
 
 /// The camera's field of view, zooming smoothly between the hip's and ADS's
 /// (US-06): holding ADS moves it to the ADS field of view over

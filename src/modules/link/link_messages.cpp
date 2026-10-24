@@ -19,6 +19,7 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/link_types.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -184,8 +185,6 @@ MessageType Named(protocol::MessageTypeWire type) {
       return MessageType::kReplayList;
     case protocol::MessageTypeWire::kReplayRequest:
       return MessageType::kReplayRequest;
-    case protocol::MessageTypeWire::kReplayView:
-      return MessageType::kReplayView;
     case protocol::MessageTypeWire::kReenactRequest:
       return MessageType::kReenactRequest;
 #if AUGUSTA_DEBUG_TOOLS
@@ -291,6 +290,9 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
       .ads_field_of_view = rifle.ads_field_of_view,
       .recoil_pattern = {},
       .magazine_capacity = rifle.magazine_capacity,
+      .hip_offset_right = rifle.hip_offset.x,
+      .hip_offset_up = rifle.hip_offset.y,
+      .hip_offset_back = rifle.hip_offset.z,
   };
   rifle_wire.recoil_pattern.reserve(rifle.recoil_pattern.size());
   for (const weapon::RecoilKick& kick : rifle.recoil_pattern) {
@@ -335,6 +337,7 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
     result.rifle.recoil_pattern.push_back(weapon::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
   }
   result.rifle.magazine_capacity = rifle.magazine_capacity;
+  result.rifle.hip_offset = math::Vec3(rifle.hip_offset_right, rifle.hip_offset_up, rifle.hip_offset_back);
   result.ammo.flight.gravity = parameters.ammo.gravity;
   result.ammo.flight.max_range = parameters.ammo.max_range;
   result.ammo.damage = {
@@ -365,12 +368,20 @@ Admission FromWire(const protocol::JoinAcceptedWire& accepted) {
   };
 }
 
+// ADS shares the body's flags with the physics state's exhausted flag (ADR-0038).
 protocol::EntityStateWire ToWire(const EntityBody& body) {
-  return protocol::EntityStateWire{.entity = ToWire(body.entity), .body = ToWire(body.body), .yaw = body.yaw};
+  protocol::EntityStateWire result{
+      .entity = ToWire(body.entity), .body = ToWire(body.body), .yaw = body.yaw, .pitch = body.pitch};
+  result.body.flags |= body.ads ? protocol::BodyStateWire::kAds : std::uint8_t{0};
+  return result;
 }
 
 EntityBody FromWire(const protocol::EntityStateWire& body) {
-  return EntityBody{.entity = FromWire(body.entity), .body = FromWire(body.body), .yaw = body.yaw};
+  return EntityBody{.entity = FromWire(body.entity),
+                    .body = FromWire(body.body),
+                    .yaw = body.yaw,
+                    .pitch = body.pitch,
+                    .ads = (body.body.flags & protocol::BodyStateWire::kAds) != 0};
 }
 
 protocol::AuthoritativeStateWire ToWire(const AuthoritativeState& state) {
@@ -513,29 +524,6 @@ protocol::MatchEndWire ToWire(const MatchEnd& end) {
 
 MatchEnd FromWire(const protocol::MatchEndWire& end) {
   return MatchEnd{.winner = end.winner == protocol::kDraw ? std::nullopt : std::optional(end.winner)};
-}
-
-protocol::ReplayViewWire ToWire(const ReplayView& view) {
-  protocol::ReplayViewWire result{.tick = view.tick, .players = {}};
-  result.players.reserve(view.players.size());
-  for (const PlayerView& player : view.players) {
-    result.players.push_back(
-        protocol::PlayerViewWire{.pitch = player.pitch,
-                                 .entity = ToWire(player.entity),
-                                 .flags = static_cast<std::uint8_t>(player.ads ? protocol::PlayerViewWire::kAds : 0U)});
-  }
-  return result;
-}
-
-ReplayView FromWire(const protocol::ReplayViewWire& view) {
-  ReplayView result{.tick = view.tick, .players = {}};
-  result.players.reserve(view.players.size());
-  for (const protocol::PlayerViewWire& player : view.players) {
-    result.players.push_back(PlayerView{.entity = FromWire(player.entity),
-                                        .pitch = player.pitch,
-                                        .ads = (player.flags & protocol::PlayerViewWire::kAds) != 0});
-  }
-  return result;
 }
 
 protocol::ReplayListingWire ToWire(const ReplayListing& listing) {
@@ -753,9 +741,6 @@ std::optional<ServerMessage> ServerMessageFromWire(const protocol::MessageWire& 
   }
   if (const auto* end = std::get_if<protocol::MatchEndWire>(&message)) {
     return FromWire(*end);
-  }
-  if (const auto* view = std::get_if<protocol::ReplayViewWire>(&message)) {
-    return FromWire(*view);
   }
   if (const auto* list = std::get_if<protocol::ReplayListWire>(&message)) {
     return FromWire(*list);
