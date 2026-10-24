@@ -35,10 +35,13 @@ namespace augusta::host {
 /// character, if its mesh is not a whole, in-range triangle list.
 [[nodiscard]] hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path);
 
-/// Each of characters as SimulationWorld takes it, by its path: its hitboxes
-/// placed in its space by their Joints in the Rest pose (assets::
-/// PlaceHitboxesAtRest), which SimulationWorld then scales by stance and turns
-/// by yaw. Throws as the hitbox overload does.
+/// hitbox as the HitboxData overload converts it, bound to the Joint of its
+/// character's Skeleton it names. Throws as that overload does.
+[[nodiscard]] hitbox::CharacterHitbox ToSimulation(const assets::JointHitbox& hitbox, const std::string& path);
+
+/// Each of characters as SimulationWorld takes it, by its path: its Skeleton,
+/// and its hitboxes each in its Joint's space, for SimulationWorld's Posing
+/// phase to pose (ADR-0061). Throws as the hitbox overloads do.
 [[nodiscard]] std::unordered_map<std::string, simulation::Character> ToSimulation(
     const std::vector<scenario::Character>& characters);
 

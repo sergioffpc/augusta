@@ -35,8 +35,9 @@ target_link_libraries(
 )
 augusta_set_module_scope(augusta_client_frame_mapping CLIENT_ONLY)
 if(AUGUSTA_DEBUG_TOOLS)
-  # augusta_gameplay: a character's Hitboxes, for the Hitboxes Debug overlay.
-  target_link_libraries(augusta_client_content PUBLIC augusta_debug augusta_gameplay)
+  # augusta_gameplay: a character's Hitboxes, for the Hitboxes Debug overlay,
+  # placed in its space by augusta_animation's Rest pose.
+  target_link_libraries(augusta_client_content PUBLIC augusta_debug augusta_gameplay PRIVATE augusta_animation)
   target_link_libraries(augusta_client_frame_mapping PUBLIC augusta_debug)
 endif()
 

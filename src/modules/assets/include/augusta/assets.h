@@ -161,12 +161,6 @@ struct UnresolvedJoint {
 [[nodiscard]] std::expected<std::vector<JointHitbox>, UnresolvedJoint> BindHitboxes(const Skeleton& skeleton,
                                                                                     std::vector<HitboxData> hitboxes);
 
-/// Each of hitboxes, in the same order, with its geometry in the character's
-/// space where its Joint of skeleton holds it in the Rest pose: where hit
-/// detection places a Hitbox until a Hitbox pose moves it (ADR-0061).
-[[nodiscard]] std::vector<HitboxData> PlaceHitboxesAtRest(const Skeleton& skeleton,
-                                                          std::span<const JointHitbox> hitboxes);
-
 /// part's name as a character stage spells it in augusta:bodyPart: "head",
 /// "torso" or "limb".
 [[nodiscard]] std::string_view BodyPartName(BodyPart part);

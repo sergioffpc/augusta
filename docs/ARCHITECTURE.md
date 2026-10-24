@@ -173,6 +173,12 @@ policy (ADR-0060).
       places them at it, and their conversion from a pack (augusta/hitbox.h):
       the server's Lag compensation and a client's Debug overlay place them
       alike (ADR-0044); the Hitbox history and judging stay SimulationWorld's
+- Animation — a Character's Skeleton posed (augusta_animation, ADR-0061): from a
+  player's Hitbox pose, each Joint's world transform, which places the Hitboxes
+  bound to it. Below Presentation, on Physics and Gameplay alone. Until Clips
+  the pose is the Rest pose, the stance and the facing carried by the Skeleton's
+  root; SimulationWorld's Posing phase is its one consumer, and neither
+  PredictionWorld nor PresentationWorld evaluates a pose
 - Networking Protocol — message definitions, serialized as Protocol Buffers
   (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
@@ -379,9 +385,9 @@ _(the Authoritative State emitted by `SimulationWorld` goes directly to
 commands)_
 
 **SimulationWorld phases** (executed in order, once per tick: Command Ingestion
-→ Movement → Dynamics → WeaponHandling → Ballistics → HitDetection → Damage →
-Scripts/Behaviours → Commit; Dynamics is added with the first Prop, and until
-then the other eight run — ADR-0023). Each tick returns a `TickResult`: the
+→ Movement → Dynamics → WeaponHandling → Posing → Ballistics → HitDetection →
+Damage → Scripts/Behaviours → Commit; Dynamics is added with the first Prop, and
+until then the other nine run — ADR-0023). Each tick returns a `TickResult`: the
 Authoritative State, its combat events included, and the Game policy actions
 taken on it, typed and validated in C++ (ADR-0022), which `host::Host` acts on
 after the tick.
@@ -392,6 +398,7 @@ after the tick.
 | Movement           | Mechanism                     | PhysX integration, stamina, collision resolution (US-04, US-05)                                                                                |
 | Dynamics           | Mechanism                     | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop |
 | WeaponHandling     | Mechanism                     | Aim/ADS, fire, reload, recoil (US-06–US-09)                                                                                                    |
+| Posing             | Mechanism                     | Evaluates every living player's Hitbox pose from its Skeleton, in the Rest pose until Clips (ADR-0061)                                         |
 | Ballistics         | Mechanism                     | Advances in-flight bullet trajectories (US-10)                                                                                                 |
 | HitDetection       | Mechanism                     | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044)                                      |
 | Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                           |

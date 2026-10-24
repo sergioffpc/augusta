@@ -17,8 +17,9 @@ round was judged against (its Shot judgement).
 - Screening commands, encoding and sending state: the server (`host::Host`).
 - Whether Shot judgements are built, and which peer is sent each: the server
   (`host::Host`), from `debug.shot_judgements` and the peer's Debug subscribe.
-- The movement, weapon and ballistics rules, and placing a player's Hitboxes at
-  a Hitbox pose: physics and gameplay.
+- The movement, weapon and ballistics rules, and placing a player's Hitboxes by
+  their Joints: physics and gameplay.
+- Posing a Character's Skeleton, which its Posing phase calls: animation.
 - Game policy's hooks, their views and reading their answers: policy.
 
 ## Decisions
@@ -29,4 +30,5 @@ round was judged against (its Shot judgement).
 [ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
 [ADR-0044](../../../docs/adr/0044-shot-lag-compensation-and-replication.md),
 [ADR-0045](../../../docs/adr/0045-dynamic-bodies.md),
+[ADR-0061](../../../docs/adr/0061-skeletal-hitboxes.md),
 [ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

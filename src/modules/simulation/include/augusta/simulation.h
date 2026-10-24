@@ -13,6 +13,7 @@
 #include <boost/uuid/nil_generator.hpp>
 #include <boost/uuid/uuid.hpp>
 
+#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
@@ -29,7 +30,7 @@
 /// augusta::simulation orchestrates SimulationWorld (ADR-0023): the single
 /// authoritative ECS pipeline, run once per tick on the server's
 /// Simulation thread (ADR-0005). It composes the mechanism modules that
-/// already exist (physics, ballistics, policy) into the eight ordered
+/// already exist (physics, animation, ballistics, policy) into the nine ordered
 /// phases ADR-0023 runs until its Dynamics phase arrives with the first Prop
 /// (see Phase below); host::Host hands its
 /// per-tick output to augusta::replication to reach clients
@@ -39,14 +40,14 @@
 /// World owns one Flecs world (ADR-0001) internally, entirely
 /// encapsulated behind Impl (simulation.cpp) - Flecs is this module's
 /// implementation detail, not part of its public interface, so no flecs
-/// header leaks in here. Phase's eight values become, in the same order,
-/// eight dependency-chained flecs::Phase entities, each with one
+/// header leaks in here. Phase's nine values become, in the same order,
+/// nine dependency-chained flecs::Phase entities, each with one
 /// registered flecs::system (named "<Phase>System") - see simulation.cpp.
 /// A player is one entity with a physics body, a rifle, its Character's
-/// hitboxes, its Hitbox history and its health, and a bullet in flight is one
-/// entity too.
-/// CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
-/// and Ballistics and HitDetection on bullets, which end on the Map, on a
+/// Skeleton and hitboxes, its Hitbox pose, its Hitbox history and its health,
+/// and a bullet in flight is one entity too.
+/// CommandIngestion, Movement, WeaponHandling, Posing, Damage and Commit act on
+/// players and Ballistics and HitDetection on bullets, which end on the Map, on a
 /// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
 /// In a Development build, while World::JudgeShots switches them on, it builds
 /// each round's Shot judgement from the players its hit test selected, handed
@@ -54,7 +55,7 @@
 /// What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
-/// SimulationWorld's eight phases (ADR-0023), executed in this exact
+/// SimulationWorld's nine phases (ADR-0023), executed in this exact
 /// order every tick. Scripts/Behaviours runs last, after Damage has
 /// resolved the tick's deaths, so a hook can react to what just happened
 /// (e.g. evaluate a win condition) and schedule what follows (Match end) for
@@ -79,15 +80,26 @@ enum class Phase {
   /// are only intent: the fire rate, the magazine and the reload are this
   /// phase's to keep, whatever a client sends.
   kWeaponHandling,
+  /// Mechanism. Evaluates every living player's Hitbox pose (ADR-0061) -
+  /// augusta::animation::PoseAtRest, one call per player: the world transform
+  /// of each Joint of its Character's Skeleton, where Movement has just put its
+  /// body. With no Clips the pose is the Rest pose, its root lowered for the
+  /// stance as the eye is and turned by the yaw (hitbox::RootOf). What
+  /// HitDetection judges this tick's Shots against when the Hitbox history
+  /// holds no tick of the player yet.
+  kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
   kBallistics,
   /// Mechanism. Resolves impact point + body part (US-11) against every
-  /// player's hitboxes, placed by its pose: where its body was, lowered for
-  /// its stance as its eye is, and turned by its yaw. They are judged where
+  /// player's hitboxes, each placed by its Joint's world transform in the
+  /// player's Hitbox pose. They are judged where
   /// the bullet's shooter saw the players (Lag compensation, ADR-0044): as
   /// they were the bullet's Shooter's delay ago, fixed when it was fired and
-  /// kept for its whole flight, from the Hitbox history. The Map is judged in
+  /// kept for its whole flight, posed from the Hitbox history's position, yaw
+  /// and stance, or as Posing posed them for a player it holds no tick of yet;
+  /// a bullet passing farther from a player's root than its Character's Rest
+  /// pose reaches in its stance is not tested against it. The Map is judged in
   /// the present. A bullet is never tested against its own shooter. The test
   /// itself is folded into the same ballistics::World::Step call as
   /// kBallistics - see ballistics.h - so the hitboxes are posed for each
@@ -156,15 +168,18 @@ struct PlayerCommand {
   command::Command command{};
 };
 
-/// What SimulationWorld needs of the Character a player plays (ADR-0040), in
-/// the character's root space: standing, its feet at the origin, facing where a
-/// view of yaw 0 looks (command::Command).
+/// What SimulationWorld needs of the Character a player plays (ADR-0040,
+/// ADR-0061), in the character's root space: standing, its feet at the origin,
+/// facing where a view of yaw 0 looks (command::Command).
 struct Character {
   /// Where it sees from, and where its Shots leave from.
   math::Vec3 eye{};
-  /// What a bullet that reaches its body is judged against. One without any
-  /// cannot be hit.
+  /// What a bullet that reaches its body is judged against, each in the space
+  /// of its Joint of skeleton. One without any cannot be hit.
   std::vector<hitbox::CharacterHitbox> hitboxes;
+  /// Its Skeleton, parents before children: by default its root Joint alone,
+  /// at the character's root, so a Hitbox bound to joint 0 is in root space.
+  assets::Skeleton skeleton{.joints = {assets::JointData{.name = "Root"}}, .rest_transforms = {math::Mat4(1.0F)}};
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.
@@ -386,7 +401,7 @@ class World {
   /// empty physics::World (its stamina rules for every player body) and an
   /// empty ballistics::World (no bullets in flight yet), policy, the scenario's
   /// Game policy (ADR-0022) as the server loaded it from its pack (none by
-  /// default), and the Flecs world with Phase's eight phases and their systems
+  /// default), and the Flecs world with Phase's nine phases and their systems
   /// registered (see header comment).
   World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy = {});
   ~World();
@@ -430,7 +445,7 @@ class World {
   /// between ticks, on a Match end policy decided or not.
   void EndMatch();
 
-  /// Runs all eight Phase values above, in their declared order, for one
+  /// Runs all nine Phase values above, in their declared order, for one
   /// fixed tick of duration delta_time seconds (internally, one
   /// flecs::world::progress(delta_time) call). commands holds this tick's
   /// validated input, at most one per player (US-02, 2-8 players) - unlike

@@ -17,6 +17,10 @@
 #include "augusta/renderer.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include <cstddef>
+#include <span>
+
+#include "augusta/animation.h"
 #include "augusta/hitbox.h"
 #endif
 
@@ -57,38 +61,71 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
 }
 
 #if AUGUSTA_DEBUG_TOOLS
-// The Hitboxes of the character named character from pack, in its space where
-// its Skeleton's Joints hold them in the Rest pose, as the server places them
-// (ADR-0061); kCorruptBlob if one names a Joint the Skeleton lacks.
-std::expected<std::vector<assets::HitboxData>, assets::ResolveError> ResolveHitboxesAtRest(const assets::Pack& pack,
-                                                                                           std::string_view character) {
-  const auto skeleton = pack.ResolveSkeleton(character);
-  if (!skeleton) {
-    return std::unexpected(skeleton.error());
-  }
+// The Hitboxes of the character named character from pack, each bound to its
+// Joint of skeleton and in that Joint's space; kCorruptBlob if one names a Joint
+// the Skeleton lacks.
+std::expected<std::vector<assets::JointHitbox>, assets::ResolveError> ResolveBoundHitboxes(
+    const assets::Pack& pack, const assets::Skeleton& skeleton, std::string_view character) {
   auto hitboxes = pack.ResolveHitboxes(character);
   if (!hitboxes) {
     return std::unexpected(hitboxes.error());
   }
-  const auto bound = assets::BindHitboxes(*skeleton, *std::move(hitboxes));
+  auto bound = assets::BindHitboxes(skeleton, *std::move(hitboxes));
   if (!bound) {
     return std::unexpected(assets::ResolveError::kCorruptBlob);
   }
-  return assets::PlaceHitboxesAtRest(*skeleton, *bound);
+  return *std::move(bound);
 }
 
-// The Hitboxes of character from pack, for the Hitboxes Debug overlay, or none
-// with a warning if they do not load: the server refuses such a pack at startup,
-// and a Debug overlay never keeps a character from loading.
+// hitboxes, each in the space of its Joint of skeleton, placed in the
+// character's root space where the Rest pose holds them, as the server's Posing
+// phase poses them for a body standing at the origin facing yaw 0 (ADR-0061):
+// the overlay then places them by each player's pose, as the root does.
+std::vector<hitbox::CharacterHitbox> AtRest(const assets::Skeleton& skeleton,
+                                            std::span<const hitbox::CharacterHitbox> hitboxes) {
+  const std::vector<math::Mat4> joints = animation::PoseAtRest(skeleton, hitbox::Pose{});
+  std::vector<hitbox::CharacterHitbox> placed;
+  placed.reserve(hitboxes.size());
+  for (hitbox::PlacedHitbox& one : hitbox::Place(hitboxes, joints)) {
+    placed.push_back(hitbox::CharacterHitbox{.part = one.part, .triangles = std::move(one.triangles)});
+  }
+  return placed;
+}
+
+// The Hitboxes of character from pack, for the Hitboxes Debug overlay, in its
+// root space where its Skeleton holds them in the Rest pose, or none with a
+// warning if they do not load: the server refuses such a pack at startup, and a
+// Debug overlay never keeps a character from loading.
 std::vector<hitbox::CharacterHitbox> LoadDebugHitboxes(const assets::Pack& pack, std::string_view character) {
-  auto hitboxes =
-      LoadCharacterHitboxes(character, [&pack](std::string_view name) { return ResolveHitboxesAtRest(pack, name); });
+  const auto skeleton = pack.ResolveSkeleton(character);
+  std::vector<assets::JointHitbox> bound;
+  auto hitboxes = LoadCharacterHitboxes(
+      character, [&](std::string_view name) -> std::expected<std::vector<assets::HitboxData>, assets::ResolveError> {
+        if (!skeleton) {
+          return std::unexpected(skeleton.error());
+        }
+        auto resolved = ResolveBoundHitboxes(pack, *skeleton, name);
+        if (!resolved) {
+          return std::unexpected(resolved.error());
+        }
+        bound = *std::move(resolved);
+        std::vector<assets::HitboxData> data;
+        data.reserve(bound.size());
+        for (const assets::JointHitbox& hitbox : bound) {
+          data.push_back(hitbox.hitbox);
+        }
+        return data;
+      });
   if (!hitboxes) {
     LOG_WARN("subsystem=client event=character_hitboxes_skipped character={} reason=\"{}\"", character,
              DescribeCharacterError(hitboxes.error()));
     return {};
   }
-  return *std::move(hitboxes);
+  // LoadCharacterHitboxes keeps the order it resolved them in.
+  for (std::size_t i = 0; i < hitboxes->size(); ++i) {
+    (*hitboxes)[i].joint = bound[i].joint;
+  }
+  return AtRest(*skeleton, *hitboxes);
 }
 #endif
 
