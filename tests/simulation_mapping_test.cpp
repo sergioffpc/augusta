@@ -1,5 +1,6 @@
 #include "augusta/simulation_mapping.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -7,6 +8,7 @@
 
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
@@ -103,6 +105,19 @@ TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSp
   ASSERT_EQ(medic.hitboxes[0].triangles.size(), 1U);
   EXPECT_EQ(medic.hitboxes[0].triangles[0].a, Vec3(0.0F, 0.0F, 0.0F));
   EXPECT_EQ(medic.hitboxes[0].triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
+}
+
+// Movement advances each player's Stride by its Character's Clips (ADR-0066):
+// SimulationWorld shares the ones the server loaded.
+TEST(SimulationMappingTest, ACharacterKeepsItsClips) {
+  const auto clips = std::make_shared<const augusta::animation::CharacterClips>();
+  const std::vector<augusta::scenario::Character> characters = {
+      {.path = "medic", .hitboxes = {}, .eye = Vec3(0.0F, 1.6F, 0.0F), .clips = clips},
+  };
+
+  const auto converted = ToSimulation(characters);
+
+  EXPECT_EQ(converted.at("medic").clips, clips);
 }
 
 // Every server places its players' Muzzles from the scenario's rifle (ADR-0064):

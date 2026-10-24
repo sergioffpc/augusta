@@ -60,7 +60,8 @@ std::unordered_map<std::string, simulation::Character> ToSimulation(
   std::unordered_map<std::string, simulation::Character> result;
   result.reserve(characters.size());
   for (const scenario::Character& character : characters) {
-    simulation::Character converted{.eye = character.eye, .hitboxes = {}, .skeleton = character.skeleton};
+    simulation::Character converted{
+        .eye = character.eye, .hitboxes = {}, .skeleton = character.skeleton, .clips = character.clips};
     converted.hitboxes.reserve(character.hitboxes.size());
     for (const assets::JointHitbox& hitbox : character.hitboxes) {
       converted.hitboxes.push_back(ToSimulation(hitbox, character.path));

@@ -1108,6 +1108,31 @@ TEST(ProtocolTest, ABodysPitchAndAdsRoundTripAtBothEndsOfTheRange) {
   EXPECT_EQ(received.bodies[2].body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds);
 }
 
+// A body's Stride travels as its one byte (ADR-0038, ADR-0066), over its whole range.
+TEST(ProtocolTest, ABodysStrideRoundTripsAtBothEndsOfItsByte) {
+  AuthoritativeStateWire sent;
+  EntityStateWire first = BodyAt(1, 1.0F);
+  first.body.stride = 0;
+  EntityStateWire last = BodyAt(2, 2.0F);
+  last.body.stride = 255;
+  EntityStateWire between = BodyAt(3, 3.0F);
+  between.body.stride = 77;
+  sent.bodies = {first, last, between};
+
+  const auto received = std::get<AuthoritativeStateWire>(RoundTrip(sent));
+
+  ASSERT_EQ(received.bodies.size(), 3U);
+  EXPECT_EQ(received.bodies[0].body.stride, 0);
+  EXPECT_EQ(received.bodies[1].body.stride, 255);
+  EXPECT_EQ(received.bodies[2].body.stride, 77);
+}
+
+// No Stride is beyond a byte, so a count beyond one is refused (ADR-0038).
+TEST(ProtocolTest, ABodysStrideBeyondAByteIsRefused) {
+  EXPECT_EQ(BodyOf(OneBody(VarintField(12, 255))).body.stride, 255);
+  EXPECT_EQ(Decode(OneBody(VarintField(12, 256))).error(), DecodeError::kOutOfRange);
+}
+
 // Each Encode builds its message on an arena local to the call, whose first
 // block is on the stack, so the payload is its one allocation (ADR-0007).
 TEST(ProtocolTest, AnAuthoritativeStateOfAFullMatchIsEncodedInOneAllocation) {

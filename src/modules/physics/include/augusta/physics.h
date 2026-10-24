@@ -129,9 +129,18 @@ struct BodyState {
   /// StaminaConfig::forced_walk_below: while set, sprint is ignored. It changes
   /// what the next commands do, so it travels and is restored with the rest.
   bool exhausted = false;
+  /// The body's Stride (GLOSSARY.md, ADR-0066): where it is in its cycle of
+  /// two steps, in kStrideSteps steps of a cycle. Step advances it by the
+  /// distance the body moves, never by time, so it travels and is restored with
+  /// the rest.
+  std::uint8_t stride = 0;
 
   bool operator==(const BodyState&) const = default;
 };
+
+/// How many steps a Stride's cycle of two steps has: BodyState::stride's 256
+/// values, one byte on the wire (ADR-0038).
+inline constexpr int kStrideSteps = 256;
 
 /// The collision capsule of a body in state: standing on its position in its
 /// stance, as World holds the body's controller. What a client draws a body
@@ -310,10 +319,14 @@ class World {
   /// Advances handle's body by one fixed tick of duration delta_time
   /// seconds: resolves collision and movement via PhysX according to
   /// input, applies stance transitions, and applies stamina depletion/
-  /// recovery (StaminaConfig). Returns the resulting state, which is also
+  /// recovery (StaminaConfig). Advances its Stride by the distance it moved
+  /// along the ground this tick over stride_length, the meters one cycle of two
+  /// steps takes at the body's gait (animation::StrideLength), each tick's
+  /// advance rounded to a whole step; a stride_length of 0 or less holds it, as
+  /// does a body that does not move. Returns the resulting state, which is also
   /// the new internally-held state for handle (visible to a subsequent
   /// Step, SetState, or Restore call).
-  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time);
+  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time, float stride_length = 0.0F);
 
   /// Overwrites handle's state immediately - e.g. for spawning or
   /// respawning a player at a fixed point (US-03). Unlike Restore, the

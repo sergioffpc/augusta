@@ -55,6 +55,10 @@
 /// each round's Shot judgement from the players its hit test selected, handed
 /// on in the tick's result once the round's flight ends (ADR-0074).
 /// What each one does is documented on its Phase enumerator below.
+namespace augusta::animation {
+struct CharacterClips;
+}  // namespace augusta::animation
+
 namespace augusta::simulation {
 
 /// SimulationWorld's nine phases (ADR-0023), executed in this exact
@@ -72,7 +76,10 @@ enum class Phase {
   /// Mechanism. PhysX integration, stamina, collision resolution
   /// (US-04, US-05) - augusta::physics::World::Step, one call per player
   /// body. The same physics::World interface PredictionWorld's Movement
-  /// phase uses (ARCHITECTURE.md §5).
+  /// phase uses (ARCHITECTURE.md §5). Each body's Stride advances by the
+  /// distance it moves over the stride length its Character's Clips give its
+  /// stance and velocity as the last tick left them, in the space its yaw faces
+  /// (animation::StrideLength), as PredictionWorld advances its own.
   kMovement,
   /// Mechanism. Aim/ADS, fire, reload, recoil, ammo rules (US-06-US-09) -
   /// augusta::weapon::Step, one call per player: the same function
@@ -199,6 +206,12 @@ struct Character {
   /// at the character's root, so a Hitbox bound to joint 0 is in root space.
   assets::Skeleton skeleton{.joints = {assets::JointData{.name = std::string(kDefaultRootJoint)}},
                             .rest_transforms = {math::Mat4(1.0F)}};
+  /// Its Clips (ADR-0066), shared by every player who plays it: what Movement
+  /// advances each one's Stride by. Null for a Character without any, whose
+  /// players' Strides hold.
+  // Initialized, so a designated initializer may leave it out.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::shared_ptr<const animation::CharacterClips> clips{};
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.

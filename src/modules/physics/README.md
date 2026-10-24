@@ -4,9 +4,10 @@
 
 ## Responsibility
 
-Wraps PhysX for collision and movement: player bodies, stance, stamina, raycasts
-against the Map, dynamic bodies, and restoring a body to a given state for
-reconciliation. It builds a map's static collision from a verified pack
+Wraps PhysX for collision and movement: player bodies, stance, stamina, the
+Stride advanced by the distance moved over the stride length its caller gives,
+raycasts against the Map, dynamic bodies, and restoring a body to a given state
+for reconciliation. It builds a map's static collision from a verified pack
 (`augusta/map.h`), keeping the opaque Surface id its caller adds each collision
 mesh with and reporting it from the Map raycast, never interpreting it.
 PredictionWorld and SimulationWorld use the same World. It gives a body's
@@ -38,5 +39,6 @@ build's PhysX records, through OmniPVD's runtime that the PhysX overlay port
 [ADR-0002](../../../docs/adr/0002-physics-and-ballistics.md),
 [ADR-0018](../../../docs/adr/0018-runtime-asset-format.md),
 [ADR-0045](../../../docs/adr/0045-dynamic-bodies.md),
+[ADR-0066](../../../docs/adr/0066-character-animation.md),
 [ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
 [ADR-0075](../../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

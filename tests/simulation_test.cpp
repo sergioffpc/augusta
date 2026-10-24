@@ -24,6 +24,7 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // SimulationWorld on flat ground: players are entities with bodies, moved by
 // the commands of each tick.
@@ -226,6 +227,68 @@ TEST_F(SimulationTest, APlayerWithNoCommandKeepsItsPitchAndAds) {
   ASSERT_EQ(state.bodies.size(), 1U);
   EXPECT_EQ(state.bodies[0].pitch, 0.5F);
   EXPECT_TRUE(state.bodies[0].ads);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(int a, int b) {
+  const int forward = ((a - b) % kStrideSteps + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// A character with Clips authored for the test (clips_fixture.h).
+Character WithClips() {
+  Character character = kCharacter;
+  character.clips = augusta::clips_fixture::TestClips();
+  return character;
+}
+
+// Movement advances a player's Stride by the distance it walks over the stride
+// length of its stance's blend space there: 30 ticks at 3 m/s walk 1.5 m. Each
+// tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(SimulationTest, AWalkingPlayersStrideAdvancesByTheDistanceOverItsClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}});
+
+  // Ahead, half of the forward Clip's 3 m stride.
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, start + (kStrideSteps / 2)), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStrafingPlayersStrideAdvancesByItsSideClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  // To its right, 1.5 m of the right Clip's 2.4 m stride.
+  const int expected = start + static_cast<int>(1.5F / augusta::clips_fixture::kStandingRight * kStrideSteps);
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, expected), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  Run(kSettleTicks, {});
+  const std::uint8_t walked =
+      Body(Run(10, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}}), kAlice).stride;
+
+  const State state = Run(kSettleTicks, {});
+
+  EXPECT_EQ(Body(state, kAlice).stride, walked);
+}
+
+TEST_F(SimulationTest, APlayerWhoseCharacterHasNoClipsHoldsItsStride) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  Run(kSettleTicks, {});
+
+  const State state = Run(kWalkTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}});
+
+  EXPECT_EQ(Body(state, kAlice).stride, 0);
 }
 
 // Requirements: US-15

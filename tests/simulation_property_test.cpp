@@ -30,6 +30,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
@@ -437,6 +438,15 @@ RC_GTEST_PROP(SimulationPropertyTest, AtMostOneMatchEndPerMatchAndAWinnerIsAlway
 // step the same body in separate PhysX scenes.
 constexpr float kConvergedPosition = 0.005F;
 constexpr float kConvergedStamina = 0.001F;
+// A Stride a step apart is left uncorrected, as such a millimetre is.
+constexpr int kConvergedStride = 1;
+
+// How far apart two Strides are, the short way round their 256 steps.
+int StrideDistance(int a, int b) {
+  const int ahead =
+      ((a - b) % augusta::physics::kStrideSteps + augusta::physics::kStrideSteps) % augusta::physics::kStrideSteps;
+  return std::min(ahead, augusta::physics::kStrideSteps - ahead);
+}
 
 // The client predicts every command while the server loses some of them,
 // moving the player and handling its rifle for a lost one with no command, as
@@ -455,11 +465,14 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
+  // Both sides advance the Stride by the same Character's Clips.
+  augusta::simulation::Character character = kCharacter;
+  character.clips = augusta::clips_fixture::TestClips();
   augusta::simulation::World server(parameters, kTickRate);
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
-  server.AddPlayer(kPlayer, kSpawn, kCharacter);
+  server.AddPlayer(kPlayer, kSpawn, character);
 
-  augusta::prediction::World client;
+  augusta::prediction::World client(character.clips);
   RC_ASSERT(client.AddCollisionMesh(Floor()).has_value());
   client.Start(kSpawn, parameters);
 
@@ -487,6 +500,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   RC_ASSERT(std::abs(body.stamina - authoritative.stamina) < kConvergedStamina);
   RC_ASSERT(body.stance == authoritative.stance);
   RC_ASSERT(body.exhausted == authoritative.exhausted);
+  RC_ASSERT(StrideDistance(body.stride, authoritative.stride) <= kConvergedStride);
   // The rifle is plain arithmetic, the same on both sides: it converges exactly.
   RC_ASSERT(predicted.rifle == answers.back().rifle);
   RC_CLASSIFY(predicted.rifle_corrections > 0, "the rifle was corrected");

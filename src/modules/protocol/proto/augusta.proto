@@ -210,6 +210,8 @@ message Body {
   sint32 yaw = 10;
   // Where its view looks up or down, on the angle grid.
   sint32 pitch = 11;
+  // Where it is in its Stride, a cycle of two steps, in 256ths of one: 0 to 255.
+  uint32 stride = 12;
 }
 
 // Server to client: the Authoritative State of one server tick.

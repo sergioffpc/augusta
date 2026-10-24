@@ -1,5 +1,6 @@
 #include "augusta/prediction.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // Exercises PredictionWorld's public Tick() surface end-to-end - the local
 // entity, its sequenced commands and its reconciliation against what the
@@ -85,6 +87,52 @@ TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
               Parameters{.stamina = {.deplete_per_second = 1.0F, .regen_per_second = 0.0F, .forced_walk_below = 0.0F}});
 
   EXPECT_LT(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(int a, int b) {
+  const int forward = ((a - b) % kStrideSteps + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// The local player's Stride advances as SimulationWorld advances a player's: by
+// the distance walked over its Character's Clips' stride length, 30 ticks at
+// 3 m/s walking half of the forward Clip's 3 m. Each tick's advance is rounded
+// to a whole step, so a tick may be up to half a step off.
+TEST(PredictionWorldTest, WalkingAdvancesTheLocalPlayersStrideByItsCharactersClips) {
+  World world(augusta::clips_fixture::TestClips());
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+  world.Start(Vec3{}, Parameters{});
+  Command still{};
+  for (int i = 0; i < kSettleTicks; ++i) {
+    world.Tick(still, 0, std::nullopt, kFixedTick);
+  }
+  Command ahead{};
+  ahead.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+  constexpr int kTicks = 30;
+
+  State state;
+  for (int i = 0; i < kTicks; ++i) {
+    state = world.Tick(ahead, 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_LE(StrideDistance(state.local_body.stride, kStrideSteps / 2), (kTicks / 2) + 1);
+}
+
+TEST(PredictionWorldTest, WithoutClipsTheLocalPlayersStrideHolds) {
+  World world;
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+
+  State state;
+  for (int i = 0; i < kSettleTicks; ++i) {
+    state = world.Tick(Walking(), 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_GT(state.local_body.position.x, 0.5F);
+  EXPECT_EQ(state.local_body.stride, 0);
 }
 
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
@@ -176,6 +224,29 @@ TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgr
   const State state = Tick(ack);
 
   EXPECT_NEAR(state.local_body.stamina, kServerStamina, 0.01F);
+}
+
+// The fixture's world has no Clips, so its Stride holds where the server put it.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AStrideThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ack.body.stride = 100;
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.stride, 100);
+}
+
+// A step apart is rounding, as a millimetre of position is: not worth a replay.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AStrideOneStepApartIsNotCorrected) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  const std::uint8_t predicted = ack.body.stride;
+  ack.body.stride = static_cast<std::uint8_t>(predicted + 1);
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.stride, predicted);
 }
 
 // Sprinting forward: the rules the fixture's world runs on never drain, so

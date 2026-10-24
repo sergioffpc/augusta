@@ -1,6 +1,7 @@
 #include "augusta/physics.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -362,6 +363,17 @@ BodyState OnWireGrid(BodyState state) {
   return state;
 }
 
+// stride advanced by moved's distance along the ground over stride_length,
+// rounded to a whole step and round the cycle; held without a stride length.
+std::uint8_t AdvanceStride(std::uint8_t stride, const math::Vec3& moved, float stride_length) {
+  if (!(stride_length > 0.0F)) {
+    return stride;
+  }
+  const float ground = math::Length(math::Vec3(moved.x, 0.0F, moved.z));
+  const std::int64_t steps = std::llround(ground / stride_length * static_cast<float>(kStrideSteps));
+  return static_cast<std::uint8_t>((stride + steps) % kStrideSteps);
+}
+
 PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
 
 }  // namespace
@@ -572,7 +584,7 @@ void World::DestroyBody(BodyHandle handle) {
   LOG_DEBUG("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
 }
 
-BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time) {
+BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time, float stride_length) {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
     return {};
@@ -614,6 +626,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   const math::Vec3 new_position = math::SnapPosition(FromPx(record.controller->getFootPosition()));
   record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
+  state.stride = AdvanceStride(state.stride, new_position - state.position, stride_length);
   state.position = new_position;
   state = OnWireGrid(state);
 

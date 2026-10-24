@@ -165,6 +165,8 @@ struct BodyStateWire {
   /// Any of kExhausted and kAds; no other bit.
   std::uint8_t flags = 0;
   StanceWire stance = StanceWire::kStanding;
+  /// Where the body is in its Stride, a cycle of two steps, in 256ths of one.
+  std::uint8_t stride = 0;
 
   bool operator==(const BodyStateWire&) const = default;
 };

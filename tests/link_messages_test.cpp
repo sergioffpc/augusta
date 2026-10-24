@@ -73,6 +73,7 @@ BodyState Body(float x, Stance stance) {
   body.velocity = Vec3(0.25F, -9.5F, 3.0F);
   body.stance = stance;
   body.stamina = 0.4F;
+  body.stride = static_cast<std::uint8_t>(200 + static_cast<int>(x));
   return body;
 }
 
@@ -83,6 +84,7 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.stance, expected.stance);
   EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
   EXPECT_EQ(actual.exhausted, expected.exhausted);
+  EXPECT_EQ(actual.stride, expected.stride);
 }
 
 TEST(LinkMessagesTest, ACommandTheClientSendsReachesTheServerUnchanged) {
