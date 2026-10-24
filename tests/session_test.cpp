@@ -683,12 +683,14 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
       .mesh = {.points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 1.0F, 0.0F)},
                .indices = {0, 1, 3}}};
 
-  EXPECT_EQ(
-      CodeThrownBy([&] {
-        Host(TestHostConfig(),
-             Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {hitbox}}}});
-      }),
-      Code::kInvalidContent);
+  EXPECT_EQ(CodeThrownBy([&] {
+              Host(TestHostConfig(), Scenario{.collision = {},
+                                              .spawn_points = {},
+                                              .characters = {{.path = kCharacter,
+                                                              .hitboxes = {augusta::session_test::OnRoot(hitbox)},
+                                                              .skeleton = augusta::session_test::RootSkeleton()}}});
+            }),
+            Code::kInvalidContent);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
@@ -1073,7 +1075,9 @@ class LoopbackMatch : public ::testing::Test {
     return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
                      .scenario = Scenario{.collision = {FloorAt(kFloorY)},
                                           .spawn_points = std::move(spawn_points),
-                                          .characters = {{.path = kCharacter, .hitboxes = {}}}},
+                                          .characters = {{.path = kCharacter,
+                                                          .hitboxes = {},
+                                                          .skeleton = augusta::session_test::RootSkeleton()}}},
                      .policy = {}};
   }
 
@@ -4143,21 +4147,22 @@ TEST_F(RecoilTest, TheViewAClientSendsNeverIncludesItsRecoil) {
   EXPECT_EQ(state->bodies.front().yaw, kViewYaw);
 }
 
-// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
+// A hitbox for part on RootSkeleton's Joint: the box from low to high, as the
+// twelve triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return augusta::session_test::OnRoot(augusta::assets::HitboxData{
       .part = part,
       .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
                           Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
                           Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
                .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}});
 }
 
 // The hitboxes of the character the hit tests play: 1.8 m tall, with a head, a
 // torso and legs on its axis and a right arm (a limb) beside the torso, at +X
 // when it faces yaw 0.
-std::vector<augusta::assets::HitboxData> HumanHitboxes() {
+std::vector<augusta::assets::JointHitbox> HumanHitboxes() {
   return {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
           BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
           BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F)),

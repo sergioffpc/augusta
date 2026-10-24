@@ -46,7 +46,8 @@ std::unordered_map<std::string, simulation::Character> ToSimulation(
   for (const scenario::Character& character : characters) {
     simulation::Character converted{.eye = character.eye, .hitboxes = {}};
     converted.hitboxes.reserve(character.hitboxes.size());
-    for (const assets::HitboxData& hitbox : character.hitboxes) {
+    // Rigid until SimulationWorld poses a Skeleton itself (ADR-0061).
+    for (const assets::HitboxData& hitbox : assets::PlaceHitboxesAtRest(character.skeleton, character.hitboxes)) {
       converted.hitboxes.push_back(ToSimulation(hitbox, character.path));
     }
     result.emplace(character.path, std::move(converted));

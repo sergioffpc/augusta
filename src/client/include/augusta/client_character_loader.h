@@ -76,7 +76,8 @@ std::expected<renderer::SceneMesh, CharacterError> LoadCharacterMesh(std::span<c
 std::expected<math::Vec3, CharacterError> LoadCharacterEye(std::string_view character, const EyeResolver& resolve_eye);
 
 #if AUGUSTA_DEBUG_TOOLS
-/// Looks up a character's Hitboxes by its name, e.g. Pack::ResolveHitboxes.
+/// Looks up a character's Hitboxes by its name, in its space: each placed by its
+/// Joint in the Rest pose (assets::PlaceHitboxesAtRest, ADR-0061).
 using HitboxesResolver =
     std::function<std::expected<std::vector<assets::HitboxData>, assets::ResolveError>(std::string_view)>;
 

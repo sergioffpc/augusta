@@ -57,12 +57,32 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
 }
 
 #if AUGUSTA_DEBUG_TOOLS
+// The Hitboxes of the character named character from pack, in its space where
+// its Skeleton's Joints hold them in the Rest pose, as the server places them
+// (ADR-0061); kCorruptBlob if one names a Joint the Skeleton lacks.
+std::expected<std::vector<assets::HitboxData>, assets::ResolveError> ResolveHitboxesAtRest(const assets::Pack& pack,
+                                                                                           std::string_view character) {
+  const auto skeleton = pack.ResolveSkeleton(character);
+  if (!skeleton) {
+    return std::unexpected(skeleton.error());
+  }
+  auto hitboxes = pack.ResolveHitboxes(character);
+  if (!hitboxes) {
+    return std::unexpected(hitboxes.error());
+  }
+  const auto bound = assets::BindHitboxes(*skeleton, *std::move(hitboxes));
+  if (!bound) {
+    return std::unexpected(assets::ResolveError::kCorruptBlob);
+  }
+  return assets::PlaceHitboxesAtRest(*skeleton, *bound);
+}
+
 // The Hitboxes of character from pack, for the Hitboxes Debug overlay, or none
 // with a warning if they do not load: the server refuses such a pack at startup,
 // and a Debug overlay never keeps a character from loading.
 std::vector<hitbox::CharacterHitbox> LoadDebugHitboxes(const assets::Pack& pack, std::string_view character) {
   auto hitboxes =
-      LoadCharacterHitboxes(character, [&pack](std::string_view name) { return pack.ResolveHitboxes(name); });
+      LoadCharacterHitboxes(character, [&pack](std::string_view name) { return ResolveHitboxesAtRest(pack, name); });
   if (!hitboxes) {
     LOG_WARN("subsystem=client event=character_hitboxes_skipped character={} reason=\"{}\"", character,
              DescribeCharacterError(hitboxes.error()));
