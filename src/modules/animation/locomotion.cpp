@@ -22,6 +22,21 @@ constexpr float kPi = std::numbers::pi_v<float>;
 // Below this speed, in m/s, a body is still.
 constexpr float kStill = 1e-4F;
 
+// The direction each directional Clip moves in, as an angle from ahead towards
+// the right, in radians: an eighth of a turn apart.
+constexpr float kEighthTurn = kPi / 4.0F;
+constexpr float kBackward = -kPi;
+constexpr float kBackwardLeft = -3.0F * kEighthTurn;
+constexpr float kLeft = -2.0F * kEighthTurn;
+constexpr float kForwardLeft = -kEighthTurn;
+constexpr float kForward = 0.0F;
+constexpr float kForwardRight = kEighthTurn;
+constexpr float kRight = 2.0F * kEighthTurn;
+constexpr float kBackwardRight = 3.0F * kEighthTurn;
+
+// How many directions a blend space has a Clip for at most.
+constexpr std::size_t kMaxDirections = 8;
+
 // A directional Clip and the direction it moves in, as an angle from ahead
 // towards the right, in radians.
 struct Direction {
@@ -31,7 +46,7 @@ struct Direction {
 
 // clips' directional Clips, by angle from -pi (backward) up: backward, the left
 // side, ahead, the right side. Every stance has forward and backward.
-std::size_t DirectionsOf(const StanceClips& clips, std::array<Direction, 8>& directions) {
+std::size_t DirectionsOf(const StanceClips& clips, std::array<Direction, kMaxDirections>& directions) {
   std::size_t count = 0;
   const auto add = [&](const Clip* clip, float angle) {
     if (clip != nullptr) {
@@ -39,14 +54,14 @@ std::size_t DirectionsOf(const StanceClips& clips, std::array<Direction, 8>& dir
     }
   };
   const auto optional = [](const std::optional<Clip>& clip) { return clip.has_value() ? &*clip : nullptr; };
-  add(&clips.backward, -kPi);
-  add(optional(clips.backward_left), -kPi * 3.0F / 4.0F);
-  add(optional(clips.left), -kPi / 2.0F);
-  add(optional(clips.forward_left), -kPi / 4.0F);
-  add(&clips.forward, 0.0F);
-  add(optional(clips.forward_right), kPi / 4.0F);
-  add(optional(clips.right), kPi / 2.0F);
-  add(optional(clips.backward_right), kPi * 3.0F / 4.0F);
+  add(&clips.backward, kBackward);
+  add(optional(clips.backward_left), kBackwardLeft);
+  add(optional(clips.left), kLeft);
+  add(optional(clips.forward_left), kForwardLeft);
+  add(&clips.forward, kForward);
+  add(optional(clips.forward_right), kForwardRight);
+  add(optional(clips.right), kRight);
+  add(optional(clips.backward_right), kBackwardRight);
   return count;
 }
 
@@ -76,7 +91,7 @@ LocomotionBlend BlendSpace(const StanceClips& clips, const math::Vec3& local_vel
 
   // The two directions either side of the velocity's, round the circle: the
   // last one's neighbour is backward again, at pi.
-  std::array<Direction, 8> directions{};
+  std::array<Direction, kMaxDirections> directions{};
   const std::size_t count = DirectionsOf(clips, directions);
   const float angle = std::atan2(right, ahead);
   Direction below = directions.at(count - 1);
@@ -104,9 +119,12 @@ LocomotionBlend BlendSpace(const StanceClips& clips, const math::Vec3& local_vel
 
   // Faster, standing, forward's weight goes over to sprint as the speed nears its.
   float sprint_weight = 0.0F;
-  float* forward_weight = below.clip == &clips.forward   ? &below_weight
-                          : above.clip == &clips.forward ? &above_weight
-                                                         : nullptr;
+  float* forward_weight = nullptr;
+  if (below.clip == &clips.forward) {
+    forward_weight = &below_weight;
+  } else if (above.clip == &clips.forward) {
+    forward_weight = &above_weight;
+  }
   if (clips.sprint.has_value() && forward_weight != nullptr && speed > clip_speed &&
       SpeedOf(*clips.sprint) > clip_speed) {
     const float toward_sprint = std::min((speed - clip_speed) / (SpeedOf(*clips.sprint) - clip_speed), 1.0F);
