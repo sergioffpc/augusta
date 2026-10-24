@@ -77,6 +77,13 @@ struct Facing {
   float yaw = 0.0F;
 };
 
+// The rest of a player's view: the pitch of its last command's, on its grid,
+// and whether it aimed down sights.
+struct Aim {
+  float pitch = 0.0F;
+  bool ads = false;
+};
+
 // What is left of a player's health, 0 or more.
 struct Health {
   float value = 0.0F;
@@ -115,6 +122,11 @@ struct Rifle {
 // Where a player's character sees from standing, relative to its feet (ADR-0040).
 struct Eye {
   math::Vec3 standing{};
+};
+
+// Where a player's rifle is, as Posing last placed it; nullopt until it has.
+struct Held {
+  std::optional<HeldRifle> rifle;
 };
 
 // A bullet in flight: an entity of its own, from the tick it is fired on until
@@ -212,6 +224,8 @@ struct World::Impl {
   };
 
   const parameters::Parameters parameters;
+  // The markers of the rifle every player holds.
+  const weapon::Markers rifle_markers;
   // The Shooter's delay's cap in ticks, and how many ticks of poses a player's
   // Hitbox history keeps for it; neither changes.
   const float max_shooters_delay;
@@ -248,8 +262,10 @@ struct World::Impl {
   std::vector<ShotJudgement> shot_judgements;
 #endif
 
-  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy)
+  Impl(const parameters::Parameters& params, std::uint8_t tick_rate_hz, policy::Policy game_policy,
+       const weapon::Markers& rifle)
       : parameters(params),
+        rifle_markers(rifle),
         max_shooters_delay(MaxShootersDelayTicks(tick_rate_hz)),
         history_ticks(HitboxHistoryTicks(tick_rate_hz)),
         physics(params.stamina),
@@ -281,10 +297,10 @@ struct World::Impl {
   // run() rather than each(): it fires exactly once per Tick regardless of
   // matched entities, since a hook is called once a tick, not once a player.
   void RegisterSystems() {
-    ecs.system<const Player, Intent, Facing>("CommandIngestionSystem")
+    ecs.system<const Player, Intent, Facing, Aim>("CommandIngestionSystem")
         .kind(phases[kCommandIngestion])
-        .each([this](const Player& player, Intent& intent, Facing& facing) {
-          OnCommandIngestion(player, intent, facing);
+        .each([this](const Player& player, Intent& intent, Facing& facing, Aim& aim) {
+          OnCommandIngestion(player, intent, facing, aim);
         });
     ecs.system<Body, const Intent>("MovementSystem")
         .kind(phases[kMovement])
@@ -303,6 +319,11 @@ struct World::Impl {
         .each([](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
           OnPosing(body, facing, skeleton, posed);
         });
+    // After PosingSystem, in the same phase: the hand is placed once the body is posed.
+    ecs.system<const Body, const Facing, const Aim, const Eye, const Rifle, Held>("HoldingSystem")
+        .kind(phases[kPosing])
+        .each([this](const Body& body, const Facing& facing, const Aim& aim, const Eye& eye, const Rifle& rifle,
+                     Held& held) { OnHolding(body, facing, aim, eye, rifle, held); });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
@@ -332,7 +353,7 @@ struct World::Impl {
 
   // A player with no command this tick stops, and keeps the stance it asked
   // for and where it faced.
-  void OnCommandIngestion(const Player& player, Intent& intent, Facing& facing) {
+  void OnCommandIngestion(const Player& player, Intent& intent, Facing& facing, Aim& aim) {
     const auto command = tick_commands.find(player.entity);
     if (command == tick_commands.end()) {
       intent.input.direction = math::Vec3{};
@@ -341,6 +362,7 @@ struct World::Impl {
     }
     intent.input = command->second.movement;
     facing.yaw = math::SnapAngle(command->second.yaw);
+    aim = Aim{.pitch = math::SnapAngle(command->second.pitch), .ads = command->second.ads};
   }
 
   void OnMovement(float delta_time, Body& body, const Intent& intent) {
@@ -370,6 +392,18 @@ struct World::Impl {
   // Poses one player's Skeleton where Movement has just put its body.
   static void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
     animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
+  }
+
+  // Places one player's rifle where a Desktop player holds it, its view turned
+  // by its rifle's Recoil offset.
+  void OnHolding(const Body& body, const Facing& facing, const Aim& aim, const Eye& eye, const Rifle& rifle,
+                 Held& held) const {
+    const math::Vec3 eye_position = body.state.position + physics::LowerToStance(eye.standing, body.state.stance);
+    const math::Mat4 hand =
+        weapon::DesktopHand(eye_position, facing.yaw + rifle.state.recoil.yaw, aim.pitch + rifle.state.recoil.pitch,
+                            aim.ads, parameters.rifle, rifle_markers);
+    held.rifle =
+        HeldRifle{.muzzle = weapon::PlaceMuzzle(hand, rifle_markers), .sight = weapon::PlaceSight(hand, rifle_markers)};
   }
 
   // Announces shot in the tick's state and puts its bullet in flight, to be
@@ -591,8 +625,9 @@ struct World::Impl {
   }
 };
 
-World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy)
-    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy))) {}
+World::World(const parameters::Parameters& parameters, std::uint8_t tick_rate_hz, policy::Policy policy,
+             const weapon::Markers& rifle)
+    : impl_(std::make_unique<Impl>(parameters, tick_rate_hz, std::move(policy), rifle)) {}
 
 World::~World() = default;
 
@@ -618,13 +653,15 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<Body>({.handle = body, .state = initial})
           .set<Intent>({})
           .set<Facing>({})
+          .set<Aim>({})
           .set<Health>({.value = impl.parameters.starting_health})
           .set<Eye>({.standing = character.eye})
           .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.skeleton, character.hitboxes)})
           .set<CharacterSkeleton>({.skeleton = character.skeleton})
           .set<PosedJoints>({})
           .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks, character.skeleton, character.hitboxes)})
-          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)});
+          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)})
+          .set<Held>({});
   impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }
 
@@ -719,6 +756,14 @@ TickResult World::Tick(const std::vector<PlayerCommand>& commands, float delta_t
 #else
   return TickResult{.state = impl.committed, .actions = impl.actions, .shooters_delays = impl.shooters_delays};
 #endif
+}
+
+std::optional<HeldRifle> World::HeldRifleOf(EntityId entity) const {
+  const auto slot = impl_->players.find(entity);
+  if (slot == impl_->players.end() || !slot->second.body.has_value()) {
+    return std::nullopt;
+  }
+  return slot->second.entity.get<Held>().rifle;
 }
 
 #if AUGUSTA_DEBUG_TOOLS

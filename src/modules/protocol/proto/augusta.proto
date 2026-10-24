@@ -124,6 +124,10 @@ message Rifle {
   float ads_field_of_view = 6;
   repeated RecoilKick recoil_pattern = 7;
   uint32 magazine_capacity = 8;
+  // Along the view's own axes: right, up and back.
+  float hip_offset_right = 9;
+  float hip_offset_up = 10;
+  float hip_offset_back = 11;
 }
 
 message Ammo {

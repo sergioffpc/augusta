@@ -356,6 +356,7 @@ TEST(LinkMessagesTest, TheParametersAJoinAcceptedCarriesReachTheClientUnchanged)
                       .recoil_recovery_per_second = 0.15F,
                       .ads_recoil_scale = 0.6F,
                       .ads_field_of_view = 0.65F,
+                      .hip_offset = augusta::math::Vec3(0.15F, -0.2F, 0.05F),
                       .recoil_pattern = {{.pitch = 0.01F, .yaw = 0.002F}, {.pitch = 0.007F, .yaw = -0.003F}},
                       .magazine_capacity = 25};
   parameters.ammo = {.flight = {.gravity = 9.81F, .max_range = 900.0F},

@@ -526,6 +526,11 @@ salvo (a Burst is not a fire mode: the rifle is full-auto)
 its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
 where a round leaves), shot origin
 
+**Hip offset**: How far from its ADS hold a Desktop player holds its rifle from
+the hip, along the view's own axes: a rifle Parameter. _Avoid_: Muzzle offset
+(the Muzzle is placed from the hand that holds the rifle, never offset from the
+body), hip position
+
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
 shrinks back to zero while the trigger is not pulled. A Shot leaves along the

@@ -81,6 +81,8 @@ TEST(ValidateTest, EachRifleAmmoOrHealthValueOutsideItsRangeIsNamedByItsPath) {
       {[](Parameters& p) { p.rifle.ads_recoil_scale = 1.5F; }, "rifle.ads_recoil_scale"},
       {[](Parameters& p) { p.rifle.ads_field_of_view = 0.0F; }, "rifle.ads_field_of_view"},
       {[](Parameters& p) { p.rifle.ads_field_of_view = std::numbers::pi_v<float>; }, "rifle.ads_field_of_view"},
+      {[](Parameters& p) { p.rifle.hip_offset.y = kNan; }, "rifle.hip_offset"},
+      {[](Parameters& p) { p.rifle.hip_offset.z = kInfinity; }, "rifle.hip_offset"},
       {[](Parameters& p) { p.rifle.recoil_pattern = {{.pitch = kNan, .yaw = 0.0F}}; }, "rifle.recoil_pattern"},
       {[](Parameters& p) { p.rifle.recoil_pattern.resize(augusta::limits::kMaxRecoilKicks + 1); },
        "rifle.recoil_pattern"},

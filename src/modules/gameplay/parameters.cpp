@@ -55,6 +55,9 @@ std::expected<void, InvalidParameter> ValidateRifle(const weapon::Rifle& rifle) 
   if (!FiniteAndAbove(rifle.ads_field_of_view, 0.0F) || rifle.ads_field_of_view >= std::numbers::pi_v<float>) {
     return Invalid("rifle.ads_field_of_view");
   }
+  if (!std::isfinite(rifle.hip_offset.x) || !std::isfinite(rifle.hip_offset.y) || !std::isfinite(rifle.hip_offset.z)) {
+    return Invalid("rifle.hip_offset");
+  }
   if (rifle.recoil_pattern.size() > limits::kMaxRecoilKicks) {
     return Invalid("rifle.recoil_pattern");
   }

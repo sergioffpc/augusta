@@ -215,6 +215,9 @@ void Write(const ParametersWire& wire, pb::Parameters& parameters, Outbound& out
   rifle.set_recoil_recovery_per_second(wire.rifle.recoil_recovery_per_second);
   rifle.set_ads_recoil_scale(wire.rifle.ads_recoil_scale);
   rifle.set_ads_field_of_view(wire.rifle.ads_field_of_view);
+  rifle.set_hip_offset_right(wire.rifle.hip_offset_right);
+  rifle.set_hip_offset_up(wire.rifle.hip_offset_up);
+  rifle.set_hip_offset_back(wire.rifle.hip_offset_back);
   if (out.Fits(wire.rifle.recoil_pattern.size(), limits::kMaxRecoilKicks)) {
     for (const RecoilKickWire& kick : wire.rifle.recoil_pattern) {
       pb::RecoilKick& written = *rifle.add_recoil_pattern();
@@ -619,7 +622,10 @@ RifleWire Read(const pb::Rifle& rifle, Inbound& in) {
                                               [](const pb::RecoilKick& kick) {
                                                 return RecoilKickWire{.pitch = kick.pitch(), .yaw = kick.yaw()};
                                               }),
-                   .magazine_capacity = in.Narrow(rifle.magazine_capacity())};
+                   .magazine_capacity = in.Narrow(rifle.magazine_capacity()),
+                   .hip_offset_right = rifle.hip_offset_right(),
+                   .hip_offset_up = rifle.hip_offset_up(),
+                   .hip_offset_back = rifle.hip_offset_back()};
 }
 
 ParametersWire Read(const pb::Parameters& parameters, Inbound& in) {
