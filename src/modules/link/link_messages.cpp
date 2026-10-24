@@ -267,6 +267,8 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
       .flags = body.exhausted ? protocol::BodyStateWire::kExhausted : std::uint8_t{0},
       .stance = ToWire(body.stance),
       .stride = body.stride,
+      .previous_stance = ToWire(body.previous_stance),
+      .stance_progress = body.stance_progress,
   };
 }
 
@@ -278,6 +280,8 @@ physics::BodyState FromWire(const protocol::BodyStateWire& body) {
   result.stamina = body.stamina;
   result.exhausted = (body.flags & protocol::BodyStateWire::kExhausted) != 0;
   result.stride = body.stride;
+  result.previous_stance = FromWire(body.previous_stance);
+  result.stance_progress = body.stance_progress;
   return result;
 }
 

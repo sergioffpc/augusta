@@ -19,8 +19,10 @@ using augusta::physics::BodyState;
 using augusta::physics::CollisionMesh;
 using augusta::physics::CollisionMeshError;
 using augusta::physics::FallState;
+using augusta::physics::kStanceProgressSteps;
 using augusta::physics::MapRaycastHit;
 using augusta::physics::MovementInput;
+using augusta::physics::Pacing;
 using augusta::physics::RaycastHit;
 using augusta::physics::StaminaConfig;
 using augusta::physics::Stance;
@@ -676,7 +678,7 @@ class StrideTest : public ::testing::Test {
   BodyState Walk(int ticks, float stride_length) {
     BodyState state{};
     for (int i = 0; i < ticks; ++i) {
-      state = world_.Step(body_, walk_, kFixedTick, stride_length);
+      state = world_.Step(body_, walk_, kFixedTick, {.stride_length = stride_length});
     }
     return state;
   }
@@ -725,6 +727,107 @@ TEST_F(StrideTest, AStrideRestoredIsWhereTheNextStepAdvancesFrom) {
   // One tick walks 51/1024 m on the position grid: 10.6 steps of a 1.2 m
   // stride, rounded to 11, from 250 round the cycle to 5.
   EXPECT_EQ(state.stride, 5);
+}
+
+// ---- A change of stance's progress (ADR-0066) ----
+
+// A Character's transition durations: 0.25 s between standing and crouching,
+// 15 ticks, 17 steps of progress a tick; 0.8 s between standing and prone.
+const Pacing kPacing{.transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F}};
+constexpr int kCrouchStepsPerTick = 17;
+
+// A body settled standing on the floor.
+class StanceProgressTest : public ::testing::Test {
+ protected:
+  StanceProgressTest() : world_(WorldWithFloor()), body_(world_.CreateBody(Vec3(0.0F))) {
+    Settle(world_, body_, MovementInput{}, 30);
+  }
+
+  BodyState Hold(Stance stance, int ticks, const Pacing& pacing = kPacing) {
+    MovementInput input{};
+    input.desired_stance = stance;
+    BodyState state{};
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Step(body_, input, kFixedTick, pacing);
+    }
+    return state;
+  }
+
+  World world_;
+  augusta::physics::BodyHandle body_;
+};
+
+TEST_F(StanceProgressTest, ABodyThatNeverChangedStanceIsAllInItsStance) {
+  const BodyState state = Hold(Stance::kStanding, 1);
+
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps);
+}
+
+// The collider crouches on the tick it changes; the pose starts from standing.
+TEST_F(StanceProgressTest, AChangeOfStanceStartsFromTheStanceItLeaves) {
+  const BodyState state = Hold(Stance::kCrouching, 1);
+
+  EXPECT_EQ(state.stance, Stance::kCrouching);
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kCrouchStepsPerTick);
+}
+
+TEST_F(StanceProgressTest, AChangeIsOverAfterItsPairsTransitionDuration) {
+  const BodyState under_way = Hold(Stance::kCrouching, 14);
+  const BodyState over = Hold(Stance::kCrouching, 1);
+
+  EXPECT_EQ(under_way.stance_progress, 14 * kCrouchStepsPerTick);
+  EXPECT_EQ(over.stance_progress, kStanceProgressSteps);
+  EXPECT_EQ(Hold(Stance::kCrouching, 10).stance_progress, kStanceProgressSteps);
+}
+
+// Going prone takes 0.8 s: 15 ticks are under a third of it. Each tick's advance
+// is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(StanceProgressTest, EachPairOfStancesTakesItsOwnTransitionDuration) {
+  constexpr int kTicks = 15;
+
+  const BodyState state = Hold(Stance::kProne, kTicks);
+
+  const float expected = kTicks * kFixedTick / kPacing.transitions.standing_prone * kStanceProgressSteps;
+  EXPECT_NEAR(state.stance_progress, expected, kTicks / 2.0F);
+}
+
+// Halfway down into a crouch and back up: the change turns round where it got
+// to, 5 ticks down, so the body comes back up from there.
+TEST_F(StanceProgressTest, BackToTheStanceAChangeUnderWayLeftItTurnsRoundWhereItGotTo) {
+  Hold(Stance::kCrouching, 5);
+
+  const BodyState state = Hold(Stance::kStanding, 1);
+
+  EXPECT_EQ(state.stance, Stance::kStanding);
+  EXPECT_EQ(state.previous_stance, Stance::kCrouching);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps - (5 * kCrouchStepsPerTick) + kCrouchStepsPerTick);
+}
+
+TEST_F(StanceProgressTest, OnToAThirdStanceANewChangeStartsFromTheStanceItLeaves) {
+  Hold(Stance::kCrouching, 5);
+
+  const BodyState state = Hold(Stance::kProne, 1);
+
+  EXPECT_EQ(state.previous_stance, Stance::kCrouching);
+  // 0.6 s from crouching to prone: 7.08 steps a tick.
+  EXPECT_EQ(state.stance_progress, 7);
+}
+
+TEST_F(StanceProgressTest, WithoutTransitionDurationsAChangeIsOverOnTheTickItStarts) {
+  const BodyState state = Hold(Stance::kCrouching, 1, Pacing{});
+
+  EXPECT_EQ(state.previous_stance, Stance::kStanding);
+  EXPECT_EQ(state.stance_progress, kStanceProgressSteps);
+}
+
+TEST_F(StanceProgressTest, AProgressRestoredIsWhereTheNextStepAdvancesFrom) {
+  BodyState restored = Hold(Stance::kCrouching, 1);
+  restored.stance_progress = 100;
+  world_.Restore(body_, restored, world_.Fall(body_));
+
+  EXPECT_EQ(Hold(Stance::kCrouching, 1).stance_progress, 100 + kCrouchStepsPerTick);
 }
 
 }  // namespace

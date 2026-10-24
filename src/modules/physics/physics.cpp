@@ -53,6 +53,7 @@
 #include <pvdruntime/OmniPvdWriter.h>
 #endif
 
+#include "augusta/assets.h"
 #include "augusta/grid.h"
 #include "augusta/logging.h"
 #include "augusta/math.h"
@@ -374,9 +375,33 @@ std::uint8_t AdvanceStride(std::uint8_t stride, const math::Vec3& moved, float s
   return static_cast<std::uint8_t>((stride + steps) % kStrideSteps);
 }
 
+// progress, the progress of a change of stance that takes duration seconds,
+// advanced by delta_time, rounded to a whole step and held at the change's end;
+// a change without a duration is over at once.
+std::uint8_t AdvanceStanceProgress(std::uint8_t progress, float delta_time, float duration) {
+  if (!(duration > 0.0F)) {
+    return kStanceProgressSteps;
+  }
+  const std::int64_t steps = std::llround(delta_time / duration * static_cast<float>(kStanceProgressSteps));
+  return static_cast<std::uint8_t>(std::min<std::int64_t>(progress + steps, kStanceProgressSteps));
+}
+
 PxExtendedVec3 ToFootPosition(const math::Vec3& position) { return {position.x, position.y, position.z}; }
 
 }  // namespace
+
+float TransitionDuration(const assets::StanceTransitionsData& transitions, Stance from, Stance to) {
+  if (from == to) {
+    return 0.0F;
+  }
+  if (from != Stance::kProne && to != Stance::kProne) {
+    return transitions.standing_crouching;
+  }
+  if (from != Stance::kCrouching && to != Stance::kCrouching) {
+    return transitions.standing_prone;
+  }
+  return transitions.crouching_prone;
+}
 
 float StanceHeight(Stance stance) { return HeightForStance(stance) + kCapsuleDiameter; }
 
@@ -584,7 +609,7 @@ void World::DestroyBody(BodyHandle handle) {
   LOG_DEBUG("subsystem=physics event=body_destroyed handle={}", static_cast<std::uint32_t>(handle));
 }
 
-BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time, float stride_length) {
+BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta_time, const Pacing& pacing) {
   const auto body_it = impl_->bodies.find(handle);
   if (body_it == impl_->bodies.end()) {
     return {};
@@ -594,8 +619,16 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
 
   if (input.desired_stance != state.stance && impl_->CanChangeStance(record, state.stance, input.desired_stance)) {
     record.controller->resize(HeightForStance(input.desired_stance));
+    // Back to the stance a change under way left, the change turns round
+    // where it has got to; to any other, a new change starts.
+    state.stance_progress = input.desired_stance == state.previous_stance
+                                ? static_cast<std::uint8_t>(kStanceProgressSteps - state.stance_progress)
+                                : std::uint8_t{0};
+    state.previous_stance = state.stance;
     state.stance = input.desired_stance;
   }
+  state.stance_progress = AdvanceStanceProgress(
+      state.stance_progress, delta_time, TransitionDuration(pacing.transitions, state.previous_stance, state.stance));
 
   const math::Vec3 direction = math::Normalize(input.direction);
   const bool standing_and_moving = state.stance == Stance::kStanding && math::Length(direction) > 0.0F;
@@ -626,7 +659,7 @@ BodyState World::Step(BodyHandle handle, const MovementInput& input, float delta
   const math::Vec3 new_position = math::SnapPosition(FromPx(record.controller->getFootPosition()));
   record.controller->setFootPosition(ToFootPosition(new_position));
   state.velocity = delta_time > 0.0F ? (new_position - state.position) / delta_time : math::Vec3{};
-  state.stride = AdvanceStride(state.stride, new_position - state.position, stride_length);
+  state.stride = AdvanceStride(state.stride, new_position - state.position, pacing.stride_length);
   state.position = new_position;
   state = OnWireGrid(state);
 

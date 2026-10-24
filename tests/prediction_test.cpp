@@ -122,6 +122,28 @@ TEST(PredictionWorldTest, WalkingAdvancesTheLocalPlayersStrideByItsCharactersCli
   EXPECT_LE(StrideDistance(state.local_body.stride, kStrideSteps / 2), (kTicks / 2) + 1);
 }
 
+// The local player's change of stance advances as SimulationWorld advances a
+// player's: over its Character's Clips' transition duration, 0.25 s from
+// standing to crouching, 17 steps of 255 a tick.
+TEST(PredictionWorldTest, ACrouchsProgressAdvancesOverTheLocalCharactersTransitionDuration) {
+  World world(augusta::clips_fixture::TestClips());
+  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
+  world.Start(Vec3{}, Parameters{});
+  for (int i = 0; i < kSettleTicks; ++i) {
+    world.Tick(Command{}, 0, std::nullopt, kFixedTick);
+  }
+  Command crouch{};
+  crouch.movement.desired_stance = augusta::physics::Stance::kCrouching;
+
+  State state;
+  for (int i = 0; i < 4; ++i) {
+    state = world.Tick(crouch, 0, std::nullopt, kFixedTick);
+  }
+
+  EXPECT_EQ(state.local_body.previous_stance, augusta::physics::Stance::kStanding);
+  EXPECT_EQ(state.local_body.stance_progress, 4 * 17);
+}
+
 TEST(PredictionWorldTest, WithoutClipsTheLocalPlayersStrideHolds) {
   World world;
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
@@ -235,6 +257,21 @@ TEST_F(ReconciliationTest, AStrideThatDiffersIsCorrectedEvenWhereEverythingElseA
   const State state = Tick(ack);
 
   EXPECT_EQ(state.local_body.stride, 100);
+}
+
+// The server has the body standing up out of a crouch, a change the client
+// never predicted: the body poses differently, so the client takes it. The
+// fixture's world has no Clips, so this tick's Movement then ends the change.
+// Requirements: NFR-02
+TEST_F(ReconciliationTest, AChangeOfStanceThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
+  Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
+  ack.body.previous_stance = augusta::physics::Stance::kCrouching;
+  ack.body.stance_progress = 100;
+
+  const State state = Tick(ack);
+
+  EXPECT_EQ(state.local_body.previous_stance, augusta::physics::Stance::kCrouching);
+  EXPECT_EQ(state.local_body.stance_progress, augusta::physics::kStanceProgressSteps);
 }
 
 // A step apart is rounding, as a millimetre of position is: not worth a replay.
