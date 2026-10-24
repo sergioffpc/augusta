@@ -2,6 +2,89 @@
 
 Generated from the Conventional Commits history by git-cliff (cliff.toml).
 
+## 7.0.0 - 2026-10-24
+
+### Features
+
+- **build:** add the AUGUSTA_DEBUG_TOOLS option, the shipping presets and the +dev version
+- **client:** add debug.hud and compile the Debug HUD out of Shipping builds
+- **server:** **BREAKING** move reenactments to debug.reenactments, left out of a Shipping build
+- **ci:** build the server image's kind from a PRESET argument, by branch
+- **protocol:** add the Debug subscribe message and debug.shot_judgements
+- **simulation:** build Shot judgements when switched on
+- **host:** send each subscribed shooter its Shot judgements
+- **harness:** hand out a Session's Shot judgements
+- **input:** **BREAKING** reserve F1 in every build and refuse a control bound to it
+- **input:** let go of held controls and release the cursor on demand
+- **renderer:** draw augusta_debug's segments and triangles over the frame
+- **debug:** tessellate boxes, spheres, capsules and voxels; keep shapes until a time
+- **renderer:** draw and operate augusta_debug's Debug panels through ImGui
+- **client:** F1 opens the Debug index, which switches the Debug HUD
+- **client:** Profiling Debug panel with an NVTX capture window
+- **presentation:** add the Physics Debug panel with the Server bodies overlay
+- **presentation:** add the Hitboxes Debug overlay
+- **physics:** step the client World's visualization into the Prediction State
+- **presentation:** draw the Collision overlay from the Prediction State's lines
+- **presentation:** draw Shot judgements beside the seen Hitboxes
+- **physics:** record PhysX scenes to OmniPVD with debug.physics_recording
+- **networking:** report accepted sends and receives to a Development-only tap
+- **pcapng:** add the pcapng encoder and its non-blocking file writer
+- **debug:** write a pcapng per run from debug.network.pcapng
+- **wireshark:** add the augusta Lua shim, its install script and tshark test
+- **link:** simulate network conditions on what a process receives
+- **presentation:** report the interpolation buffer's slack
+- **link:** count the client's traffic by message type
+- **prediction:** count corrections in a CorrectionTally shared with NetcodeTally
+- **client:** show the connection and per-type traffic in a Network panel
+- **link:** keep an Authoritative State tally in the client's Traffic
+- **client:** show the Authoritative State updates in the Network panel
+- **client:** impair the link from the Network panel and mark the HUD
+- **client:** show corrections and interpolation slack in the Network panel
+
+### Bug Fixes
+
+- **build:** lint the Shipping-only test against a Development build
+- **ci:** plan package pruning before develop has a Development cache
+- **ci:** give the confinement job's Agents the image's build kind
+- **renderer:** give each Debug panel a default position of its own
+- **client:** show the Profiling panel's frame count as a whole number
+- **client:** open and close the capture window between frames' ranges
+- **renderer:** keep the Profiling panel's Aftermath status out of Shipping
+- **physics:** type the recording's error and touch PhysX only on a change
+- **presentation:** give Shot judgements' rounds a part of their own
+- **debug:** share one pcapng run writer and pass transport options whole
+- **networking:** report a client's local end in its server's address family
+- **client:** fix the Network panel's code-review findings
+- **config:** close the network panel test the develop merge left open
+
+### Refactoring
+
+- **config:** read both debug sections' flags through one OptionalFlag
+- **tests:** give each debug tool's test cases a file of their own
+- tie Shot judgement bounds and give negative tests their controls
+- **debug:** name Routing's leave flag for the leave key, not Escape
+- **client:** run one render frame in Impl::RunRenderFrame
+- **gameplay:** place a player's Hitboxes with one shared function
+- **simulation:** include what the Hitbox placing move uses
+- **presentation:** name the PhysX colour channel mask
+- **presentation:** split a judgement's judged Hitboxes out of Judge
+- **debug:** append one frame's Shapes to another in the debug module
+- **client:** carry the debug.physics section whole and test its decisions
+- **link:** build the Link's transports from construction options
+
+### Documentation
+
+- **prototypes:** add a voxel Breakable Prop prototype
+- **debug:** state the debug module's one responsibility and its comments' point
+- **adr:** add ADR-0076, Wireshark reads the game's own pcapng
+
+### Tests
+
+- **config:** keep the F1 case's requirement marker on a line of its own
+- **debug:** give the Debug panels' nothing-happens tests a control case
+- **fuzz:** commit a pcapng of the protocol_decode seeds with a drift test
+- **debug:** cover the pcapng directory's write probe and an unset key
+- **wireshark:** tie the dissector fixture's version to the engine's
 ## 6.0.0 - 2026-10-22
 
 ### Features
