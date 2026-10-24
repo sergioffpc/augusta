@@ -18,13 +18,21 @@ SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
 RUN := scripts\vcenv.cmd
+else ifeq ($(shell uname -s),Darwin)
+PRESET ?= macos
+RUN :=
 else
 PRESET ?= linux
 RUN :=
 endif
 
-# Every preset's binaryDir is build/x64-<preset> (CMakePresets.json).
+# Every preset's binaryDir is build/x64-<preset>, the macOS ones'
+# build/arm64-<preset> (CMakePresets.json).
+ifneq ($(filter macos%,$(PRESET)),)
+BUILD_DIR := build/arm64-$(PRESET)
+else
 BUILD_DIR := build/x64-$(PRESET)
+endif
 
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
 LUA_SOURCES := "*.lua"
@@ -86,7 +94,7 @@ INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 JOBS ?= $(NUMBER_OF_PROCESSORS)
 else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
-JOBS ?= $(shell nproc)
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 endif
 INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell $(LINT_LS_FILES) -- "src/*.cpp" "tests/*.cpp" "tools/agent/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
@@ -231,6 +239,11 @@ tidy: configure
 # prints), which ctcache's key leaves out. Recursive, so only tidy and lint-files
 # run clang-tidy for it, and hand it to the per-file targets.
 CLANG_TIDY := clang-tidy-cache clang-tidy
+# On macOS, Homebrew's clang takes its SDK from a configuration file that
+# clang-tidy does not read: the SDK that clang resolves, handed to clang-tidy.
+ifeq ($(shell uname -s),Darwin)
+CLANG_TIDY += --extra-arg=-isysroot$(shell $(or $(HOMEBREW_PREFIX),/opt/homebrew)/opt/llvm@21/bin/clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
+endif
 CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
@@ -271,7 +284,7 @@ format-files:
 LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint buf)
 LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
 lint-files:
-	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)) - on macOS through scripts/dev-container.sh)))
+	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)))))
 	$(if $(filter tidy/src/modules/protocol/protocol.cpp,$(LINT_TIDY)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(strip $(LINT_TIDY)),"CTCACHE_DIR=$(CTCACHE_DIR)") $(LINT_CHECKS) $(LINT_TIDY)
 

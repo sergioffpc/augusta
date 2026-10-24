@@ -1,6 +1,7 @@
 # Checks the server's platform-support contract (NFR-04): which target platforms
 # augustad configures for, and as what. Linux x86-64 and Linux arm64 are where
-# it runs in production; Windows x64 (ADR-0047) is a development build only;
+# it runs in production; Windows x64 (ADR-0047) and macOS arm64 are development
+# builds only;
 # every other target is refused at configure time rather than compiled by
 # accident.
 #
@@ -32,6 +33,7 @@ expect_support(Windows AMD64 8 development)
 expect_support(Windows x86_64 8 development)
 expect_support(Linux aarch64 8 production)
 expect_support(Linux arm64 8 production)
+expect_support(Darwin arm64 8 development)
 
 # A 32-bit toolchain on a 64-bit host still reports the host's processor.
 expect_support(Linux x86_64 4 unsupported)
@@ -40,7 +42,6 @@ expect_support(Linux aarch64 4 unsupported)
 
 # Another architecture on a supported OS, or another OS altogether.
 expect_support(Windows ARM64 8 unsupported)
-expect_support(Darwin arm64 8 unsupported)
 expect_support(Darwin x86_64 8 unsupported)
 expect_support(FreeBSD amd64 8 unsupported)
 

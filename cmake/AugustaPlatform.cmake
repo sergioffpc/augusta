@@ -1,6 +1,6 @@
 # The server's platform-support contract (NFR-04): augustad runs in production
-# on Linux x86-64 and Linux arm64, and builds on Windows x64 (ADR-0047) for
-# development only. Any other target -
+# on Linux x86-64 and Linux arm64, and builds on Windows x64 (ADR-0047) and
+# macOS arm64 (beside the client there) for development only. Any other target -
 # another OS, another architecture, a 32-bit toolchain - is refused when the
 # build is configured, so it can't compile by accident and pass for supported.
 #
@@ -16,7 +16,7 @@ include_guard(GLOBAL)
 # tell a 32-bit build from a 64-bit one - a 32-bit toolchain on a 64-bit host
 # reports the host's - so the pointer size decides that. Linux names x86-64
 # x86_64 and Windows AMD64; either spelling counts on both. Linux names arm64
-# aarch64, and arm64 too.
+# aarch64, and arm64 too; macOS, arm64 alone.
 function(augusta_server_platform_support out_var system processor pointer_size)
   string(TOLOWER "${processor}" processor)
   set(support unsupported)
@@ -27,8 +27,12 @@ function(augusta_server_platform_support out_var system processor pointer_size)
       elseif(system STREQUAL "Windows")
         set(support development)
       endif()
-    elseif(processor MATCHES "^(aarch64|arm64)$" AND system STREQUAL "Linux")
-      set(support production)
+    elseif(processor MATCHES "^(aarch64|arm64)$")
+      if(system STREQUAL "Linux")
+        set(support production)
+      elseif(system STREQUAL "Darwin")
+        set(support development)
+      endif()
     endif()
   endif()
   set(${out_var} ${support} PARENT_SCOPE)
@@ -38,7 +42,8 @@ function(_augusta_refuse_server_platform target)
   message(
     FATAL_ERROR
     "augustad does not support ${target}. Supported server platforms: Linux "
-    "x86-64 and Linux arm64 (production), and Windows x64 (development only) - "
+    "x86-64 and Linux arm64 (production), and Windows x64 and macOS arm64 "
+    "(development only) - "
     "see docs/REQUIREMENTS.md NFR-04."
   )
 endfunction()
@@ -49,7 +54,7 @@ endfunction()
 # cross-compile (CMAKE_SYSTEM_NAME set by its toolchain) is left to
 # augusta_require_server_platform().
 function(augusta_require_server_host)
-  if(NOT DEFINED CMAKE_SYSTEM_NAME AND NOT CMAKE_HOST_SYSTEM_NAME MATCHES "^(Linux|Windows)$")
+  if(NOT DEFINED CMAKE_SYSTEM_NAME AND NOT CMAKE_HOST_SYSTEM_NAME MATCHES "^(Linux|Windows|Darwin)$")
     _augusta_refuse_server_platform("${CMAKE_HOST_SYSTEM_NAME}")
   endif()
 endfunction()

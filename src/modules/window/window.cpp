@@ -11,6 +11,10 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __APPLE__
+#include <dlfcn.h>
+#endif
+
 #include "augusta/logging.h"
 #include "augusta/window_events.h"
 #include "augusta/window_vulkan.h"
@@ -21,9 +25,26 @@ namespace augusta::window {
 
 namespace {
 
+#ifdef __APPLE__
+// Hands GLFW the Vulkan loader Homebrew's vulkan-loader installs (with
+// MoltenVK's driver beside it), found by the rpath the module gives every
+// executable that links it (CMakeLists.txt): GLFW looks for it by its file
+// name alone, which dyld searches for neither in Homebrew's prefix nor by
+// rpath. Without it, GLFW reports no Vulkan, as on a machine without a driver.
+void InitVulkanLoader() {
+  void* loader = dlopen("@rpath/libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
+  if (loader != nullptr) {
+    glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(loader, "vkGetInstanceProcAddr")));
+  }
+}
+#endif
+
 // GLFW's library, initialized for as long as one is alive.
 struct GlfwLibrary {
   GlfwLibrary() {
+#ifdef __APPLE__
+    InitVulkanLoader();
+#endif
     if (glfwInit() != GLFW_TRUE) {
       throw std::runtime_error("GLFW failed to initialize");
     }

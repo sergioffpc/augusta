@@ -65,6 +65,21 @@ built and tested with MSVC. That does not hold for our own code: the
 dependencies, NVIDIA's included, stay on `cl` and its triplet, and `clang-cl`
 links against what they build.
 
+macOS (arm64, a development build of the client, the server and their tests)
+builds with Homebrew's LLVM 21 (`llvm@21`, `lld@21`), the version Linux and
+Windows build with, not Apple's clang: clang compiles against LLVM's libc++,
+linked dynamically from Homebrew's prefix as its LLVM documents, lld links, and
+LLVM's binary tools stand in for Apple's; the Command Line Tools give the SDK
+alone. `cmake/LlvmMacosToolchain.cmake` states it, chainloaded as on Linux, from
+the macos presets and from `triplets/arm64-osx.cmake`, so its ports build with
+it too.
+
+clang is then the project's one compiler: `clang-cl` on Windows, LLVM's clang on
+Linux and macOS. The root project refuses any other when it is configured - GCC,
+MSVC's `cl`, Apple's clang (CMake's `AppleClang`) - rather than build with it by
+accident. The Windows dependencies on `cl` are vcpkg's builds, not the
+project's.
+
 The client (`augustac`, its Renderer and their tests) builds with the
 `AUGUSTA_CLIENT` option, on by default on Windows and Linux, so
 `cmake --preset linux` builds it as `cmake --preset windows` does. Its ports are

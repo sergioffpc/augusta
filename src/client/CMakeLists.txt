@@ -280,7 +280,13 @@ else()
   # The shared libraries the folder bundles are found beside augustac, wherever
   # it is extracted, with no launcher script setting a library path. In the
   # build tree too, so the installed augustac is the built one, byte for byte.
-  set_target_properties(augustac PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "$ORIGIN")
+  # macOS names the executable's folder @executable_path.
+  if(APPLE)
+    set(augustac_rpath "@executable_path")
+  else()
+    set(augustac_rpath "$ORIGIN")
+  endif()
+  set_target_properties(augustac PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "${augustac_rpath}")
 
   # `cmake --install --component client` stages the client's runtime folder,
   # which a release tars (scripts/stage-client.sh): augustac and the shared
