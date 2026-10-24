@@ -55,6 +55,189 @@ def SkelRoot "Character" (
         ]
     }
 
+    # The character's Clips by role (ADR-0066), each a UsdSkelAnimation in a
+    # file of its own under animations/: each stance's blend space, Aim
+    # offset and ADS grip, and `air`. Diagonals and Cosmetic layers' Clips
+    # are optional, and this character has none. Each pair of stances'
+    # transition duration is in seconds, either way.
+    def Scope "Clips"
+    {
+        float augusta:transitionDuration:standing_crouching = 0.25
+        float augusta:transitionDuration:standing_prone = 0.8
+        float augusta:transitionDuration:crouching_prone = 0.6
+
+        def SkelAnimation "air" (
+            references = @../animations/air.usda@
+        )
+        {
+        }
+
+        def Scope "standing"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/standing_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/standing_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/standing_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "left" (
+                references = @../animations/standing_left.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "right" (
+                references = @../animations/standing_right.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "sprint" (
+                references = @../animations/standing_sprint.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/standing_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/standing_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/standing_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/standing_ads.usda@
+            )
+            {
+            }
+        }
+
+        def Scope "crouching"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/crouching_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/crouching_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/crouching_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "left" (
+                references = @../animations/crouching_left.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "right" (
+                references = @../animations/crouching_right.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/crouching_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/crouching_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/crouching_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/crouching_ads.usda@
+            )
+            {
+            }
+        }
+
+        def Scope "prone"
+        {
+            def SkelAnimation "idle" (
+                references = @../animations/prone_idle.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "forward" (
+                references = @../animations/prone_forward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "backward" (
+                references = @../animations/prone_backward.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_down" (
+                references = @../animations/prone_aim_down.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_center" (
+                references = @../animations/prone_aim_center.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "aim_up" (
+                references = @../animations/prone_aim_up.usda@
+            )
+            {
+            }
+
+            def SkelAnimation "ads" (
+                references = @../animations/prone_ads.usda@
+            )
+            {
+            }
+        }
+    }
+
     def Sphere "Eye"
     {
         # Where the local player's camera sits, relative to the feet above:

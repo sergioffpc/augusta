@@ -17,6 +17,7 @@
     "gtest",
     "libsodium",
     "lua",
+    "ozz-animation",
     "physx",
     "protobuf",
     {
