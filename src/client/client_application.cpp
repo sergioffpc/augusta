@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <print>
@@ -21,6 +22,9 @@
 #include "augusta/harness.h"
 #include "augusta/link.h"
 #include "augusta/reenactment.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/physics.h"
+#endif
 
 namespace augusta::client {
 
@@ -91,11 +95,33 @@ std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess
       .reenactment = reenactment,
       .replay = replay,
       .run = run,
+#if AUGUSTA_DEBUG_TOOLS
+      .debug_hud = file_config.debug.hud,
+      .debug_profiling_panel = file_config.debug.profiling_panel,
+      .debug_physics = file_config.debug.physics,
+      .debug_network_panel = file_config.debug.network_panel,
+      .debug_network_pcapng = file_config.debug.network_pcapng,
+#endif
   };
   auto parts = std::make_unique<ClientProcess::Parts>();
   parts->pack = std::move(loaded->pack);
   parts->runtime = std::make_unique<ClientRuntime>(config, std::move(loaded->content));
   return std::make_unique<ClientProcess>(std::move(parts));
+}
+
+// What initialize starts, before any World exists, of the debug tools
+// file_config asks for: in a Development build the physics recording
+// (`debug.physics_recording`), held for as long as what this returns lives;
+// in a Shipping build nothing.
+std::function<void()> DebugToolsStart([[maybe_unused]] const config::ClientConfig& file_config) {
+#if AUGUSTA_DEBUG_TOOLS
+  if (file_config.debug.physics_recording) {
+    return [recording = std::make_shared<std::optional<physics::Recording>>()] {
+      *recording = physics::StartRecordingOrWarn("augustac", "debug.physics_recording");
+    };
+  }
+#endif
+  return [] {};
 }
 
 }  // namespace
@@ -121,7 +147,13 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
   }
   return {
       // Once, process-wide, before any ClientRuntime is constructed (link.h).
-      .initialize = [] { return link::Init(); },
+      // What the debug tools start is held by initialize, so it lasts as long
+      // as the Lifecycle: past the process and every World in it.
+      .initialize =
+          [start_debug_tools = DebugToolsStart(file_config)] {
+            start_debug_tools();
+            return link::Init();
+          },
       .construct = [played = std::move(played), reenactment = std::move(reenactment), replay = std::move(replay),
                     run] { return ConstructProcess(played, reenactment, replay, run); },
       .run = [](ClientProcess& process) { return process.Run(); },

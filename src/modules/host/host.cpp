@@ -24,6 +24,7 @@
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
 #include "augusta/link_mapping.h"
+#include "augusta/link_types.h"
 #include "augusta/logging.h"
 #include "augusta/match.h"
 #include "augusta/policy.h"
@@ -91,6 +92,13 @@ std::vector<std::string> CharacterPaths(const std::vector<scenario::Character>& 
   return paths;
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// The bit of each stream of the server's state config's `debug` keys serve.
+std::uint8_t ServedStreams(const HostConfig& config) {
+  return config.shot_judgements ? link::DebugSubscribe::kShotJudgements : std::uint8_t{0};
+}
+#endif
+
 }  // namespace
 
 Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::Policy policy)
@@ -101,18 +109,30 @@ Host::Impl::Impl(const HostConfig& config, scenario::Scenario scenario, policy::
       parameters(config.parameters),
       characters(ToSimulation(scenario.characters)),
       spawn_points(std::move(scenario.spawn_points)),
-      network(config.listen, config.faults),
+      network(config.listen, config.transport),
       match(MatchConfig{
           .engine_version = std::string(EngineVersion()),
           .client_pack = scenario.client_pack,
           .characters = CharacterPaths(scenario.characters),
           .player_count = config.parameters.player_count,
           .pause_ticks = PauseTicks(config.tick_rate_hz),
+#if AUGUSTA_DEBUG_TOOLS
           .reenactments = config.reenactments,
-      }) {
+#endif
+      })
+#if AUGUSTA_DEBUG_TOOLS
+      ,
+      debug_subscriptions(ServedStreams(config))
+#endif
+{
+#if AUGUSTA_DEBUG_TOOLS
   if (config.reenactments) {
     LOG_WARN("subsystem=serverruntime event=reenactments_enabled");
   }
+  if (config.shot_judgements) {
+    LOG_INFO("subsystem=serverruntime event=shot_judgements_enabled");
+  }
+#endif
 }
 
 bool Host::Impl::Failed() const { return transport_failure.Recorded() || invariant_failure.Recorded(); }

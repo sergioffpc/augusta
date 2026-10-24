@@ -10,7 +10,9 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -26,7 +28,6 @@
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
-#include "augusta/hud.h"
 #include "augusta/input.h"
 #include "augusta/interpolation.h"
 #include "augusta/link.h"
@@ -42,13 +43,57 @@
 #include "augusta/runner.h"
 #include "augusta/tick.h"
 #include "augusta/window.h"
+#include "augusta/window_events.h"
 #include "frame_mapping.h"
 #include "lobby_readiness.h"
 #include "net_stats.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/correction_tally.h"
+#include "augusta/debug_index.h"
+#include "augusta/debug_interaction.h"
+#include "augusta/debug_panels.h"
+#include "augusta/hud.h"
+#include "augusta/link_types.h"
+#include "augusta/pcapng_file_writer.h"
+#include "augusta/physics_overlays.h"
+#include "augusta/version.h"
+#include "debug_index_entries.h"
+#include "network_panel.h"
+#include "profiling_panel.h"
+#endif
+
 namespace augusta::client {
 
 namespace {
+
+#if AUGUSTA_DEBUG_TOOLS
+// The NVTX range, in the default domain, that `nsys profile
+// --capture-range=nvtx --nvtx-capture=augusta.capture` records alone.
+constexpr const char* kCaptureRange = "augusta.capture";
+
+// What config runs the client as, for which debug tools it carries.
+ClientMode ModeOf(const RuntimeConfig& config) {
+  return client::ModeOf(config.replay.has_value(), config.reenactment.has_value());
+}
+
+// The Debug index's entries for config's mode, as config starts them.
+std::vector<debug::IndexEntry> DebugIndexEntries(const RuntimeConfig& config) {
+  return DebugIndexEntries(
+      DebugIndexStart{
+          .hud = config.debug_hud,
+          .profiling_panel = config.debug_profiling_panel,
+          .network_panel = config.debug_network_panel,
+          .physics_panel = config.debug_physics.panel,
+      },
+      ModeOf(config));
+}
+
+// Which Physics overlays start on for config's mode.
+presentation::PhysicsOverlaysStart PhysicsOverlaysStartOf(const RuntimeConfig& config) {
+  return client::PhysicsOverlaysStartOf(config.debug_physics, ModeOf(config));
+}
+#endif
 
 // The window the client opens, titled as the game.
 window::Config WindowConfig() {
@@ -93,6 +138,12 @@ struct ClientRuntime::Impl {
   // before the Session, so they end after it, its last lines included.
   std::optional<SessionLogContext> session_log;
   MatchLogContext match_log;
+#if AUGUSTA_DEBUG_TOOLS
+  // This run's pcapng, if asked for: declared before the Session, whose
+  // connection reports to it until it goes.
+  std::unique_ptr<pcapng::FileWriter> pcapng =
+      pcapng::RunWriter(config.debug_network_pcapng, "augustac", EngineVersion());
+#endif
   // Emplaced by the constructor once the map is loaded into its PredictionWorld.
   std::optional<harness::Session> session;
   presentation::World presentation;
@@ -118,12 +169,16 @@ struct ClientRuntime::Impl {
 
   // What the Prediction thread's last tick left: the predicted states before
   // and after it, and when it was due and for how long, so a render frame
-  // blends the two by how far through the tick it is.
+  // blends the two by how far through the tick it is; in a Development build,
+  // the corrections counted so far too, for the Network panel.
   struct LatestTick {
     prediction::State previous;
     prediction::State latest;
     tick::Clock::time_point start;
     tick::Clock::duration duration{};
+#if AUGUSTA_DEBUG_TOOLS
+    prediction::Corrections corrections;
+#endif
   };
 
   // Guards latest_tick: written once per Prediction tick,
@@ -149,24 +204,233 @@ struct ClientRuntime::Impl {
   std::mutex seen_time_mutex;
   std::optional<presentation::SeenTime> seen_time;
 
-  // Connection numbers for the debug HUD: written by the Network
-  // I/O thread (SampleNetworkStats), read by the Main/Render thread once per
-  // frame. They should be consistent with each other, so - like
-  // latest_tick above - a mutex-guarded copy.
-  std::mutex hud_net_mutex;
-  std::optional<hud::NetStats> latest_hud_net;
-
-  // Network I/O thread only: what the HUD shows of the connection, and the
-  // counters Nsight Systems plots of it, sampled once per round of the
-  // Runner's network work.
-  HudNetStats hud_net_stats;
+  // Network I/O thread only: the counters Nsight Systems plots of the
+  // connection, sampled once per round of the Runner's network work.
   NetStatsCounters net_stats_counters;
+
+#if AUGUSTA_DEBUG_TOOLS
+  // Guards the connection's readings below, the debug HUD's and the Network
+  // panel's: written by the Network I/O thread (SampleNetworkStats), read by
+  // the Main/Render thread. They should be consistent with each other, so -
+  // like latest_tick above - mutex-guarded copies.
+  std::mutex connection_readings_mutex;
+  // Connection numbers for the debug HUD, read once per frame.
+  std::optional<hud::NetStats> latest_hud_net;
+  // The Network panel's readings of the connection, from the same rounds as
+  // latest_hud_net, recorded only while network_panel_on: a closed panel
+  // costs nothing beyond the Link's counting.
+  ConnectionReadings connection_readings;
+  std::atomic<bool> network_panel_on{false};
+
+  // Network I/O thread only: what the HUD shows of the connection.
+  HudNetStats hud_net_stats;
   // Main/Render thread only: the frames the HUD's FPS averages.
   hud::FrameTimeWindow frame_times;
+  // Main/Render thread only: where each frame's window events go, F1 entering
+  // and leaving Debug interaction, and the Debug index's switches, which last
+  // until the client exits.
+  debug::DebugInteraction debug_interaction{{.toggle = input::kReservedKey, .leave = input::kReleaseCursorKey}};
+  debug::DebugIndex debug_index{DebugIndexEntries(config)};
+  // Main/Render thread only: the Profiling panel, after the Renderer, whose
+  // Aftermath status it shows, and the capture window it has open, if any.
+  ProfilingPanel profiling_panel{renderer.GpuCrashDumps()};
+  std::optional<nvtx3::unique_range> capture_range;
+  // Main/Render thread only: which Physics Debug overlays are on, drawn each
+  // frame whether the Physics panel is shown or not.
+  presentation::PhysicsOverlays physics_overlays{PhysicsOverlaysStartOf(config)};
+  // Main/Render thread only: the Network panel, which samples the connection
+  // readings while the Debug index has it on.
+  NetworkPanel network_panel;
+  // Main/Render thread only: the conditions last applied to the transport
+  // from the Network panel's Impairment group; the real network at start.
+  link::SimulatedConditions applied_conditions;
+  // Prediction thread only: the corrections of its ticks, in a Match only, as
+  // an Agent counts them; published with each tick (LatestTick).
+  prediction::CorrectionTally correction_tally;
 
   std::optional<hud::NetStats> GetLatestHudNet() {
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     return latest_hud_net;
+  }
+
+  // Main/Render thread only: applies the conditions the Network panel's
+  // Impairment group wants to the client's one connection, both ways, when
+  // they change. The server is never told: it measures the link as it is.
+  void ApplyImpairment() {
+    const link::SimulatedConditions wanted = network_panel.WantedConditions();
+    if (wanted != applied_conditions) {
+      link::SimulateNetworkConditions(wanted);
+      applied_conditions = wanted;
+    }
+  }
+
+  // Main/Render thread only: hands the Renderer this frame's HUD lines while
+  // the Debug index has the HUD on, and none while it is off.
+  void UpdateDebugHud() {
+    // Each frame ends the last one for the FPS the HUD reads, shown or not, so
+    // the HUD switched on reads the frames before it.
+    frame_times.Tick(hud::FrameTimeWindow::Clock::now());
+    if (!debug_index.IsOn(kDebugHudEntry)) {
+      renderer.SetTextLines({});
+      return;
+    }
+    // Impaired while the Network panel's Impairment group says so, the panel
+    // shown or not, connected or not.
+    renderer.SetTextLines(hud::Lines(frame_times.Average(), GetLatestHudNet(), network_panel.Impaired()));
+  }
+
+  // Main/Render thread only: the frame's Debug panels, the Debug index in
+  // Debug interaction only, then each panel the index has on, in or out of it.
+  [[nodiscard]] debug::Panels DebugPanels() const {
+    debug::Panels panels;
+    if (debug_interaction.In()) {
+      panels.push_back(debug_index.BuildPanel());
+    }
+    if (debug_index.IsOn(kProfilingPanelId)) {
+      panels.push_back(profiling_panel.BuildPanel());
+    }
+    if (debug_index.IsOn(kNetworkPanelId)) {
+      panels.push_back(network_panel.BuildPanel());
+    }
+    if (debug_index.IsOn(presentation::kPhysicsPanelId)) {
+      panels.push_back(physics_overlays.BuildPanel());
+    }
+    return panels;
+  }
+
+  ConnectionReading TakeConnectionReading() {
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
+    return connection_readings.Take();
+  }
+
+  // Main/Render thread only: tells the Network I/O thread whether to record
+  // the Network panel's readings as the Debug index has the panel on, and
+  // hands the panel a sample each frame that crosses one of its boundaries.
+  void SampleNetworkPanel() {
+    const bool on = debug_index.IsOn(kNetworkPanelId);
+    if (on != network_panel_on.load()) {
+      if (on) {
+        // Readings left from before it was last closed are stale.
+        const std::lock_guard<std::mutex> lock(connection_readings_mutex);
+        connection_readings = {};
+      } else {
+        network_panel.Close();
+      }
+      network_panel_on.store(on);
+    }
+    if (const auto now = NetworkPanel::Clock::now(); on && network_panel.SampleDue(now)) {
+      const std::shared_ptr<const harness::ServerView> view = session->GetServerView();
+      network_panel.Sample({.connection = TakeConnectionReading(),
+                            .tick_rate_hz = view->accepted.transform(
+                                [](const harness::Admission& admission) { return admission.tick_rate_hz; }),
+                            .receives_authoritative_state = !config.replay.has_value(),
+                            .corrections = PanelCorrections(*view)},
+                           now);
+    }
+  }
+
+  // Main/Render thread only: the Prediction thread's corrections so far, or
+  // nullopt with no Prediction State: a Replay viewer, or a spectator since
+  // its Death, as view says.
+  std::optional<prediction::Corrections> PanelCorrections(const harness::ServerView& view) {
+    if (config.replay.has_value() || (view.in_match && !view.OwnAlive())) {
+      return std::nullopt;
+    }
+    return GetLatestTick().corrections;
+  }
+
+  // Main/Render thread only: the frame's interpolation slack, for the Network
+  // panel's next sample while the Debug index has it on.
+  void RecordNetworkPanelFrame(const presentation::State& frame_state) {
+    if (network_panel_on.load()) {
+      network_panel.RecordFrame(frame_state.interpolation_slack);
+    }
+  }
+
+  // Main/Render thread only: opens or closes the capture window's NVTX range
+  // as the Profiling panel says.
+  void ApplyCaptureChange(CaptureChange change) {
+    switch (change) {
+      case CaptureChange::kNone:
+        break;
+      case CaptureChange::kOpens:
+        capture_range.emplace(kCaptureRange);
+        LOG_INFO("subsystem=clientruntime event=profiling_capture_opened");
+        break;
+      case CaptureChange::kCloses:
+        capture_range.reset();
+        LOG_INFO("subsystem=clientruntime event=profiling_capture_closed");
+        break;
+    }
+  }
+
+  // Main/Render thread only, once per frame after its Main/Render Frame range
+  // closes: the frame has ended for the Profiling panel's capture window.
+  void TickProfilingPanel() { ApplyCaptureChange(profiling_panel.Tick()); }
+
+  // Asks the server for the Debug streams the overlays want: Shot judgements
+  // while their overlay is on (ADR-0074).
+  void SubscribeDebug() {
+    session->SubscribeDebug(physics_overlays.WantsShotJudgements() ? link::DebugSubscribe::kShotJudgements : 0U);
+  }
+
+  // Main/Render thread only: routes each control event the last RenderFrame's
+  // panels gave to the area whose panel it names.
+  void RouteDebugControlEvents() {
+    for (const debug::ControlEvent& event : renderer.TakeDebugControlEvents()) {
+      if (event.panel == debug::kDebugIndexPanelId) {
+        debug_index.Update(event);
+      } else if (event.panel == kProfilingPanelId) {
+        ApplyCaptureChange(profiling_panel.Update(event));
+      } else if (event.panel == kNetworkPanelId) {
+        network_panel.Update(event);
+      } else if (event.panel == presentation::kPhysicsPanelId) {
+        const bool wanted = physics_overlays.WantsShotJudgements();
+        physics_overlays.Update(event);
+        if (physics_overlays.WantsShotJudgements() != wanted) {
+          SubscribeDebug();
+        }
+      }
+    }
+    ApplyImpairment();
+  }
+#endif
+
+  // Main/Render thread only: hands a frame's window events to Input, and in a
+  // Development build those of Debug interaction to the Debug panels instead.
+  void HandleWindowEvents(std::span<const window::Event> events) {
+#if AUGUSTA_DEBUG_TOOLS
+    const debug::Routing routing = debug_interaction.Route(events);
+    input.Handle(routing.game);
+    if (routing.entered) {
+      input.LetGo();
+    }
+    if (routing.left_by_leave_key) {
+      input.ReleaseCursor();
+    }
+    renderer.HandleDebugPanelInput(routing.panels);
+#else
+    input.Handle(events);
+#endif
+  }
+
+  // Main/Render thread only: whether the window's cursor is locked for
+  // mouselook, nullopt until the first UpdateCursorLock.
+  std::optional<bool> cursor_locked;
+
+  // Main/Render thread only: locks the window's cursor for mouselook while
+  // Input captures it - Escape releases it and a click captures it again, as
+  // Input decides - and in a Development build out of Debug interaction only.
+  void UpdateCursorLock() {
+#if AUGUSTA_DEBUG_TOOLS
+    const bool locked = debug_interaction.CursorLocked(input.CursorCaptured());
+#else
+    const bool locked = input.CursorCaptured();
+#endif
+    if (locked != cursor_locked) {
+      window.SetCursorLocked(locked);
+      cursor_locked = locked;
+    }
   }
 
   void SampleNetworkStats() {
@@ -176,9 +440,18 @@ struct ClientRuntime::Impl {
       round_trip_ticks.store(harness::RoundTripTicks(stats->ping_ms, view->accepted->tick_rate_hz));
     }
     net_stats_counters.Sample(stats);
+#if AUGUSTA_DEBUG_TOOLS
+    // Whether the HUD is on or not: the Debug index can switch it on at any frame.
     const std::optional<hud::NetStats> net = hud_net_stats.Update(stats, std::chrono::steady_clock::now());
-    const std::lock_guard<std::mutex> lock(hud_net_mutex);
+    // The Network panel's reading is this round's, the HUD's: the two never disagree.
+    const bool network_panel_reads = network_panel_on.load();
+    const link::Traffic traffic = network_panel_reads ? session->GetTraffic() : link::Traffic{};
+    const std::lock_guard<std::mutex> lock(connection_readings_mutex);
     latest_hud_net = net;
+    if (network_panel_reads) {
+      connection_readings.Record(stats, traffic);
+    }
+#endif
   }
 
   Impl(const RuntimeConfig& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
@@ -214,6 +487,9 @@ struct ClientRuntime::Impl {
             .server = link::Endpoint{.address = cfg.server_address},
             .client_pack = cfg.client_pack,
             .character = cfg.character,
+#if AUGUSTA_DEBUG_TOOLS
+            .transport = {.tap = pcapng.get()},
+#endif
             .replay = cfg.replay,
             .spawn = cfg.reenactment.transform([](const harness::Script& script) { return script.spawn; }),
             .run = cfg.run,
@@ -301,21 +577,41 @@ struct ClientRuntime::Impl {
   // The Runner's word on each tick: publishes it, with the one before it, for
   // render frames to blend. Prediction thread.
   void PublishTick(const harness::PredictedTick& tick) {
+#if AUGUSTA_DEBUG_TOOLS
+    correction_tally.RecordTick(tick.state, session->GetServerView()->GetPhase() == harness::Phase::kMatch);
+#endif
     {
       const std::lock_guard<std::mutex> lock(latest_tick_mutex);
-      latest_tick = {.previous = previous_tick.value_or(tick.state),
-                     .latest = tick.state,
-                     .start = tick.due,
-                     .duration = tick.duration};
+      latest_tick = {
+          .previous = previous_tick.value_or(tick.state),
+          .latest = tick.state,
+          .start = tick.due,
+          .duration = tick.duration,
+#if AUGUSTA_DEBUG_TOOLS
+          .corrections = correction_tally.Totals(),
+#endif
+      };
     }
     previous_tick = tick.state;
   }
 
-  // In the Lobby, once per Roster version: uploads the mesh of every other
-  // player's character not loaded yet and hands PresentationWorld its eye, then
-  // reports Ready for that Roster (ADR-0043). Nothing is loaded during a match.
-  // Main/Render thread only, as the upload is. Returns why a character could
-  // not be loaded, if one could not.
+  // Hands what was loaded of character to whatever draws it: the renderer its
+  // mesh, PresentationWorld its eye, and in a Development build the Physics
+  // overlays its Hitboxes. Main/Render thread only, as the upload is.
+  void TakeCharacter(const std::string& character, LoadedCharacter& loaded) {
+    renderer.SetCharacterMesh(character, loaded.mesh);
+    presentation.SetCharacterEye(character, loaded.eye);
+#if AUGUSTA_DEBUG_TOOLS
+    physics_overlays.SetCharacterHitboxes(character, std::move(loaded.hitboxes));
+#endif
+    LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+  }
+
+  // In the Lobby, once per Roster version: loads every other player's character
+  // not loaded yet and hands it on (TakeCharacter), then reports Ready for that
+  // Roster (ADR-0043). Nothing is loaded during a match. Main/Render thread
+  // only, as the upload is. Returns why a character could not be loaded, if
+  // one could not.
   std::optional<CharacterError> GetReadyForLobby() {
     const std::optional<ReadyPlan> plan = lobby_readiness.Plan(*session->GetServerView());
     if (!plan.has_value()) {
@@ -326,9 +622,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(character, loaded->mesh);
-      presentation.SetCharacterEye(character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", character);
+      TakeCharacter(character, *loaded);
       lobby_readiness.MarkLoaded(character);
     }
     session->ReportReady(plan->version);
@@ -354,9 +648,7 @@ struct ClientRuntime::Impl {
       if (!loaded.has_value()) {
         return loaded.error();
       }
-      renderer.SetCharacterMesh(player.character, loaded->mesh);
-      presentation.SetCharacterEye(player.character, loaded->eye);
-      LOG_INFO("subsystem=clientruntime event=character_loaded character={}", player.character);
+      TakeCharacter(player.character, *loaded);
       replay_characters.insert(player.character);
     }
     return std::nullopt;
@@ -406,6 +698,14 @@ struct ClientRuntime::Impl {
           }
         }
         presentation.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+#if AUGUSTA_DEBUG_TOOLS
+        physics_overlays.SetParameters(accepted->parameters, 1.0F / static_cast<float>(accepted->tick_rate_hz));
+        // The overlay's startup key: the Session keeps no subscription, so it
+        // is asked for once admitted.
+        if (physics_overlays.WantsShotJudgements()) {
+          SubscribeDebug();
+        }
+#endif
         return std::nullopt;
       }
       input.Handle(window.Poll());
@@ -471,8 +771,11 @@ struct ClientRuntime::Impl {
   // Hands the renderer what the next RenderFrame draws of this frame, without
   // drawing it. The local player's own position isn't drawn yet (renderer.h) -
   // only remote players, each as its character. In the Lobby there are none,
-  // so the map is drawn empty.
-  void StageRenderFrame(const presentation::State& frame_state) {
+  // so the map is drawn empty. In a Development build, the Debug overlays are
+  // built from what the frame was shown from (input) and what it showed
+  // (frame_state).
+  void StageRenderFrame([[maybe_unused]] const presentation::FrameInput& input,
+                        const presentation::State& frame_state) {
     renderer.SetCamera(ToRenderer(frame_state.camera));
     std::vector<renderer::RemotePlayer> remote_boxes;
     remote_boxes.reserve(frame_state.remote_players.size());
@@ -483,6 +786,23 @@ struct ClientRuntime::Impl {
     // After SetCamera: the effects are turned to face it.
     renderer.SetCombatEffects(CombatEffectsOf(frame_state));
     renderer.SetOverlay({.crosshair = frame_state.crosshair, .hit_marker = frame_state.hit_marker});
+#if AUGUSTA_DEBUG_TOOLS
+    // Shapes and panels live one frame (ADR-0075); the judged rounds are kept
+    // by the overlay, which takes the frame's seen Hitboxes first.
+    const auto now = presentation::PhysicsOverlays::Clock::now();
+    physics_overlays.Advance(input, frame_state, now);
+    for (const harness::ShotJudgement& judgement : session->TakeShotJudgements(*session->GetServerView())) {
+      physics_overlays.Judge(ToPresentation(judgement), presentation.Map(), now);
+    }
+    renderer.SetDebugShapes(physics_overlays.BuildShapes(input, frame_state));
+    renderer.SetDebugPanels(DebugPanels());
+    // What the Prediction thread's next ticks draw of the client's World,
+    // culled around this frame's camera; off while Collision is, so a closed
+    // overlay costs nothing.
+    if (runner.has_value()) {
+      runner->SetVisualization(physics_overlays.Visualization(frame_state.camera.position));
+    }
+#endif
   }
 
   // The Prediction and Network I/O threads (ADR-0005), emplaced by Run().
@@ -497,6 +817,26 @@ struct ClientRuntime::Impl {
   std::optional<presentation::SeenTime> GetSeenTime() {
     const std::lock_guard<std::mutex> lock(seen_time_mutex);
     return seen_time;
+  }
+
+  // Main/Render thread only: one render frame, from the window's events to
+  // RenderFrame, inside the Main/Render Frame range.
+  void RunRenderFrame() {
+    const nvtx3::scoped_range range{"Main/Render Frame"};
+    HandleWindowEvents(window.Poll());
+    UpdateCursorLock();
+#if AUGUSTA_DEBUG_TOOLS
+    UpdateDebugHud();
+    SampleNetworkPanel();
+#endif
+    const presentation::FrameInput input = NextFrameInput();
+    const presentation::State frame_state = presentation.RunFrame(input);
+#if AUGUSTA_DEBUG_TOOLS
+    RecordNetworkPanelFrame(frame_state);
+#endif
+    SetSeenTime(frame_state.seen_time);
+    StageRenderFrame(input, frame_state);
+    renderer.RenderFrame();
   }
 };
 
@@ -525,8 +865,7 @@ std::optional<failure::Failure> ClientRuntime::Run() {
   }
 
   window::Window& window = impl_->window;
-  bool cursor_locked = impl_->input.CursorCaptured();
-  window.SetCursorLocked(cursor_locked);
+  impl_->UpdateCursorLock();
   LOG_INFO("subsystem=clientruntime event=loop_starting loop=render");
   while (!window.ShouldClose()) {
     failure = impl_->GetRunFailure();
@@ -549,20 +888,14 @@ std::optional<failure::Failure> ClientRuntime::Run() {
       impl_->LogOutcome(*view, *ending);
       break;
     }
-    const nvtx3::scoped_range range{"Main/Render Frame"};
-    impl_->input.Handle(window.Poll());
-    // Escape releases the cursor and a click captures it again (Input decides).
-    if (const bool captured = impl_->input.CursorCaptured(); captured != cursor_locked) {
-      window.SetCursorLocked(captured);
-      cursor_locked = captured;
-    }
-    // Each frame ends the last one for the FPS the HUD reads.
-    impl_->frame_times.Tick(hud::FrameTimeWindow::Clock::now());
-    impl_->renderer.SetTextLines(hud::Lines(impl_->frame_times.Average(), impl_->GetLatestHudNet()));
-    const presentation::State frame_state = impl_->presentation.RunFrame(impl_->NextFrameInput());
-    impl_->SetSeenTime(frame_state.seen_time);
-    impl_->StageRenderFrame(frame_state);
-    impl_->renderer.RenderFrame();
+    impl_->RunRenderFrame();
+#if AUGUSTA_DEBUG_TOOLS
+    // Between two frames' ranges, so the capture window holds whole frames.
+    // The frame ends before the events are routed: a window opened by them
+    // starts with the next frame.
+    impl_->TickProfilingPanel();
+    impl_->RouteDebugControlEvents();
+#endif
   }
   LOG_INFO("subsystem=clientruntime event=loop_stopping loop=render");
   return failure;

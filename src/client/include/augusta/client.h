@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_CLIENT_H_
 #define AUGUSTA_CLIENT_H_
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -13,15 +14,18 @@
 #include "augusta/failure.h"
 #include "augusta/input.h"
 #include "augusta/reenactment.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/client_config.h"
+#endif
 
 /// \file
 /// The client Runtime, augustac's (ARCHITECTURE.md §5, ADR-0060): it owns one of
 /// every client module - Input, Audio, the harness::Session, PresentationWorld,
 /// the window and the Renderer that draws into it - and runs the Main/Render
-/// loop:
-/// it hands the window's events to Input and the HUD's lines (augusta::hud) to
-/// the Renderer (ADR-0059). augustac's entry point runs it behind the
-/// application boundary, and the end-to-end tests link it in augustac's place.
+/// loop: it hands the window's events to Input and, in a Development build
+/// (ADR-0074), the HUD's lines (augusta::hud) to the Renderer (ADR-0059).
+/// augustac's entry point runs it behind the application boundary, and the
+/// end-to-end tests link it in augustac's place.
 ///
 /// It plays nothing itself. Sending commands, receiving the server's state and
 /// reconciling the prediction is harness::Session's work, and its Prediction and
@@ -55,6 +59,26 @@ struct RuntimeConfig {
   std::optional<std::string> replay;
   /// The Run's ID (client::BeginRun), which the join carries (ADR-0038).
   boost::uuids::uuid run = boost::uuids::nil_uuid();
+#if AUGUSTA_DEBUG_TOOLS
+  /// Whether the Debug HUD is drawn at first (`debug.hud`), until the Debug
+  /// index switches it; a Shipping build has none (ADR-0074).
+  bool debug_hud = true;
+  /// Whether the Profiling Debug panel is shown at first
+  /// (`debug.profiling.panel`), until the Debug index switches it.
+  bool debug_profiling_panel = false;
+  /// Whether the Physics Debug panel is shown, and each of its overlays drawn,
+  /// at first (`debug.physics`), until the Debug index and the panel switch
+  /// them; a Replay viewer's index never lists the panel, and none of its
+  /// overlays starts on.
+  config::ClientPhysicsDebugConfig debug_physics{};
+  /// Whether the Network Debug panel is shown at first
+  /// (`debug.network.panel`), until the Debug index switches it.
+  bool debug_network_panel = false;
+  /// The directory (`debug.network.pcapng`, which checked it can be written)
+  /// this run writes one pcapng file into, of every message its connection
+  /// sends and receives (ADR-0076); empty, the default, writes none.
+  std::filesystem::path debug_network_pcapng;
+#endif
 };
 
 /// The client process constructs exactly one, on what becomes the Main/Render

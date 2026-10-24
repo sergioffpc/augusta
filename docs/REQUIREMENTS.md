@@ -391,7 +391,7 @@ Then those controls answer to their new keys, their old keys do nothing, and eve
      other control keeps its default
 
 Given an input.keys entry that names an unknown control or key, binds a key another
-      control has, binds Escape, or names a control twice
+      control has, binds Escape or F1, or names a control twice
 When the client starts
 Then it refuses to start and names the offending entry
 
@@ -422,7 +422,7 @@ Then I watch the Match from its first player's eyes, with that player's pitch an
      ADS, move on to the next player with fire, and the replay server logs the
      first Death or Match end that differs from the capture's, if any
 
-Given a server with simulation.reenactments on, on the capture's packs
+Given a Development server with debug.reenactments on, on the capture's packs
 When I run augustac --reenact with the capture, once per player, all at once
 Then each player spawns where the capture has it and its Commands reach the
      server on their ticks, each Seen time keeping its captured delay

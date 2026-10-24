@@ -20,6 +20,7 @@
 #include "augusta/limits.h"
 #include "augusta/math.h"
 #include "augusta/tick.h"
+#include "augusta/version.h"
 #include "protobuf_bytes.h"
 
 // ThreadSanitizer's runtime defines operator new and delete itself, so a build
@@ -244,6 +245,11 @@ TEST(ProtocolTest, JoinRequestWithTheLongestVersionRoundTrips) {
   const auto decoded = RoundTrip(JoinRequestWire{.engine_version = longest, .character = ""});
 
   EXPECT_EQ(std::get<JoinRequestWire>(decoded).engine_version, longest);
+}
+
+// Either kind of build's version, `+dev` and all (ADR-0074), fits the wire.
+TEST(ProtocolTest, TheEngineVersionFitsAJoinRequest) {
+  EXPECT_LE(augusta::EngineVersion().size(), kMaxEngineVersionLength) << augusta::EngineVersion();
 }
 
 TEST(ProtocolTest, JoinRequestCarriesTheClientPackHash) {
@@ -661,12 +667,13 @@ TEST(ProtocolTest, AnEmptyPayloadIsOfNoTypeThisBuildKnows) {
   EXPECT_EQ(Decode(BytesWire{}).error(), DecodeError::kUnknownType);
 }
 
-// The envelope's members number from 1 to 17: a member past them is a field
-// this build does not know, ignored, which leaves the envelope with no body.
+// The envelope's members number from 1, one per message: a member past them
+// all (999, below a capture record's 1000) is a field this build does not know,
+// ignored, which leaves the envelope with no body.
 // Requirements: NFR-12
 TEST(ProtocolTest, AnEnvelopeWithNoMemberThisBuildKnowsIsOfAnUnknownType) {
   EXPECT_TRUE(Decode(Envelope(MessageTypeWire::kReenactRequest, {})).has_value());
-  EXPECT_EQ(Decode(LengthField(18, {})).error(), DecodeError::kUnknownType);
+  EXPECT_EQ(Decode(LengthField(999, {})).error(), DecodeError::kUnknownType);
   EXPECT_EQ(Decode(VarintField(1, 1)).error(), DecodeError::kUnknownType);
 }
 

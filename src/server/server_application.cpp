@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -23,6 +25,9 @@
 #include "augusta/replay_server.h"
 #include "augusta/server.h"
 #include "augusta/server_config.h"
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/physics.h"
+#endif
 
 namespace augusta::server {
 
@@ -34,6 +39,17 @@ failure::Failure ContentFailure(const std::filesystem::path& pack_path, std::str
   return {.code = failure::Code::kInvalidContent,
           .context = {{.key = "path", .value = pack_path.string()}},
           .detail = std::move(detail)};
+}
+
+// What the runtime runs its server with, from the file's settings.
+RuntimeOptions RuntimeOptionsOf(const config::ServerConfig& file_config, failure::Faults* faults) {
+  return RuntimeOptions{
+      .metrics_port = file_config.metrics_port,
+      .faults = faults,
+#if AUGUSTA_DEBUG_TOOLS
+      .network_pcapng = file_config.network_pcapng,
+#endif
+  };
 }
 
 // A replay server's runtime (ADR-0051), on the content loaded from pack: each
@@ -53,10 +69,10 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructReplayR
       .server_pack = pack.Hash(),
       .captures = file_config.replay_captures,
       .max_viewers = file_config.replay_max_viewers,
-      .faults = faults,
+      .transport = {.faults = faults},
   };
-  return std::make_unique<ServerRuntime>(replay_config, file_config.metrics_port, std::move(content.scenario),
-                                         *std::move(policy), faults);
+  return std::make_unique<ServerRuntime>(replay_config, std::move(content.scenario), *std::move(policy),
+                                         RuntimeOptionsOf(file_config, faults));
 }
 
 // Verifies the pack the file's settings name, loads its content and constructs
@@ -96,11 +112,30 @@ std::expected<std::unique_ptr<ServerRuntime>, failure::Failure> ConstructRuntime
       .capture_retention = host::CaptureRetention{.max_files = file_config.capture_max_files,
                                                   .max_bytes = file_config.capture_max_mib.transform(
                                                       [](std::uint32_t mib) { return std::uintmax_t{mib} * kMiB; })},
+#if AUGUSTA_DEBUG_TOOLS
       .reenactments = file_config.reenactments,
+      .shot_judgements = file_config.shot_judgements,
+#endif
       .faults = faults,
+      .transport = {.faults = faults},
   };
-  return std::make_unique<ServerRuntime>(host_config, file_config.metrics_port, std::move(content->scenario),
-                                         std::move(content->policy), faults);
+  return std::make_unique<ServerRuntime>(host_config, std::move(content->scenario), std::move(content->policy),
+                                         RuntimeOptionsOf(file_config, faults));
+}
+
+// What initialize starts, before any World exists, of the debug tools
+// file_config asks for: in a Development build the physics recording
+// (`debug.physics_recording`), held for as long as what this returns lives;
+// in a Shipping build nothing.
+std::function<void()> DebugToolsStart([[maybe_unused]] const config::ServerConfig& file_config) {
+#if AUGUSTA_DEBUG_TOOLS
+  if (file_config.physics_recording) {
+    return [recording = std::make_shared<std::optional<physics::Recording>>()] {
+      *recording = physics::StartRecordingOrWarn("augustad", "debug.physics_recording");
+    };
+  }
+#endif
+  return [] {};
 }
 
 }  // namespace
@@ -120,10 +155,13 @@ application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig
                                                       failure::Faults* faults) {
   return {
       // link::Init() must run once, process-wide, before any Server is
-      // constructed - see link.h.
+      // constructed - see link.h. What the debug tools start is held by
+      // initialize, so it lasts as long as the Lifecycle: past the runtime and
+      // every World in it.
       .initialize =
-          [faults] {
+          [faults, start_debug_tools = DebugToolsStart(file_config)] {
             LOG_INFO("subsystem=server event=hardware {}", hardware::DescribeMachine(hardware::QueryMachine()));
+            start_debug_tools();
             return link::Init(faults);
           },
       .construct = [file_config, faults] { return ConstructRuntime(file_config, faults); },

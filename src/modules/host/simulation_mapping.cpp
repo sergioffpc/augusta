@@ -1,6 +1,5 @@
 #include "augusta/simulation_mapping.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <string>
@@ -9,10 +8,9 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/ballistics.h"
-#include "augusta/body_part.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
+#include "augusta/hitbox.h"
 #include "augusta/map.h"
 #include "augusta/match.h"
 #include "augusta/parameters.h"
@@ -30,34 +28,15 @@ EntityId FromSimulation(simulation::EntityId entity) {
   return static_cast<EntityId>(static_cast<std::uint32_t>(entity));
 }
 
-body_part::BodyPart FromBlob(assets::BodyPart part) {
-  switch (part) {
-    case assets::BodyPart::kHead:
-      return body_part::BodyPart::kHead;
-    case assets::BodyPart::kTorso:
-      return body_part::BodyPart::kTorso;
-    case assets::BodyPart::kLimb:
-      return body_part::BodyPart::kLimb;
-  }
-  std::unreachable();
-}
-
-simulation::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
-  const assets::MeshData& mesh = hitbox.mesh;
-  if (const auto valid = physics::ValidateCollisionMesh({.points = mesh.points, .indices = mesh.indices}); !valid) {
+hitbox::CharacterHitbox ToSimulation(const assets::HitboxData& hitbox, const std::string& path) {
+  auto converted = hitbox::FromPack(hitbox);
+  if (!converted) {
     throw failure::ClassifiedFailure(failure::Failure{
         .code = failure::Code::kInvalidContent,
         .context = {{.key = "character", .value = path}},
-        .detail = std::format("hitbox rejected: {}", physics::DescribeCollisionMeshError(valid.error()))});
+        .detail = std::format("hitbox rejected: {}", physics::DescribeCollisionMeshError(converted.error()))});
   }
-  simulation::CharacterHitbox result{.part = FromBlob(hitbox.part), .triangles = {}};
-  result.triangles.reserve(mesh.indices.size() / 3);
-  for (std::size_t i = 0; i < mesh.indices.size(); i += 3) {
-    result.triangles.push_back(ballistics::Triangle{.a = mesh.points[mesh.indices[i]],
-                                                    .b = mesh.points[mesh.indices[i + 1]],
-                                                    .c = mesh.points[mesh.indices[i + 2]]});
-  }
-  return result;
+  return *std::move(converted);
 }
 
 std::unordered_map<std::string, simulation::Character> ToSimulation(

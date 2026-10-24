@@ -52,6 +52,10 @@ message Message {
     ReplayRequest replay_request = 15;
     ReplayView replay_view = 16;
     ReenactRequest reenact_request = 17;
+    // A Development build's alone (ADR-0038, ADR-0074): a Shipping build's
+    // codec reads it as a member it lacks.
+    DebugSubscribe debug_subscribe = 18;
+    ShotJudgement shot_judgement = 19;
   }
 }
 
@@ -299,6 +303,56 @@ message Death {
 
 // Client to server: asks a replay server which captures it replays (ADR-0051).
 message ReplayListRequest {}
+
+// Client to server, in a Development build: which streams of the server's
+// state the client wants from now on (ADR-0038).
+message DebugSubscribe {
+  // One bit per stream, bit 0 Shot judgements; a bit no stream uses yet may be
+  // set, and the server ignores it. Fits a byte.
+  uint32 flags = 1;
+}
+
+// One player a round was judged against on one tick of its flight, as the
+// Hitbox history held it.
+message JudgedPlayer {
+  uint32 entity = 1;
+  // On the position grid.
+  sint32 position_x = 2;
+  sint32 position_y = 3;
+  sint32 position_z = 4;
+  // Bits 0-1: the stance.
+  uint32 bits = 5;
+  // Where it faced, on the angle grid.
+  sint32 yaw = 6;
+}
+
+// One tick of a round's flight whose segment crossed some player's bounds.
+message ShotJudgementEntry {
+  // How many ticks after its Shot's (0 to 65535).
+  uint32 ticks_after_shot = 1;
+  repeated JudgedPlayer players = 2;
+}
+
+// Server to client, in a Development build, to the round's shooter alone: how
+// the server judged one round it fired, once its flight ended (ADR-0038).
+message ShotJudgement {
+  uint64 shot_tick = 1;
+  // The Shooter's delay: its whole ticks (0 to 255), then its fraction of a
+  // tick on the Seen fraction grid.
+  uint32 delay_ticks = 2;
+  uint32 delay_fraction = 3;
+  // Bits 0-1: what it struck (0 nothing, 1 the Map, 2 a Prop, 3 a Hitbox);
+  // bits 2-3: the Body part, as BodyPart numbers it; bit 4: entries were left out.
+  uint32 bits = 4;
+  // Where it struck, on the position grid.
+  sint32 point_x = 5;
+  sint32 point_y = 6;
+  sint32 point_z = 7;
+  // The Prop or body it struck, 0 for neither.
+  uint32 target = 8;
+  // At most 16, oldest first.
+  repeated ShotJudgementEntry entries = 9;
+}
 
 message ReplayListing {
   bytes name = 1;

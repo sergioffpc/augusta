@@ -16,7 +16,6 @@
 #include "augusta/connection_sample.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
-#include "augusta/faults.h"
 #include "augusta/host_metrics.h"
 #include "augusta/link.h"
 #include "augusta/match.h"
@@ -43,7 +42,8 @@
 /// accepted, it starts a Replay of its own for that viewer from its first tick.
 /// Every Join request is refused with _replay server_, by the one path that
 /// refuses whatever asks to play here (RefuseToPlay); a Reenact request
-/// (ADR-0050) is to be refused by it too.
+/// (ADR-0050) is to be refused by it too. It serves no debug stream (ADR-0074):
+/// a Debug subscribe, from a viewer or not, is ignored, never misbehaviour.
 ///
 /// A Replay viewer is sent what a Match's Spectator is: Join accepted with the
 /// tick rate and Parameters (and session 0, which no player has), the Match
@@ -68,9 +68,12 @@ struct ReplayServerConfig {
   std::filesystem::path captures;
   /// How many Replays run at once, at least 1.
   std::size_t max_viewers = 1;
-  /// For a test: asked at listener setup and at every send and receive; null
-  /// otherwise. Must outlive the ReplayServer.
-  failure::Faults* faults = nullptr;
+  /// What the endpoint's transport is built with (augusta/link.h): for a
+  /// test, the faults asked at listener setup and at every send and receive;
+  /// in a Development build, the tap, such as the pcapng writer, reported
+  /// every message it sends to and receives from every viewer (ADR-0076). Each
+  /// null by default; each must outlive the ReplayServer.
+  link::TransportOptions transport{};
 };
 
 /// What a Replay viewer is sent for tick of its Replay, in order, each with the

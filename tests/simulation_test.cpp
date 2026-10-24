@@ -17,6 +17,7 @@
 #include "augusta/body_part.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -29,12 +30,12 @@ namespace {
 
 using augusta::body_part::BodyPart;
 using augusta::command::Command;
+using augusta::hitbox::CharacterHitbox;
 using augusta::math::Vec3;
 using augusta::parameters::Parameters;
 using augusta::physics::CollisionMesh;
 using augusta::physics::Stance;
 using augusta::simulation::Character;
-using augusta::simulation::CharacterHitbox;
 using augusta::simulation::Death;
 using augusta::simulation::EntityId;
 using augusta::simulation::Hit;

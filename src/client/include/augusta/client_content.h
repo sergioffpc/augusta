@@ -14,6 +14,10 @@
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hitbox.h"
+#endif
+
 /// \file
 /// What the client loads from its verified pack at startup (ADR-0018): the scene
 /// it draws, the map it predicts against, every cue's sound, and how to load the
@@ -29,14 +33,22 @@ struct Map {
 };
 
 /// What the client loads of a character another player brings: its visual mesh,
-/// which the renderer draws, and its eye, which a spectator watches it from.
+/// which the renderer draws, its eye, which a spectator watches it from, and in
+/// a Development build (ADR-0074) its Hitboxes, which the Hitboxes Debug overlay
+/// draws.
 struct LoadedCharacter {
   renderer::SceneMesh mesh{};
   math::Vec3 eye{};
+#if AUGUSTA_DEBUG_TOOLS
+  /// None for a character that has none, or whose Hitboxes do not load: a
+  /// Debug overlay never keeps a character from loading.
+  std::vector<hitbox::CharacterHitbox> hitboxes;
+#endif
 };
 
 /// Loads the character with the given path from the client pack
-/// (LoadCharacterMesh and LoadCharacterEye), or says why it could not.
+/// (LoadCharacterMesh and LoadCharacterEye, and LoadCharacterHitboxes in a
+/// Development build), or says why it could not.
 using CharacterLoader = std::function<std::expected<LoadedCharacter, CharacterError>(std::string_view)>;
 
 /// Everything LoadClientContent loads, for ClientRuntime's constructor.

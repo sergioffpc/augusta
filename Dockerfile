@@ -4,6 +4,13 @@
 # chart's securityContext names the same ID.
 ARG AUGUSTA_UID=65532
 
+# The CMake preset the server is built with, which decides the kind of build
+# (ADR-0074): linux-shipping, the default, leaves every debug tool out, so an
+# image built by hand never carries them; CI passes linux, a Development
+# build, on a push to develop alone. The build tree is the preset's binary
+# directory, build/x64-<preset> (CMakePresets.json).
+ARG PRESET=linux-shipping
+
 # The vcpkg binary cache the dependency install reads, empty unless the build
 # replaces this stage with a vcpkg-bincache build context.
 FROM scratch AS vcpkg-bincache
@@ -61,19 +68,22 @@ WORKDIR /workspace
 
 # Only what the vcpkg layers read comes in before them, so they stay cached
 # across source and CMake edits: the bootstrap reads the submodule alone, and
-# the install below it, the manifest, its overlay triplets and the toolchain
-# they chainload.
+# the install below it, the manifest, its overlay ports and triplets and the
+# toolchain they chainload.
 COPY third_party/vcpkg third_party/vcpkg
 RUN ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 COPY vcpkg.json ./
+COPY ports ports
 COPY triplets triplets
 COPY cmake/LlvmToolchain.cmake cmake/
 
-# The dependencies too, into the install root the linux preset's configure
-# uses (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds
-# them installed and builds none. Built after COPY src instead, a change to
-# any source rebuilt all of them. The scratch trees go in the same layer, so
-# the registry cache doesn't carry them.
+# The dependencies too, into the install root the preset's configure uses
+# (manifest mode, <binaryDir>/vcpkg_installed): that configure then finds them
+# installed and builds none. Built after COPY src instead, a change to any
+# source rebuilt all of them. The scratch trees go in the same layer, so the
+# registry cache doesn't carry them. The preset is declared only here, so the
+# layers above are shared by both kinds of build and every one from here on is
+# its kind's own: a Shipping image never reuses a Development build's layer.
 # vcpkg restores what it can from the vcpkg-bincache context, the CI Linux
 # jobs' binary cache (ci.yml's container jobs pass it), and builds the rest
 # from source: vcpkg builds its ports with the same triplets and the very
@@ -87,10 +97,11 @@ COPY cmake/LlvmToolchain.cmake cmake/
 # the cache restored. vcpkg's tools are its own pinned downloads,
 # as in those jobs (setup-linux-build), never apt's CMake: its version is part
 # of every ABI hash.
+ARG PRESET
 RUN --mount=type=bind,from=vcpkg-bincache,target=/vcpkg-bincache \
     VCPKG_BINARY_SOURCES="clear;files,/vcpkg-bincache,read" \
     VCPKG_FORCE_DOWNLOADED_BINARIES=1 \
-      ./third_party/vcpkg/vcpkg install --x-install-root=build/x64-linux/vcpkg_installed \
+      ./third_party/vcpkg/vcpkg install --x-install-root="build/x64-${PRESET}/vcpkg_installed" \
     && rm -rf third_party/vcpkg/buildtrees third_party/vcpkg/packages third_party/vcpkg/downloads \
       /root/.cache/vcpkg
 
@@ -108,15 +119,16 @@ COPY checks checks
 # Without the C++ tools (AUGUSTA_TOOLS) or the client (AUGUSTA_CLIENT): the
 # image builds augustad alone, does not copy tools/, and installs none of the
 # client's ports or the system packages they need.
-RUN cmake --preset linux -DAUGUSTA_TOOLS=OFF -DAUGUSTA_CLIENT=OFF \
-    && cmake --build --preset linux --target augustad \
-    && DESTDIR=/workspace/stage cmake --install build/x64-linux --prefix /usr/local
+RUN cmake --preset "${PRESET}" -DAUGUSTA_TOOLS=OFF -DAUGUSTA_CLIENT=OFF \
+    && cmake --build --preset "${PRESET}" --target augustad \
+    && DESTDIR=/workspace/stage cmake --install "build/x64-${PRESET}" --prefix /usr/local
 
 # The debug info the build split off augustad (ADR-0047), alone: CI publishes
 # it as the image's sha-<12>-debuginfo tag, what reads a core dump of the
 # binary below. Not the last stage, so a plain build still makes the runtime.
 FROM scratch AS debuginfo
-COPY --from=build /workspace/build/x64-linux/src/server/augustad.debug /
+ARG PRESET
+COPY --from=build /workspace/build/x64-${PRESET}/src/server/augustad.debug /
 
 # The runtime stage's root filesystem: only the Ubuntu 26.04 files augustad
 # and tini run on, cut from the archive's packages by chisel (ADR-0054), with

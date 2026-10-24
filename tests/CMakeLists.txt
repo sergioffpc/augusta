@@ -129,7 +129,7 @@ gtest_discover_tests(augusta_parameters_loader_tests DISCOVERY_TIMEOUT 30)
 add_executable(augusta_protocol_tests protocol_test.cpp)
 target_link_libraries(
   augusta_protocol_tests
-  PRIVATE augusta_limits augusta_protocol augusta_tick GTest::gtest GTest::gtest_main
+  PRIVATE augusta_limits augusta_protocol augusta_tick augusta_version GTest::gtest GTest::gtest_main
 )
 # Links PhysX through augusta_physics, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_protocol_tests DISCOVERY_TIMEOUT 30)
@@ -353,6 +353,11 @@ target_link_libraries(augusta_body_part_tests PRIVATE augusta_gameplay GTest::gt
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_body_part_tests DISCOVERY_TIMEOUT 30)
 
+add_executable(augusta_hitbox_tests hitbox_test.cpp)
+target_link_libraries(augusta_hitbox_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_hitbox_tests DISCOVERY_TIMEOUT 30)
+
 add_executable(augusta_ballistics_tests ballistics_test.cpp)
 target_link_libraries(augusta_ballistics_tests PRIVATE augusta_gameplay GTest::gtest GTest::gtest_main)
 # NFR-03's golden trajectories (ADR-0013). When the ballistics model changes on
@@ -382,11 +387,6 @@ add_executable(augusta_correction_tests correction_test.cpp)
 target_link_libraries(augusta_correction_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
 # Links augusta_prediction publicly (so PhysX), same first-launch cost as above.
 gtest_discover_tests(augusta_correction_tests DISCOVERY_TIMEOUT 30)
-
-# What the DebugHud shows (augusta_hud), free of any GPU API.
-add_executable(augusta_hud_tests hud_test.cpp)
-target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
-gtest_discover_tests(augusta_hud_tests)
 
 add_executable(augusta_input_tests input_test.cpp)
 target_link_libraries(augusta_input_tests PRIVATE augusta_input GTest::gtest GTest::gtest_main)
@@ -589,6 +589,15 @@ target_link_libraries(
 # Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_netcode_stats_tests DISCOVERY_TIMEOUT 30)
 
+# How often and how far Reconciliation moved the body, from Prediction States built by hand.
+add_executable(augusta_correction_tally_tests correction_tally_test.cpp)
+target_link_libraries(
+  augusta_correction_tally_tests
+  PRIVATE augusta_math augusta_prediction GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_prediction, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_correction_tally_tests DISCOVERY_TIMEOUT 30)
+
 # The Command each Intent yields and how it ends, from Server views built by hand.
 add_executable(augusta_intent_tests intent_test.cpp)
 target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math GTest::gtest GTest::gtest_main)
@@ -632,12 +641,20 @@ gtest_discover_tests(augusta_link_messages_tests DISCOVERY_TIMEOUT 30)
 
 # What the Link decides about the transport beneath it is in headers private to
 # the link module, tested apart from a live connection through a private
-# include path, as networking's send flags are.
+# include path, as networking's send flags are. What a Client counts it carries
+# is tested over loopback, against a raw server that sends any bytes.
 add_executable(augusta_link_transport_tests link_transport_test.cpp)
 target_include_directories(augusta_link_transport_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/modules/link)
 target_link_libraries(
   augusta_link_transport_tests
-  PRIVATE augusta_link augusta_link_messages augusta_networking augusta_protocol GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_link
+    augusta_link_messages
+    augusta_link_raw
+    augusta_networking
+    augusta_protocol
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_link_transport_tests DISCOVERY_TIMEOUT 30)
@@ -804,6 +821,9 @@ if(AUGUSTA_CLIENT)
   add_executable(augusta_client_net_stats_tests client_net_stats_test.cpp)
   target_link_libraries(augusta_client_net_stats_tests PRIVATE augusta_client_net_stats GTest::gtest GTest::gtest_main)
   target_include_directories(augusta_client_net_stats_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+  # NOMINMAX, as augusta_client_net_stats has it: net_stats.h's includes pull in
+  # <windows.h>, whose min/max macros would break the headers included after it.
+  target_compile_definitions(augusta_client_net_stats_tests PRIVATE NOMINMAX)
   gtest_discover_tests(augusta_client_net_stats_tests DISCOVERY_TIMEOUT 30)
 
   # Drives the Renderer (ADR-0059) on lavapipe, Mesa's software Vulkan driver,
@@ -907,7 +927,146 @@ if(AUGUSTA_CLIENT)
   gtest_discover_tests(augusta_client_window_tests)
 endif()
 
+# Before the build's kind decides below which sources its fuzz seeds test takes.
 add_subdirectory(fuzz)
+
+# Which tests a build's kind carries (ADR-0074), decided here and nowhere else:
+# a debug tool's tests only in a Development build, which carries the tool; in
+# a Shipping build, which carries none, the one test that the config readers
+# refuse a `debug` section. A debug tool's cases for a module both kinds test
+# sit in a file of their own, added to that module's test executable here, so
+# no test file leaves a case out by `#if AUGUSTA_DEBUG_TOOLS`.
+if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_networking_tests PRIVATE networking_tap_test.cpp)
+  target_sources(augusta_client_config_tests PRIVATE client_config_debug_test.cpp)
+  target_sources(augusta_server_config_tests PRIVATE server_config_debug_test.cpp)
+  target_sources(augusta_server_application_tests PRIVATE server_application_debug_test.cpp)
+  target_sources(augusta_match_tests PRIVATE match_reenactment_test.cpp)
+  target_sources(
+    augusta_session_tests
+    PRIVATE
+      session_reenactment_test.cpp
+      session_debug_subscribe_test.cpp
+      session_shot_judgement_test.cpp
+      session_tap_test.cpp
+  )
+  # The pcapng writer each tapped end of session_tap_test.cpp writes through.
+  target_link_libraries(augusta_session_tests PRIVATE augusta_pcapng augusta_version)
+  target_sources(augusta_protocol_tests PRIVATE protocol_debug_test.cpp)
+  target_sources(augusta_protocol_property_tests PRIVATE protocol_property_debug_test.cpp)
+  target_sources(augusta_link_messages_tests PRIVATE link_messages_debug_test.cpp)
+  target_sources(augusta_link_transport_tests PRIVATE link_transport_debug_test.cpp)
+  target_sources(augusta_host_metrics_tests PRIVATE host_metrics_debug_test.cpp)
+  target_sources(augusta_tick_messages_tests PRIVATE tick_messages_debug_test.cpp)
+  target_sources(augusta_replay_server_tests PRIVATE replay_server_debug_test.cpp)
+  target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_debug.cpp)
+  target_sources(augusta_physics_tests PRIVATE physics_debug_test.cpp)
+  # OmniPVD's runtime beside it in a Debug build (cmake/PvdRuntime.cmake), so
+  # its recording test records where augustac and augustad can.
+  augusta_stage_pvd_runtime(augusta_physics_tests)
+  target_sources(augusta_prediction_tests PRIVATE prediction_debug_test.cpp)
+  if(TARGET augusta_client_frame_mapping_tests)
+    target_sources(augusta_client_frame_mapping_tests PRIVATE client_frame_mapping_debug_test.cpp)
+  endif()
+  target_sources(augusta_simulation_tests PRIVATE simulation_shot_judgement_test.cpp)
+  if(TARGET augusta_client_character_tests)
+    target_sources(augusta_client_character_tests PRIVATE client_character_debug_test.cpp)
+  endif()
+  target_link_libraries(augusta_simulation_tests PRIVATE augusta_limits)
+  target_sources(augusta_renderer_gpu_crash_dump_files_tests PRIVATE renderer_gpu_crash_dump_files_debug_test.cpp)
+  if(TARGET augusta_client_net_stats_tests)
+    target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
+  endif()
+  # The Profiling Debug panel (profiling_panel.h), private to the client
+  # Runtime, as net_stats.h is.
+  if(TARGET augusta_client_profiling_panel)
+    add_executable(augusta_client_profiling_panel_tests client_profiling_panel_test.cpp)
+    target_link_libraries(
+      augusta_client_profiling_panel_tests
+      PRIVATE augusta_client_profiling_panel GTest::gtest GTest::gtest_main
+    )
+    target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
+  endif()
+  # Which debug tools the client's Debug index lists (debug_index_entries.h),
+  # private to the client Runtime, as profiling_panel.h is.
+  if(TARGET augusta_client_debug_index_entries)
+    add_executable(augusta_client_debug_index_entries_tests client_debug_index_entries_test.cpp)
+    target_link_libraries(
+      augusta_client_debug_index_entries_tests
+      PRIVATE
+        augusta_client_debug_index_entries
+        augusta_client_network_panel
+        augusta_client_profiling_panel
+        augusta_presentation
+        GTest::gtest
+        GTest::gtest_main
+    )
+    target_include_directories(augusta_client_debug_index_entries_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
+    gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
+  endif()
+  # The Network Debug panel (network_panel.h), private to the client Runtime,
+  # as net_stats.h is.
+  if(TARGET augusta_client_network_panel)
+    add_executable(augusta_client_network_panel_tests client_network_panel_test.cpp)
+    target_link_libraries(
+      augusta_client_network_panel_tests
+      PRIVATE augusta_client_network_panel GTest::gtest GTest::gtest_main
+    )
+    target_include_directories(augusta_client_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_network_panel_tests DISCOVERY_TIMEOUT 30)
+  endif()
+  if(TARGET augusta_client_renderer_smoke_tests)
+    target_sources(
+      augusta_client_renderer_smoke_tests
+      PRIVATE
+        client_renderer_debug_hud_smoke_test.cpp
+        client_renderer_debug_shapes_smoke_test.cpp
+        client_renderer_debug_panels_smoke_test.cpp
+    )
+  endif()
+
+  # What the DebugHud shows (augusta_hud), free of any GPU API.
+  add_executable(augusta_hud_tests hud_test.cpp)
+  target_link_libraries(augusta_hud_tests PRIVATE augusta_hud GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_hud_tests)
+
+  # The Debug overlays' shapes and their tessellation, the Debug index and
+  # Debug interaction (augusta_debug), free of any GPU API.
+  add_executable(augusta_debug_tests debug_test.cpp debug_index_test.cpp debug_interaction_test.cpp)
+  target_link_libraries(augusta_debug_tests PRIVATE augusta_debug GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_debug_tests)
+
+  # The Physics Debug overlays, their panel and their shapes (presentation's
+  # physics_overlays.h), free of any GPU API.
+  add_executable(augusta_physics_overlays_tests physics_overlays_test.cpp)
+  target_link_libraries(augusta_physics_overlays_tests PRIVATE augusta_presentation GTest::gtest GTest::gtest_main)
+  # Links augusta_prediction publicly (so PhysX), as augusta_tracers_tests does.
+  gtest_discover_tests(augusta_physics_overlays_tests DISCOVERY_TIMEOUT 30)
+  # The pcapng's blocks and its file writer (augusta_pcapng, ADR-0076).
+  add_executable(augusta_pcapng_tests pcapng_test.cpp pcapng_file_writer_test.cpp)
+  target_link_libraries(augusta_pcapng_tests PRIVATE augusta_pcapng augusta_logging GTest::gtest GTest::gtest_main)
+  gtest_discover_tests(augusta_pcapng_tests)
+
+  # The Shipping-only test as an object library that nothing builds or runs:
+  # only so that its file has a compile command for clang-tidy, which lints
+  # against a Development build's.
+  add_library(augusta_shipping_config_tests OBJECT EXCLUDE_FROM_ALL shipping_config_test.cpp)
+  # The same for the protocol_decode seeds of a Shipping build, which has none
+  # of a Development build's messages.
+  add_library(augusta_protocol_decode_seeds_shipping OBJECT EXCLUDE_FROM_ALL fuzz/protocol_decode_seeds_shipping.cpp)
+  target_link_libraries(augusta_protocol_decode_seeds_shipping PRIVATE augusta_protocol)
+else()
+  add_executable(augusta_shipping_config_tests shipping_config_test.cpp)
+  # Links PhysX through augusta_input, as augusta_client_config_tests does.
+  gtest_discover_tests(augusta_shipping_config_tests DISCOVERY_TIMEOUT 30)
+  target_sources(augusta_protocol_decode_seeds_tests PRIVATE fuzz/protocol_decode_seeds_shipping.cpp)
+endif()
+target_link_libraries(
+  augusta_shipping_config_tests
+  PRIVATE augusta_client_config augusta_server_config GTest::gtest GTest::gtest_main
+)
 
 # Every executable here and in fuzz/, and in each tool's tests/ (kept next to
 # the tool) when AUGUSTA_TOOLS builds the tools:

@@ -10,20 +10,31 @@ other side, owning the transport connection beneath, and the only place the
 game's state is converted to and from the Networking Protocol's messages. The
 client's end connects to the server; the server's listens and keeps one channel
 per peer, naming each by a peer identity of its own and taking in each payload
-as what a client says; a replay server opens one of its own. Each end sends and
+as what a client says; a replay server opens one of its own. Each end is built
+from construction options, which carry what its transport takes when it is made
+(the faults a test injects and, in a Development build, the tap its messages are
+reported to, ADR-0076) and never reach its message API. Each end sends and
 receives the Link's own message vocabulary, in the engine's types, each message
 with the reliability ADR-0038's table gives its type, a server's message encoded
 once for as many peers as need it and a tick's Authoritative State readdressed
 to each recipient without encoding its bodies again; it reads each connection's
 round trip, loss and queue in its own types and keeps a Replay list within what
-the protocol carries. Its conversions, which keep only the newest of a tick's
-unacknowledged Commands within the protocol's bound and turn a Match capture's
-records into their bytes and back, are stateless and have no transport beneath,
-so the Host and capture convert without opening a connection. It owns the
-transport's process-wide setup and, for tests only, its simulated network
-conditions and raw ends that carry bytes as they are. Only it links networking
+the protocol carries. The client's end also counts, in every build, the messages
+and bytes it sends and receives by message type since it connected, read beside
+the connection's numbers, and keeps a tally of the Authoritative State updates
+among them: their sizes, and the ticks missing and out of order against the
+newest tick seen, which it forgets at each connection and Match start; the
+server's traffic is the Host's to count. Its conversions, which keep only the
+newest of a tick's unacknowledged Commands within the protocol's bound and turn
+a Match capture's records into their bytes and back, are stateless and have no
+transport beneath, so the Host and capture convert without opening a connection.
+It owns the transport's process-wide setup, its simulated network conditions
+(latency, jitter, loss and reorder on what the process sends or, when asked, on
+what it receives too: for tests, and the Network Debug panel's impairment) and,
+for tests only, raw ends that carry bytes as they are. Only it links networking
 (`checks/core_boundary.cmake`), and privately, with the protocol, so whatever
-speaks to it reaches neither.
+speaks to it reaches neither. A Development build's messages are in the Link
+only with `AUGUSTA_DEBUG_TOOLS`.
 
 ## Not its responsibility
 
@@ -40,4 +51,5 @@ speaks to it reaches neither.
 [ADR-0003](../../../docs/adr/0003-networking-transport.md),
 [ADR-0038](../../../docs/adr/0038-networking-protocol-messages.md),
 [ADR-0050](../../../docs/adr/0050-match-capture-and-reenactment.md),
-[ADR-0051](../../../docs/adr/0051-replay.md).
+[ADR-0051](../../../docs/adr/0051-replay.md),
+[ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md).

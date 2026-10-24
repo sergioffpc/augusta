@@ -7,6 +7,7 @@
 #include "augusta/command.h"
 #include "augusta/harness.h"
 #include "augusta/link_types.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 
@@ -37,6 +38,11 @@ class CommandStream {
 
   /// The sequence the next command sent goes under.
   [[nodiscard]] tick::Sequence NextSequence() const { return next_sequence_; }
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches the prediction's Collision, as Session::SetVisualization describes.
+  void SetVisualization(const physics::Visualization& visualization) { prediction_.SetVisualization(visualization); }
+#endif
 
  private:
   // Keeps command under sequence with the commands server_view does not yet

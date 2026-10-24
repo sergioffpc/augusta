@@ -9,16 +9,24 @@ lines (ADR-0059). Like every debug tool, it exists only in a Development build
 (ADR-0074).
 
 **One vocabulary module.** `augusta_debug`, client-only and compiled only with
-`AUGUSTA_DEBUG_TOOLS`, depends on no other module of the game. It holds the
+`AUGUSTA_DEBUG_TOOLS`, depends on `augusta_math` and the window's event types
+alone, never on an area module, the Renderer, ImGui or a thread. It holds the
 shape and panel types, the tessellation of shapes into lines and triangles, and
 a helper that keeps shapes until a time. The Renderer draws them; the client
 Runtime composes them (ADR-0021).
 
 **Each area builds its own.** The code that turns an area's state into shapes or
-a panel lives in that area's module, such as `physics::DebugShapes(world)`,
-compiled only in a Development build and depending on `augusta_debug` only
-there. The client Runtime calls it and passes the result on; it builds nothing
-itself.
+a panel lives in a client-only module of that area, compiled only in a
+Development build and depending on `augusta_debug` only there. A shared core
+module, which the server links too, never names `augusta_debug`: physics and
+gameplay hand plain values, such as a body's capsule or a placed Hitbox, and
+presentation, which holds the Physics overlays and their panel, builds their
+shapes. The client Runtime calls it and passes the result on; it builds nothing
+itself. When an area's values come from modules that ship in every build and run
+on several threads, as the network's do (the Link, Prediction and
+PresentationWorld), its panel is built in a client Runtime piece instead, a pure
+state of its own taking plain values, so those modules never depend on
+`augusta_debug`; the Runtime still only hands it its values and its events.
 
 **Shapes.** A producer asks for segments, oriented boxes, spheres, capsules,
 triangles and voxels, each with a colour and an alpha. `augusta_debug`
@@ -32,20 +40,26 @@ smear thin lines, and over whatever the frame shows, a Debug view included.
 **One frame, one thread.** The shapes and panels are assembled on the
 Main/Render thread every frame, after PresentationWorld's Commit and before
 `RenderFrame`, from data that already reaches that thread: the Prediction State,
-the Server view, and the client World's visualization, copied out there because
-Presentation runs `simulate()` (ADR-0024). There is no new channel between
-threads: a producer on another thread hands what it shows through the channel it
-already publishes on, in a Development build only. A shape lives one frame; the
-Renderer keeps nothing between frames. What must stay longer, such as a shot the
-server announced once, is its producer's state, kept with the helper.
+the Server view, and the client World's visualization. There is no new channel
+between threads: a producer on another thread hands what it shows through the
+channel it already publishes on, in a Development build only. Until the client
+World has a Dynamics phase (#819), it is PredictionWorld's, so its visualization
+comes from the Prediction thread: PredictionWorld's Commit steps it once per
+tick, never inside a replay, and the Prediction State carries its lines, and the
+settings that switch it reach PredictionWorld with each tick's input. Once
+Presentation runs the client World's `simulate()` (ADR-0024), the copy follows
+it onto the Main/Render thread. A shape lives one frame; the Renderer keeps
+nothing between frames. What must stay longer, such as a shot the server
+announced once, is its producer's state, kept with the helper.
 
 **Panels.** A Debug panel is a description: a title, then text, tables, history
 plots, toggles, sliders and buttons, each control with an id. The Renderer draws
-it with Dear ImGui, which stays inside the Renderer, and `RenderFrame` returns
-the frame's control changes as events. The client Runtime routes each event to
-the area that built the panel, whose panel is a pure function of its state and
-whose update is a pure function of its state and the event. A change to state
-another thread owns travels by the way that thread already takes orders.
+it with Dear ImGui, which stays inside the Renderer, and hands back the frame's
+control changes as events from a call of their own, so `RenderFrame` is the same
+call in both kinds of build. The client Runtime routes each event to the area
+that built the panel, whose panel is a pure function of its state and whose
+update is a pure function of its state and the event. A change to state another
+thread owns travels by the way that thread already takes orders.
 
 **Shown, or in Debug interaction.** A Debug panel that is on is shown over the
 frame but takes no input: the cursor stays captured and the game plays on. F1
@@ -105,17 +119,22 @@ or how many lights a screen tile traces, is a Debug view.
   character callback the Window does not have, for what toggles already do.
 - **Panels that always take input when shown**: one state fewer, but a developer
   could not play with the network panel in view.
-- **The building code in `augusta_debug`, or in the client Runtime**: the first
-  makes the vocabulary module depend on every area, and the second puts reusable
-  logic in an executable, which is glue.
+- **The building code in `augusta_debug`, or always in the client Runtime**: the
+  first makes the vocabulary module depend on every area, and the second moves
+  an area's panel away from the state it reads; only a panel whose values come
+  from modules that ship in every build, on several threads, is built there.
+- **The network panel's parts built by `link`, `prediction` and
+  `presentation`**: each part beside its numbers, but three modules that ship in
+  every build depending on `augusta_debug`, and one panel assembled from three
+  threads.
 
 ## Consequences
 
 - An area's debug tool is tested without a GPU: its shapes and its panel are
   pure functions of its state.
-- The Renderer's interface grows a call for the frame's shapes and one for its
-  panels and one for the window's events in Debug interaction, and `RenderFrame`
-  returns the panels' events.
+- The Renderer's interface grows a call for the frame's shapes, one for its
+  panels, one for the window's events in Debug interaction and one that hands
+  back the panels' events; `RenderFrame` keeps its signature.
 - How the server's state reaches a Debug overlay is decided apart (ADR-0038,
   ADR-0044).
 - `input::Input` grows a way to drop the keys and buttons held, and the client

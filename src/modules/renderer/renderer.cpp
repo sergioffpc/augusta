@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -20,11 +21,21 @@
 
 #include "augusta/math.h"
 #include "augusta/window.h"
-#include "debug_hud.h"
 #include "frame_regions.h"
+#include "streamed_vertices.h"
 #include "vertices.h"
 #include "vulkan_device.h"
 #include "vulkan_swapchain.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/debug_panels.h"
+#include "augusta/debug_shapes.h"
+#include "augusta/gpu_crash_dump_files.h"
+#include "augusta/window_events.h"
+#include "debug_hud.h"
+#include "debug_panels_pass.h"
+#include "debug_shapes_pass.h"
+#endif
 
 // The shaders' SPIR-V, compiled at build time (CMakeLists.txt).
 #include "kEffectsPs.h"
@@ -35,7 +46,8 @@
 // The Renderer on NVRHI's Vulkan backend, in the window it is lent (ADR-0059).
 // It draws into an offscreen target, then copies that to the swapchain's image
 // and presents it (vulkan_swapchain.h). It draws the scene, the remote players, the
-// fight's effects and the overlay, and the debug HUD's lines over them.
+// fight's effects and the overlay, and, in a Development build (ADR-0074), the
+// Debug overlays' shapes and the debug HUD's lines over them.
 namespace augusta::renderer {
 
 namespace {
@@ -76,59 +88,6 @@ std::array<nvrhi::VertexAttributeDesc, 3> VertexAttributes() {
   return {attribute("POSITION", offsetof(Vertex, position)), attribute("NORMAL", offsetof(Vertex, normal)),
           attribute("COLOR", offsetof(Vertex, color))};
 }
-
-// A vertex buffer the CPU rewrites every frame (the remote players, the fight's
-// effects, the overlay): unlike the scene's (UploadScene), it is in memory the
-// CPU writes, mapped once for good, so a frame's vertices are copied straight
-// into it with no GPU wait.
-//
-// It holds kFramesInFlight regions of region_capacity vertices each, and a
-// frame writes and draws only the region FrameRegion gives it: several frames
-// are in flight, and rewriting the one region a previous frame is still drawing
-// from tears that frame's drawing. The caller waits for the GPU to finish the
-// last frame drawn from a region before writing there
-// (Renderer::Impl::ReadyRegion).
-//
-// It grows into a new buffer only when a call needs more room than any before
-// it. Frames in flight keep drawing from the old one, which NVRHI keeps alive
-// until they are done, so growing waits for nothing either.
-struct StreamedVertices {
-  nvrhi::BufferHandle buffer;
-  std::span<Vertex> mapped;
-  std::uint32_t region_capacity = 0;
-  std::uint32_t count = 0;
-  std::uint32_t region = 0;
-
-  // Writes vertices into region, first growing the buffer to fit them if a
-  // region holds fewer. Nothing is drawn if there are none.
-  void Write(nvrhi::IDevice& device, const std::vector<Vertex>& vertices, std::uint32_t frame_region) {
-    count = static_cast<std::uint32_t>(vertices.size());
-    region = frame_region;
-    if (vertices.empty()) {
-      return;
-    }
-    if (count > region_capacity) {
-      const std::size_t capacity = std::size_t{count} * kFramesInFlight;
-      buffer = device.createBuffer(nvrhi::BufferDesc()
-                                       .setByteSize(capacity * sizeof(Vertex))
-                                       .setIsVertexBuffer(true)
-                                       .setCpuAccess(nvrhi::CpuAccessMode::Write)
-                                       .setInitialState(nvrhi::ResourceStates::VertexBuffer)
-                                       .setKeepInitialState(true)
-                                       .setDebugName("Streamed vertices"));
-      auto* data = static_cast<Vertex*>(device.mapBuffer(buffer, nvrhi::CpuAccessMode::Write));
-      if (data == nullptr) {
-        throw std::runtime_error("Mapping a per-frame vertex buffer failed");
-      }
-      mapped = {data, capacity};
-      region_capacity = count;
-    }
-    std::ranges::copy(vertices, mapped.subspan(FirstVertex(), count).begin());
-  }
-
-  // Where region starts in buffer, in vertices.
-  [[nodiscard]] std::uint32_t FirstVertex() const { return region * region_capacity; }
-};
 
 // In the swapchain's format, which is sRGB, so the clear colour and shading stay
 // linear, and which a copy into its images keeps byte for byte.
@@ -212,9 +171,6 @@ struct Renderer::Impl {
   nvrhi::TextureHandle depth;
   nvrhi::FramebufferHandle framebuffer;
   nvrhi::CommandListHandle commands;
-  // Made once the device is.
-  std::unique_ptr<DebugHud> debug_hud;
-  std::vector<std::string> text_lines;
 
   // The scene and the remote players, lit by Renderer.3d.slang, and the
   // fight's effects, by Effects.3d.slang, all from the camera's
@@ -223,6 +179,7 @@ struct Renderer::Impl {
   // the identity.
   nvrhi::BufferHandle per_frame;
   nvrhi::BufferHandle overlay_per_frame;
+  nvrhi::BindingLayoutHandle binding_layout;
   nvrhi::BindingSetHandle bindings;
   nvrhi::BindingSetHandle overlay_bindings;
   nvrhi::GraphicsPipelineHandle lit_pipeline;
@@ -238,9 +195,21 @@ struct Renderer::Impl {
   // keyed by character name - set by SetCharacterMesh; empty until the first
   // call.
   CharacterVertices character_vertices;
-  StreamedVertices remote_vertices;
-  StreamedVertices effect_vertices;
-  StreamedVertices overlay_vertices;
+  StreamedVertices<Vertex> remote_vertices;
+  StreamedVertices<Vertex> effect_vertices;
+  StreamedVertices<Vertex> overlay_vertices;
+
+#if AUGUSTA_DEBUG_TOOLS
+  // Made once the pipelines are, drawing from the camera's per_frame.
+  std::unique_ptr<DebugShapesPass> debug_shapes;
+  std::unique_ptr<DebugHud> debug_hud;
+  std::vector<std::string> text_lines;
+  std::unique_ptr<DebugPanelsPass> debug_panels;
+  debug::Panels panels;
+  // What the panels' controls changed to since TakeDebugControlEvents last
+  // took them.
+  std::vector<debug::ControlEvent> control_events;
+#endif
 
   // Signaled after each frame's work, per frame region (FrameRegion): a frame
   // waits on its region's before writing there or drawing, which keeps the CPU
@@ -256,7 +225,11 @@ struct Renderer::Impl {
     CreateFramebuffer(swapchain.ImageSize().value_or(window.GetSize()));
     commands = device->createCommandList();
     CreatePipelines();
+#if AUGUSTA_DEBUG_TOOLS
+    debug_shapes = std::make_unique<DebugShapesPass>(*device, *binding_layout, framebuffer->getFramebufferInfo());
     debug_hud = std::make_unique<DebugHud>(*device);
+    debug_panels = std::make_unique<DebugPanelsPass>(*device);
+#endif
     for (nvrhi::EventQueryHandle& query : frame_done) {
       query = device->createEventQuery();
     }
@@ -296,10 +269,9 @@ struct Renderer::Impl {
   void CreatePipelines() {
     per_frame = CreatePerFrame("PerFrameCB");
     overlay_per_frame = CreatePerFrame("Overlay PerFrameCB");
-    const nvrhi::BindingLayoutHandle binding_layout =
-        device->createBindingLayout(nvrhi::BindingLayoutDesc()
-                                        .setVisibility(nvrhi::ShaderType::All)
-                                        .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)));
+    binding_layout = device->createBindingLayout(nvrhi::BindingLayoutDesc()
+                                                     .setVisibility(nvrhi::ShaderType::All)
+                                                     .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0)));
     bindings = device->createBindingSet(
         nvrhi::BindingSetDesc().addItem(nvrhi::BindingSetItem::ConstantBuffer(0, per_frame)), binding_layout);
     overlay_bindings = device->createBindingSet(
@@ -396,6 +368,11 @@ struct Renderer::Impl {
     overlay_vertices.Write(*device, BuildOverlayVertices(overlay, size.width, size.height), region);
   }
 
+#if AUGUSTA_DEBUG_TOOLS
+  // Writes the Debug overlays' shapes into this frame's region.
+  void UploadDebugShapes(const debug::Shapes& shapes) { debug_shapes->Write(shapes, ReadyRegion()); }
+#endif
+
   // This frame's region of the per-frame upload buffers, once the GPU has
   // finished the last frame drawn from it: normally at once, since that frame
   // is kFramesInFlight back.
@@ -434,7 +411,8 @@ struct Renderer::Impl {
   }
 
   // Draws the region of vertices the last frame wrote.
-  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants, const StreamedVertices& vertices) const {
+  void Draw(nvrhi::IGraphicsPipeline* pipeline, nvrhi::IBindingSet* constants,
+            const StreamedVertices<Vertex>& vertices) const {
     Draw(pipeline, constants, vertices.buffer, vertices.count, vertices.FirstVertex());
   }
 
@@ -458,8 +436,16 @@ struct Renderer::Impl {
     Draw(lit_pipeline, bindings, remote_vertices);
     // After everything opaque, so the depth buffer hides the effects behind it.
     Draw(effects_pipeline, bindings, effect_vertices);
+#if AUGUSTA_DEBUG_TOOLS
+    // Over the whole frame as the scene and the effects leave it, at its output
+    // resolution, but under what is drawn over the frame itself.
+    debug_shapes->Render(*commands, *framebuffer, *bindings);
+#endif
     Draw(overlay_pipeline, overlay_bindings, overlay_vertices);
+#if AUGUSTA_DEBUG_TOOLS
     debug_hud->Render(*commands, *framebuffer, text_lines);
+    std::ranges::move(debug_panels->Render(*commands, *framebuffer, panels), std::back_inserter(control_events));
+#endif
     // None while the window is minimized: the frame is drawn, not shown.
     if (image != nullptr) {
       // The copy overwrites the whole image, so what it held, and the layout it
@@ -534,6 +520,22 @@ void Renderer::SetCombatEffects(const CombatEffects& effects) { impl_->UploadCom
 
 void Renderer::SetOverlay(const Overlay& overlay) { impl_->UploadOverlay(overlay); }
 
+#if AUGUSTA_DEBUG_TOOLS
 void Renderer::SetTextLines(std::vector<std::string> lines) { impl_->text_lines = std::move(lines); }
+
+void Renderer::SetDebugShapes(const debug::Shapes& shapes) { impl_->UploadDebugShapes(shapes); }
+
+void Renderer::SetDebugPanels(debug::Panels panels) { impl_->panels = std::move(panels); }
+
+void Renderer::HandleDebugPanelInput(std::span<const window::Event> events) { impl_->debug_panels->Handle(events); }
+
+std::vector<debug::ControlEvent> Renderer::TakeDebugControlEvents() { return std::exchange(impl_->control_events, {}); }
+
+GpuCrashDumpStatus Renderer::GpuCrashDumps() const {
+  return {.enabled = impl_->vulkan.GpuCrashDumpsEnabled(),
+          .attached = impl_->vulkan.GpuCrashDumpsAttached(),
+          .directory = GpuCrashDumpDirectory()};
+}
+#endif
 
 }  // namespace augusta::renderer

@@ -154,7 +154,7 @@ struct ReplayServer::Impl {
         catalog(RequireDirectory(config.captures), ReplayTerms{.server_pack = config.server_pack,
                                                                .tick_rate_hz = config.tick_rate_hz,
                                                                .characters = PathsOf(scenario.characters)}),
-        network(ListenOnceTheMapBuilds(config.listen), config.faults) {
+        network(ListenOnceTheMapBuilds(config.listen), config.transport) {
     LOG_INFO("subsystem=replay event=replay_server_started directory={} max_viewers={}", Utf8(config.captures),
              max_viewers);
   }
@@ -329,6 +329,13 @@ struct ReplayServer::Impl {
       return;
     }
     metrics.messages_received[*message.type].Increment();
+#if AUGUSTA_DEBUG_TOOLS
+    // A replay server runs no Match, so it serves no stream of one: a Debug
+    // subscribe, from a viewer or not, is ignored, and never misbehaviour.
+    if (message.type == MessageType::kDebugSubscribe) {
+      return;
+    }
+#endif
     // A viewer has asked for its Replay and sends nothing more: whatever it
     // sends, a request among them, is dropped and judged, and its Replay goes on.
     if (viewers.contains(message.from)) {

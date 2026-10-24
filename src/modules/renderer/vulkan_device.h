@@ -46,6 +46,14 @@ class VulkanDevice final {
   /// The queue that draws and presents: NVRHI's graphics queue.
   [[nodiscard]] vk::Queue Queue() const { return queue_; }
   [[nodiscard]] vk::SurfaceKHR Surface() const { return *surface_; }
+#if AUGUSTA_DEBUG_TOOLS
+  /// Whether Aftermath watches the process's devices (EnableGpuCrashDumps):
+  /// what the Profiling Debug panel shows (Renderer::GpuCrashDumps).
+  [[nodiscard]] bool GpuCrashDumpsEnabled() const { return gpu_crash_dumps_enabled_; }
+  /// Whether this device has the diagnostics Aftermath reads turned on, as the
+  /// Profiling Debug panel shows.
+  [[nodiscard]] bool GpuCrashDumpsAttached() const { return gpu_crash_dumps_attached_; }
+#endif
 
   /// Throws std::runtime_error, with its message, if the validation layer has
   /// reported an error since the last call; does nothing without validation.
@@ -71,6 +79,11 @@ class VulkanDevice final {
   // gpu_crash_dumps: whether Aftermath is watching, so the device turns on what
   // it reads.
   void CreateDevice(bool gpu_crash_dumps);
+
+#if AUGUSTA_DEBUG_TOOLS
+  bool gpu_crash_dumps_enabled_ = false;
+  bool gpu_crash_dumps_attached_ = false;
+#endif
 
   // The first validation error since the last ThrowValidationErrors. Before
   // the messenger, which reports into it.

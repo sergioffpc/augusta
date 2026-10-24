@@ -18,6 +18,7 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/logging.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "command_stream.h"
@@ -64,7 +65,7 @@ struct Session::Impl {
                                      .capture = capture,
                                      .run = config.run};
         })),
-        channel(config.faults),
+        channel(config.transport),
         inbox(config.replay.has_value(), config.on_match),
         commands(std::move(world)) {}
 
@@ -112,7 +113,7 @@ std::string_view DescribeJoinRefusal(JoinRefusal reason) {
     case JoinRefusal::kUnknownCapture:
       return "the replay server replays no such capture: list them with --replays";
     case JoinRefusal::kReenactmentsNotAccepted:
-      return "the server does not take reenactments: it needs simulation.reenactments on";
+      return "the server does not take reenactments: it needs a Development server with debug.reenactments on";
   }
   return "unknown refusal";
 }
@@ -197,6 +198,8 @@ std::optional<failure::Failure> Session::TakeInvariantFailure() { return impl_->
 
 std::optional<link::ConnectionStats> Session::GetConnectionStats() const { return impl_->channel.GetStats(); }
 
+link::Traffic Session::GetTraffic() const { return impl_->channel.GetTraffic(); }
+
 void Session::ReportReady(std::uint32_t version) {
   const std::shared_ptr<const ServerView> server_view = impl_->inbox.View();
   if (!server_view->lobby.has_value() || server_view->lobby->version != version) {
@@ -207,6 +210,14 @@ void Session::ReportReady(std::uint32_t version) {
   }
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+void Session::SubscribeDebug(std::uint8_t flags) {
+  if (impl_->Send(link::DebugSubscribe{.flags = flags})) {
+    LOG_DEBUG("subsystem=harness event=debug_subscribed flags={:#04x}", flags);
+  }
+}
+#endif
+
 std::vector<Shot> Session::TakeShots(const ServerView& view) { return impl_->inbox.TakeShots(view.matches_started); }
 
 std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& view) {
@@ -215,7 +226,19 @@ std::vector<HitConfirmation> Session::TakeHitConfirmations(const ServerView& vie
 
 std::vector<Death> Session::TakeDeaths(const ServerView& view) { return impl_->inbox.TakeDeaths(view.matches_started); }
 
+#if AUGUSTA_DEBUG_TOOLS
+std::vector<ShotJudgement> Session::TakeShotJudgements(const ServerView& view) {
+  return impl_->inbox.TakeShotJudgements(view.matches_started);
+}
+#endif
+
 tick::Sequence Session::NextSequence() const { return impl_->commands.NextSequence(); }
+
+#if AUGUSTA_DEBUG_TOOLS
+void Session::SetVisualization(const physics::Visualization& visualization) {
+  impl_->commands.SetVisualization(visualization);
+}
+#endif
 
 prediction::State Session::Tick(const command::Command& command, float delta_time) {
   Impl& impl = *impl_;

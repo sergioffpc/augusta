@@ -13,6 +13,13 @@ target_include_directories(augusta_renderer_vulkan_device_choice PUBLIC ${CMAKE_
 target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_math augusta_window_events)
 augusta_set_module_scope(augusta_renderer_vulkan_device_choice CLIENT_ONLY)
 
+# renderer.h, which both of the above reach, names augusta_debug's shapes in a
+# Development build (ADR-0075).
+if(AUGUSTA_DEBUG_TOOLS)
+  target_link_libraries(augusta_renderer_vertices PUBLIC augusta_debug)
+  target_link_libraries(augusta_renderer_vulkan_device_choice PUBLIC augusta_debug)
+endif()
+
 # The files GPU crash dumps are written to (gpu_crash_dump_files.h), apart from
 # Aftermath so it is built and tested on every platform. Public, unlike the two
 # above: the client names the files (client_run.h).
@@ -26,7 +33,6 @@ if(AUGUSTA_CLIENT)
   # compiler below are the manifest's client feature, which AUGUSTA_CLIENT
   # installs.
   find_package(nvrhi CONFIG REQUIRED)
-  find_package(imgui CONFIG REQUIRED)
   find_package(VulkanHeaders CONFIG REQUIRED)
 
   # Its shaders, compiled to SPIR-V at build time and embedded in the renderer
@@ -53,39 +59,12 @@ if(AUGUSTA_CLIENT)
     )
     set(shader_headers ${shader_headers} ${output} PARENT_SCOPE)
   endfunction()
-  augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
-  augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
   augusta_compile_shader(Renderer.3d.slang vsMain vertex kSceneVs)
   augusta_compile_shader(Renderer.3d.slang psMain fragment kScenePs)
   augusta_compile_shader(Effects.3d.slang vsMain vertex kEffectsVs)
   augusta_compile_shader(Effects.3d.slang psMain fragment kEffectsPs)
 
-  # The debug HUD's monospace font (fonts/, with its licence), embedded the same
-  # way, so there is no font file to ship or find.
-  set(font_header ${shader_dir}/debug_hud_font.h)
-  set(font ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Bold.ttf)
-  add_custom_command(
-    OUTPUT ${font_header}
-    COMMAND
-      ${CMAKE_COMMAND} -DINPUT=${font} -DOUTPUT=${font_header} -DNAME=kDebugHudFont -P
-      ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
-    DEPENDS ${font} ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
-    COMMENT "Embedding the debug HUD's font"
-    VERBATIM
-  )
-
-  add_library(
-    augusta_renderer
-    STATIC
-    renderer.cpp
-    vulkan_device.cpp
-    vulkan_swapchain.cpp
-    vulkan_gpu_crash_dumps.cpp
-    debug_hud.cpp
-    imgui_renderer.cpp
-    ${shader_headers}
-    ${font_header}
-  )
+  add_library(augusta_renderer STATIC renderer.cpp vulkan_device.cpp vulkan_swapchain.cpp vulkan_gpu_crash_dumps.cpp)
   target_include_directories(augusta_renderer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${shader_dir})
   # No Vulkan loader is linked: Vulkan is reached through the system's, which
   # the window finds at runtime, so the client ships none (ADR-0059).
@@ -99,7 +78,6 @@ if(AUGUSTA_CLIENT)
       nvrhi
       nvrhi_vk
       Vulkan::Headers
-      imgui::imgui
   )
   # Vulkan-Hpp calls Vulkan through a dispatcher filled in at runtime, as NVRHI
   # does (vulkan_device.cpp). NOMINMAX: on Windows, NVRHI's Vulkan target has
@@ -107,6 +85,45 @@ if(AUGUSTA_CLIENT)
   # std::numeric_limits<>::max().
   target_compile_definitions(augusta_renderer PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1 NOMINMAX)
   augusta_set_module_scope(augusta_renderer CLIENT_ONLY)
+
+  # The debug HUD (debug_hud.h) and the Debug panels (debug_panels_pass.h),
+  # drawn with Dear ImGui, and the Debug overlays' shapes (debug_shapes_pass.h),
+  # the panels and shapes described by augusta_debug, public in renderer.h, in a
+  # Development build only (ADR-0074, ADR-0075): a Shipping build compiles no
+  # HUD, panels or shapes pass, no ImGui or shapes shader, no font and no
+  # augusta_debug.
+  if(AUGUSTA_DEBUG_TOOLS)
+    augusta_compile_shader(DebugShapes.3d.slang vsMain vertex kDebugShapesVs)
+    augusta_compile_shader(DebugShapes.3d.slang psMain fragment kDebugShapesPs)
+    target_sources(augusta_renderer PRIVATE debug_shapes_pass.cpp)
+    target_link_libraries(augusta_renderer PUBLIC augusta_debug)
+
+    find_package(imgui CONFIG REQUIRED)
+    augusta_compile_shader(ImGui.slang vsMain vertex kImGuiVs)
+    augusta_compile_shader(ImGui.slang psMain fragment kImGuiPs)
+
+    # The debug HUD's monospace font (fonts/, with its licence), embedded as the
+    # shaders are, so there is no font file to ship or find.
+    set(font_header ${shader_dir}/debug_hud_font.h)
+    set(font ${CMAKE_CURRENT_SOURCE_DIR}/fonts/JetBrainsMono-Bold.ttf)
+    add_custom_command(
+      OUTPUT ${font_header}
+      COMMAND
+        ${CMAKE_COMMAND} -DINPUT=${font} -DOUTPUT=${font_header} -DNAME=kDebugHudFont -P
+        ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+      DEPENDS ${font} ${CMAKE_SOURCE_DIR}/cmake/EmbedFile.cmake
+      COMMENT "Embedding the debug HUD's font"
+      VERBATIM
+    )
+    list(APPEND shader_headers ${font_header})
+    target_sources(augusta_renderer PRIVATE debug_hud.cpp debug_panels_pass.cpp imgui_renderer.cpp)
+    target_link_libraries(augusta_renderer PRIVATE imgui::imgui)
+
+    # Where a GPU crash dump would land, with Aftermath or without: what the
+    # Profiling Debug panel shows (Renderer::GpuCrashDumps).
+    target_link_libraries(augusta_renderer PRIVATE augusta_renderer_gpu_crash_dump_files)
+  endif()
+  target_sources(augusta_renderer PRIVATE ${shader_headers})
 
   # GPU crash dumps (vulkan_gpu_crash_dumps.h) with Nsight Aftermath when its SDK is
   # found (cmake/Aftermath.cmake), and none without. vcpkg's NVRHI is built

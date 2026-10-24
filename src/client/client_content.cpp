@@ -16,6 +16,10 @@
 #include "augusta/math.h"
 #include "augusta/renderer.h"
 
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hitbox.h"
+#endif
+
 namespace augusta::client {
 
 namespace {
@@ -52,9 +56,25 @@ std::expected<math::Vec3, failure::Failure> LoadEye(const assets::Pack& pack, st
   return *eye;
 }
 
-// Loads a character's mesh and eye from pack by its path, which must be one of
-// the scenario's characters (ADR-0042); pack must outlive it. Fails if the
-// character list does not load.
+#if AUGUSTA_DEBUG_TOOLS
+// The Hitboxes of character from pack, for the Hitboxes Debug overlay, or none
+// with a warning if they do not load: the server refuses such a pack at startup,
+// and a Debug overlay never keeps a character from loading.
+std::vector<hitbox::CharacterHitbox> LoadDebugHitboxes(const assets::Pack& pack, std::string_view character) {
+  auto hitboxes =
+      LoadCharacterHitboxes(character, [&pack](std::string_view name) { return pack.ResolveHitboxes(name); });
+  if (!hitboxes) {
+    LOG_WARN("subsystem=client event=character_hitboxes_skipped character={} reason=\"{}\"", character,
+             DescribeCharacterError(hitboxes.error()));
+    return {};
+  }
+  return *std::move(hitboxes);
+}
+#endif
+
+// Loads a character's mesh and eye, and its Hitboxes in a Development build,
+// from pack by its path, which must be one of the scenario's characters
+// (ADR-0042); pack must outlive it. Fails if the character list does not load.
 std::expected<CharacterLoader, failure::Failure> CharacterLoaderFor(const assets::Pack& pack) {
   auto characters = pack.ResolveCharacters();
   if (!characters) {
@@ -65,8 +85,15 @@ std::expected<CharacterLoader, failure::Failure> CharacterLoaderFor(const assets
     return LoadCharacterMesh(characters, character, [&pack](std::string_view path) { return pack.ResolveMesh(path); })
         .and_then([&](renderer::SceneMesh mesh) {
           return LoadCharacterEye(character, [&pack](std::string_view path) { return pack.ResolveEye(path); })
-              .transform(
-                  [&mesh](const math::Vec3& eye) { return LoadedCharacter{.mesh = std::move(mesh), .eye = eye}; });
+              .transform([&](const math::Vec3& eye) {
+                return LoadedCharacter{
+                    .mesh = std::move(mesh),
+                    .eye = eye,
+#if AUGUSTA_DEBUG_TOOLS
+                    .hitboxes = LoadDebugHitboxes(pack, character),
+#endif
+                };
+              });
         });
   };
 }

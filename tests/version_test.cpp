@@ -2,10 +2,22 @@
 
 #include <regex>
 #include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
 TEST(EngineVersion, IsNotEmpty) { EXPECT_FALSE(augusta::EngineVersion().empty()); }
+
+// A Development build's version carries the SemVer build metadata `+dev` and a
+// Shipping build's none, so the two kinds refuse each other at Join (ADR-0074).
+TEST(EngineVersion, EndsInDevInADevelopmentBuildAndIsBareInAShippingOne) {
+  const std::string_view version = augusta::EngineVersion();
+#if AUGUSTA_DEBUG_TOOLS
+  EXPECT_TRUE(version.ends_with("+dev")) << version;
+#else
+  EXPECT_EQ(version.find('+'), std::string_view::npos) << version;
+#endif
+}
 
 // What matches a dump of the running executable to its symbols: on Windows its
 // PDB's GUID and age, which a Debug build links this test with (a Release one

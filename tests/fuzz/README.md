@@ -22,10 +22,34 @@ libFuzzer targets for what arrives from outside (ADR-0013). Each target is one
 
 The `protocol_decode` seeds are what `Encode` writes for the messages in
 [protocol_decode_seeds_test.cpp](protocol_decode_seeds_test.cpp), which fails
-when they drift from it. After a deliberate change to the wire, rewrite them:
+when they drift from it; those of a Development build's messages are in
+[protocol_decode_seeds_debug.cpp](protocol_decode_seeds_debug.cpp), which only a
+Development build checks and regenerates (ADR-0074). After a deliberate change
+to the wire, rewrite them:
 
 ```bash
 cmake --build --preset linux --target augusta_protocol_decode_seeds
+```
+
+Beside the corpus, never in it, so no replay reads it,
+[protocol_decode_seeds.pcapng](protocol_decode_seeds.pcapng) is what the pcapng
+encoder (`augusta_pcapng`, ADR-0076) writes of those seeds: the fixture of
+`tools/wireshark`'s dissector test. Its Section Header Block's `shb_userappl` is
+`augustad <version>`, the version of the build that wrote it. Then one Enhanced
+Packet Block per file in `corpus/protocol_decode`, in name order, so the nth
+packet is the seed whose name is the nth in that order and the `augusta.Message`
+`oneof` member of that name. Every packet goes between `10.0.0.1:27015` (local)
+and `10.0.0.2:50000` (remote), 2026-10-09T12:00:00Z plus n milliseconds, and the
+nth (from 0) is outbound (`10.0.0.1` to `10.0.0.2`) when n is even and inbound
+(`10.0.0.2` to `10.0.0.1`) when it is odd.
+[protocol_decode_seeds_pcapng_test.cpp](protocol_decode_seeds_pcapng_test.cpp),
+built only with `AUGUSTA_DEBUG_TOOLS` on, fails when the fixture drifts from the
+seeds, the encoder or the engine's version (a Development build's, `+dev`).
+After rewriting the seeds, a deliberate change to the encoder, or a version
+bump, rewrite it with this build's version:
+
+```bash
+cmake --build --preset linux --target augusta_protocol_decode_seeds_pcapng
 ```
 
 The `capture_read` seed is what a `Capturer` writes for the short Match in

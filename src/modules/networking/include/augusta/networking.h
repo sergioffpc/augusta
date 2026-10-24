@@ -8,6 +8,12 @@
 #include <optional>
 #include <string>
 #include <vector>
+#if AUGUSTA_DEBUG_TOOLS
+#include <array>
+#include <chrono>
+#include <span>
+#include <variant>
+#endif
 
 #include "augusta/failure.h"
 #include "augusta/faults.h"
@@ -75,39 +81,55 @@ enum class Reliability {
   kUnreliable,
 };
 
-/// Network conditions to impose on the real transport, for tests (e.g. NFR-02's 100 ms).
+/// Which of a process's packets SimulatedConditions' latency, jitter, loss and reorder reach.
+enum class SimulatedTraffic : std::uint8_t {
+  /// What the process sends only.
+  kSent,
+  /// What it sends, and again what it receives: each condition applies once
+  /// each way, so a latency of 50 ms adds about 100 ms to a round trip with a
+  /// peer elsewhere.
+  kSentAndReceived,
+};
+
+/// Network conditions to impose on the real transport: for tests (e.g. NFR-02's
+/// 100 ms), and for a developer impairing their own client's link.
 struct SimulatedConditions {
-  /// Extra delay on every packet this process sends, in milliseconds.
+  /// Extra delay on every packet the conditions reach (applies_to), in milliseconds.
   int latency_ms = 0;
-  /// A random delay added on top of latency_ms to every packet this process
-  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// A random delay added on top of latency_ms to every packet the conditions
+  /// reach, drawn from an exponential distribution of this mean and capped at
   /// jitter_max_ms, in milliseconds; 0 adds none. A packet is never let overtake
   /// one sent before it, so jitter alone clumps packets but keeps their order.
   int jitter_mean_ms = 0;
   int jitter_max_ms = 0;
-  /// Share of packets this process sends that are dropped, 0..100.
+  /// Share of packets the conditions reach that are dropped, 0..100.
   float loss_percent = 0.0F;
-  /// Share of packets this process sends that are held back a further
-  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  /// Share of packets the conditions reach that are held back a further
+  /// reorder_delay_ms, 0..100, so that those behind them overtake them. The
+  /// transport has one reorder delay for both ways.
   float reorder_percent = 0.0F;
   int reorder_delay_ms = 0;
   /// How long a connection may hear nothing from its peer before it counts as
   /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
   /// transport's own default (about 10 seconds), which is too long for a test
   /// to wait. Unlike the other conditions it only reaches connections made
-  /// after it is set, so set it before connecting.
+  /// after it is set, so set it before connecting. Whatever applies_to says, it
+  /// is one timeout for the connection.
   int timeout_ms = 0;
+  /// Which packets the conditions above reach: by default only those the process sends.
+  SimulatedTraffic applies_to = SimulatedTraffic::kSent;
 };
 
 /// Applies conditions to every connection in the process from now on; a default-constructed one restores the real
 /// network.
 /// Process-wide, not per Client/Server, and applied at the packet level: the
 /// latency is one-way, so two peers in the same process see a round trip of
-/// about twice latency_ms, and loss drops whole packets (several small
-/// messages can share one), which reliable messages survive by retransmission
-/// and unreliable ones do not. Needs Init() to have run. Meant for tests: call
-/// it after the connection is established (the handshake is subject to it
-/// too) and reset it before the next test.
+/// about twice latency_ms (four times, with kSentAndReceived), and loss drops
+/// whole packets (several small messages can share one), which reliable
+/// messages survive by retransmission and unreliable ones do not. Needs Init()
+/// to have run. A test calls it after the connection is established (the
+/// handshake is subject to it too) and resets it before the next test; a
+/// client with its one connection makes it that connection's.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
 
 /// What the local transport did with a message it did not fail on.
@@ -138,6 +160,72 @@ struct Endpoint {
 /// One received message's raw bytes, copied out of the transport's own
 /// buffer so callers don't have to reason about its lifetime.
 using Payload = std::vector<std::byte>;
+
+#if AUGUSTA_DEBUG_TOOLS
+inline constexpr std::size_t kIpv4AddressBytes = 4;
+inline constexpr std::size_t kIpv6AddressBytes = 16;
+/// An IPv4 address's bytes, in network order (192.168.1.10 is {192, 168, 1, 10}).
+using Ipv4Address = std::array<std::uint8_t, kIpv4AddressBytes>;
+/// An IPv6 address's bytes, in network order.
+using Ipv6Address = std::array<std::uint8_t, kIpv6AddressBytes>;
+
+/// One end of a tapped message: an address and a port, as values rather than
+/// Endpoint's "host:port" text. A default one is unspecified: IPv4 0.0.0.0, port 0.
+struct TapEndpoint {
+  std::variant<Ipv4Address, Ipv6Address> address;
+  /// In host order.
+  std::uint16_t port = 0;
+
+  bool operator==(const TapEndpoint&) const = default;
+};
+
+/// The unspecified address in endpoint's family, port 0: 0.0.0.0 for an IPv4
+/// endpoint, :: for an IPv6 one. A Client's local end, which the transport
+/// does not give, so a pcapng never pairs an IPv4 end with an IPv6 one.
+TapEndpoint UnspecifiedEndpointLike(const TapEndpoint& endpoint);
+
+/// Which way a tapped message went, from this process's side.
+enum class TapDirection : std::uint8_t {
+  /// Received from the remote end.
+  kInbound,
+  /// Sent to the remote end.
+  kOutbound,
+};
+
+/// One message a Client or Server reports to its Tap.
+struct TappedMessage {
+  TapDirection direction;
+  /// A Server's listen address and port; for a Client, since the transport
+  /// does not give a connection's local address, UnspecifiedEndpointLike(remote).
+  TapEndpoint local;
+  TapEndpoint remote;
+  /// The message's bytes, valid only during the Tap::Report call.
+  std::span<const std::byte> payload;
+  /// When the transport took the message to send, or handed it over received.
+  std::chrono::system_clock::time_point time;
+};
+
+/// What a Client or Server reports every message it moves to, in a Development
+/// build only (ADR-0074): each send the transport accepted (kAccepted, never a
+/// dropped or failed one), and each message received, as it is taken off the
+/// transport and before anyone decodes it. Report is called on whichever
+/// thread sends or receives, the Network I/O thread or a tick's, often with
+/// the transport's own lock held, so it must not block: an implementation
+/// that writes somewhere slow only enqueues. What is done with the messages (such
+/// as a pcapng file) is the tap's, not this module's.
+class Tap {
+ public:
+  virtual ~Tap() = default;
+  virtual void Report(const TappedMessage& message) = 0;
+
+ protected:
+  Tap() = default;
+  Tap(const Tap&) = default;
+  Tap& operator=(const Tap&) = default;
+  Tap(Tap&&) = default;
+  Tap& operator=(Tap&&) = default;
+};
+#endif
 
 // ---- Client ----
 
@@ -195,6 +283,11 @@ class Client {
   /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
   /// Client.
   explicit Client(failure::Faults* faults = nullptr);
+#if AUGUSTA_DEBUG_TOOLS
+  /// As above, reporting every message to tap when it is not null; tap must
+  /// outlive the Client.
+  Client(failure::Faults* faults, Tap* tap);
+#endif
 
   /// Closes the connection, if any, and releases the underlying
   /// transport connection.
@@ -313,6 +406,11 @@ class Server {
   /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
   /// must outlive the Server.
   explicit Server(const Endpoint& local_endpoint, failure::Faults* faults = nullptr);
+#if AUGUSTA_DEBUG_TOOLS
+  /// As above, reporting every message to tap when it is not null; tap must
+  /// outlive the Server.
+  Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap);
+#endif
 
   /// Closes the listen socket and every connected peer's connection.
   ~Server();

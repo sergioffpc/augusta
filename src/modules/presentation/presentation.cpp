@@ -134,6 +134,7 @@ struct World::Impl {
   std::optional<tick::Tick> last_recorded_tick;
   std::vector<RemotePlayer> remote_players;
   std::optional<SeenTime> seen_time;
+  std::optional<double> interpolation_slack;
   // The bodies of the match in progress whose Death has arrived: shown no
   // more, whatever update still lists them.
   std::vector<EntityId> dead;
@@ -212,6 +213,7 @@ struct World::Impl {
     for (RemotePlayer& remote : remote_players) {
       remote.character = CharacterOf(remote.entity);
     }
+    interpolation_slack = remote_players.empty() ? std::nullopt : server_clock.Slack();
     ShowShots(delta_time);
   }
 
@@ -364,6 +366,7 @@ struct World::Impl {
     // Sampled anew each frame (OnInterpolation), so handed over, not copied.
     frame_state.remote_players = std::move(remote_players);
     frame_state.seen_time = seen_time;
+    frame_state.interpolation_slack = interpolation_slack;
     frame_state.tracers = tracers.Drawn();
     frame_state.impacts.assign(tracers.Impacts().begin(), tracers.Impacts().end());
     frame_state.muzzle_flashes = muzzle_flashes;
@@ -383,12 +386,10 @@ std::expected<void, physics::CollisionMeshError> World::AddCollisionMesh(const p
   return impl_->map.AddCollisionMesh(mesh, kMapSurface);
 }
 
+const physics::World& World::Map() const { return impl_->map; }
+
 void World::SetParameters(const parameters::Parameters& parameters, float tick_duration) {
-  impl_->tracer_rules = TracerRules{
-      .muzzle_velocity = parameters.rifle.muzzle_velocity,
-      .bullet = parameters.ammo.flight,
-      .tick_duration = tick_duration,
-  };
+  impl_->tracer_rules = TracerRulesOf(parameters, tick_duration);
   impl_->ads_field_of_view = parameters.rifle.ads_field_of_view;
 }
 

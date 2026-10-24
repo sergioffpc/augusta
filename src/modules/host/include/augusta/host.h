@@ -73,13 +73,25 @@ struct HostConfig {
   CaptureMode capture_mode = CaptureMode::kOptional;
   /// What that directory is kept within, oldest capture first; off by default.
   CaptureRetention capture_retention{};
+#if AUGUSTA_DEBUG_TOOLS
   /// Whether a Captured player's Reenact request is admitted, at the spawn it
-  /// names (ADR-0050); without it each is refused. Never for a server open to players.
+  /// names (ADR-0050); without it each is refused. Never for a server open to
+  /// players; a Shipping build refuses every one (ADR-0074).
   bool reenactments = false;
-  /// For a test: asked at listener setup, at every send and receive
-  /// (augusta/link.h) and at the capture's write and flush, so the transport or
-  /// the disk fails there; null otherwise. Must outlive the Host.
+  /// Whether the Shot judgements stream is served (`debug.shot_judgements`,
+  /// ADR-0038): sent to a peer whose last Debug subscribe sets its bit. Off, a
+  /// peer that sets the bit is told nothing, and the server logs it once.
+  bool shot_judgements = false;
+#endif
+  /// For a test: asked at the capture's write and flush, so the disk fails
+  /// there; null otherwise. Must outlive the Host.
   failure::Faults* faults = nullptr;
+  /// What the listening socket's transport is built with (augusta/link.h): for
+  /// a test, the faults asked at listener setup and at every send and receive,
+  /// so the transport fails there; in a Development build, the tap, such as
+  /// the pcapng writer, reported every message it sends to and receives from
+  /// every peer (ADR-0076). Each null by default; each must outlive the Host.
+  link::TransportOptions transport{};
 };
 
 /// The server's listening socket and its SimulationWorld, without threads or a clock.

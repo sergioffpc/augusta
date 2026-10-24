@@ -26,6 +26,31 @@ namespace {
 // defaults for the controls it leaves out.
 constexpr std::string_view kKeysSection = "input.keys";
 
+// Every scalar key augustac.yaml may hold.
+constexpr auto kKeys = std::to_array<std::string_view>({
+    "base_dir",
+    "content.pack",
+    "content.public_key",
+    "player.character",
+    "network.server_address",
+    "logging.level",
+    "input.mouse_sensitivity",
+#if AUGUSTA_DEBUG_TOOLS
+    // The debug tools' keys, in a Development build only (ADR-0074): a
+    // Shipping build refuses them as unknown.
+    "debug.hud",
+    "debug.profiling.panel",
+    "debug.network.panel",
+    "debug.physics.panel",
+    "debug.physics.collision",
+    "debug.physics.server_bodies",
+    "debug.physics.hitboxes",
+    "debug.physics.shot_judgements",
+    "debug.physics_recording",
+    "debug.network.pcapng",
+#endif
+});
+
 // Every control's name, comma-separated, for an entry that names none of them.
 std::string ControlNames() {
   std::string names;
@@ -48,8 +73,8 @@ std::expected<float, ConfigError> OptionalPositiveNumber(const ConfigValues& val
 }
 
 // Decision: the keymap the `input.keys` entries of values (control name -> key
-// name) make of the defaults. Each control keeps a key of its own, never the
-// one that releases the cursor; errors name the entry ("input.keys.<control>").
+// name) make of the defaults. Each control keeps a key of its own, never a
+// reserved one; errors name the entry ("input.keys.<control>").
 std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values) {
   const std::string prefix = std::format("{}.", kKeysSection);
   auto bindings = values | std::views::filter([&](const auto& value) { return value.first.starts_with(prefix); });
@@ -61,10 +86,13 @@ std::expected<input::Keymap, ConfigError> ParseKeymap(const ConfigValues& values
     }
     const auto key = input::KeyNamed(key_name);
     if (!key) {
-      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F1 or MouseRight");
+      return Reject(path, "must name a key, e.g. W, LeftShift, Space, F2 or MouseRight");
     }
     if (*key == input::kReleaseCursorKey) {
       return Reject(path, std::format("can't use {}: it releases the cursor", input::NameOf(input::kReleaseCursorKey)));
+    }
+    if (*key == input::kReservedKey) {
+      return Reject(path, std::format("can't use {}: it is reserved", input::NameOf(input::kReservedKey)));
     }
     keymap.at(static_cast<std::size_t>(*control)) = *key;
   }
@@ -89,19 +117,74 @@ std::expected<input::Config, ConfigError> ParseInputConfig(const ConfigValues& v
   return input::Config{.mouse_sensitivity = *sensitivity, .keymap = *keymap};
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// The `debug.physics` section: the Physics panel and which of its overlays start on.
+std::expected<ClientPhysicsDebugConfig, ConfigError> ParsePhysicsDebugConfig(const ConfigValues& values) {
+  const auto panel = OptionalFlag(values, "debug.physics.panel", false);
+  if (!panel) {
+    return std::unexpected(panel.error());
+  }
+  const auto collision = OptionalFlag(values, "debug.physics.collision", false);
+  if (!collision) {
+    return std::unexpected(collision.error());
+  }
+  const auto server_bodies = OptionalFlag(values, "debug.physics.server_bodies", false);
+  if (!server_bodies) {
+    return std::unexpected(server_bodies.error());
+  }
+  const auto hitboxes = OptionalFlag(values, "debug.physics.hitboxes", false);
+  if (!hitboxes) {
+    return std::unexpected(hitboxes.error());
+  }
+  return OptionalFlag(values, "debug.physics.shot_judgements", false).transform([&](bool shot_judgements) {
+    return ClientPhysicsDebugConfig{.panel = *panel,
+                                    .collision = *collision,
+                                    .server_bodies = *server_bodies,
+                                    .hitboxes = *hitboxes,
+                                    .shot_judgements = shot_judgements};
+  });
+}
+
+// The `debug` section (ADR-0074): which debug tools start on, and where the
+// pcapng goes, relative to root.
+std::expected<ClientDebugConfig, ConfigError> ParseDebugConfig(const ConfigValues& values,
+                                                               const std::filesystem::path& root) {
+  const auto hud = OptionalFlag(values, "debug.hud", true);
+  if (!hud) {
+    return std::unexpected(hud.error());
+  }
+  const auto profiling_panel = OptionalFlag(values, "debug.profiling.panel", false);
+  if (!profiling_panel) {
+    return std::unexpected(profiling_panel.error());
+  }
+  const auto network_panel = OptionalFlag(values, "debug.network.panel", false);
+  if (!network_panel) {
+    return std::unexpected(network_panel.error());
+  }
+  const auto physics = ParsePhysicsDebugConfig(values);
+  if (!physics) {
+    return std::unexpected(physics.error());
+  }
+  const auto physics_recording = OptionalFlag(values, "debug.physics_recording", false);
+  if (!physics_recording) {
+    return std::unexpected(physics_recording.error());
+  }
+  return OptionalWritableDirectory(values, "debug.network.pcapng", root)
+      .transform([&](std::filesystem::path network_pcapng) {
+        return ClientDebugConfig{.hud = *hud,
+                                 .profiling_panel = *profiling_panel,
+                                 .physics = *physics,
+                                 .physics_recording = *physics_recording,
+                                 .network_panel = *network_panel,
+                                 .network_pcapng = std::move(network_pcapng)};
+      });
+}
+#endif
+
 }  // namespace
 
 std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml_text,
                                                            const std::filesystem::path& base_dir) {
-  static constexpr std::array<std::string_view, 7> kKeys{
-      "base_dir",
-      "content.pack",
-      "content.public_key",
-      "player.character",
-      "network.server_address",
-      "logging.level",
-      "input.mouse_sensitivity",
-  };
   static constexpr std::array<std::string_view, 1> kOpenSections{kKeysSection};
   const auto values = ReadConfigValues(yaml_text, ConfigSchema{.keys = kKeys, .open_sections = kOpenSections});
   if (!values) {
@@ -133,6 +216,12 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
   if (!input) {
     return std::unexpected(input.error());
   }
+#if AUGUSTA_DEBUG_TOOLS
+  const auto debug = ParseDebugConfig(*values, *root);
+  if (!debug) {
+    return std::unexpected(debug.error());
+  }
+#endif
   return ClientConfig{
       .pack_path = *std::move(pack_path),
       .public_key_path = *std::move(public_key_path),
@@ -140,6 +229,9 @@ std::expected<ClientConfig, ConfigError> ParseClientConfig(std::string_view yaml
       .server_address = OptionalString(*values, "network.server_address", kDefaultServerAddress),
       .log_level = *std::move(log_level),
       .input = *input,
+#if AUGUSTA_DEBUG_TOOLS
+      .debug = *debug,
+#endif
   };
 }
 

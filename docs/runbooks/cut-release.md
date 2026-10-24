@@ -90,12 +90,21 @@ cut that release first and the hotfix off it.
     git switch -c release/vX.Y.Z origin/develop
     ```
 
-3. Bump the version in its three places, then commit:
+3. Bump the version in its three places, rewrite the fixture that names it, then
+   commit:
 
-    - `src/modules/version/version.cpp`: `EngineVersion()` returns `"X.Y.Z"`.
-      Join refuses a client of another engine version (ADR-0038).
+    - `src/modules/version/version.cpp`: `EngineVersion()`'s release is
+      `"X.Y.Z"`, which a Development build returns with `+dev` appended
+      (ADR-0074). Join refuses a client of another engine version (ADR-0038).
     - `vcpkg.json`: `"version": "X.Y.Z"`.
     - `charts/augustad/Chart.yaml`: `version: X.Y.Z` and `appVersion: "X.Y.Z"`.
+
+    Then rewrite the dissector's fixture, which names the engine version
+    (`tests/fuzz/README.md`), with a Development build of the bump:
+
+    ```sh
+    cmake --build --preset linux --target augusta_protocol_decode_seeds_pcapng
+    ```
 
     ```sh
     git commit -am "chore(release): bump the engine, manifest and chart to X.Y.Z"
@@ -194,15 +203,17 @@ cut that release first and the hotfix off it.
     once its image is published.
 
 9. Watch the workflow. Its `client-x64-windows`, `client-x64-linux` and `server`
-   jobs rebuild and test the Release binaries, and `client-x64-windows` and
-   `client-x64-linux` check the zip and the tarball start from an empty folder
-   (ADR-0058). Once the three build jobs pass, its `nightly` job runs every
-   nightly job on the tagged commit (ADR-0013), the scan of the SBOMs just built
-   among them. `publish` creates the GitHub Release only if all of them pass.
-   Plan for the builds' time and then a night's on top, over an hour in all: the
-   fuzzing alone takes 30 minutes per target, the targets side by side. A
-   failing nightly job here fails the run and opens no `nightly-failure` issue;
-   the run is where it shows:
+   jobs rebuild and test the binaries as Shipping builds, with the shipping
+   presets (ADR-0074), and `client-x64-windows` and `client-x64-linux` check the
+   zip and the tarball start from an empty folder and print the tag's version
+   exactly, so a `+dev` client fails the run (ADR-0058). Once the three build
+   jobs pass, its `nightly` job runs every nightly job on the tagged commit
+   (ADR-0013), the scan of the SBOMs just built among them. `publish` creates
+   the GitHub Release only if all of them pass. Plan for the builds' time and
+   then a night's on top, over an hour in all: the fuzzing alone takes 30
+   minutes per target, the targets side by side. A failing nightly job here
+   fails the run and opens no `nightly-failure` issue; the run is where it
+   shows:
 
     ```sh
     gh run list --workflow release.yml --limit 1

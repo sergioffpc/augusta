@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breakable Voxels</title>
+<!--
+  PROTOTYPE - throwaway, never built or shipped. Open it in a browser.
+  Answers: can a Breakable Prop hold voxels, so a round or an Explosion carves it
+  where it lands and connectivity decides which pieces fall, while the Map stays
+  fixed (ADR-0071)?
+  The <script id="breakable-voxels"> block is pure and is the part worth lifting;
+  the page around it is not.
+-->
+<style>
+  :root {
+    --bg: #f5f4f0; --panel: #ffffff; --ink: #1c1c1f; --muted: #6a6a70;
+    --line: #e1dfd8; --accent: #2b67d1; --accent-soft: #e6eefb;
+    --bad: #b3401a; --bad-soft: #fbece6; --ok: #2f7a3e;
+    --btn: #ffffff; --code: #f0eee8;
+    --range: #fbfaf7; --prop: #efece4; --voxel: #78706a; --worn: #cdc4b2;
+    --heat-lo: #e1ecfa; --debris: #9a9a9f;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --prop: #26282d; --voxel: #b5ab98; --worn: #57524a;
+    --heat-lo: #24324d; --debris: #6e6e75;
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #17181b; --panel: #202226; --ink: #ecebe7; --muted: #a2a2a8; --line: #34363c;
+    --accent: #6d9bf0; --accent-soft: #24324d; --bad: #f08a62; --bad-soft: #3d2620; --ok: #6cc47e;
+    --btn: #2a2c31; --code: #2c2e33;
+    --range: #1c1d21; --prop: #26282d; --voxel: #b5ab98; --worn: #57524a;
+    --heat-lo: #24324d; --debris: #6e6e75;
+    color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1480px; margin: 0 auto; padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .layout > div { min-width: 0; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  h3 { font-size: 14px; margin: 14px 0 6px; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--muted); max-width: 980px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    background: var(--bad-soft); color: var(--bad); padding: 2px 8px; border-radius: 99px;
+    margin-bottom: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 16px;
+    margin-top: 16px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px; }
+  #wallWrap { width: 100%; display: flex; justify-content: center; }
+  canvas#wall { display: block; max-width: 100%; border-radius: 6px; cursor: crosshair; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--btn); color: var(--ink);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.done { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--muted); }
+  button.next { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=number] { width: 80px; font: inherit; padding: 3px 6px; background: var(--btn); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; }
+  select { font: inherit; padding: 3px 6px; background: var(--btn); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 5px; }
+  label.radio { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+    vertical-align: -2px; margin-right: 4px; border: 1px solid var(--line); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .changed { background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; }
+  .bad { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
+  .params label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .watch { color: var(--muted); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  ul.assume { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  ul.pieces { margin: 4px 0 0; padding-left: 18px; }
+  code { font-size: 12px; background: var(--code); overflow-wrap: anywhere; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">PROTOTYPE · THROWAWAY</span>
+  <h1>A Breakable Prop made of voxels</h1>
+  <p class="lede">
+    ADR-0071 keeps the Map fixed and breaks Breakable Props instead, each authored already broken
+    into pieces. What if a Breakable Prop — a wall placed in the Map — held a grid of voxels
+    instead? A round or an Explosion carves out the voxels it destroys, and the voxels no longer
+    held up fall as pieces: large ones as Props the server spawns, small ones as Cosmetic debris.
+    Does that give walls that open where they are hit, with few enough pieces and cheap enough
+    rebuilds, and which rules decide what still stands? Click the wall to fire a round or set off
+    an Explosion; the wall is seen from the front.
+  </p>
+  <details>
+    <summary>What this prototype assumes that no spec fixes</summary>
+    <ul class="assume">
+      <li>The Prop is 4 m wide, 3 m high and 0.25 m thick, on a 0.125 m grid seen from the front: 32 × 24 voxels, each the Prop's full thickness. A round or an Explosion destroys a voxel through its whole thickness.</li>
+      <li>A round puts half the energy it lost in the Prop into the voxel it strikes and an eighth into each of the four beside it; a round that strikes a hole passes through and loses nothing.</li>
+      <li>An Explosion's damage falls linearly from its centre to zero at its radius, and nothing shields a voxel from it.</li>
+      <li>An anchored edge is where the Prop meets the Map (floor, ceiling or a wall): a voxel on it is held by the Map.</li>
+      <li><b>Connectivity</b> always applies: a voxel with no path of voxels to an anchored edge falls.</li>
+      <li><b>Overhang</b> (experiment): a voxel held only by a path that goes sideways more than the limit falls; going up or down costs nothing.</li>
+      <li><b>Load</b> (experiment): each held voxel passes its weight to the voxel that holds it, along one chosen path; a voxel carrying more than the limit is crushed and what it held falls or finds another path.</li>
+      <li>The fall is only the page's: each piece is a rigid body in the wall's plane that tumbles off the floor and what is left of the Prop, but passes through other pieces and cannot fall out of the plane. In the game a piece is a Prop the server's physics moves (ADR-0045).</li>
+      <li>Every rule is deterministic, so each client can repeat a hit and get the same wall; the numbers are stand-ins for Parameters (ADR-0039).</li>
+    </ul>
+  </details>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="row">
+          <span>Click to:</span>
+          <label class="radio"><input type="radio" name="tool" value="round" checked> fire a round</label>
+          <label class="radio"><input type="radio" name="tool" value="explosion"> set off an Explosion</label>
+          <label class="radio"><input type="checkbox" id="slow" checked> slow motion (¼ speed)</label>
+        </div>
+        <div id="wallWrap"><canvas id="wall"></canvas></div>
+        <div class="row">
+          <span>Show:</span>
+          <label class="radio"><input type="radio" name="view" value="integrity" checked> Integrity left</label>
+          <label class="radio"><input type="radio" name="view" value="span"> Sideways distance to an anchor</label>
+          <label class="radio"><input type="radio" name="view" value="load"> Load carried</label>
+        </div>
+        <div class="row">
+          <button id="reset">New Prop</button>
+          <button id="undo">Undo</button>
+          <button id="recheck">Check again what holds</button>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+
+      <div class="card">
+        <h2>The Prop and its rules</h2>
+        <div class="params" id="params"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" id="state"></div>
+      <div class="card" id="hover"><h2>Voxel under the pointer</h2><p class="watch">Point at the wall.</p></div>
+    </div>
+  </div>
+</main>
+
+<script id="breakable-voxels">
+// Pure: no DOM. A Breakable Prop's voxel grid, the hits that carve it, and the
+// rules that decide which voxels still stand. Every function returns new values.
+const BreakableVoxels = (() => {
+  const W = 32, H = 24, VOXEL_M = 0.125, THICKNESS_M = 0.25;
+  const VOXEL_M3 = VOXEL_M * VOXEL_M * THICKNESS_M;
+
+  // Stand-ins for a Surface material's Parameters.
+  const MATERIALS = {
+    concrete: { name: 'Concrete', integrity: 400, overhang: 12, load: 96,  density: 2400 },
+    wood:     { name: 'Wood',     integrity: 200, overhang: 20, load: 120, density: 600 },
+    drywall:  { name: 'Drywall',  integrity: 60,  overhang: 6,  load: 72,  density: 700 },
+  };
+
+  const SHAPES = {
+    wall:   { name: 'Plain wall', solid: () => true },
+    door:   { name: 'Wall with a doorway', solid: (x, y) => !(x >= 12 && x <= 19 && y <= 16) },
+    window: { name: 'Wall with a window', solid: (x, y) => !(x >= 10 && x <= 21 && y >= 9 && y <= 16) },
+    column: { name: 'Column', solid: (x) => x >= 13 && x <= 18 },
+  };
+
+  const idx = (x, y) => y * W + x;
+  const xOf = (i) => i % W;
+  const yOf = (i) => Math.floor(i / W);
+  const inside = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
+
+  // rules: { overhang: voxels or 0 for off, load: voxels or 0 for off,
+  //          minPropVoxels, maxProps }
+  function create(shape, material, anchors, rules) {
+    const solid = new Uint8Array(W * H), hp = new Float64Array(W * H);
+    const full = MATERIALS[material].integrity;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (SHAPES[shape].solid(x, y)) { solid[idx(x, y)] = 1; hp[idx(x, y)] = full; }
+    }
+    const prop = { shape, material, anchors: { ...anchors }, rules: { ...rules }, solid, hp,
+      startVoxels: 0 };
+    prop.startVoxels = count(solid);
+    // A fresh Prop settles once, so an authored shape that cannot stand shows it.
+    return resolve(prop, [], { kind: 'settle' });
+  }
+
+  function count(solid) { let n = 0; for (const s of solid) n += s; return n; }
+
+  function isAnchor(prop, x, y) {
+    const a = prop.anchors;
+    return (a.floor && y === 0) || (a.ceiling && y === H - 1) ||
+           (a.left && x === 0) || (a.right && x === W - 1);
+  }
+
+  // 0-1 search from the anchored voxels: up or down costs 0, sideways costs 1.
+  // Returns the sideways cost of each voxel's cheapest path, the voxel it came
+  // from, and the order voxels were settled in (every parent before its child).
+  function supportSearch(prop, solid) {
+    const cost = new Int32Array(W * H).fill(-1), parent = new Int32Array(W * H).fill(-1);
+    const best = new Int32Array(W * H).fill(1 << 30), done = new Uint8Array(W * H);
+    const order = [], dq = [];
+    let head = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (solid[i] && isAnchor(prop, xOf(i), yOf(i))) { best[i] = 0; dq.push(i); }
+    }
+    // A deque as an array with a moving head; pushFront goes to a side buffer
+    // drained first, which keeps the 0-1 order.
+    const front = [];
+    while (front.length || head < dq.length) {
+      const i = front.length ? front.pop() : dq[head++];
+      if (done[i]) continue;
+      done[i] = 1; cost[i] = best[i]; order.push(i);
+      const x = xOf(i), y = yOf(i);
+      for (const [dx, dy, c] of [[0, 1, 0], [0, -1, 0], [1, 0, 1], [-1, 0, 1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const n = idx(nx, ny);
+        if (!solid[n] || done[n] || best[i] + c >= best[n]) continue;
+        best[n] = best[i] + c; parent[n] = i;
+        if (c === 0) front.push(n); else dq.push(n);
+      }
+    }
+    return { cost, parent, order };
+  }
+
+  // Steps from the nearest anchored voxel through voxels, any direction alike.
+  function stepsToAnchor(prop, solid) {
+    const steps = new Int32Array(W * H).fill(1 << 30), q = [];
+    for (let i = 0; i < W * H; i++) {
+      if (solid[i] && isAnchor(prop, xOf(i), yOf(i))) { steps[i] = 0; q.push(i); }
+    }
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k], x = xOf(i), y = yOf(i);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!inside(x + dx, y + dy)) continue;
+        const n = idx(x + dx, y + dy);
+        if (solid[n] && steps[n] > steps[i] + 1) { steps[n] = steps[i] + 1; q.push(n); }
+      }
+    }
+    return steps;
+  }
+
+  // Which voxels stand, crushing overloaded ones until the load rule holds.
+  function stand(prop, solid) {
+    const crushed = [];
+    for (;;) {
+      const { cost, parent, order } = supportSearch(prop, solid);
+      const held = new Uint8Array(W * H);
+      for (const i of order) {
+        held[i] = prop.rules.overhang === 0 || cost[i] <= prop.rules.overhang ? 1 : 0;
+        if (held[i] && parent[i] >= 0 && !held[parent[i]]) held[i] = 0;
+      }
+      // A held voxel's weight, and all it carries, is shared evenly by the held
+      // voxels beside it nearer an anchor: less sideways, then fewer steps. An
+      // anchored voxel passes its load to the Map.
+      const steps = stepsToAnchor(prop, solid);
+      const nearer = (n, i) => cost[n] < cost[i] || (cost[n] === cost[i] && steps[n] < steps[i]);
+      const holders = (i) => {
+        const x = xOf(i), y = yOf(i), out = [];
+        if (isAnchor(prop, x, y)) return out;
+        for (const [dx, dy] of [[0, -1], [0, 1], [1, 0], [-1, 0]]) {
+          if (!inside(x + dx, y + dy)) continue;
+          const n = idx(x + dx, y + dy);
+          if (held[n] && nearer(n, i)) out.push(n);
+        }
+        return out;
+      };
+      const byDistance = order.filter((i) => held[i])
+        .sort((a, b) => cost[a] - cost[b] || steps[a] - steps[b] || a - b);
+      const load = new Float64Array(W * H);
+      for (let k = byDistance.length - 1; k >= 0; k--) {
+        const i = byDistance[k];
+        load[i] += 1;
+        const hs = holders(i);
+        for (const n of hs) load[n] += load[i] / hs.length;
+      }
+      if (prop.rules.load > 0) {
+        // Crush the highest overloaded voxels, where the load gathers: those
+        // that hold no overloaded voxel.
+        const over = (i) => held[i] && load[i] > prop.rules.load;
+        const holdsOver = new Uint8Array(W * H);
+        for (const j of byDistance) if (over(j)) for (const n of holders(j)) holdsOver[n] = 1;
+        const crush = byDistance.filter((i) => over(i) && !holdsOver[i]);
+        if (crush.length) {
+          for (const i of crush) { solid[i] = 0; crushed.push(i); }
+          continue;
+        }
+      }
+      return { held, cost, load, crushed };
+    }
+  }
+
+  // 4-connected groups of the given voxels, largest first, ties to the lowest index.
+  function groups(mask) {
+    const seen = new Uint8Array(W * H), out = [];
+    for (let i = 0; i < W * H; i++) {
+      if (!mask[i] || seen[i]) continue;
+      const g = [i]; seen[i] = 1;
+      for (let k = 0; k < g.length; k++) {
+        const x = xOf(g[k]), y = yOf(g[k]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (!inside(nx, ny)) continue;
+          const n = idx(nx, ny);
+          if (mask[n] && !seen[n]) { seen[n] = 1; g.push(n); }
+        }
+      }
+      out.push(g.sort((a, b) => a - b));
+    }
+    return out.sort((a, b) => b.length - a.length || a[0] - b[0]);
+  }
+
+  // Applies damage [{i, amount}] then the rules. Returns the new Prop and what
+  // happened: voxels carved, crushed, and the pieces that fell.
+  function resolve(prop, damage, event) {
+    const solid = prop.solid.slice(), hp = prop.hp.slice();
+    const carved = [];
+    for (const { i, amount } of damage) {
+      if (!solid[i]) continue;
+      hp[i] -= amount;
+      if (hp[i] <= 0) { solid[i] = 0; hp[i] = 0; carved.push(i); }
+    }
+    const { held, crushed } = stand(prop, solid);
+    const loose = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) if (solid[i] && !held[i]) loose[i] = 1;
+    const pieces = groups(loose).map((voxels) => ({ voxels, kind: 'cosmetic', demoted: false }));
+    let props = 0;
+    for (const p of pieces) {
+      if (p.voxels.length < prop.rules.minPropVoxels) continue;
+      if (props < prop.rules.maxProps) { p.kind = 'prop'; props++; } else p.demoted = true;
+    }
+    for (const p of pieces) for (const i of p.voxels) { solid[i] = 0; hp[i] = 0; }
+    for (const i of crushed) hp[i] = 0;
+    const next = { ...prop, solid, hp };
+    return { prop: next, report: { event, carved: [...new Set(carved)], crushed, pieces,
+      before: measure(prop), after: measure(next) } };
+  }
+
+  function round(prop, x, y, energy) {
+    const i = idx(x, y);
+    if (!prop.solid[i]) {
+      return { prop, report: { event: { kind: 'round', x, y, energy, through: true }, carved: [],
+        crushed: [], pieces: [], before: measure(prop), after: measure(prop) } };
+    }
+    const damage = [{ i, amount: energy * 0.5 }];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (inside(x + dx, y + dy)) damage.push({ i: idx(x + dx, y + dy), amount: energy * 0.125 });
+    }
+    return resolve(prop, damage, { kind: 'round', x, y, energy });
+  }
+
+  function explosion(prop, x, y, amount, radiusM) {
+    const damage = [];
+    for (let i = 0; i < W * H; i++) {
+      if (!prop.solid[i]) continue;
+      const d = Math.hypot(xOf(i) - x, yOf(i) - y) * VOXEL_M;
+      if (d < radiusM) damage.push({ i, amount: amount * (1 - d / radiusM) });
+    }
+    return resolve(prop, damage, { kind: 'explosion', x, y, amount, radiusM });
+  }
+
+  // Applies the rules again without a hit, after a rule changes.
+  function settle(prop) { return resolve(prop, [], { kind: 'settle' }); }
+
+  // What rebuilding the Prop costs and what describing it takes.
+  function measure(prop) {
+    const s = prop.solid;
+    let voxels = 0, outline = 0, integrity = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (!s[i]) continue;
+      voxels++; integrity += prop.hp[i];
+      const x = xOf(i), y = yOf(i);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!inside(x + dx, y + dy) || !s[idx(x + dx, y + dy)]) outline++;
+      }
+    }
+    return { voxels, outline, integrity, boxes: boxes(s).length };
+  }
+
+  // Greedy merge of the voxels into rectangles: the Prop's collision boxes.
+  function boxes(solid) {
+    const used = new Uint8Array(W * H), out = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (!solid[idx(x, y)] || used[idx(x, y)]) continue;
+      let w = 1;
+      while (x + w < W && solid[idx(x + w, y)] && !used[idx(x + w, y)]) w++;
+      let h = 1;
+      for (;;) {
+        if (y + h >= H) break;
+        let rowOk = true;
+        for (let k = 0; k < w; k++) {
+          const n = idx(x + k, y + h);
+          if (!solid[n] || used[n]) { rowOk = false; break; }
+        }
+        if (!rowOk) break;
+        h++;
+      }
+      for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) used[idx(xx, yy)] = 1;
+      out.push({ x, y, w, h });
+    }
+    return out;
+  }
+
+  // Bytes on the wire. A hit replicated as an event: Prop id (4), voxel x and
+  // y (1 each), energy or damage (2), and for an Explosion its radius (1).
+  // A piece's shape sent instead: its bounding box (4) and one bit per voxel in it.
+  function eventBytes(event) {
+    return event.kind === 'round' ? 8 : event.kind === 'explosion' ? 9 : 0;
+  }
+  function shapeBytes(voxels) {
+    const xs = voxels.map(xOf), ys = voxels.map(yOf);
+    const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
+    return 4 + Math.ceil((w * h) / 8);
+  }
+  function massKg(material, voxels) { return voxels * VOXEL_M3 * MATERIALS[material].density; }
+
+  return { W, H, VOXEL_M, MATERIALS, SHAPES, idx, xOf, yOf, create, round, explosion, settle,
+    supportSearch, stand, measure, boxes, eventBytes, shapeBytes, massKg, isAnchor };
+})();
+</script>
+
+<script>
+// The page: a thin shell over BreakableVoxels.
+const B = BreakableVoxels;
+const CELL = 16;
+const PIECE_COLOURS = ['#2b67d1', '#d1902b', '#2f9a6a', '#9a4fc0', '#c0476b', '#3aa7b8'];
+
+const app = {
+  setup: { shape: 'wall', material: 'concrete',
+    anchors: { floor: true, ceiling: true, left: false, right: false } },
+  rules: null,
+  energy: 1000, blast: 3000, radius: 0.75,
+  prop: null, report: null, history: [],
+  view: 'integrity', tool: 'round', hover: null,
+  fall: null, slow: true,
+};
+
+function defaultRules(material) {
+  const m = B.MATERIALS[material];
+  return { overhang: m.overhang, load: m.load, minPropVoxels: 8, maxProps: 6 };
+}
+
+function newProp() {
+  const r = B.create(app.setup.shape, app.setup.material, app.setup.anchors, app.rules);
+  app.prop = r.prop; app.report = r.report; app.history = [];
+  app.fall = null;
+}
+
+function apply(result) {
+  app.history.push({ prop: app.prop, report: app.report });
+  app.prop = result.prop; app.report = result.report;
+  app.fall = startFall(result.report);
+  render(); animate();
+}
+
+// ---- Falling ----
+// Only the page shows the fall; in the game a piece is a Prop the server's
+// physics moves (ADR-0045). Each piece here is a rigid body in the wall's plane:
+// gravity, rotation, friction, and contact with the floor and with what is left
+// of the Prop, but not with other pieces. An Explosion pushes its pieces
+// outward. Carved and crushed voxels fall as dust that fades. Units are voxels.
+const G = 9.81 / B.VOXEL_M, PUSH = 1.5 / B.VOXEL_M; // voxels/s², voxels/s
+const DUST_S = 1.2, DT = 1 / 240, FRICTION = 0.6;
+
+function startFall(report) {
+  const e = report.event;
+  const bodies = report.pieces.map((pc) => {
+    const cells = pc.voxels.map((i) => [B.xOf(i) + 0.5, B.yOf(i) + 0.5]);
+    const cx = cells.reduce((s, c) => s + c[0], 0) / cells.length;
+    const cy = cells.reduce((s, c) => s + c[1], 0) / cells.length;
+    const local = cells.map(([x, y]) => [x - cx, y - cy]);
+    // Collision points: the voxel corners on the piece's outline.
+    const corners = new Map();
+    for (const [x, y] of local) for (const dx of [-0.5, 0.5]) for (const dy of [-0.5, 0.5]) {
+      const key = `${x + dx},${y + dy}`;
+      corners.set(key, (corners.get(key) || 0) + 1);
+    }
+    const points = [...corners].filter(([, n]) => n < 4).map(([k]) => k.split(',').map(Number));
+    const inertia = local.reduce((s, [x, y]) => s + x * x + y * y + 1 / 6, 0);
+    let vx = 0, vy = 0;
+    if (e.kind === 'explosion') {
+      const dx = cx - (e.x + 0.5), dy = cy - (e.y + 0.5), d = Math.hypot(dx, dy) || 1;
+      vx = (dx / d) * PUSH; vy = (dy / d) * PUSH;
+    }
+    return { local, points, mass: local.length, inertia, x: cx, y: cy, a: 0, vx, vy, w: 0,
+      still: 0, asleep: false };
+  });
+  const dust = [...report.carved, ...report.crushed].map((i, n) => ({
+    x: B.xOf(i) + 0.5, y: B.yOf(i) + 0.5, vx: ((((i * 7919 + n * 104729) % 200) - 100) / 100) * 6,
+  }));
+  return { bodies, dust, t: 0, last: performance.now() };
+}
+
+function solidAt(cx, cy) {
+  return cx >= 0 && cx < B.W && cy >= 0 && cy < B.H && app.prop.solid[B.idx(cx, cy)];
+}
+
+// Where a point is inside the floor or a voxel of the Prop: the way out and how deep.
+function contactAt(px, py) {
+  if (py < 0) return { nx: 0, ny: 1, depth: -py };
+  const cx = Math.floor(px), cy = Math.floor(py);
+  if (!solidAt(cx, cy)) return null;
+  let best = null;
+  for (const [nx, ny, depth] of [[-1, 0, px - cx], [1, 0, cx + 1 - px], [0, -1, py - cy], [0, 1, cy + 1 - py]]) {
+    if (solidAt(cx + nx, cy + ny)) continue;
+    if (!best || depth < best.depth) best = { nx, ny, depth };
+  }
+  return best || { nx: 0, ny: 1, depth: cy + 1 - py };
+}
+
+function stepBody(b) {
+  if (b.asleep) return;
+  b.vy -= G * DT;
+  const cos = Math.cos(b.a), sin = Math.sin(b.a);
+  const contacts = [];
+  for (const [lx, ly] of b.points) {
+    const rx = lx * cos - ly * sin, ry = lx * sin + ly * cos;
+    const c = contactAt(b.x + rx, b.y + ry);
+    if (c) contacts.push({ ...c, rx, ry });
+  }
+  for (let it = 0; it < 4; it++) {
+    for (const c of contacts) {
+      const vrx = b.vx - b.w * c.ry, vry = b.vy + b.w * c.rx;
+      const vn = vrx * c.nx + vry * c.ny;
+      if (vn >= 0) continue;
+      const rn = c.rx * c.ny - c.ry * c.nx;
+      const jn = -vn / (1 / b.mass + (rn * rn) / b.inertia);
+      b.vx += (jn * c.nx) / b.mass; b.vy += (jn * c.ny) / b.mass; b.w += (rn * jn) / b.inertia;
+      const tx = -c.ny, ty = c.nx;
+      const vt = (b.vx - b.w * c.ry) * tx + (b.vy + b.w * c.rx) * ty;
+      const rt = c.rx * ty - c.ry * tx;
+      let jt = -vt / (1 / b.mass + (rt * rt) / b.inertia);
+      jt = Math.max(-FRICTION * jn, Math.min(FRICTION * jn, jt));
+      b.vx += (jt * tx) / b.mass; b.vy += (jt * ty) / b.mass; b.w += (rt * jt) / b.inertia;
+    }
+  }
+  b.x += b.vx * DT; b.y += b.vy * DT; b.a += b.w * DT;
+  if (contacts.length) {
+    // Push out of what it sank into, by the deepest contact; contact damps.
+    const deep = contacts.reduce((m, c) => (c.depth > m.depth ? c : m));
+    b.x += deep.nx * deep.depth * 0.5; b.y += deep.ny * deep.depth * 0.5;
+    b.vx *= 0.99; b.vy *= 0.99; b.w *= 0.98;
+  }
+  const slow = Math.hypot(b.vx, b.vy) < 0.5 && Math.abs(b.w) < 0.1 && contacts.length > 0;
+  b.still = slow ? b.still + DT : 0;
+  if (b.still > 0.5) { b.asleep = true; b.vx = b.vy = b.w = 0; }
+}
+
+function stepFall() {
+  const f = app.fall, now = performance.now();
+  f.acc = (f.acc || 0) + Math.min(0.05, (now - f.last) / 1000) * (app.slow ? 0.25 : 1);
+  f.last = now;
+  while (f.acc >= DT) {
+    f.bodies.forEach(stepBody);
+    f.t += DT; f.acc -= DT;
+  }
+}
+
+let frame = 0;
+function animate() {
+  cancelAnimationFrame(frame);
+  const tick = () => {
+    const f = app.fall;
+    if (!f) return;
+    stepFall(); drawWall();
+    if (f.t < DUST_S || (f.t < 15 && f.bodies.some((b) => !b.asleep))) frame = requestAnimationFrame(tick);
+  };
+  frame = requestAnimationFrame(tick);
+}
+
+const act = {
+  round: (x, y) => apply(B.round(app.prop, x, y, app.energy)),
+  explosion: (x, y) => apply(B.explosion(app.prop, x, y, app.blast, app.radius)),
+  settle: () => apply(B.settle({ ...app.prop, rules: { ...app.rules } })),
+};
+
+// ---- Canvas ----
+const canvas = document.getElementById('wall');
+const ctx = canvas.getContext('2d');
+// Room either side of the Prop and above it, for pieces to fall into.
+const MX = 10, TOP = 2;
+canvas.width = (B.W + 2 * MX) * CELL; canvas.height = (B.H + TOP) * CELL;
+
+function cellAt(ev) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor(((ev.clientX - r.left) / r.width) * (B.W + 2 * MX)) - MX;
+  const y = B.H + TOP - 1 - Math.floor(((ev.clientY - r.top) / r.height) * (B.H + TOP));
+  return x >= 0 && x < B.W && y >= 0 && y < B.H ? { x, y } : null;
+}
+
+canvas.addEventListener('click', (ev) => {
+  const c = cellAt(ev); if (!c) return;
+  act[app.tool](c.x, c.y);
+});
+canvas.addEventListener('mousemove', (ev) => { app.hover = cellAt(ev); renderHover(); drawWall(); });
+canvas.addEventListener('mouseleave', () => { app.hover = null; renderHover(); drawWall(); });
+
+// Canvas colours come from the page's tokens, read again whenever the theme changes.
+const C = {};
+function readTheme() {
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['ink', 'muted', 'accent', 'bad', 'range', 'prop', 'voxel', 'worn', 'heat-lo', 'debris'])
+    C[k] = css.getPropertyValue(`--${k}`).trim();
+}
+readTheme();
+
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+function mix(from, to, t) {
+  const a = rgb(from), b = rgb(to);
+  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * t)).join(',')})`;
+}
+const shade = (t) => mix(C.worn, C.voxel, t); // 0 = worn out, 1 = untouched
+const heat = (t) => (t > 1 ? C.bad : mix(C['heat-lo'], C.accent, t)); // 1 = at the limit
+
+function drawWall() {
+  const p = app.prop, full = B.MATERIALS[p.material].integrity;
+  // Voxel (x, y) and a point (px, py) in voxel units, on the canvas.
+  const sx = (x) => (MX + x) * CELL, sy = (y) => (TOP + B.H - 1 - y) * CELL;
+  const X = (px) => (MX + px) * CELL, Y = (py) => (TOP + B.H - py) * CELL;
+  ctx.fillStyle = C.range; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = C.prop; ctx.fillRect(X(0), Y(B.H), B.W * CELL, B.H * CELL);
+  let info = null;
+  if (app.view !== 'integrity') {
+    const s = B.stand(p, p.solid.slice());
+    const { cost } = B.supportSearch(p, p.solid);
+    info = { cost, load: s.load };
+  }
+  for (let y = 0; y < B.H; y++) for (let x = 0; x < B.W; x++) {
+    const i = B.idx(x, y);
+    if (!p.solid[i]) continue;
+    let fill;
+    if (app.view === 'integrity') fill = shade(p.hp[i] / full);
+    else if (app.view === 'span') {
+      const lim = p.rules.overhang || 32;
+      fill = heat(info.cost[i] / lim);
+    } else {
+      const lim = p.rules.load || p.startVoxels;
+      fill = heat(info.load[i] / lim);
+    }
+    ctx.fillStyle = fill; ctx.fillRect(sx(x), sy(y), CELL - 1, CELL - 1);
+  }
+  const r = app.report;
+  if (r) {
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 1.5;
+    for (const i of [...r.carved, ...r.crushed]) {
+      const x0 = sx(B.xOf(i)) + 4, y0 = sy(B.yOf(i)) + 4, d = CELL - 9;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + d, y0 + d);
+      if (r.crushed.includes(i)) { ctx.moveTo(x0 + d, y0); ctx.lineTo(x0, y0 + d); }
+      ctx.stroke();
+    }
+    const e = r.event;
+    if (e.kind === 'round' || e.kind === 'explosion') {
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(e.x + 0.5), Y(e.y + 0.5), 4, 0, Math.PI * 2); ctx.stroke();
+      if (e.kind === 'explosion') {
+        ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(X(e.x + 0.5), Y(e.y + 0.5), e.radiusM / B.VOXEL_M * CELL, 0, Math.PI * 2);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+  }
+  // The pieces of the last action, falling or at rest, and its dust.
+  const f = app.fall;
+  if (r && f) {
+    r.pieces.forEach((pc, k) => {
+      const b = f.bodies[k];
+      const col = pc.kind === 'prop' ? PIECE_COLOURS[k % PIECE_COLOURS.length] : C.debris;
+      ctx.save();
+      ctx.translate(X(b.x), Y(b.y)); ctx.rotate(-b.a);
+      ctx.fillStyle = col + 'cc'; ctx.strokeStyle = col; ctx.lineWidth = 1;
+      for (const [lx, ly] of b.local) {
+        ctx.fillRect((lx - 0.5) * CELL, (-ly - 0.5) * CELL, CELL - 1, CELL - 1);
+      }
+      if (pc.kind === 'prop') {
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center';
+        ctx.fillText(String(k + 1), 0, 4); ctx.textAlign = 'start';
+      }
+      ctx.restore();
+    });
+    if (f.t < DUST_S) {
+      ctx.fillStyle = C.worn; ctx.globalAlpha = 1 - f.t / DUST_S;
+      for (const d of f.dust) {
+        const py = Math.max(0.2, d.y - 0.5 * G * f.t * f.t);
+        ctx.fillRect(X(d.x + d.vx * f.t) - 2.5, Y(py) - 2.5, 5, 5);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  // The Map's floor, and the Prop's anchored edges.
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, Y(0) + .5); ctx.lineTo(canvas.width, Y(0) + .5); ctx.stroke();
+  ctx.lineWidth = 5;
+  const a = p.anchors;
+  ctx.beginPath();
+  if (a.floor) { ctx.moveTo(X(0), Y(0) + 2); ctx.lineTo(X(B.W), Y(0) + 2); }
+  if (a.ceiling) { ctx.moveTo(X(0), Y(B.H) - 2); ctx.lineTo(X(B.W), Y(B.H) - 2); }
+  if (a.left) { ctx.moveTo(X(0) - 2, Y(0)); ctx.lineTo(X(0) - 2, Y(B.H)); }
+  if (a.right) { ctx.moveTo(X(B.W) + 2, Y(0)); ctx.lineTo(X(B.W) + 2, Y(B.H)); }
+  ctx.stroke();
+  if (app.hover) {
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
+    ctx.strokeRect(sx(app.hover.x) + .5, sy(app.hover.y) + .5, CELL - 1, CELL - 1);
+  }
+}
+
+function renderLegend() {
+  const items = app.view === 'integrity'
+    ? [[C.voxel, 'untouched voxel'], [C.worn, 'nearly worn out']]
+    : app.view === 'span'
+      ? [[C['heat-lo'], 'straight above an anchor'], [C.accent, 'at the overhang limit']]
+      : [[C['heat-lo'], 'carries little'], [C.accent, 'at the load limit'], [C.bad, 'over it']];
+  document.getElementById('legend').innerHTML =
+    items.map(([c, t]) => `<span><span class="sw" style="background:${c}"></span>${t}</span>`).join('') +
+    `<span><span class="sw" style="background:${PIECE_COLOURS[0]}cc;border-color:${PIECE_COLOURS[0]}"></span>fell as a Prop (numbered)</span>` +
+    `<span><span class="sw" style="background:${C.debris}cc;border-color:${C.debris}"></span>fell as Cosmetic debris</span>` +
+    `<span>╲ carved · ╳ crushed under load · thick line: anchored edge</span>`;
+}
+
+// ---- State panel ----
+const fmt = (n, d = 0) => n.toLocaleString('en', { maximumFractionDigits: d, minimumFractionDigits: d });
+const m2 = (voxels) => fmt(voxels * B.VOXEL_M * B.VOXEL_M, 2) + ' m²';
+function delta(a, b) {
+  const d = b - a;
+  return d === 0 ? '' : ` <span class="watch">(${d > 0 ? '+' : ''}${fmt(d)})</span>`;
+}
+
+function describeEvent(e) {
+  if (e.kind === 'round') {
+    return e.through
+      ? `A round at (${e.x}, ${e.y}) struck a hole and passed through: nothing happened.`
+      : `A round losing ${fmt(e.energy)} J struck voxel (${e.x}, ${e.y}).`;
+  }
+  if (e.kind === 'explosion') return `An Explosion of ${fmt(e.amount)} damage, ${fmt(e.radiusM, 2)} m radius, at (${e.x}, ${e.y}).`;
+  return 'The rules were applied again, with no hit.';
+}
+
+function renderState() {
+  const p = app.prop, r = app.report, m = r.after, b = r.before;
+  const props = r.pieces.filter((pc) => pc.kind === 'prop');
+  const cosmetic = r.pieces.filter((pc) => pc.kind === 'cosmetic');
+  const debrisVoxels = cosmetic.reduce((n, pc) => n + pc.voxels.length, 0);
+  const shapes = props.reduce((n, pc) => n + B.shapeBytes(pc.voxels), 0);
+  const ev = B.eventBytes(r.event);
+  const rules = p.rules;
+  let html = `<h2>The Prop now</h2>
+    <dl>
+      <dt>Prop</dt><dd>${B.SHAPES[p.shape].name}, ${B.MATERIALS[p.material].name.toLowerCase()}</dd>
+      <dt>Anchored</dt><dd>${Object.entries(p.anchors).filter(([, v]) => v).map(([k]) => k).join(', ') || 'nowhere'}</dd>
+      <dt>Rules</dt><dd>connectivity${rules.overhang ? `, overhang ≤ ${rules.overhang}` : ''}${rules.load ? `, load ≤ ${rules.load}` : ''}</dd>
+      <dt>Voxels left</dt><dd>${fmt(m.voxels)} of ${fmt(p.startVoxels)} (${m2(m.voxels)})${delta(b.voxels, m.voxels)}</dd>
+      <dt>Integrity</dt><dd>${fmt(m.integrity)} in all${delta(Math.round(b.integrity), Math.round(m.integrity))}</dd>
+      <dt>Collision boxes</dt><dd>${fmt(m.boxes)}${delta(b.boxes, m.boxes)}</dd>
+      <dt>Outline to re-mesh</dt><dd>${fmt(m.outline)} voxel edges${delta(b.outline, m.outline)}</dd>
+      <dt>Shape, as a bitmask</dt><dd>${fmt(Math.ceil(p.startVoxels / 8))} B</dd>
+    </dl>
+    <h3>What just happened</h3>
+    <div class="changed">${describeEvent(r.event)}</div>
+    <dl>
+      <dt>Carved</dt><dd>${fmt(r.carved.length)} voxels → Cosmetic debris</dd>
+      <dt>Crushed</dt><dd>${fmt(r.crushed.length)} voxels under load</dd>
+      <dt>Fell as Props</dt><dd>${props.length ? props.length : 'none'}</dd>
+      <dt>Fell as debris</dt><dd>${cosmetic.length ? `${cosmetic.length} bits, ${fmt(debrisVoxels)} voxels` : 'none'}</dd>
+    </dl>`;
+  if (props.length) {
+    html += '<ul class="pieces">' + props.map((pc) => {
+      const k = r.pieces.indexOf(pc) + 1;
+      return `<li><b style="color:${PIECE_COLOURS[(k - 1) % PIECE_COLOURS.length]}">${k}</b>: ${fmt(pc.voxels.length)} voxels, ${m2(pc.voxels.length)}, ${fmt(B.massKg(p.material, pc.voxels.length))} kg</li>`;
+    }).join('') + '</ul>';
+  }
+  const demoted = r.pieces.filter((pc) => pc.demoted).length;
+  if (demoted) html += `<p class="bad">${demoted} piece${demoted > 1 ? 's' : ''} large enough for a Prop fell as debris instead: over ${rules.maxProps} Props in one break.</p>`;
+  html += `<h3>On the wire</h3><dl>
+      <dt>The hit, as an event</dt><dd>${ev ? `${ev} B — every client repeats it` : '—'}</dd>
+      <dt>Or the pieces' shapes</dt><dd>${props.length ? `${fmt(shapes)} B for ${props.length} Prop${props.length > 1 ? 's' : ''}` : '—'}</dd>
+    </dl>`;
+  document.getElementById('state').innerHTML = html;
+}
+
+function renderHover() {
+  const el = document.getElementById('hover'), h = app.hover, p = app.prop;
+  if (!h) { el.innerHTML = '<h2>Voxel under the pointer</h2><p class="watch">Point at the wall.</p>'; return; }
+  const i = B.idx(h.x, h.y);
+  let body;
+  if (!p.solid[i]) body = '<dd>empty</dd>';
+  else {
+    const { cost } = B.supportSearch(p, p.solid);
+    const s = B.stand(p, p.solid.slice());
+    body = `<dd>${fmt(p.hp[i])} of ${fmt(B.MATERIALS[p.material].integrity)} Integrity</dd>
+      <dt>Sideways to an anchor</dt><dd>${cost[i]} voxels${p.rules.overhang ? ` (limit ${p.rules.overhang})` : ''}</dd>
+      <dt>Load carried</dt><dd>${fmt(s.load[i], 1)} voxels${p.rules.load ? ` (limit ${p.rules.load})` : ''}</dd>`;
+  }
+  el.innerHTML = `<h2>Voxel under the pointer</h2><dl>
+    <dt>Voxel</dt><dd>(${h.x}, ${h.y}) — ${fmt(h.x * B.VOXEL_M, 3)} m across, ${fmt(h.y * B.VOXEL_M, 3)} m up</dd>
+    <dt>State</dt>${body}</dl>`;
+}
+
+// ---- Parameters ----
+function renderParams() {
+  const s = app.setup, r = app.rules;
+  const opt = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v.name}</option>`).join('');
+  const chk = (k) => `<label>anchored at ${k === 'left' || k === 'right' ? `the ${k} wall` : `the ${k}`}<input type="checkbox" data-anchor="${k}" ${s.anchors[k] ? 'checked' : ''}></label>`;
+  document.getElementById('params').innerHTML = `
+    <label>Shape <select id="pShape">${opt(B.SHAPES, s.shape)}</select></label>
+    <label>Material <select id="pMat">${opt(B.MATERIALS, s.material)}</select></label>
+    ${['floor', 'ceiling', 'left', 'right'].map(chk).join('')}
+    <label>Round's energy lost (J)<input type="number" id="pEnergy" value="${app.energy}" step="100"></label>
+    <label>Explosion damage<input type="number" id="pBlast" value="${app.blast}" step="250"></label>
+    <label>Explosion radius (m)<input type="number" id="pRadius" value="${app.radius}" step="0.25"></label>
+    <label>Overhang limit (voxels, 0 = off)<input type="number" id="pOver" value="${r.overhang}" min="0"></label>
+    <label>Load limit (voxels, 0 = off)<input type="number" id="pLoad" value="${r.load}" min="0" step="8"></label>
+    <label>Smallest Prop piece (voxels)<input type="number" id="pMin" value="${r.minPropVoxels}" min="1"></label>
+    <label>Most Props per break<input type="number" id="pMax" value="${r.maxProps}" min="0"></label>`;
+  const setupChanged = () => { newProp(); render(); };
+  document.getElementById('pShape').onchange = (e) => { s.shape = e.target.value; setupChanged(); };
+  document.getElementById('pMat').onchange = (e) => {
+    s.material = e.target.value; app.rules = defaultRules(s.material); renderParams(); setupChanged();
+  };
+  document.querySelectorAll('[data-anchor]').forEach((el) => {
+    el.onchange = () => { s.anchors[el.dataset.anchor] = el.checked; setupChanged(); };
+  });
+  document.getElementById('pEnergy').onchange = (e) => { app.energy = +e.target.value; };
+  document.getElementById('pBlast').onchange = (e) => { app.blast = +e.target.value; };
+  document.getElementById('pRadius').onchange = (e) => { app.radius = +e.target.value; };
+  const rule = (id, key) => {
+    document.getElementById(id).onchange = (e) => { r[key] = Math.max(0, +e.target.value); act.settle(); };
+  };
+  rule('pOver', 'overhang'); rule('pLoad', 'load'); rule('pMin', 'minPropVoxels'); rule('pMax', 'maxProps');
+}
+
+// ---- Walkthroughs ----
+const step = (label, run) => ({ label, run });
+const shots = (y, xs) => xs.map((x) => step(`Fire a round at (${x}, ${y})`, () => act.round(x, y)));
+
+const SCENARIOS = [
+  {
+    title: 'Rounds wear a wall',
+    setup: { shape: 'wall', material: 'concrete', anchors: { floor: true, ceiling: true } },
+    text: 'A concrete wall between floor and ceiling takes a burst of rounds across its middle. Each round carves the voxel it strikes and wears the four beside it, so a line of shots opens a slot.',
+    watch: 'Nothing falls: every voxel still has a path to the floor or the ceiling. The collision boxes multiply with each hole, the cost a carved Prop pays on every rebuild. The last round strikes the slot and passes through.',
+    steps: [...shots(12, [6, 7, 8, 9, 10, 11]), step('Fire a round into the slot at (8, 12)', () => act.round(8, 12))],
+  },
+  {
+    title: 'Cutting a wall across',
+    setup: { shape: 'wall', material: 'concrete', anchors: { floor: true } },
+    text: 'A free-standing concrete wall, held only by the floor. Three Explosions in a row at head height cut it in two.',
+    watch: 'The first opens a hole. After the second, the top-left of the wall falls as a Prop: what is left to hold it reaches too far sideways or carries too much (show the load). The third cuts the last link: the whole top falls as one Prop of over a tonne. Compare the 9 bytes of the hit with the bytes of the piece\'s shape.',
+    steps: [
+      step('Explosion at (5, 13)', () => act.explosion(5, 13)),
+      step('Explosion at (16, 13)', () => act.explosion(16, 13)),
+      step('Explosion at (27, 13)', () => act.explosion(27, 13)),
+    ],
+  },
+  {
+    title: 'A column on one voxel',
+    setup: { shape: 'column', material: 'concrete', anchors: { floor: true }, rules: { load: 0 } },
+    text: 'A concrete column held by the floor, with the load rule off. Rounds chew through its base from the left, one voxel at a time, until a single voxel is left.',
+    watch: 'Connectivity alone keeps 2.5 m of concrete standing on one 12.5 cm voxel, and the overhang rule does not see it either: the path goes straight up. Show the load carried, then switch the load rule on: the neck is crushed and the column falls as one Prop.',
+    steps: [
+      ...shots(2, [13, 14, 15, 16, 17]),
+      step('Switch the load rule on (96 voxels)', () => { app.rules.load = 96; renderParams(); act.settle(); }),
+    ],
+  },
+  {
+    title: 'A wall on a stub',
+    setup: { shape: 'wall', material: 'concrete', anchors: { floor: true }, rules: { load: 0 } },
+    text: 'A free-standing concrete wall, load rule off. Two Explosions near the floor, left and right, leave the upper wall standing on a narrow stub in the middle, its wings reaching out sideways.',
+    watch: 'With an overhang of 12 voxels (1.5 m) the wings hold. Shorten it to 6 and both fall as Props. Then switch the load rule on: the stub cannot carry the wall above it, which breaks along a stepped line and falls, leaving loose voxels as debris. Is that what a player expects of concrete?',
+    steps: [
+      step('Explosion at (5, 3)', () => act.explosion(5, 3)),
+      step('Explosion at (26, 3)', () => act.explosion(26, 3)),
+      step('Shorten the overhang to 6 voxels', () => { app.rules.overhang = 6; renderParams(); act.settle(); }),
+      step('Switch the load rule on (96 voxels)', () => { app.rules.load = 96; renderParams(); act.settle(); }),
+    ],
+  },
+  {
+    title: 'A doorway\'s lintel',
+    setup: { shape: 'door', material: 'wood', anchors: { floor: true } },
+    text: 'A free-standing wooden wall with a doorway. An Explosion takes out the right-hand jamb near the floor, so the lintel over the doorway and the wall beyond it hang from the left jamb alone. Then the same Explosion again, with the load rule off.',
+    watch: 'With the load rule on, the wall cracks diagonally over the doorway: the right-hand part falls as one Prop and the crack leaves a scatter of single voxels as debris. With it off, wood\'s overhang of 20 voxels keeps 2.5 m of wall hanging sideways from the jamb. Which is believable, and is either what a player expects?',
+    steps: [
+      step('Explosion at (25, 2)', () => act.explosion(25, 2)),
+      step('Undo it and switch the load rule off', () => { undo(); app.rules.load = 0; renderParams(); act.settle(); }),
+      step('Explosion at (25, 2) again', () => act.explosion(25, 2)),
+    ],
+  },
+];
+
+let scenario = 0, stepAt = 0;
+
+function startScenario(k) {
+  scenario = k; stepAt = 0;
+  const sc = SCENARIOS[k];
+  app.setup = { shape: sc.setup.shape, material: sc.setup.material,
+    anchors: { floor: false, ceiling: false, left: false, right: false, ...sc.setup.anchors } };
+  app.rules = { ...defaultRules(sc.setup.material), ...(sc.setup.rules || {}) };
+  app.energy = 1000; app.blast = 3000; app.radius = 0.75;
+  newProp(); renderParams(); render(); renderScenario();
+}
+
+function renderScenario() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((sc, k) =>
+    `<button class="${k === scenario ? 'active' : ''}" data-k="${k}">${sc.title}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => startScenario(+b.dataset.k); });
+  const sc = SCENARIOS[scenario];
+  document.getElementById('scenario').innerHTML = `<p>${sc.text}</p><p class="watch"><b>Watch:</b> ${sc.watch}</p>
+    <div class="steps">${sc.steps.map((s, k) =>
+      `<button data-s="${k}" class="${k < stepAt ? 'done' : k === stepAt ? 'next' : ''}">${k + 1}. ${s.label}</button>`).join('')}
+      <button id="restart">Start again</button></div>`;
+  document.querySelectorAll('#scenario [data-s]').forEach((b) => {
+    b.onclick = () => {
+      const k = +b.dataset.s;
+      if (k !== stepAt) return;
+      sc.steps[k].run(); stepAt++; renderScenario();
+    };
+  });
+  document.getElementById('restart').onclick = () => startScenario(scenario);
+}
+
+// ---- Wiring ----
+function render() { drawWall(); renderLegend(); renderState(); renderHover(); }
+
+document.querySelectorAll('input[name=tool]').forEach((el) => { el.onchange = () => { app.tool = el.value; }; });
+document.querySelectorAll('input[name=view]').forEach((el) => { el.onchange = () => { app.view = el.value; render(); }; });
+document.getElementById('reset').onclick = () => { newProp(); render(); };
+function undo() {
+  const h = app.history.pop(); if (!h) return;
+  app.prop = h.prop; app.report = h.report; app.rules = { ...h.prop.rules };
+  app.fall = null;
+  renderParams(); render();
+}
+document.getElementById('undo').onclick = undo;
+document.getElementById('slow').onchange = (e) => { app.slow = e.target.checked; };
+document.getElementById('recheck').onclick = () => act.settle();
+
+const retheme = () => { readTheme(); render(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+startScenario(0);
+</script>
+</body>
+</html>

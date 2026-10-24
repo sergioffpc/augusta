@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_LINK_H_
 #define AUGUSTA_LINK_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -14,6 +15,14 @@
 #include "augusta/failure.h"
 #include "augusta/faults.h"
 #include "augusta/link_types.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+// The transport's tap, declared only: link::Tap names it without this header
+// reaching networking's.
+namespace augusta::networking {
+class Tap;
+}  // namespace augusta::networking
+#endif
 
 /// \file
 /// The Link (GLOSSARY.md, ADR-0038): the channel through which one Session
@@ -31,6 +40,15 @@
 /// (ARCHITECTURE.md §8), and may send from another.
 namespace augusta::link {
 
+#if AUGUSTA_DEBUG_TOOLS
+/// What a Client or a Server reports every message it sends and receives to,
+/// in a Development build only (ADR-0074, ADR-0076): the transport's tap
+/// (augusta/networking.h), named here so that a module on the Link alone can
+/// pass one through without naming the transport. Whoever makes one, such as
+/// the pcapng writer (augusta/pcapng_file_writer.h), sees its definition.
+using Tap = networking::Tap;
+#endif
+
 // ---- The transport, process-wide ----
 
 /// The one-time, process-wide setup of the transport beneath every Link (ADR-0003):
@@ -46,37 +64,71 @@ namespace augusta::link {
 /// the transport's still-referenced state reads as a leak under ASan.
 void Shutdown();
 
-/// Network conditions imposed on the real transport, for tests (e.g. NFR-02's 100 ms).
+/// Which of a process's packets SimulatedConditions' latency, jitter, loss and reorder reach.
+enum class SimulatedTraffic : std::uint8_t {
+  /// What the process sends only.
+  kSent,
+  /// What it sends, and again what it receives: each condition applies once
+  /// each way, so a latency of 50 ms adds about 100 ms to a round trip with a
+  /// peer elsewhere.
+  kSentAndReceived,
+};
+
+/// Network conditions imposed on the real transport: for tests (e.g. NFR-02's
+/// 100 ms), and for a developer impairing their own client's link.
 struct SimulatedConditions {
-  /// Extra delay on every packet this process sends, in milliseconds.
+  /// Extra delay on every packet the conditions reach (applies_to), in milliseconds.
   int latency_ms = 0;
-  /// A random delay added on top of latency_ms to every packet this process
-  /// sends, drawn from an exponential distribution of this mean and capped at
+  /// A random delay added on top of latency_ms to every packet the conditions
+  /// reach, drawn from an exponential distribution of this mean and capped at
   /// jitter_max_ms, in milliseconds; 0 adds none. A packet never overtakes one
   /// sent before it, so jitter alone clumps packets but keeps their order.
   int jitter_mean_ms = 0;
   int jitter_max_ms = 0;
-  /// Share of packets this process sends that are dropped, 0..100.
+  /// Share of packets the conditions reach that are dropped, 0..100.
   float loss_percent = 0.0F;
-  /// Share of packets this process sends that are held back a further
-  /// reorder_delay_ms, 0..100, so that those sent meanwhile overtake them.
+  /// Share of packets the conditions reach that are held back a further
+  /// reorder_delay_ms, 0..100, so that those behind them overtake them. The
+  /// transport has one reorder delay for both ways.
   float reorder_percent = 0.0F;
   int reorder_delay_ms = 0;
   /// How long a connection may hear nothing from its peer before it counts as
   /// lost (or, while connecting, as unreachable), in milliseconds; 0 keeps the
   /// transport's own default (about 10 seconds), too long for a test to wait.
-  /// Unlike the others it only reaches connections made after it is set.
+  /// Unlike the others it only reaches connections made after it is set, and
+  /// whatever applies_to says it is one timeout for the connection.
   int timeout_ms = 0;
+  /// Which packets the conditions above reach: by default only those the process sends.
+  SimulatedTraffic applies_to = SimulatedTraffic::kSent;
+
+  bool operator==(const SimulatedConditions&) const = default;
 };
 
 /// Imposes conditions on every connection of the process from now on; a
 /// default-constructed one restores the real network. Process-wide and at the
 /// packet level: the latency is one-way, so two ends in one process see a round
-/// trip of about twice latency_ms, and loss drops whole packets, which reliable
-/// messages survive by retransmission and unreliable ones do not. Needs Init.
-/// For tests only: set it once the connection is up (the handshake is subject
-/// to it too), and reset it before the next test.
+/// trip of about twice latency_ms (four times, with kSentAndReceived), and loss
+/// drops whole packets, which reliable messages survive by retransmission and
+/// unreliable ones do not. Needs Init. A test sets it once the connection is up
+/// (the handshake is subject to it too) and resets it before the next; a
+/// client, with its one connection, makes it that connection's.
 void SimulateNetworkConditions(const SimulatedConditions& conditions);
+
+/// What a Client or a Server is built with, beyond where it listens: whatever
+/// its transport takes at construction, and nothing of what it sends or receives.
+struct TransportOptions {
+  /// When given, asked at every send and receive (failure::Site::kTransportSend,
+  /// kTransportReceive) and, for a Server, at listener setup
+  /// (kListenerSetup); it must outlive the transport.
+  failure::Faults* faults = nullptr;
+#if AUGUSTA_DEBUG_TOOLS
+  /// When given, reported every message the transport accepts to send and
+  /// every one it receives, before it is decoded (augusta/networking.h); it
+  /// must outlive the transport. Nothing of it shows in what the Link sends or
+  /// receives.
+  Tap* tap = nullptr;
+#endif
+};
 
 // ---- The client's end ----
 
@@ -119,6 +171,59 @@ struct ConnectionStats {
   int pending_bytes = 0;
 };
 
+/// How many messages, and their bytes as the transport carried them.
+struct MessageCount {
+  std::uint64_t messages = 0;
+  std::uint64_t bytes = 0;
+
+  bool operator==(const MessageCount&) const = default;
+};
+
+/// One message type's traffic, each way.
+struct TypeTraffic {
+  MessageCount sent;
+  MessageCount received;
+
+  bool operator==(const TypeTraffic&) const = default;
+};
+
+/// How many of MessageType's values this build has.
+inline constexpr std::size_t kMessageTypeCount = static_cast<std::size_t>(kLastMessageType) + 1;
+
+/// The Authoritative State updates a Client received, sizes as the transport
+/// carried them, and what their ticks say of what the server sent: a tick
+/// more than one past the newest seen adds the ticks between to
+/// ticks_missing; a tick at or before it is out of order. The newest tick seen
+/// is forgotten at Connect and at each Match start, so a new tick sequence
+/// counts nothing missing.
+struct AuthoritativeStateTally {
+  std::uint64_t updates = 0;
+  std::uint64_t total_bytes = 0;
+  /// The size of the update that arrived last, whatever its tick; 0 before the first.
+  std::uint64_t last_bytes = 0;
+  std::uint64_t largest_bytes = 0;
+  std::uint64_t ticks_missing = 0;
+  std::uint64_t ticks_out_of_order = 0;
+
+  bool operator==(const AuthoritativeStateTally&) const = default;
+};
+
+/// What a Client's connection has carried since its last Connect, counted by
+/// the Link itself, by message type: cumulative, so a reader takes rates by
+/// difference. Sent counts only what the transport accepted; received, only
+/// what Receive returns, so a payload that is no message, or one only a client
+/// sends, counts nowhere.
+struct Traffic {
+  /// Indexed by MessageType: every type, those that never travelled at zero.
+  std::array<TypeTraffic, kMessageTypeCount> by_type{};
+  /// The Authoritative State updates among what was received.
+  AuthoritativeStateTally authoritative_state;
+
+  [[nodiscard]] const TypeTraffic& Of(MessageType type) const { return by_type.at(static_cast<std::size_t>(type)); }
+
+  bool operator==(const Traffic&) const = default;
+};
+
 /// What the Link did with a message it did not fail on.
 enum class SendOutcome : std::uint8_t {
   /// Taken: it travels as its type's reliability says. Only an accepted
@@ -139,10 +244,7 @@ using SendResult = std::expected<SendOutcome, failure::Failure>;
 /// holds one at a time.
 class Client {
  public:
-  /// faults, when given, is asked at every send and receive
-  /// (failure::Site::kTransportSend, kTransportReceive); it must outlive the
-  /// Client.
-  explicit Client(failure::Faults* faults = nullptr);
+  explicit Client(const TransportOptions& options = {});
   /// Ends the connection, if any.
   ~Client();
 
@@ -171,11 +273,20 @@ class Client {
   /// nor does I/O, so it is safe to read every round.
   [[nodiscard]] std::optional<ConnectionStats> GetStats() const;
 
+  /// What the connection has carried since the last Connect, by message type,
+  /// with its Authoritative State tally;
+  /// all zero before the first. Safe from any thread, and neither blocks nor
+  /// does I/O, so it is safe to read every round.
+  [[nodiscard]] Traffic GetTraffic() const;
+
   /// Sends one message to the server: kDropped while not connected.
   [[nodiscard]] SendResult Send(const JoinRequest& request);
   [[nodiscard]] SendResult Send(const ReplayRequest& request);
   [[nodiscard]] SendResult Send(ReplayListRequest request);
   [[nodiscard]] SendResult Send(Ready ready);
+#if AUGUSTA_DEBUG_TOOLS
+  [[nodiscard]] SendResult Send(DebugSubscribe subscribe);
+#endif
   /// A tick's commands, oldest first, as its one Commands message: the
   /// Carried ones alone.
   [[nodiscard]] SendResult Send(std::span<const SequencedCommand> commands);
@@ -281,6 +392,9 @@ class Outgoing {
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const Death& death);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ReplayView& view);
 [[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const std::vector<ReplayListing>& listings);
+#if AUGUSTA_DEBUG_TOOLS
+[[nodiscard]] std::expected<Outgoing, failure::Failure> Encode(const ShotJudgement& judgement);
+#endif
 
 /// state, an Authoritative State encoded for one recipient, encoded for
 /// recipient instead: recipient's own fields (its acknowledged sequence, rifle,
@@ -305,11 +419,8 @@ class Server {
   /// Starts listening on local, on a free port of its own choosing if that
   /// names port 0 (LocalEndpoint). Throws failure::ClassifiedFailure:
   /// failure::Code::kInvalidConfiguration if local does not parse,
-  /// kListenerSetupFailed if the transport cannot listen there. faults, when
-  /// given, is asked at listener setup and at every send and receive
-  /// (failure::Site::kListenerSetup, kTransportSend, kTransportReceive); it
-  /// must outlive the Server.
-  explicit Server(const Endpoint& local, failure::Faults* faults = nullptr);
+  /// kListenerSetupFailed if the transport cannot listen there.
+  explicit Server(const Endpoint& local, const TransportOptions& options = {});
   /// Ends every peer's connection and stops listening.
   ~Server();
 

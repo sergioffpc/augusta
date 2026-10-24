@@ -395,8 +395,9 @@ TEST(HostMetricsTest, MessagesAreLabelledByTheirType) {
                                        "replay_request",
                                        "replay_view",
                                        "reenact_request"};
-  EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types);
-  EXPECT_EQ(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types);
+  // A Development build's messages are labelled too (host_metrics_debug_test.cpp).
+  EXPECT_TRUE(std::ranges::includes(ValuesOf(Family(families, "augustad_messages_sent_total"), "type"), types));
+  EXPECT_TRUE(std::ranges::includes(ValuesOf(Family(families, "augustad_messages_received_total"), "type"), types));
 }
 
 // Requirements: NFR-07

@@ -169,6 +169,10 @@ policy (ADR-0060).
       each client's PresentationWorld draws every announced Shot's tracer and
       Map impact with it, a visual only. Deciding a bullet's outcome (hit
       detection, damage) stays server-side (ADR-0024, ADR-0044).
+    - Hitbox — the Hitbox pose and a Character's Hitboxes, the function that
+      places them at it, and their conversion from a pack (augusta/hitbox.h):
+      the server's Lag compensation and a client's Debug overlay place them
+      alike (ADR-0044); the Hitbox history and judging stay SimulationWorld's
 - Networking Protocol — message definitions, serialized as Protocol Buffers
   (ADR-0007)
 - Link — the channel of one Session (augusta_link): every conversion between the
@@ -178,8 +182,9 @@ policy (ADR-0060).
   and the fixed schedule the server's Simulation loop and the client's
   Prediction loop both keep (ADR-0005)
 - Limits — the bounds the rules and the protocol share (augusta_limits): the
-  players a Lobby or a Match holds, the kicks a recoil pattern holds. Tick and
-  Limits depend on no other module, so neither side needs the other's for them
+  players a Lobby or a Match holds, the kicks a recoil pattern holds, the ticks
+  a Shot judgement tells. Tick and Limits depend on no other module, so neither
+  side needs the other's for them
 - Level Data — lightweight custom runtime format, baked offline from OpenUSD
   source. Its collision geometry is built into a physics::World's static meshes
   by the shared Physics module (augusta_physics), so PredictionWorld and
@@ -197,6 +202,9 @@ policy (ADR-0060).
   (augusta_crash, ADR-0047): it logs the signal and the crashing thread's
   symbolized stack under the executable's subsystem, then lets the process die
   of the signal so its core is still dumped
+- Pcapng — a Development build's pcapng of the messages it sends and receives,
+  decrypted (augusta_pcapng, ADR-0076): the encoder of its blocks and the file
+  writer that implements the transport's tap, on a thread of its own
 
 **Client-only** (Windows and Linux)
 
@@ -217,9 +225,10 @@ policy (ADR-0060).
       Authoritative State update since its last frame; interpolates/smooths for
       display; emits presentation state each render frame. One module
       (augusta_presentation) holds it and its phases, including the animation
-      engine behind its Animation phase. Cosmetic bodies and Props' kinematic
-      poses, which are not gameplay, get a client-only dynamics module with the
-      first of them (ADR-0045)
+      engine behind its Animation phase, and in a Development build the Physics
+      Debug overlays and their panel (ADR-0075). Cosmetic bodies and Props'
+      kinematic poses, which are not gameplay, get a client-only dynamics module
+      with the first of them (ADR-0045)
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; draws into the
   client's single Window, which the client Runtime owns and lends it, with the
   GPU device and swapchain it owns, consumes presentation state and draws text
@@ -229,6 +238,10 @@ policy (ADR-0060).
 - Audio — Steam Audio; consumes presentation state
 - HUD — what the DebugHud shows, system metrics only, as text lines the client
   Runtime hands the Renderer (augusta_hud, ADR-0059)
+- Debug — the vocabulary of the debug tools: Debug overlay shapes and Debug
+  panels, as values each area builds and the client Runtime hands the Renderer,
+  the shapes' tessellation into lines and triangles, and the panels' control
+  events the Renderer hands back (augusta_debug, ADR-0075)
 
 ```text
 +-------+     +------------+
@@ -679,6 +692,9 @@ not affect numbering.
 - [ADR-0075](./adr/0075-debug-overlays-and-panels-are-values.md) — Debug
   overlays and panels: values each area builds and the Renderer draws, ImGui
   inside the Renderer
+- [ADR-0076](./adr/0076-wireshark-reads-the-games-own-pcapng.md) — Wireshark:
+  the game's own `exported_pdu` pcapng of decrypted messages, read by a fixed
+  Lua shim over the `protobuf` dissector
 
 ### Tooling & Build
 

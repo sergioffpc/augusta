@@ -88,6 +88,11 @@ target_link_libraries(
   PRIVATE augusta_logging augusta_version
 )
 augusta_set_module_scope(augusta_host SERVER_ONLY)
+# Which streams of the server's state each peer subscribed to (see
+# augusta/debug_subscriptions.h), in a Development build alone (ADR-0074).
+if(AUGUSTA_DEBUG_TOOLS)
+  target_sources(augusta_host PRIVATE debug_subscriptions.cpp)
+endif()
 
 # The Replay server (see augusta/replay_server.h, ADR-0051): it serves a
 # recorded Match to Replay viewers through a Link endpoint of its own, with the

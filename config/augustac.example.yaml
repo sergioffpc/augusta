@@ -35,11 +35,11 @@ input:
   # default 0.0022).
   mouse_sensitivity: 0.0022
   # Which key triggers each control (optional). Leave a control out to keep its
-  # default; no two controls may share a key, and Escape is reserved for
-  # releasing the cursor. Key names: A-Z, 0-9, Space, Tab, Enter, Backspace,
-  # LeftShift, RightShift, LeftControl, RightControl, LeftAlt, RightAlt, Up,
-  # Down, Left, Right, F1-F12, MouseLeft, MouseRight, MouseMiddle. The values
-  # below are the defaults.
+  # default; no two controls may share a key, Escape is reserved for releasing
+  # the cursor and F1 is reserved too. Key names: A-Z, 0-9, Space, Tab, Enter,
+  # Backspace, LeftShift, RightShift, LeftControl, RightControl, LeftAlt,
+  # RightAlt, Up, Down, Left, Right, F2-F12, MouseLeft, MouseRight,
+  # MouseMiddle. The values below are the defaults.
   keys:
     move_forward: W
     move_back: S
@@ -51,3 +51,54 @@ input:
     fire: MouseLeft
     ads: MouseRight
     reload: R
+# Which debug tools start on (optional, ADR-0074). The section exists only in a
+# Development build; a Shipping build, the one players get, refuses it as an
+# unknown key, so it is left commented out here.
+# debug:
+#   # Whether the Debug HUD - the frame rate and the connection's numbers - is
+#   # drawn (optional, default true): true or false.
+#   hud: true
+#   profiling:
+#     # Whether the Profiling Debug panel - a window of frames for Nsight
+#     # Systems to capture, and Aftermath's status - is shown (optional, default
+#     # false): true or false.
+#     panel: false
+#   # Whether the client's PhysX scenes are recorded for OmniPVD (optional,
+#   # default false), read at startup: true records them from startup to exit
+#   # into one augustac-<time>.ovd in the system's temporary directory, its path
+#   # logged at info. Only a Debug build records; elsewhere it warns and runs on.
+#   physics_recording: false
+#   physics:
+#     # Whether the Physics Debug panel - the switches of the physics and
+#     # collision Debug overlays - is shown (optional, default false): true or
+#     # false. Not offered to a Replay viewer.
+#     panel: false
+#     # Whether the Collision overlay - PhysX's own view of the client's World,
+#     # the Map's collision, the player's capsule and the controller volumes,
+#     # around the camera - is drawn (optional, default false): true or false.
+#     collision: false
+#     # Whether the Server bodies overlay - every body as the newest
+#     # Authoritative State update put it, the player's own beside its
+#     # predicted body - is drawn (optional, default false): true or false.
+#     server_bodies: false
+#     # Whether the Hitboxes overlay - every other player's Hitboxes where the
+#     # client shows that player, placed as the server places them, one colour
+#     # per body part - is drawn (optional, default false): true or false.
+#     hitboxes: false
+#     # Whether the Shot judgements overlay - for each of the player's own
+#     # rounds, the Hitboxes the client showed when it fired beside those the
+#     # server judged it against, with its flight and the point struck - is
+#     # drawn (optional, default false): true or false. The server sends Shot
+#     # judgements only with its own `debug.shot_judgements` on.
+#     shot_judgements: false
+#   network:
+#     # Whether the Network Debug panel - the connection's numbers and its
+#     # traffic per message type - is shown (optional, default false): true or
+#     # false.
+#     panel: false
+#     # The directory each run writes a pcapng of the messages it sends and
+#     # receives into, decrypted, for Wireshark with tools/wireshark (optional,
+#     # default none; ADR-0076): one new file per run, augustac-<start in
+#     # UTC>.pcapng, and none is ever deleted. Created if missing; one that
+#     # can't be written fails the startup. Read at startup only.
+#     pcapng: pcapng

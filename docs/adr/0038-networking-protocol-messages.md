@@ -10,9 +10,9 @@ body state, command, stance and parameters, as plain fields) and the math types
 (`math::Vec3`); never another module's structs. So `augusta_protocol` depends on
 nothing but `augusta_math`, which also holds the grids its numbers travel on,
 `augusta_tick`, whose Tick and Sequence widths it encodes, and `augusta_limits`,
-whose player and recoil bounds it encodes, without owning or re-exporting them;
-a module changing its own structs never changes what travels. How many commands
-a Commands message carries is the protocol's own bound
+whose player, recoil and Shot judgement bounds it encodes, without owning or
+re-exporting them; a module changing its own structs never changes what travels.
+How many commands a Commands message carries is the protocol's own bound
 (`protocol::kMaxCommandsPerMessage`). `checks/protocol_boundary.cmake` fails if
 the protocol includes or links anything else but the protobuf runtime, which it
 links `PRIVATE` (ADR-0007), and if a header outside `src/modules/protocol`

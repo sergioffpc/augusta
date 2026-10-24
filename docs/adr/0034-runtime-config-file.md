@@ -12,14 +12,15 @@ successfully without reading any config (`--help` wins over the rest of the
 line). Any other argument, including an old-style `augustac <pack> <key>`, fails
 with the usage message instead of being half-honored. Keys are grouped into
 sections by what they are about - `content` (pack, public key), `network`,
-`logging`, `simulation` (server), `input` (client) - and a key is named by its
-dotted path (`network.server_address`), which is what an error names too. A
-section may hold another (`input.keys`, the client's keymap, whose entries are
-the controls it rebinds). Values are strings; unknown keys and sections, missing
-required keys, non-string values and a section that is not a mapping are errors,
-so a misspelled optional key never silently falls back to its default. A value
-that is a number (the server's tick rate) is read from its string, and one that
-is not a number in its range (for the tick rate, a whole number of Hz from 1
+`logging`, `simulation` (server), `input` (client), `debug` (the debug tools, in
+a Development build only, ADR-0074) - and a key is named by its dotted path
+(`network.server_address`), which is what an error names too. A section may hold
+another (`input.keys`, the client's keymap, whose entries are the controls it
+rebinds). Values are strings; unknown keys and sections, missing required keys,
+non-string values and a section that is not a mapping are errors, so a
+misspelled optional key never silently falls back to its default. A value that
+is a number (the server's tick rate) is read from its string, and one that is
+not a number in its range (for the tick rate, a whole number of Hz from 1
 to 255) is an error like any other. Relative paths start from a required
 top-level `base_dir` key (itself relative to the config file's directory, so `.`
 means the file's own), never from the working directory: the process starts the
@@ -44,8 +45,12 @@ of its own to the shared parser (`augusta_client_config`'s `kClientOptions`),
 which lists them in its usage; every other setting still comes from the file.
 
 **Extended by ADR-0074**: each executable's file may hold a `debug` section,
-which says which debug tools start on. Its keys exist only in a Development
-build, so a Shipping build refuses them as unknown keys like any other.
+which says which debug tools start on, such as the server's `debug.reenactments`
+(ADR-0050), and where one writes, such as both executables'
+`debug.network.pcapng`, the directory each run writes its pcapng of decrypted
+messages into (ADR-0076), checked at startup that it can be written. Its keys
+exist only in a Development build, so a Shipping build refuses them as unknown
+keys like any other.
 
 YAML because the repository already keeps its configuration in JSON and YAML (CI
 workflows, Helm charts, cluster manifests, `vcpkg.json`, CMake presets): a third

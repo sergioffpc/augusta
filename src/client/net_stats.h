@@ -7,13 +7,16 @@
 
 #include <nvtx3/nvtx3.hpp>
 
-#include "augusta/hud.h"
 #include "augusta/link.h"
+
+#if AUGUSTA_DEBUG_TOOLS
+#include "augusta/hud.h"
+#endif
 
 /// \file
 /// What the client makes of its connection's numbers, sampled once per Network
-/// I/O round: the readout the debug HUD shows, and the counters Nsight
-/// Systems plots.
+/// I/O round: the counters Nsight Systems plots, in every build, and the
+/// readout the debug HUD shows, in a Development build only (ADR-0074).
 namespace augusta::client {
 
 /// Packet loss in percent, from the worse of the two directions; nullopt while
@@ -21,6 +24,7 @@ namespace augusta::client {
 /// measured yet.
 [[nodiscard]] std::optional<float> PacketLossPercent(const link::ConnectionStats& stats);
 
+#if AUGUSTA_DEBUG_TOOLS
 /// Turns the connection's numbers into the debug HUD's. ConnectionStats reports
 /// jitter as a high-water mark cleared by every read, and the Network I/O thread
 /// reads it far faster than anyone can read a HUD, so the HUD shows the peak over
@@ -41,6 +45,7 @@ class HudNetStats {
   // The last full window's peak jitter; nullopt until one has a measurement.
   std::optional<float> jitter_ms_;
 };
+#endif
 
 /// NVTX counters (nvtx3::counter, third_party/nvtx) mirroring
 /// link::ConnectionStats field-for-field - plotted on the Nsight Systems

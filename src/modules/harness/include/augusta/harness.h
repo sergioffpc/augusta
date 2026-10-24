@@ -21,6 +21,7 @@
 #include "augusta/link.h"
 #include "augusta/link_types.h"
 #include "augusta/math.h"
+#include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
@@ -68,6 +69,10 @@ using MatchEnd = link::MatchEnd;
 using JoinRefusal = link::JoinRefusal;
 using Admission = link::Admission;
 using ReplayListing = link::ReplayListing;
+#if AUGUSTA_DEBUG_TOOLS
+using DebugSubscribe = link::DebugSubscribe;
+using ShotJudgement = link::ShotJudgement;
+#endif
 
 /// The most Shots a Session keeps for TakeShots: a few seconds of a full match
 /// firing, so a caller that asks every frame loses none and one that never
@@ -80,6 +85,12 @@ inline constexpr std::size_t kMaxPendingDeaths = 16;
 /// The most Hit confirmations a Session keeps for TakeHitConfirmations: more
 /// than one rifle lands between two frames, by far.
 inline constexpr std::size_t kMaxPendingHitConfirmations = 64;
+
+#if AUGUSTA_DEBUG_TOOLS
+/// The most Shot judgements a Session keeps for TakeShotJudgements: as many as
+/// the Hit confirmations it keeps, one per round its own player fired.
+inline constexpr std::size_t kMaxPendingShotJudgements = 64;
+#endif
 
 /// The most Authoritative State updates a Server view keeps
 /// (ServerView::recent_authoritative): as many as the interpolation keeps per
@@ -186,9 +197,12 @@ struct SessionConfig {
   /// The character to ask to play, by its name in the scenario's manifest (e.g.
   /// "soldier"): the server admits only one of its scenario's (ADR-0042).
   std::string character;
-  /// For a test: asked at every send and receive (link.h), so the
-  /// transport fails there; null otherwise. Must outlive the Session.
-  failure::Faults* faults = nullptr;
+  /// What the connection's transport is built with (link.h): for a test, the
+  /// faults asked at every send and receive, so the transport fails there; in
+  /// a Development build, the tap, such as the pcapng writer, reported every
+  /// message it sends to and receives from the server (ADR-0076). Each null by
+  /// default; each must outlive the Session.
+  link::TransportOptions transport{};
   /// Set, this client is a Replay viewer (ADR-0051): instead of joining, it
   /// asks a replay server to replay the capture of this name, by its name in
   /// the server's Replay list. It is then a Spectator from the first tick: it
@@ -276,11 +290,25 @@ class Session {
   /// The connection's quality numbers, or nullopt if not connected.
   [[nodiscard]] std::optional<link::ConnectionStats> GetConnectionStats() const;
 
+  /// What the connection has carried since the last Connect, by message type
+  /// (link::Client::GetTraffic): cumulative, so rates are the reader's to
+  /// take. Safe from any thread.
+  [[nodiscard]] link::Traffic GetTraffic() const;
+
   /// Tells the server this client has loaded what it needs to draw everyone in
   /// the Roster of version, which makes it Ready. Sends nothing unless version
   /// is that of the newest Roster received: the server would not count an older
   /// one. The caller decides when loading is done; safe to call from any thread.
   void ReportReady(std::uint32_t version);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Asks the server, from now on, for each stream of its state whose bit
+  /// (one of DebugSubscribe's) is set in flags, in a Development build alone
+  /// (ADR-0038, ADR-0074): a cleared bit stops its stream. Sent as it is, at
+  /// any point of the connection; the Session keeps no subscription of its
+  /// own, so a new connection asks again. Safe to call from any thread.
+  void SubscribeDebug(std::uint8_t flags);
+#endif
 
   /// The Shots of the match view is of (ServerView::matches_started): the
   /// match in progress, or the last one if back in the Lobby. Those received
@@ -301,6 +329,15 @@ class Session {
   /// TakeShots hands out Shots; the newest kMaxPendingDeaths of them if more
   /// arrived.
   [[nodiscard]] std::vector<Death> TakeDeaths(const ServerView& view);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// The Shot judgements of the match view is of, in a Development build
+  /// alone (ADR-0038, ADR-0074), as TakeShots hands out Shots; the newest
+  /// kMaxPendingShotJudgements of them if more arrived. The server sends one
+  /// for each round this client's player fired, once its flight ends, while
+  /// this client's Debug subscribe asks for them (SubscribeDebug).
+  [[nodiscard]] std::vector<ShotJudgement> TakeShotJudgements(const ServerView& view);
+#endif
 
   /// The sequence the command of the next Tick in a match goes under: what a
   /// caller that paces its commands to the server's ticks counts from (the
@@ -326,6 +363,14 @@ class Session {
   /// A Replay viewer predicts and sends nothing, ever: its state is the one a
   /// PredictionWorld starts with.
   prediction::State Tick(const command::Command& command, float delta_time);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches Collision for the Ticks to come, in a Development build alone
+  /// (ADR-0074): PredictionWorld's visualization, whose lines each Tick's
+  /// State then carries (prediction::World::SetVisualization). Prediction
+  /// thread, as Tick.
+  void SetVisualization(const physics::Visualization& visualization);
+#endif
 
  private:
   struct Impl;

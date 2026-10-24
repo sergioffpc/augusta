@@ -3,7 +3,10 @@
 
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -48,6 +51,19 @@ enum class Stance {
 /// (ADR-0040) with its body as it crouches or goes prone, for the client's
 /// camera and the server's Shots alike.
 [[nodiscard]] math::Vec3 LowerToStance(const math::Vec3& standing_point, Stance stance);
+
+/// A body's collision capsule: the points within radius of the segment between
+/// the centres of its two hemispherical caps.
+struct Capsule {
+  /// World space, as BodyState::position: the lower cap's centre, radius above
+  /// the feet.
+  math::Vec3 bottom{};
+  /// The upper cap's centre, radius below the top of the body in its stance
+  /// (StanceHeight).
+  math::Vec3 top{};
+  /// In metres.
+  float radius = 0.0F;
+};
 
 /// Opaque handle to a body created by World::CreateBody. Valid only for the
 /// World instance that created it; passing a handle from one World to
@@ -111,6 +127,11 @@ struct BodyState {
 
   bool operator==(const BodyState&) const = default;
 };
+
+/// The collision capsule of a body in state: standing on its position in its
+/// stance, as World holds the body's controller. What a client draws a body
+/// the server reported as.
+[[nodiscard]] Capsule CapsuleOf(const BodyState& state);
 
 /// Tunable balance values governing stamina depletion/recovery (US-05).
 /// These are data, not mechanism or policy (ARCHITECTURE.md §8's third
@@ -186,6 +207,45 @@ struct MapRaycastHit {
   float distance = 0.0F;
 };
 
+#if AUGUSTA_DEBUG_TOOLS
+/// What a World's visualization draws, and where (World::SetVisualization), in
+/// a Development build alone (ADR-0074): PhysX's own view of its collision, for
+/// the Collision Debug overlay.
+struct Visualization {
+  /// Off, a World draws nothing and its visualization costs nothing.
+  bool on = false;
+  /// Every collision shape: the Map's meshes and each body's capsule.
+  bool collision_shapes = true;
+  /// Each collision shape's axis-aligned bounds.
+  bool bounds = false;
+  /// Contact points and their normals.
+  bool contacts = false;
+  /// Joints' frames and limits.
+  bool joints = false;
+  /// The character controllers' own volumes, such as the space a move sweeps.
+  bool controller_volumes = true;
+  /// The culling box: only the scene's shapes in the cube of half-extent
+  /// cull_half_extent metres around cull_center are drawn, so a whole Map of
+  /// triangle edges does not bury the frame or the tick. Controller volumes
+  /// are drawn wherever they are.
+  math::Vec3 cull_center{};
+  float cull_half_extent = 0.0F;
+
+  bool operator==(const Visualization&) const = default;
+};
+
+/// One line of a World's visualization, in world space.
+struct VisualizationLine {
+  math::Vec3 from{};
+  math::Vec3 to{};
+  /// PhysX's colour for it, as PhysX gives it (0xAARRGGBB, PxDebugColor), so
+  /// it reads as PhysX's documentation describes it.
+  std::uint32_t argb = 0;
+
+  bool operator==(const VisualizationLine&) const = default;
+};
+#endif
+
 /// Owns every body's PhysX state for one side (client or server) of the
 /// engine. One World instance is created per process; see
 /// ARCHITECTURE.md §8 (Threading) for which thread owns it on each side.
@@ -203,9 +263,10 @@ class World {
   /// physics/scene instance (ADR-0002) - not shared with any other World,
   /// matching the "one World instance per process" contract above.
   ///
-  /// CPU only, and with no worker threads: this World only ever drives
-  /// PxController::move() (see physics.cpp's header comment), never
-  /// PxScene::simulate()/fetchResults(), so neither GPU dynamics nor a
+  /// CPU only, and with no worker threads: this World moves its bodies with
+  /// PxController::move() alone (see physics.cpp's header comment), and its
+  /// only PxScene::simulate()/fetchResults() is StepVisualization's, in a
+  /// Development build, so neither GPU dynamics nor a
   /// simulation thread pool would do anything but cost startup time,
   /// threads and (next to the client's renderer) VRAM. Revisit once a real
   /// rigid-body simulate step (props, ragdolls, projectiles) exists.
@@ -273,7 +334,8 @@ class World {
   ///
   /// A body is not hit where it is: the ray sees it where its PhysX
   /// controller was made (centered on the world origin), however far
-  /// CreateBody, Step, SetState or Restore have put it since (ADR-0002).
+  /// CreateBody, Step, SetState or Restore have put it since (ADR-0002), until
+  /// a StepVisualization moves its actor to where its body is.
   /// Player hit detection does not use this - see RaycastMap.
   [[nodiscard]] RaycastHit Raycast(const math::Vec3& origin, const math::Vec3& direction, float max_distance) const;
 
@@ -284,10 +346,85 @@ class World {
   [[nodiscard]] MapRaycastHit RaycastMap(const math::Vec3& origin, const math::Vec3& direction,
                                          float max_distance) const;
 
+#if AUGUSTA_DEBUG_TOOLS
+  /// Switches this World's visualization to visualization: off, or on with
+  /// what it draws and its culling box. A World starts with it off, and one
+  /// that never turns it on pays nothing for it: PhysX is touched only when the
+  /// settings change, so setting them every tick, off, costs nothing either.
+  /// Development build only.
+  void SetVisualization(const Visualization& visualization);
+
+  /// Steps this World's scene once by delta_time seconds, a fixed tick, and
+  /// returns the lines PhysX then draws of it, its character controllers'
+  /// included; nullopt, stepping nothing, while the visualization is off.
+  /// Development build only.
+  ///
+  /// The step is harmless: a World holds the Map's static meshes and each
+  /// body's kinematic actor, nothing dynamic, so it moves only those actors,
+  /// to where their bodies last moved. No body's Step, SetState, Restore or
+  /// Fall sees them, nor RaycastMap; only Raycast sees a body where it is
+  /// rather than where its controller was made, from this call on.
+  [[nodiscard]] std::optional<std::vector<VisualizationLine>> StepVisualization(float delta_time);
+#endif
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+#if AUGUSTA_DEBUG_TOOLS
+/// Why StartRecording could not record.
+enum class RecordingError : std::uint8_t {
+  /// A World already exists, and PhysX was made without the recording.
+  kWorldExists,
+  /// This build's PhysX has no OmniPVD (as every non-Debug build's), or
+  /// OmniPVD's runtime (PVDRuntime_64, beside the executable) did not load.
+  kUnavailable,
+  /// OmniPVD gave no writer or file stream, or would not start sampling.
+  kRefused,
+};
+
+/// A phrase for error, for the warning that the process runs on unrecorded.
+[[nodiscard]] std::string_view DescribeRecordingError(RecordingError error);
+
+/// A recording of every PhysX scene in the process to one OmniPVD file (`.ovd`),
+/// which OmniPVD opens, made by StartRecording. A debug tool's (ADR-0074): only
+/// a Development build has it. It holds a use of the PhysX state every World
+/// shares for as long as it lives, so the file covers each World the process
+/// makes until the recording goes, and is complete once it has (and every
+/// World with it). OmniPVD has no stop, so a process records one file.
+class Recording {
+ public:
+  ~Recording();
+  Recording(const Recording&) = delete;
+  Recording& operator=(const Recording&) = delete;
+  Recording(Recording&&) noexcept;
+  Recording& operator=(Recording&&) noexcept;
+
+  /// The file the recording writes.
+  [[nodiscard]] const std::filesystem::path& File() const;
+
+ private:
+  struct Impl;
+  explicit Recording(std::unique_ptr<Impl> impl);
+  friend std::expected<Recording, RecordingError> StartRecording(std::string_view executable);
+
+  std::unique_ptr<Impl> impl_;
+};
+
+/// Starts recording the process's PhysX scenes to
+/// `<executable>-<startup time, UTC>.ovd` in the system's temporary directory,
+/// and logs its path at INFO (`subsystem=physics`). It must come before any
+/// World exists, since PhysX is made with the recording or without it. Fails
+/// when it cannot record, leaving PhysX as it was; the process then runs on
+/// unrecorded.
+[[nodiscard]] std::expected<Recording, RecordingError> StartRecording(std::string_view executable);
+
+/// Starts the recording the config key asked for, as StartRecording does, for
+/// an executable to hold from startup to exit; where it cannot, logs one WARN
+/// (`event=recording_unavailable`) naming key and why, and returns nullopt.
+[[nodiscard]] std::optional<Recording> StartRecordingOrWarn(std::string_view executable, std::string_view key);
+#endif
 
 }  // namespace augusta::physics
 

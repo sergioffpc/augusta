@@ -1,6 +1,8 @@
 #include "augusta/networking.h"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -14,6 +16,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <steam/isteamnetworkingsockets.h>
@@ -264,6 +267,48 @@ int ReceiveBatch(HSteamNetConnection connection, std::vector<Payload>& into) {
   return count;
 }
 
+#if AUGUSTA_DEBUG_TOOLS
+// addr as the tap's plain value. GameNetworkingSockets holds an IPv4 address
+// as an IPv4-mapped IPv6 one, which the tap reports as the IPv4 it maps.
+TapEndpoint ToTapEndpoint(const SteamNetworkingIPAddr& addr) {
+  TapEndpoint endpoint{.address = Ipv4Address{}, .port = addr.m_port};
+  if (addr.IsIPv4()) {
+    const std::uint32_t ipv4 = addr.GetIPv4();
+    constexpr unsigned kByte = 8;
+    endpoint.address =
+        Ipv4Address{static_cast<std::uint8_t>(ipv4 >> (3 * kByte)), static_cast<std::uint8_t>(ipv4 >> (2 * kByte)),
+                    static_cast<std::uint8_t>(ipv4 >> kByte), static_cast<std::uint8_t>(ipv4)};
+  } else {
+    Ipv6Address ipv6;
+    std::ranges::copy(addr.m_ipv6, ipv6.begin());
+    endpoint.address = ipv6;
+  }
+  return endpoint;
+}
+
+// connection's remote end, unspecified if the transport has none for it (it is gone).
+TapEndpoint RemoteTapEndpoint(HSteamNetConnection connection) {
+  SteamNetConnectionInfo_t info;
+  if (!SteamNetworkingSockets()->GetConnectionInfo(connection, &info)) {
+    return {};
+  }
+  return ToTapEndpoint(info.m_addrRemote);
+}
+
+// Reports one message to tap, if there is one, timed now.
+void ReportToTap(Tap* tap, TapDirection direction, const TapEndpoint& local, const TapEndpoint& remote,
+                 std::span<const std::byte> payload) {
+  if (tap == nullptr) {
+    return;
+  }
+  tap->Report(TappedMessage{.direction = direction,
+                            .local = local,
+                            .remote = remote,
+                            .payload = payload,
+                            .time = std::chrono::system_clock::now()});
+}
+#endif
+
 // Listens on addr with options. GameNetworkingSockets refuses port 0, so for
 // it this listens on a port the OS reports free (see FreeUdpPort) - asking
 // again if it fails to bind there - and leaves the one it bound in addr.
@@ -291,6 +336,46 @@ HSteamListenSocket CreateListenSocket(SteamNetworkingIPAddr& addr,
   return k_HSteamListenSocket_Invalid;
 }
 
+// The transport's fake-packet settings of one side: what a process sends, or what it receives.
+struct FakePacketSide {
+  ESteamNetworkingConfigValue lag;
+  ESteamNetworkingConfigValue jitter_avg;
+  ESteamNetworkingConfigValue jitter_max;
+  ESteamNetworkingConfigValue jitter_pct;
+  ESteamNetworkingConfigValue loss;
+  ESteamNetworkingConfigValue reorder;
+};
+
+constexpr FakePacketSide kSendSide{
+    .lag = k_ESteamNetworkingConfig_FakePacketLag_Send,
+    .jitter_avg = k_ESteamNetworkingConfig_FakePacketJitter_Send_Avg,
+    .jitter_max = k_ESteamNetworkingConfig_FakePacketJitter_Send_Max,
+    .jitter_pct = k_ESteamNetworkingConfig_FakePacketJitter_Send_Pct,
+    .loss = k_ESteamNetworkingConfig_FakePacketLoss_Send,
+    .reorder = k_ESteamNetworkingConfig_FakePacketReorder_Send,
+};
+
+constexpr FakePacketSide kReceiveSide{
+    .lag = k_ESteamNetworkingConfig_FakePacketLag_Recv,
+    .jitter_avg = k_ESteamNetworkingConfig_FakePacketJitter_Recv_Avg,
+    .jitter_max = k_ESteamNetworkingConfig_FakePacketJitter_Recv_Max,
+    .jitter_pct = k_ESteamNetworkingConfig_FakePacketJitter_Recv_Pct,
+    .loss = k_ESteamNetworkingConfig_FakePacketLoss_Recv,
+    .reorder = k_ESteamNetworkingConfig_FakePacketReorder_Recv,
+};
+
+// Sets one side's latency, jitter, loss and reorder share to conditions'.
+void SetFakePackets(ISteamNetworkingUtils& utils, const FakePacketSide& side, const SimulatedConditions& conditions) {
+  utils.SetGlobalConfigValueInt32(side.lag, conditions.latency_ms);
+  // Every packet draws a jitter; a mean of 0 draws none.
+  constexpr float kEveryPacket = 100.0F;
+  utils.SetGlobalConfigValueFloat(side.jitter_avg, static_cast<float>(conditions.jitter_mean_ms));
+  utils.SetGlobalConfigValueFloat(side.jitter_max, static_cast<float>(conditions.jitter_max_ms));
+  utils.SetGlobalConfigValueFloat(side.jitter_pct, kEveryPacket);
+  utils.SetGlobalConfigValueFloat(side.loss, conditions.loss_percent);
+  utils.SetGlobalConfigValueFloat(side.reorder, conditions.reorder_percent);
+}
+
 }  // namespace
 
 std::expected<void, failure::Failure> Init(failure::Faults* faults) {
@@ -314,16 +399,12 @@ void Shutdown() {
 
 void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   ISteamNetworkingUtils* utils = SteamNetworkingUtils();
-  utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, conditions.latency_ms);
-  // Every packet draws a jitter; a mean of 0 draws none.
-  constexpr float kEveryPacket = 100.0F;
-  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Avg,
-                                   static_cast<float>(conditions.jitter_mean_ms));
-  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Max,
-                                   static_cast<float>(conditions.jitter_max_ms));
-  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketJitter_Send_Pct, kEveryPacket);
-  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, conditions.loss_percent);
-  utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketReorder_Send, conditions.reorder_percent);
+  SetFakePackets(*utils, kSendSide, conditions);
+  // The receive side is set either way, so conditions on it from an earlier
+  // call never outlive a call that leaves it out.
+  SetFakePackets(*utils, kReceiveSide,
+                 conditions.applies_to == SimulatedTraffic::kSentAndReceived ? conditions : SimulatedConditions{});
+  // One delay for both sides in the transport.
   utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketReorder_Time, conditions.reorder_delay_ms);
   for (const ESteamNetworkingConfigValue timeout :
        {k_ESteamNetworkingConfig_TimeoutInitial, k_ESteamNetworkingConfig_TimeoutConnected}) {
@@ -336,10 +417,20 @@ void SimulateNetworkConditions(const SimulatedConditions& conditions) {
   }
   LOG_INFO(
       "subsystem=networking event=simulated_conditions latency_ms={} jitter_mean_ms={} jitter_max_ms={} "
-      "loss_percent={} reorder_percent={} reorder_delay_ms={}",
+      "loss_percent={} reorder_percent={} reorder_delay_ms={} applies_to={}",
       conditions.latency_ms, conditions.jitter_mean_ms, conditions.jitter_max_ms, conditions.loss_percent,
-      conditions.reorder_percent, conditions.reorder_delay_ms);
+      conditions.reorder_percent, conditions.reorder_delay_ms,
+      conditions.applies_to == SimulatedTraffic::kSentAndReceived ? "sent_and_received" : "sent");
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+TapEndpoint UnspecifiedEndpointLike(const TapEndpoint& endpoint) {
+  if (std::holds_alternative<Ipv6Address>(endpoint.address)) {
+    return TapEndpoint{.address = Ipv6Address{}, .port = 0};
+  }
+  return TapEndpoint{.address = Ipv4Address{}, .port = 0};
+}
+#endif
 
 // ---- Client ----
 
@@ -360,6 +451,26 @@ struct Client::Impl {
   std::vector<Payload> received_before_close;
   // Filled by the status-changed callback, drained by PumpEvents.
   TransportEventQueue transport_events;
+#if AUGUSTA_DEBUG_TOOLS
+  // Null unless a Tap was given; remote is the server last connected to and
+  // local the unspecified address in its family (GNS gives none), guarded by
+  // mutex.
+  Tap* tap = nullptr;
+  TapEndpoint local;
+  TapEndpoint remote;
+#endif
+
+  // ReceiveBatch on connection under mutex, which the caller holds,
+  // reporting each message it took off the transport to the tap.
+  int ReceiveBatchLocked(std::vector<Payload>& into) const {
+    const int count = ReceiveBatch(connection, into);
+#if AUGUSTA_DEBUG_TOOLS
+    for (std::size_t index = into.size() - static_cast<std::size_t>(std::max(count, 0)); index < into.size(); ++index) {
+      ReportToTap(tap, TapDirection::kInbound, local, remote, into[index]);
+    }
+#endif
+    return count;
+  }
 
   // Applies one drained event: the state under the lock, then the transport
   // call it needs and its log line outside it.
@@ -371,7 +482,7 @@ struct Client::Impl {
       state = transition.state;
       if (transition.ended) {
         // Closing the connection releases what it still holds unread.
-        while (ReceiveBatch(connection, received_before_close) > 0) {
+        while (ReceiveBatchLocked(received_before_close) > 0) {
         }
         connection = k_HSteamNetConnection_Invalid;
       }
@@ -386,6 +497,10 @@ struct Client::Impl {
 };
 
 Client::Client(failure::Faults* faults) : impl_(std::make_unique<Impl>(faults)) {}
+
+#if AUGUSTA_DEBUG_TOOLS
+Client::Client(failure::Faults* faults, Tap* tap) : Client(faults) { impl_->tap = tap; }
+#endif
 
 Client::~Client() { Disconnect(); }
 
@@ -415,6 +530,10 @@ void Client::Connect(const Endpoint& server) {
   std::lock_guard<std::mutex> lock(impl_->mutex);
   // A connection's leftovers are never read as the next one's.
   impl_->received_before_close.clear();
+#if AUGUSTA_DEBUG_TOOLS
+  impl_->remote = ToTapEndpoint(addr);
+  impl_->local = UnspecifiedEndpointLike(impl_->remote);
+#endif
   impl_->connection =
       SteamNetworkingSockets()->ConnectByIPAddress(addr, static_cast<int>(options.size()), options.data());
   // A connection GNS refused to create never gets a status-changed callback,
@@ -471,6 +590,9 @@ SendResult Client::Send(const Payload& payload, Reliability reliability) {
   switch (ClassifySend(sent.result, reliability)) {
     case SendVerdict::kAccepted:
       LOG_TRACE("subsystem=networking event=send role=client bytes={}", payload.size());
+#if AUGUSTA_DEBUG_TOOLS
+      ReportToTap(impl_->tap, TapDirection::kOutbound, impl_->local, impl_->remote, payload);
+#endif
       return SendOutcome::kAccepted;
     case SendVerdict::kDropped:
       return SendOutcome::kDropped;
@@ -497,7 +619,7 @@ std::expected<std::vector<Payload>, failure::Failure> Client::ReceiveMessages() 
   std::vector<Payload> messages;
   while (true) {
     std::optional<std::string> tripped = ReceiveTripped(impl_->faults);
-    const int count = tripped.has_value() ? -1 : ReceiveBatch(impl_->connection, messages);
+    const int count = tripped.has_value() ? -1 : impl_->ReceiveBatchLocked(messages);
     if (count < 0) {
       return std::unexpected(LocalFailure(failure::Code::kTransportReceiveFailed, {{.key = "role", .value = "client"}},
                                           tripped.value_or("ReceiveMessagesOnConnection returned -1")));
@@ -536,6 +658,11 @@ struct Server::Impl {
   PeerTable peers;
   // Filled by the status-changed callback, drained by PumpEvents.
   TransportEventQueue transport_events;
+#if AUGUSTA_DEBUG_TOOLS
+  // Null unless a Tap was given; local is the listen address, set once bound.
+  Tap* tap = nullptr;
+  TapEndpoint local;
+#endif
 
   // Applies one drained event: the peers under the lock, then the transport
   // call it needs and its log line outside it.
@@ -612,8 +739,17 @@ Server::Server(const Endpoint& local_endpoint, failure::Faults* faults) : impl_(
     throw listener_failure("failed to bind");
   }
   impl_->local_endpoint = Endpoint{.address = FormatAddr(addr)};
+#if AUGUSTA_DEBUG_TOOLS
+  impl_->local = ToTapEndpoint(addr);
+#endif
   LOG_INFO("subsystem=networking event=listening address={}", impl_->local_endpoint.address);
 }
+
+#if AUGUSTA_DEBUG_TOOLS
+Server::Server(const Endpoint& local_endpoint, failure::Faults* faults, Tap* tap) : Server(local_endpoint, faults) {
+  impl_->tap = tap;
+}
+#endif
 
 Endpoint Server::LocalEndpoint() const { return impl_->local_endpoint; }
 
@@ -664,6 +800,11 @@ SendResult Server::Impl::SendLocked(HSteamNetConnection connection, const Payloa
   switch (ClassifySend(sent.result, reliability)) {
     case SendVerdict::kAccepted:
       LOG_TRACE("subsystem=networking event=send role=server peer={} bytes={}", connection, payload.size());
+#if AUGUSTA_DEBUG_TOOLS
+      if (tap != nullptr) {
+        ReportToTap(tap, TapDirection::kOutbound, local, RemoteTapEndpoint(connection), payload);
+      }
+#endif
       return SendOutcome::kAccepted;
     case SendVerdict::kDropped:
       return SendOutcome::kDropped;
@@ -736,6 +877,12 @@ std::expected<std::vector<PeerMessage>, failure::Failure> Server::ReceiveMessage
       const auto* bytes = static_cast<const std::byte*>(incoming[i]->m_pData);
       messages.push_back(PeerMessage{.from = static_cast<PeerId>(incoming[i]->m_conn),
                                      .payload = Payload(bytes, bytes + incoming[i]->m_cbSize)});
+#if AUGUSTA_DEBUG_TOOLS
+      if (impl_->tap != nullptr) {
+        ReportToTap(impl_->tap, TapDirection::kInbound, impl_->local, RemoteTapEndpoint(incoming[i]->m_conn),
+                    messages.back().payload);
+      }
+#endif
       incoming[i]->Release();
     }
   }

@@ -150,6 +150,8 @@ struct PlayerCharacter {
 struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
+  /// The server tick it was fired on.
+  tick::Tick tick = 0;
   /// Where the round left from: the shooter's eye.
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw in radians (command::Command).
@@ -252,6 +254,12 @@ struct State {
   /// shown at, for the Commands sampled on it to report (ADR-0044); nullopt before the client
   /// has received an Authoritative State and outside a match.
   std::optional<SeenTime> seen_time;
+  /// The interpolation buffer's slack this frame, in seconds (ServerClock::Slack,
+  /// interpolation.h): how far the newest Authoritative State update is ahead
+  /// of the time remote_players are shown at. Positive while updates wait to be
+  /// shown, zero or below once the buffer has run dry and holds the newest;
+  /// nullopt outside a match or with no remote player shown.
+  std::optional<double> interpolation_slack;
   /// Every tracer in flight, as drawn this frame (tracers.h).
   std::vector<Tracer> tracers;
   /// Every impact on the Map still showing.
@@ -297,6 +305,11 @@ class World {
   /// Adds immovable level geometry for tracers to meet, the same Map the
   /// server's bullets meet.
   std::expected<void, physics::CollisionMeshError> AddCollisionMesh(const physics::CollisionMesh& mesh);
+
+  /// The Map tracers meet, as AddCollisionMesh made it: what anything else
+  /// flown as a tracer flies, such as a Shot judgement's flight, meets. Never
+  /// ticked, it holds no body.
+  [[nodiscard]] const physics::World& Map() const;
 
   /// Takes the parameters the server sent when it admitted this client and its
   /// tick duration, in seconds: what a Shot's tracer flies by, and the ADS field

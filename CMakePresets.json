@@ -32,6 +32,15 @@
       }
     },
     {
+      "name": "windows-shipping",
+      "displayName": "Windows Shipping (Ninja + clang-cl, no debug tools)",
+      "inherits": "windows",
+      "binaryDir": "${sourceDir}/build/x64-windows-shipping",
+      "cacheVariables": {
+        "AUGUSTA_DEBUG_TOOLS": "OFF"
+      }
+    },
+    {
       "name": "linux",
       "displayName": "Linux (Ninja + LLVM)",
       "generator": "Ninja",
@@ -55,6 +64,15 @@
       "binaryDir": "${sourceDir}/build/x64-linux-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-shipping",
+      "displayName": "Linux Shipping (Ninja + LLVM, no debug tools)",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/x64-linux-shipping",
+      "cacheVariables": {
+        "AUGUSTA_DEBUG_TOOLS": "OFF"
       }
     },
     {
@@ -107,8 +125,10 @@
   "buildPresets": [
     { "name": "windows", "configurePreset": "windows" },
     { "name": "windows-debug", "configurePreset": "windows-debug" },
+    { "name": "windows-shipping", "configurePreset": "windows-shipping" },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "linux-debug", "configurePreset": "linux-debug" },
+    { "name": "linux-shipping", "configurePreset": "linux-shipping" },
     { "name": "linux-san", "configurePreset": "linux-san" },
     {
       "name": "linux-fuzz",
@@ -132,6 +152,12 @@
       "filter": { "exclude": { "label": "^netcode$" } }
     },
     {
+      "name": "windows-shipping",
+      "configurePreset": "windows-shipping",
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
+    },
+    {
       "name": "linux",
       "configurePreset": "linux",
       "output": { "outputOnFailure": true },
@@ -140,6 +166,12 @@
     {
       "name": "linux-debug",
       "configurePreset": "linux-debug",
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "^netcode$" } }
+    },
+    {
+      "name": "linux-shipping",
+      "configurePreset": "linux-shipping",
       "output": { "outputOnFailure": true },
       "filter": { "exclude": { "label": "^netcode$" } }
     },

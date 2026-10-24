@@ -16,6 +16,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/command.h"
+#include "augusta/hitbox.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -47,6 +48,9 @@
 /// CommandIngestion, Movement, WeaponHandling, Damage and Commit act on players
 /// and Ballistics and HitDetection on bullets, which end on the Map, on a
 /// player or at their range; Scripts/Behaviours calls the scenario's Game policy.
+/// In a Development build, while World::JudgeShots switches them on, it builds
+/// each round's Shot judgement from the players its hit test selected, handed
+/// on in the tick's result once the round's flight ends (ADR-0074).
 /// What each one does is documented on its Phase enumerator below.
 namespace augusta::simulation {
 
@@ -152,15 +156,6 @@ struct PlayerCommand {
   command::Command command{};
 };
 
-/// One hitbox of a Character (CONTEXT.md's Hitbox, ADR-0040): the body part it
-/// stands for and its triangles, in the character's root space.
-struct CharacterHitbox {
-  /// What a bullet that crosses it hits.
-  body_part::BodyPart part = body_part::BodyPart::kTorso;
-  /// Its surface: a bullet is tested against each, from either side.
-  std::vector<ballistics::Triangle> triangles;
-};
-
 /// What SimulationWorld needs of the Character a player plays (ADR-0040), in
 /// the character's root space: standing, its feet at the origin, facing where a
 /// view of yaw 0 looks (command::Command).
@@ -169,7 +164,7 @@ struct Character {
   math::Vec3 eye{};
   /// What a bullet that reaches its body is judged against. One without any
   /// cannot be hit.
-  std::vector<CharacterHitbox> hitboxes;
+  std::vector<hitbox::CharacterHitbox> hitboxes;
 };
 
 /// One player of a Match, as Match start hands it to SimulationWorld.
@@ -256,6 +251,71 @@ struct Death {
   bool operator==(const Death&) const = default;
 };
 
+#if AUGUSTA_DEBUG_TOOLS
+/// What a round struck, which ended its flight, as its Shot judgement tells it.
+enum class Struck : std::uint8_t {
+  /// Nothing: it flew past the ammo's max range or ballistics::kMaxFlightTime.
+  kNothing,
+  kMap,
+  /// A Prop (ADR-0045). Nothing yet: no round strikes a Prop.
+  kProp,
+  /// A player's Hitbox.
+  kHitbox,
+};
+
+/// One player a round was judged against on one tick of its flight, by the
+/// Hitbox pose the Hitbox history gave for that tick's judging moment (its
+/// Shooter's delay before it): what, with its Character, places its Hitboxes.
+struct JudgedPlayer {
+  EntityId entity{};
+  /// Where its feet were.
+  math::Vec3 position{};
+  physics::Stance stance = physics::Stance::kStanding;
+  /// Where it faced, in radians.
+  float yaw = 0.0F;
+
+  bool operator==(const JudgedPlayer&) const = default;
+};
+
+/// One tick of a round's flight whose segment reached some player's bounds.
+struct ShotJudgementEntry {
+  /// How many ticks after its Shot's this one is: 0 on the tick it was fired.
+  std::uint32_t ticks_after_shot = 0;
+  /// Every player whose bounds the segment reached, not only one it struck,
+  /// ordered by entity; never the shooter.
+  std::vector<JudgedPlayer> players;
+
+  bool operator==(const ShotJudgementEntry&) const = default;
+};
+
+/// How the server judged one round (GLOSSARY.md's Shot judgement, ADR-0038),
+/// once its flight has ended: a Development build's alone (ADR-0074), for its
+/// shooter to compare with what it saw.
+struct ShotJudgement {
+  /// The body of the player who fired it, which may have left the world since.
+  EntityId shooter{};
+  /// The tick its Shot was fired on.
+  tick::Tick shot_tick = 0;
+  /// Its Shooter's delay (ADR-0044), in ticks: from 0 to kMaxShootersDelay's.
+  float shooters_delay = 0.0F;
+  Struck struck = Struck::kNothing;
+  /// The Body part of the Hitbox struck; meaningful only when struck is kHitbox.
+  body_part::BodyPart part = body_part::BodyPart::kTorso;
+  /// Where it struck; the origin when it struck nothing.
+  math::Vec3 point{};
+  /// The body or Prop it struck; nullopt when it struck neither.
+  std::optional<EntityId> target = std::nullopt;
+  /// The ticks of its flight whose segment reached some player's bounds, oldest
+  /// first: the first limits::kMaxShotJudgementEntries of them. Empty for a round that
+  /// passed no player.
+  std::vector<ShotJudgementEntry> entries;
+  /// Whether more ticks reached some player's bounds than entries holds.
+  bool entries_left_out = false;
+
+  bool operator==(const ShotJudgement&) const = default;
+};
+#endif
+
 /// ADR-0023/ARCHITECTURE.md's "Authoritative State" of one tick, for
 /// augusta::replication to send to clients: every living player's body, the
 /// rounds fired, what became of the bullets in flight (the Map impacts and the
@@ -301,6 +361,12 @@ struct TickResult {
   /// cap held it. The server's own, for its metrics (ADR-0049): neither sent
   /// nor recorded.
   std::vector<float> shooters_delays;
+#if AUGUSTA_DEBUG_TOOLS
+  /// The Shot judgement of each round whose flight ended on this tick, ordered
+  /// by shooter, while World::JudgeShots has them built; empty otherwise. Not
+  /// part of state: neither replicated to every client nor captured.
+  std::vector<ShotJudgement> shot_judgements;
+#endif
 };
 
 /// The single authoritative SimulationWorld. The server constructs
@@ -378,6 +444,14 @@ class World {
   /// kMaxShootersDelay. Returns the tick's Authoritative State and the actions
   /// Game policy took on it.
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
+
+#if AUGUSTA_DEBUG_TOOLS
+  /// Whether Tick builds the Shot judgements of the rounds fired from now on:
+  /// off until switched on, as host::Host does at Match start while the server
+  /// has them on. Off, a round records nothing of its flight; how a round is
+  /// judged is the same either way.
+  void JudgeShots(bool on);
+#endif
 
  private:
   struct Impl;

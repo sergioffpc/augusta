@@ -24,19 +24,6 @@ std::string FormatFps(double average_frame_time_s) {
                      average_frame_time_s * kMsPerSecond);
 }
 
-// Bytes per second -> "512B/s", "1.2KB/s" or "3.4MB/s".
-std::string FormatRate(float bytes_per_sec) {
-  constexpr float kKiB = 1024.0F;
-  constexpr float kMiB = kKiB * 1024.0F;
-  if (bytes_per_sec >= kMiB) {
-    return std::format("{:.1f}MB/s", bytes_per_sec / kMiB);
-  }
-  if (bytes_per_sec >= kKiB) {
-    return std::format("{:.1f}KB/s", bytes_per_sec / kKiB);
-  }
-  return std::format("{:.0f}B/s", bytes_per_sec);
-}
-
 std::string FormatNet(const std::optional<NetStats>& net) {
   if (!net.has_value()) {
     return "RTT: --";
@@ -49,8 +36,22 @@ std::string FormatNet(const std::optional<NetStats>& net) {
 
 }  // namespace
 
-std::vector<std::string> Lines(double average_frame_time_s, const std::optional<NetStats>& net) {
-  return {FormatFps(average_frame_time_s) + " | " + FormatNet(net)};
+std::string FormatBytes(double bytes) {
+  constexpr double kKiB = 1024.0;
+  constexpr double kMiB = kKiB * 1024.0;
+  if (bytes >= kMiB) {
+    return std::format("{:.1f}MB", bytes / kMiB);
+  }
+  if (bytes >= kKiB) {
+    return std::format("{:.1f}KB", bytes / kKiB);
+  }
+  return std::format("{:.0f}B", bytes);
+}
+
+std::string FormatRate(double bytes_per_sec) { return FormatBytes(bytes_per_sec) + "/s"; }
+
+std::vector<std::string> Lines(double average_frame_time_s, const std::optional<NetStats>& net, bool impaired) {
+  return {FormatFps(average_frame_time_s) + " | " + FormatNet(net) + (impaired ? " | IMPAIRED" : "")};
 }
 
 void FrameTimeWindow::Tick(Clock::time_point now) {

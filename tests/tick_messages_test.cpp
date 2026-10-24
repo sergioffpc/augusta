@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -37,10 +38,18 @@ using augusta::protocol::StanceWire;
 using augusta::simulation::EntityId;
 using augusta::simulation::EntityState;
 using augusta::simulation::State;
+using augusta::simulation::TickResult;
 
 using Payload = std::vector<std::byte>;
 
 Payload BytesOf(const Outgoing& message) { return {message.Payload().begin(), message.Payload().end()}; }
+
+// The tick whose State is state, and nothing more.
+TickResult ResultOf(State state) {
+  TickResult result;
+  result.state = std::move(state);
+  return result;
+}
 
 struct Sent {
   PeerId peer{};
@@ -50,7 +59,7 @@ struct Sent {
 
 std::vector<Sent> SendAll(const State& state, augusta::tick::Tick tick, const TickRecipients& to) {
   std::vector<Sent> sent;
-  const auto handed = ForEachTickMessage(state, tick, to, [&sent](PeerId peer, const Outgoing& message) {
+  const auto handed = ForEachTickMessage(ResultOf(state), tick, to, [&sent](PeerId peer, const Outgoing& message) {
     sent.push_back(Sent{.peer = peer, .payload = BytesOf(message), .type = message.Type()});
     return true;
   });
@@ -243,10 +252,11 @@ TEST(TickMessagesTest, AnUpdateTheProtocolCannotCarryIsNotSentAndIsAnInvariantFa
   }
   std::vector<Sent> sent;
 
-  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
-    sent.push_back({peer, BytesOf(message), message.Type()});
-    return true;
-  });
+  const auto handed =
+      ForEachTickMessage(ResultOf(state), 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+        sent.push_back({peer, BytesOf(message), message.Type()});
+        return true;
+      });
 
   ASSERT_FALSE(handed.has_value());
   EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
@@ -266,10 +276,11 @@ TEST(TickMessagesTest, AMessageTheProtocolCannotCarrySendsNoneOfTheTicks) {
                    .part = static_cast<augusta::body_part::BodyPart>(99)}};
   std::vector<Sent> sent;
 
-  const auto handed = ForEachTickMessage(state, 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
-    sent.push_back({peer, BytesOf(message), message.Type()});
-    return true;
-  });
+  const auto handed =
+      ForEachTickMessage(ResultOf(state), 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+        sent.push_back({peer, BytesOf(message), message.Type()});
+        return true;
+      });
 
   ASSERT_FALSE(handed.has_value());
   EXPECT_EQ(handed.error().code, augusta::failure::Code::kInvariantViolated);
@@ -283,7 +294,7 @@ TEST(TickMessagesTest, NothingMoreIsHandedOnOnceTheSinkDeclines) {
   std::vector<Sent> sent;
 
   const auto handed =
-      ForEachTickMessage(TwoBodies(), 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
+      ForEachTickMessage(ResultOf(TwoBodies()), 42, ThreePlayers(), [&sent](PeerId peer, const Outgoing& message) {
         sent.push_back({peer, BytesOf(message), message.Type()});
         return false;
       });
