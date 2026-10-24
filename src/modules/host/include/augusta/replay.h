@@ -75,16 +75,6 @@ class ReplayCheck {
   bool reported_ = false;
 };
 
-/// Where one player of a Replay looked on a tick, from the Command the World
-/// ran: what its Replay viewer is shown of it, which no Authoritative State
-/// carries (ADR-0051).
-struct PlayerView {
-  EntityId entity{};
-  /// In radians, as command::Command's.
-  float pitch = 0.0F;
-  bool ads = false;
-};
-
 /// How a Replay ended, for its viewer to be told.
 struct ReplayEnd {
   /// The winner's session, as the capture names it; nullopt for a Draw.
@@ -94,8 +84,6 @@ struct ReplayEnd {
 /// One tick of a Replay, as it ran.
 struct ReplayTick {
   simulation::TickResult result;
-  /// Every player handed a Command on the tick, in the capture's order.
-  std::vector<PlayerView> views;
   /// Set on the Replay's last tick.
   std::optional<ReplayEnd> end;
   /// The first marker the Replay resolved otherwise than the capture, on the
@@ -152,7 +140,7 @@ class Replay {
   // Hands the World what the tick at offset is handed before it runs: the
   // Leaves before it, and each player's Commands queued.
   void HandBefore(std::uint32_t offset);
-  [[nodiscard]] std::vector<simulation::PlayerCommand> TakeCommands(std::vector<PlayerView>& views);
+  [[nodiscard]] std::vector<simulation::PlayerCommand> TakeCommands();
   [[nodiscard]] std::optional<ReplayEnd> EndOf(std::uint32_t offset, const simulation::TickResult& result) const;
 
   capture::Capture capture_;

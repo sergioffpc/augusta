@@ -99,12 +99,11 @@ every body by interpolating Authoritative States, as any client draws the other
 players, so it is as smooth as the other players always are. It watches the
 capture's first player and moves on with fire, as a Spectator does.
 
-**A Replay sends what the watched player saw.** A Spectator's camera looks level
-from the hip, since a remote player's pitch and ADS are not replicated. A Replay
-viewer is there to see what the player saw, so each tick the replay server also
-sends a Replay view: every player's pitch and whether it held ADS, from the
-Command the World ran that tick. It travels unreliably, as the Authoritative
-State does, and only to Replay viewers: live Authoritative States do not grow.
+**A Replay shows what the watched player saw.** A Replay viewer is there to see
+what the player saw: its camera looks at the watched player's pitch and zooms
+with its ADS, as a Spectator's does. Both are in every body of the Authoritative
+State (ADR-0038, ADR-0066), which the World sets from the Command it ran that
+tick, so a Replay needs no message of its own for them.
 
 **augustac watches a Replay: `--replays` and `--replay <capture>`.** As for a
 Reenactment, a capture is chosen for one run, so it joins the command line
@@ -126,10 +125,10 @@ at the wrong server says so at once instead of waiting.
 - **A Replay plays forward only.** Seeking means re-running from the first tick,
   and pausing or changing speed means the replay server ticking a run at another
   rate; none is decided here.
-- **The protocol grows by four messages and three refusal reasons**: the Replay
-  list request, the Replay list, the Replay request and the Replay view, with
-  _replay server_, _unknown capture_ and _not a replay server_. A client of an
-  older engine version is refused, as for any protocol change.
+- **The protocol grows by three messages and three refusal reasons**: the Replay
+  list request, the Replay list and the Replay request, with _replay server_,
+  _unknown capture_ and _not a replay server_. A client of an older engine
+  version is refused, as for any protocol change.
 - **A replay server serves only its own pack's captures.** A capture made before
   a change to the scenario needs a replay server started on the pack it was made
   on.
@@ -149,5 +148,6 @@ at the wrong server says so at once instead of waiting.
   directory's listing cannot.
 - **One Replay of a capture shared by every viewer**: rejected - viewers who
   connect late would join it partway, with no way back to the start.
-- **Replicating pitch and ADS in every Authoritative State**: rejected - every
-  live client would pay for what only a Replay viewer uses.
+- **A Replay view, every player's pitch and ADS sent to Replay viewers alone**:
+  rejected - the Authoritative State carries both for every client, since they
+  pose the Hitboxes (ADR-0066), so a second carrier would only duplicate them.

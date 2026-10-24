@@ -217,6 +217,11 @@ struct EntityState {
   /// (command::Command), in radians, on the grid the Networking Protocol sends
   /// it on (ADR-0038). Its hitboxes turn with it.
   float yaw = 0.0F;
+  /// Where it looks up or down: the pitch of the same Command, in radians, on
+  /// the same grid.
+  float pitch = 0.0F;
+  /// Whether the same Command aimed down sights.
+  bool ads = false;
   /// What is left of its player's health: the Parameters' starting health at
   /// Match start, less the damage taken since, never below 0. Its own player
   /// alone is told it (ADR-0038).

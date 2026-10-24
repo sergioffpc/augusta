@@ -519,7 +519,7 @@ TEST_F(ReplayServerTest, AReplayRequestFromAnotherVersionOrPackIsRefusedForItBef
 }
 
 // Requirements: US-21
-TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
+TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesAndEndThenClosed) {
   const std::string name = CaptureAKill(directory_.Path());
   if (name.empty()) {
     return;  // CaptureAKill reported the missing capture.
@@ -549,19 +549,18 @@ TEST_F(ReplayServerTest, AViewerIsSentAMatchsStartStatesViewsAndEndThenClosed) {
     EXPECT_EQ(starts[0].players[i].entity, static_cast<protocol::EntityIdWire>(i + 1));
     EXPECT_EQ(starts[0].players[i].spawn, join.spawn);
   }
-  EXPECT_FALSE(Of<protocol::AuthoritativeStateWire>(received).empty());
-  for (const protocol::AuthoritativeStateWire& state : Of<protocol::AuthoritativeStateWire>(received)) {
+  const std::vector<protocol::AuthoritativeStateWire> states = Of<protocol::AuthoritativeStateWire>(received);
+  ASSERT_FALSE(states.empty());
+  for (const protocol::AuthoritativeStateWire& state : states) {
     EXPECT_EQ(state.health, 0.0F);
     EXPECT_EQ(state.acknowledged_sequence, 0U);
   }
-  // The shooter's pitch and ADS, which no Authoritative State carries.
-  const std::vector<protocol::ReplayViewWire> views = Of<protocol::ReplayViewWire>(received);
-  ASSERT_FALSE(views.empty());
-  const auto shooter =
-      std::ranges::find(views.back().players, protocol::EntityIdWire{1}, &protocol::PlayerViewWire::entity);
-  ASSERT_NE(shooter, views.back().players.end());
+  // The shooter's pitch and ADS, as the replayed state carries them.
+  const std::vector<protocol::EntityStateWire>& last = states.back().bodies;
+  const auto shooter = std::ranges::find(last, protocol::EntityIdWire{1}, &protocol::EntityStateWire::entity);
+  ASSERT_NE(shooter, last.end());
   EXPECT_GT(shooter->pitch, 0.0F);
-  EXPECT_EQ(shooter->flags, protocol::PlayerViewWire::kAds);
+  EXPECT_NE(shooter->body.flags & protocol::BodyStateWire::kAds, 0);
   EXPECT_FALSE(Of<protocol::ShotWire>(received).empty());
   EXPECT_TRUE(Of<protocol::HitConfirmationWire>(received).empty());
   const std::vector<protocol::DeathWire> deaths = Of<protocol::DeathWire>(received);
@@ -661,9 +660,9 @@ TEST_F(ReplayServerTest, TwoViewersEachWatchFromTheStartAndOnePastTheMostIsRefus
 
   // Each saw the Match from its first tick to its end.
   for (const RawClient* viewer : {&first, &second}) {
-    const auto views = viewer->ReceivedOf<protocol::ReplayViewWire>();
-    ASSERT_FALSE(views.empty());
-    const auto first_tick = std::ranges::min(views, {}, &protocol::ReplayViewWire::tick).tick;
+    const auto states = viewer->ReceivedOf<protocol::AuthoritativeStateWire>();
+    ASSERT_FALSE(states.empty());
+    const auto first_tick = std::ranges::min(states, {}, &protocol::AuthoritativeStateWire::tick).tick;
     EXPECT_LE(first_tick, 2U);
     EXPECT_EQ(viewer->ReceivedOf<protocol::DeathWire>().size(), 1U);
     EXPECT_EQ(viewer->ReceivedOf<protocol::MatchEndWire>().size(), 1U);
@@ -741,8 +740,8 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
   ASSERT_TRUE(RunUntil(
       *server, *viewer,
       [&] {
-        const auto& view = viewer->GetServerView()->replay_view;
-        return view.has_value() && !view->players.empty() && view->players[0].ads;
+        const auto& state = viewer->GetServerView()->authoritative;
+        return state.has_value() && !state->bodies.empty() && state->bodies[0].ads;
       },
       true));
   const std::shared_ptr<const augusta::harness::ServerView> watching = viewer->GetServerView();
@@ -750,11 +749,11 @@ TEST_F(ReplayViewerTest, AViewerWatchesACaptureFromItsFirstTickToItsEndWithEvery
   EXPECT_FALSE(watching->OwnEntity().has_value());
   EXPECT_EQ(watching->match_start->players.size(), 2U);
   EXPECT_EQ(watching->match_start->first_tick, 1U);
-  ASSERT_EQ(watching->replay_view->players.size(), 2U);
-  EXPECT_EQ(watching->replay_view->players[0].entity, augusta::harness::EntityId{1});
-  EXPECT_GT(watching->replay_view->players[0].pitch, 0.0F);
-  EXPECT_TRUE(watching->replay_view->players[0].ads);
-  EXPECT_FALSE(watching->replay_view->players[1].ads);
+  ASSERT_EQ(watching->authoritative->bodies.size(), 2U);
+  EXPECT_EQ(watching->authoritative->bodies[0].entity, augusta::harness::EntityId{1});
+  EXPECT_GT(watching->authoritative->bodies[0].pitch, 0.0F);
+  EXPECT_TRUE(watching->authoritative->bodies[0].ads);
+  EXPECT_FALSE(watching->authoritative->bodies[1].ads);
   // It predicts nothing and sends nothing, however it is ticked.
   EXPECT_EQ(viewer->Tick(Command{}, kFixedTick).local_body.position, Vec3{});
 

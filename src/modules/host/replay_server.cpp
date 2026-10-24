@@ -93,7 +93,6 @@ std::expected<std::vector<link::Outgoing>, failure::Failure> ViewerMessages(cons
   for (const replication::Death& death : replication::PlanDeaths(state)) {
     messages.push_back(link::Encode(ToLink(death)));
   }
-  messages.push_back(link::Encode(ToLink(tick.views, state.tick)));
   if (tick.end.has_value()) {
     messages.push_back(link::Encode(ToLink(MatchEnd{.players = {}, .winner = tick.end->winner})));
   }

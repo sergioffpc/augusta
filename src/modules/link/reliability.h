@@ -11,13 +11,12 @@
 namespace augusta::link {
 
 /// How a message of type travels: unreliable when a newer one supersedes it (a
-/// tick's Commands, an Authoritative State, a Replay view), reliable when its
+/// tick's Commands, an Authoritative State), reliable when its
 /// loss would leave the two sides disagreeing (everything else).
 constexpr networking::Reliability ReliabilityOf(MessageType type) {
   switch (type) {
     case MessageType::kCommands:
     case MessageType::kAuthoritativeState:
-    case MessageType::kReplayView:
       return networking::Reliability::kUnreliable;
     case MessageType::kJoinRequest:
     case MessageType::kJoinAccepted:

@@ -254,8 +254,7 @@ looks back in time), re-simulation (Reconciliation's replay of unacknowledged
 commands is the client's own), Reenactment (that goes through live clients)
 
 **Replay viewer**: A client watching a Replay: a Spectator from the first tick,
-with no body and no Commands, shown each watched player's pitch and ADS as well
-(ADR-0051). _Avoid_: Observer, ghost
+with no body and no Commands (ADR-0051). _Avoid_: Observer, ghost
 
 **Seen time**: The moment of the server's timeline a client's frame shows the
 other players at: the tick of an Authoritative State update and how far from it
@@ -576,8 +575,9 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 
 **Spectator**: A dead player still in the Match: until the Match ends it watches
 from a living teammate's eye (any living player's once its Team has none),
-chosen in Session order and moved on with fire, and its input moves, turns and
-fires nothing. It never respawns. _Avoid_: Ghost, observer, dead cam
+looking where that player looks and zoomed by its ADS, chosen in Session order
+and moved on with fire, and its input moves, turns and fires nothing. It never
+respawns. _Avoid_: Ghost, observer, dead cam
 
 ### Audio
 

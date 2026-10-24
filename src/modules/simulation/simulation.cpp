@@ -72,9 +72,12 @@ struct Intent {
   physics::MovementInput input{};
 };
 
-// Where a player's body faces: the yaw of its last command's view, on its grid.
+// Where a player's body faces and looks: its last command's view, on its grid,
+// and whether that command aimed down sights.
 struct Facing {
   float yaw = 0.0F;
+  float pitch = 0.0F;
+  bool ads = false;
 };
 
 // What is left of a player's health, 0 or more.
@@ -331,7 +334,7 @@ struct World::Impl {
   }
 
   // A player with no command this tick stops, and keeps the stance it asked
-  // for and where it faced.
+  // for, where it faced and looked, and whether it aimed down sights.
   void OnCommandIngestion(const Player& player, Intent& intent, Facing& facing) {
     const auto command = tick_commands.find(player.entity);
     if (command == tick_commands.end()) {
@@ -341,6 +344,8 @@ struct World::Impl {
     }
     intent.input = command->second.movement;
     facing.yaw = math::SnapAngle(command->second.yaw);
+    facing.pitch = math::SnapAngle(command->second.pitch);
+    facing.ads = command->second.ads;
   }
 
   void OnMovement(float delta_time, Body& body, const Intent& intent) {
@@ -577,8 +582,13 @@ struct World::Impl {
   // Commit, first: packages one living player into the tick's State.
   void PackageState(const Player& player, const Body& body, const Facing& facing, const Health& health,
                     const Rifle& rifle) {
-    committed.bodies.push_back(EntityState{
-        .entity = player.entity, .body = body.state, .yaw = facing.yaw, .health = health.value, .rifle = rifle.state});
+    committed.bodies.push_back(EntityState{.entity = player.entity,
+                                           .body = body.state,
+                                           .yaw = facing.yaw,
+                                           .pitch = facing.pitch,
+                                           .ads = facing.ads,
+                                           .health = health.value,
+                                           .rifle = rifle.state});
     committed.alive.push_back(player.entity);
   }
 
