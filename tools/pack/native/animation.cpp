@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstring>
 #include <format>
 #include <span>
 #include <stdexcept>
@@ -21,6 +20,7 @@
 #include <ozz/base/io/archive.h>
 #include <ozz/base/io/stream.h>
 #include <ozz/base/maths/quaternion.h>
+#include <ozz/base/maths/simd_math.h>
 #include <ozz/base/maths/soa_transform.h>
 #include <ozz/base/maths/transform.h>
 #include <ozz/base/maths/vec_float.h>
@@ -36,8 +36,17 @@ namespace {
 
 // The lanes of a SoA value: ozz-animation keeps four Joints in each.
 constexpr std::size_t kSoaWidth = 4;
-// The SIMD values of a SoaTransform: translation, rotation, scale.
-constexpr std::size_t kSoaComponents = 3 + 4 + 3;
+
+using Lanes = std::array<float, kSoaWidth>;
+
+// Each lane of value. Floats, never a standard container of the SIMD values
+// themselves: clang-cl aligns one of those to 8 bytes only, and the aligned
+// loads of its elements crash (tests/animation_ozz_jobs_test.cpp).
+Lanes LanesOf(ozz::math::_SimdFloat4 value) {
+  Lanes lanes{};
+  ozz::math::StorePtrU(value, lanes.data());
+  return lanes;
+}
 
 ozz::math::Float3 Float3Of(const math::Vec3& vec) { return {vec.x, vec.y, vec.z}; }
 
@@ -183,19 +192,22 @@ std::vector<SampledJoint> SampleClip(std::span<const std::byte> skeleton_archive
   std::vector<SampledJoint> sampled;
   const auto names = skeleton.joint_names();
   for (std::size_t soa = 0; soa < locals.size(); ++soa) {
-    // A SoaTransform is its translation's x, y and z, its rotation's x, y, z
-    // and w, then its scale's x, y and z, each four Joints' lanes. Copied as
-    // bytes rather than stored lane by lane: an array of its SIMD values on the
-    // stack came out misaligned under clang-cl, and its aligned loads crashed.
-    std::array<std::array<float, kSoaWidth>, kSoaComponents> lanes{};
-    static_assert(sizeof(lanes) == sizeof(ozz::math::SoaTransform));
-    std::memcpy(lanes.data(), &locals[soa], sizeof(lanes));
+    const ozz::math::SoaTransform& transform = locals[soa];
+    const Lanes tx = LanesOf(transform.translation.x);
+    const Lanes ty = LanesOf(transform.translation.y);
+    const Lanes tz = LanesOf(transform.translation.z);
+    const Lanes rx = LanesOf(transform.rotation.x);
+    const Lanes ry = LanesOf(transform.rotation.y);
+    const Lanes rz = LanesOf(transform.rotation.z);
+    const Lanes rw = LanesOf(transform.rotation.w);
+    const Lanes sx = LanesOf(transform.scale.x);
+    const Lanes sy = LanesOf(transform.scale.y);
+    const Lanes sz = LanesOf(transform.scale.z);
     for (std::size_t lane = 0; lane < kSoaWidth && soa * kSoaWidth + lane < names.size(); ++lane) {
-      SampledJoint joint{.name = names[soa * kSoaWidth + lane]};
-      joint.translation = math::Vec3(lanes[0][lane], lanes[1][lane], lanes[2][lane]);
-      joint.rotation = math::Quat(lanes[6][lane], lanes[3][lane], lanes[4][lane], lanes[5][lane]);
-      joint.scale = math::Vec3(lanes[7][lane], lanes[8][lane], lanes[9][lane]);
-      sampled.push_back(joint);
+      sampled.push_back({.name = names[soa * kSoaWidth + lane],
+                         .translation = math::Vec3(tx[lane], ty[lane], tz[lane]),
+                         .rotation = math::Quat(rw[lane], rx[lane], ry[lane], rz[lane]),
+                         .scale = math::Vec3(sx[lane], sy[lane], sz[lane])});
     }
   }
   return sampled;
