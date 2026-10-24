@@ -254,8 +254,7 @@ looks back in time), re-simulation (Reconciliation's replay of unacknowledged
 commands is the client's own), Reenactment (that goes through live clients)
 
 **Replay viewer**: A client watching a Replay: a Spectator from the first tick,
-with no body and no Commands, shown each watched player's pitch and ADS as well
-(ADR-0051). _Avoid_: Observer, ghost
+with no body and no Commands (ADR-0051). _Avoid_: Observer, ghost
 
 **Seen time**: The moment of the server's timeline a client's frame shows the
 other players at: the tick of an Authoritative State update and how far from it
@@ -526,6 +525,19 @@ salvo (a Burst is not a fire mode: the rifle is full-auto)
 its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
 where a round leaves), shot origin
 
+**Grip**: Where on a rifle the holding hand holds it: one of the rifle's
+markers, with the Muzzle and the Sight, authored in its stage. _Avoid_: Handle,
+hand position
+
+**Sight**: The point on a rifle the Eye looks through in ADS, and its line of
+sight: one of the rifle's markers. In ADS a Desktop player holds the rifle with
+its Sight on the Eye. _Avoid_: Scope, aim point
+
+**Hip offset**: How far from its ADS hold a Desktop player holds its rifle from
+the hip, along the view's own axes: a rifle Parameter. _Avoid_: Muzzle offset
+(the Muzzle is placed from the hand that holds the rifle, never offset from the
+body), hip position
+
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
 shrinks back to zero while the trigger is not pulled. A Shot leaves along the
@@ -576,8 +588,9 @@ sights, trading movement/hip-fire speed for accuracy. _Avoid_: Zoom, scope
 
 **Spectator**: A dead player still in the Match: until the Match ends it watches
 from a living teammate's eye (any living player's once its Team has none),
-chosen in Session order and moved on with fire, and its input moves, turns and
-fires nothing. It never respawns. _Avoid_: Ghost, observer, dead cam
+looking where that player looks and zoomed by its ADS, chosen in Session order
+and moved on with fire, and its input moves, turns and fires nothing. It never
+respawns. _Avoid_: Ghost, observer, dead cam
 
 ### Audio
 

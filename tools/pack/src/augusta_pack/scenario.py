@@ -1,12 +1,13 @@
 """A scenario is named, not pathed (ADR-0041).
 
 `augusta-pack <name>` resolves to <assets-root>/authoring/scenarios/<name>.yaml,
-a manifest naming, by file, the one map, every character, the sound of every cue
-and the scripts that scenario composes:
+a manifest naming, by file, the one map, every character, the one rifle, the
+sound of every cue and the scripts that scenario composes:
 
     authoring/scenarios/test.yaml                  # the manifest below
     authoring/maps/test.usda
     authoring/characters/soldier.usda
+    authoring/rifles/rifle.usda
     authoring/sounds/gunshot.wav                   # mono PCM WAVs
     authoring/scripts/parameters/rules_of_engagement.lua
     authoring/scripts/rules/last_man_standing.lua
@@ -14,6 +15,7 @@ and the scripts that scenario composes:
     map: maps/test.usda
     characters:
       soldier: characters/soldier.usda
+    rifle: rifles/rifle.usda
     sounds:
       gunshot:                                     # variants played at random
         variants: [sounds/gunshot.wav, sounds/gunshot_2.wav]
@@ -27,7 +29,8 @@ and the scripts that scenario composes:
 Every path is relative to authoring/. The cooker packs everything the manifest
 names: the map's stage and every character's stage into the client and server
 packs (a character's own prim paths addressed under its name, e.g.
-soldier/Character/Visual - ADR-0040), each script into the
+soldier/Character/Visual - ADR-0040), the rifle's Grip, Muzzle and Sight into
+both (ADR-0064), each script into the
 server pack under its role's fixed name (parameters.lua, rules.lua - ADR-0022,
 ADR-0039), signed with the map/characters so it cannot change during a run, and
 each cue's sound into the client pack only (ADR-0020, ADR-0031). A character is
@@ -54,7 +57,7 @@ USD_EXTENSIONS = (".usd", ".usda", ".usdc", ".usdz")
 
 # The keys a manifest may hold; any other is a typo, refused rather than
 # ignored.
-MANIFEST_KEYS = ("map", "characters", "sounds", "scripts")
+MANIFEST_KEYS = ("map", "characters", "rifle", "sounds", "scripts")
 
 # The keys a cue's sound may hold, when it is a mapping rather than one file.
 CUE_SOUND_KEYS = ("variants", "gain")
@@ -101,6 +104,9 @@ class Scenario:
     map_stage_path: Path
     # Every character the manifest named, in manifest order.
     characters: list[Character]
+    # <authoring>/<manifest's rifle>, the stage the cooker reads the rifle's
+    # markers from (ADR-0064).
+    rifle_stage_path: Path
     # Each script's path in the server pack with its bytes, in path order so a
     # cook is reproducible.
     scripts: list[tuple[str, bytes]]
@@ -109,14 +115,15 @@ class Scenario:
 
 
 def resolve_scenario(assets_root: Path, name: str) -> Scenario:
-    """Reads the map, characters, sounds and scripts a scenario names.
+    """Reads the map, characters, rifle, sounds and scripts a scenario names.
 
     The scenario's manifest is <assets_root>/authoring/scenarios/<name>.yaml.
 
     Raises:
         ScenarioError: the manifest is missing or malformed, a file it names
             is missing or not what its key needs (a USD stage, a mono PCM
-            WAV), it lacks a cue's sound or the parameters script, or it holds
+            WAV), it lacks a rifle, a cue's sound or the parameters script, or
+            it holds
             a key, cue or script role it does not know.
     """
     authoring_dir = assets_root / "authoring"
@@ -168,11 +175,21 @@ def resolve_scenario(assets_root: Path, name: str) -> Scenario:
         for name, stage_rel in characters_rel.items()
     ]
 
+    # Every server places its players' Muzzles from the rifle's markers, so a
+    # scenario without one cannot be played (ADR-0064).
+    rifle_rel = manifest.get("rifle")
+    if not isinstance(rifle_rel, str) or not rifle_rel:
+        raise ScenarioError(
+            f"{manifest_path}: 'rifle' must name the rifle's stage, e.g. "
+            f"rifle: rifles/rifle.usda"
+        )
+
     return Scenario(
         name=name,
         manifest_path=manifest_path,
         map_stage_path=map_stage_path,
         characters=characters,
+        rifle_stage_path=_find_stage(authoring_dir, rifle_rel, manifest_path),
         scripts=_read_scripts(
             authoring_dir, manifest.get("scripts"), manifest_path
         ),

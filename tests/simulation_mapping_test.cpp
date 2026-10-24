@@ -1,5 +1,6 @@
 #include "augusta/simulation_mapping.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -7,11 +8,15 @@
 
 #include "augusta/assets.h"
 #include "augusta/body_part.h"
+#include "augusta/clips.h"
+#include "augusta/command.h"
 #include "augusta/content.h"
 #include "augusta/failure.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/parameters.h"
 #include "augusta/simulation.h"
+#include "augusta/weapon.h"
 
 // Unit tests for the conversions Host makes at SimulationWorld's edge.
 namespace {
@@ -100,6 +105,46 @@ TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSp
   ASSERT_EQ(medic.hitboxes[0].triangles.size(), 1U);
   EXPECT_EQ(medic.hitboxes[0].triangles[0].a, Vec3(0.0F, 0.0F, 0.0F));
   EXPECT_EQ(medic.hitboxes[0].triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
+}
+
+// Movement advances each player's Stride by its Character's Clips (ADR-0066):
+// SimulationWorld shares the ones the server loaded.
+TEST(SimulationMappingTest, ACharacterKeepsItsClips) {
+  const auto clips = std::make_shared<const augusta::animation::CharacterClips>();
+  const std::vector<augusta::scenario::Character> characters = {
+      {.path = "medic", .hitboxes = {}, .eye = Vec3(0.0F, 1.6F, 0.0F), .clips = clips},
+  };
+
+  const auto converted = ToSimulation(characters);
+
+  EXPECT_EQ(converted.at("medic").clips, clips);
+}
+
+// Every server places its players' Muzzles from the scenario's rifle (ADR-0064):
+// in ADS its Sight is on the Eye and its Muzzle where the rifle has it ahead of
+// its Sight.
+TEST(SimulationMappingTest, ASimulationHoldsTheScenariosRifle) {
+  augusta::scenario::Scenario scenario;
+  scenario.rifle = augusta::weapon::Markers{
+      .grip = augusta::math::Mat4(1.0F),
+      .muzzle =
+          augusta::math::ToMat4(Vec3(0.0F, 0.06F, -0.62F), augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F)),
+      .sight =
+          augusta::math::ToMat4(Vec3(0.0F, 0.12F, -0.05F), augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F)),
+  };
+  auto world = augusta::host::BuildSimulation(augusta::parameters::Parameters{}, 60, scenario, {});
+  const augusta::simulation::EntityId alice{1};
+  world.AddPlayer(alice, Vec3(0.0F, 0.0F, 0.0F),
+                  augusta::simulation::Character{.eye = Vec3(0.0F, 1.6F, 0.0F), .hitboxes = {}});
+
+  augusta::command::Command aiming;
+  aiming.ads = true;
+  static_cast<void>(world.Tick({{.entity = alice, .command = aiming}}, 1.0F / 60.0F));
+
+  const auto held = world.HeldRifleOf(alice);
+  ASSERT_TRUE(held.has_value());
+  const Vec3 muzzle_from_sight = Vec3(held->muzzle[3]) - Vec3(held->sight[3]);
+  EXPECT_NEAR(augusta::math::Length(muzzle_from_sight - Vec3(0.0F, -0.06F, -0.57F)), 0.0F, 1e-4F);
 }
 
 }  // namespace

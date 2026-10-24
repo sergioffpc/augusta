@@ -17,6 +17,7 @@
 #include "augusta/policy.h"
 #include "augusta/replay.h"
 #include "augusta/simulation.h"
+#include "clips_fixture.h"
 
 // A Replay (ADR-0051) re-run on a SimulationWorld with no Map, from captures
 // made by hand: what it hands the World, tick by tick, and what it compares
@@ -128,7 +129,7 @@ TEST(CaptureReplayTest, TheMatchStartsWithTheCapturesPlayersWhereItHasThemWithou
 }
 
 // The queue holds a player's last Command over a tick the capture has nothing
-// new for, as the live server's did: the view keeps its pitch and ADS.
+// new for, as the live server's did: the body keeps its pitch and ADS.
 // Requirements: US-21
 TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid) {
   Command aiming;
@@ -141,12 +142,11 @@ TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid)
 
   ASSERT_EQ(ticks.size(), 41U);
   for (const ReplayTick& tick : ticks) {
-    ASSERT_EQ(tick.views.size(), 2U);
-    EXPECT_EQ(tick.views[0].entity, EntityId{1});
-    EXPECT_FLOAT_EQ(tick.views[0].pitch, 0.5F);
-    EXPECT_TRUE(tick.views[0].ads);
-    EXPECT_FLOAT_EQ(tick.views[1].pitch, 0.0F);
-    EXPECT_FALSE(tick.views[1].ads);
+    ASSERT_NE(BodyOf(tick, 1), nullptr);
+    EXPECT_FLOAT_EQ(BodyOf(tick, 1)->pitch, 0.5F);
+    EXPECT_TRUE(BodyOf(tick, 1)->ads);
+    EXPECT_FLOAT_EQ(BodyOf(tick, 2)->pitch, 0.0F);
+    EXPECT_FALSE(BodyOf(tick, 2)->ads);
   }
   // The movement is held for kMaxHeldTime, then the body stops, as live.
   EXPECT_GT(BodyOf(ticks[10], 1)->body.position.x, 10.0F);
@@ -154,7 +154,7 @@ TEST(CaptureReplayTest, ATickWithNothingNewHoldsTheLastCommandAsTheLiveQueueDid)
 }
 
 // A Command the capture has on a tick reaches the World on that tick, and the
-// view the viewer is shown is its pitch.
+// state the viewer is shown carries its pitch.
 // Requirements: US-21
 TEST(CaptureReplayTest, EachCapturedCommandReachesTheWorldOnItsTick) {
   Command up;
@@ -166,10 +166,46 @@ TEST(CaptureReplayTest, EachCapturedCommandReachesTheWorldOnItsTick) {
   const std::vector<ReplayTick> ticks = RunToEnd(replay);
 
   ASSERT_EQ(ticks.size(), 7U);
-  EXPECT_FLOAT_EQ(ticks[1].views[1].pitch, 0.0F);
-  EXPECT_FLOAT_EQ(ticks[2].views[1].pitch, 0.25F);
-  EXPECT_FLOAT_EQ(ticks[4].views[1].pitch, 0.25F);
-  EXPECT_FLOAT_EQ(ticks[5].views[1].pitch, -0.75F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[1], 2)->pitch, 0.0F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[2], 2)->pitch, 0.25F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[4], 2)->pitch, 0.25F);
+  EXPECT_FLOAT_EQ(BodyOf(ticks[5], 2)->pitch, -0.75F);
+}
+
+// A Replay re-runs the captured Commands on the Characters' Clips, so each
+// body's Stride is the one the live Match's World advanced (ADR-0066): the same
+// as a World given those Commands on those ticks by hand, the last held over
+// the Match's last tick as the live queue held it.
+// Requirements: US-21
+TEST(CaptureReplayTest, AReplayReproducesEachBodysStride) {
+  Command walking;
+  walking.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+  constexpr std::uint32_t kWalkTicks = 20;
+  std::vector<Captured> events;
+  for (std::uint32_t offset = 0; offset < kWalkTicks; ++offset) {
+    events.push_back(CommandAt(offset, 1, walking));
+  }
+  events.push_back(EndAt(kWalkTicks));
+  Character walker = Characters().at(kCharacter);
+  walker.clips = augusta::clips_fixture::TestClips();
+  const std::unordered_map<std::string, Character> characters = {{kCharacter, walker}};
+  augusta::parameters::Parameters parameters;
+  parameters.player_count = 2;
+  Replay replay(CaptureOf(std::move(events)), augusta::simulation::World(parameters, kTickRate), characters);
+  augusta::simulation::World live(parameters, kTickRate);
+  live.AddPlayer(augusta::simulation::EntityId{1}, Vec3(10.0F, 0.0F, 0.0F), walker);
+  live.AddPlayer(augusta::simulation::EntityId{2}, Vec3(-10.0F, 0.0F, 4.0F), walker);
+
+  const std::vector<ReplayTick> ticks = RunToEnd(replay);
+
+  ASSERT_EQ(ticks.size(), kWalkTicks + 1);
+  for (std::uint32_t i = 0; i < ticks.size(); ++i) {
+    const augusta::simulation::State state =
+        live.Tick({{.entity = augusta::simulation::EntityId{1}, .command = walking}}, 1.0F / kTickRate).state;
+    ASSERT_NE(BodyOf(ticks[i], 1), nullptr);
+    EXPECT_EQ(BodyOf(ticks[i], 1)->body.stride, state.bodies.at(0).body.stride) << "tick " << i;
+  }
+  EXPECT_NE(BodyOf(ticks.back(), 1)->body.stride, 0);
 }
 
 // A round fired at offset 10 whose Seen time was 2 ticks older is judged 2
@@ -196,7 +232,6 @@ TEST(CaptureReplayTest, APlayerWhoLeftIsTakenOutBeforeTheTickOfItsLeave) {
   ASSERT_EQ(ticks.size(), 6U);
   EXPECT_NE(BodyOf(ticks[2], 2), nullptr);
   EXPECT_EQ(BodyOf(ticks[3], 2), nullptr);
-  EXPECT_EQ(ticks[3].views.size(), 1U);
   EXPECT_NE(BodyOf(ticks[3], 1), nullptr);
 }
 

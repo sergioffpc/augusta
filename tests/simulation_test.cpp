@@ -24,6 +24,7 @@
 #include "augusta/physics.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // SimulationWorld on flat ground: players are entities with bodies, moved by
 // the commands of each tick.
@@ -195,6 +196,101 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
   EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
 }
 
+// Every side learns where a body looks and whether it aims down sights from
+// the state alone (ADR-0066), on the grid the pitch travels on (ADR-0038).
+TEST_F(SimulationTest, APlayersStateCarriesThePitchAndAdsOfTheCommandItApplied) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
+  Command aiming;
+  aiming.pitch = -0.1234567F;
+  aiming.ads = true;
+
+  const State state = world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick).state;
+
+  ASSERT_EQ(state.bodies.size(), 2U);
+  EXPECT_EQ(state.bodies[0].pitch, augusta::math::SnapAngle(-0.1234567F));
+  EXPECT_TRUE(state.bodies[0].ads);
+  EXPECT_EQ(state.bodies[1].pitch, 0.0F);
+  EXPECT_FALSE(state.bodies[1].ads);
+}
+
+// As it keeps where it faces.
+TEST_F(SimulationTest, APlayerWithNoCommandKeepsItsPitchAndAds) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  Command aiming;
+  aiming.pitch = 0.5F;
+  aiming.ads = true;
+  world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick);
+
+  const State state = Run(3, {});
+
+  ASSERT_EQ(state.bodies.size(), 1U);
+  EXPECT_EQ(state.bodies[0].pitch, 0.5F);
+  EXPECT_TRUE(state.bodies[0].ads);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(int a, int b) {
+  const int forward = ((a - b) % kStrideSteps + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// A character with Clips authored for the test (clips_fixture.h).
+Character WithClips() {
+  Character character = kCharacter;
+  character.clips = augusta::clips_fixture::TestClips();
+  return character;
+}
+
+// Movement advances a player's Stride by the distance it walks over the stride
+// length of its stance's blend space there: 30 ticks at 3 m/s walk 1.5 m. Each
+// tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(SimulationTest, AWalkingPlayersStrideAdvancesByTheDistanceOverItsClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}});
+
+  // Ahead, half of the forward Clip's 3 m stride.
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, start + (kStrideSteps / 2)), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStrafingPlayersStrideAdvancesByItsSideClipsStrideLength) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  const std::uint8_t start = Body(Run(kSettleTicks, {}), kAlice).stride;
+  constexpr int kTicks = 30;
+
+  const State state = Run(kTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(1.0F, 0.0F, 0.0F))}});
+
+  // To its right, 1.5 m of the right Clip's 2.4 m stride.
+  const int expected = start + static_cast<int>(1.5F / augusta::clips_fixture::kStandingRight * kStrideSteps);
+  EXPECT_LE(StrideDistance(Body(state, kAlice).stride, expected), (kTicks / 2) + 1);
+}
+
+TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  Run(kSettleTicks, {});
+  const std::uint8_t walked =
+      Body(Run(10, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}}), kAlice).stride;
+
+  const State state = Run(kSettleTicks, {});
+
+  EXPECT_EQ(Body(state, kAlice).stride, walked);
+}
+
+TEST_F(SimulationTest, APlayerWhoseCharacterHasNoClipsHoldsItsStride) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  Run(kSettleTicks, {});
+
+  const State state = Run(kWalkTicks, {PlayerCommand{.entity = kAlice, .command = Walking(Vec3(0.0F, 0.0F, -1.0F))}});
+
+  EXPECT_EQ(Body(state, kAlice).stride, 0);
+}
+
 // Requirements: US-15
 TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
@@ -254,7 +350,8 @@ Command Firing() {
 // Alice alone on the floor with a rifle, settled before each test.
 class FireTest : public ::testing::Test {
  protected:
-  explicit FireTest(const Parameters& parameters = WithTheTestRifle()) : world_(parameters, kTickRate) {
+  explicit FireTest(const Parameters& parameters = WithTheTestRifle(), const augusta::weapon::Markers& rifle = {})
+      : world_(parameters, kTickRate, {}, rifle) {
     EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
   }
 
@@ -1804,5 +1901,139 @@ TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
   EXPECT_EQ(hits[0].shooter, kAlice);
   EXPECT_EQ(hits[0].target, kBob);
 }
+
+// Alice's rifle, held where her view puts it (ADR-0064): the test rifle with
+// its markers authored along -Z, the Grip at its origin, the Sight 8 cm above
+// it and 10 cm behind, and the Muzzle 2 cm above it and 70 cm ahead, so the
+// Muzzle is 6 cm below the Sight and 80 cm ahead of it. From the hip, it is
+// held 20 cm right of the ADS hold, 30 cm below and 10 cm back. It kicks up by
+// 1/32 rad a round and never recovers.
+class HeldRifleTest : public FireTest {
+ protected:
+  static constexpr float kViewYaw = 0.75F;
+  static constexpr float kViewPitch = -0.25F;
+  static constexpr float kKick = 1.0F / 32.0F;
+  static constexpr float kTolerance = 0.002F;
+
+  static Parameters WithAHipOffsetAndRecoil() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.hip_offset = Vec3(0.2F, -0.3F, 0.1F);
+    parameters.rifle.recoil_pattern = {{.pitch = kKick, .yaw = 0.0F}};
+    return parameters;
+  }
+
+  static augusta::weapon::Markers TheRifle() {
+    return augusta::weapon::Markers{
+        .grip = augusta::math::Mat4(1.0F),
+        .muzzle = glm::translate(augusta::math::Mat4(1.0F), Vec3(0.0F, 0.02F, -0.7F)),
+        .sight = glm::translate(augusta::math::Mat4(1.0F), Vec3(0.0F, 0.08F, 0.1F)),
+    };
+  }
+
+  HeldRifleTest() : FireTest(WithAHipOffsetAndRecoil(), TheRifle()) {}
+
+  static Command Aiming(float yaw, float pitch, bool ads) {
+    Command command{};
+    command.yaw = yaw;
+    command.pitch = pitch;
+    command.ads = ads;
+    return command;
+  }
+
+  // Where Alice's rifle is after a tick of command.
+  augusta::simulation::HeldRifle HeldAfter(const Command& command) {
+    Tick(command);
+    const auto held = world_.HeldRifleOf(kAlice);
+    EXPECT_TRUE(held.has_value());
+    return held.value_or(augusta::simulation::HeldRifle{});
+  }
+
+  static Vec3 PositionOf(const augusta::math::Mat4& marker) { return augusta::math::TranslationOf(marker); }
+
+  // Where a marker points: its -Z, as the barrel does.
+  static Vec3 PointingOf(const augusta::math::Mat4& marker) { return augusta::math::Normalize(-Vec3(marker[2])); }
+
+  static void ExpectNear(const Vec3& actual, const Vec3& expected) {
+    EXPECT_NEAR(actual.x, expected.x, kTolerance);
+    EXPECT_NEAR(actual.y, expected.y, kTolerance);
+    EXPECT_NEAR(actual.z, expected.z, kTolerance);
+  }
+};
+
+// Requirements: US-06
+TEST_F(HeldRifleTest, InAdsTheSightIsOnTheEyeAndTheMuzzleAheadOfItAlongTheView) {
+  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, true));
+
+  ExpectNear(PositionOf(held.sight), eye);
+  ExpectNear(PositionOf(held.muzzle), eye + Vec3(0.0F, -0.06F, -0.8F));
+  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 0.0F, -1.0F));
+}
+
+// Requirements: US-06
+TEST_F(HeldRifleTest, InAdsTheBarrelFollowsTheYawAndThePitchOfTheView) {
+  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
+  const Vec3 view = augusta::command::ViewDirection(kViewYaw, kViewPitch);
+
+  const auto held = HeldAfter(Aiming(kViewYaw, kViewPitch, true));
+
+  ExpectNear(PositionOf(held.sight), eye);
+  ExpectNear(PointingOf(held.muzzle), view);
+  const Vec3 ahead = PositionOf(held.muzzle) - eye;
+  EXPECT_NEAR(augusta::math::Dot(ahead, view), 0.8F, kTolerance);
+  EXPECT_NEAR(augusta::math::Length(ahead - (view * augusta::math::Dot(ahead, view))), 0.06F, kTolerance);
+}
+
+// Requirements: US-07
+TEST_F(HeldRifleTest, FromTheHipTheRifleIsHeldAtTheHipOffsetFromTheAdsHold) {
+  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, false));
+
+  ExpectNear(PositionOf(held.sight), eye + Vec3(0.2F, -0.3F, 0.1F));
+  ExpectNear(PositionOf(held.muzzle), eye + Vec3(0.2F, -0.36F, -0.7F));
+}
+
+// Requirements: US-07
+TEST_F(HeldRifleTest, FromTheHipTheMuzzleIsAheadOfTheBodyAlongTheViewAndOffTheLineOfSight) {
+  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
+  const Vec3 view = augusta::command::ViewDirection(kViewYaw, kViewPitch);
+
+  const auto held = HeldAfter(Aiming(kViewYaw, kViewPitch, false));
+
+  const Vec3 ahead = PositionOf(held.muzzle) - eye;
+  EXPECT_GT(augusta::math::Dot(ahead, view), 0.5F);
+  EXPECT_GT(augusta::math::Length(ahead - (view * augusta::math::Dot(ahead, view))), 0.2F);
+  ExpectNear(PointingOf(held.muzzle), view);
+}
+
+// The eye is 1.5 m up a body 2.1 m tall standing and 1.3 m crouching.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheSightFollowsTheEyeLoweredForTheStance) {
+  Command crouched = Aiming(0.0F, 0.0F, true);
+  crouched.movement.desired_stance = Stance::kCrouching;
+  const Vec3 feet = Feet();
+
+  const auto held = HeldAfter(crouched);
+
+  ExpectNear(PositionOf(held.sight), feet + Vec3(0.0F, 1.5F * 1.3F / 2.1F, 0.0F));
+}
+
+// Requirements: US-09
+TEST_F(HeldRifleTest, TheBarrelFollowsTheRecoilOffset) {
+  Command firing = Aiming(kViewYaw, kViewPitch, false);
+  firing.fire = true;
+
+  const State state = Tick(firing);
+  const auto held = world_.HeldRifleOf(kAlice);
+
+  ASSERT_TRUE(held.has_value());
+  ASSERT_EQ(state.bodies.front().rifle.recoil.pitch, kKick);
+  ExpectNear(PointingOf(held->muzzle), augusta::command::ViewDirection(kViewYaw, kViewPitch + kKick));
+}
+
+// Requirements: US-07
+TEST_F(HeldRifleTest, APlayerNotInTheWorldHoldsNoRifle) { EXPECT_FALSE(world_.HeldRifleOf(kBob).has_value()); }
 
 }  // namespace

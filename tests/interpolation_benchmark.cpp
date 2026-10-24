@@ -17,6 +17,7 @@ namespace {
 
 using augusta::math::Vec3;
 using augusta::physics::BodyState;
+using augusta::presentation::Aim;
 using augusta::presentation::EntityId;
 using augusta::presentation::RemoteInterpolator;
 
@@ -36,7 +37,7 @@ void BM_RemoteInterpolationIngest(benchmark::State& state) {
   for (auto _ : state) {
     const double server_time = static_cast<double>(tick++) * kTickDuration;
     for (const EntityId entity : present) {
-      interpolator.Record(entity, server_time, body_state, 0.0F);
+      interpolator.Record(entity, server_time, body_state, Aim{});
     }
     interpolator.Sync(present);
   }

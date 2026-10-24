@@ -57,7 +57,8 @@ void BindErrors(py::module_& module) {
       .value("TOO_LARGE", assets::EncodeError::kTooLarge)
       .value("UNSUPPORTED_SAMPLE_WIDTH", assets::EncodeError::kUnsupportedSampleWidth)
       .value("PARTIAL_SAMPLE", assets::EncodeError::kPartialSample)
-      .value("INVALID_CUE_SOUND", assets::EncodeError::kInvalidCueSound);
+      .value("INVALID_CUE_SOUND", assets::EncodeError::kInvalidCueSound)
+      .value("INVALID_ANIMATION", assets::EncodeError::kInvalidAnimation);
   py::enum_<assets::WriteError>(module, "WriteErrorReason", "Why a pack was not written: a WriteError's reason.")
       .value("IO_ERROR", assets::WriteError::kIoError)
       .value("DUPLICATE_PATH", assets::WriteError::kDuplicatePath)
@@ -80,16 +81,24 @@ void BindEnums(py::module_& module) {
       .value("CHARACTERS", assets::AssetType::kCharacters)
       .value("EYE", assets::AssetType::kEye)
       .value("CUE_SOUND", assets::AssetType::kCueSound)
-      .value("SKELETON", assets::AssetType::kSkeleton);
+      .value("SKELETON", assets::AssetType::kSkeleton)
+      .value("ANIMATION_SKELETON", assets::AssetType::kAnimationSkeleton)
+      .value("CLIP", assets::AssetType::kClip)
+      .value("STANCE_TRANSITIONS", assets::AssetType::kStanceTransitions)
+      .value("RIFLE", assets::AssetType::kRifle);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
       .value("LIMB", assets::BodyPart::kLimb);
+  py::enum_<assets::Foot>(module, "Foot", "The foot a Foot contact lands (ADR-0062).")
+      .value("LEFT", assets::Foot::kLeft)
+      .value("RIGHT", assets::Foot::kRight);
 }
 
 void BindConstants(py::module_& module) {
   module.attr("SCENE_PATH") = std::string(assets::kScenePath);
   module.attr("CHARACTERS_PATH") = std::string(assets::kCharactersPath);
+  module.attr("RIFLE_PATH") = std::string(assets::kRiflePath);
   module.attr("SOUNDS_PREFIX") = std::string(assets::kSoundsPrefix);
   module.attr("SCENE_NODE_NO_PARENT") = assets::kSceneNodeNoParent;
   module.attr("MAX_CHARACTERS") = assets::kMaxCharacters;
@@ -148,6 +157,26 @@ void BindGeometryTypes(py::module_& module) {
   py::class_<assets::EyeData>(module, "EyeData", "A character's eye, in its own root space (ADR-0040).")
       .def(py::init([](math::Vec3 position) { return assets::EyeData{.position = position}; }), py::arg("position"))
       .def_readwrite("position", &assets::EyeData::position);
+}
+
+void BindRifleTypes(py::module_& module) {
+  py::class_<assets::RifleMarker>(module, "RifleMarker",
+                                  "One of the rifle's markers: a frame in the rifle's space, pointing along its -Z "
+                                  "(ADR-0064).")
+      .def(py::init([](math::Vec3 translation, math::Quat rotation) {
+             return assets::RifleMarker{.translation = translation, .rotation = rotation};
+           }),
+           py::arg("translation"), py::arg("rotation"))
+      .def_readwrite("translation", &assets::RifleMarker::translation)
+      .def_readwrite("rotation", &assets::RifleMarker::rotation);
+  py::class_<assets::RifleData>(module, "RifleData", "The rifle's Grip, Muzzle and Sight (ADR-0064).")
+      .def(py::init([](assets::RifleMarker grip, assets::RifleMarker muzzle, assets::RifleMarker sight) {
+             return assets::RifleData{.grip = grip, .muzzle = muzzle, .sight = sight};
+           }),
+           py::arg("grip"), py::arg("muzzle"), py::arg("sight"))
+      .def_readwrite("grip", &assets::RifleData::grip)
+      .def_readwrite("muzzle", &assets::RifleData::muzzle)
+      .def_readwrite("sight", &assets::RifleData::sight);
 }
 
 void BindSceneNode(py::module_& module) {
@@ -258,6 +287,10 @@ void BindEncodeFunctions(py::module_& module) {
       "encode_eye_blob", [](const assets::EyeData& eye) { return BlobOrThrow(assets::EncodeEyeBlob(eye), "eye"); },
       py::arg("eye"), "An eye blob (ADR-0040).");
   module.def(
+      "encode_rifle_blob",
+      [](const assets::RifleData& rifle) { return BlobOrThrow(assets::EncodeRifleBlob(rifle), "rifle"); },
+      py::arg("rifle"), "A rifle blob: its Grip, Muzzle and Sight (ADR-0064).");
+  module.def(
       "encode_script_blob",
       [](const py::bytes& script) { return BlobOrThrow(assets::EncodeScriptBlob(std::string_view(script)), "script"); },
       py::arg("script"), "A script blob of a Lua script's text (ADR-0031).");
@@ -276,6 +309,41 @@ void BindEncodeFunctions(py::module_& module) {
       "encode_cue_sound_blob",
       [](const assets::CueSoundData& sound) { return BlobOrThrow(assets::EncodeCueSoundBlob(sound), "cue sound"); },
       py::arg("sound"), "A cue's sound: its gain and its variants' paths (ADR-0041).");
+  module.def(
+      "encode_animation_skeleton_blob",
+      [](const py::bytes& archive) {
+        return BlobOrThrow(assets::EncodeAnimationSkeletonBlob(BytesOf(archive)), "animation skeleton");
+      },
+      py::arg("archive"), "An animation-skeleton blob of an ozz-animation Skeleton archive (ADR-0066).");
+  module.def(
+      "encode_clip_blob",
+      [](float stride_length, const std::vector<std::pair<assets::Foot, float>>& foot_contacts,
+         const py::bytes& archive) {
+        assets::ClipData clip{.stride_length = stride_length, .archive = BytesOf(archive)};
+        for (const auto& [foot, ratio] : foot_contacts) {
+          clip.foot_contacts.push_back({.foot = foot, .ratio = ratio});
+        }
+        return BlobOrThrow(assets::EncodeClipBlob(clip), "clip");
+      },
+      py::arg("stride_length"), py::arg("foot_contacts"), py::arg("archive"),
+      "A clip blob (ADR-0066): its stride length in meters, its Foot contacts as (foot, ratio of its duration) in "
+      "time order, and its ozz-animation Animation archive.");
+  module.def(
+      "encode_stance_transitions_blob",
+      [](float standing_crouching, float standing_prone, float crouching_prone) {
+        return BlobOrThrow(assets::EncodeStanceTransitionsBlob({.standing_crouching = standing_crouching,
+                                                                .standing_prone = standing_prone,
+                                                                .crouching_prone = crouching_prone}),
+                           "stance transitions");
+      },
+      py::arg("standing_crouching"), py::arg("standing_prone"), py::arg("crouching_prone"),
+      "A stance-transitions blob (ADR-0066): each pair of stances' transition duration, in seconds, either way.");
+  module.def("character_animation_skeleton_path", &assets::CharacterAnimationSkeletonPath, py::arg("character"),
+             "The pack-relative path of the character's ozz-animation Skeleton, e.g. soldier/Character/Skeleton.ozz.");
+  module.def("character_clip_path", &assets::CharacterClipPath, py::arg("character"), py::arg("role"),
+             "The pack-relative path of the character's Clip of role, e.g. soldier/Character/Clips/standing/forward.");
+  module.def("character_stance_transitions_path", &assets::CharacterStanceTransitionsPath, py::arg("character"),
+             "The pack-relative path of the character's stance transitions, e.g. soldier/Character/Clips.");
   module.def("cue_sound_path", &assets::CueSoundPath, py::arg("cue"),
              "The pack-relative path of the cue named cue's sound, e.g. sounds/gunshot (ADR-0031).");
   module.def("cue_variant_path", &assets::CueVariantPath, py::arg("cue"), py::arg("variant"),
@@ -289,6 +357,7 @@ void BindPackEncoder(py::module_& module) {
   BindEnums(module);
   BindConstants(module);
   BindGeometryTypes(module);
+  BindRifleTypes(module);
   BindSceneNode(module);
   BindBlobTypes(module);
   BindEncodeFunctions(module);

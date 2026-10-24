@@ -1,0 +1,46 @@
+#usda 1.0
+(
+    defaultPrim = "Rifle"
+    upAxis = "Y"
+    metersPerUnit = 1
+)
+
+def Xform "Rifle"
+{
+    # The rifle's markers (ADR-0064), each pointing along its -Z, the way the
+    # barrel points: the cooker writes these three frames into both packs and
+    # nothing else of this stage. Guide markers like the soldier's Eye, so none
+    # is ever rendered or cooked as geometry. The rifle's own space has the Grip
+    # at its origin.
+
+    # Where the holding hand holds it: the pistol grip.
+    def Sphere "Grip"
+    {
+        double radius = 0.01
+        float3[] extent = [(-0.01, -0.01, -0.01), (0.01, 0.01, 0.01)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # The end of the barrel, ahead of the Grip and level with the bore.
+    def Sphere "Muzzle"
+    {
+        double radius = 0.01
+        float3[] extent = [(-0.01, -0.01, -0.01), (0.01, 0.01, 0.01)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0, 0.06, -0.62)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # The point the Eye looks through in ADS: above the bore, just ahead of
+    # the Grip, its line of sight parallel to the barrel.
+    def Sphere "Sight"
+    {
+        double radius = 0.01
+        float3[] extent = [(-0.01, -0.01, -0.01), (0.01, 0.01, 0.01)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0, 0.12, -0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

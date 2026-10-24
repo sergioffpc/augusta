@@ -37,6 +37,7 @@ def manifest(**overrides):
     entries = {
         "map": "maps/test.usda",
         "characters": {"soldier": "characters/soldier.usda"},
+        "rifle": "rifles/rifle.usda",
         "sounds": {cue: f"sounds/{cue}.wav" for cue in CUES},
         "scripts": {"parameters": "scripts/parameters/rules_of_engagement.lua"},
     }
@@ -47,11 +48,16 @@ def manifest(**overrides):
 def make_scenario(root, entries):
     """Builds an assets root under root with a scenario named "test".
 
-    The root holds a map, a character, a sound for every cue, a parameters and
-    a rules script, and the scenario's manifest is entries (None writes none).
+    The root holds a map, a character, a rifle, a sound for every cue, a
+    parameters and a rules script, and the scenario's manifest is entries (None
+    writes none).
     """
     authoring = root / "authoring"
-    for stage in ("maps/test.usda", "characters/soldier.usda"):
+    for stage in (
+        "maps/test.usda",
+        "characters/soldier.usda",
+        "rifles/rifle.usda",
+    ):
         (authoring / stage).parent.mkdir(parents=True, exist_ok=True)
         (authoring / stage).write_text("#usda 1.0\n")
     for cue in CUES:
@@ -80,6 +86,10 @@ def test_the_example_scenario_resolves():
         == EXAMPLES_ROOT / "authoring" / "maps" / "firebase.usda"
     )
     assert [character.name for character in scenario.characters] == ["soldier"]
+    assert (
+        scenario.rifle_stage_path
+        == EXAMPLES_ROOT / "authoring" / "rifles" / "rifle.usda"
+    )
     assert [path for path, _ in scenario.scripts] == [
         "parameters.lua",
         "rules.lua",
@@ -198,6 +208,31 @@ def test_a_script_that_does_not_exist_is_refused(tmp_path):
     )
 
     with pytest.raises(ScenarioError, match=r"file not found.*missing\.lua"):
+        resolve_scenario(root, "test")
+
+
+def test_the_rifle_is_the_stage_the_manifest_names(tmp_path):
+    root = make_scenario(tmp_path, manifest())
+
+    scenario = resolve_scenario(root, "test")
+
+    assert (
+        scenario.rifle_stage_path
+        == root / "authoring" / "rifles" / "rifle.usda"
+    )
+
+
+def test_a_scenario_without_a_rifle_is_refused(tmp_path):
+    root = make_scenario(tmp_path, manifest(rifle=None))
+
+    with pytest.raises(ScenarioError, match="'rifle'"):
+        resolve_scenario(root, "test")
+
+
+def test_a_rifle_that_is_not_a_usd_stage_is_refused(tmp_path):
+    root = make_scenario(tmp_path, manifest(rifle="sounds/death.wav"))
+
+    with pytest.raises(ScenarioError, match="not a USD stage"):
         resolve_scenario(root, "test")
 
 

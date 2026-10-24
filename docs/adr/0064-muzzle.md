@@ -8,17 +8,27 @@ modes (ADR-0063). This takes effect in its own change, after ADR-0061's, so hits
 change once and on purpose; that change amends ADR-0038, ADR-0039, ADR-0040 and
 ADR-0044 to match.
 
-**The rifle is authored.** Like a Character, the rifle is a USD stage with two
-markers: its Grip, where the hand holds it, and its Muzzle, the end of its
-barrel and the way it points. Both packs carry them, since the server places the
-Muzzle. The Muzzle in the world is the holding hand's pose, times the Grip's
-inverse, times the Muzzle.
+**The rifle is authored.** Like a Character, the rifle is a USD stage, the one a
+scenario's manifest names as its `rifle` (ADR-0041), whose default prim holds
+three markers, each a frame pointing along its -Z: its **Grip**, where the hand
+holds it; its **Muzzle**, the end of its barrel and the way it points; and its
+**Sight**, the point the Eye looks through in ADS and its line of sight. Both
+packs carry the three and no rifle mesh, since the server places the Muzzle and
+nothing that reads a pack draws the rifle yet; the cooker refuses a stage
+missing any of them, and a server does not start on a pack without them. The
+Muzzle in the world is the holding hand's pose, times the Grip's inverse, times
+the Muzzle; the Sight likewise.
 
 **Where the hand is.** A VR player's hand is its bounded Tracked pose's
 (ADR-0063). With the support hand on the handguard the barrel points from the
 Grip toward it, as a rifle held in two hands does; with it elsewhere, along the
 holding hand. A Desktop player holds the rifle as its synthesized pose does:
-shouldered along its view, with its sight on the Eye in ADS.
+shouldered along its view, with its Sight on the Eye in ADS, and from the hip
+that hold moved by the rifle's **hip offset**, a Parameter (ADR-0039), along the
+view's own axes. The hold is placed from the Eye lowered for the stance, along
+the view turned by the Recoil offset. Until the Posing phase poses the right
+hand (ADR-0066), the desktop hand is synthesized so from the view, after Posing;
+a posed or a tracked hand takes its place and nothing else changes.
 
 **Zeroing.** The barrel is pitched so that a round crosses the line of sight at
 the rifle's zero range, a Parameter (ADR-0039): above or below it a round lands

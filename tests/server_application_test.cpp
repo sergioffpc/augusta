@@ -3,8 +3,12 @@
 #include <cstddef>
 #include <expected>
 #include <filesystem>
+#include <fstream>
+#include <ios>
+#include <iterator>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -15,6 +19,7 @@
 #include "augusta/faults.h"
 #include "augusta/link.h"
 #include "augusta/logging.h"
+#include "augusta/pack_encoder.h"
 #include "augusta/server_config.h"
 
 // augustad's application boundary (ADR-0033), on the example scenario's
@@ -144,6 +149,50 @@ TEST(ServerApplicationTest, APackWithoutServerContentIsAContentFailure) {
   EXPECT_EQ(outcome->code, Code::kInvalidContent);
   EXPECT_EQ(ContextOf(*outcome, "path"), config.pack_path.string());
   EXPECT_FALSE(outcome->detail.empty());
+}
+
+// The example's server pack without its rifle, signed with a key of the test's
+// own at directory/server.apak, its public key at directory/test.pub: a pack a
+// server would verify, and holding all it needs but the rifle.
+ServerConfig WithoutTheRifle(const std::filesystem::path& directory) {
+  const std::filesystem::path golden = (kPacks / "server").replace_extension(augusta::assets::kPackExtension);
+  const auto layout = augusta::assets::ReadPackLayout(golden);
+  EXPECT_TRUE(layout.has_value());
+  std::ifstream file(golden, std::ios::binary);
+  const std::vector<char> bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+  std::vector<augusta::assets::AssetEntry> entries;
+  for (const auto& entry : layout->entries) {
+    if (entry.type == augusta::assets::AssetType::kRifle) {
+      continue;
+    }
+    const auto* first = reinterpret_cast<const std::byte*>(bytes.data()) + entry.offset;
+    entries.push_back({.type = entry.type, .path = entry.path, .data = {first, first + entry.size}});
+  }
+  const auto keys = augusta::assets::GenerateEd25519KeyPair();
+  ServerConfig config = ExampleConfig();
+  std::filesystem::create_directories(directory);
+  config.pack_path = (directory / "server").replace_extension(augusta::assets::kPackExtension);
+  config.public_key_path = directory / "test.pub";
+  EXPECT_TRUE(augusta::assets::WritePack(config.pack_path, entries, keys.private_key, layout->client_pack).has_value());
+  std::ofstream(config.public_key_path, std::ios::binary)
+      .write(reinterpret_cast<const char*>(keys.public_key.data()), keys.public_key.size());
+  return config;
+}
+
+// Every player's Muzzle is placed from the rifle's markers (ADR-0064), so a
+// server does not start on a scenario without them.
+TEST(ServerApplicationTest, APackWithoutARifleIsAContentFailure) {
+  Faults faults;
+  const auto directory = std::filesystem::temp_directory_path() / "augusta_server_application_test_no_rifle";
+  const ServerConfig config = WithoutTheRifle(directory);
+
+  const Outcome outcome = Served(config, faults);
+  std::filesystem::remove_all(directory);
+
+  ASSERT_TRUE(outcome.has_value());
+  EXPECT_EQ(outcome->code, Code::kInvalidContent);
+  EXPECT_EQ(ContextOf(*outcome, "asset"), "Rifle");
+  EXPECT_EQ(outcome->detail, "not found");
 }
 
 TEST(ServerApplicationTest, AListenAddressThatDoesNotParseIsAConfigurationFailure) {

@@ -1,5 +1,8 @@
 #include "augusta/physics.h"
 
+#include <algorithm>
+#include <cstdint>
+
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
@@ -647,6 +650,81 @@ TEST(StaticGeometryTest, AnIndexCountThatIsNotWholeTrianglesIsRejected) {
 
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error(), CollisionMeshError::kInvalidIndex);
+}
+
+// The Stride (ADR-0066): one byte, 256 steps to a cycle of two steps.
+constexpr int kStrideSteps = 256;
+
+// How far apart two Strides are, the short way round the cycle.
+int StrideDistance(std::uint8_t a, std::uint8_t b) {
+  const int forward = (a - b + kStrideSteps) % kStrideSteps;
+  return std::min(forward, kStrideSteps - forward);
+}
+
+// A body settled on the floor with its Stride at stride, walking along +x.
+class StrideTest : public ::testing::Test {
+ protected:
+  static constexpr std::uint8_t kStartStride = 40;
+
+  StrideTest() : world_(WorldWithFloor()), body_(world_.CreateBody(Vec3(0.0F, 0.0F, 0.0F))) {
+    BodyState settled = Settle(world_, body_, MovementInput{}, 60);
+    settled.stride = kStartStride;
+    world_.Restore(body_, settled, world_.Fall(body_));
+    walk_.direction = Vec3(1.0F, 0.0F, 0.0F);
+  }
+
+  BodyState Walk(int ticks, float stride_length) {
+    BodyState state{};
+    for (int i = 0; i < ticks; ++i) {
+      state = world_.Step(body_, walk_, kFixedTick, stride_length);
+    }
+    return state;
+  }
+
+  World world_;
+  augusta::physics::BodyHandle body_;
+  MovementInput walk_{};
+};
+
+// At 3 m/s, 15 ticks walk 0.75 m: half of a 1.5 m stride, half a cycle on. Each
+// tick's advance is rounded to a whole step, so a tick may be up to half a step off.
+TEST_F(StrideTest, WalkingAdvancesTheStrideByTheDistanceMovedOverTheStrideLength) {
+  constexpr int kTicks = 15;
+
+  const BodyState state = Walk(kTicks, 1.5F);
+
+  EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 2)), kTicks / 2 + 1);
+}
+
+TEST_F(StrideTest, TheSameDistanceOverALongerStrideLengthAdvancesItLess) {
+  const BodyState state = Walk(15, 3.0F);
+
+  EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 4)), 8);
+}
+
+TEST_F(StrideTest, AStillBodyHoldsItsStride) {
+  const BodyState state = Settle(world_, body_, MovementInput{}, 30);
+
+  EXPECT_EQ(state.stride, kStartStride);
+}
+
+TEST_F(StrideTest, WithoutAStrideLengthTheStrideHolds) {
+  const BodyState state = Walk(15, 0.0F);
+
+  EXPECT_GT(state.position.x, 0.5F);
+  EXPECT_EQ(state.stride, kStartStride);
+}
+
+TEST_F(StrideTest, AStrideRestoredIsWhereTheNextStepAdvancesFrom) {
+  BodyState restored = Walk(1, 1.2F);
+  restored.stride = 250;
+  world_.Restore(body_, restored, world_.Fall(body_));
+
+  const BodyState state = Walk(1, 1.2F);
+
+  // One tick walks 51/1024 m on the position grid: 10.6 steps of a 1.2 m
+  // stride, rounded to 11, from 250 round the cycle to 5.
+  EXPECT_EQ(state.stride, 5);
 }
 
 }  // namespace

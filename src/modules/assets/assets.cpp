@@ -34,7 +34,7 @@ namespace augusta::assets {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 4;
+constexpr std::uint32_t kFormatVersion = 6;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -528,6 +528,10 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kEye:
     case AssetType::kCueSound:
     case AssetType::kSkeleton:
+    case AssetType::kAnimationSkeleton:
+    case AssetType::kClip:
+    case AssetType::kStanceTransitions:
+    case AssetType::kRifle:
       return true;
   }
   return false;
@@ -756,12 +760,31 @@ std::expected<Skeleton, ResolveError> Pack::ResolveSkeleton(std::string_view cha
   return skeleton;
 }
 
+std::expected<std::vector<std::byte>, ResolveError> Pack::ResolveAnimationSkeleton(std::string_view character) const {
+  return ResolveAsset<std::vector<std::byte>>(impl_->index, impl_->mapping, CharacterAnimationSkeletonPath(character),
+                                              AssetType::kAnimationSkeleton, DecodeAnimationSkeletonBlob);
+}
+
+std::expected<ClipData, ResolveError> Pack::ResolveClip(std::string_view character, std::string_view role) const {
+  return ResolveAsset<ClipData>(impl_->index, impl_->mapping, CharacterClipPath(character, role), AssetType::kClip,
+                                DecodeClipBlob);
+}
+
+std::expected<StanceTransitionsData, ResolveError> Pack::ResolveStanceTransitions(std::string_view character) const {
+  return ResolveAsset<StanceTransitionsData>(impl_->index, impl_->mapping, CharacterStanceTransitionsPath(character),
+                                             AssetType::kStanceTransitions, DecodeStanceTransitionsBlob);
+}
+
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
 }
 
 std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
   return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
+}
+
+std::expected<RifleData, ResolveError> Pack::ResolveRifle() const {
+  return ResolveAsset<RifleData>(impl_->index, impl_->mapping, kRiflePath, AssetType::kRifle, DecodeRifleBlob);
 }
 
 std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path) const {

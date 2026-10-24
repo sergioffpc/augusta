@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -10,13 +11,16 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/parameters_loader.h"
 #include "augusta/policy.h"
 #include "augusta/policy_loader.h"
+#include "augusta/weapon.h"
 
 namespace augusta::scenario {
 
@@ -30,9 +34,10 @@ failure::Failure ContentFailure(const assets::Pack& pack, std::vector<failure::C
   return {.code = failure::Code::kInvalidContent, .context = std::move(context), .detail = std::move(detail)};
 }
 
-// Each of paths as a Character with its hitboxes, its Skeleton and its eye, in
-// the same order, or the failure of the first that has no hitbox for a body part,
-// no Skeleton, a hitbox on a Joint its Skeleton lacks or no eye.
+// Each of paths as a Character with its hitboxes, its Skeleton, its eye and its
+// Clips, in the same order, or the failure of the first that has no hitbox for a
+// body part, no Skeleton, a hitbox on a Joint its Skeleton lacks, no eye or
+// Clips that do not load.
 std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const assets::Pack& pack,
                                                                        std::vector<std::string> paths) {
   std::vector<Character> characters;
@@ -60,12 +65,36 @@ std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const ass
     if (!eye) {
       return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(eye.error(), "eye")));
     }
+    auto clips = animation::LoadClips(pack, path, *skeleton);
+    if (!clips) {
+      std::vector<failure::ContextField> clip_context = context;
+      if (clips.error().part == animation::ClipPart::kClip) {
+        clip_context.push_back({.key = "clip", .value = clips.error().role});
+      }
+      return std::unexpected(
+          ContentFailure(pack, std::move(clip_context), animation::DescribeClipLoadError(clips.error())));
+    }
     characters.push_back({.path = std::move(path),
                           .hitboxes = *std::move(bound),
                           .skeleton = *std::move(skeleton),
-                          .eye = eye->position});
+                          .eye = eye->position,
+                          .clips = std::make_shared<const animation::CharacterClips>(*std::move(clips))});
   }
   return characters;
+}
+
+// The scenario's rifle (ADR-0064): its Grip, Muzzle and Sight, each a frame in
+// the rifle's space, as Posing places them.
+std::expected<weapon::Markers, failure::Failure> ReadRifle(const assets::Pack& pack) {
+  const auto rifle = pack.ResolveRifle();
+  if (!rifle) {
+    return std::unexpected(ContentFailure(pack, {{.key = "asset", .value = std::string(assets::kRiflePath)}},
+                                          assets::DescribeResolveError(rifle.error(), "rifle")));
+  }
+  const auto frame = [](const assets::RifleMarker& marker) {
+    return math::ToMat4(marker.translation, marker.rotation, math::Vec3(1.0F));
+  };
+  return weapon::Markers{.grip = frame(rifle->grip), .muzzle = frame(rifle->muzzle), .sight = frame(rifle->sight)};
 }
 
 // The scenario's Parameters script, out of the pack (it was cooked into the
@@ -123,6 +152,10 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
   if (!characters) {
     return std::unexpected(std::move(characters.error()));
   }
+  auto rifle = ReadRifle(pack);
+  if (!rifle) {
+    return std::unexpected(std::move(rifle.error()));
+  }
   // The client pack cooked with this one, the only one a player may join with.
   const std::optional<assets::PackHash>& client_pack = pack.ClientPackHash();
   if (!client_pack) {
@@ -147,6 +180,7 @@ std::expected<Content, failure::Failure> LoadServerContent(const assets::Pack& p
               .collision = *std::move(collision),
               .spawn_points = *std::move(spawn_points),
               .characters = *std::move(characters),
+              .rifle = *rifle,
               .client_pack = *client_pack,
           },
       .parameters = *std::move(parameters),

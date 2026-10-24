@@ -1,6 +1,7 @@
 // augusta_pack._native: the pybind11 bindings of the cooker's native steps,
 // called from augusta_pack.cook: the mesh pass (mesh.h), the texture
-// compression (texture.h) and augusta_assets' pack encoder
+// compression (texture.h), the ozz-animation archives of a Character's Skeleton
+// and Clips (animation.h) and augusta_assets' pack encoder
 // (encoder_binding.h); from augusta-keygen: augusta_assets' key generation
 // (keys_binding.h); and from augusta-inspect, augusta-verify and
 // augusta-publish: augusta_assets' pack reading (reader_binding.h).
@@ -19,9 +20,13 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
+#include "animation.h"
+#include "augusta/assets.h"
+#include "augusta/math.h"
 #include "bytes.h"
 #include "encoder_binding.h"
 #include "keys_binding.h"
+#include "math_caster.h"  // IWYU pragma: keep - the Vec3/Quat conversions
 #include "mesh.h"
 #include "reader_binding.h"
 #include "texture.h"
@@ -32,7 +37,8 @@ PYBIND11_MODULE(_native, module) {
   module.doc() =
       "The cooker's native steps (ADR-0030): meshoptimizer's weld/simplify/optimize-cache/optimize-fetch/quantize "
       "(ADR-0016), and stb_image + stb_image_resize2 + libktx's PNG/JPEG load, mip chain, BC7/BC5/BC4 encode and KTX2 "
-      "write (ADR-0017), augusta_assets' pack encoder: the blobs and the signed pack the client and server load "
+      "write (ADR-0017), ozz-animation's archives of a Character's Skeleton and Clips (ADR-0066), augusta_assets' pack "
+      "encoder: the blobs and the signed pack the client and server load "
       "(ADR-0031) and the Ed25519 keys it signs them with (ADR-0018), and its pack reader: a pack's layout, and the "
       "pack the client and server would load.";
   module.def(
@@ -77,6 +83,46 @@ PYBIND11_MODULE(_native, module) {
       "rgba: a width x height 8-bit RGBA image, row by row from the top. Returns the mip chain compress_texture "
       "encodes for `format`, as [(width, height, rgba)], level 0 (the image itself) first. Exposed so the filtering "
       "can be checked before BC encoding.");
+  module.def(
+      "build_animation_skeleton",
+      [](const std::vector<augusta::assets::JointData>& joints) {
+        return augusta::pack::ToBytes(augusta::pack::BuildSkeletonArchive(joints));
+      },
+      py::arg("joints"),
+      "The ozz-animation Skeleton archive of joints, parents before children (ADR-0066). Its Joints are depth first, "
+      "which may be another order. Raises ValueError for joints it cannot build.");
+  module.def(
+      "build_clip",
+      [](const std::vector<augusta::assets::JointData>& joints, std::vector<float> times, float duration,
+         std::vector<std::vector<augusta::math::Vec3>> translations,
+         std::vector<std::vector<augusta::math::Quat>> rotations,
+         std::vector<std::vector<augusta::math::Vec3>> scales) {
+        const augusta::pack::ClipSamples clip{.times = std::move(times),
+                                              .duration = duration,
+                                              .translations = std::move(translations),
+                                              .rotations = std::move(rotations),
+                                              .scales = std::move(scales)};
+        return augusta::pack::ToBytes(augusta::pack::BuildClipArchive(joints, clip));
+      },
+      py::arg("joints"), py::arg("times"), py::arg("duration"), py::arg("translations"), py::arg("rotations"),
+      py::arg("scales"),
+      "The ozz-animation Animation archive of a Clip on the Skeleton of joints (ADR-0066). times: seconds from its "
+      "start, ascending, the first 0, none past duration. translations, rotations (x, y, z, w) and scales: "
+      "[sample][joint], in the order of joints, each relative to its parent. Raises ValueError for a Clip it cannot "
+      "build.");
+  module.def(
+      "sample_clip",
+      [](const py::bytes& skeleton_archive, const py::bytes& clip_archive, float ratio) {
+        py::list joints;
+        for (const augusta::pack::SampledJoint& joint : augusta::pack::SampleClip(
+                 augusta::pack::BytesOf(skeleton_archive), augusta::pack::BytesOf(clip_archive), ratio)) {
+          joints.append(py::make_tuple(joint.name, joint.translation, joint.rotation, joint.scale));
+        }
+        return joints;
+      },
+      py::arg("skeleton_archive"), py::arg("clip_archive"), py::arg("ratio"),
+      "Every Joint of the Skeleton archive, in its order, as (name, translation, rotation (x, y, z, w), scale) "
+      "relative to its parent, where the Clip archive puts it at ratio of its duration: what a Clip cooked to.");
   augusta::pack::BindPackEncoder(module);
   augusta::pack::BindPackReader(module);
   augusta::pack::BindKeys(module);

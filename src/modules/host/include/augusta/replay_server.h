@@ -48,10 +48,9 @@
 /// A Replay viewer is sent what a Match's Spectator is: Join accepted with the
 /// tick rate and Parameters (and session 0, which no player has), the Match
 /// start with its first tick, then each tick's Authoritative State, Shots and
-/// Deaths, with a Replay view of every player's pitch and ADS (ViewerMessages),
-/// and the Match end, after which the server closes the connection. Each
-/// Replay logs the first Death or Match end that differs from its capture's
-/// (NFR-09). Both threads count what they do into the server's metrics, as
+/// Deaths (ViewerMessages), and the Match end, after which the server closes
+/// the connection. Each Replay logs the first Death or Match end that differs
+/// from its capture's (NFR-09). Both threads count what they do into the server's metrics, as
 /// Host's do (host_metrics.h, ADR-0049).
 namespace augusta::host {
 
@@ -78,8 +77,8 @@ struct ReplayServerConfig {
 
 /// What a Replay viewer is sent for tick of its Replay, in order, each with the
 /// reliability the Link gives its type: the tick's Authoritative State, with
-/// every body and none of a player's own fields; every Shot and Death; its
-/// Replay view; and, on its last tick, the Match end. No Hit confirmation: the
+/// every body and none of a player's own fields; every Shot and Death; and, on
+/// its last tick, the Match end. No Hit confirmation: the
 /// viewer fired nothing. Every message is encoded before any is returned, so
 /// if the protocol cannot carry one, the broken invariant is returned instead
 /// (link::Encode, augusta/link.h), as ForEachTickMessage does a live tick's.

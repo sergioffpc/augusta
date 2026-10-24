@@ -46,6 +46,30 @@ two joints of one name, a rest transform missing), and one whose root joint is
 not at the character's root, each naming the character's prim, or its
 skeleton's.
 
+A character names its **Clips** (ADR-0066) by role under `Character/Clips`: each
+a UsdSkel `SkelAnimation` prim at its role's path, usually a reference to the
+Clip's own file under `authoring/animations/`, so characters whose skeletons
+share its joints share it. A stance's roles are under the stance's name
+(`standing/idle`, `crouching/forward`, `prone/aim_up`, `standing/ads`...) and
+the rest at the top (`air`, and the Cosmetic layers' `reload`, `recoil`,
+`flinch` and `land`). A Clip is authored in its character's units and axes,
+moving as tools make it, and a locomotion Clip names its Foot contacts in
+`augusta:footContacts`, a token time-sampled at each contact's time code with
+the foot that lands, `left` or `right` (ADR-0062). The `Clips` prim authors the
+transition duration of each pair of stances in seconds, either way:
+`augusta:transitionDuration:standing_crouching`, `standing_prone` and
+`crouching_prone`. The cooker converts the skeleton and each Clip into
+ozz-animation's archives, joint for joint in the stage's corrected space, and
+for each locomotion Clip measures its stride length, how far its root moves
+along the ground from its first time code to its last, then removes that
+progress, and where it started, from its root, so it plays in place with its
+sway and height kept. It refuses, naming the Clip's prim under the character's:
+a required role with no Clip, a Clip that is not a `SkelAnimation` or whose
+joints are not exactly its skeleton's, a locomotion Clip without exactly one
+left and one right Foot contact within it or whose root does not move along the
+ground, an idle with a Foot contact or whose root does, and a pair of stances
+without a positive transition duration.
+
 A character is hittable through its **hitboxes**, authored in its own stage
 under `Character`: each is geometry (a `UsdGeomMesh`, `Cube` or `Capsule`,
 usually a guide so it is never drawn) marked `augusta:hitbox`, and names the
@@ -91,9 +115,9 @@ character's blobs are addressed under its name (e.g.
 its own stage root. The two meet only where a character's name is one of the
 map's root prims, and the cooker refuses that scenario, so they never collide.
 Client/server split follows ADR-0019's existing rule unchanged: mesh/texture
-data is client-pack-only, hitbox geometry, the skeleton and the eye ship to both
-packs — the server needs them for hit detection and for where a Shot leaves
-from, same as level collision.
+data is client-pack-only, hitbox geometry, the skeleton, the Clips the Hitbox
+pose uses and the eye ship to both packs — the server needs them for hit
+detection and for where a Shot leaves from, same as level collision.
 
 A scenario's packs carry exactly the characters its manifest names (ADR-0041),
 not every character under `authoring/characters/`.

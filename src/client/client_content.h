@@ -3,10 +3,12 @@
 
 #include <expected>
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
@@ -20,7 +22,8 @@
 
 /// \file
 /// What the client loads from its verified pack at startup (ADR-0018): the scene
-/// it draws, the map it predicts against, every cue's sound, and how to load the
+/// it draws, the map it predicts against, every cue's sound, the Clips of the
+/// character it asked to play, which its predicted Stride advances by, and how to load the
 /// characters other players bring once the Lobby names them (ADR-0043). Where
 /// content comes from is the executable's business, not the orchestrator's:
 /// ClientRuntime (client.h) is handed it already loaded.
@@ -59,6 +62,9 @@ struct Content {
   Map map;
   CharacterLoader load_character;
   audio::CueSounds cue_sounds;
+  /// The Clips of the character it asked to play (ADR-0066): what PredictionWorld
+  /// advances its Stride by, as the server's World does.
+  std::shared_ptr<const animation::CharacterClips> clips;
 };
 
 /// Loads startup content from the verified pack for the local player's

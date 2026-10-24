@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include "augusta/math.h"
+#include "augusta/pack_decoder.h"
 #include "augusta/pack_encoder.h"
 
 // Unit tests for augusta_assets, including its pack encoder
@@ -521,6 +522,63 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   EXPECT_EQ(pack->ResolveEye("medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
 }
 
+// The rifle's markers (ADR-0064): its Grip, Muzzle and Sight, each a frame in
+// the rifle's space, found at the one path every scenario's rifle has.
+TEST_F(PackTest, EncodesAndResolvesTheRiflesMarkers) {
+  const auto pack_path = MakePackPath("augusta_assets_test_rifle");
+  const auto keys = GenerateEd25519KeyPair();
+  const augusta::math::Quat quarter_turn(0.70710677F, 0.0F, 0.70710677F, 0.0F);
+  const augusta::assets::RifleData rifle{
+      .grip = {.translation = Vec3(0.0F, -0.1F, 0.0F)},
+      .muzzle = {.translation = Vec3(0.0F, 0.0F, -0.8F), .rotation = quarter_turn},
+      .sight = {.translation = Vec3(0.0F, 0.07F, -0.2F)},
+  };
+
+  const auto blob = augusta::assets::EncodeRifleBlob(rifle);
+  ASSERT_TRUE(blob.has_value());
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path,
+                                         {{.type = augusta::assets::AssetType::kRifle,
+                                           .path = std::string(augusta::assets::kRiflePath),
+                                           .data = *blob}},
+                                         keys.private_key)
+                  .has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto resolved = pack->ResolveRifle();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(*resolved, rifle);
+  EXPECT_EQ(pack->ResolveEye(augusta::assets::kRiflePath).error(), augusta::assets::ResolveError::kTypeMismatch);
+}
+
+TEST_F(PackTest, APackWithoutARifleResolvesNone) {
+  const auto pack_path = MakePackPath("augusta_assets_test_no_rifle");
+  const auto keys = GenerateEd25519KeyPair();
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, {}, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveRifle().error(), augusta::assets::ResolveError::kNotFound);
+}
+
+TEST_F(PackTest, ARifleMissingAMarkerIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_rifle_truncated");
+  const auto keys = GenerateEd25519KeyPair();
+  auto blob = augusta::assets::EncodeRifleBlob({}).value();
+  // The Sight's rotation, the last of its fields, cut off.
+  blob.resize(blob.size() - (4 * sizeof(float)));
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path,
+                                         {{.type = augusta::assets::AssetType::kRifle,
+                                           .path = std::string(augusta::assets::kRiflePath),
+                                           .data = blob}},
+                                         keys.private_key)
+                  .has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveRifle().error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
 // A character's hitboxes (ADR-0040, ADR-0061): each a body part, its Joint and
 // its geometry, found together under the character's path, in path order.
 class HitboxPackTest : public PackTest {
@@ -738,6 +796,132 @@ TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   EXPECT_EQ(FirstMissingBodyPart({}), BodyPart::kHead);
 }
 
+TEST(CharacterAnimationPathsTest, ACharactersClipsAreAddressedUnderItsClipsPrim) {
+  EXPECT_EQ(augusta::assets::CharacterAnimationSkeletonPath("soldier"), "soldier/Character/Skeleton.ozz");
+  EXPECT_EQ(augusta::assets::CharacterClipPath("soldier", "standing/forward"),
+            "soldier/Character/Clips/standing/forward");
+  EXPECT_EQ(augusta::assets::CharacterStanceTransitionsPath("soldier"), "soldier/Character/Clips");
+}
+
+// Some bytes standing in for an ozz-animation archive, which augusta_assets
+// carries without reading.
+std::vector<std::byte> MakeArchive() { return {std::byte{0x6F}, std::byte{0x7A}, std::byte{0x7A}, std::byte{0x00}}; }
+
+TEST(ClipBlobTest, AClipDecodesToItsStrideLengthFootContactsAndArchive) {
+  using augusta::assets::Foot;
+  const augusta::assets::ClipData clip{
+      .stride_length = 1.4F,
+      .foot_contacts = {{.foot = Foot::kLeft, .ratio = 0.0F}, {.foot = Foot::kRight, .ratio = 0.5F}},
+      .archive = MakeArchive()};
+
+  const auto blob = augusta::assets::EncodeClipBlob(clip);
+  ASSERT_TRUE(blob.has_value());
+  const auto decoded = augusta::assets::DecodeClipBlob(*blob);
+
+  ASSERT_TRUE(decoded.has_value());
+  EXPECT_FLOAT_EQ(decoded->stride_length, 1.4F);
+  ASSERT_EQ(decoded->foot_contacts.size(), 2U);
+  EXPECT_EQ(decoded->foot_contacts[0].foot, Foot::kLeft);
+  EXPECT_FLOAT_EQ(decoded->foot_contacts[0].ratio, 0.0F);
+  EXPECT_EQ(decoded->foot_contacts[1].foot, Foot::kRight);
+  EXPECT_FLOAT_EQ(decoded->foot_contacts[1].ratio, 0.5F);
+  EXPECT_EQ(decoded->archive, MakeArchive());
+}
+
+TEST(ClipBlobTest, AClipWithANegativeStrideOrAFootContactOutsideItIsRefused) {
+  using augusta::assets::EncodeError;
+  using augusta::assets::Foot;
+  const augusta::assets::ClipData backwards{.stride_length = -1.0F, .foot_contacts = {}, .archive = MakeArchive()};
+  const augusta::assets::ClipData late{
+      .stride_length = 1.0F, .foot_contacts = {{.foot = Foot::kLeft, .ratio = 1.5F}}, .archive = MakeArchive()};
+  const augusta::assets::ClipData infinite{
+      .stride_length = std::numeric_limits<float>::infinity(), .foot_contacts = {}, .archive = MakeArchive()};
+
+  EXPECT_EQ(augusta::assets::EncodeClipBlob(backwards).error(), EncodeError::kInvalidAnimation);
+  EXPECT_EQ(augusta::assets::EncodeClipBlob(late).error(), EncodeError::kInvalidAnimation);
+  EXPECT_EQ(augusta::assets::EncodeClipBlob(infinite).error(), EncodeError::kInvalidAnimation);
+}
+
+TEST(ClipBlobTest, AClipOfAnUnknownFootIsCorrupt) {
+  auto blob =
+      augusta::assets::EncodeClipBlob({.stride_length = 1.0F,
+                                       .foot_contacts = {{.foot = augusta::assets::Foot::kLeft, .ratio = 0.25F}},
+                                       .archive = MakeArchive()});
+  ASSERT_TRUE(blob.has_value());
+  // The stride length's f32, the contact count's u8, then the contact's foot.
+  (*blob)[5] = std::byte{7};
+
+  EXPECT_FALSE(augusta::assets::DecodeClipBlob(*blob).has_value());
+}
+
+TEST(StanceTransitionsBlobTest, EachPairOfStancesDecodesToItsDuration) {
+  const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
+      {.standing_crouching = 0.25F, .standing_prone = 0.75F, .crouching_prone = 0.5F});
+  ASSERT_TRUE(blob.has_value());
+
+  const auto decoded = augusta::assets::DecodeStanceTransitionsBlob(*blob);
+
+  ASSERT_TRUE(decoded.has_value());
+  EXPECT_FLOAT_EQ(decoded->standing_crouching, 0.25F);
+  EXPECT_FLOAT_EQ(decoded->standing_prone, 0.75F);
+  EXPECT_FLOAT_EQ(decoded->crouching_prone, 0.5F);
+}
+
+TEST(StanceTransitionsBlobTest, ADurationThatIsNotPositiveIsRefused) {
+  const auto blob = augusta::assets::EncodeStanceTransitionsBlob(
+      {.standing_crouching = 0.25F, .standing_prone = 0.0F, .crouching_prone = 0.5F});
+
+  EXPECT_EQ(blob.error(), augusta::assets::EncodeError::kInvalidAnimation);
+}
+
+TEST(AnimationSkeletonBlobTest, AnAnimationSkeletonDecodesToItsArchive) {
+  const auto blob = augusta::assets::EncodeAnimationSkeletonBlob(MakeArchive());
+  ASSERT_TRUE(blob.has_value());
+
+  EXPECT_EQ(augusta::assets::DecodeAnimationSkeletonBlob(*blob), MakeArchive());
+}
+
+// A pack holding a character's animation loads, and resolves each part of it
+// by the character's name and, for a Clip, its role.
+TEST_F(PackTest, APackHoldingACharactersAnimationResolvesItsSkeletonClipsAndTransitions) {
+  const auto pack_path = MakePackPath("augusta_assets_test_animation");
+  const auto keys = GenerateEd25519KeyPair();
+  const auto skeleton = augusta::assets::EncodeAnimationSkeletonBlob(MakeArchive());
+  const auto clip =
+      augusta::assets::EncodeClipBlob({.stride_length = 1.25F, .foot_contacts = {}, .archive = MakeArchive()});
+  const auto transitions = augusta::assets::EncodeStanceTransitionsBlob(
+      {.standing_crouching = 0.25F, .standing_prone = 0.75F, .crouching_prone = 0.5F});
+  ASSERT_TRUE(skeleton.has_value() && clip.has_value() && transitions.has_value());
+  const std::vector<augusta::assets::AssetEntry> entries = {
+      {.type = augusta::assets::AssetType::kAnimationSkeleton,
+       .path = augusta::assets::CharacterAnimationSkeletonPath("soldier"),
+       .data = *skeleton},
+      {.type = augusta::assets::AssetType::kClip,
+       .path = augusta::assets::CharacterClipPath("soldier", "standing/idle"),
+       .data = *clip},
+      {.type = augusta::assets::AssetType::kStanceTransitions,
+       .path = augusta::assets::CharacterStanceTransitionsPath("soldier"),
+       .data = *transitions},
+  };
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, entries, keys.private_key).has_value());
+
+  const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+
+  ASSERT_TRUE(pack.has_value());
+  EXPECT_EQ(pack->Entries().size(), 3U);
+  EXPECT_EQ(pack->ResolveAnimationSkeleton("soldier"), MakeArchive());
+  const auto idle = pack->ResolveClip("soldier", "standing/idle");
+  ASSERT_TRUE(idle.has_value());
+  EXPECT_FLOAT_EQ(idle->stride_length, 1.25F);
+  EXPECT_EQ(idle->archive, MakeArchive());
+  const auto transitions_resolved = pack->ResolveStanceTransitions("soldier");
+  ASSERT_TRUE(transitions_resolved.has_value());
+  EXPECT_FLOAT_EQ(transitions_resolved->standing_prone, 0.75F);
+  EXPECT_EQ(pack->ResolveClip("soldier", "air").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveAnimationSkeleton("medic").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_EQ(pack->ResolveStanceTransitions("medic").error(), augusta::assets::ResolveError::kNotFound);
+}
+
 TEST_F(PackTest, AnEmptyCharacterListResolvesAsEmpty) {
   const auto pack_path = MakePackPath("augusta_assets_test_no_characters");
   const auto keys = GenerateEd25519KeyPair();
@@ -951,7 +1135,7 @@ TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWr
   const auto layout = augusta::assets::ReadPackLayout(pack_path);
 
   ASSERT_TRUE(layout.has_value());
-  EXPECT_EQ(layout->version, 4U);
+  EXPECT_EQ(layout->version, 6U);
   EXPECT_EQ(layout->file_size, bytes.size());
   EXPECT_EQ(layout->data_offset, kWrittenHeaderSize);
   EXPECT_EQ(layout->index_offset, kWrittenHeaderSize + mesh.size() + script.size());
@@ -1020,7 +1204,7 @@ TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
   const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
 
   ASSERT_TRUE(pack.has_value());
-  EXPECT_EQ(pack->Version(), 4U);
+  EXPECT_EQ(pack->Version(), 6U);
   EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
 }
 
@@ -1077,7 +1261,7 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
-  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 4");
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 6");
 }
 
 // Requirements: NFR-08, NFR-12
@@ -1092,7 +1276,37 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion3Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
-  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 3; this build reads format 4");
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 3; this build reads format 6");
+}
+
+// Requirements: NFR-08, NFR-12
+// A version-4 pack has no Clips (ADR-0066): refused at load by the version
+// error, so a server never starts on a Character it cannot pose.
+TEST_F(PackLoadNegativeTest, RejectsAVersion4Pack) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{4};
+  const auto path = MakePackPath("augusta_assets_test_version_4");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 4; this build reads format 6");
+}
+
+// Requirements: NFR-08, NFR-12
+// A version-5 pack has no rifle (ADR-0064): refused at load by the version
+// error, not loaded only to fail when the server resolves its rifle.
+TEST_F(PackLoadNegativeTest, RejectsAVersion5Pack) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{5};
+  const auto path = MakePackPath("augusta_assets_test_version_5");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 5; this build reads format 6");
 }
 
 // Requirements: NFR-08, NFR-12

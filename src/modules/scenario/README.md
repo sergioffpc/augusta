@@ -14,10 +14,13 @@ bad pack does, and the Host is handed it already loaded.
 ## Not its responsibility
 
 - Verifying and reading the pack itself: assets.
+- Reading a character's Clips: animation (`augusta/clips.h`). Scenario only
+  refuses a character whose Clips do not load.
 - Running the Game policy each tick: policy and simulation.
 - Sending the Parameters to clients: host.
 
 ## Decisions
 
 [ADR-0022](../../../docs/adr/0022-gameplay-scripting-language.md),
-[ADR-0039](../../../docs/adr/0039-lua-data-driven-configuration.md).
+[ADR-0039](../../../docs/adr/0039-lua-data-driven-configuration.md),
+[ADR-0066](../../../docs/adr/0066-character-animation.md).

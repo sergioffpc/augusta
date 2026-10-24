@@ -56,6 +56,10 @@ enum class AssetType : std::uint8_t {
   kEye,
   kCueSound,
   kSkeleton,
+  kAnimationSkeleton,
+  kClip,
+  kStanceTransitions,
+  kRifle,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -138,6 +142,46 @@ struct Skeleton {
   std::vector<JointData> joints;
   /// Index for index with joints.
   std::vector<math::Mat4> rest_transforms;
+};
+
+/// The foot a Foot contact lands (ADR-0062). Numbered as the clip blob carries
+/// it.
+enum class Foot : std::uint8_t {
+  kLeft = 0,
+  kRight = 1,
+};
+
+/// One Foot contact of a Clip (ADR-0062): the foot that lands, and when, as a
+/// ratio of the Clip's duration from 0 (its start) to 1 (its end).
+struct FootContact {
+  Foot foot = Foot::kLeft;
+  float ratio = 0.0F;
+};
+
+/// A Character's Clip (ADR-0066): its ozz-animation archive and what the cooker
+/// measured of it.
+struct ClipData {
+  /// How far a locomotion Clip's root moved over it as authored, in meters: the
+  /// distance its Stride advances one cycle by. The archive no longer moves the
+  /// root along the ground. 0 for a Clip that is not locomotion.
+  float stride_length = 0.0F;
+  /// Its Foot contacts in time order: one left and one right for a locomotion
+  /// Clip, none for an idle; whatever was authored for any other.
+  // Initialized, so a designated initializer may leave it out.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::vector<FootContact> foot_contacts{};
+  /// An ozz::animation::Animation archive, a track for each Joint of its
+  /// Character's animation Skeleton, in that Skeleton's order.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::vector<std::byte> archive{};
+};
+
+/// How long a change between two stances takes a Character (ADR-0066), in
+/// seconds, either way: one duration for each pair of stances.
+struct StanceTransitionsData {
+  float standing_crouching = 0.0F;
+  float standing_prone = 0.0F;
+  float crouching_prone = 0.0F;
 };
 
 /// A character's Hitbox paired with its Joint (ADR-0061): the Joint's index in
@@ -303,11 +347,58 @@ struct EyeData {
   return std::format("{}/Character/Eye", character);
 }
 
+/// One of the rifle's markers (ADR-0064): a frame in the rifle's own space,
+/// pointing along its -Z, as the rifle stage's marker prim places it.
+struct RifleMarker {
+  math::Vec3 translation{0.0F, 0.0F, 0.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+
+  bool operator==(const RifleMarker&) const = default;
+};
+
+/// A scenario's rifle (ADR-0064): its Grip, where the holding hand holds it;
+/// its Muzzle, the end of its barrel, pointing the way the barrel does; and its
+/// Sight, the point the Eye looks through in ADS, pointing along its line of
+/// sight. No mesh: nothing that reads a pack draws or tests the rifle itself.
+struct RifleData {
+  RifleMarker grip;
+  RifleMarker muzzle;
+  RifleMarker sight;
+
+  bool operator==(const RifleData&) const = default;
+};
+
+/// Pack-relative path of a scenario's rifle (ADR-0064), in both of its packs.
+inline constexpr std::string_view kRiflePath = "Rifle";
+
 /// Pack-relative path of the Skeleton of the character named character (its
 /// name in the scenario's manifest): its `Character` root prim's `Skeleton`
 /// child (ADR-0040, ADR-0061), e.g. "soldier/Character/Skeleton".
 [[nodiscard]] inline std::string CharacterSkeletonPath(std::string_view character) {
   return std::format("{}/Character/Skeleton", character);
+}
+
+/// Pack-relative path of the ozz-animation archive of the Skeleton of the
+/// character named character (ADR-0066), e.g. "soldier/Character/Skeleton.ozz":
+/// beside its Skeleton's, and never a prim's, since no prim name holds a '.'.
+/// Its Joints are the Skeleton's, in the order ozz-animation keeps them.
+[[nodiscard]] inline std::string CharacterAnimationSkeletonPath(std::string_view character) {
+  return std::format("{}/Character/Skeleton.ozz", character);
+}
+
+/// Pack-relative path of the Clip of the character named character that plays
+/// role (ADR-0066): the prim that names it under the `Character` root prim's
+/// `Clips` child, e.g. "soldier/Character/Clips/standing/forward" for the role
+/// "standing/forward", or "soldier/Character/Clips/air".
+[[nodiscard]] inline std::string CharacterClipPath(std::string_view character, std::string_view role) {
+  return std::format("{}/Character/Clips/{}", character, role);
+}
+
+/// Pack-relative path of the stance transitions of the character named
+/// character (ADR-0066): its `Clips` prim, which authors them, e.g.
+/// "soldier/Character/Clips".
+[[nodiscard]] inline std::string CharacterStanceTransitionsPath(std::string_view character) {
+  return std::format("{}/Character/Clips", character);
 }
 
 /// Pack-relative path of the visual mesh of the character named
@@ -522,6 +613,23 @@ class Pack {
   /// server packs, with the same Joints.
   [[nodiscard]] std::expected<Skeleton, ResolveError> ResolveSkeleton(std::string_view character) const;
 
+  /// Resolves the ozz-animation Skeleton archive of the character named
+  /// character, at CharacterAnimationSkeletonPath (ADR-0066), as its bytes:
+  /// augusta_assets carries it without reading it. Present in both packs.
+  [[nodiscard]] std::expected<std::vector<std::byte>, ResolveError> ResolveAnimationSkeleton(
+      std::string_view character) const;
+
+  /// Resolves the Clip of the character named character that plays role, e.g.
+  /// "standing/forward", at CharacterClipPath (ADR-0066). The Hitbox pose's
+  /// Clips are in both packs, a Cosmetic layer's in the client's only.
+  [[nodiscard]] std::expected<ClipData, ResolveError> ResolveClip(std::string_view character,
+                                                                  std::string_view role) const;
+
+  /// Resolves the stance transition durations of the character named character,
+  /// at CharacterStanceTransitionsPath (ADR-0066). Present in both packs.
+  [[nodiscard]] std::expected<StanceTransitionsData, ResolveError> ResolveStanceTransitions(
+      std::string_view character) const;
+
   /// Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   /// ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;
@@ -529,6 +637,10 @@ class Pack {
   /// Resolves a character's eye by its pack-relative path (CharacterEyePath,
   /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
+
+  /// Resolves the scenario's rifle at kRiflePath: its Grip, Muzzle and Sight
+  /// (ADR-0064). Present in both client and server packs.
+  [[nodiscard]] std::expected<RifleData, ResolveError> ResolveRifle() const;
 
   /// Resolves a sound by its pack-relative path (ADR-0020). Present in the client
   /// pack only.

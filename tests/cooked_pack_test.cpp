@@ -91,6 +91,17 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   }
 }
 
+// The server places every Muzzle from them (ADR-0064), so both packs hold the
+// example rifle's Grip, Muzzle and Sight: the Muzzle ahead of the Grip.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleRiflesMarkers) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto rifle = pack->ResolveRifle();
+    ASSERT_TRUE(rifle.has_value());
+    EXPECT_FLOAT_EQ(rifle->muzzle.translation.z, -0.62F);
+    EXPECT_FLOAT_EQ(rifle->sight.translation.y, 0.12F);
+  }
+}
+
 // The server judges hits against them and the client draws where a Shot lands,
 // so both packs hold the example character's hitboxes, one or more per body part.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {
@@ -114,6 +125,27 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
       return entry.type == augusta::assets::AssetType::kSkeleton &&
              entry.path == augusta::assets::CharacterSkeletonPath("soldier");
     }));
+  }
+}
+
+// The example character's pose comes from its Clips (ADR-0066), so both packs
+// hold its animation Skeleton, its Clips and its stance transitions.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersAnimation) {
+  using augusta::assets::AssetType;
+  const std::vector<std::pair<AssetType, std::string>> expected = {
+      {AssetType::kAnimationSkeleton, augusta::assets::CharacterAnimationSkeletonPath("soldier")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "standing/forward")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "prone/idle")},
+      {AssetType::kClip, augusta::assets::CharacterClipPath("soldier", "air")},
+      {AssetType::kStanceTransitions, augusta::assets::CharacterStanceTransitionsPath("soldier")},
+  };
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto entries = pack->Entries();
+    for (const auto& [type, path] : expected) {
+      EXPECT_TRUE(std::ranges::any_of(entries, [&](const augusta::assets::PackEntry& entry) {
+        return entry.type == type && entry.path == path;
+      })) << path;
+    }
   }
 }
 

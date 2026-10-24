@@ -1,12 +1,13 @@
 """The asset cooker itself (ADR-0030).
 
 Walks the authored OpenUSD stages a scenario's manifest composes - one map, zero
-or more characters (ADR-0041) - and bakes them into one signed client/server
-pack pair (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
-pip-installed usd-optimize build optimize.py already uses, rather than linking a
-second, independently-built OpenUSD - see ADR-0030 for why those can't coexist
-in one process), and calls the native module, _native, for the two pieces with
-no Python equivalent (mesh optimization, texture compression) and for
+or more characters (ADR-0041), one rifle (ADR-0064) - and bakes them into one
+signed client/server pack pair (ADR-0031/ADR-0032). Walks each stage through pxr
+directly (the same pip-installed usd-optimize build optimize.py already uses,
+rather than linking a second, independently-built OpenUSD - see ADR-0030 for why
+those can't coexist in one process), and calls the native module, _native, for
+the pieces with no Python equivalent (mesh optimization, texture compression,
+ozz-animation's archives of a character's Skeleton and Clips, ADR-0066) and for
 augusta_assets' pack encoder, which encodes every blob and writes, hashes and
 signs both packs.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+import enum
 import itertools
 import math
 from pathlib import Path
@@ -60,6 +62,11 @@ CHARACTER_EYE_PRIM = "Eye"
 # Skeleton (ADR-0061), which client and server read at <character
 # name>/Character/Skeleton.
 CHARACTER_SKELETON_PRIM = "Skeleton"
+# The children of a rifle stage's default prim that are its markers
+# (ADR-0064), each a frame pointing along its -Z: where the holding hand holds
+# it, the end of its barrel and the point the Eye looks through in ADS. In the
+# order the rifle blob carries them.
+RIFLE_MARKER_PRIMS = ("Grip", "Muzzle", "Sight")
 # How far a root joint's transform may be from the character's root and still
 # be at it: float noise in an authored matrix, not a misplaced skeleton.
 _ROOT_TOLERANCE = 1e-6
@@ -734,8 +741,9 @@ def _maybe_cook_texture_prim(
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
 # geometry, hitboxes, spawn points, character eyes (the server fires each
-# Shot from its shooter's eye, ADR-0040) and character skeletons (the same
-# joints on either side, ADR-0061). Mesh/texture/scene are client-only
+# Shot from its shooter's eye, ADR-0040), character skeletons (the same
+# joints on either side, ADR-0061) and the rifle's markers (the server places
+# each Muzzle, ADR-0064). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
@@ -745,6 +753,10 @@ _SERVER_PACK_ASSET_TYPES = frozenset(
         _native.AssetType.SPAWN_POINT,
         _native.AssetType.EYE,
         _native.AssetType.SKELETON,
+        _native.AssetType.ANIMATION_SKELETON,
+        _native.AssetType.CLIP,
+        _native.AssetType.STANCE_TRANSITIONS,
+        _native.AssetType.RIFLE,
     }
 )
 
@@ -779,6 +791,23 @@ class _Skeleton:
     # Each joint's rest transform in the character's root space, by name, as
     # authored: before the stage's up-axis/metersPerUnit correction.
     rest_to_root: dict[str, Gf.Matrix4d]
+    # The Skeleton prim's own transform in the character's root space, which
+    # a root joint's transform is relative to.
+    skeleton_to_root: Gf.Matrix4d
+
+
+@dataclass(frozen=True)
+class _Animation:
+    """A character's Skeleton and Clips as ozz-animation archives (ADR-0066).
+
+    Every entry is cooked, ready for the packs.
+    """
+
+    # Its Skeleton's archive, each Hitbox-pose Clip and its stance
+    # transitions: both packs' (ADR-0019).
+    entries: list[_native.AssetEntry]
+    # Its Cosmetic layers' Clips: the client pack's alone.
+    client_entries: list[_native.AssetEntry]
 
 
 @dataclass(frozen=True)
@@ -794,6 +823,7 @@ class _OpenedCharacter:
     prims: list[Usd.Prim]
     eye_path: Sdf.Path
     skeleton: _Skeleton
+    animation: _Animation
 
 
 def _is_at_root(matrix: Gf.Matrix4d) -> bool:
@@ -939,7 +969,12 @@ def _read_skeleton(
     joints, rest_to_root = _decompose_joints(
         names, rests, parents, skeleton_to_root, correction, path
     )
-    return _Skeleton(path=path, joints=joints, rest_to_root=rest_to_root)
+    return _Skeleton(
+        path=path,
+        joints=joints,
+        rest_to_root=rest_to_root,
+        skeleton_to_root=skeleton_to_root,
+    )
 
 
 def _read_hitbox_joint(
@@ -978,6 +1013,427 @@ def _read_hitbox_joint(
             f"names joint {joint!r}, which {skeleton.path} does not have",
         )
     return joint
+
+
+class _Kind(enum.Enum):
+    """What the cook checks and measures of a Clip by its role (ADR-0066)."""
+
+    # Moves its root along the ground over two steps: one left and one right
+    # Foot contact, its stride length measured and its root motion removed.
+    LOCOMOTION = enum.auto()
+    # Stands still: no Foot contact, and its root stays where it is.
+    IDLE = enum.auto()
+    # Neither: an Aim offset, an ADS grip, `air` or a Cosmetic layer's.
+    POSE = enum.auto()
+
+
+@dataclass(frozen=True)
+class _Role:
+    """A role a character's Clip plays, e.g. "standing/forward"."""
+
+    name: str
+    kind: _Kind
+    required: bool
+    # A Cosmetic layer's, which the client alone plays (ADR-0066).
+    cosmetic: bool = False
+
+
+_STANCES = ("standing", "crouching", "prone")
+_DIAGONALS = (
+    "forward_left",
+    "forward_right",
+    "backward_left",
+    "backward_right",
+)
+# Each stance's Aim offset, lowest to highest pitch, and its ADS grip.
+_AIM_ROLES = ("aim_down", "aim_center", "aim_up", "ads")
+_COSMETIC_ROLES = ("reload", "recoil", "flinch", "land")
+
+
+def _stance_roles(stance: str) -> list[_Role]:
+    """The roles of stance's Clips: its blend space, Aim offset and grip."""
+    required_moves = ["forward", "backward"]
+    optional_moves = list(_DIAGONALS)
+    if stance == "prone":
+        optional_moves += ["left", "right"]
+    else:
+        required_moves += ["left", "right"]
+    if stance == "standing":
+        required_moves.append("sprint")
+    return [
+        _Role(f"{stance}/idle", _Kind.IDLE, required=True),
+        *(
+            _Role(f"{stance}/{move}", _Kind.LOCOMOTION, required=True)
+            for move in required_moves
+        ),
+        *(
+            _Role(f"{stance}/{move}", _Kind.LOCOMOTION, required=False)
+            for move in optional_moves
+        ),
+        *(
+            _Role(f"{stance}/{aim}", _Kind.POSE, required=True)
+            for aim in _AIM_ROLES
+        ),
+    ]
+
+
+# Every role a character's Clip may play, in the order they are cooked.
+_ROLES = (
+    *(role for stance in _STANCES for role in _stance_roles(stance)),
+    _Role("air", _Kind.POSE, required=True),
+    *(
+        _Role(name, _Kind.POSE, required=False, cosmetic=True)
+        for name in _COSMETIC_ROLES
+    ),
+)
+
+# The child of CHARACTER_ROOT_PRIM that names a character's Clips by role, each
+# a UsdSkelAnimation prim at its role's path under it (e.g. standing/forward),
+# usually a reference to the Clip's own file under authoring/animations/. It
+# authors each pair of stances' transition duration, in seconds, in
+# _TRANSITION_ATTR_PREFIX followed by the pair (ADR-0066).
+CHARACTER_CLIPS_PRIM = "Clips"
+_TRANSITION_ATTR_PREFIX = "augusta:transitionDuration:"
+# In the stance-transitions blob's order.
+_TRANSITION_PAIRS = ("standing_crouching", "standing_prone", "crouching_prone")
+# A time-sampled token on a Clip's SkelAnimation: at each Foot contact's time
+# code, the foot that lands (ADR-0062).
+_FOOT_CONTACTS_ATTR = "augusta:footContacts"
+_FEET = {"left": _native.Foot.LEFT, "right": _native.Foot.RIGHT}
+# How far along the ground, in meters, a root may move over a Clip and still
+# stand still: float noise in an authored Clip, not a step.
+_STILL_ROOT = 1e-3
+
+
+@dataclass(frozen=True)
+class _ClipSamples:
+    """A Clip's joints at each of its samples, corrected like its character.
+
+    Each transform is (translation, rotation xyzw, scale), relative to its
+    joint's parent, the joints in their Skeleton's order.
+    """
+
+    # Seconds since its first sample.
+    times: list[float]
+    duration: float
+    transforms: list[list[tuple]]
+
+
+def _clip_joint_order(
+    animation: UsdSkel.Animation, prim_path: str, skeleton: _Skeleton
+) -> list[int]:
+    """Where each of the Skeleton's joints is in the Clip's own joint order.
+
+    Raises CookError naming the Clip and the Skeleton unless the Clip animates
+    exactly the Skeleton's joints.
+    """
+    names = [str(name) for name in animation.GetJointsAttr().Get() or []]
+    expected = [joint.name for joint in skeleton.joints]
+    if len(set(names)) != len(names) or set(names) != set(expected):
+        missing = sorted(set(expected) - set(names))
+        extra = sorted(set(names) - set(expected))
+        raise CookError(
+            "clip_joints_mismatch",
+            prim_path,
+            f"its joints do not match {skeleton.path}'s: it lacks "
+            f"{missing or 'none'} and has {extra or 'none'} beyond them",
+        )
+    return [names.index(name) for name in expected]
+
+
+def _clip_times(animation: UsdSkel.Animation) -> list[float]:
+    """The time codes a Clip is sampled at: each its animation authors."""
+    times = sorted(
+        set(animation.GetTranslationsAttr().GetTimeSamples())
+        | set(animation.GetRotationsAttr().GetTimeSamples())
+        | set(animation.GetScalesAttr().GetTimeSamples())
+    )
+    # A Clip authored with no time samples is one pose.
+    return times or [0.0]
+
+
+def _read_clip_samples(
+    animation: UsdSkel.Animation,
+    prim_path: str,
+    skeleton: _Skeleton,
+    correction: Gf.Matrix4d,
+) -> tuple[list[float], _ClipSamples]:
+    """A Clip's joints at each of its time codes, which are returned too.
+
+    Each root joint is placed in the character's root space, and every joint
+    corrected like the rest of the character (_decompose_joints).
+    """
+    order = _clip_joint_order(animation, prim_path, skeleton)
+    time_codes = _clip_times(animation)
+    seconds = animation.GetPrim().GetStage().GetTimeCodesPerSecond()
+    inverse_correction = correction.GetInverse()
+    transforms = []
+    for time_code in time_codes:
+        translations = animation.GetTranslationsAttr().Get(time_code)
+        rotations = animation.GetRotationsAttr().Get(time_code)
+        scales = animation.GetScalesAttr().Get(time_code)
+        if any(
+            values is None or len(values) != len(order)
+            for values in (translations, rotations, scales)
+        ):
+            raise CookError(
+                "clip_invalid",
+                prim_path,
+                "needs a translation, rotation and scale for each of its "
+                f"joints at time code {time_code}",
+            )
+        sample = []
+        for joint, index in zip(skeleton.joints, order, strict=True):
+            local = UsdSkel.MakeTransform(
+                translations[index], rotations[index], scales[index]
+            )
+            if joint.parent == _native.JOINT_NO_PARENT:
+                local = local * skeleton.skeleton_to_root
+            sample.append(_decompose(inverse_correction * local * correction))
+        transforms.append(sample)
+    first = time_codes[0]
+    # One pose lasts one time code.
+    duration = max(time_codes[-1] - first, 1.0) / seconds
+    return time_codes, _ClipSamples(
+        times=[(time_code - first) / seconds for time_code in time_codes],
+        duration=duration,
+        transforms=transforms,
+    )
+
+
+def _read_foot_contacts(
+    prim: Usd.Prim, prim_path: str, time_codes: list[float]
+) -> list[tuple[_native.Foot, float]]:
+    """A locomotion Clip's Foot contacts, as (foot, ratio of it) in time order.
+
+    Raises CookError unless it has exactly one left and one right, within it.
+    """
+    attr = prim.GetAttribute(_FOOT_CONTACTS_ATTR)
+    authored = [
+        (time_code, str(attr.Get(time_code)))
+        for time_code in (attr.GetTimeSamples() if attr else [])
+    ]
+    first, last = time_codes[0], time_codes[-1]
+    feet = sorted(foot for _, foot in authored)
+    if feet != ["left", "right"] or any(
+        not first <= time_code <= last for time_code, _ in authored
+    ):
+        raise CookError(
+            "locomotion_foot_contacts",
+            prim_path,
+            f"a locomotion Clip needs one left and one right Foot contact "
+            f"within it in {_FOOT_CONTACTS_ATTR}, and has "
+            f"{[foot for _, foot in authored]}",
+        )
+    return [
+        (_FEET[foot], (time_code - first) / (last - first))
+        for time_code, foot in authored
+    ]
+
+
+def _ground_offset(transform: tuple, origin: tuple) -> tuple[float, float]:
+    """How far transform's translation is from origin's along the ground."""
+    return (
+        transform[0][0] - origin[0][0],
+        transform[0][2] - origin[0][2],
+    )
+
+
+def _root_index(skeleton: _Skeleton) -> int:
+    """The index of the Skeleton's first root joint, the one Clips move."""
+    return next(
+        index
+        for index, joint in enumerate(skeleton.joints)
+        if joint.parent == _native.JOINT_NO_PARENT
+    )
+
+
+def _check_idle(
+    prim: Usd.Prim, prim_path: str, samples: _ClipSamples, root: int
+):
+    """Raises CookError unless an idle Clip has no Foot contact and stays."""
+    attr = prim.GetAttribute(_FOOT_CONTACTS_ATTR)
+    if attr and attr.GetTimeSamples():
+        raise CookError(
+            "idle_foot_contact",
+            prim_path,
+            f"an idle never steps, and has a Foot contact in "
+            f"{_FOOT_CONTACTS_ATTR}",
+        )
+    origin = samples.transforms[0][root]
+    if any(
+        math.hypot(*_ground_offset(sample[root], origin)) > _STILL_ROOT
+        for sample in samples.transforms
+    ):
+        raise CookError(
+            "idle_root_moves",
+            prim_path,
+            "an idle stands still, and its root moves along the ground",
+        )
+
+
+def _remove_root_motion(
+    prim_path: str, samples: _ClipSamples, root: int
+) -> float:
+    """A locomotion Clip's stride length, its root motion removed in place.
+
+    The stride length is how far its root moved along the ground from its
+    first sample to its last, in meters. Its root is then kept where the Clip
+    starts at the character's root, along the ground, less the steady
+    progress that took it there, so its sway is kept, and its height.
+    """
+    origin = samples.transforms[0][root]
+    end_x, end_z = _ground_offset(samples.transforms[-1][root], origin)
+    stride_length = math.hypot(end_x, end_z)
+    if stride_length <= _STILL_ROOT:
+        raise CookError(
+            "locomotion_root_still",
+            prim_path,
+            "a locomotion Clip moves its root along the ground, and its root "
+            "ends where it starts",
+        )
+    for time, sample in zip(samples.times, samples.transforms, strict=True):
+        progress = time / samples.times[-1]
+        (x, y, z), rotation, scale = sample[root]
+        sample[root] = (
+            (
+                x - origin[0][0] - end_x * progress,
+                y,
+                z - origin[0][2] - end_z * progress,
+            ),
+            rotation,
+            scale,
+        )
+    return stride_length
+
+
+def _cook_clip(
+    prim: Usd.Prim,
+    prim_path: str,
+    role: _Role,
+    skeleton: _Skeleton,
+    correction: Gf.Matrix4d,
+) -> bytes:
+    """A character's Clip as a clip blob: checked, measured and in place."""
+    if not prim.IsA(UsdSkel.Animation):
+        raise CookError(
+            "clip_invalid", prim_path, "a Clip must be a UsdSkelAnimation"
+        )
+    time_codes, samples = _read_clip_samples(
+        UsdSkel.Animation(prim), prim_path, skeleton, correction
+    )
+    root = _root_index(skeleton)
+    stride_length = 0.0
+    foot_contacts = []
+    if role.kind == _Kind.IDLE:
+        _check_idle(prim, prim_path, samples, root)
+    elif role.kind == _Kind.LOCOMOTION:
+        stride_length = _remove_root_motion(prim_path, samples, root)
+        foot_contacts = _read_foot_contacts(prim, prim_path, time_codes)
+    try:
+        archive = _native.build_clip(
+            skeleton.joints,
+            samples.times,
+            samples.duration,
+            [[t for t, _, _ in sample] for sample in samples.transforms],
+            [[r for _, r, _ in sample] for sample in samples.transforms],
+            [[s for _, _, s in sample] for sample in samples.transforms],
+        )
+        return _native.encode_clip_blob(stride_length, foot_contacts, archive)
+    except ValueError as error:
+        raise CookError("clip_invalid", prim_path, str(error)) from error
+
+
+def _cook_stance_transitions(clips: Usd.Prim, path: str) -> bytes:
+    """The stance-transitions blob of a character's Clips prim.
+
+    Raises CookError naming a pair of stances with no positive duration.
+    """
+    durations = []
+    for pair in _TRANSITION_PAIRS:
+        attr = (
+            clips.GetAttribute(_TRANSITION_ATTR_PREFIX + pair)
+            if clips
+            else None
+        )
+        value = attr.Get() if attr else None
+        if value is None:
+            raise CookError(
+                "stance_transition_missing",
+                path,
+                f"needs a transition duration for {pair}, in seconds, in "
+                f"{_TRANSITION_ATTR_PREFIX}{pair}",
+            )
+        if not math.isfinite(value) or value <= 0:
+            raise CookError(
+                "stance_transition_invalid",
+                path,
+                f"{_TRANSITION_ATTR_PREFIX}{pair} is {value}, not a positive "
+                "number of seconds",
+            )
+        durations.append(value)
+    return _native.encode_stance_transitions_blob(*durations)
+
+
+def _cook_animation(
+    character_name: str,
+    default_prim: Usd.Prim,
+    skeleton: _Skeleton,
+    correction: Gf.Matrix4d,
+) -> _Animation:
+    """A character's Skeleton and Clips, cooked into ozz-animation's archives.
+
+    Its Clips are the UsdSkelAnimation prims under its Clips prim, by role
+    (_ROLES). Raises CookError, naming the character and what is wrong, for a
+    required Clip missing, a Clip that breaks its role's rules, or a pair of
+    stances with no transition duration.
+    """
+    clips = default_prim.GetChild(CHARACTER_CLIPS_PRIM)
+    entries = [
+        _native.AssetEntry(
+            type=_native.AssetType.ANIMATION_SKELETON,
+            path=_native.character_animation_skeleton_path(character_name),
+            data=_native.encode_animation_skeleton_blob(
+                _native.build_animation_skeleton(skeleton.joints)
+            ),
+        )
+    ]
+    client_entries = []
+    for role in _ROLES:
+        prim_path = _native.character_clip_path(character_name, role.name)
+        prim = (
+            clips.GetStage().GetPrimAtPath(
+                clips.GetPath().AppendPath(role.name)
+            )
+            if clips
+            else None
+        )
+        if not prim:
+            if role.required:
+                raise CookError(
+                    "clip_missing",
+                    prim_path,
+                    f"character {character_name!r} needs a Clip for "
+                    f"{role.name!r}, at {CHARACTER_CLIPS_PRIM}/{role.name}",
+                )
+            continue
+        entry = _native.AssetEntry(
+            type=_native.AssetType.CLIP,
+            path=prim_path,
+            data=_cook_clip(prim, prim_path, role, skeleton, correction),
+        )
+        (client_entries if role.cosmetic else entries).append(entry)
+    entries.append(
+        _native.AssetEntry(
+            type=_native.AssetType.STANCE_TRANSITIONS,
+            path=_native.character_stance_transitions_path(character_name),
+            data=_cook_stance_transitions(
+                clips,
+                _native.character_stance_transitions_path(character_name),
+            ),
+        )
+    )
+    return _Animation(entries=entries, client_entries=client_entries)
 
 
 def _cook_character_prim(
@@ -1088,9 +1544,60 @@ def _sound_entries(sounds: CueSounds) -> list[_native.AssetEntry]:
     return entries
 
 
+def _cook_rifle(stage_path: Path) -> _native.AssetEntry:
+    """The rifle's Grip, Muzzle and Sight out of its stage (ADR-0064).
+
+    Each marker is a child of the stage's default prim, read as its frame in
+    the stage's root space, corrected to the runtime's Y-up meters; its scale
+    is dropped, since a marker is a frame. Nothing else of the stage is cooked:
+    no pack reader draws or tests the rifle itself.
+    """
+    stage = Usd.Stage.Open(str(stage_path))
+    if not stage:
+        raise CookError("stage_open_failed", "", str(stage_path))
+    default_prim = stage.GetDefaultPrim()
+    if not default_prim:
+        raise CookError(
+            "rifle_root_missing",
+            "",
+            f"{stage_path}: a rifle stage needs a default prim holding its "
+            f"{', '.join(RIFLE_MARKER_PRIMS)}",
+        )
+    correction = _stage_correction_matrix(stage)
+    markers = []
+    for name in RIFLE_MARKER_PRIMS:
+        marker_prim = default_prim.GetChild(name)
+        if not marker_prim:
+            raise CookError(
+                "rifle_marker_missing",
+                "",
+                f"{stage_path}: a rifle's {default_prim.GetName()!r} prim "
+                f"must have a {name!r} child",
+            )
+        xformable = UsdGeom.Xformable(marker_prim)
+        local_to_root = (
+            xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            if xformable
+            else Gf.Matrix4d(1.0)
+        )
+        translation, rotation, _ = _decompose(local_to_root * correction)
+        markers.append(
+            _native.RifleMarker(translation=translation, rotation=rotation)
+        )
+    grip, muzzle, sight = markers
+    return _native.AssetEntry(
+        type=_native.AssetType.RIFLE,
+        path=_native.RIFLE_PATH,
+        data=_native.encode_rifle_blob(
+            _native.RifleData(grip=grip, muzzle=muzzle, sight=sight)
+        ),
+    )
+
+
 def cook_scenario(
     map_stage_path: Path,
     character_stages: Sequence[tuple[str, Path]],
+    rifle_stage_path: Path,
     client_output_path: Path,
     server_output_path: Path,
     signing_key: bytes,
@@ -1103,7 +1610,8 @@ def cook_scenario(
     The map is map_stage_path and the characters every (character_name,
     stage_path) in character_stages (ADR-0041) - character_name is a
     character's name in the manifest (e.g. "soldier"), also the prefix its
-    blobs are addressed under (ADR-0040).
+    blobs are addressed under (ADR-0040). The rifle's markers, out of
+    rifle_stage_path, go into both packs at RIFLE_PATH (ADR-0064).
 
     scripts are a scenario's Lua files as (path in the pack, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
@@ -1196,6 +1704,10 @@ def cook_scenario(
         skeleton = _read_skeleton(
             character_name, default_prim, stage_path, character_correction
         )
+        # Every Hitbox pose is posed from its Clips (ADR-0066).
+        animation = _cook_animation(
+            character_name, default_prim, skeleton, character_correction
+        )
         character_prims = list(
             character_stage.Traverse(
                 Usd.TraverseInstanceProxies(Usd.PrimDefaultPredicate)
@@ -1209,8 +1721,11 @@ def cook_scenario(
                 prims=character_prims,
                 eye_path=eye_prim.GetPath(),
                 skeleton=skeleton,
+                animation=animation,
             )
         )
+
+    rifle_entry = _cook_rifle(rifle_stage_path)
 
     total_prims = len(map_prims) + sum(
         len(character.prims) for character in opened_characters
@@ -1218,7 +1733,9 @@ def cook_scenario(
     done = 0
 
     correction = _stage_correction_matrix(map_stage)
-    entries: list[_native.AssetEntry] = []
+    entries: list[_native.AssetEntry] = [rifle_entry]
+    # The client pack's alone, beside the entries whose type keeps them there.
+    client_only_entries: list[_native.AssetEntry] = []
     nodes: list[_native.SceneNode] = []
     node_index_of: dict[str, int] = {}
 
@@ -1298,6 +1815,8 @@ def cook_scenario(
                 f"{character.stage_path}: a character needs a hitbox for each "
                 f"body part, and has none for {', '.join(missing)}",
             )
+        entries.extend(character.animation.entries)
+        client_only_entries.extend(character.animation.client_entries)
 
     mesh_count = sum(
         1 for entry in entries if entry.type == _native.AssetType.MESH
@@ -1357,6 +1876,7 @@ def cook_scenario(
     # the cue sounds.
     client_entries = [
         *entries,
+        *client_only_entries,
         _native.AssetEntry(
             type=_native.AssetType.SCENE,
             path=_native.SCENE_PATH,

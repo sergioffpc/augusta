@@ -27,10 +27,14 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
 std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob);
 std::optional<SkeletonData> DecodeSkeletonBlob(std::span<const std::byte> blob);
 std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob);
+std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob);
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob);
 std::optional<std::vector<std::string>> DecodeCharactersBlob(std::span<const std::byte> blob);
 std::optional<AudioData> DecodeAudioBlob(std::span<const std::byte> blob);
 std::optional<CueSoundData> DecodeCueSoundBlob(std::span<const std::byte> blob);
+std::optional<std::vector<std::byte>> DecodeAnimationSkeletonBlob(std::span<const std::byte> blob);
+std::optional<ClipData> DecodeClipBlob(std::span<const std::byte> blob);
+std::optional<StanceTransitionsData> DecodeStanceTransitionsBlob(std::span<const std::byte> blob);
 
 }  // namespace augusta::assets
 

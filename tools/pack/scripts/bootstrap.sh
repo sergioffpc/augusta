@@ -28,6 +28,7 @@ set -euo pipefail
 readonly EXAMPLE_PIECES=(
   maps/firebase.usda
   characters/soldier.usda
+  rifles/rifle.usda
   sounds/gunshot.wav
   sounds/hit_marker.wav
   sounds/hit_taken.wav
@@ -149,13 +150,19 @@ main() {
   # A small worked authoring/ tree (tools/composer/examples/authoring -
   # committed, unlike everything else under the assets root) so a fresh
   # environment has something to cook straight away (`augusta-pack
-  # firebase`): one map (ADR-0015), one character (ADR-0040), placeholder cue
-  # sounds (ADR-0020), a Parameters script (ADR-0039) and rules (ADR-0022),
-  # and the scenario's manifest (ADR-0041) composing them. Seeded piece by
-  # piece rather than as one tree, so each survives local edits
-  # independently - left alone once it exists, like the signing key below.
+  # firebase`): one map (ADR-0015), one character (ADR-0040) and its Clips
+  # (ADR-0066), placeholder cue sounds (ADR-0020), a Parameters script
+  # (ADR-0039) and rules (ADR-0022), and the scenario's manifest (ADR-0041)
+  # composing them. Seeded piece by piece rather than as one tree, so each
+  # survives local edits independently - left alone once it exists, like the
+  # signing key below.
   local example_root="${repo_root}/tools/composer/examples/authoring" piece
-  for piece in "${EXAMPLE_PIECES[@]}"; do
+  local -a pieces=("${EXAMPLE_PIECES[@]}")
+  # The character's Clips, a file each.
+  for piece in "${example_root}"/animations/*.usda; do
+    pieces+=("animations/$(basename "${piece}")")
+  done
+  for piece in "${pieces[@]}"; do
     if [[ -e "${authoring_dir}/${piece}" ]]; then
       echo "Example ${piece} already exists at ${authoring_dir}/${piece} -" \
         "leaving it as is."

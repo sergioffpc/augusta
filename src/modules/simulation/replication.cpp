@@ -28,7 +28,8 @@ Updates PlanUpdates(const simulation::State& state, tick::Tick tick, std::span<c
   Updates updates{.tick = tick, .bodies = {}, .recipients = {}};
   updates.bodies.reserve(state.bodies.size());
   for (const simulation::EntityState& body : state.bodies) {
-    updates.bodies.push_back(EntityBody{.entity = body.entity, .body = body.body, .yaw = body.yaw});
+    updates.bodies.push_back(
+        EntityBody{.entity = body.entity, .body = body.body, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads});
   }
   updates.recipients.reserve(recipients.size());
   for (const Recipient& recipient : recipients) {

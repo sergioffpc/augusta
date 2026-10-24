@@ -22,8 +22,13 @@ namespace {
 // use below.
 constexpr float kMidpointFraction = 0.5F;
 
-RemoteBody AsRemote(const physics::BodyState& body, float yaw) {
-  return RemoteBody{.position = body.position, .velocity = body.velocity, .yaw = yaw, .stance = body.stance};
+RemoteBody AsRemote(const physics::BodyState& body, const Aim& aim) {
+  return RemoteBody{.position = body.position,
+                    .velocity = body.velocity,
+                    .yaw = aim.yaw,
+                    .pitch = aim.pitch,
+                    .stance = body.stance,
+                    .ads = aim.ads};
 }
 
 }  // namespace
@@ -90,8 +95,8 @@ const RemoteInterpolator::Update& RemoteInterpolator::History::operator[](std::s
   return slots_[(oldest_ + index) % slots_.size()];
 }
 
-void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw) {
-  const Update update{.server_time = server_time, .body = body, .yaw = yaw};
+void RemoteInterpolator::Record(EntityId entity, double server_time, const physics::BodyState& body, const Aim& aim) {
+  const Update update{.server_time = server_time, .body = body, .aim = aim};
   const auto [found, added] = index_.try_emplace(entity, bodies_.size());
   if (added) {
     bodies_.push_back(Buffered{.entity = entity, .updates = History(update)});
@@ -136,18 +141,21 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
         indices.begin());
     RemoteBody body;
     if (later == 0) {
-      body = AsRemote(updates[0].body, updates[0].yaw);
+      body = AsRemote(updates[0].body, updates[0].aim);
     } else if (later == updates.Size()) {
-      body = AsRemote(updates.Newest().body, updates.Newest().yaw);
+      body = AsRemote(updates.Newest().body, updates.Newest().aim);
     } else {
       const Update& earlier = updates[later - 1];
       const Update& next = updates[later];
       const auto t = static_cast<float>((sample_time - earlier.server_time) / (next.server_time - earlier.server_time));
+      const Update& nearer = t < kMidpointFraction ? earlier : next;
       body = RemoteBody{
           .position = math::Lerp(earlier.body.position, next.body.position, t),
           .velocity = math::Lerp(earlier.body.velocity, next.body.velocity, t),
-          .yaw = math::LerpAngle(earlier.yaw, next.yaw, t),
-          .stance = t < kMidpointFraction ? earlier.body.stance : next.body.stance,
+          .yaw = math::LerpAngle(earlier.aim.yaw, next.aim.yaw, t),
+          .pitch = std::lerp(earlier.aim.pitch, next.aim.pitch, t),
+          .stance = nearer.body.stance,
+          .ads = nearer.aim.ads,
       };
     }
     result.push_back(RemotePlayer{.entity = buffered.entity, .body = body, .character = {}});

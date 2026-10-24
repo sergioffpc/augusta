@@ -24,9 +24,14 @@ ship in both packs, Cosmetic layers' Clips in the client's alone (ADR-0019).
 collision rules. Locomotion Clips are authored moving; the cooker measures each
 one's stride length from its root's translation and removes it, so the Clip
 plays in place. A player's Stride, one cycle of two steps, advances by the
-distance its body moves divided by that stride length, never by time, so the
-feet do not slide at any speed and the Stride follows from the movement alone.
-Standing still, it holds where it was.
+distance its body moves along the ground divided by the stride length of its
+stance's blend space at its velocity, never by time, so the feet do not slide at
+any speed and the Stride follows from the movement alone. Standing still, it
+holds where it was. Movement advances it, in SimulationWorld and in the owner's
+PredictionWorld alike, from the stance and velocity the last tick left, in the
+space the tick's yaw faces, each tick's advance rounded to a 256th of the cycle,
+the byte it travels as; so a client loads its own Character's Clips to predict
+it, and Reconciliation corrects it as it corrects the position.
 
 **A blend space per stance, no state machine.** Each stance has a 2D blend space
 over the body's velocity in its own space: idle, forward, backward, the sides,
