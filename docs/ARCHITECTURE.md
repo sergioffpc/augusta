@@ -224,11 +224,10 @@ policy (ADR-0060).
     - PresentationWorld (ECS) — consumes the prediction state and every
       Authoritative State update since its last frame; interpolates/smooths for
       display; emits presentation state each render frame. One module
-      (augusta_presentation) holds it and its phases, including the animation
-      engine behind its Animation phase, and in a Development build the Physics
-      Debug overlays and their panel (ADR-0075). Cosmetic bodies and Props'
-      kinematic poses, which are not gameplay, get a client-only dynamics module
-      with the first of them (ADR-0045)
+      (augusta_presentation) holds it and its phases, and in a Development build
+      the Physics Debug overlays and their panel (ADR-0075). Cosmetic bodies and
+      Props' kinematic poses, which are not gameplay, get a client-only dynamics
+      module with the first of them (ADR-0045)
 - Renderer — NVIDIA's NVRHI (Vulkan), shaders authored in Slang; draws into the
   client's single Window, which the client Runtime owns and lends it, with the
   GPU device and swapchain it owns, consumes presentation state and draws text
