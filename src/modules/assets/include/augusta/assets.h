@@ -131,6 +131,42 @@ struct SkeletonData {
   std::vector<JointData> joints;
 };
 
+/// A character's Skeleton as it is loaded (ADR-0061): its Joints as the pack
+/// stores them, and each one's transform in the character's space in the Rest
+/// pose, composed once at load from their local ones.
+struct Skeleton {
+  std::vector<JointData> joints;
+  /// Index for index with joints.
+  std::vector<math::Mat4> rest_transforms;
+};
+
+/// A character's Hitbox paired with its Joint (ADR-0061): the Joint's index in
+/// its Skeleton, resolved once at load from the name the Hitbox carries, and the
+/// Hitbox, its geometry still in that Joint's space.
+struct JointHitbox {
+  std::uint32_t joint = 0;
+  HitboxData hitbox;
+};
+
+/// Why BindHitboxes refused a character's Hitboxes: one names a Joint its
+/// Skeleton does not have.
+struct UnresolvedJoint {
+  /// The name, as the Hitbox carries it.
+  std::string joint;
+};
+
+/// Each of hitboxes, in the same order, paired with the Joint of skeleton it
+/// names, or the first name skeleton has no Joint by: a character the server
+/// could not place every Hitbox of is one it cannot judge a hit on.
+[[nodiscard]] std::expected<std::vector<JointHitbox>, UnresolvedJoint> BindHitboxes(const Skeleton& skeleton,
+                                                                                    std::vector<HitboxData> hitboxes);
+
+/// Each of hitboxes, in the same order, with its geometry in the character's
+/// space where its Joint of skeleton holds it in the Rest pose: where hit
+/// detection places a Hitbox until a Hitbox pose moves it (ADR-0061).
+[[nodiscard]] std::vector<HitboxData> PlaceHitboxesAtRest(const Skeleton& skeleton,
+                                                          std::span<const JointHitbox> hitboxes);
+
 /// part's name as a character stage spells it in augusta:bodyPart: "head",
 /// "torso" or "limb".
 [[nodiscard]] std::string_view BodyPartName(BodyPart part);
@@ -482,12 +518,15 @@ class Pack {
   /// Resolves every hitbox of the character named character (its
   /// name in the scenario's manifest, e.g. "soldier", ADR-0040): each one
   /// addressed under it, in path order. Empty if it has none. Present in both
-  /// client and server packs. Each one's geometry is composed out of its Joint's
-  /// space into the character's root space, by the Joint's rest transform in the
-  /// character's Skeleton at CharacterSkeletonPath (ADR-0061): kNotFound if it
-  /// has hitboxes and no Skeleton, kCorruptBlob if a hitbox names a Joint the
-  /// Skeleton does not have.
+  /// client and server packs. Each one's geometry is in its Joint's space, as it
+  /// was cooked (ADR-0061): BindHitboxes pairs it with that Joint.
   [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(std::string_view character) const;
+
+  /// Resolves the Skeleton of the character named character (its name in the
+  /// scenario's manifest, e.g. "soldier"), at CharacterSkeletonPath (ADR-0061),
+  /// composing each Joint's Rest pose transform. Present in both client and
+  /// server packs, with the same Joints.
+  [[nodiscard]] std::expected<Skeleton, ResolveError> ResolveSkeleton(std::string_view character) const;
 
   /// Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   /// ADR-0032). Present in both client and server packs.

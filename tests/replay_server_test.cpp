@@ -103,15 +103,23 @@ class NetworkEnvironment : public ::testing::Environment {
 [[maybe_unused]] ::testing::Environment* const kNetworkEnvironment =
     ::testing::AddGlobalTestEnvironment(new NetworkEnvironment);
 
-// A hitbox for part: the box from low to high, as the twelve triangles of its faces.
-augusta::assets::HitboxData BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
-  return augusta::assets::HitboxData{
-      .part = part,
-      .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
-                          Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
-                          Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
-               .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
-                           3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}};
+// A Skeleton of one Joint, at the character's feet.
+augusta::assets::Skeleton RootOnly() {
+  return {.joints = {{.name = "Root"}}, .rest_transforms = {augusta::math::Mat4(1.0F)}};
+}
+
+// A hitbox for part on RootOnly's Joint: the box from low to high, as the twelve
+// triangles of its faces.
+augusta::assets::JointHitbox BoxHitbox(augusta::assets::BodyPart part, const Vec3& low, const Vec3& high) {
+  return {.joint = 0,
+          .hitbox = {
+              .part = part,
+              .joint = "Root",
+              .mesh = {.points = {Vec3(low.x, low.y, low.z), Vec3(high.x, low.y, low.z), Vec3(high.x, high.y, low.z),
+                                  Vec3(low.x, high.y, low.z), Vec3(low.x, low.y, high.z), Vec3(high.x, low.y, high.z),
+                                  Vec3(high.x, high.y, high.z), Vec3(low.x, high.y, high.z)},
+                       .indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1,
+                                   3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2}}}};
 }
 
 CollisionMesh Floor() {
@@ -132,6 +140,7 @@ Scenario TwoInALine() {
             .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
                          BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
                          BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))},
+            .skeleton = RootOnly(),
             .eye = Vec3(0.0F, kEyeHeight, 0.0F)}},
       .client_pack = {}};
 }

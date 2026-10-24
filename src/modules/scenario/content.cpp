@@ -30,8 +30,9 @@ failure::Failure ContentFailure(const assets::Pack& pack, std::vector<failure::C
   return {.code = failure::Code::kInvalidContent, .context = std::move(context), .detail = std::move(detail)};
 }
 
-// Each of paths as a Character with its hitboxes and its eye, in the same
-// order, or the failure of the first that has no hitbox for a body part or no eye.
+// Each of paths as a Character with its hitboxes, its Skeleton and its eye, in
+// the same order, or the failure of the first that has no hitbox for a body part,
+// no Skeleton, a hitbox on a Joint its Skeleton lacks or no eye.
 std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const assets::Pack& pack,
                                                                        std::vector<std::string> paths) {
   std::vector<Character> characters;
@@ -46,11 +47,23 @@ std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const ass
       return std::unexpected(
           ContentFailure(pack, context, std::format("no hitbox for the {}", assets::BodyPartName(*missing))));
     }
+    auto skeleton = pack.ResolveSkeleton(path);
+    if (!skeleton) {
+      return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(skeleton.error(), "skeleton")));
+    }
+    auto bound = assets::BindHitboxes(*skeleton, *std::move(hitboxes));
+    if (!bound) {
+      return std::unexpected(ContentFailure(
+          pack, context, std::format("a hitbox names no joint of the skeleton: {}", bound.error().joint)));
+    }
     const auto eye = pack.ResolveEye(assets::CharacterEyePath(path));
     if (!eye) {
       return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(eye.error(), "eye")));
     }
-    characters.push_back({.path = std::move(path), .hitboxes = *std::move(hitboxes), .eye = eye->position});
+    characters.push_back({.path = std::move(path),
+                          .hitboxes = *std::move(bound),
+                          .skeleton = *std::move(skeleton),
+                          .eye = eye->position});
   }
   return characters;
 }

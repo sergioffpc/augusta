@@ -23,12 +23,17 @@
 namespace augusta::scenario {
 
 /// A character a player may join as (ADR-0042), with the hitboxes a bullet
-/// that reaches a body of that character is judged against (US-11, ADR-0040)
-/// and the eye its Shots leave from.
+/// that reaches a body of that character is judged against (US-11, ADR-0040),
+/// the Skeleton they hang from (ADR-0061) and the eye its Shots leave from.
 struct Character {
   /// Its path in the pack, as the scenario's character list names it.
   std::string path;
-  std::vector<assets::HitboxData> hitboxes;
+  /// Each paired with its Joint of skeleton, in that Joint's space.
+  std::vector<assets::JointHitbox> hitboxes;
+  // Initialized, so a designated initializer may leave it out, as a character
+  // with no hitboxes does.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  assets::Skeleton skeleton{};
   /// Where it sees from standing, relative to its feet (ADR-0040).
   math::Vec3 eye{};
 };

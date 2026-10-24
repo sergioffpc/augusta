@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -113,6 +114,27 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
       return entry.type == augusta::assets::AssetType::kSkeleton &&
              entry.path == augusta::assets::CharacterSkeletonPath("soldier");
     }));
+  }
+}
+
+// Both packs carry the same Skeleton (ADR-0061), and it loads with every one of
+// the example character's Hitboxes on a Joint of it.
+TEST_F(CookedPackTest, BothPacksLoadTheSameExampleSkeletonAndEveryHitboxResolvesItsJoint) {
+  const auto client_skeleton = client_->ResolveSkeleton("soldier");
+  const auto server_skeleton = server_->ResolveSkeleton("soldier");
+  ASSERT_TRUE(client_skeleton.has_value());
+  ASSERT_TRUE(server_skeleton.has_value());
+  ASSERT_EQ(client_skeleton->joints.size(), server_skeleton->joints.size());
+  for (std::size_t joint = 0; joint < client_skeleton->joints.size(); ++joint) {
+    EXPECT_EQ(client_skeleton->joints[joint].name, server_skeleton->joints[joint].name);
+    EXPECT_EQ(client_skeleton->joints[joint].parent, server_skeleton->joints[joint].parent);
+  }
+  for (const Pack* pack : {&*client_, &*server_}) {
+    auto hitboxes = pack->ResolveHitboxes("soldier");
+    ASSERT_TRUE(hitboxes.has_value());
+    const auto bound = augusta::assets::BindHitboxes(*server_skeleton, *std::move(hitboxes));
+    ASSERT_TRUE(bound.has_value()) << bound.error().joint;
+    EXPECT_EQ(bound->size(), 6U);
   }
 }
 

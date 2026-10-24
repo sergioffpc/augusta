@@ -9,11 +9,13 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "augusta/assets.h"
 #include "augusta/harness.h"
 #include "augusta/host.h"
 #include "augusta/link.h"
@@ -65,6 +67,16 @@ inline const Parameters kTestParameters{};
 // The one character every test's server offers and every test's client picks,
 // unless a test says otherwise.
 inline constexpr const char* kCharacter = "soldier";
+
+// A Skeleton of one Joint at the character's feet, so a test's hitboxes, on it,
+// sit in the character's space as they are written.
+inline assets::Skeleton RootSkeleton() { return {.joints = {{.name = "Root"}}, .rest_transforms = {math::Mat4(1.0F)}}; }
+
+// hitbox, on RootSkeleton's Joint.
+inline assets::JointHitbox OnRoot(assets::HitboxData hitbox) {
+  hitbox.joint = "Root";
+  return {.joint = 0, .hitbox = std::move(hitbox)};
+}
 
 // The test parameters, for a match of count players.
 inline Parameters WithPlayerCount(std::uint8_t count) {

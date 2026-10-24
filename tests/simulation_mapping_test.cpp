@@ -55,9 +55,19 @@ TEST(SimulationMappingTest, AHitboxThatIsNotAWholeTriangleListIsRejected) {
   }
 }
 
+// A Skeleton of one Joint, raised to height above the character's feet.
+augusta::assets::Skeleton RootAt(float height) {
+  return {.joints = {{.name = "Root", .translation = Vec3(0.0F, height, 0.0F)}},
+          .rest_transforms = {augusta::math::ToMat4(Vec3(0.0F, height, 0.0F),
+                                                    augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F), Vec3(1.0F))}};
+}
+
 TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   const std::vector<augusta::scenario::Character> characters = {
-      {.path = "medic", .hitboxes = {Triangle(BodyPart::kHead)}, .eye = Vec3(0.0F, 1.6F, 0.0F)},
+      {.path = "medic",
+       .hitboxes = {{.joint = 0, .hitbox = Triangle(BodyPart::kHead)}},
+       .skeleton = RootAt(0.0F),
+       .eye = Vec3(0.0F, 1.6F, 0.0F)},
       {.path = "sniper", .hitboxes = {}, .eye = Vec3(0.0F, 1.5F, 0.0F)},
   };
 
@@ -67,6 +77,24 @@ TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   EXPECT_EQ(converted.at("medic").eye, Vec3(0.0F, 1.6F, 0.0F));
   EXPECT_EQ(converted.at("medic").hitboxes.size(), 1U);
   EXPECT_TRUE(converted.at("sniper").hitboxes.empty());
+}
+
+// Until SimulationWorld poses a Skeleton (ADR-0061), it judges a character's
+// hitboxes where their Joints hold them in the Rest pose.
+TEST(SimulationMappingTest, ACharactersHitboxesArePlacedByTheirJointsAtRest) {
+  const std::vector<augusta::scenario::Character> characters = {
+      {.path = "medic",
+       .hitboxes = {{.joint = 0, .hitbox = Triangle(BodyPart::kHead)}},
+       .skeleton = RootAt(1.5F),
+       .eye = Vec3(0.0F, 1.6F, 0.0F)},
+  };
+
+  const auto converted = ToSimulation(characters);
+
+  ASSERT_EQ(converted.at("medic").hitboxes.size(), 1U);
+  ASSERT_EQ(converted.at("medic").hitboxes[0].triangles.size(), 1U);
+  EXPECT_EQ(converted.at("medic").hitboxes[0].triangles[0].a, Vec3(0.0F, 1.5F, 0.0F));
+  EXPECT_EQ(converted.at("medic").hitboxes[0].triangles[0].c, Vec3(0.0F, 2.5F, 0.0F));
 }
 
 }  // namespace

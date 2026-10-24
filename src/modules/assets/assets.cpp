@@ -499,6 +499,35 @@ std::optional<BodyPart> FirstMissingBodyPart(std::span<const HitboxData> hitboxe
   return std::nullopt;
 }
 
+std::expected<std::vector<JointHitbox>, UnresolvedJoint> BindHitboxes(const Skeleton& skeleton,
+                                                                      std::vector<HitboxData> hitboxes) {
+  std::vector<JointHitbox> bound;
+  bound.reserve(hitboxes.size());
+  for (HitboxData& hitbox : hitboxes) {
+    const auto joint = std::ranges::find(skeleton.joints, hitbox.joint, &JointData::name);
+    if (joint == skeleton.joints.end()) {
+      return std::unexpected(UnresolvedJoint{.joint = std::move(hitbox.joint)});
+    }
+    bound.push_back(
+        {.joint = static_cast<std::uint32_t>(joint - skeleton.joints.begin()), .hitbox = std::move(hitbox)});
+  }
+  return bound;
+}
+
+std::vector<HitboxData> PlaceHitboxesAtRest(const Skeleton& skeleton, std::span<const JointHitbox> hitboxes) {
+  std::vector<HitboxData> placed;
+  placed.reserve(hitboxes.size());
+  for (const JointHitbox& bound : hitboxes) {
+    const math::Mat4& transform = skeleton.rest_transforms.at(bound.joint);
+    HitboxData hitbox = bound.hitbox;
+    for (math::Vec3& point : hitbox.mesh.points) {
+      point = math::TransformPoint(transform, point);
+    }
+    placed.push_back(std::move(hitbox));
+  }
+  return placed;
+}
+
 bool IsValidAssetType(std::uint8_t value) {
   switch (static_cast<AssetType>(value)) {
     case AssetType::kMesh:
@@ -703,34 +732,6 @@ std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view pat
   return ResolveAsset<HitboxData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeHitboxBlob);
 }
 
-namespace {
-
-// Moves each of hitboxes' geometry out of its Joint's space into the character's
-// root space, by that Joint's rest transform composed from skeleton's: where hit
-// detection places a Hitbox until it is posed (ADR-0061). False if a hitbox names
-// a Joint skeleton does not have.
-bool ComposeIntoRootSpace(const SkeletonData& skeleton, std::vector<HitboxData>& hitboxes) {
-  std::vector<math::Mat4> rest_to_root;
-  rest_to_root.reserve(skeleton.joints.size());
-  for (const JointData& joint : skeleton.joints) {
-    const math::Mat4 local = math::ToMat4(joint.translation, joint.rotation, joint.scale);
-    rest_to_root.push_back(joint.parent == kJointNoParent ? local : rest_to_root[joint.parent] * local);
-  }
-  for (HitboxData& hitbox : hitboxes) {
-    const auto joint = std::ranges::find(skeleton.joints, hitbox.joint, &JointData::name);
-    if (joint == skeleton.joints.end()) {
-      return false;
-    }
-    const math::Mat4& transform = rest_to_root[static_cast<std::size_t>(joint - skeleton.joints.begin())];
-    for (math::Vec3& point : hitbox.mesh.points) {
-      point = math::TransformPoint(transform, point);
-    }
-  }
-  return true;
-}
-
-}  // namespace
-
 std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character) const {
   const std::string prefix = std::string(character) + "/";
   std::vector<const PackEntry*> entries;
@@ -749,18 +750,24 @@ std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::
     }
     hitboxes.push_back(*std::move(hitbox));
   }
-  if (hitboxes.empty()) {
-    return hitboxes;
-  }
-  const auto skeleton = ResolveAsset<SkeletonData>(impl_->index, impl_->mapping, CharacterSkeletonPath(character),
-                                                   AssetType::kSkeleton, DecodeSkeletonBlob);
-  if (!skeleton) {
-    return std::unexpected(skeleton.error());
-  }
-  if (!ComposeIntoRootSpace(*skeleton, hitboxes)) {
-    return std::unexpected(ResolveError::kCorruptBlob);
-  }
   return hitboxes;
+}
+
+std::expected<Skeleton, ResolveError> Pack::ResolveSkeleton(std::string_view character) const {
+  auto stored = ResolveAsset<SkeletonData>(impl_->index, impl_->mapping, CharacterSkeletonPath(character),
+                                           AssetType::kSkeleton, DecodeSkeletonBlob);
+  if (!stored) {
+    return std::unexpected(stored.error());
+  }
+  Skeleton skeleton{.joints = std::move(stored->joints), .rest_transforms = {}};
+  skeleton.rest_transforms.reserve(skeleton.joints.size());
+  // DecodeSkeletonBlob guarantees each parent is listed before its children.
+  for (const JointData& joint : skeleton.joints) {
+    const math::Mat4 local = math::ToMat4(joint.translation, joint.rotation, joint.scale);
+    skeleton.rest_transforms.push_back(joint.parent == kJointNoParent ? local
+                                                                      : skeleton.rest_transforms[joint.parent] * local);
+  }
+  return skeleton;
 }
 
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
