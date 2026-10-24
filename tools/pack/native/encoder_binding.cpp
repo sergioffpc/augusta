@@ -79,7 +79,8 @@ void BindEnums(py::module_& module) {
       .value("SCRIPT", assets::AssetType::kScript)
       .value("CHARACTERS", assets::AssetType::kCharacters)
       .value("EYE", assets::AssetType::kEye)
-      .value("CUE_SOUND", assets::AssetType::kCueSound);
+      .value("CUE_SOUND", assets::AssetType::kCueSound)
+      .value("SKELETON", assets::AssetType::kSkeleton);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
@@ -92,6 +93,8 @@ void BindConstants(py::module_& module) {
   module.attr("SOUNDS_PREFIX") = std::string(assets::kSoundsPrefix);
   module.attr("SCENE_NODE_NO_PARENT") = assets::kSceneNodeNoParent;
   module.attr("MAX_CHARACTERS") = assets::kMaxCharacters;
+  module.attr("MAX_JOINTS") = assets::kMaxJoints;
+  module.attr("JOINT_NO_PARENT") = assets::kJointNoParent;
 }
 
 void BindGeometryTypes(py::module_& module) {
@@ -105,13 +108,36 @@ void BindGeometryTypes(py::module_& module) {
            py::arg("points"), py::arg("indices"))
       .def_readwrite("points", &assets::MeshData::points)
       .def_readwrite("indices", &assets::MeshData::indices);
-  py::class_<assets::HitboxData>(module, "HitboxData", "A hitbox: the body part it stands for, and its geometry.")
-      .def(py::init([](assets::BodyPart part, assets::MeshData mesh) {
-             return assets::HitboxData{.part = part, .mesh = std::move(mesh)};
+  py::class_<assets::HitboxData>(
+      module, "HitboxData",
+      "A hitbox: the body part it stands for, the name of the Joint it moves with, and its geometry in that "
+      "Joint's space (ADR-0061).")
+      .def(py::init([](assets::BodyPart part, std::string joint, assets::MeshData mesh) {
+             return assets::HitboxData{.part = part, .joint = std::move(joint), .mesh = std::move(mesh)};
            }),
-           py::arg("part"), py::arg("mesh"))
+           py::arg("part"), py::arg("joint"), py::arg("mesh"))
       .def_readwrite("part", &assets::HitboxData::part)
+      .def_readwrite("joint", &assets::HitboxData::joint)
       .def_readwrite("mesh", &assets::HitboxData::mesh);
+  py::class_<assets::JointData>(module, "JointData",
+                                "One Joint of a Skeleton: its name, the path within the Skeleton; its parent's index "
+                                "(JOINT_NO_PARENT for a root); its rest transform relative to that parent (ADR-0061).")
+      .def(py::init([](std::string name, std::uint32_t parent, math::Vec3 translation, math::Quat rotation,
+                       math::Vec3 scale) {
+             return assets::JointData{.name = std::move(name),
+                                      .parent = parent,
+                                      .translation = translation,
+                                      .rotation = rotation,
+                                      .scale = scale};
+           }),
+           py::arg("name"), py::arg("parent") = assets::kJointNoParent,
+           py::arg("translation") = math::Vec3(0.0F, 0.0F, 0.0F),
+           py::arg("rotation") = math::Quat(1.0F, 0.0F, 0.0F, 0.0F), py::arg("scale") = math::Vec3(1.0F, 1.0F, 1.0F))
+      .def_readwrite("name", &assets::JointData::name)
+      .def_readwrite("parent", &assets::JointData::parent)
+      .def_readwrite("translation", &assets::JointData::translation)
+      .def_readwrite("rotation", &assets::JointData::rotation)
+      .def_readwrite("scale", &assets::JointData::scale);
   py::class_<assets::SpawnPointData>(module, "SpawnPointData", "A spawn point's transform (ADR-0032).")
       .def(py::init([](math::Vec3 translation, math::Quat rotation) {
              return assets::SpawnPointData{.translation = translation, .rotation = rotation};
@@ -221,6 +247,13 @@ void BindEncodeFunctions(py::module_& module) {
       "encode_hitbox_blob",
       [](const assets::HitboxData& hitbox) { return BlobOrThrow(assets::EncodeHitboxBlob(hitbox), "hitbox"); },
       py::arg("hitbox"), "A hitbox blob (ADR-0040).");
+  module.def(
+      "encode_skeleton_blob",
+      [](std::vector<assets::JointData> joints) {
+        const auto what = std::format("a skeleton of {} joints", joints.size());
+        return BlobOrThrow(assets::EncodeSkeletonBlob({.joints = std::move(joints)}), what);
+      },
+      py::arg("joints"), "A skeleton blob of joints, parents before children (ADR-0061).");
   module.def(
       "encode_eye_blob", [](const assets::EyeData& eye) { return BlobOrThrow(assets::EncodeEyeBlob(eye), "eye"); },
       py::arg("eye"), "An eye blob (ADR-0040).");

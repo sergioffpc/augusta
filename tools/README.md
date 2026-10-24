@@ -62,8 +62,8 @@ scenarios/<scenario>.yaml -> the map's and characters' stages -> usd-optimize ->
 2. **usd-validation-nvidia** validates the cleaned stage. Any issue, warnings
    included, aborts the cook and no pack is written. ADR-0015.
 3. **cook** walks the stage with `pxr`, converts meshes, colliders, hitboxes,
-   spawn points and textures, then packs, BLAKE3-hashes and Ed25519-signs the
-   result. ADR-0031, ADR-0032.
+   skeletons, spawn points and textures, then packs, BLAKE3-hashes and
+   Ed25519-signs the result. ADR-0031, ADR-0032, ADR-0061.
 
 The pipeline is Python over one pybind11 module in [pack/native/](pack/native/),
 `_native`: the mesh pass (ADR-0016), the texture compression (ADR-0017) and

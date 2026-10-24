@@ -305,18 +305,47 @@ std::optional<SpawnPointData> DecodeSpawnPointBlob(std::span<const std::byte> bl
 
 // Hitbox blob wire format: see EncodeHitboxBlob.
 std::optional<HitboxData> DecodeHitboxBlob(std::span<const std::byte> blob) {
-  if (blob.empty()) {
+  ByteReader reader(blob);
+  const auto part = reader.ReadU8();
+  if (!part || *part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
     return std::nullopt;
   }
-  const auto part = static_cast<std::uint8_t>(blob.front());
-  if (part > static_cast<std::uint8_t>(BodyPart::kLimb)) {
+  auto joint = reader.ReadString();
+  if (!joint) {
     return std::nullopt;
   }
-  auto mesh = DecodeMeshBlob(blob.subspan(1));
+  auto mesh = DecodeMeshBlob(reader.ReadRest());
   if (!mesh) {
     return std::nullopt;
   }
-  return HitboxData{.part = static_cast<BodyPart>(part), .mesh = *std::move(mesh)};
+  return HitboxData{.part = static_cast<BodyPart>(*part), .joint = *std::move(joint), .mesh = *std::move(mesh)};
+}
+
+// Skeleton blob wire format: see EncodeSkeletonBlob. Only joints listed parents
+// before children are a skeleton, so a parent's index is below its child's.
+std::optional<SkeletonData> DecodeSkeletonBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  const auto count = reader.ReadU32();
+  if (!count || *count > kMaxJoints) {
+    return std::nullopt;
+  }
+  SkeletonData skeleton;
+  // Capped at kMaxJoints, so reserving on its word can't over-allocate.
+  skeleton.joints.reserve(*count);
+  for (std::uint32_t index = 0; index < *count; ++index) {
+    auto name = reader.ReadString();
+    const auto parent = reader.ReadU32();
+    const auto transform = ReadTransform(reader);
+    if (!name || !parent || !transform || (*parent != kJointNoParent && *parent >= index)) {
+      return std::nullopt;
+    }
+    skeleton.joints.push_back(JointData{.name = *std::move(name),
+                                        .parent = *parent,
+                                        .translation = transform->translation,
+                                        .rotation = transform->rotation,
+                                        .scale = transform->scale});
+  }
+  return skeleton;
 }
 
 // Eye blob wire format: see EncodeEyeBlob.

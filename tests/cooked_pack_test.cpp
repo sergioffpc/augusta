@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -97,6 +98,21 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart
     ASSERT_TRUE(hitboxes.has_value());
     EXPECT_EQ(hitboxes->size(), 6U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
+    for (const augusta::assets::HitboxData& hitbox : *hitboxes) {
+      EXPECT_FALSE(hitbox.joint.empty());
+    }
+  }
+}
+
+// Each Hitbox moves with a Joint of it (ADR-0061), so both packs hold the
+// example character's Skeleton.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersSkeleton) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto entries = pack->Entries();
+    EXPECT_TRUE(std::ranges::any_of(entries, [](const augusta::assets::PackEntry& entry) {
+      return entry.type == augusta::assets::AssetType::kSkeleton &&
+             entry.path == augusta::assets::CharacterSkeletonPath("soldier");
+    }));
   }
 }
 

@@ -521,13 +521,14 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   EXPECT_EQ(pack->ResolveEye("medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
 }
 
-// A character's hitboxes (ADR-0040): each a body part and its geometry, found
-// together under the character's path, in path order.
+// A character's hitboxes (ADR-0040, ADR-0061): each a body part, its Joint and
+// its geometry, found together under the character's path, in path order.
 class HitboxPackTest : public PackTest {
  protected:
   static augusta::assets::AssetEntry Hitbox(std::string path, augusta::assets::BodyPart part, float height) {
     const augusta::assets::HitboxData hitbox{
         .part = part,
+        .joint = "Root/Spine",
         .mesh = {.points = {Vec3(0.0F, height, 0.0F), Vec3(1.0F, height, 0.0F), Vec3(0.0F, height, 1.0F)},
                  .indices = {0, 1, 2}},
     };
@@ -535,6 +536,18 @@ class HitboxPackTest : public PackTest {
     EXPECT_TRUE(blob.has_value());
     return {.type = augusta::assets::AssetType::kHitbox,
             .path = std::move(path),
+            .data = blob.value_or(std::vector<std::byte>{})};
+  }
+
+  // The Skeleton of the character named character: a root at its feet, and the
+  // Root/Spine joint every Hitbox above moves with at spine.
+  static augusta::assets::AssetEntry Skeleton(std::string_view character, Vec3 spine) {
+    const augusta::assets::SkeletonData skeleton{
+        .joints = {{.name = "Root"}, {.name = "Root/Spine", .parent = 0, .translation = spine}}};
+    const auto blob = augusta::assets::EncodeSkeletonBlob(skeleton);
+    EXPECT_TRUE(blob.has_value());
+    return {.type = augusta::assets::AssetType::kSkeleton,
+            .path = augusta::assets::CharacterSkeletonPath(character),
             .data = blob.value_or(std::vector<std::byte>{})};
   }
 
@@ -550,13 +563,14 @@ class HitboxPackTest : public PackTest {
   }
 };
 
-TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
+TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartJointAndGeometry) {
   const auto pack = Write({Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F)});
 
   const auto hitbox = pack.ResolveHitbox("soldier/Character/Head");
 
   ASSERT_TRUE(hitbox.has_value());
   EXPECT_EQ(hitbox->part, augusta::assets::BodyPart::kHead);
+  EXPECT_EQ(hitbox->joint, "Root/Spine");
   EXPECT_EQ(hitbox->mesh.points.size(), 3U);
   EXPECT_EQ(hitbox->mesh.points[0], Vec3(0.0F, 1.8F, 0.0F));
   EXPECT_EQ(hitbox->mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
@@ -564,6 +578,7 @@ TEST_F(HitboxPackTest, AHitboxResolvesToItsBodyPartAndGeometry) {
 
 TEST_F(HitboxPackTest, ACharactersHitboxesResolveTogetherInPathOrderAndNoOtherCharacters) {
   const auto pack = Write({
+      Skeleton("soldier", Vec3(0.0F)),
       Hitbox("soldier/Character/Torso", augusta::assets::BodyPart::kTorso, 1.3F),
       Hitbox("medic/Character/Head", augusta::assets::BodyPart::kHead, 1.7F),
       Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
@@ -590,6 +605,46 @@ TEST_F(HitboxPackTest, AHitboxOfAnUnknownBodyPartIsCorrupt) {
   const auto pack = Write({entry});
 
   EXPECT_EQ(pack.ResolveHitbox("soldier/Character/Tail").error(), augusta::assets::ResolveError::kCorruptBlob);
+  EXPECT_EQ(pack.ResolveHitboxes("soldier").error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
+// A character's hitbox is cooked in its Joint's space (ADR-0061); hit detection
+// places it in the character's, by the Joint's rest transform.
+TEST_F(HitboxPackTest, ACharactersHitboxesResolveIntoItsRootSpaceByTheirJoints) {
+  const auto pack = Write({
+      Skeleton("soldier", Vec3(0.0F, 1.0F, 0.0F)),
+      Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 0.8F),
+  });
+
+  const auto hitboxes = pack.ResolveHitboxes("soldier");
+
+  ASSERT_TRUE(hitboxes.has_value());
+  ASSERT_EQ(hitboxes->size(), 1U);
+  EXPECT_FLOAT_EQ((*hitboxes)[0].mesh.points[1].x, 1.0F);
+  EXPECT_FLOAT_EQ((*hitboxes)[0].mesh.points[1].y, 1.8F);
+}
+
+TEST_F(HitboxPackTest, ACharactersHitboxesResolveNoneWithoutItsSkeleton) {
+  const auto pack = Write({
+      Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+      Skeleton("medic", Vec3(0.0F)),
+      Hitbox("medic/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+  });
+
+  EXPECT_EQ(pack.ResolveHitboxes("soldier").error(), augusta::assets::ResolveError::kNotFound);
+  EXPECT_TRUE(pack.ResolveHitboxes("medic").has_value());
+}
+
+TEST_F(HitboxPackTest, ACharactersHitboxesResolveNoneWhenOneNamesAJointItsSkeletonLacks) {
+  const auto root_only = augusta::assets::EncodeSkeletonBlob({.joints = {{.name = "Root"}}});
+  ASSERT_TRUE(root_only.has_value());
+  const auto pack = Write({
+      augusta::assets::AssetEntry{.type = augusta::assets::AssetType::kSkeleton,
+                                  .path = augusta::assets::CharacterSkeletonPath("soldier"),
+                                  .data = *root_only},
+      Hitbox("soldier/Character/Head", augusta::assets::BodyPart::kHead, 1.8F),
+  });
+
   EXPECT_EQ(pack.ResolveHitboxes("soldier").error(), augusta::assets::ResolveError::kCorruptBlob);
 }
 
@@ -820,7 +875,7 @@ TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWr
   const auto layout = augusta::assets::ReadPackLayout(pack_path);
 
   ASSERT_TRUE(layout.has_value());
-  EXPECT_EQ(layout->version, 3U);
+  EXPECT_EQ(layout->version, 4U);
   EXPECT_EQ(layout->file_size, bytes.size());
   EXPECT_EQ(layout->data_offset, kWrittenHeaderSize);
   EXPECT_EQ(layout->index_offset, kWrittenHeaderSize + mesh.size() + script.size());
@@ -889,7 +944,7 @@ TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
   const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
 
   ASSERT_TRUE(pack.has_value());
-  EXPECT_EQ(pack->Version(), 3U);
+  EXPECT_EQ(pack->Version(), 4U);
   EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
 }
 
@@ -946,7 +1001,7 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
-  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 3");
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 4");
 }
 
 // Requirements: NFR-08, NFR-12

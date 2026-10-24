@@ -34,7 +34,7 @@ namespace augusta::assets {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 3;
+constexpr std::uint32_t kFormatVersion = 4;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -512,6 +512,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kCharacters:
     case AssetType::kEye:
     case AssetType::kCueSound:
+    case AssetType::kSkeleton:
       return true;
   }
   return false;
@@ -702,6 +703,34 @@ std::expected<HitboxData, ResolveError> Pack::ResolveHitbox(std::string_view pat
   return ResolveAsset<HitboxData>(impl_->index, impl_->mapping, path, AssetType::kHitbox, DecodeHitboxBlob);
 }
 
+namespace {
+
+// Moves each of hitboxes' geometry out of its Joint's space into the character's
+// root space, by that Joint's rest transform composed from skeleton's: where hit
+// detection places a Hitbox until it is posed (ADR-0061). False if a hitbox names
+// a Joint skeleton does not have.
+bool ComposeIntoRootSpace(const SkeletonData& skeleton, std::vector<HitboxData>& hitboxes) {
+  std::vector<math::Mat4> rest_to_root;
+  rest_to_root.reserve(skeleton.joints.size());
+  for (const JointData& joint : skeleton.joints) {
+    const math::Mat4 local = math::ToMat4(joint.translation, joint.rotation, joint.scale);
+    rest_to_root.push_back(joint.parent == kJointNoParent ? local : rest_to_root[joint.parent] * local);
+  }
+  for (HitboxData& hitbox : hitboxes) {
+    const auto joint = std::ranges::find(skeleton.joints, hitbox.joint, &JointData::name);
+    if (joint == skeleton.joints.end()) {
+      return false;
+    }
+    const math::Mat4& transform = rest_to_root[static_cast<std::size_t>(joint - skeleton.joints.begin())];
+    for (math::Vec3& point : hitbox.mesh.points) {
+      point = math::TransformPoint(transform, point);
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::string_view character) const {
   const std::string prefix = std::string(character) + "/";
   std::vector<const PackEntry*> entries;
@@ -719,6 +748,17 @@ std::expected<std::vector<HitboxData>, ResolveError> Pack::ResolveHitboxes(std::
       return std::unexpected(ResolveError::kCorruptBlob);
     }
     hitboxes.push_back(*std::move(hitbox));
+  }
+  if (hitboxes.empty()) {
+    return hitboxes;
+  }
+  const auto skeleton = ResolveAsset<SkeletonData>(impl_->index, impl_->mapping, CharacterSkeletonPath(character),
+                                                   AssetType::kSkeleton, DecodeSkeletonBlob);
+  if (!skeleton) {
+    return std::unexpected(skeleton.error());
+  }
+  if (!ComposeIntoRootSpace(*skeleton, hitboxes)) {
+    return std::unexpected(ResolveError::kCorruptBlob);
   }
   return hitboxes;
 }

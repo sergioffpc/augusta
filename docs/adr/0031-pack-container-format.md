@@ -24,6 +24,13 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   `<character name>/Character/Eye`. Written to both the client and server pack:
   the client places the local player's camera at it, and the server fires that
   player's Shots from it.
+- Character skeleton (ADR-0040, ADR-0061): the UsdSkel `Skeleton` at a
+  character's `Character/Skeleton` prim, as one blob at
+  `<character name>/Character/Skeleton`: a u32 joint count, at most 128, then
+  each joint, parents before children, as its name (a string: its path within
+  the skeleton), its parent's index (u32, `0xFFFFFFFF` for a root) and its rest
+  transform relative to that parent as a scene node's transform is stored.
+  Written to both the client and server pack, the same in each.
 - Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
   a USD prim or a script. The cue catalogue is fixed in code, in the client and
   the cooker alike: gunshot, hit marker, hit taken, death, match won, match
@@ -87,7 +94,7 @@ changes its runtime path; nothing here guards against that.
 2. **Data section** — every asset blob, back-to-back, in traversal order.
    Offsets are recorded as each blob is written.
 3. **Index** — one entry per blob: type tag
-   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound),
+   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound/Skeleton),
    path, offset, size. Written after the data section, since it needs the
    recorded offsets.
 4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the
