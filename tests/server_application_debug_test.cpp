@@ -27,7 +27,7 @@ using augusta::failure::Code;
 using augusta::failure::Failure;
 using augusta::failure::Faults;
 using augusta::failure::Site;
-using augusta::server::ServerLifecycle;
+using augusta::server::ServerProgram;
 
 const std::filesystem::path kPacks{AUGUSTA_EXAMPLE_PACKS};
 
@@ -49,9 +49,9 @@ ServerConfig ExampleConfig() {
 Outcome ServedOnce(const ServerConfig& config) {
   Faults faults;
   faults.Arm(Site::kWorkerExecution, "injected");
-  auto lifecycle = ServerLifecycle(config, &faults);
-  lifecycle.initialize = []() -> std::expected<void, Failure> { return {}; };
-  return Execute(lifecycle);
+  auto program = ServerProgram(config, &faults);
+  program.initialize = []() -> std::expected<void, Failure> { return {}; };
+  return Execute(program);
 }
 
 // A directory of the test's own under the temp folder, empty.
