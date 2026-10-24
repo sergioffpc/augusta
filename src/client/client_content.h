@@ -8,13 +8,13 @@
 #include <vector>
 
 #include "augusta/assets.h"
-#include "augusta/client_character_loader.h"
 #include "augusta/clips.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "augusta/renderer.h"
+#include "client_character_loader.h"
 
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/hitbox.h"

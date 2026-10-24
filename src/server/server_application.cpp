@@ -1,4 +1,4 @@
-#include "augusta/server_application.h"
+#include "server_application.h"
 
 #include <cstdint>
 #include <expected>
@@ -23,8 +23,8 @@
 #include "augusta/logging.h"
 #include "augusta/policy_loader.h"
 #include "augusta/replay_server.h"
-#include "augusta/server.h"
 #include "augusta/server_config.h"
+#include "server.h"
 #if AUGUSTA_DEBUG_TOOLS
 #include "augusta/physics.h"
 #endif
@@ -151,12 +151,11 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
       });
 }
 
-application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
-                                                      failure::Faults* faults) {
+application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config, failure::Faults* faults) {
   return {
       // link::Init() must run once, process-wide, before any Server is
       // constructed - see link.h. What the debug tools start is held by
-      // initialize, so it lasts as long as the Lifecycle: past the runtime and
+      // initialize, so it lasts as long as the Program: past the runtime and
       // every World in it.
       .initialize =
           [faults, start_debug_tools = DebugToolsStart(file_config)] {

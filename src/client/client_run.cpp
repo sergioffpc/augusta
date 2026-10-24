@@ -1,4 +1,4 @@
-#include "augusta/client_run.h"
+#include "client_run.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -17,8 +17,8 @@
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/hardware.h"
 #include "augusta/logging.h"
-#include "augusta/run_files.h"
 #include "augusta/version.h"
+#include "run_files.h"
 
 namespace augusta::client {
 

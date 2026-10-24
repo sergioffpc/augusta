@@ -35,12 +35,14 @@ PredictionWorld are a module, tested by hand-driven ticks.
   (the Agent's, in `tools/agent/native` as the tools layout has it), each in the
   namespace of its name (`augusta::client`, `augusta::server`,
   `augusta::agent`); the Host is `augusta::host`'s. A Runtime is built as a
-  module is - internal targets named `augusta_<runtime>_*`, public headers under
-  `include/augusta/`, a README stating its responsibility - and its executable
-  is one more target beside them. A Runtime adds its executable's configuration,
-  its threads, its clock and the wiring of the services the Harness or the Host
-  lacks: the window, the GPU, audio, the metrics endpoint (ADR-0049). End-to-end
-  tests link a Runtime, never an executable.
+  module is - internal targets named `augusta_<runtime>_*`, a README stating its
+  responsibility - and its executable is one more target beside them, but with
+  every header beside its source file, included by its bare name: with no
+  consumer but its executable and its tests, a Runtime has no public interface
+  to set apart from its private one. A Runtime adds its executable's
+  configuration, its threads, its clock and the wiring of the services the
+  Harness or the Host lacks: the window, the GPU, audio, the metrics endpoint
+  (ADR-0049). End-to-end tests link a Runtime, never an executable.
 - **Conversions at a seam.** A conversion between two modules' types lives in
   the module whose seam it crosses. Every conversion between the game's state
   and messages is the Link's.

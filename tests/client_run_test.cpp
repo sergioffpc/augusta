@@ -1,4 +1,4 @@
-#include "augusta/client_run.h"
+#include "client_run.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -18,7 +18,7 @@
 #include "augusta/crash.h"
 #include "augusta/gpu_crash_dump_files.h"
 #include "augusta/logging.h"
-#include "augusta/run_files.h"
+#include "run_files.h"
 
 // What a launch tells the player of the Run before it (ADR-0027): a crashed
 // one, in one WARN line naming it and its files, and nothing otherwise. And
