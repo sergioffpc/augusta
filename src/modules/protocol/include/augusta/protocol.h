@@ -224,6 +224,10 @@ struct RifleWire {
   /// At most limits::kMaxRecoilKicks.
   std::vector<RecoilKickWire> recoil_pattern;
   std::uint8_t magazine_capacity = 0;
+  /// Along the view's own axes: right, up and back.
+  float hip_offset_right = 0.0F;
+  float hip_offset_up = 0.0F;
+  float hip_offset_back = 0.0F;
 
   bool operator==(const RifleWire&) const = default;
 };

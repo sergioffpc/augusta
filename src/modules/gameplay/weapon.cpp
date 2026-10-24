@@ -6,6 +6,7 @@
 
 #include "augusta/command.h"
 #include "augusta/grid.h"
+#include "augusta/math.h"
 
 namespace augusta::weapon {
 
@@ -90,6 +91,23 @@ Result Step(const Rifle& rifle, const State& state, const command::Command& comm
     }
   }
   return result;
+}
+
+math::Mat4 PlaceMuzzle(const math::Mat4& hand, const Markers& markers) {
+  return hand * math::Inverse(markers.grip) * markers.muzzle;
+}
+
+math::Mat4 PlaceSight(const math::Mat4& hand, const Markers& markers) {
+  return hand * math::Inverse(markers.grip) * markers.sight;
+}
+
+math::Mat4 DesktopHand(const math::Vec3& eye, float yaw, float pitch, bool ads, const Rifle& rifle,
+                       const Markers& markers) {
+  const math::Quat view = command::ViewRotation(yaw, pitch);
+  const math::Vec3 hold = ads ? math::Vec3{} : rifle.hip_offset;
+  const math::Mat4 sight = math::ToMat4(eye + (view * hold), view, math::Vec3(1.0F));
+  // The hand that puts the Sight there: PlaceSight(hand) is sight.
+  return sight * math::Inverse(markers.sight) * markers.grip;
 }
 
 }  // namespace augusta::weapon

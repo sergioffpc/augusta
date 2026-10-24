@@ -76,7 +76,8 @@ void showValue(const MessageWire& message, std::ostream& out) {
       out << ", rifle{capacity " << +rifle.magazine_capacity << ", rpm " << rifle.rounds_per_minute << ", velocity "
           << rifle.muzzle_velocity << ", reload " << rifle.reload_seconds << ", recovery "
           << rifle.recoil_recovery_per_second << ", ads_scale " << rifle.ads_recoil_scale << ", ads_fov "
-          << rifle.ads_field_of_view << ", kicks";
+          << rifle.ads_field_of_view << ", hip " << rifle.hip_offset_right << " " << rifle.hip_offset_up << " "
+          << rifle.hip_offset_back << ", kicks";
       for (const RecoilKickWire& kick : rifle.recoil_pattern) {
         out << " (" << kick.pitch << " " << kick.yaw << ")";
       }
@@ -363,7 +364,9 @@ rc::Gen<JoinAcceptedWire> JoinAccepted() {
       rc::gen::set(&RifleWire::ads_recoil_scale, FiniteFloat()),
       rc::gen::set(&RifleWire::ads_field_of_view, FiniteFloat()),
       rc::gen::set(&RifleWire::recoil_pattern, UpTo<std::vector<RecoilKickWire>>(kMaxRecoilKicks, kick)),
-      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()));
+      rc::gen::set(&RifleWire::magazine_capacity, rc::gen::arbitrary<std::uint8_t>()),
+      rc::gen::set(&RifleWire::hip_offset_right, FiniteFloat()), rc::gen::set(&RifleWire::hip_offset_up, FiniteFloat()),
+      rc::gen::set(&RifleWire::hip_offset_back, FiniteFloat()));
   const auto ammo = rc::gen::build<AmmoWire>(
       rc::gen::set(&AmmoWire::gravity, FiniteFloat()), rc::gen::set(&AmmoWire::max_range, FiniteFloat()),
       rc::gen::set(&AmmoWire::head_damage, FiniteFloat()), rc::gen::set(&AmmoWire::torso_damage, FiniteFloat()),

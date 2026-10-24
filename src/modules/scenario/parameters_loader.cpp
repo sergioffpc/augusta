@@ -19,6 +19,7 @@
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
 #include "augusta/lua_sandbox.h"
+#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/weapon.h"
@@ -36,10 +37,12 @@ constexpr std::array<std::string_view, 5> kRootKeys{
 };
 constexpr std::array<std::string_view, 3> kStaminaKeys{"deplete_per_second", "regen_per_second", "forced_walk_below"};
 constexpr std::string_view kRecoilPatternKey = "recoil_pattern";
-constexpr std::array<std::string_view, 8> kRifleKeys{
-    "magazine_capacity", "rounds_per_minute",          "muzzle_velocity",  "reload_seconds",
-    kRecoilPatternKey,   "recoil_recovery_per_second", "ads_recoil_scale", "ads_field_of_view",
+constexpr std::string_view kHipOffset = "hip_offset";
+constexpr std::array<std::string_view, 9> kRifleKeys{
+    "magazine_capacity",          "rounds_per_minute", "muzzle_velocity",   "reload_seconds", kRecoilPatternKey,
+    "recoil_recovery_per_second", "ads_recoil_scale",  "ads_field_of_view", kHipOffset,
 };
+constexpr std::array<std::string_view, 3> kHipOffsetAxes{"right", "up", "back"};
 constexpr std::array<std::string_view, 2> kRecoilKickKeys{"pitch", "yaw"};
 constexpr std::string_view kDamageKey = "damage";
 constexpr std::array<std::string_view, 3> kAmmoKeys{"gravity", "max_range", kDamageKey};
@@ -261,6 +264,21 @@ std::expected<weapon::Rifle, ParametersLoadError> ReadRifle(const sol::table& ro
       {.key = "ads_field_of_view", .field = &weapon::Rifle::ads_field_of_view},
   });
   if (const auto read = ReadFloats(*table, kRifleKey, kAiming, rifle); !read) {
+    return std::unexpected(read.error());
+  }
+  const std::string hip_offset_path = KeyPath(kRifleKey, kHipOffset);
+  // NOLINTNEXTLINE(readability-suspicious-call-argument) - the rifle is the hip offset's parent, as passed.
+  const auto hip_offset = ReadTable(*table, kRifleKey, kHipOffset, kHipOffsetAxes);
+  if (!hip_offset) {
+    return std::unexpected(hip_offset.error());
+  }
+  // The view's own axes: x right, y up, z back (weapon::Rifle::hip_offset).
+  constexpr auto kAxes = std::to_array<FloatKey<math::Vec3>>({
+      {.key = "right", .field = &math::Vec3::x},
+      {.key = "up", .field = &math::Vec3::y},
+      {.key = "back", .field = &math::Vec3::z},
+  });
+  if (const auto read = ReadFloats(*hip_offset, hip_offset_path, kAxes, rifle.hip_offset); !read) {
     return std::unexpected(read.error());
   }
   return rifle;

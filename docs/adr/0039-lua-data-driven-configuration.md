@@ -46,6 +46,12 @@ exits at startup naming the script and the field, as it does for a bad pack. The
 cooker refuses a scenario whose manifest names no Parameters script, so that is
 found when the pack is made rather than when a server starts on it.
 
+**A vector is a table of named axes.** The rifle's hip offset
+(`rifle.hip_offset`, ADR-0064), where a Desktop player holds the rifle from the
+hip relative to its ADS hold, is a table of `right`, `up` and `back`, in meters
+along the view's own axes; each is required and finite, and any other key is
+unknown.
+
 **The tick rate is not a parameter.** It is fixed for the life of the server
 process: every command, acknowledgement and stretch of history is counted in
 ticks, so a rate changed under them would put both sides out of step. It is

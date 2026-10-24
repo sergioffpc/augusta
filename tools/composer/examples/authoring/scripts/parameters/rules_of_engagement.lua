@@ -72,6 +72,9 @@ return {
     ads_recoil_scale = 0.5,
     -- The vertical field of view aiming down sights zooms to (above 0, below pi).
     ads_field_of_view = math.rad(40),
+    -- Where the rifle is held from the hip: the ADS hold (its Sight on the
+    -- eye) moved this far, in meters, along the view's own axes.
+    hip_offset = { right = 0.15, up = -0.2, back = 0.05 },
   },
   -- The rifle's rounds (US-10, US-12).
   ammo = {
