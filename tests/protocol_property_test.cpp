@@ -48,7 +48,7 @@ void showValue(const BodyStateWire& body, std::ostream& out) {
   out << ", velocity ";
   showValue(body.velocity, out);
   out << ", stamina " << body.stamina << ", flags " << +body.flags << ", stance "
-      << +static_cast<std::uint8_t>(body.stance) << "}";
+      << +static_cast<std::uint8_t>(body.stance) << ", stride " << +body.stride << "}";
 }
 
 void showValue(const MessageWire& message, std::ostream& out) {
@@ -332,7 +332,7 @@ rc::Gen<BodyStateWire> Body() {
       rc::gen::set(&BodyStateWire::velocity, Vec3OnGrid(kVelocityGrid)),
       rc::gen::set(&BodyStateWire::stamina, OnGrid(kStaminaGrid)),
       rc::gen::set(&BodyStateWire::flags, rc::gen::inRange<std::uint8_t>(0, BodyStateWire::kAds << 1U)),
-      rc::gen::set(&BodyStateWire::stance, Stance()));
+      rc::gen::set(&BodyStateWire::stance, Stance()), rc::gen::set(&BodyStateWire::stride));
 }
 
 rc::Gen<JoinRequestWire> JoinRequest() {

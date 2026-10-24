@@ -173,6 +173,7 @@ void Write(const EntityStateWire& wire, pb::Body& body, Outbound& out) {
   body.set_stamina(UnsignedSteps(wire.body.stamina, math::kStaminaGrid));
   body.set_yaw(Steps(wire.yaw, math::kAngleGrid));
   body.set_pitch(Steps(wire.pitch, math::kAngleGrid));
+  body.set_stride(wire.body.stride);
 }
 
 // An Authoritative State's shared fields: what every recipient of a tick is told alike.
@@ -582,6 +583,7 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
   wire.body.stamina = in.FromSteps(body.stamina(), math::kStaminaGrid);
   wire.yaw = in.FromSteps(body.yaw(), math::kAngleGrid);
   wire.pitch = in.FromSteps(body.pitch(), math::kAngleGrid);
+  wire.body.stride = in.Narrow(body.stride());
   return wire;
 }
 

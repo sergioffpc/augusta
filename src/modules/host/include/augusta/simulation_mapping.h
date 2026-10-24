@@ -41,7 +41,8 @@ namespace augusta::host {
 
 /// Each of characters as SimulationWorld takes it, by its path: its Skeleton,
 /// and its hitboxes each in its Joint's space, for SimulationWorld's Posing
-/// phase to pose (ADR-0061). Throws as the hitbox overloads do.
+/// phase to pose (ADR-0061), and its Clips, shared, for its Movement to advance
+/// each Stride by (ADR-0066). Throws as the hitbox overloads do.
 [[nodiscard]] std::unordered_map<std::string, simulation::Character> ToSimulation(
     const std::vector<scenario::Character>& characters);
 

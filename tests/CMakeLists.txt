@@ -158,8 +158,10 @@ target_link_libraries(
   PRIVATE
     augusta_simulation
     augusta_prediction
+    augusta_animation
     augusta_input
     augusta_logging
+    ozz::animation_offline
     rapidcheck_gtest
     GTest::gtest
     GTest::gtest_main
@@ -241,7 +243,12 @@ target_link_libraries(augusta_replication_tests PRIVATE augusta_simulation GTest
 gtest_discover_tests(augusta_replication_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_simulation_tests simulation_test.cpp)
-target_link_libraries(augusta_simulation_tests PRIVATE augusta_simulation GTest::gtest GTest::gtest_main)
+# Links augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
+target_link_libraries(
+  augusta_simulation_tests
+  PRIVATE augusta_simulation augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_simulation_tests DISCOVERY_TIMEOUT 30)
 
@@ -374,6 +381,16 @@ target_link_libraries(
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_clips_tests DISCOVERY_TIMEOUT 30)
 
+# A stance's blend space and the stride length a Stride advances by, on Clips
+# the test authors in memory (clips_fixture.h).
+add_executable(augusta_locomotion_tests locomotion_test.cpp)
+target_link_libraries(
+  augusta_locomotion_tests
+  PRIVATE augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_locomotion_tests DISCOVERY_TIMEOUT 30)
+
 # What the server loads at startup, on the golden server pack and on copies of
 # it the test re-signs without an entry.
 add_executable(augusta_server_content_tests server_content_test.cpp)
@@ -451,10 +468,18 @@ target_link_libraries(augusta_presentation_tests PRIVATE augusta_presentation GT
 gtest_discover_tests(augusta_presentation_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_prediction_tests prediction_test.cpp)
-# Links augusta_presentation too: a new Match must not show as a correction.
+# Links augusta_presentation too: a new Match must not show as a correction. And
+# augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
 target_link_libraries(
   augusta_prediction_tests
-  PRIVATE augusta_prediction augusta_presentation GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_prediction
+    augusta_presentation
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links augusta_physics publicly, so the same PhysX DLL launch cost applies.
 gtest_discover_tests(augusta_prediction_tests DISCOVERY_TIMEOUT 30)
@@ -540,9 +565,18 @@ gtest_discover_tests(augusta_capturer_tests DISCOVERY_TIMEOUT 30)
 # A Replay (ADR-0051): a Match capture re-run on a fresh SimulationWorld and
 # checked against its markers, with no network.
 add_executable(augusta_server_replay_tests server_replay_test.cpp)
+# Links augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
 target_link_libraries(
   augusta_server_replay_tests
-  PRIVATE augusta_host augusta_policy augusta_simulation GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_host
+    augusta_policy
+    augusta_simulation
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
+    GTest::gtest_main
 )
 gtest_discover_tests(augusta_server_replay_tests DISCOVERY_TIMEOUT 30)
 

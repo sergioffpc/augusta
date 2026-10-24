@@ -24,6 +24,7 @@
 #include "augusta/client_content.h"
 #include "augusta/client_phases.h"
 #include "augusta/client_run.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/cues.h"
 #include "augusta/failure.h"
@@ -453,7 +454,7 @@ struct ClientRuntime::Impl {
   }
 
   Impl(const RuntimeConfig& cfg, const Map& map, const math::Vec3& eye, const audio::CueSounds& cue_sounds,
-       CharacterLoader loader)
+       CharacterLoader loader, std::shared_ptr<const animation::CharacterClips> clips)
       : config(cfg),
         load_character(std::move(loader)),
         input(cfg.input),
@@ -468,8 +469,9 @@ struct ClientRuntime::Impl {
     // account for that.
     // No rules of its own: the Session starts the prediction under the
     // server's once it has joined, so the two cannot drift.
-    // The Map goes into PresentationWorld too, for the tracers to meet.
-    prediction::World world;
+    // The Map goes into PresentationWorld too, for the tracers to meet. It
+    // predicts the Stride by the Clips of the character this player plays.
+    prediction::World world(std::move(clips));
     const auto added = map::AddCollision(world, map.collision).and_then([&] {
       return map::AddCollision(presentation, map.collision);
     });
@@ -838,7 +840,7 @@ struct ClientRuntime::Impl {
 
 ClientRuntime::ClientRuntime(const RuntimeConfig& config, Content content)
     : impl_(std::make_unique<Impl>(config, content.map, content.eye, content.cue_sounds,
-                                   std::move(content.load_character))) {
+                                   std::move(content.load_character), std::move(content.clips))) {
   impl_->renderer.SetScene(content.scene);
 }
 

@@ -16,7 +16,8 @@ Harness to the renderer, the HUD, input, PresentationWorld and audio, and runs
 it behind the application boundary in augustac's Lifecycle, beside listing a
 replay server's Replays. It decides at its edges what the client loads from its
 verified pack (the scene, the characters other players bring, the map's
-collision and every cue's sound) and what it loads in the Lobby before it
+collision, every cue's sound and the Clips of the character it plays, which its
+prediction advances the Stride by) and what it loads in the Lobby before it
 reports Ready, converts between the harness's, presentation's and the renderer's
 types, classifies each phase's failure, and shows the connection's numbers to
 Nsight Systems and, in a Development build with the debug HUD on (ADR-0074), on

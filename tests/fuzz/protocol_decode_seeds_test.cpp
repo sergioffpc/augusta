@@ -76,7 +76,8 @@ std::vector<Seed> SeedsOfEveryBuild() {
                            .velocity = Vec3(3.0F, -0.5F, 4.25F),
                            .stamina = 0.25F,
                            .flags = BodyStateWire::kExhausted | BodyStateWire::kAds,
-                           .stance = StanceWire::kCrouching};
+                           .stance = StanceWire::kCrouching,
+                           .stride = 200};
   const CommandWire command{.direction = Vec3(0.6F, 0.0F, -0.8F),
                             .yaw = 1.5F,
                             .pitch = -0.25F,

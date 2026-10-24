@@ -19,10 +19,12 @@
 #include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/body_part.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/grid.h"
 #include "augusta/hitbox.h"
 #include "augusta/limits.h"
+#include "augusta/locomotion.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
@@ -113,6 +115,11 @@ struct HitboxHistory {
 // A player's rifle, as WeaponHandling left it.
 struct Rifle {
   weapon::State state{};
+};
+
+// A player's character's Clips, null for one without any (Character::clips).
+struct Clips {
+  std::shared_ptr<const animation::CharacterClips> clips;
 };
 
 // Where a player's character sees from standing, relative to its feet (ADR-0040).
@@ -298,11 +305,10 @@ struct World::Impl {
         .each([this](const Player& player, Intent& intent, Facing& facing) {
           OnCommandIngestion(player, intent, facing);
         });
-    ecs.system<Body, const Intent>("MovementSystem")
+    ecs.system<Body, const Intent, const Facing, const Clips>("MovementSystem")
         .kind(phases[kMovement])
-        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent) {
-          OnMovement(it.delta_time(), body, intent);
-        });
+        .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent, const Facing& facing,
+                     const Clips& clips) { OnMovement(it.delta_time(), body, intent, facing, clips); });
     // Writes Bullet, so the bullets it fires exist by the time Ballistics runs
     // and fly their first tick on the tick they are fired.
     ecs.system<const Player, const Body, const Eye, Rifle>("WeaponHandlingSystem")
@@ -363,8 +369,12 @@ struct World::Impl {
     facing.ads = command->second.ads;
   }
 
-  void OnMovement(float delta_time, Body& body, const Intent& intent) {
-    body.state = physics.Step(body.handle, intent.input, delta_time);
+  // The Stride advances by the stride length at the stance and velocity the
+  // last tick left, as PredictionWorld's does from the same state.
+  void OnMovement(float delta_time, Body& body, const Intent& intent, const Facing& facing, const Clips& clips) {
+    const float stride_length =
+        clips.clips != nullptr ? animation::StrideLength(*clips.clips, body.state, facing.yaw) : 0.0F;
+    body.state = physics.Step(body.handle, intent.input, delta_time, stride_length);
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
@@ -656,6 +666,7 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<Intent>({})
           .set<Facing>({})
           .set<Health>({.value = impl.parameters.starting_health})
+          .set<Clips>({.clips = character.clips})
           .set<Eye>({.standing = character.eye})
           .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.skeleton, character.hitboxes)})
           .set<CharacterSkeleton>({.skeleton = character.skeleton})

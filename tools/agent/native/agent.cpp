@@ -9,6 +9,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -18,6 +19,7 @@
 
 #include "augusta/agent_report.h"
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/harness.h"
@@ -32,13 +34,47 @@ namespace augusta::agent {
 
 namespace {
 
-prediction::World WorldWithMap(const std::vector<physics::CollisionMesh>& map) {
-  prediction::World world;
+// A prediction of the Map's collision, the Stride by clips (null for a character
+// the pack has none of).
+prediction::World WorldWithMap(const std::vector<physics::CollisionMesh>& map,
+                               std::shared_ptr<const animation::CharacterClips> clips) {
+  prediction::World world(std::move(clips));
   if (auto added = map::AddCollision(world, map); !added) {
     throw std::runtime_error(
         std::format("augusta_agent: map collision rejected: {}", physics::DescribeCollisionMeshError(added.error())));
   }
   return world;
+}
+
+// Each character's Clips in pack, by its name, or why one does not load.
+std::expected<std::unordered_map<std::string, std::shared_ptr<const animation::CharacterClips>>, CharacterClipsError>
+LoadEveryCharactersClips(const assets::Pack& pack) {
+  auto characters = pack.ResolveCharacters();
+  if (!characters) {
+    return std::unexpected(CharacterClipsError{
+        .character = {}, .reason = assets::DescribeResolveError(characters.error(), "character list")});
+  }
+  std::unordered_map<std::string, std::shared_ptr<const animation::CharacterClips>> result;
+  for (const std::string& character : *characters) {
+    const auto skeleton = pack.ResolveSkeleton(character);
+    if (!skeleton) {
+      return std::unexpected(CharacterClipsError{.character = character,
+                                                 .reason = assets::DescribeResolveError(skeleton.error(), "skeleton")});
+    }
+    auto clips = animation::LoadClips(pack, character, *skeleton);
+    if (!clips) {
+      return std::unexpected(
+          CharacterClipsError{.character = character, .reason = animation::DescribeClipLoadError(clips.error())});
+    }
+    result.emplace(character, std::make_shared<const animation::CharacterClips>(*std::move(clips)));
+  }
+  return result;
+}
+
+// The Clips of character in pack, null for one it has none of.
+std::shared_ptr<const animation::CharacterClips> ClipsOf(const LoadedPack& pack, const std::string& character) {
+  const auto found = pack.clips.find(character);
+  return found == pack.clips.end() ? nullptr : found->second;
 }
 
 }  // namespace
@@ -54,13 +90,20 @@ std::expected<LoadedPack, LoadPackError> LoadPack(const std::filesystem::path& p
   if (!map) {
     return std::unexpected(map.error());
   }
-  return LoadedPack{.hash = pack->Hash(), .map = *std::move(map)};
+  auto clips = LoadEveryCharactersClips(*pack);
+  if (!clips) {
+    return std::unexpected(clips.error());
+  }
+  return LoadedPack{.hash = pack->Hash(), .map = *std::move(map), .clips = *std::move(clips)};
 }
 
 std::string DescribeLoadPackError(const LoadPackError& error, const std::filesystem::path& pack_path,
                                   const std::filesystem::path& public_key_path) {
   if (const auto* verified = std::get_if<assets::VerifiedPackError>(&error)) {
     return assets::DescribeVerifiedPackError(*verified, pack_path, public_key_path);
+  }
+  if (const auto* clips = std::get_if<CharacterClipsError>(&error)) {
+    return std::format("clips of character {}: {}", clips->character, clips->reason);
   }
   return map::DescribeMapError(std::get<map::MapError>(error));
 }
@@ -74,7 +117,7 @@ Agent::Agent(const std::string& server, const LoadedPack& pack, const std::strin
                                       .client_pack = pack.hash,
                                       .character = character,
                                       .run = boost::uuids::time_generator_v7{}()},
-               WorldWithMap(pack.map)) {
+               WorldWithMap(pack.map, ClipsOf(pack, character))) {
   runner_.emplace(
       session_,
       harness::RunnerHooks{
