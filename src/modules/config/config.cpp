@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -146,23 +147,31 @@ std::string Spelled(const CommandLineOption& option) {
   return option.value.empty() ? std::format("--{}", option.name) : std::format("--{} <{}>", option.name, option.value);
 }
 
-// The usage message ParseCommandLine's help and errors show.
+// The usage message ParseCommandLine's help and errors show. Descriptions
+// start in one column, kDescriptionGap past the longest option.
 std::string Usage(std::string_view program, std::string_view default_file_name,
                   std::span<const CommandLineOption> options) {
+  constexpr std::size_t kDescriptionGap = 4;
+  constexpr std::string_view kConfig = "--config <file>";
+  std::size_t width = kConfig.size();
+  for (const CommandLineOption& option : options) {
+    width = std::max(width, Spelled(option).size());
+  }
+  width += kDescriptionGap;
   std::string synopsis;
   std::string described;
   for (const CommandLineOption& option : options) {
     synopsis += std::format(" [{}]", Spelled(option));
-    described += std::format("\n  {:<17}{}", Spelled(option), option.description);
+    described += std::format("\n  {:<{}}{}", Spelled(option), width, option.description);
   }
   return std::format(
-      "usage: {0} [--config <file>]{2}\n"
+      "usage: {0} [{4}]{2}\n"
       "       {0} --help | --version\n"
-      "  --config <file>  the config file, relative to the working directory\n"
-      "                   (without it, {1} next to the executable){3}\n"
-      "  --help           print this message and exit\n"
-      "  --version        print the version and exit",
-      program, default_file_name, synopsis, described);
+      "  {4:<{5}}the config file, relative to the working directory\n"
+      "  {6:<{5}}(without it, {1} next to the executable){3}\n"
+      "  {7:<{5}}print this message and exit\n"
+      "  {8:<{5}}print the version and exit",
+      program, default_file_name, synopsis, described, kConfig, width, "", "--help", "--version");
 }
 
 }  // namespace
