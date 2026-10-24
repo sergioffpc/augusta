@@ -8,6 +8,9 @@ map: maps/firebase.usda
 # client asks for it by (ADR-0042).
 characters:
   soldier: characters/soldier.usda
+# The one rifle every player holds (ADR-0064): its stage's Grip, Muzzle and
+# Sight, which every server places its players' Muzzles from.
+rifle: rifles/rifle.usda
 # The mono PCM WAV sound of every cue the client plays (ADR-0020, ADR-0031),
 # by cue. Cooked into the client pack only.
 sounds:

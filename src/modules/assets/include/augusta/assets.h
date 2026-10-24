@@ -59,6 +59,7 @@ enum class AssetType : std::uint8_t {
   kAnimationSkeleton,
   kClip,
   kStanceTransitions,
+  kRifle,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -346,6 +347,30 @@ struct EyeData {
   return std::format("{}/Character/Eye", character);
 }
 
+/// One of the rifle's markers (ADR-0064): a frame in the rifle's own space,
+/// pointing along its -Z, as the rifle stage's marker prim places it.
+struct RifleMarker {
+  math::Vec3 translation{0.0F, 0.0F, 0.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+
+  bool operator==(const RifleMarker&) const = default;
+};
+
+/// A scenario's rifle (ADR-0064): its Grip, where the holding hand holds it;
+/// its Muzzle, the end of its barrel, pointing the way the barrel does; and its
+/// Sight, the point the Eye looks through in ADS, pointing along its line of
+/// sight. No mesh: nothing that reads a pack draws or tests the rifle itself.
+struct RifleData {
+  RifleMarker grip;
+  RifleMarker muzzle;
+  RifleMarker sight;
+
+  bool operator==(const RifleData&) const = default;
+};
+
+/// Pack-relative path of a scenario's rifle (ADR-0064), in both of its packs.
+inline constexpr std::string_view kRiflePath = "Rifle";
+
 /// Pack-relative path of the Skeleton of the character named character (its
 /// name in the scenario's manifest): its `Character` root prim's `Skeleton`
 /// child (ADR-0040, ADR-0061), e.g. "soldier/Character/Skeleton".
@@ -595,6 +620,10 @@ class Pack {
   /// Resolves a character's eye by its pack-relative path (CharacterEyePath,
   /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
+
+  /// Resolves the scenario's rifle at kRiflePath: its Grip, Muzzle and Sight
+  /// (ADR-0064). Present in both client and server packs.
+  [[nodiscard]] std::expected<RifleData, ResolveError> ResolveRifle() const;
 
   /// Resolves a sound by its pack-relative path (ADR-0020). Present in the client
   /// pack only.

@@ -1,13 +1,13 @@
 """The asset cooker itself (ADR-0030).
 
 Walks the authored OpenUSD stages a scenario's manifest composes - one map, zero
-or more characters (ADR-0041) - and bakes them into one signed client/server
-pack pair (ADR-0031/ADR-0032). Walks each stage through pxr directly (the same
-pip-installed usd-optimize build optimize.py already uses, rather than linking a
-second, independently-built OpenUSD - see ADR-0030 for why those can't coexist
-in one process), and calls the native module, _native, for the pieces with no
-Python equivalent (mesh optimization, texture compression, ozz-animation's
-archives of a character's Skeleton and Clips, ADR-0066) and for
+or more characters (ADR-0041), one rifle (ADR-0064) - and bakes them into one
+signed client/server pack pair (ADR-0031/ADR-0032). Walks each stage through pxr
+directly (the same pip-installed usd-optimize build optimize.py already uses,
+rather than linking a second, independently-built OpenUSD - see ADR-0030 for why
+those can't coexist in one process), and calls the native module, _native, for
+the pieces with no Python equivalent (mesh optimization, texture compression,
+ozz-animation's archives of a character's Skeleton and Clips, ADR-0066) and for
 augusta_assets' pack encoder, which encodes every blob and writes, hashes and
 signs both packs.
 """
@@ -62,6 +62,11 @@ CHARACTER_EYE_PRIM = "Eye"
 # Skeleton (ADR-0061), which client and server read at <character
 # name>/Character/Skeleton.
 CHARACTER_SKELETON_PRIM = "Skeleton"
+# The children of a rifle stage's default prim that are its markers
+# (ADR-0064), each a frame pointing along its -Z: where the holding hand holds
+# it, the end of its barrel and the point the Eye looks through in ADS. In the
+# order the rifle blob carries them.
+RIFLE_MARKER_PRIMS = ("Grip", "Muzzle", "Sight")
 # How far a root joint's transform may be from the character's root and still
 # be at it: float noise in an authored matrix, not a misplaced skeleton.
 _ROOT_TOLERANCE = 1e-6
@@ -736,8 +741,9 @@ def _maybe_cook_texture_prim(
 
 # True for the AssetType values ADR-0019 puts in the server pack: collision
 # geometry, hitboxes, spawn points, character eyes (the server fires each
-# Shot from its shooter's eye, ADR-0040) and character skeletons (the same
-# joints on either side, ADR-0061). Mesh/texture/scene are client-only
+# Shot from its shooter's eye, ADR-0040), character skeletons (the same
+# joints on either side, ADR-0061) and the rifle's markers (the server places
+# each Muzzle, ADR-0064). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
@@ -750,6 +756,7 @@ _SERVER_PACK_ASSET_TYPES = frozenset(
         _native.AssetType.ANIMATION_SKELETON,
         _native.AssetType.CLIP,
         _native.AssetType.STANCE_TRANSITIONS,
+        _native.AssetType.RIFLE,
     }
 )
 
@@ -1537,9 +1544,60 @@ def _sound_entries(sounds: CueSounds) -> list[_native.AssetEntry]:
     return entries
 
 
+def _cook_rifle(stage_path: Path) -> _native.AssetEntry:
+    """The rifle's Grip, Muzzle and Sight out of its stage (ADR-0064).
+
+    Each marker is a child of the stage's default prim, read as its frame in
+    the stage's root space, corrected to the runtime's Y-up meters; its scale
+    is dropped, since a marker is a frame. Nothing else of the stage is cooked:
+    no pack reader draws or tests the rifle itself.
+    """
+    stage = Usd.Stage.Open(str(stage_path))
+    if not stage:
+        raise CookError("stage_open_failed", "", str(stage_path))
+    default_prim = stage.GetDefaultPrim()
+    if not default_prim:
+        raise CookError(
+            "rifle_root_missing",
+            "",
+            f"{stage_path}: a rifle stage needs a default prim holding its "
+            f"{', '.join(RIFLE_MARKER_PRIMS)}",
+        )
+    correction = _stage_correction_matrix(stage)
+    markers = []
+    for name in RIFLE_MARKER_PRIMS:
+        marker_prim = default_prim.GetChild(name)
+        if not marker_prim:
+            raise CookError(
+                "rifle_marker_missing",
+                "",
+                f"{stage_path}: a rifle's {default_prim.GetName()!r} prim "
+                f"must have a {name!r} child",
+            )
+        xformable = UsdGeom.Xformable(marker_prim)
+        local_to_root = (
+            xformable.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            if xformable
+            else Gf.Matrix4d(1.0)
+        )
+        translation, rotation, _ = _decompose(local_to_root * correction)
+        markers.append(
+            _native.RifleMarker(translation=translation, rotation=rotation)
+        )
+    grip, muzzle, sight = markers
+    return _native.AssetEntry(
+        type=_native.AssetType.RIFLE,
+        path=_native.RIFLE_PATH,
+        data=_native.encode_rifle_blob(
+            _native.RifleData(grip=grip, muzzle=muzzle, sight=sight)
+        ),
+    )
+
+
 def cook_scenario(
     map_stage_path: Path,
     character_stages: Sequence[tuple[str, Path]],
+    rifle_stage_path: Path,
     client_output_path: Path,
     server_output_path: Path,
     signing_key: bytes,
@@ -1552,7 +1610,8 @@ def cook_scenario(
     The map is map_stage_path and the characters every (character_name,
     stage_path) in character_stages (ADR-0041) - character_name is a
     character's name in the manifest (e.g. "soldier"), also the prefix its
-    blobs are addressed under (ADR-0040).
+    blobs are addressed under (ADR-0040). The rifle's markers, out of
+    rifle_stage_path, go into both packs at RIFLE_PATH (ADR-0064).
 
     scripts are a scenario's Lua files as (path in the pack, bytes):
     they go into the server pack only, as script assets (ADR-0031, ADR-0039). A
@@ -1666,13 +1725,15 @@ def cook_scenario(
             )
         )
 
+    rifle_entry = _cook_rifle(rifle_stage_path)
+
     total_prims = len(map_prims) + sum(
         len(character.prims) for character in opened_characters
     )
     done = 0
 
     correction = _stage_correction_matrix(map_stage)
-    entries: list[_native.AssetEntry] = []
+    entries: list[_native.AssetEntry] = [rifle_entry]
     # The client pack's alone, beside the entries whose type keeps them there.
     client_only_entries: list[_native.AssetEntry] = []
     nodes: list[_native.SceneNode] = []

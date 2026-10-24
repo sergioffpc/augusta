@@ -118,6 +118,7 @@ void ResolveEverything(const Pack& pack) {
   (void)pack.ResolveHitboxes("soldier");
   (void)pack.ResolveSkeleton("soldier");
   (void)pack.ResolveCharacters();
+  (void)pack.ResolveRifle();
   (void)pack.ClientPackHash();
 }
 

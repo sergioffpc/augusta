@@ -45,6 +45,11 @@ cooker (ADR-0030) turns the cleaned/validated OpenUSD stage into it.
   (3x f32), each positive. The skeleton archive, the transitions and every Clip
   the Hitbox pose uses are written to both packs; a Cosmetic layer's Clip to the
   client pack alone.
+- Rifle (ADR-0064): the Grip, Muzzle and Sight children of the default prim of
+  the stage the manifest names as its `rifle`, each its frame in the rifle's
+  space as a translation and a rotation, stored as a spawn point's are, one blob
+  at the fixed path `Rifle` in that order. No rifle mesh is written. Written to
+  both the client and server pack: the server places every Muzzle from it.
 - Cue sounds (ADR-0020): an audio clip is associated with a client cue, not with
   a USD prim or a script. The cue catalogue is fixed in code, in the client and
   the cooker alike: gunshot, hit marker, hit taken, death, match won, match
@@ -108,7 +113,7 @@ changes its runtime path; nothing here guards against that.
 2. **Data section** — every asset blob, back-to-back, in traversal order.
    Offsets are recorded as each blob is written.
 3. **Index** — one entry per blob: type tag
-   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound/Skeleton/AnimationSkeleton/Clip/StanceTransitions),
+   (Mesh/Texture/Audio/Collision/SpawnPoint/Hitbox/Prop/Ragdoll/Scene/Script/Characters/Eye/CueSound/Skeleton/AnimationSkeleton/Clip/StanceTransitions/Rifle),
    path, offset, size. Written after the data section, since it needs the
    recorded offsets.
 4. **Trailer** — BLAKE3 hash of everything from byte 0 through the end of the

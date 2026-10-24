@@ -16,10 +16,10 @@ into the client pack (ADR-0020).
 
 The scenario argument is a bare name, not a path (ADR-0041): it resolves to
 <assets-root>/authoring/scenarios/<name>.yaml, a manifest naming, by file, the
-one map, every character, the cue sounds and the scripts that scenario
-composes - see scenario.py. This project is
-installed into the hermetic environment tools/pack/scripts/bootstrap.sh
-builds (--assets-root/python), so --assets-root defaults to the
+one map, every character, the rifle, the cue sounds and the scripts that
+scenario composes - see scenario.py. This project is installed into the
+hermetic environment tools/pack/scripts/bootstrap.sh builds
+(--assets-root/python), so --assets-root defaults to the
 root of the venv this interpreter is already running from, and is used for:
 resolving authoring/scenarios/<name>.yaml and everything it names; the
 signing key, --assets-root/keys/develop.key, develop's (a release signs with
@@ -132,15 +132,16 @@ def main(argv: list[str] | None = None) -> int:
         pack.parent.mkdir(parents=True, exist_ok=True)
 
     # Every stage the manifest composes - the map, then each character in
-    # manifest order - is cleaned/validated independently before cooking:
-    # usd-optimize/usd-validation-nvidia work one stage at a time, and a
-    # character is authored and cleaned up independently of any particular
-    # map (ADR-0040).
+    # manifest order, then the rifle - is cleaned/validated independently
+    # before cooking: usd-optimize/usd-validation-nvidia work one stage at a
+    # time, and a character is authored and cleaned up independently of any
+    # particular map (ADR-0040).
     stages_to_clean = [("map", scenario.map_stage_path)]
     stages_to_clean += [
         (character.name, character.stage_path)
         for character in scenario.characters
     ]
+    stages_to_clean.append(("rifle", scenario.rifle_stage_path))
 
     pipeline_start = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -182,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
 
             cleaned_stages.append(cleaned_stage)
 
-        map_cleaned, *character_cleaned_paths = cleaned_stages
+        map_cleaned, *character_cleaned_paths, rifle_cleaned = cleaned_stages
         character_cleaned = list(
             zip(
                 (character.name for character in scenario.characters),
@@ -210,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             report = cook_scenario(
                 map_cleaned,
                 character_cleaned,
+                rifle_cleaned,
                 client_output_pack,
                 server_output_pack,
                 signing_key,
