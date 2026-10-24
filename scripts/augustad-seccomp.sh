@@ -25,9 +25,16 @@
 #
 # The profile is the Node's architecture's alone, x86-64: run this on an
 # x86-64 Linux host (CI's confinement job does, and uploads what record
-# writes), with Docker, sudo, and for record auditd, after `uv sync --group
-# agent` in tools/ and a build of the Agents' native module (ci.yml's server
-# job). The image is the one CI built, or `docker build -t <image> .`.
+# writes), with a container engine, sudo, and for record auditd, after `uv
+# sync --group agent` in tools/ and a build of the Agents' native module
+# (ci.yml's server job).
+#
+# The engine is Podman, rootful (sudo podman: the capture directory's owner
+# and the audit log are the host's own uids), or Docker where there is no
+# Podman; AUGUSTA_CONTAINER_ENGINE=podman or docker picks one. The image is
+# the one CI built, or `sudo podman build -t <image> .` (`docker build` with
+# Docker). Podman runs it with crun, Docker with runc, the runtime the Node's
+# k3s uses: a profile recorded under one may lack the other's last syscalls.
 #
 # Usage: scripts/augustad-seccomp.sh check|record <image>
 set -euo pipefail
@@ -54,6 +61,31 @@ log() {
   echo "augustad-seccomp: $*" >&2
 }
 
+# Runs the container engine (see the top of this file) with its arguments.
+# Globals:
+#   AUGUSTA_CONTAINER_ENGINE, which picks it when set.
+engine() {
+  local name="${AUGUSTA_CONTAINER_ENGINE:-}"
+  if [[ -z "${name}" ]]; then
+    if command -v podman >/dev/null 2>&1; then
+      name=podman
+    elif command -v docker >/dev/null 2>&1; then
+      name=docker
+    else
+      log "neither podman nor docker found - install one"
+      exit 1
+    fi
+  fi
+  case "${name}" in
+    podman) sudo podman "$@" ;;
+    docker) docker "$@" ;;
+    *)
+      log "AUGUSTA_CONTAINER_ENGINE is ${name}, not podman or docker"
+      exit 1
+      ;;
+  esac
+}
+
 # Prints how to run it, and exits.
 usage() {
   echo "usage: $0 check|record <image>" >&2
@@ -68,7 +100,7 @@ prepare() {
   WORK="$(mktemp -d)"
   readonly WORK
   # shellcheck disable=SC2064 # WORK is set once, here
-  trap "docker rm -f '${CONTAINER}' >/dev/null 2>&1 || true
+  trap "engine rm -f '${CONTAINER}' >/dev/null 2>&1 || true
     sudo rm -rf -- '${WORK}'" EXIT
   mkdir "${WORK}/config" "${WORK}/pack"
   cp "${PACKS}/server.apak" "${WORK}/pack/server.apak"
@@ -104,10 +136,10 @@ EOF
 #   0 when the server served them, captured them and exited 0.
 play() {
   local image="$1" profile="$2"
-  docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
+  engine rm -f "${CONTAINER}" >/dev/null 2>&1 || true
   sudo find "${WORK}/captures" -mindepth 1 -delete
   # Under a profile that lacks the runtime's own last syscalls, it fails here.
-  if ! docker run --detach --name "${CONTAINER}" \
+  if ! engine run --detach --name "${CONTAINER}" \
     --user "${SERVER_ID}:${SERVER_ID}" --read-only --cap-drop ALL \
     --security-opt no-new-privileges --security-opt "seccomp=${profile}" \
     --publish "127.0.0.1:${GAME_PORT}:${GAME_PORT}/udp" \
@@ -138,9 +170,9 @@ play() {
     status=1
   fi
 
-  docker stop --time 10 "${CONTAINER}" >/dev/null || true
+  engine stop --time 10 "${CONTAINER}" >/dev/null || true
   local exit_code
-  exit_code="$(docker inspect --format '{{.State.ExitCode}}' "${CONTAINER}")"
+  exit_code="$(engine inspect --format '{{.State.ExitCode}}' "${CONTAINER}")"
   if [[ "${exit_code}" != 0 ]]; then
     # 159: 128 + SIGSYS, a syscall outside the profile.
     log "the server exited ${exit_code}"
@@ -151,7 +183,7 @@ play() {
     status=1
   fi
   if [[ "${status}" != 0 ]]; then
-    docker logs "${CONTAINER}" >&2 || true
+    engine logs "${CONTAINER}" >&2 || true
   fi
   return "${status}"
 }

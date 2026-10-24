@@ -21,13 +21,95 @@ extract_zip() {
     -C "$(cygpath -w "$2")"
 }
 
-# Appends a directory to a registry PATH, Machine or User, unless it is there.
+# Appends a directory to a registry PATH, Machine or User, unless it is there,
+# and records it when it was not.
 # Arguments:
 #   The scope, the directory.
 add_to_path() {
+  local dir added
+  dir="$(cygpath -w "$2")"
   # shellcheck disable=SC2016 # expanded by PowerShell
-  SCOPE="$1" DIR="$(cygpath -w "$2")" powershell.exe -NoProfile \
-    -NonInteractive -Command '$path = [Environment]::GetEnvironmentVariable("Path", $env:SCOPE); if (($path -split ";") -notcontains $env:DIR) { [Environment]::SetEnvironmentVariable("Path", "$path;$env:DIR", $env:SCOPE) }'
+  added="$(SCOPE="$1" DIR="${dir}" powershell.exe -NoProfile \
+    -NonInteractive -Command '$path = [Environment]::GetEnvironmentVariable("Path", $env:SCOPE); if (($path -split ";") -notcontains $env:DIR) { [Environment]::SetEnvironmentVariable("Path", "$path;$env:DIR", $env:SCOPE); "added" }' \
+    | tr -d '\r')"
+  [[ "${added}" = added ]] && manifest_add path "$1" "${dir}"
+  return 0
+}
+
+# Removes a directory from a registry PATH, Machine or User.
+# Arguments:
+#   The scope, the directory (a Windows path).
+remove_from_path() {
+  # shellcheck disable=SC2016 # expanded by PowerShell
+  SCOPE="$1" DIR="$2" powershell.exe -NoProfile -NonInteractive -Command \
+    '$path = [Environment]::GetEnvironmentVariable("Path", $env:SCOPE); [Environment]::SetEnvironmentVariable("Path", (($path -split ";") | Where-Object { $_ -ne $env:DIR }) -join ";", $env:SCOPE)'
+}
+
+# Fails unless this Git Bash runs as Administrator.
+require_administrator() {
+  if ! net session >/dev/null 2>&1; then
+    echo "bootstrap: run Git Bash as Administrator (VS Build Tools and the" \
+      "Machine PATH need it)." >&2
+    exit 1
+  fi
+}
+
+# The manifest (scripts/bootstrap.sh), the user's: the bootstrap runs as them,
+# elevated.
+manifest_file() {
+  echo "$(windows_dir LOCALAPPDATA)/augusta-bootstrap/manifest"
+}
+
+manifest_append() {
+  mkdir -p "$(dirname "$(manifest_file)")"
+  cat >>"$(manifest_file)"
+}
+
+remove_manifest() {
+  rm -rf "$(dirname "$(manifest_file)")"
+}
+
+require_uninstall_rights() {
+  require_administrator
+}
+
+# Records each of a directory's files that does not exist yet, before the
+# install that writes it.
+# Arguments:
+#   The directory, then the files' names.
+record_new_files() {
+  local dir="$1" name
+  shift
+  for name in "$@"; do
+    [[ -e "${dir}/${name}" ]] \
+      || manifest_add file "$(cygpath -w "${dir}/${name}")"
+  done
+}
+
+# Undoes a manifest entry of this platform's.
+# Arguments:
+#   Its kind, then its fields.
+undo_entry() {
+  case "$1" in
+    winget)
+      winget uninstall --id "$2" --exact --silent --accept-source-agreements
+      ;;
+    winget-pin) winget pin remove --id "$2" --exact ;;
+    vs-components)
+      local args=(modify --installPath "$2" --quiet --norestart) component
+      for component in "${@:3}"; do
+        args+=(--remove "${component}")
+      done
+      "$(windows_dir 'ProgramFiles(x86)')/Microsoft Visual Studio/Installer/setup.exe" \
+        "${args[@]}" >/dev/null
+      ;;
+    path) remove_from_path "$2" "$3" ;;
+    file) rm -f "$(cygpath -u "$2")" ;;
+    dir) rm -rf "$(cygpath -u "$2")" ;;
+    uv-tool) uv tool uninstall "$2" ;;
+    podman-machine) podman machine rm --force ;;
+    *) echo "bootstrap: no way to undo $1 here; skipped." >&2 ;;
+  esac
 }
 
 # winget/MSI installers update the Machine/User PATH in the registry, but this
@@ -61,6 +143,7 @@ winget_install() {
   echo "Installing ${id}..."
   winget install --id "${id}" --exact --silent \
     --accept-package-agreements --accept-source-agreements "$@"
+  manifest_add winget "${id}"
 }
 
 # Installs a winget package at a version, replacing a different installed one
@@ -69,6 +152,10 @@ winget_install() {
 # Arguments:
 #   The package id, the version, the pin.
 winget_install_pinned() {
+  winget list --id "$1" --exact --accept-source-agreements >/dev/null 2>&1 \
+    || manifest_add winget "$1"
+  winget pin list --id "$1" --exact 2>/dev/null | grep -qF "$1" \
+    || manifest_add winget-pin "$1"
   echo "Installing $1 $2..."
   winget install --id "$1" --exact --silent --version "$2" --force \
     --accept-package-agreements --accept-source-agreements
@@ -76,12 +163,13 @@ winget_install_pinned() {
 }
 
 # The formatters and linters the hooks and CI's format job run at pinned
-# versions, and the flux CLI at the cluster's, which winget doesn't keep:
-# standalone releases in a user-local bin directory.
+# versions, the flux CLI at the cluster's and cosign at CI's, which winget
+# doesn't keep: standalone releases in a user-local bin directory.
 # Arguments:
 #   The bin directory.
 install_formatters() {
   local bin="$1" tmp
+  [[ -e "${bin}" ]] || manifest_add dir "$(cygpath -w "${bin}")"
   mkdir -p "${bin}"
   tmp="$(mktemp -d)"
   download_verified \
@@ -105,14 +193,75 @@ install_formatters() {
     "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_windows_amd64.zip" \
     1a23053bf9abbedbdac07237f5c6ae9b0da0bcb77ddbd103faa99839c6a7f562 \
     "${tmp}/flux.zip"
+  download_verified \
+    "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-windows-amd64.exe" \
+    9b85a88ebff2d9dd30ff4984a6f61f2cedc232dd87d81fa7f2ff3c0ed96c241c \
+    "${tmp}/cosign.exe"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt.exe
   extract_zip "${tmp}/stylua.zip" "${tmp}"
   extract_zip "${tmp}/flux.zip" "${tmp}"
   gunzip "${tmp}/taplo.exe.gz"
+  record_new_files "${bin}" yamlfmt.exe stylua.exe taplo.exe luacheck.exe \
+    flux.exe cosign.exe
   cp -f "${tmp}/yamlfmt.exe" "${tmp}/stylua.exe" "${tmp}/taplo.exe" \
-    "${tmp}/luacheck.exe" "${tmp}/flux.exe" "${bin}"
+    "${tmp}/luacheck.exe" "${tmp}/flux.exe" "${tmp}/cosign.exe" "${bin}"
   rm -rf "${tmp}"
   add_to_path User "${bin}"
+}
+
+# Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
+# releases, at CI's versions, in the bin directory install_formatters puts on
+# PATH.
+# Arguments:
+#   The bin directory.
+install_ci_tools() {
+  local bin="$1" tools tool name url sha member tmp
+  # Each: the command, its release asset, the asset's SHA-256, and the
+  # command's path inside the zip ("-" for a plain executable).
+  # promtool and amtool sit in a directory named after their archive.
+  local prometheus_dir="prometheus-${PROMETHEUS_VERSION}.windows-amd64"
+  local alertmanager_dir="alertmanager-${ALERTMANAGER_VERSION}.windows-amd64"
+  tools=(
+    "trivy https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_windows-64bit.zip 4e43bd71a30f51aee39525f60f2b47043af77eb8df8fe082aae4372b69c6660f trivy.exe"
+    "kubeconform https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-windows-amd64.zip e3f56102bcf4f50b034a567e2482a1c5330799983ddd655952310211aef73d93 kubeconform.exe"
+    "kyverno https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_windows_x86_64.zip fe329f8ec5cfb19d3776d6a9e568d9857e3bf2be6ed82c6feb12d4fa73b626b8 kyverno.exe"
+    "promtool https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${prometheus_dir}.zip 5d333b385557d9adc2ff015d13da9809baccc52fb800a82d1e5c94b79258f87e ${prometheus_dir}/promtool.exe"
+    "amtool https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/${alertmanager_dir}.zip 69624d6ce3674dbcf8cefc5a93d7028d00bbd5e0196a8384907f51593a495fef ${alertmanager_dir}/amtool.exe"
+    "hadolint https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-windows-x86_64.exe 01d927294962b5387f9ead4f18679158452be4f17c765ad0bdffe5264b9c7b0a -"
+    "oras https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_windows_amd64.zip 8cf69e46f966e592ad36261c05b8f59c02125743b7261c03f6badc3919b40cb0 oras.exe"
+    "syft https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_windows_amd64.zip 77f4b472779058e819eec9a054753a5071a996aaa40db31a290f8b256748593f syft.exe"
+    "grype https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_windows_amd64.zip 82fb07f246e61526e8f2bf187fc6bb29ed23c7450cda6e9d1868a60fb942fc98 grype.exe"
+    "yq https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_windows_amd64.exe ece3dd8bb50d39f93610506273ea262feb91e5c486bbddbb10abf91b2a6c0f14 -"
+  )
+  mkdir -p "${bin}"
+  tmp="$(mktemp -d)"
+  for tool in "${tools[@]}"; do
+    read -r name url sha member <<<"${tool}"
+    download_verified "${url}" "${sha}" "${tmp}/${name}.download"
+    record_new_files "${bin}" "${name}.exe"
+    if [[ "${member}" = - ]]; then
+      cp -f "${tmp}/${name}.download" "${bin}/${name}.exe"
+    else
+      mkdir "${tmp}/${name}.d"
+      extract_zip "${tmp}/${name}.download" "${tmp}/${name}.d"
+      cp -f "${tmp}/${name}.d/${member}" "${bin}/${name}.exe"
+    fi
+  done
+  rm -rf "${tmp}"
+}
+
+# Starts Podman's virtual machine, creating it first if there is none: Podman
+# runs its Linux containers there, on WSL 2. As scripts/bootstrap/macos.sh's.
+start_podman_machine() {
+  local state
+  if ! podman machine inspect >/dev/null 2>&1; then
+    manifest_add podman-machine
+    podman machine init
+  fi
+  state="$(podman machine inspect --format '{{.State}}' | tr -d '\r')"
+  if [[ "${state}" != running ]]; then
+    podman machine start
+  fi
 }
 
 # Installs ctcache (scripts/bootstrap.sh) in uv's user tool directory, which
@@ -120,6 +269,7 @@ install_formatters() {
 # for the checks after it.
 install_ctcache() {
   local bin
+  uv tool list 2>/dev/null | grep -q '^ctcache ' || manifest_add uv-tool ctcache
   uv tool install "${CTCACHE_PACKAGE}"
   bin="$(uv tool dir --bin | tr -d '\r')"
   add_to_path User "${bin}"
@@ -145,10 +295,17 @@ add_build_tools_components() {
   # the installer's own setup.exe rejects it, and returns once it is done.
   local args=(modify --installPath "${vs_install}" --quiet --norestart
     --includeRecommended)
-  local component
+  # Only those it lacks, which are also the ones the manifest takes.
+  local component missing=()
   for component in "$@"; do
+    [[ -n "$("${installer}/vswhere.exe" -latest -products '*' \
+      -requires "${component}" -property installationPath | tr -d '\r')" ]] \
+      || missing+=("${component}")
+  done
+  for component in "${missing[@]}"; do
     args+=(--add "${component}")
   done
+  manifest_add vs-components "${vs_install}" "${missing[@]}"
   # Its output is silenced: it logs the channel refreshes --quiet cancels as
   # errors, which they are not. Its real logs are dd_setup_* in %TEMP%.
   if ! "${installer}/setup.exe" "${args[@]}" >/dev/null; then
@@ -159,11 +316,7 @@ add_build_tools_components() {
 }
 
 install_toolchain() {
-  if ! net session >/dev/null 2>&1; then
-    echo "bootstrap: run Git Bash as Administrator (VS Build Tools and the" \
-      "Machine PATH need it)." >&2
-    exit 1
-  fi
+  require_administrator
 
   # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
   # Vulkan driver) builds on, needs it.
@@ -204,9 +357,17 @@ install_toolchain() {
   # latest stable release, as scripts/bootstrap/linux.sh's.
   winget_install Kubernetes.kubectl
   winget_install Helm.Helm
+  # jq: with cosign (install_formatters), the release runbook's wait on a
+  # signed image (docs/runbooks/cut-release.md).
+  winget_install jqlang.jq
+  # Podman: the container engine, for scripts/dev-container.sh and the server
+  # image. Wireshark for its tshark: the Wireshark dissector's test
+  # (tools/wireshark). Each one's latest release.
+  winget_install RedHat.Podman
+  winget_install WiresharkFoundation.Wireshark
 
-  # Unlike the other packages here, LLVM's and Doxygen's installers don't add
-  # themselves to PATH under winget's --silent flag (that's an
+  # Unlike the other packages here, LLVM's, Doxygen's and Wireshark's installers
+  # don't add themselves to PATH under winget's --silent flag (that's an
   # interactive-installer checkbox, unchecked by default in silent mode) - add
   # their default install locations explicitly rather than relying on it.
   # Git's bin directory too (bash.exe, sh.exe), which Git's installer leaves off
@@ -217,15 +378,19 @@ install_toolchain() {
   local program_files bin
   program_files="$(windows_dir ProgramFiles)"
   for bin in "${program_files}/LLVM/bin" "${program_files}/doxygen/bin" \
-    "${program_files}/Git/bin"; do
+    "${program_files}/Wireshark" "${program_files}/Git/bin"; do
     if [[ -d "${bin}" ]]; then
       add_to_path Machine "${bin}"
     fi
   done
 
-  install_formatters "$(windows_dir LOCALAPPDATA)/Programs/augusta-tools"
+  local tools_bin
+  tools_bin="$(windows_dir LOCALAPPDATA)/Programs/augusta-tools"
+  install_formatters "${tools_bin}"
+  install_ci_tools "${tools_bin}"
   refresh_path
   install_ctcache
+  start_podman_machine
 
   # A silently-missing tool here doesn't fail loud until much later - e.g.
   # clang-format's absence only shows up as ".githooks/pre-commit: not found
@@ -233,7 +398,8 @@ install_toolchain() {
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
     clang-format clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo \
-    luacheck kubectl helm flux
+    luacheck kubectl helm flux jq cosign podman tshark trivy kubeconform \
+    kyverno promtool amtool hadolint oras syft grype yq
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
@@ -266,6 +432,11 @@ update_submodules() {
 
 bootstrap_vcpkg() {
   cmd //c 'third_party\vcpkg\bootstrap-vcpkg.bat -disableMetrics'
+}
+
+# Removes what bootstrap_vcpkg wrote: vcpkg's tool.
+unbootstrap_vcpkg() {
+  rm -f third_party/vcpkg/vcpkg.exe
 }
 
 bootstrap_done() {

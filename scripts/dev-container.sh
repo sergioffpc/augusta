@@ -16,11 +16,14 @@
 # scripts/bootstrap.sh or scripts/bootstrap/linux.sh changes (not the
 # Windows half).
 #
-# Docker or Podman (rootless Podman maps the host's user to the image's
-# ubuntu, so files written inside are the host user's).
+# Podman, or Docker where there is no Podman (rootless Podman maps the host's
+# user to the image's ubuntu, so files written inside are the host user's).
 #
 # Usage: scripts/dev-container.sh [command [argument...]]
 #   With no command, an interactive shell. Runs in the current directory.
+#        scripts/dev-container.sh --remove
+#   Removes this checkout's container and its build/ volume (the bootstrap's
+#   uninstall), leaving the images and the volumes every checkout shares.
 set -euo pipefail
 
 # The git environment a hook runs with, which a command run from one needs
@@ -30,16 +33,16 @@ readonly GIT_ENV=(GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE)
 readonly HOME_IN=/home/ubuntu
 readonly VCPKG_CACHE="${HOME_IN}/.cache/augusta-vcpkg"
 
-# Prints the container engine: docker if there is one, podman otherwise.
+# Prints the container engine: podman if there is one, docker otherwise.
 engine() {
   local candidate
-  for candidate in docker podman; do
+  for candidate in podman docker; do
     if command -v "${candidate}" >/dev/null 2>&1; then
       echo "${candidate}"
       return
     fi
   done
-  echo "dev-container: neither docker nor podman found - install one (on" \
+  echo "dev-container: neither podman nor docker found - install one (on" \
     "macOS: brew install podman && podman machine init && podman machine" \
     "start)." >&2
   exit 1
@@ -48,6 +51,13 @@ engine() {
 # Prints a short, stable identifier of its argument.
 digest() {
   cksum | cut -d ' ' -f 1
+}
+
+# Prints the name of a checkout's build/ volume.
+# Arguments:
+#   The checkout.
+build_volume() {
+  echo "augusta-build-$(printf '%s' "$1" | digest)"
 }
 
 # Builds the image tagged $1 from the checkout $2, unless it exists.
@@ -76,7 +86,7 @@ create_container() {
   local args=(
     run --detach --init --name "${name}" --label "augusta.image=${tag}"
     --volume "${top}:${top}"
-    --volume "augusta-build-$(printf '%s' "${top}" | digest):${top}/build"
+    --volume "$(build_volume "${top}"):${top}/build"
     --volume "augusta-sccache:${HOME_IN}/.cache/sccache"
     --volume "augusta-vcpkg:${VCPKG_CACHE}"
     --env "VCPKG_BINARY_SOURCES=clear;files,${VCPKG_CACHE}/bincache,readwrite"
@@ -111,6 +121,14 @@ main() {
   tag="augusta-dev:$(cat "${top}/.devcontainer/Dockerfile" \
     "${top}/scripts/bootstrap.sh" "${top}/scripts/bootstrap/linux.sh" | digest)"
   name="augusta-dev-$(printf '%s' "${top}" | digest)"
+
+  if [[ "${1:-}" = --remove ]]; then
+    "${engine}" rm --force "${name}" >/dev/null 2>&1 || true
+    "${engine}" volume rm --force "$(build_volume "${top}")" >/dev/null 2>&1 \
+      || true
+    echo "dev-container: removed ${name} and its build volume." >&2
+    return
+  fi
 
   build_image "${engine}" "${tag}" "${top}"
   local current

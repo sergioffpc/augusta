@@ -26,6 +26,8 @@ inputs:
 runs:
   using: composite
   steps:
+    # It installs cosign 3.0.6, scripts/bootstrap.sh's COSIGN_VERSION; bump
+    # them together.
     - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
     - name: Sign the artifact
       shell: bash
