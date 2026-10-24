@@ -1,12 +1,12 @@
 # client
 
 `augusta_client`, `augusta_client_application`, `augusta_client_content`,
-`augusta_client_debug_index_entries`, `augusta_client_frame_mapping`,
+`augusta_client_debug_index_entries`, `augusta_client_debug_network_panel`,
+`augusta_client_debug_profiling_panel`, `augusta_client_frame_mapping`,
 `augusta_client_lobby_readiness`, `augusta_client_net_stats`,
-`augusta_client_network_panel`, `augusta_client_phases`,
-`augusta_client_profiling_panel`, `augusta_client_run`,
-`augusta_client_run_files`, and augustac, the executable that runs them.
-Client-only: the headless server never links it.
+`augusta_client_phases`, `augusta_client_run`, `augusta_client_run_files`, and
+augustac, the executable that runs them. Client-only: the headless server never
+links it.
 
 ## Responsibility
 

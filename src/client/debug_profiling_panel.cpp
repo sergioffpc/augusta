@@ -1,4 +1,4 @@
-#include "profiling_panel.h"
+#include "debug_profiling_panel.h"
 
 #include <algorithm>
 #include <cmath>
