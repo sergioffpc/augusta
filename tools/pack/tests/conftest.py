@@ -100,12 +100,62 @@ def decode_mesh(
     return points, indices
 
 
-def decode_hitbox(
-    blob: bytes,
-) -> tuple[int, list[tuple[float, float, float]], list[int]]:
-    """A hitbox blob: u8 body part, then a mesh blob."""
-    points, indices = decode_mesh(blob[1:])
-    return blob[0], points, indices
+@dataclass(frozen=True)
+class Hitbox:
+    body_part: int
+    joint: str
+    points: list[tuple[float, float, float]]
+    indices: list[int]
+
+
+def decode_hitbox(blob: bytes) -> Hitbox:
+    """A hitbox blob: u8 body part, the joint's name, then a mesh blob.
+
+    The name is a u32 length and its bytes.
+    """
+    (length,) = struct.unpack_from("<I", blob, 1)
+    joint = blob[5 : 5 + length].decode("utf-8")
+    points, indices = decode_mesh(blob[5 + length :])
+    return Hitbox(blob[0], joint, points, indices)
+
+
+@dataclass(frozen=True)
+class Joint:
+    name: str
+    parent: int
+    translation: tuple[float, float, float]
+    # x, y, z, w.
+    rotation: tuple[float, float, float, float]
+    scale: tuple[float, float, float]
+
+
+def decode_skeleton(blob: bytes) -> list[Joint]:
+    """A skeleton blob's joints, in order.
+
+    The blob is a u32 joint count, then each joint's name as a u32 length and
+    its bytes, its parent's index as a u32, then its translation xyz, rotation
+    xyzw and scale xyz, all f32.
+    """
+    (count,) = struct.unpack_from("<I", blob, 0)
+    offset = 4
+    joints = []
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", blob, offset)
+        name = blob[offset + 4 : offset + 4 + length].decode("utf-8")
+        offset += 4 + length
+        parent, *transform = struct.unpack_from("<I10f", blob, offset)
+        offset += 44
+        joints.append(
+            Joint(
+                name,
+                parent,
+                tuple(transform[0:3]),
+                tuple(transform[3:7]),
+                tuple(transform[7:10]),
+            )
+        )
+    assert offset == len(blob)
+    return joints
 
 
 def decode_spawn_point(

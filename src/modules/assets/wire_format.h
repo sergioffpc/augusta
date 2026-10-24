@@ -189,6 +189,14 @@ class ByteReader {
     return result;
   }
 
+  /// Every byte not read yet, consumed: for a blob that ends in another blob,
+  /// as a hitbox's ends in a mesh blob.
+  std::span<const std::byte> ReadRest() {
+    const auto result = data_.subspan(pos_);
+    pos_ = data_.size();
+    return result;
+  }
+
   /// Reads a length-prefixed string no longer than kMaxPathLength - the
   /// read-side counterpart of WriteString.
   std::optional<std::string> ReadString() {

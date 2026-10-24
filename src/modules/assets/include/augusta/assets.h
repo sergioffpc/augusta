@@ -55,6 +55,7 @@ enum class AssetType : std::uint8_t {
   kCharacters,
   kEye,
   kCueSound,
+  kSkeleton,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -87,11 +88,47 @@ enum class BodyPart : std::uint8_t {
   kLimb = 2,
 };
 
-/// One hitbox (ADR-0040): its geometry and the body part it stands for. A
-/// character's is in its own root space, its feet at the origin, standing.
+/// One hitbox (ADR-0040, ADR-0061): the body part it stands for, the Joint it
+/// moves with, and its geometry. A character's is in that Joint's space, placed
+/// by the Joint's transform in the character's space with no rest pose to undo;
+/// a map's, in its scene node's.
 struct HitboxData {
   BodyPart part = BodyPart::kTorso;
+  /// Its Joint's name, the path within its character's Skeleton (JointData);
+  /// empty for a map's, which belongs to no Skeleton.
+  // Initialized, so a designated initializer may leave it out, as one naming
+  // only a part does.
+  // NOLINTNEXTLINE(readability-redundant-member-init)
+  std::string joint{};
   MeshData mesh{};
+};
+
+/// Sentinel JointData::parent for a root Joint.
+inline constexpr std::uint32_t kJointNoParent = 0xFFFFFFFFU;
+
+/// Most Joints a character's Skeleton has (ADR-0061): the pack format's cap, not
+/// the protocol's, since a pose is never replicated. It bounds what the Hitbox
+/// history keeps per player.
+inline constexpr std::size_t kMaxJoints = 128;
+
+/// One Joint of a character's Skeleton (ADR-0061): its name, the path within the
+/// Skeleton (e.g. "Root/Pelvis/Spine"), so two `Shoulder` Joints under `Left` and
+/// `Right` are two names; its parent's index, lower than its own; and its rest
+/// transform relative to that parent, or to the character's root for a root
+/// Joint.
+struct JointData {
+  std::string name;
+  std::uint32_t parent = kJointNoParent;
+  math::Vec3 translation{0.0F, 0.0F, 0.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  math::Vec3 scale{1.0F, 1.0F, 1.0F};
+};
+
+/// A character's Skeleton (ADR-0061): every Joint, parents before children, the
+/// same list in both packs whether or not a Joint carries a Hitbox. A root Joint
+/// sits at the character's root: its feet, facing -Z.
+struct SkeletonData {
+  std::vector<JointData> joints;
 };
 
 /// part's name as a character stage spells it in augusta:bodyPart: "head",
@@ -234,6 +271,13 @@ struct EyeData {
 /// (ADR-0040), e.g. "soldier/Character/Eye".
 [[nodiscard]] inline std::string CharacterEyePath(std::string_view character) {
   return std::format("{}/Character/Eye", character);
+}
+
+/// Pack-relative path of the Skeleton of the character named character (its
+/// name in the scenario's manifest): its `Character` root prim's `Skeleton`
+/// child (ADR-0040, ADR-0061), e.g. "soldier/Character/Skeleton".
+[[nodiscard]] inline std::string CharacterSkeletonPath(std::string_view character) {
+  return std::format("{}/Character/Skeleton", character);
 }
 
 /// Pack-relative path of the visual mesh of the character named
@@ -438,7 +482,11 @@ class Pack {
   /// Resolves every hitbox of the character named character (its
   /// name in the scenario's manifest, e.g. "soldier", ADR-0040): each one
   /// addressed under it, in path order. Empty if it has none. Present in both
-  /// client and server packs.
+  /// client and server packs. Each one's geometry is composed out of its Joint's
+  /// space into the character's root space, by the Joint's rest transform in the
+  /// character's Skeleton at CharacterSkeletonPath (ADR-0061): kNotFound if it
+  /// has hitboxes and no Skeleton, kCorruptBlob if a hitbox names a Joint the
+  /// Skeleton does not have.
   [[nodiscard]] std::expected<std::vector<HitboxData>, ResolveError> ResolveHitboxes(std::string_view character) const;
 
   /// Resolves a spawn-point marker by its pack-relative path (ADR-0019/
