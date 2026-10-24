@@ -18,14 +18,18 @@ dedicated server.
 
 - [Highlights](#highlights)
 - [Status](#status)
+- [Installation](#installation)
+    - [Client](#client)
+    - [Server](#server)
+        - [k3s node (Debian 13)](#k3s-node-debian-13)
+        - [Standalone](#standalone)
 - [Development Setup](#development-setup)
-    - [Bootstrap](#bootstrap)
+    - [Development Environment](#development-environment)
         - [Windows (client)](#windows-client)
         - [Linux (server and shared core, Ubuntu 26.04)](#linux-server-and-shared-core-ubuntu-2604)
         - [macOS (server and shared core, through the dev container)](#macos-server-and-shared-core-through-the-dev-container)
         - [Dev container or Codespaces (server and shared core)](#dev-container-or-codespaces-server-and-shared-core)
         - [Uninstall](#uninstall)
-        - [k3s node (the cluster's server, Debian 13)](#k3s-node-the-clusters-server-debian-13)
     - [Build and Run](#build-and-run)
     - [Tests](#tests)
     - [Agent Skills](#agent-skills)
@@ -51,18 +55,96 @@ dedicated server.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone plan.
 
-Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
-the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
-(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
-its folder. The Linux client needs the glibc of Ubuntu 26.04 or newer, a Vulkan
-1.3 driver, and an X11 or Wayland session.
-
 The [documentation site](https://sergioffpc.github.io/augusta/) publishes these
 docs, the decisions behind the engine (ADRs) and the C++ API reference.
 
+## Installation
+
+Running the engine needs no checkout and no toolchain: a player installs the
+client, an operator the server. To build them, see
+[Development Setup](#development-setup).
+
+### Client
+
+Each [release](https://github.com/sergioffpc/augusta/releases/latest) publishes
+the client for Windows x64 (`augustac-windows-x64.zip`) and Linux x64
+(`augustac-linux-x64.tar.gz`): extract either anywhere and run `augustac` from
+its folder. It needs a Vulkan 1.3 driver; the Linux client also needs the glibc
+of Ubuntu 26.04 or newer and an X11 or Wayland session.
+
+Before the first run, create `augustac.yaml` beside `augustac` from
+[config/augustac.example.yaml](config/augustac.example.yaml), and point it at:
+
+- the client pack and the public key it is signed with, from the same cook as
+  the server's pack: Join refuses any other. No channel distributes them; they
+  are copied by hand
+  ([pack-key-rotation.md](docs/runbooks/pack-key-rotation.md));
+- the server, `network.server_address`: the cluster node's address with the
+  environment's node port, `30700` for `develop` and `30800` for `staging`, or
+  `127.0.0.1:27015` for a local server.
+
+Then, on Windows and on Linux:
+
+```powershell
+.\augustac.exe
+```
+
+```bash
+./augustac
+```
+
+`--config <file>` reads a config kept elsewhere.
+
+### Server
+
+The production server is a Linux x86-64 or arm64 one. Its environments,
+`develop` and `staging`, run on a k3s node that Flux deploys from Git; a server
+also runs on its own, from an install.
+
+#### k3s node (Debian 13)
+
+Over SSH, by key, as your own user:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
+```
+
+[scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
+runs `develop` and `staging`, through sudo, without a checkout: the crash-core
+handler, Podman and lldb to read a core, the server's `augusta` user, the
+asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
+by key only, unattended security updates, auditd), k3s at the cluster's release,
+and Flux, which then installs the monitoring stack and both environments from
+Git. It skips what the node already has. The firewall then lets only the SSH
+session's address, or those given with `--admin`, reach SSH and the API server.
+The asset packs are the one state not in Git: `augusta-publish` puts them on the
+node, or `--packs` unpacks a copy
+([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)).
+
+#### Standalone
+
+From a checkout with the [development environment](#development-environment),
+`make install` builds the server and installs it with its libraries (the client
+is never installed: it runs from its build directory or a release's folder):
+
+```bash
+make install prefix="$HOME/augusta"
+```
+
+On Windows, `prefix=C:/augusta` installs a development build. Create
+`augustad.yaml` from
+[config/augustad.example.yaml](config/augustad.example.yaml), pointing it at the
+server pack and its public key, then start it:
+
+```bash
+~/augusta/bin/augustad --config augustad.yaml
+```
+
+It listens on UDP `0.0.0.0:27015` and serves its metrics on TCP `9464`.
+
 ## Development Setup
 
-### Bootstrap
+### Development Environment
 
 One command per platform sets up a machine and a checkout ready to build, test
 and commit: it installs the toolchain, clones the repository into `./augusta`
@@ -128,26 +210,6 @@ the git hooks and the submodules, and on macOS the dev containers. The
 repository's files and your work stay. A machine bootstrapped before the
 bootstrap kept a record of what it installed keeps what it installed then.
 
-#### k3s node (the cluster's server, Debian 13)
-
-Over SSH, by key, as your own user:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/sergioffpc/augusta/develop/scripts/bootstrap-node.sh | bash
-```
-
-[scripts/bootstrap-node.sh](scripts/bootstrap-node.sh) sets up the node that
-runs `develop` and `staging`, through sudo, without a checkout: the crash-core
-handler, Podman and lldb to read a core, the server's `augusta` user, the
-asset-pack volume, the capture filesystem, the OS's hardening (a firewall, SSH
-by key only, unattended security updates, auditd), k3s at the cluster's release,
-and Flux, which then installs the monitoring stack and both environments from
-Git. It skips what the node already has. The firewall then lets only the SSH
-session's address, or those given with `--admin`, reach SSH and the API server.
-The asset packs are the one state not in Git: `augusta-publish` puts them on the
-node, or `--packs` unpacks a copy
-([k3s-node-recovery.md](docs/runbooks/k3s-node-recovery.md)).
-
 ### Build and Run
 
 The [Makefile](Makefile) wraps the build presets. On Windows it loads the Visual
@@ -183,11 +245,9 @@ one client per captured player, all at once, each the player of the capture
 
 Create each local YAML from its `*.example.yaml` file and edit its pack and
 public-key paths to point to cooked content before running. `make` builds the
-default release preset (`windows` on Windows, `linux` on Linux). `make install`
-installs only the server; the client has no install step and runs from its build
-directory. Use `prefix=C:/augusta` on Windows (a development build; Linux x86-64
-and Linux arm64 are the production server platforms) or a Unix-style prefix on
-Linux. Configuring on any other platform stops with the supported list (NFR-04).
+default release preset (`windows` on Windows, `linux` on Linux); `make install`
+installs the server ([Standalone](#standalone)). Configuring on any other
+platform stops with the supported list (NFR-04).
 
 ### Tests
 
