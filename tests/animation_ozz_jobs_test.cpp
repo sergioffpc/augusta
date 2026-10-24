@@ -1,6 +1,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <ozz/animation/offline/animation_builder.h>
@@ -12,9 +13,11 @@
 #include <ozz/animation/runtime/local_to_model_job.h>
 #include <ozz/animation/runtime/sampling_job.h>
 #include <ozz/animation/runtime/skeleton.h>
+#include <ozz/base/maths/internal/simd_math_config.h>
 #include <ozz/base/maths/simd_math.h>
 #include <ozz/base/maths/soa_transform.h>
 #include <ozz/base/maths/transform.h>
+#include <ozz/base/memory/unique_ptr.h>
 #include <ozz/base/span.h>
 
 // ozz-animation's runtime jobs, which the Animation module poses with
