@@ -25,13 +25,14 @@
 /// reach, judging), and drawing them is presentation's.
 namespace augusta::hitbox {
 
-/// A player's Hitbox pose: all that places its Hitboxes, until Clips give it
-/// more (#823).
+/// Where a player's Hitbox pose puts its root: what places a Hitbox bound to
+/// the root, and what its Joints' pose is composed onto.
 struct Pose {
   /// Where its feet are.
   math::Vec3 position{};
   /// Where it faces, in radians, as a Command's yaw (command::Command).
   float yaw = 0.0F;
+  /// The stance it was posed in: it does not move the root (RootOf).
   physics::Stance stance = physics::Stance::kStanding;
 };
 
@@ -55,9 +56,9 @@ struct PlacedHitbox {
 };
 
 /// Where pose puts a Character's root, and with it the root Joint of its
-/// Skeleton (ADR-0061): lowered for the stance as the eye is
-/// (physics::LowerToStance), turned about the vertical by the yaw as the view is
-/// (command::ViewRotation), then moved to the position.
+/// Skeleton (ADR-0061): turned about the vertical by the yaw as the view is
+/// (command::ViewRotation), then moved to the position. The stance does not
+/// scale it: how low a body is, is its stance's Clips' (ADR-0066).
 [[nodiscard]] math::Mat4 RootOf(const Pose& pose);
 
 /// hitboxes placed by joints, a Hitbox pose's world transform of each Joint

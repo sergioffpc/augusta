@@ -490,10 +490,10 @@ carry none. _Avoid_: Bone, node, transform (a Joint has a transform; it is not
 one)
 
 **Rest pose**: The Hitbox pose a Character is in when nothing animates it — the
-pose it was authored in. What the engine poses a player by until a Character has
-Clips, and what a Skeleton's Joint transforms describe as authored. _Avoid_:
-Bind pose (that names the pose a mesh was skinned in, a client concern), T-pose,
-default pose, idle (an idle is a Clip, not the absence of one)
+pose it was authored in. What the engine poses a player by when its Character
+has no Clips, and what a Skeleton's Joint transforms describe as authored.
+_Avoid_: Bind pose (that names the pose a mesh was skinned in, a client
+concern), T-pose, default pose, idle (an idle is a Clip, not the absence of one)
 
 **Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
 without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:

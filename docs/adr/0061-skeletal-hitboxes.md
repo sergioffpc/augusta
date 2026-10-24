@@ -4,12 +4,10 @@ A player's Hitboxes move with its skeleton: an arm reaching out is hit where it
 is drawn. Client and server evaluate the same Hitbox pose from the same state,
 so a Shot is judged against the body the shooter saw (ADR-0044).
 
-Today's Hitboxes are rigid in the character's space: the server scales them down
-with the stance and turns them by the body's yaw (ADR-0040), and the Hitbox
-history keeps position, stance and facing (ADR-0044). That holds until
-characters have a skeleton, which ADR-0040 leaves open. This decision resolves
-the skeleton format and takes effect with it: the change that brings it amends
-ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
+Rigid Hitboxes in the character's space, scaled down with the stance and turned
+by the body's yaw, with a Hitbox history of position, stance and facing, hold
+only until characters have a skeleton. This decision resolves the skeleton
+format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
 
 ## Decisions
 
@@ -89,22 +87,19 @@ ADR-0019, ADR-0023, ADR-0040 and ADR-0044 to match.
   time falls between: the root's position linearly, its facing along the shorter
   arc and its stance the nearer tick's; each joint's position linearly and its
   rotation along the shorter arc; then composes the joints onto the root from
-  the root down (ADR-0044). The root is kept apart because it carries the
-  stance's lowering, a scale of the vertical alone: composed into a turned joint
-  that is a sheared transform, with no position and rotation to interpolate.
+  the root down (ADR-0044). The root is kept apart because it is the body's
+  position and facing, which interpolate as a client shows them.
 - **Culling stays conservative.** The reach that discards a candidate before its
-  triangles are tested (ADR-0044) is computed when the character is loaded, as
-  the furthest a Hitbox can be from the root in the rest pose, plus its margin,
-  and it scales with the stance like the root. Clips make it the furthest over
-  every clip, which is an amendment to make with them.
-- **The skeleton lands before any clip.** The first change brings the format,
-  the rest pose, the Hitbox bound to its joint, the Posing phase and the
-  history, with the pose always the rest pose. Until a clip exists, the stance
-  and the facing are carried by the skeleton's root exactly as they are today —
-  the vertical alone scaled by the stance's height, as the eye is lowered, and
-  the rotation by yaw of ADR-0040 — so no shot lands differently on the day the
-  format arrives. ADR-0040's scaling and turning give way to the pose only where
-  a clip replaces them (ADR-0066).
+  triangles are tested (ADR-0044) is taken from the pose being judged: each
+  Hitbox's furthest point from its joint, measured when the character is loaded,
+  added to how far that pose holds the joint from the root, plus a margin. It
+  holds whatever a Clip does with the joints, with nothing to measure over every
+  Clip.
+- **The root carries the position and the facing alone.** The skeleton's root is
+  where the body's position puts it, turned about the vertical by its yaw
+  (ADR-0040); the stance does not scale it. How low a body is in a stance is
+  that stance's Clips' (ADR-0066). A character without Clips, which only a test
+  builds, stands in its rest pose in every stance.
 - **No replicated state is added.** In the rest pose there is nothing to
   remember: position, yaw and stance are already in the Authoritative State. The
   protocol, the Authoritative State update and the Match capture are untouched

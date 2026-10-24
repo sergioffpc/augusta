@@ -12,9 +12,10 @@
 /// augusta::animation poses a Character's Skeleton (GLOSSARY.md, ADR-0061):
 /// from a player's Hitbox pose, each of its Joints relative to its parent and
 /// the world transform that composes, which gameplay's hitbox::Place places the
-/// Hitboxes bound to them by. Until a Character has Clips the pose is the Rest
-/// pose, with the stance and the facing carried by the Skeleton's root exactly
-/// as ADR-0040 has them (hitbox::RootOf). Pure, with no world or state of its
+/// Hitboxes bound to them by. The pose is its Clips' (augusta/pose.h); this
+/// header holds what a pose is and the Rest pose, which poses a Character
+/// without Clips, its root where the position and facing put it
+/// (hitbox::RootOf). Pure, with no world or state of its
 /// own: which players are posed, when, and what a posed Hitbox is judged
 /// against are SimulationWorld's, in its Posing phase. Its one other consumer
 /// is a Development build's client (ADR-0074), whose Hitboxes Debug overlay
@@ -49,8 +50,8 @@ void PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose, Skel
 [[nodiscard]] std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose);
 
 /// hitboxes, each in the space of its Joint of skeleton, placed where the Rest
-/// pose at pose holds them: hitbox::Place by PoseAtRest's world transforms. How
-/// far a Character reaches in a stance, and where a Debug overlay draws it.
+/// pose at pose holds them: hitbox::Place by PoseAtRest's world transforms.
+/// Where a Debug overlay draws them.
 [[nodiscard]] std::vector<hitbox::PlacedHitbox> PlaceAtRest(const assets::Skeleton& skeleton,
                                                             std::span<const hitbox::CharacterHitbox> hitboxes,
                                                             const hitbox::Pose& pose);

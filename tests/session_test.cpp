@@ -4386,36 +4386,6 @@ TEST_F(HitLineTest, WithTwoTargetsInLineOnlyTheNearerIsHit) {
 
 using HitDuelTest = HitMatchOf<2>;
 
-// A body 2.1 m tall standing is 1.3 m tall crouched and 0.7 m prone, and its hitboxes with it.
-// Requirements: US-11
-TEST_F(HitDuelTest, AShotWhereAStandingHeadWouldBeMissesACrouchedOrProneTargetAndOneAtItsLoweredBodyHits) {
-  Session& shooter = Standing(0);
-  Session& target = Standing(1);
-  struct Lowered {
-    Stance stance;
-    float height;
-  };
-
-  for (const Lowered& lowered : {Lowered{Stance::kCrouching, 1.3F}, Lowered{Stance::kProne, 0.7F}}) {
-    CommandOf(target).movement.desired_stance = lowered.stance;
-    Fight(kSettleTicks);
-    ASSERT_EQ(BodySeenBy(shooter, *target.GetServerView()->OwnEntity())->stance, lowered.stance);
-
-    ShootAt(target, Vec3(0.0F, kHeadHeight, 0.0F));
-    EXPECT_TRUE(hits_.empty()) << "stance " << static_cast<int>(lowered.stance);
-
-    ShootAt(target, Vec3(0.0F, kTorsoHeight * lowered.height / 2.1F, 0.0F));
-    ASSERT_EQ(hits_.size(), 1U) << "stance " << static_cast<int>(lowered.stance);
-    EXPECT_EQ(hits_[0].part, BodyPart::kTorso);
-    hits_.clear();
-  }
-
-  const std::vector<HitConfirmation>& confirmations = ConfirmationsOf(shooter);
-  ASSERT_EQ(confirmations.size(), 2U);
-  EXPECT_EQ(confirmations[0].part, BodyPart::kTorso);
-  EXPECT_EQ(confirmations[1].part, BodyPart::kTorso);
-}
-
 // The target's right arm is at +X while it faces yaw 0, and at -X once it has
 // turned half a turn: every client is told where it faces, and its hitboxes
 // turn with it.

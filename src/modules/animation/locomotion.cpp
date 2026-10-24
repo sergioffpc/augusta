@@ -151,10 +151,13 @@ float StrideLength(const StanceClips& clips, const math::Vec3& local_velocity) {
   return moving > 0.0F ? weighted / moving : clips.forward.stride_length;
 }
 
-float StrideLength(const CharacterClips& clips, const physics::BodyState& body, float yaw) {
+math::Vec3 LocalVelocity(const math::Vec3& velocity, float yaw) {
   // Turned back by the yaw: the body's own space, where -Z is ahead.
-  const math::Vec3 local = glm::angleAxis(-yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * body.velocity;
-  return StrideLength(clips.Of(body.stance), local);
+  return glm::angleAxis(-yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * velocity;
+}
+
+float StrideLength(const CharacterClips& clips, const physics::BodyState& body, float yaw) {
+  return StrideLength(clips.Of(body.stance), LocalVelocity(body.velocity, yaw));
 }
 
 }  // namespace augusta::animation

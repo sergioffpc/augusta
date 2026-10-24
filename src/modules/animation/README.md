@@ -8,8 +8,11 @@ runtime (ADR-0066).
 
 A Character's Skeleton posed: from a player's Hitbox pose, each of its Joints
 relative to its parent and the world transform that composes, which places the
-Hitboxes bound to them. Until a Character has Clips the pose is the Rest pose,
-the stance and the facing carried by the Skeleton's root.
+Hitboxes bound to them. The pose is evaluated from the Character's Clips with
+ozz-animation's sampling and blending (`augusta/pose.h`): its stance's blend
+space at its velocity, each Clip synchronised by the Stride between its Foot
+contacts, onto a root its position and facing place, as a pure function of
+replicated state; a Character without Clips stands in its Rest pose.
 
 A Character's Clips, loaded from its verified pack with ozz-animation's runtime
 alone (`augusta/clips.h`): its ozz-animation Skeleton, mapped Joint by Joint to

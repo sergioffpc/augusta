@@ -33,28 +33,33 @@ namespace augusta::simulation {
 /// Surface, reserved for it, so a strike on it is never read as anything else.
 inline constexpr physics::SurfaceId kMapSurface{0};
 
-/// How far from its root a character's hitboxes reach in each stance, posed in
-/// the Rest pose (ADR-0061): a bullet that passes farther from where a pose puts
-/// its root crosses none of them. Measured once, when the character is added.
+/// How far from its root a character's hitboxes reach in a pose (ADR-0061): a
+/// bullet that passes farther from where the pose puts its root crosses none of
+/// them. Each Hitbox's farthest point from its Joint is measured once, when the
+/// character is added; a pose adds how far it holds each Joint from the root,
+/// so the reach holds whatever a Clip does with the Joints.
 class Reach {
  public:
-  /// How far hitboxes, each in the space of its Joint of skeleton, reach in the
-  /// Rest pose in each stance, plus a margin.
-  Reach(const assets::Skeleton& skeleton, std::span<const hitbox::CharacterHitbox> hitboxes);
+  /// Measures hitboxes, each in the space of its Joint.
+  explicit Reach(std::span<const hitbox::CharacterHitbox> hitboxes);
   /// Reaching nowhere: what a character with no hitboxes, which cannot be hit,
   /// would reach, but for the margin.
   Reach() = default;
 
-  /// How far they reach in stance: as far as the root lowers them with it.
-  [[nodiscard]] float In(physics::Stance stance) const {
-    const auto index = static_cast<std::size_t>(stance);
-    assert(index < by_stance_.size());
-    return by_stance_[index];
-  }
+  /// How far the hitboxes reach from root, where a pose puts the character's
+  /// root, when joints are each Joint's world transform in it, plus a margin.
+  /// Each Hitbox's Joint must be one joints has, as hitbox::Place requires.
+  [[nodiscard]] float Of(const math::Vec3& root, std::span<const math::Mat4> joints) const;
 
  private:
-  // Index for index with physics::Stance's values.
-  std::array<float, physics::kStanceCount> by_stance_{};
+  // One Hitbox's Joint, and how far from the Joint's origin it reaches in the
+  // Joint's own space.
+  struct Extent {
+    std::uint32_t joint = 0;
+    float radius = 0.0F;
+  };
+
+  std::vector<Extent> extents_;
 };
 
 /// A player a bullet is tested against, and the pose its hitboxes are placed by.
