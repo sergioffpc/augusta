@@ -60,7 +60,7 @@ float RatioAt(const Clip& clip, std::uint8_t stride) {
 // rising at kAirVerticalSpeed or faster, its end falling as fast, linearly
 // between, so the top of a jump is halfway through it.
 float AirRatio(float vertical_speed) {
-  return std::clamp(0.5F - (vertical_speed / (2.0F * kAirVerticalSpeed)), 0.0F, 1.0F);
+  return std::clamp((kAirVerticalSpeed - vertical_speed) / (kAirVerticalSpeed + kAirVerticalSpeed), 0.0F, 1.0F);
 }
 
 // One SoA block's lanes of a SIMD value, read with ozz's own unaligned store.
