@@ -18,7 +18,6 @@
 #include <flecs.h>
 #include <nvtx3/nvtx3.hpp>
 
-#include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/audio.h"
 #include "augusta/audio_cues.h"
@@ -73,7 +72,6 @@ struct World::Impl {
   // (physics::BodyState's feet) standing: its character's eye (World's
   // constructor).
   math::Vec3 eye;
-  animation::Engine animation;
   PhaseEntities phases;
 
   // The frame RunFrame() is running, borrowed for its ecs.progress() and read
@@ -330,13 +328,8 @@ struct World::Impl {
 
   void OnAnimation() {
     const nvtx3::scoped_range range{"Animation"};
-    // TODO(sergioffpc): animation.Update per visible player character,
-    // once there's a per-character handle to iterate and a
-    // animation::LocomotionInput to build from interpolated movement -
-    // see presentation.h's Phase::kAnimation doc comment. The capture
-    // only proves animation is reachable from here; no call is made
-    // yet.
-    (void)animation;
+    // Nothing to do yet: the phase poses each visible player's Character once
+    // the client evaluates a pose (ADR-0061); until then it calls nothing.
   }
 
   void OnAudioCues() {
