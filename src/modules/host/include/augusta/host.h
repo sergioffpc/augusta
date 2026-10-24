@@ -135,7 +135,7 @@ class Host {
 
   /// The Link's numbers for every open connection, each with the
   /// Session it carries if its client has joined: what ConnectionHealth
-  /// (connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
+  /// (metrics_connection_health.h) records. Each call clears the transport's worst-jitter mark, so one
   /// caller samples, once a heartbeat interval (ADR-0049): the Network I/O
   /// thread.
   [[nodiscard]] std::vector<ConnectionSample> SampleConnections();

@@ -190,10 +190,13 @@ add_executable(augusta_heartbeat_tests heartbeat_test.cpp)
 target_link_libraries(augusta_heartbeat_tests PRIVATE augusta_host_heartbeat GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_heartbeat_tests DISCOVERY_TIMEOUT 30)
 
-add_executable(augusta_liveness_tests liveness_test.cpp)
-target_link_libraries(augusta_liveness_tests PRIVATE augusta_server_liveness GTest::gtest GTest::gtest_main)
-target_include_directories(augusta_liveness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
-gtest_discover_tests(augusta_liveness_tests DISCOVERY_TIMEOUT 30)
+add_executable(augusta_metrics_liveness_tests metrics_liveness_test.cpp)
+target_link_libraries(
+  augusta_metrics_liveness_tests
+  PRIVATE augusta_server_metrics_liveness GTest::gtest GTest::gtest_main
+)
+target_include_directories(augusta_metrics_liveness_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
+gtest_discover_tests(augusta_metrics_liveness_tests DISCOVERY_TIMEOUT 30)
 
 # Over real HTTP on the loopback, on a port the test finds free, with the
 # acceptor's failures injected (see faults.h) and the log line they end in read
@@ -204,7 +207,7 @@ target_link_libraries(
   augusta_metrics_tests
   PRIVATE
     augusta_server_metrics
-    augusta_server_liveness
+    augusta_server_metrics_liveness
     augusta_failure
     augusta_logging
     Boost::beast
@@ -221,14 +224,14 @@ target_link_libraries(augusta_host_metrics_tests PRIVATE augusta_host GTest::gte
 gtest_discover_tests(augusta_host_metrics_tests DISCOVERY_TIMEOUT 30)
 
 # Reads what it records back as the metrics endpoint collects it.
-add_executable(augusta_connection_health_tests connection_health_test.cpp)
+add_executable(augusta_metrics_connection_health_tests metrics_connection_health_test.cpp)
 target_link_libraries(
-  augusta_connection_health_tests
-  PRIVATE augusta_server_connection_health GTest::gtest GTest::gtest_main
+  augusta_metrics_connection_health_tests
+  PRIVATE augusta_server_metrics_connection_health GTest::gtest GTest::gtest_main
 )
-target_include_directories(augusta_connection_health_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
+target_include_directories(augusta_metrics_connection_health_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 # Links networking (for ConnectionStats), so the same first-launch cost applies as below.
-gtest_discover_tests(augusta_connection_health_tests DISCOVERY_TIMEOUT 30)
+gtest_discover_tests(augusta_metrics_connection_health_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_admission_tests admission_test.cpp)
 target_link_libraries(augusta_admission_tests PRIVATE augusta_host_admission GTest::gtest GTest::gtest_main)
@@ -446,7 +449,7 @@ target_link_libraries(
   augusta_session_tests
   PRIVATE
     augusta_harness
-    augusta_server_connection_health
+    augusta_server_metrics_connection_health
     augusta_host
     augusta_link
     augusta_link_raw
@@ -458,8 +461,8 @@ target_link_libraries(
     GTest::gtest
     GTest::gtest_main
 )
-# connection_health.h is private to the server Runtime, reached through its
-# directory.
+# metrics_connection_health.h is private to the server Runtime, reached through
+# its directory.
 target_include_directories(augusta_session_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/server)
 # The server runs the example scenario's Game policy, as it loads it from its
 # golden server pack: the Spawn points and the win condition (US-03, US-14).

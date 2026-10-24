@@ -9,7 +9,7 @@
 /// \file
 /// One sample of a client's Connection health, as Host takes it from the Link
 /// (Host::SampleConnections) and ConnectionHealth records it
-/// (connection_health.h, ADR-0049). A plain struct of its own, so Host need not
+/// (metrics_connection_health.h, ADR-0049). A plain struct of its own, so Host need not
 /// depend on the metrics that consume it.
 namespace augusta::host {
 

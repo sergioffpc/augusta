@@ -16,7 +16,7 @@
 /// \file
 /// augustad's metrics endpoint (ADR-0049): an HTTP server on one TCP port
 /// serving /metrics, the Prometheus text exposition the cluster's Prometheus
-/// scrapes, and /livez, the Deployment's liveness probe (liveness.h decides
+/// scrapes, and /livez, the Deployment's liveness probe (metrics_liveness.h decides
 /// it). ServerRuntime owns it. Boost.Beast serves it on a thread of its own,
 /// the server's third beside Network I/O and Simulation (ADR-0005), which only
 /// reads: the Simulation and Network I/O threads write what it reports. That
@@ -28,7 +28,7 @@
 /// subsystem one (ADR-0033): it logs it once, stops serving and closes its
 /// port, so /livez fails and the platform restarts the pod (ADR-0049) while the
 /// tick loop goes on until then. What the Host counts (host_metrics.h) and
-/// every client's Connection health (connection_health.h) it serves beside the
+/// every client's Connection health (metrics_connection_health.h) it serves beside the
 /// Process family, which is its own.
 namespace augusta::failure {
 class Faults;

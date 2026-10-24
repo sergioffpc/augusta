@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_CONNECTION_HEALTH_H_
-#define AUGUSTA_SERVER_CONNECTION_HEALTH_H_
+#ifndef AUGUSTA_SERVER_METRICS_CONNECTION_HEALTH_H_
+#define AUGUSTA_SERVER_METRICS_CONNECTION_HEALTH_H_
 
 #include <memory>
 #include <vector>
@@ -53,4 +53,4 @@ class ConnectionHealth final : public prometheus::Collectable {
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_CONNECTION_HEALTH_H_
+#endif  // AUGUSTA_SERVER_METRICS_CONNECTION_HEALTH_H_

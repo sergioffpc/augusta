@@ -1,9 +1,9 @@
 # server
 
 `augusta_server`, `augusta_server_application`, `augusta_server_metrics`,
-`augusta_server_liveness`, `augusta_server_connection_health`, all in
-`augusta::server`, and augustad, the executable that runs them. Server-only: the
-client never links it.
+`augusta_server_metrics_liveness`, `augusta_server_metrics_connection_health`,
+all in `augusta::server`, and augustad, the executable that runs them.
+Server-only: the client never links it.
 
 ## Responsibility
 
