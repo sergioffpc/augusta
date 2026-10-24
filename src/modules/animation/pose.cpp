@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <ozz/animation/runtime/blending_job.h>
@@ -64,23 +65,68 @@ std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
 
 }  // namespace
 
+// The stances a pose blends at most: the one a body is in and, while a change
+// of stance is under way, the one it left.
+constexpr std::size_t kBlendedStances = 2;
+
 struct Poser::Buffers {
-  // One per Clip a blend space blends at once: each samples one of them, so a
-  // Clip sampled tick after tick keeps its context's cache.
-  std::array<ozz::animation::SamplingJob::Context, kMaxBlendedClips> contexts;
-  std::array<std::vector<ozz::math::SoaTransform>, kMaxBlendedClips> sampled;
+  // One per Clip a blend space blends at once, for each stance blended: each
+  // samples one of them, so a Clip sampled tick after tick keeps its context's
+  // cache.
+  std::array<ozz::animation::SamplingJob::Context, kBlendedStances * kMaxBlendedClips> contexts;
+  std::array<std::vector<ozz::math::SoaTransform>, kBlendedStances * kMaxBlendedClips> sampled;
+  // Each stance's blend space blended, the one the body is in first; and the
+  // two stances blended by the change's progress.
+  std::array<std::vector<ozz::math::SoaTransform>, kBlendedStances> stances;
   std::vector<ozz::math::SoaTransform> blended;
 
   // Fits every buffer to skeleton.
   void Fit(const ozz::animation::Skeleton& skeleton) {
     const auto soa_joints = static_cast<std::size_t>(skeleton.num_soa_joints());
-    for (std::size_t slot = 0; slot < kMaxBlendedClips; ++slot) {
+    for (std::size_t slot = 0; slot < contexts.size(); ++slot) {
       if (contexts.at(slot).max_tracks() < skeleton.num_joints()) {
         contexts.at(slot).Resize(skeleton.num_joints());
       }
       sampled.at(slot).resize(soa_joints);
     }
+    for (std::vector<ozz::math::SoaTransform>& stance : stances) {
+      stance.resize(soa_joints);
+    }
     blended.resize(soa_joints);
+  }
+
+  // Blends layers into output over skeleton's rest pose.
+  static void Blend(const ozz::animation::Skeleton& skeleton,
+                    std::span<const ozz::animation::BlendingJob::Layer> layers,
+                    std::vector<ozz::math::SoaTransform>& output) {
+    ozz::animation::BlendingJob blending;
+    blending.layers = {layers.data(), layers.size()};
+    blending.rest_pose = skeleton.joint_rest_poses();
+    blending.output = {output.data(), output.size()};
+    [[maybe_unused]] const bool blended_ok = blending.Run();
+    assert(blended_ok);
+  }
+
+  // Each Clip of stance's blend space at input's velocity, sampled where the
+  // Stride puts it, then blended by its weight into stances[index].
+  void BlendStance(const CharacterClips& clips, physics::Stance stance, const PoseInput& input, std::size_t index) {
+    const LocomotionBlend blend = BlendSpace(clips.Of(stance), LocalVelocity(input.body.velocity, input.yaw));
+    std::array<ozz::animation::BlendingJob::Layer, kMaxBlendedClips> layers{};
+    for (std::size_t each_clip = 0; each_clip < blend.count; ++each_clip) {
+      const ClipWeight& each = blend.clips.at(each_clip);
+      const std::size_t slot = (index * kMaxBlendedClips) + each_clip;
+      std::vector<ozz::math::SoaTransform>& output = sampled.at(slot);
+      ozz::animation::SamplingJob sampling;
+      sampling.animation = &each.clip->animation;
+      sampling.context = &contexts.at(slot);
+      sampling.ratio = RatioAt(*each.clip, input.body.stride);
+      sampling.output = {output.data(), output.size()};
+      [[maybe_unused]] const bool sampled_ok = sampling.Run();
+      // LoadClips checked every Clip's tracks against the Skeleton.
+      assert(sampled_ok);
+      layers.at(each_clip) = {.weight = each.weight, .transform = {output.data(), output.size()}, .joint_weights = {}};
+    }
+    Blend(clips.skeleton, {layers.data(), blend.count}, stances.at(index));
   }
 };
 
@@ -94,35 +140,31 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
   Buffers& buffers = *buffers_;
   buffers.Fit(clips.skeleton);
 
-  // Each Clip of the stance's blend space at the body's velocity, sampled
-  // where the Stride puts it, then blended by its weight.
-  const LocomotionBlend blend = BlendSpace(clips.Of(input.body.stance), LocalVelocity(input.body.velocity, input.yaw));
-  std::array<ozz::animation::BlendingJob::Layer, kMaxBlendedClips> layers{};
-  for (std::size_t slot = 0; slot < blend.count; ++slot) {
-    const ClipWeight& each = blend.clips.at(slot);
-    std::vector<ozz::math::SoaTransform>& sampled = buffers.sampled.at(slot);
-    ozz::animation::SamplingJob sampling;
-    sampling.animation = &each.clip->animation;
-    sampling.context = &buffers.contexts.at(slot);
-    sampling.ratio = RatioAt(*each.clip, input.body.stride);
-    sampling.output = {sampled.data(), sampled.size()};
-    [[maybe_unused]] const bool sampled_ok = sampling.Run();
-    // LoadClips checked every Clip's tracks against the Skeleton.
-    assert(sampled_ok);
-    layers.at(slot) = {.weight = each.weight, .transform = {sampled.data(), sampled.size()}, .joint_weights = {}};
+  // The stance's blend space; while a change of stance is under way, the
+  // stance it left blended into it by how far the change has gone.
+  buffers.BlendStance(clips, input.body.stance, input, 0);
+  const std::vector<ozz::math::SoaTransform>* pose = &buffers.stances.at(0);
+  if (input.body.previous_stance != input.body.stance && input.body.stance_progress < physics::kStanceProgressSteps) {
+    buffers.BlendStance(clips, input.body.previous_stance, input, 1);
+    const float progress =
+        static_cast<float>(input.body.stance_progress) / static_cast<float>(physics::kStanceProgressSteps);
+    const std::array<ozz::animation::BlendingJob::Layer, kBlendedStances> layers{{
+        {.weight = progress,
+         .transform = {buffers.stances.at(0).data(), buffers.stances.at(0).size()},
+         .joint_weights = {}},
+        {.weight = 1.0F - progress,
+         .transform = {buffers.stances.at(1).data(), buffers.stances.at(1).size()},
+         .joint_weights = {}},
+    }};
+    Buffers::Blend(clips.skeleton, layers, buffers.blended);
+    pose = &buffers.blended;
   }
-  ozz::animation::BlendingJob blending;
-  blending.layers = {layers.data(), blend.count};
-  blending.rest_pose = clips.skeleton.joint_rest_poses();
-  blending.output = {buffers.blended.data(), buffers.blended.size()};
-  [[maybe_unused]] const bool blended_ok = blending.Run();
-  assert(blended_ok);
 
   // Each ozz-animation Joint into its Joint of the Skeleton, lane by lane.
   posed.local.resize(skeleton.joints.size());
   const auto joint_count = static_cast<std::size_t>(clips.skeleton.num_joints());
   for (std::size_t block = 0; block * 4 < joint_count; ++block) {
-    const ozz::math::SoaTransform& soa = buffers.blended.at(block);
+    const ozz::math::SoaTransform& soa = pose->at(block);
     const std::array<float, 4> tx = LanesOf(soa.translation.x);
     const std::array<float, 4> ty = LanesOf(soa.translation.y);
     const std::array<float, 4> tz = LanesOf(soa.translation.z);

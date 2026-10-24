@@ -13,8 +13,11 @@
 /// ozz-animation's sampling and blending: its stance's blend space at its
 /// velocity in its own space (augusta/locomotion.h), each Clip sampled where the
 /// Stride puts it between the Clip's two Foot contacts, so two blended Clips
-/// always land the same foot together. The root is where the body's position and
-/// yaw put it (hitbox::RootOf); how low the body is, is its stance's Clips'.
+/// always land the same foot together. While a change of stance is under way,
+/// the stance it left is posed the same way and blended into the new one by how
+/// far the change has gone (physics::BodyState::stance_progress). The root is
+/// where the body's position and yaw put it (hitbox::RootOf); how low the body
+/// is, is its stances' Clips'.
 ///
 /// A pure function of replicated state: the Poser holds ozz-animation's
 /// working buffers alone, so posing the same state twice gives the same pose,
@@ -25,8 +28,8 @@ namespace augusta::animation {
 /// What a player's Hitbox pose follows from: all of it in its Authoritative
 /// State.
 struct PoseInput {
-  /// Its body, as Movement left it this tick: its position, velocity, stance
-  /// and Stride.
+  /// Its body, as Movement left it this tick: its position, velocity, stance,
+  /// Stride and change of stance.
   physics::BodyState body{};
   /// Where it faces, in radians, as a Command's yaw (command::Command).
   float yaw = 0.0F;

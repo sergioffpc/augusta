@@ -44,9 +44,12 @@ its own, which ADR-0061 rules out.
 **Stance changes blend by a replicated progress.** A change of stance blends the
 previous stance's pose into the new one's over a duration the Character authors
 for each pair of stances. The previous stance and the progress are gameplay
-state, replicated and captured. The collider still changes height at once, as
-today, and Movement's rules do not change; the Hitboxes are where the body is
-drawn, halfway through when the change is.
+state, replicated and captured; Movement advances the progress by time over that
+duration, never by a clock of its own. A change back to the stance a change
+still under way left turns that change round where it has got to; a change to a
+third stance starts afresh from the stance it leaves. The collider still changes
+height at once, as today, and Movement's rules do not change; the Hitboxes are
+where the body is drawn, halfway through when the change is.
 
 **In the air.** A body off the ground (`kGrounded`, ADR-0062) takes its `air`
 Clip, sampled by its vertical velocity from rising to falling, in place of the

@@ -5,14 +5,15 @@
 ## Responsibility
 
 Wraps PhysX for collision and movement: player bodies, stance, stamina, the
-Stride advanced by the distance moved over the stride length its caller gives,
-raycasts against the Map, dynamic bodies, and restoring a body to a given state
-for reconciliation. It builds a map's static collision from a verified pack
-(`augusta/map.h`), keeping the opaque Surface id its caller adds each collision
-mesh with and reporting it from the Map raycast, never interpreting it.
-PredictionWorld and SimulationWorld use the same World. It gives a body's
-collision capsule from its state, as plain values a client's Debug overlay
-draws.
+Stride advanced by the distance moved over the stride length its caller gives, a
+change of stance's progress advanced by time over the transition duration its
+caller gives, raycasts against the Map, dynamic bodies, and restoring a body to
+a given state for reconciliation. It builds a map's static collision from a
+verified pack (`augusta/map.h`), keeping the opaque Surface id its caller adds
+each collision mesh with and reporting it from the Map raycast, never
+interpreting it. PredictionWorld and SimulationWorld use the same World. It
+gives a body's collision capsule from its state, as plain values a client's
+Debug overlay draws.
 
 In a Development build, a World's visualization: switched off, or on with what
 PhysX draws and a culling box, then stepped once to copy out PhysX's lines of

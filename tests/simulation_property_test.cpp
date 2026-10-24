@@ -465,7 +465,8 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   const auto lost = *rc::gen::container<std::set<std::size_t>>(rc::gen::inRange<std::size_t>(0, commands.size()));
   const std::size_t losses_end = commands.size() - delay - 1;
 
-  // Both sides advance the Stride by the same Character's Clips.
+  // Both sides advance the Stride and a change of stance by the same
+  // Character's Clips.
   augusta::simulation::Character character = kCharacter;
   character.clips = augusta::clips_fixture::TestClips();
   augusta::simulation::World server(parameters, kTickRate);
@@ -501,6 +502,9 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
   RC_ASSERT(body.stance == authoritative.stance);
   RC_ASSERT(body.exhausted == authoritative.exhausted);
   RC_ASSERT(StrideDistance(body.stride, authoritative.stride) <= kConvergedStride);
+  // A change of stance advances by time alone, the same on both sides.
+  RC_ASSERT(body.previous_stance == authoritative.previous_stance);
+  RC_ASSERT(body.stance_progress == authoritative.stance_progress);
   // The rifle is plain arithmetic, the same on both sides: it converges exactly.
   RC_ASSERT(predicted.rifle == answers.back().rifle);
   RC_CLASSIFY(predicted.rifle_corrections > 0, "the rifle was corrected");

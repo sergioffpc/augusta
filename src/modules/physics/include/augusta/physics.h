@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "augusta/assets.h"
 #include "augusta/math.h"
 
 /// \file
@@ -111,6 +112,10 @@ struct FallState {
   bool grounded = false;
 };
 
+/// How many steps a change of stance's progress has (BodyState::stance_progress):
+/// at this many the change is over, one byte on the wire (ADR-0038).
+inline constexpr int kStanceProgressSteps = 255;
+
 /// A body's full movement-relevant state at a point in time: what
 /// World::Step returns, what World::SetState and World::Restore consume,
 /// and what the caller packages into its own Prediction/Authoritative State
@@ -134,9 +139,31 @@ struct BodyState {
   /// distance the body moves, never by time, so it travels and is restored with
   /// the rest.
   std::uint8_t stride = 0;
+  /// The stance the body changed from on its last change of stance, and how far
+  /// that change has gone, in kStanceProgressSteps steps (ADR-0066): its pose
+  /// blends previous_stance's into stance's by it. Step advances it by the time
+  /// stepped over the change's transition duration (Pacing), never by a clock of
+  /// its own, so it travels and is restored with the rest. A body that never
+  /// changed stance is all in its stance.
+  Stance previous_stance = Stance::kStanding;
+  std::uint8_t stance_progress = kStanceProgressSteps;
 
   bool operator==(const BodyState&) const = default;
 };
+
+/// What a body's Clips (ADR-0066) pace its Movement by, which World::Step takes
+/// from its caller (animation::PacingOf): how far one Stride, a cycle of two
+/// steps, takes the body at its gait, in meters, and how long each change
+/// between two stances takes. The default, without Clips, holds the Stride and
+/// ends a change of stance on the tick it starts.
+struct Pacing {
+  float stride_length = 0.0F;
+  assets::StanceTransitionsData transitions{};
+};
+
+/// How long a change between stances from and to takes in transitions, in
+/// seconds, either way; 0 from a stance to itself.
+[[nodiscard]] float TransitionDuration(const assets::StanceTransitionsData& transitions, Stance from, Stance to);
 
 /// How many steps a Stride's cycle of two steps has: BodyState::stride's 256
 /// values, one byte on the wire (ADR-0038).
@@ -320,13 +347,18 @@ class World {
   /// seconds: resolves collision and movement via PhysX according to
   /// input, applies stance transitions, and applies stamina depletion/
   /// recovery (StaminaConfig). Advances its Stride by the distance it moved
-  /// along the ground this tick over stride_length, the meters one cycle of two
-  /// steps takes at the body's gait (animation::StrideLength), each tick's
-  /// advance rounded to a whole step; a stride_length of 0 or less holds it, as
-  /// does a body that does not move. Returns the resulting state, which is also
-  /// the new internally-held state for handle (visible to a subsequent
-  /// Step, SetState, or Restore call).
-  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time, float stride_length = 0.0F);
+  /// along the ground this tick over pacing's stride length, each tick's
+  /// advance rounded to a whole step; a stride length of 0 or less holds it, as
+  /// does a body that does not move. A change of stance starts its progress
+  /// from the stance it leaves, or, back to the stance a change still under way
+  /// left, from where that change has got to; the progress advances by
+  /// delta_time over pacing's transition duration for the two stances, each
+  /// tick's advance rounded to a whole step, and a duration of 0 ends the change
+  /// at once. The collider takes the new stance's height on the tick it
+  /// changes. Returns the resulting state, which is also the new
+  /// internally-held state for handle (visible to a subsequent Step, SetState,
+  /// or Restore call).
+  BodyState Step(BodyHandle handle, const MovementInput& input, float delta_time, const Pacing& pacing = {});
 
   /// Overwrites handle's state immediately - e.g. for spawning or
   /// respawning a player at a fixed point (US-03). Unlike Restore, the

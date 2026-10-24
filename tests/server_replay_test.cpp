@@ -14,6 +14,7 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
+#include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/replay.h"
 #include "augusta/simulation.h"
@@ -206,6 +207,47 @@ TEST(CaptureReplayTest, AReplayReproducesEachBodysStride) {
     EXPECT_EQ(BodyOf(ticks[i], 1)->body.stride, state.bodies.at(0).body.stride) << "tick " << i;
   }
   EXPECT_NE(BodyOf(ticks.back(), 1)->body.stride, 0);
+}
+
+// As the Stride, a change of stance's progress is re-advanced by the Commands
+// on the Characters' Clips: a body crouching from offset 3 is posed between
+// standing and crouching tick by tick as the live Match's.
+// Requirements: US-21
+TEST(CaptureReplayTest, AReplayReproducesEachBodysChangeOfStance) {
+  Command crouching;
+  crouching.movement.desired_stance = augusta::physics::Stance::kCrouching;
+  constexpr std::uint32_t kTicks = 20;
+  constexpr std::uint32_t kCrouchFrom = 3;
+  std::vector<Captured> events;
+  for (std::uint32_t offset = 0; offset < kTicks; ++offset) {
+    events.push_back(CommandAt(offset, 1, offset < kCrouchFrom ? Command{} : crouching));
+  }
+  events.push_back(EndAt(kTicks));
+  Character crouch = Characters().at(kCharacter);
+  crouch.clips = augusta::clips_fixture::TestClips();
+  const std::unordered_map<std::string, Character> characters = {{kCharacter, crouch}};
+  augusta::parameters::Parameters parameters;
+  parameters.player_count = 2;
+  Replay replay(CaptureOf(std::move(events)), augusta::simulation::World(parameters, kTickRate), characters);
+  augusta::simulation::World live(parameters, kTickRate);
+  live.AddPlayer(augusta::simulation::EntityId{1}, Vec3(10.0F, 0.0F, 0.0F), crouch);
+  live.AddPlayer(augusta::simulation::EntityId{2}, Vec3(-10.0F, 0.0F, 4.0F), crouch);
+
+  const std::vector<ReplayTick> ticks = RunToEnd(replay);
+
+  ASSERT_EQ(ticks.size(), kTicks + 1);
+  bool under_way = false;
+  for (std::uint32_t i = 0; i < ticks.size(); ++i) {
+    const Command command = i < kCrouchFrom ? Command{} : crouching;
+    const augusta::simulation::State state =
+        live.Tick({{.entity = augusta::simulation::EntityId{1}, .command = command}}, 1.0F / kTickRate).state;
+    ASSERT_NE(BodyOf(ticks[i], 1), nullptr);
+    const augusta::physics::BodyState& replayed = BodyOf(ticks[i], 1)->body;
+    EXPECT_EQ(replayed.previous_stance, state.bodies.at(0).body.previous_stance) << "tick " << i;
+    EXPECT_EQ(replayed.stance_progress, state.bodies.at(0).body.stance_progress) << "tick " << i;
+    under_way = under_way || replayed.stance_progress < augusta::physics::kStanceProgressSteps;
+  }
+  EXPECT_TRUE(under_way);
 }
 
 // A round fired at offset 10 whose Seen time was 2 ticks older is judged 2

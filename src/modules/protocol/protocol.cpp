@@ -42,11 +42,13 @@ constexpr unsigned kCommandStanceShift = 4U;
 constexpr std::uint32_t kStanceMask = 0x03U;
 constexpr std::uint32_t kCommandBitsMask = kCommandFlagsMask | (kStanceMask << kCommandStanceShift);
 
-// A body's stance takes bits 0-1 of its bitfield and its flags the bits from 2
-// up: exhausted bit 2, ADS bit 3 (ADR-0038).
+// A body's stance takes bits 0-1 of its bitfield, its flags the bits from 2 up
+// (exhausted bit 2, ADS bit 3), and its previous stance bits 5-6 (ADR-0038).
 constexpr std::uint8_t kBodyFlagsMask = BodyStateWire::kExhausted | BodyStateWire::kAds;
 constexpr unsigned kBodyFlagsShift = 2U;
-constexpr std::uint32_t kBodyBitsMask = kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift);
+constexpr unsigned kPreviousStanceShift = 5U;
+constexpr std::uint32_t kBodyBitsMask =
+    kStanceMask | (std::uint32_t{kBodyFlagsMask} << kBodyFlagsShift) | (kStanceMask << kPreviousStanceShift);
 
 #if AUGUSTA_DEBUG_TOOLS
 // A Shot judgement's bitfield (ADR-0038): what the round struck in bits 0-1,
@@ -169,11 +171,14 @@ void Write(const EntityStateWire& wire, pb::Body& body, Outbound& out) {
   body.set_velocity_z(Steps(wire.body.velocity.z, math::kVelocityGrid));
   const std::uint32_t stance = out.FromEnum(wire.body.stance, StanceWire::kStanding, StanceWire::kProne);
   const std::uint32_t flags = out.FromFlags(wire.body.flags, kBodyFlagsMask);
-  body.set_bits(stance | (flags << kBodyFlagsShift));
+  const std::uint32_t previous_stance =
+      out.FromEnum(wire.body.previous_stance, StanceWire::kStanding, StanceWire::kProne);
+  body.set_bits(stance | (flags << kBodyFlagsShift) | (previous_stance << kPreviousStanceShift));
   body.set_stamina(UnsignedSteps(wire.body.stamina, math::kStaminaGrid));
   body.set_yaw(Steps(wire.yaw, math::kAngleGrid));
   body.set_pitch(Steps(wire.pitch, math::kAngleGrid));
   body.set_stride(wire.body.stride);
+  body.set_stance_to_go(BodyStateWire::kStanceProgressOver - wire.body.stance_progress);
 }
 
 // An Authoritative State's shared fields: what every recipient of a tick is told alike.
@@ -579,11 +584,15 @@ EntityStateWire Read(const pb::Body& body, Inbound& in) {
   wire.body.velocity = in.FromSteps(body.velocity_x(), body.velocity_y(), body.velocity_z(), math::kVelocityGrid);
   const std::uint32_t bits = in.ToBits(body.bits(), kBodyBitsMask);
   wire.body.stance = in.ToEnum(bits & kStanceMask, StanceWire::kStanding, StanceWire::kProne);
-  wire.body.flags = static_cast<std::uint8_t>(bits >> kBodyFlagsShift);
+  wire.body.flags = static_cast<std::uint8_t>((bits >> kBodyFlagsShift) & kBodyFlagsMask);
+  wire.body.previous_stance =
+      in.ToEnum((bits >> kPreviousStanceShift) & kStanceMask, StanceWire::kStanding, StanceWire::kProne);
   wire.body.stamina = in.FromSteps(body.stamina(), math::kStaminaGrid);
   wire.yaw = in.FromSteps(body.yaw(), math::kAngleGrid);
   wire.pitch = in.FromSteps(body.pitch(), math::kAngleGrid);
   wire.body.stride = in.Narrow(body.stride());
+  const std::uint8_t to_go = in.Narrow(body.stance_to_go());
+  wire.body.stance_progress = static_cast<std::uint8_t>(BodyStateWire::kStanceProgressOver - to_go);
   return wire;
 }
 
