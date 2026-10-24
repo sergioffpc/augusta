@@ -41,9 +41,8 @@ the issues is ENGINEERING.md's Milestones section.
     - [M18 — Protocol Buffers (M)](#m18--protocol-buffers-m)
 - [v6 — Client Diagnosability (6.0.0, 2026-10-22)](#v6--client-diagnosability-600-2026-10-22)
     - [M18b — Client Diagnosability (M)](#m18b--client-diagnosability-m)
-- [Debug Tooling (planned)](#debug-tooling-planned)
+- [v7 — Debug and Network Tooling (7.0.0, 2026-10-24)](#v7--debug-and-network-tooling-700-2026-10-24)
     - [M19a — Debug Tooling (L)](#m19a--debug-tooling-l)
-- [Network Tooling (planned)](#network-tooling-planned)
     - [M19b — Network Tooling (M)](#m19b--network-tooling-m)
 - [Authoritative Body (planned)](#authoritative-body-planned)
     - [M20 — Skeleton (M)](#m20--skeleton-m)
@@ -417,13 +416,16 @@ ADR-0055, NFR-10 **Exit criteria:** a client that crashes in a playtest leaves a
 log and a Crash dump under its Run ID, and that Run ID leads, through the
 server's lines, to the Matches it played and the Session IDs it played against
 
-## Debug Tooling (planned)
+## v7 — Debug and Network Tooling (7.0.0, 2026-10-24)
 
 Debug Tooling lets developers see what the game does before the releases that
 build on it: what collides, which bodies the server holds and where a Shot was
-judged. Every tool is compiled out of the Shipping build players get, not merely
-switched off. The Smoke screen and rendering overlays wait on what they show,
-and ship with the releases that bring it.
+judged. Network Tooling shows what the network carries, from the client's own
+numbers and from a capture Wireshark reads. Every tool is compiled out of the
+Shipping build players get, not merely switched off. The Smoke screen and
+rendering overlays wait on what they show, and ship with the releases that bring
+it. F1 and the `debug` section changed what a config may say, so both shipped in
+one major.
 
 ### M19a — Debug Tooling (L)
 
@@ -441,12 +443,6 @@ and ship with the releases that bring it.
 **Exercises:** ADR-0074, ADR-0075, ADR-0038, ADR-0044 **Exit criteria:** a
 Development build shows where the server judged a Shot against the Hitboxes the
 shooter saw, and a Shipping build holds no debug tool
-
-## Network Tooling (planned)
-
-Debug Tooling shows the game; Network Tooling shows what the network carries,
-from the client's own numbers and from a capture Wireshark reads. Its tools are
-compiled out of the Shipping build like the rest.
 
 ### M19b — Network Tooling (M)
 
