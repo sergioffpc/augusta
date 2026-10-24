@@ -308,6 +308,8 @@ struct World::Impl {
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
           OnBallistics(it.delta_time(), it.entity(row), bullet);
         });
+    // HitDetection registers no system: its test is folded into
+    // BallisticsSystem's Step call (Phase::kHitDetection).
     // Writes Body and Intent, so a player it kills is out of the State Commit
     // packages on the same tick.
     ecs.system<const Player, Health>("DamageSystem")
@@ -322,8 +324,10 @@ struct World::Impl {
            "CommitSystem")
         .kind(phases[kCommit])
         .each([this](const Player& player, const Body& body, const Facing& facing, const Health& health,
-                     const Rifle& rifle, const PosedJoints& posed,
-                     HitboxHistory& history) { OnCommit(player, body, facing, health, rifle, posed, history); });
+                     const Rifle& rifle, const PosedJoints& posed, HitboxHistory& history) {
+          PackageState(player, body, facing, health, rifle);
+          RecordHitboxHistory(posed, history);
+        });
   }
 
   // A player with no command this tick stops, and keeps the stance it asked
@@ -570,15 +574,19 @@ struct World::Impl {
     return policy_bridge.AssignSpawns(view, spawn_points, tick);
   }
 
-  // Packages one living player into the tick's State, and keeps its Joints as
-  // Posing posed them, where that State puts its body, in its Hitbox history:
-  // every bullet of this tick has been judged by now, and a Shooter's delay is
-  // a tick or more, so none of them needs this tick's.
-  void OnCommit(const Player& player, const Body& body, const Facing& facing, const Health& health, const Rifle& rifle,
-                const PosedJoints& posed, HitboxHistory& history) {
+  // Commit, first: packages one living player into the tick's State.
+  void PackageState(const Player& player, const Body& body, const Facing& facing, const Health& health,
+                    const Rifle& rifle) {
     committed.bodies.push_back(EntityState{
         .entity = player.entity, .body = body.state, .yaw = facing.yaw, .health = health.value, .rifle = rifle.state});
     committed.alive.push_back(player.entity);
+  }
+
+  // Commit, then: keeps one living player's Joints as Posing posed them, where
+  // the State puts its body, in its Hitbox history. Every bullet of this tick
+  // has been judged by now, and a Shooter's delay is a tick or more, so none of
+  // them needs this tick's.
+  void RecordHitboxHistory(const PosedJoints& posed, HitboxHistory& history) const {
     history.poses.Record(tick, posed.posed);
   }
 };

@@ -1,6 +1,7 @@
 #ifndef AUGUSTA_PHYSICS_H_
 #define AUGUSTA_PHYSICS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -37,9 +38,13 @@ enum class Stance {
   kStanding,
   /// Crouching: reduced collision height, reduced movement speed.
   kCrouching,
-  /// Prone: minimal collision height, slowest movement speed.
+  /// Prone: minimal collision height, slowest movement speed. Keep last:
+  /// kStanceCount counts from it.
   kProne,
 };
+
+/// How many stances Stance names, numbered from 0.
+inline constexpr std::size_t kStanceCount = static_cast<std::size_t>(Stance::kProne) + 1;
 
 /// How tall a body is in stance, feet to the top of its collision capsule, in
 /// meters - lower crouching than standing, and lower prone than crouching.

@@ -17,6 +17,7 @@
 #include "augusta/renderer.h"
 
 #if AUGUSTA_DEBUG_TOOLS
+#include "augusta/animation.h"
 #include "augusta/hitbox.h"
 #endif
 
@@ -35,6 +36,11 @@ std::string DescribeCharacterError(const CharacterError& error) {
     case CharacterErrorCode::kHitboxesUnresolved:
       return std::format("hitboxes of character {} {}", error.character,
                          assets::DescribeResolveError(error.resolve_error, "hitbox"));
+    case CharacterErrorCode::kSkeletonUnresolved:
+      return std::format("skeleton of character {} {}", error.character,
+                         assets::DescribeResolveError(error.resolve_error, "skeleton"));
+    case CharacterErrorCode::kJointUnresolved:
+      return std::format("a hitbox of character {} names no joint of its skeleton: {}", error.character, error.subject);
     case CharacterErrorCode::kHitboxRejected:
       return std::format("{} hitbox of character {} rejected: {}", error.subject, error.character,
                          physics::DescribeCollisionMeshError(error.mesh_error));
@@ -76,28 +82,44 @@ std::expected<math::Vec3, CharacterError> LoadCharacterEye(std::string_view char
 
 #if AUGUSTA_DEBUG_TOOLS
 std::expected<std::vector<hitbox::CharacterHitbox>, CharacterError> LoadCharacterHitboxes(
-    std::string_view character, const HitboxesResolver& resolve_hitboxes) {
-  const auto resolved = resolve_hitboxes(character);
-  if (!resolved) {
-    return std::unexpected(CharacterError{.code = CharacterErrorCode::kHitboxesUnresolved,
+    std::string_view character, const SkeletonResolver& resolve_skeleton, const HitboxesResolver& resolve_hitboxes) {
+  const auto failed = [character](CharacterErrorCode code, std::string subject = {},
+                                  assets::ResolveError resolve_error = {},
+                                  physics::CollisionMeshError mesh_error = {}) {
+    return std::unexpected(CharacterError{.code = code,
                                           .character = std::string(character),
-                                          .subject = {},
-                                          .resolve_error = resolved.error()});
+                                          .subject = std::move(subject),
+                                          .resolve_error = resolve_error,
+                                          .mesh_error = mesh_error});
+  };
+  auto resolved = resolve_hitboxes(character);
+  if (!resolved) {
+    return failed(CharacterErrorCode::kHitboxesUnresolved, {}, resolved.error());
+  }
+  const auto skeleton = resolve_skeleton(character);
+  if (!skeleton) {
+    return failed(CharacterErrorCode::kSkeletonUnresolved, {}, skeleton.error());
+  }
+  auto bound = assets::BindHitboxes(*skeleton, *std::move(resolved));
+  if (!bound) {
+    return failed(CharacterErrorCode::kJointUnresolved, std::move(bound.error().joint));
   }
   std::vector<hitbox::CharacterHitbox> hitboxes;
-  hitboxes.reserve(resolved->size());
-  for (const assets::HitboxData& data : *resolved) {
-    auto converted = hitbox::FromPack(data);
+  hitboxes.reserve(bound->size());
+  for (const assets::JointHitbox& one : *bound) {
+    auto converted = hitbox::FromPack(one);
     if (!converted) {
-      return std::unexpected(CharacterError{.code = CharacterErrorCode::kHitboxRejected,
-                                            .character = std::string(character),
-                                            .subject = std::string(assets::BodyPartName(data.part)),
-                                            .resolve_error = {},
-                                            .mesh_error = converted.error()});
+      return failed(CharacterErrorCode::kHitboxRejected, std::string(assets::BodyPartName(one.hitbox.part)), {},
+                    converted.error());
     }
     hitboxes.push_back(*std::move(converted));
   }
-  return hitboxes;
+  std::vector<hitbox::CharacterHitbox> in_root_space;
+  in_root_space.reserve(hitboxes.size());
+  for (hitbox::PlacedHitbox& placed : animation::PlaceAtRest(*skeleton, hitboxes, hitbox::Pose{})) {
+    in_root_space.push_back(hitbox::CharacterHitbox{.part = placed.part, .triangles = std::move(placed.triangles)});
+  }
+  return in_root_space;
 }
 #endif
 

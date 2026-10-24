@@ -1475,11 +1475,13 @@ TEST_F(PosedHitTest, TheSkeletonsRootTurnsItsHitboxesWithWhereItFaces) {
 
 // Bob turns a quarter turn on one tick, swinging his hand toward Alice, so a
 // round crosses it on the tick it is fired. Halfway between that tick and the
-// one before, Lag compensation composes his hand from his Joints as the Hitbox
-// history keeps them (ADR-0044): an eighth of a turn round, still kHandSide
-// from his feet, and not on the chord between where the two ticks held it.
+// one before, Lag compensation turns his root's facing along the shorter arc
+// and composes his Joints, the Rest pose's on both ticks, onto it (ADR-0044):
+// his hand an eighth of a turn round, still kHandSide from his feet, and not on
+// the chord between where the two ticks held it. The Rest pose being his only
+// pose, no Joint's own interpolation is exercised.
 // Requirements: US-11, NFR-02
-TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsSwingsAHeldOutHitboxAlongTheArc) {
+TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsTurnsTheRootAlongTheArcInTheRestPose) {
   bob_.yaw = -std::numbers::pi_v<float> / 2.0F;
   const augusta::tick::Tick turned = Tick(Command{}).tick;
   const float eighth_turn = std::numbers::pi_v<float> / 4.0F;

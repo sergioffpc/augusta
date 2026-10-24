@@ -2,6 +2,7 @@
 #define AUGUSTA_SIMULATION_HITBOX_POSING_H_
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -45,11 +46,15 @@ class Reach {
   Reach() = default;
 
   /// How far they reach in stance: as far as the root lowers them with it.
-  [[nodiscard]] float In(physics::Stance stance) const { return by_stance_.at(std::to_underlying(stance)); }
+  [[nodiscard]] float In(physics::Stance stance) const {
+    const auto index = static_cast<std::size_t>(stance);
+    assert(index < by_stance_.size());
+    return by_stance_[index];
+  }
 
  private:
   // Index for index with physics::Stance's values.
-  std::array<float, 3> by_stance_{};
+  std::array<float, physics::kStanceCount> by_stance_{};
 };
 
 /// A player a bullet is tested against, and the pose its hitboxes are placed by.
