@@ -403,7 +403,7 @@ after the tick.
 | HitDetection       | Mechanism                     | Resolves impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044)                                      |
 | Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                           |
 | Scripts/Behaviours | Policy (Lua, sandboxed)       | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action                                                 |
-| Commit             | Mechanism                     | Packages tick state into Authoritative State for Networking                                                                                    |
+| Commit             | Mechanism                     | Packages tick state into Authoritative State for Networking, and records the posed Joints in the Hitbox history (ADR-0044)                     |
 
 **Tooling** (offline, not shipped)
 

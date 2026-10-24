@@ -5,10 +5,10 @@ presentation, on physics and gameplay alone.
 
 ## Responsibility
 
-A Character's Skeleton posed: from a player's Hitbox pose, the world transform
-of each of its Joints, which places the Hitboxes bound to them. Until a
-Character has Clips the pose is the Rest pose, the stance and the facing carried
-by the Skeleton's root.
+A Character's Skeleton posed: from a player's Hitbox pose, each of its Joints
+relative to its parent and the world transform that composes, which places the
+Hitboxes bound to them. Until a Character has Clips the pose is the Rest pose,
+the stance and the facing carried by the Skeleton's root.
 
 ## Not its responsibility
 

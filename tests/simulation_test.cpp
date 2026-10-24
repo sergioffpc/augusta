@@ -1473,6 +1473,27 @@ TEST_F(PosedHitTest, TheSkeletonsRootTurnsItsHitboxesWithWhereItFaces) {
   EXPECT_EQ(turned[0].part, BodyPart::kLimb);
 }
 
+// Bob turns a quarter turn on one tick, swinging his hand toward Alice, so a
+// round crosses it on the tick it is fired. Halfway between that tick and the
+// one before, Lag compensation composes his hand from his Joints as the Hitbox
+// history keeps them (ADR-0044): an eighth of a turn round, still kHandSide
+// from his feet, and not on the chord between where the two ticks held it.
+// Requirements: US-11, NFR-02
+TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsSwingsAHeldOutHitboxAlongTheArc) {
+  bob_.yaw = -std::numbers::pi_v<float> / 2.0F;
+  const augusta::tick::Tick turned = Tick(Command{}).tick;
+  const float eighth_turn = std::numbers::pi_v<float> / 4.0F;
+  const Vec3 on_the_arc(kHandSide * std::cos(eighth_turn), kHandHeight, kHandSide * std::sin(eighth_turn));
+  const Vec3 on_the_chord(kHandSide / 2.0F, kHandHeight, kHandSide / 2.0F);
+
+  const std::vector<Hit> arc = ShootAt(on_the_arc, turned - 1, 0.5F);
+  const std::vector<Hit> chord = ShootAt(on_the_chord, turned - 1, 0.5F);
+
+  ASSERT_EQ(arc.size(), 1U);
+  EXPECT_EQ(arc[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(chord.empty());
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);

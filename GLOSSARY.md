@@ -540,11 +540,12 @@ that Command in, capped at 300 ms. Fixed when the Shot is fired, it holds for
 the bullet's whole flight (ADR-0044). _Avoid_: Ping, lag, latency, rewind time
 (the RTT is only part of it, next to the Interpolation delay)
 
-**Hitbox history**: Every player's pose (position, stance and facing) on each of
-the Authoritative server's recent ticks, as that tick's Authoritative State
-reported it: enough ticks to cover the Shooter's delay's cap, 18 at 60 Hz. What
-Lag compensation places a player's Hitboxes by. _Avoid_: Rewind buffer, position
-history, snapshot history
+**Hitbox history**: Every player's posed Joints on each of the Authoritative
+server's recent ticks, as that tick's Authoritative State posed them: where its
+root was (position, stance and facing), and each Joint that carries a Hitbox or
+is the ancestor of one. Enough ticks to cover the Shooter's delay's cap, 18 at
+60 Hz. What Lag compensation places a player's Hitboxes by. _Avoid_: Rewind
+buffer, position history, snapshot history
 
 **Lag compensation**: Judging a bullet against the hitboxes as they were the
 Shooter's delay ago, so a shot that hit on the shooter's screen hits on the
