@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_CLIENT_PROFILING_PANEL_H_
-#define AUGUSTA_CLIENT_PROFILING_PANEL_H_
+#ifndef AUGUSTA_CLIENT_DEBUG_PROFILING_PANEL_H_
+#define AUGUSTA_CLIENT_DEBUG_PROFILING_PANEL_H_
 
 #include <string_view>
 
@@ -62,4 +62,4 @@ class ProfilingPanel {
 
 }  // namespace augusta::client
 
-#endif  // AUGUSTA_CLIENT_PROFILING_PANEL_H_
+#endif  // AUGUSTA_CLIENT_DEBUG_PROFILING_PANEL_H_

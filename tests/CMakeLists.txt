@@ -977,27 +977,27 @@ if(AUGUSTA_DEBUG_TOOLS)
   if(TARGET augusta_client_net_stats_tests)
     target_sources(augusta_client_net_stats_tests PRIVATE client_net_stats_debug_test.cpp)
   endif()
-  # The Profiling Debug panel (profiling_panel.h), private to the client
+  # The Profiling Debug panel (debug_profiling_panel.h), private to the client
   # Runtime, as net_stats.h is.
-  if(TARGET augusta_client_profiling_panel)
-    add_executable(augusta_client_profiling_panel_tests client_profiling_panel_test.cpp)
+  if(TARGET augusta_client_debug_profiling_panel)
+    add_executable(augusta_client_debug_profiling_panel_tests client_debug_profiling_panel_test.cpp)
     target_link_libraries(
-      augusta_client_profiling_panel_tests
-      PRIVATE augusta_client_profiling_panel GTest::gtest GTest::gtest_main
+      augusta_client_debug_profiling_panel_tests
+      PRIVATE augusta_client_debug_profiling_panel GTest::gtest GTest::gtest_main
     )
-    target_include_directories(augusta_client_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
-    gtest_discover_tests(augusta_client_profiling_panel_tests DISCOVERY_TIMEOUT 30)
+    target_include_directories(augusta_client_debug_profiling_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_debug_profiling_panel_tests DISCOVERY_TIMEOUT 30)
   endif()
   # Which debug tools the client's Debug index lists (debug_index_entries.h),
-  # private to the client Runtime, as profiling_panel.h is.
+  # private to the client Runtime, as debug_profiling_panel.h is.
   if(TARGET augusta_client_debug_index_entries)
     add_executable(augusta_client_debug_index_entries_tests client_debug_index_entries_test.cpp)
     target_link_libraries(
       augusta_client_debug_index_entries_tests
       PRIVATE
         augusta_client_debug_index_entries
-        augusta_client_network_panel
-        augusta_client_profiling_panel
+        augusta_client_debug_network_panel
+        augusta_client_debug_profiling_panel
         augusta_presentation
         GTest::gtest
         GTest::gtest_main
@@ -1006,16 +1006,16 @@ if(AUGUSTA_DEBUG_TOOLS)
     # Links PhysX through augusta_presentation, as augusta_tracers_tests does.
     gtest_discover_tests(augusta_client_debug_index_entries_tests DISCOVERY_TIMEOUT 30)
   endif()
-  # The Network Debug panel (network_panel.h), private to the client Runtime,
-  # as net_stats.h is.
-  if(TARGET augusta_client_network_panel)
-    add_executable(augusta_client_network_panel_tests client_network_panel_test.cpp)
+  # The Network Debug panel (debug_network_panel.h), private to the client
+  # Runtime, as net_stats.h is.
+  if(TARGET augusta_client_debug_network_panel)
+    add_executable(augusta_client_debug_network_panel_tests client_debug_network_panel_test.cpp)
     target_link_libraries(
-      augusta_client_network_panel_tests
-      PRIVATE augusta_client_network_panel GTest::gtest GTest::gtest_main
+      augusta_client_debug_network_panel_tests
+      PRIVATE augusta_client_debug_network_panel GTest::gtest GTest::gtest_main
     )
-    target_include_directories(augusta_client_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
-    gtest_discover_tests(augusta_client_network_panel_tests DISCOVERY_TIMEOUT 30)
+    target_include_directories(augusta_client_debug_network_panel_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/client)
+    gtest_discover_tests(augusta_client_debug_network_panel_tests DISCOVERY_TIMEOUT 30)
   endif()
   if(TARGET augusta_client_renderer_smoke_tests)
     target_sources(

@@ -7,8 +7,8 @@
 #include "augusta/debug_index.h"
 #include "augusta/physics_overlays.h"
 #include "debug_index_entries.h"
-#include "network_panel.h"
-#include "profiling_panel.h"
+#include "debug_network_panel.h"
+#include "debug_profiling_panel.h"
 
 // Which debug tools the client Runtime's Debug index lists, and which Physics
 // overlays start on, by the client's mode (ADR-0075): private to the Runtime,

@@ -6,8 +6,8 @@
 #include "augusta/client_config.h"
 #include "augusta/debug_index.h"
 #include "augusta/physics_overlays.h"
-#include "network_panel.h"
-#include "profiling_panel.h"
+#include "debug_network_panel.h"
+#include "debug_profiling_panel.h"
 
 namespace augusta::client {
 

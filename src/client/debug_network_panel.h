@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_CLIENT_NETWORK_PANEL_H_
-#define AUGUSTA_CLIENT_NETWORK_PANEL_H_
+#ifndef AUGUSTA_CLIENT_DEBUG_NETWORK_PANEL_H_
+#define AUGUSTA_CLIENT_DEBUG_NETWORK_PANEL_H_
 
 #include <array>
 #include <chrono>
@@ -272,4 +272,4 @@ class NetworkPanel {
 
 }  // namespace augusta::client
 
-#endif  // AUGUSTA_CLIENT_NETWORK_PANEL_H_
+#endif  // AUGUSTA_CLIENT_DEBUG_NETWORK_PANEL_H_
