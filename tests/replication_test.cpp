@@ -219,6 +219,23 @@ TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyFaces) {
   EXPECT_EQ(updates.bodies[1].yaw, 0.0F);
 }
 
+// What poses a body, a pitch and ADS among it, is every recipient's (ADR-0066).
+TEST(ReplicationTest, EveryRecipientIsToldWhereEachBodyLooksAndWhetherItAims) {
+  EntityState aiming = PlayerAt(1, 0.0F);
+  aiming.pitch = -0.5F;
+  aiming.ads = true;
+  const State state = StateOf({aiming, PlayerAt(2, 0.0F)});
+  const std::array<Recipient, 1> recipients = {Recipient{.entity = static_cast<EntityId>(2)}};
+
+  const auto updates = PlanUpdates(state, 1, recipients);
+
+  ASSERT_EQ(updates.bodies.size(), 2U);
+  EXPECT_EQ(updates.bodies[0].pitch, -0.5F);
+  EXPECT_TRUE(updates.bodies[0].ads);
+  EXPECT_EQ(updates.bodies[1].pitch, 0.0F);
+  EXPECT_FALSE(updates.bodies[1].ads);
+}
+
 TEST(ReplicationTest, EachHitIsConfirmedToItsShooterAloneWithItsTargetBodyPartAndDamage) {
   State state;
   state.hits = {{.shooter = static_cast<EntityId>(1),

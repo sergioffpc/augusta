@@ -195,6 +195,39 @@ TEST_F(SimulationTest, APlayerWithNoCommandStopsAndKeepsItsStance) {
   EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
 }
 
+// Every side learns where a body looks and whether it aims down sights from
+// the state alone (ADR-0066), on the grid the pitch travels on (ADR-0038).
+TEST_F(SimulationTest, APlayersStateCarriesThePitchAndAdsOfTheCommandItApplied) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world_.AddPlayer(kBob, Vec3(0.0F, 0.0F, 10.0F), kCharacter);
+  Command aiming;
+  aiming.pitch = -0.1234567F;
+  aiming.ads = true;
+
+  const State state = world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick).state;
+
+  ASSERT_EQ(state.bodies.size(), 2U);
+  EXPECT_EQ(state.bodies[0].pitch, augusta::math::SnapAngle(-0.1234567F));
+  EXPECT_TRUE(state.bodies[0].ads);
+  EXPECT_EQ(state.bodies[1].pitch, 0.0F);
+  EXPECT_FALSE(state.bodies[1].ads);
+}
+
+// As it keeps where it faces.
+TEST_F(SimulationTest, APlayerWithNoCommandKeepsItsPitchAndAds) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  Command aiming;
+  aiming.pitch = 0.5F;
+  aiming.ads = true;
+  world_.Tick({PlayerCommand{.entity = kAlice, .command = aiming}}, kTick);
+
+  const State state = Run(3, {});
+
+  ASSERT_EQ(state.bodies.size(), 1U);
+  EXPECT_EQ(state.bodies[0].pitch, 0.5F);
+  EXPECT_TRUE(state.bodies[0].ads);
+}
+
 // Requirements: US-15
 TEST_F(SimulationTest, ACommandForAPlayerNotInTheWorldIsIgnored) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);

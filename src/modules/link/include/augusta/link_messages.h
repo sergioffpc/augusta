@@ -92,9 +92,6 @@ void FillRecipientFields(protocol::AuthoritativeStateWire& state, const Authorit
 [[nodiscard]] protocol::MatchEndWire ToWire(const MatchEnd& end);
 [[nodiscard]] MatchEnd FromWire(const protocol::MatchEndWire& end);
 
-[[nodiscard]] protocol::ReplayViewWire ToWire(const ReplayView& view);
-[[nodiscard]] ReplayView FromWire(const protocol::ReplayViewWire& view);
-
 [[nodiscard]] protocol::ReplayListingWire ToWire(const ReplayListing& listing);
 [[nodiscard]] ReplayListing FromWire(const protocol::ReplayListingWire& listing);
 

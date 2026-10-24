@@ -58,8 +58,6 @@ using EntityBody = link::EntityBody;
 using AuthoritativeState = link::AuthoritativeState;
 using Shot = link::Shot;
 using HitConfirmation = link::HitConfirmation;
-using PlayerView = link::PlayerView;
-using ReplayView = link::ReplayView;
 using Death = link::Death;
 using RosterEntry = link::RosterEntry;
 using Lobby = link::Lobby;
@@ -169,9 +167,6 @@ struct ServerView {
   std::vector<AuthoritativeState> recent_authoritative;
   /// The bodies of the match in progress whose Death has been told.
   std::vector<EntityId> dead;
-  /// The newest Replay view of the Replay this client watches (ADR-0051), a
-  /// Replay viewer's only; only while in_match.
-  std::optional<ReplayView> replay_view;
 
   /// Whether this client is waiting to be admitted, in the Lobby, or in a match.
   [[nodiscard]] Phase GetPhase() const;

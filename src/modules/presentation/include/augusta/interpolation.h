@@ -136,17 +136,31 @@ struct SeenTime {
 [[nodiscard]] SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_tick,
                                   tick::Tick newest_tick);
 
-/// One remote player's body as shown this frame: position and velocity
-/// linearly interpolated between the two surrounding updates, and facing along
-/// the shorter arc between them (math::LerpAngle, as the server poses its
-/// hitboxes, ADR-0044); stance (a discrete state, not a number) taken from
-/// whichever of the two is nearer the sample point.
+/// Where a player aims: its view's yaw and pitch, in radians
+/// (command::Command's), and whether it holds ADS. The local player's as of a
+/// render frame, newer than its latest Command's, which is only as new as the
+/// last tick; a remote player's as an Authoritative State tells it.
+struct Aim {
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  bool ads = false;
+};
+
+/// One remote player's body as shown this frame: position, velocity and the
+/// view's pitch linearly interpolated between the two surrounding updates, and
+/// facing along the shorter arc between them (math::LerpAngle, as the server
+/// poses its hitboxes, ADR-0044); stance and ADS (discrete states, not
+/// numbers) taken from whichever of the two is nearer the sample point.
 struct RemoteBody {
   math::Vec3 position{};
   math::Vec3 velocity{};
   /// Where the body faces: the yaw of its player's view, in radians (command::Command).
   float yaw = 0.0F;
+  /// Where its player's view looks up or down, in radians (command::Command).
+  float pitch = 0.0F;
   physics::Stance stance = physics::Stance::kStanding;
+  /// Whether its player aims down sights.
+  bool ads = false;
 };
 
 /// One entity's interpolated body, as Sample returns it.
@@ -163,13 +177,14 @@ struct RemotePlayer {
 /// whole match; bodies come and go as players leave.
 class RemoteInterpolator {
  public:
-  /// Records entity's body as of server_time, the update's time on the
-  /// server's timeline (its tick × the tick duration) - not when it arrived.
+  /// Records entity's body, and where its player aims, as of server_time, the
+  /// update's time on the server's timeline (its tick × the tick duration) -
+  /// not when it arrived.
   /// Becomes this entity's newest update; beyond kUpdatesKept, its oldest is
   /// dropped. A server_time at or before the entity's current newest is
   /// ignored: out-of-order or repeated Authoritative State cannot move
   /// interpolation backward.
-  void Record(EntityId entity, double server_time, const physics::BodyState& body, float yaw);
+  void Record(EntityId entity, double server_time, const physics::BodyState& body, const Aim& aim);
 
   /// Forgets every buffered entity not present in current - the disconnect
   /// case, driven by each Authoritative State's full player list rather than
@@ -186,7 +201,7 @@ class RemoteInterpolator {
   struct Update {
     double server_time = 0.0;
     physics::BodyState body{};
-    float yaw = 0.0F;
+    Aim aim{};
   };
   // One entity's newest kUpdatesKept updates, oldest first, overwriting the
   // oldest in place once full rather than shifting the rest down per update.

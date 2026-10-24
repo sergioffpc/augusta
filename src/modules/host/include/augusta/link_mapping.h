@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <span>
-#include <vector>
 
 #include <boost/uuid/uuid.hpp>
 
@@ -11,15 +10,14 @@
 #include "augusta/match.h"
 #include "augusta/math.h"
 #include "augusta/parameters.h"
-#include "augusta/replay.h"
 #include "augusta/replication.h"
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 
 /// \file
 /// The conversions Host makes at the Link's edge (ADR-0038), the way
-/// augusta/simulation_mapping.h makes them at SimulationWorld's: what Match,
-/// replication and a Replay decide to send, which name players and bodies by
+/// augusta/simulation_mapping.h makes them at SimulationWorld's: what Match
+/// and replication decide to send, which name players and bodies by
 /// the server's own IDs, as the Link's messages (augusta/link_types.h), which
 /// name them by the same numbers. A Session ID is one boost::uuids::uuid on
 /// both sides, so it needs no conversion. The Link alone turns those into the
@@ -61,9 +59,6 @@ void FillRecipientFields(link::AuthoritativeState& state, const replication::Rec
 [[nodiscard]] link::HitConfirmation ToLink(const replication::HitConfirmation& hit);
 
 [[nodiscard]] link::Death ToLink(const replication::Death& death);
-
-/// What each player of a Replay looked like on tick, as its viewer's Replay view.
-[[nodiscard]] link::ReplayView ToLink(const std::vector<PlayerView>& views, tick::Tick tick);
 
 #if AUGUSTA_DEBUG_TOOLS
 /// How SimulationWorld judged a round, as its shooter is told it (ADR-0038):

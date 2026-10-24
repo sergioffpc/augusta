@@ -106,8 +106,6 @@ enum class MessageTypeWire : std::uint8_t {
   kReplayList = 14,
   /// Client to server: asks a replay server to replay one Match capture to this client (ADR-0051).
   kReplayRequest = 15,
-  /// Server to client: every player's pitch and ADS on one tick of a Replay, to its Replay viewer alone.
-  kReplayView = 16,
   /// Client to server: asks to join the Lobby as a Captured player, naming its spawn (ADR-0050).
   kReenactRequest = 17,
 #if AUGUSTA_DEBUG_TOOLS
@@ -154,14 +152,17 @@ enum class BodyPartWire : std::uint8_t {
 
 /// One player's body as the server simulated it.
 struct BodyStateWire {
-  /// The bits of flags: the body ran its stamina out and has not yet recovered.
+  /// The bits of flags: the body ran its stamina out and has not yet
+  /// recovered; its player aims down sights, as the Command the server applied
+  /// said.
   static constexpr std::uint8_t kExhausted = 1U << 0U;
+  static constexpr std::uint8_t kAds = 1U << 1U;
 
   math::Vec3 position{};
   math::Vec3 velocity{};
   /// Remaining stamina, 0 to 1.
   float stamina = 1.0F;
-  /// Any of kExhausted; no other bit.
+  /// Any of kExhausted and kAds; no other bit.
   std::uint8_t flags = 0;
   StanceWire stance = StanceWire::kStanding;
 
@@ -328,6 +329,8 @@ struct EntityStateWire {
   BodyStateWire body{};
   /// Where the body faces: the yaw of its player's view, in radians.
   float yaw = 0.0F;
+  /// Where its player's view looks up or down, in radians, on the angle grid.
+  float pitch = 0.0F;
 
   bool operator==(const EntityStateWire&) const = default;
 };
@@ -586,32 +589,6 @@ struct ReplayRequestWire {
   bool operator==(const ReplayRequestWire&) const = default;
 };
 
-/// Where one player of a Replay looked on a tick, from the Command the World ran.
-struct PlayerViewWire {
-  /// The bits of flags: the player held ADS.
-  static constexpr std::uint8_t kAds = 1U << 0U;
-
-  /// The view's pitch, in radians, on the angle grid.
-  float pitch = 0.0F;
-  /// The player's body.
-  EntityIdWire entity{};
-  /// kAds or not; no other bit.
-  std::uint8_t flags = 0;
-
-  bool operator==(const PlayerViewWire&) const = default;
-};
-
-/// Server to client, unreliably and to a Replay viewer alone: what each player
-/// saw on one tick of its Replay, which no Authoritative State carries.
-struct ReplayViewWire {
-  /// The tick, as the Authoritative State of the same tick names it.
-  tick::Tick tick = 0;
-  /// Every player handed a Command on the tick, at most limits::kMaxPlayers.
-  std::vector<PlayerViewWire> players;
-
-  bool operator==(const ReplayViewWire&) const = default;
-};
-
 #if AUGUSTA_DEBUG_TOOLS
 /// Client to server, in a Development build: which streams of the server's
 /// state the client wants from now on, each a bit, a cleared one stopping its
@@ -691,7 +668,7 @@ struct ShotJudgementWire {
 using MessageWire =
     std::variant<JoinRequestWire, JoinAcceptedWire, JoinRefusedWire, CommandsWire, AuthoritativeStateWire, LobbyWire,
                  ReadyWire, MatchStartWire, MatchEndWire, ShotWire, HitConfirmationWire, DeathWire,
-                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReplayViewWire, ReenactRequestWire
+                 ReplayListRequestWire, ReplayListWire, ReplayRequestWire, ReenactRequestWire
 #if AUGUSTA_DEBUG_TOOLS
                  ,
                  DebugSubscribeWire, ShotJudgementWire
