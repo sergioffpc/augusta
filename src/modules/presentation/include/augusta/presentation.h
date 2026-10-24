@@ -43,9 +43,7 @@
 /// a separate Shared Core/client-only module the way WeaponHandling is; it
 /// stays a system inside this module (see Phase::kCamera below), exposed
 /// through State::camera for augusta::renderer::Renderer::SetCamera to
-/// consume once per render frame. Animation does have its own home:
-/// augusta::animation::Engine (see that header) - this module owns the one
-/// Engine instance and calls Update from its Animation phase.
+/// consume once per render frame.
 namespace augusta::presentation {
 
 /// PresentationWorld's five phases (ADR-0024), executed in this exact
@@ -94,11 +92,11 @@ enum class Phase {
   /// crosshair or hit marker shows. View bob is still future work. Not yet a
   /// module of its own - see the header comment above.
   kCamera,
-  /// Mechanism. Drives skeletal/procedural animation from interpolated
-  /// movement and weapon state - augusta::animation::Engine::Update, once
-  /// per visible player character (local and remote alike, unlike
-  /// Interpolation/Camera which only concern the local player's own
-  /// predicted state).
+  /// Mechanism. Will drive skeletal/procedural animation from interpolated
+  /// movement and weapon state, once per visible player character (local and
+  /// remote alike, unlike Interpolation/Camera which only concern the local
+  /// player's own predicted state). Calls nothing yet: the client evaluates
+  /// no pose (ADR-0061).
   kAnimation,
   /// Mechanism. Sets the listener to the camera Phase::kCamera just placed, a
   /// spectator's included (ListenerOf, audio_cues.h), then plays the frame's
