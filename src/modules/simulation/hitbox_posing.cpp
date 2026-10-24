@@ -2,13 +2,12 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <span>
 #include <utility>
 #include <vector>
 
-#include "augusta/animation.h"
-#include "augusta/assets.h"
 #include "augusta/ballistics.h"
 #include "augusta/hitbox.h"
 #include "augusta/math.h"
@@ -19,7 +18,7 @@ namespace augusta::simulation {
 
 namespace {
 
-// What ReachOf adds to the farthest point of a character's hitboxes: far above
+// What Reach::Of adds to how far a pose holds a character's hitboxes: far above
 // the rounding of posing them, or of Reaches, anywhere on the position grid, so
 // culling by it never drops a hitbox a bullet crosses.
 constexpr float kReachMargin = 0.1F;
@@ -49,23 +48,34 @@ std::size_t PosedHitboxOf(physics::SurfaceId surface) {
 
 }  // namespace
 
-// Measured with the root at the origin facing yaw 0: a yaw turns every point
-// about the vertical through the root, which brings none of them nearer or
-// farther.
-Reach::Reach(const assets::Skeleton& skeleton, std::span<const hitbox::CharacterHitbox> hitboxes) {
-  for (std::size_t index = 0; index < by_stance_.size(); ++index) {
-    const auto stance = static_cast<physics::Stance>(index);
-    float reach = 0.0F;
-    for (const hitbox::PlacedHitbox& placed :
-         animation::PlaceAtRest(skeleton, hitboxes, hitbox::Pose{.position = {}, .yaw = 0.0F, .stance = stance})) {
-      for (const ballistics::Triangle& triangle : placed.triangles) {
-        for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
-          reach = std::max(reach, math::Length(point));
-        }
+Reach::Reach(std::span<const hitbox::CharacterHitbox> hitboxes) {
+  extents_.reserve(hitboxes.size());
+  for (const hitbox::CharacterHitbox& hitbox : hitboxes) {
+    float radius = 0.0F;
+    for (const ballistics::Triangle& triangle : hitbox.triangles) {
+      for (const math::Vec3& point : {triangle.a, triangle.b, triangle.c}) {
+        radius = std::max(radius, math::Length(point));
       }
     }
-    by_stance_.at(index) = reach + kReachMargin;
+    extents_.push_back(Extent{.joint = hitbox.joint, .radius = radius});
   }
+}
+
+// A point radius from a Joint's origin is no farther from it in the world than
+// radius times the Joint's largest stretch, which its linear part's Frobenius
+// norm bounds whatever scale a Skeleton composes into it.
+float Reach::Of(const math::Vec3& root, std::span<const math::Mat4> joints) const {
+  float reach = 0.0F;
+  for (const Extent& extent : extents_) {
+    assert(extent.joint < joints.size());
+    const math::Mat4& joint = joints[extent.joint];
+    const math::Vec3 origin(joint[3]);
+    const float stretch = std::sqrt(math::Dot(math::Vec3(joint[0]), math::Vec3(joint[0])) +
+                                    math::Dot(math::Vec3(joint[1]), math::Vec3(joint[1])) +
+                                    math::Dot(math::Vec3(joint[2]), math::Vec3(joint[2])));
+    reach = std::max(reach, math::Length(origin - root) + (extent.radius * stretch));
+  }
+  return reach + kReachMargin;
 }
 
 void HitboxPosing::Clear() {

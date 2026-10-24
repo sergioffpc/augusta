@@ -89,12 +89,13 @@ enum class Phase {
   /// are only intent: the fire rate, the magazine and the reload are this
   /// phase's to keep, whatever a client sends.
   kWeaponHandling,
-  /// Mechanism. Evaluates every living player's Hitbox pose (ADR-0061) -
-  /// augusta::animation::PoseAtRest, one call per player: each Joint of its
-  /// Character's Skeleton relative to its parent and as its world transform,
-  /// where Movement has just put its body. With no Clips the pose is the Rest
-  /// pose, its root lowered for the stance as the eye is and turned by the yaw
-  /// (hitbox::RootOf). What HitDetection judges this tick's Shots against when
+  /// Mechanism. Evaluates every living player's Hitbox pose (ADR-0061,
+  /// ADR-0066) - augusta::animation::Poser, one call per player: each Joint of
+  /// its Character's Skeleton relative to its parent and as its world
+  /// transform, from its Clips at the stance, velocity and Stride Movement has
+  /// just left its body with, its root where its position and yaw put it
+  /// (hitbox::RootOf). A Character without Clips is posed in its Rest pose
+  /// (animation::PoseAtRest). What HitDetection judges this tick's Shots against when
   /// the Hitbox history holds no tick of the player yet, and what Commit keeps
   /// in it. Then places its rifle (ADR-0064, World::HeldRifleOf): its holding
   /// hand a Desktop player's (weapon::DesktopHand), from its eye lowered for
@@ -115,8 +116,8 @@ enum class Phase {
   /// around that moment: the root's position, facing and stance interpolated
   /// apart from the Joints relative to it, which are composed onto it from the
   /// root down; or as Posing posed them for a player it holds no tick of yet.
-  /// A bullet passing farther from a player's root than its Character's Rest
-  /// pose reaches in its stance is not tested against it. The Map is judged in
+  /// A bullet passing farther from a player's root than that pose holds its
+  /// Hitboxes is not tested against it. The Map is judged in
   /// the present. A bullet is never tested against its own shooter. The test
   /// itself is folded into the same ballistics::World::Step call as
   /// kBallistics - see ballistics.h - so the hitboxes are posed for each

@@ -30,6 +30,7 @@
 #include "augusta/physics.h"
 #include "augusta/policy.h"
 #include "augusta/policy_actions.h"
+#include "augusta/pose.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "hitbox_history.h"
@@ -90,8 +91,8 @@ struct Health {
 // A player's character's hitboxes, each in the space of its Joint.
 struct Hitboxes {
   std::vector<hitbox::CharacterHitbox> bound;
-  // How far from its root they reach in each stance: a bullet that passes
-  // farther from where a pose puts its root crosses none of them.
+  // How far from its root they reach in a pose: a bullet that passes farther
+  // from where the pose puts its root crosses none of them.
   Reach reach;
 };
 
@@ -248,10 +249,12 @@ struct World::Impl {
   std::vector<policy::PolicyAction> actions;
   std::vector<float> shooters_delays;
   // Every player a bullet may strike, for posing its hitboxes where the bullet
-  // judges it to be.
+  // judges it to be: a living one, with a Body.
   flecs::query<const Player, const Body, const Hitboxes, const PosedJoints, const HitboxHistory> targets;
   // Their hitboxes, posed for the tick's bullets. Cleared each tick.
   HitboxPosing posing;
+  // Evaluates every player's Hitbox pose from its Clips, one after the other.
+  animation::Poser poser;
   // A target's Joints as the Hitbox history has them where a bullet judges it.
   // Kept between calls for its storage only.
   std::vector<math::Mat4> judged_joints;
@@ -316,11 +319,10 @@ struct World::Impl {
         .write<Bullet>()
         .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
                      Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
-    ecs.system<const Body, const Facing, const CharacterSkeleton, PosedJoints>("PosingSystem")
+    ecs.system<const Body, const Facing, const CharacterSkeleton, const Clips, PosedJoints>("PosingSystem")
         .kind(phases[kPosing])
-        .each([](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
-          OnPosing(body, facing, skeleton, posed);
-        });
+        .each([this](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
+                     PosedJoints& posed) { OnPosing(body, facing, skeleton, clips, posed); });
     // After PosingSystem, in the same phase: the hand is placed once the body is posed.
     ecs.system<const Body, const Facing, const Eye, const Rifle, Held>("HoldingSystem")
         .kind(phases[kPosing])
@@ -397,9 +399,16 @@ struct World::Impl {
     Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
   }
 
-  // Poses one player's Skeleton where Movement has just put its body.
-  static void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, PosedJoints& posed) {
-    animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
+  // Poses one player's Skeleton by its Clips where Movement has just put its
+  // body; in its Rest pose for a Character without any.
+  void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
+                PosedJoints& posed) {
+    if (clips.clips == nullptr) {
+      animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
+      return;
+    }
+    poser.Pose(*clips.clips, skeleton.skeleton, animation::PoseInput{.body = body.state, .yaw = facing.yaw},
+               posed.posed);
   }
 
   // Places one player's rifle where a Desktop player holds it, its view turned
@@ -438,18 +447,19 @@ struct World::Impl {
   std::span<const ballistics::Hitbox> HitboxesFor(const Bullet& bullet, const ballistics::Segment& segment) {
     const double time = static_cast<double>(tick) - static_cast<double>(bullet.shooters_delay);
     posing.BeginBullet(time, segment);
-    targets.each([&](const Player& player, const Body& body, const Hitboxes& hitboxes, const PosedJoints& posed,
+    targets.each([&](const Player& player, const Body& /*alive*/, const Hitboxes& hitboxes, const PosedJoints& posed,
                      const HitboxHistory& history) {
       if (player.entity == bullet.shooter) {
         return;
       }
       const std::optional<hitbox::Pose> seen = history.poses.At(time, judged_joints);
       if (!seen) {
-        posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.In(body.state.stance), posed.posed.root,
-                        posed.posed.world);
+        posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(posed.posed.root.position, posed.posed.world),
+                        posed.posed.root, posed.posed.world);
         return;
       }
-      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.In(seen->stance), *seen, judged_joints);
+      posing.Consider(player.entity, hitboxes.bound, hitboxes.reach.Of(seen->position, judged_joints), *seen,
+                      judged_joints);
     });
     return posing.BulletHitboxes();
   }
@@ -668,7 +678,7 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<Health>({.value = impl.parameters.starting_health})
           .set<Clips>({.clips = character.clips})
           .set<Eye>({.standing = character.eye})
-          .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.skeleton, character.hitboxes)})
+          .set<Hitboxes>({.bound = character.hitboxes, .reach = Reach(character.hitboxes)})
           .set<CharacterSkeleton>({.skeleton = character.skeleton})
           .set<PosedJoints>({})
           .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks, character.skeleton, character.hitboxes)})

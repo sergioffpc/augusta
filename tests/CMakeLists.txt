@@ -391,6 +391,16 @@ target_link_libraries(
 # Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_locomotion_tests DISCOVERY_TIMEOUT 30)
 
+# A Hitbox pose evaluated from Clips the test authors in memory
+# (clips_fixture.h), whose Joints move.
+add_executable(augusta_pose_tests pose_test.cpp)
+target_link_libraries(
+  augusta_pose_tests
+  PRIVATE augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
+# Links PhysX through augusta_gameplay, so the same first-launch cost applies as above.
+gtest_discover_tests(augusta_pose_tests DISCOVERY_TIMEOUT 30)
+
 # What the server loads at startup, on the golden server pack and on copies of
 # it the test re-signs without an entry.
 add_executable(augusta_server_content_tests server_content_test.cpp)

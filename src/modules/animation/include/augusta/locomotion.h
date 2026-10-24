@@ -44,6 +44,10 @@ struct LocomotionBlend {
   [[nodiscard]] std::span<const ClipWeight> Weights() const { return {clips.data(), count}; }
 };
 
+/// velocity, in the world, in the space of a body facing yaw (a Command's yaw,
+/// command::Command): where its blend space is evaluated.
+[[nodiscard]] math::Vec3 LocalVelocity(const math::Vec3& velocity, float yaw);
+
 /// clips' blend space at local_velocity, the body's velocity in its own space;
 /// its vertical part does not count. Still, it is idle alone.
 [[nodiscard]] LocomotionBlend BlendSpace(const StanceClips& clips, const math::Vec3& local_velocity);

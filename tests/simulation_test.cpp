@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -1077,8 +1078,10 @@ class HitTest : public ::testing::Test {
 
   // A one-tick press of fire by Alice, aimed at the point offset from Bob's
   // feet as the State of a tick shows them, which is the Seen time it reports.
-  Command FiringAt(const Vec3& offset) {
-    const State state = Tick(Command{});
+  Command FiringAt(const Vec3& offset) { return FiringAt(offset, Tick(Command{})); }
+
+  // As FiringAt, at Bob's feet as state, the newest tick's, shows them.
+  static Command FiringAt(const Vec3& offset, const State& state) {
     const Vec3 eye = Entity(state, kAlice).body.position + Target().eye;
     const Vec3 aim = Entity(state, kBob).body.position + offset - eye;
     Command command = Firing();
@@ -1295,19 +1298,6 @@ TEST_F(HitTest, AShotPastTheTargetHitsNoOne) {
   EXPECT_TRUE(ShootAt(Vec3(0.0F, 2.0F, 0.0F)).empty());
 }
 
-// Crouched, a body 2.1 m tall standing is 1.3 m tall, and its hitboxes with it.
-// Requirements: US-11
-TEST_F(HitTest, ACrouchedTargetsHitboxesAreLoweredWithItsBody) {
-  bob_.movement.desired_stance = Stance::kCrouching;
-  Wait(kSettleTicks);
-
-  EXPECT_TRUE(ShootAt(Vec3(0.0F, kHeadHeight, 0.0F)).empty());
-  const std::vector<Hit> lowered = ShootAt(Vec3(0.0F, kHeadHeight * 1.3F / 2.1F, 0.0F));
-
-  ASSERT_EQ(lowered.size(), 1U);
-  EXPECT_EQ(lowered[0].part, BodyPart::kHead);
-}
-
 // Its right arm is at +X while it faces yaw 0, and at -X once it has turned half a turn.
 // Requirements: US-11
 TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
@@ -1324,29 +1314,6 @@ TEST_F(HitTest, ATargetsHitboxesTurnWithWhereItFaces) {
   ASSERT_EQ(turned.size(), 1U);
   EXPECT_EQ(turned[0].part, BodyPart::kLimb);
   EXPECT_EQ(Entity(Tick(Command{}), kBob).yaw, augusta::math::SnapAngle(std::numbers::pi_v<float>));
-}
-
-// Bob crouches on one tick. A Seen time between the tick before and that one shows
-// him as the nearer of the two has him, as a client does.
-// Requirements: US-11, NFR-02
-TEST_F(HitTest, ASeenTimeBetweenTwoStancesIsJudgedInTheStanceOfTheNearerTick) {
-  bob_.movement.desired_stance = Stance::kCrouching;
-  augusta::tick::Tick crouched = 0;
-  for (int i = 0; i < kSettleTicks && crouched == 0; ++i) {
-    const State state = Tick(Command{});
-    if (Entity(state, kBob).body.stance == Stance::kCrouching) {
-      crouched = state.tick;
-    }
-  }
-  ASSERT_NE(crouched, 0U);
-  const Vec3 standing_head(0.0F, kHeadHeight, 0.0F);
-
-  const std::vector<Hit> nearer_standing = ShootAt(standing_head, crouched - 1, 0.4F);
-  const std::vector<Hit> nearer_crouched = ShootAt(standing_head, crouched - 1, 0.6F);
-
-  ASSERT_EQ(nearer_standing.size(), 1U);
-  EXPECT_EQ(nearer_standing[0].part, BodyPart::kHead);
-  EXPECT_TRUE(nearer_crouched.empty());
 }
 
 // Bob faces just short of half a turn one way, then just short of it the
@@ -1544,18 +1511,19 @@ TEST_F(PosedHitTest, AHitboxIsJudgedWhereItsJointHoldsIt) {
   EXPECT_EQ(torso[0].part, BodyPart::kTorso);
 }
 
-// Crouched, a body 2.1 m tall standing is 1.3 m tall: the Skeleton's root
-// lowers the hand with it, as far out to the side as it was.
+// The stance does not scale the Skeleton's root (ADR-0040): how low a body is
+// is its stance's Clips', and Bob has none, so crouched his hand is where it
+// was standing.
 // Requirements: US-11
-TEST_F(PosedHitTest, TheSkeletonsRootLowersItsHitboxesWithACrouchedBody) {
+TEST_F(PosedHitTest, TheStanceDoesNotScaleTheSkeletonsRoot) {
   bob_.movement.desired_stance = Stance::kCrouching;
   Wait(kSettleTicks);
+  ASSERT_EQ(Entity(Tick(Command{}), kBob).body.stance, Stance::kCrouching);
 
-  EXPECT_TRUE(ShootAt(Vec3(kHandSide, kHandHeight, 0.0F)).empty());
-  const std::vector<Hit> lowered = ShootAt(Vec3(kHandSide, kHandHeight * 1.3F / 2.1F, 0.0F));
+  const std::vector<Hit> hand = ShootAt(Vec3(kHandSide, kHandHeight, 0.0F));
 
-  ASSERT_EQ(lowered.size(), 1U);
-  EXPECT_EQ(lowered[0].part, BodyPart::kLimb);
+  ASSERT_EQ(hand.size(), 1U);
+  EXPECT_EQ(hand[0].part, BodyPart::kLimb);
 }
 
 // Requirements: US-11
@@ -1591,6 +1559,129 @@ TEST_F(PosedHitTest, ASeenTimeBetweenTwoFacingsTurnsTheRootAlongTheArcInTheRestP
   ASSERT_EQ(arc.size(), 1U);
   EXPECT_EQ(arc[0].part, BodyPart::kLimb);
   EXPECT_TRUE(chord.empty());
+}
+
+// The Walker (clips_fixture.h), its Hitboxes on its Joints: a head on its Head
+// Joint, a torso up from its Pelvis and a leg down each of its legs, 1 m long.
+// Standing, its head is 1.6 m to 1.9 m up and its torso 1 m to 1.6 m;
+// crouched, its Pelvis 0.6 m up, its head is 1.2 m to 1.5 m.
+Character Walker() {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kWalkerHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kWalkerPelvis;
+  CharacterHitbox left_leg = Box(BodyPart::kLimb, Vec3(-0.07F, -1.0F, -0.07F), Vec3(0.07F, 0.0F, 0.07F));
+  left_leg.joint = fixture::kWalkerLeftLeg;
+  CharacterHitbox right_leg = left_leg;
+  right_leg.joint = fixture::kWalkerRightLeg;
+  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                   .hitboxes = {head, torso, left_leg, right_leg},
+                   .skeleton = fixture::WalkerSkeleton(),
+                   .clips = fixture::WalkerClips()};
+}
+
+// HitTest's Alice and Bob, Bob playing the Walker: Alice's rounds are judged
+// against his Hitboxes as his Clips pose them (ADR-0066).
+class AnimatedHitTest : public HitTest {
+ protected:
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Walker());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+
+  // Puts Bob back 3 m to Alice's right, walks him ahead at his forward walk's
+  // speed facing -X, across Alice's line of fire, and ticks with Alice idle
+  // until his Stride is within a few steps of one of strides: that tick's
+  // State, Bob within a few meters of straight ahead of Alice. Fails the test
+  // if no tick of two cycles gets there.
+  State UntilWalkingBobsStrideNears(std::initializer_list<int> strides) {
+    constexpr int kNear = 3;
+    world_.RemovePlayer(kBob);
+    world_.AddPlayer(kBob, Vec3(3.0F, 0.5F, -10.0F), Walker());
+    bob_ = Walking(Vec3(-1.0F, 0.0F, 0.0F));
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+    for (int i = 0; i < 2 * kTickRate; ++i) {
+      const State state = Tick(Command{});
+      for (const int stride : strides) {
+        if (StrideDistance(Entity(state, kBob).body.stride, stride) <= kNear) {
+          return state;
+        }
+      }
+    }
+    ADD_FAILURE() << "Bob's Stride never neared it";
+    return Tick(Command{});
+  }
+};
+
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAStandingHeadsHeightHitsAStandingPlayerAndMissesACrouchedOne) {
+  const Vec3 standing_head(0.0F, 1.75F, 0.0F);
+  const std::vector<Hit> standing = ShootAt(standing_head);
+
+  bob_.movement.desired_stance = Stance::kCrouching;
+  Wait(kSettleTicks);
+  const std::vector<Hit> crouched = ShootAt(standing_head);
+  const std::vector<Hit> crouched_head = ShootAt(Vec3(0.0F, 1.35F, 0.0F));
+
+  ASSERT_EQ(standing.size(), 1U);
+  EXPECT_EQ(standing[0].part, BodyPart::kHead);
+  EXPECT_TRUE(crouched.empty());
+  ASSERT_EQ(crouched_head.size(), 1U);
+  EXPECT_EQ(crouched_head[0].part, BodyPart::kHead);
+}
+
+// Bob crouches on one tick, his Pelvis down from 1 m to 0.6 m. Halfway between
+// the tick before and that one, Lag compensation interpolates his posed Joints
+// (ADR-0044): his Pelvis 0.8 m up, his head 1.4 m to 1.7 m, below where it was
+// standing and above where it is crouched.
+// Requirements: US-11, NFR-02
+TEST_F(AnimatedHitTest, ASeenTimeBetweenTwoStancesIsJudgedAgainstTheJointsBetweenThem) {
+  bob_.movement.desired_stance = Stance::kCrouching;
+  augusta::tick::Tick crouched = 0;
+  for (int i = 0; i < kSettleTicks && crouched == 0; ++i) {
+    const State state = Tick(Command{});
+    if (Entity(state, kBob).body.stance == Stance::kCrouching) {
+      crouched = state.tick;
+    }
+  }
+  ASSERT_NE(crouched, 0U);
+  const Vec3 standing_head(0.0F, 1.8F, 0.0F);
+  const Vec3 halfway_head(0.0F, 1.45F, 0.0F);
+
+  const std::vector<Hit> standing = ShootAt(standing_head, crouched - 1, 0.0F);
+  const std::vector<Hit> halfway_standing = ShootAt(standing_head, crouched - 1, 0.5F);
+  const std::vector<Hit> halfway = ShootAt(halfway_head, crouched - 1, 0.5F);
+
+  ASSERT_EQ(standing.size(), 1U);
+  EXPECT_EQ(standing[0].part, BodyPart::kHead);
+  EXPECT_TRUE(halfway_standing.empty());
+  ASSERT_EQ(halfway.size(), 1U);
+  EXPECT_EQ(halfway[0].part, BodyPart::kHead);
+}
+
+// Bob walks ahead at his forward walk's speed, facing -X, so his legs swing
+// across Alice's line of fire. At a Foot contact (a Stride of 0 or 128) one leg
+// is 30 degrees ahead: 0.6 m down it is 0.3 m ahead of his hips, 0.48 m up. A
+// quarter of a cycle later his legs pass each other, straight down. Each round
+// is judged where the Stride had him on the tick its Seen time names.
+// Requirements: US-11
+TEST_F(AnimatedHitTest, AShotAtAWalkingPlayersLegHitsItWhereTheStrideHasIt) {
+  const Vec3 ahead_of_his_hips(-0.3F, 0.48F, 0.0F);
+  const Vec3 under_his_hips(0.0F, 0.48F, 0.0F);
+
+  const std::vector<Hit> stepping = Shoot(FiringAt(ahead_of_his_hips, UntilWalkingBobsStrideNears({0, 128})));
+  const std::vector<Hit> passing = Shoot(FiringAt(ahead_of_his_hips, UntilWalkingBobsStrideNears({64, 192})));
+  const std::vector<Hit> passing_under = Shoot(FiringAt(under_his_hips, UntilWalkingBobsStrideNears({64, 192})));
+
+  ASSERT_EQ(stepping.size(), 1U);
+  EXPECT_EQ(stepping[0].part, BodyPart::kLimb);
+  EXPECT_TRUE(passing.empty());
+  ASSERT_EQ(passing_under.size(), 1U);
+  EXPECT_EQ(passing_under[0].part, BodyPart::kLimb);
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
