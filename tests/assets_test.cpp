@@ -724,24 +724,6 @@ TEST_F(SkeletonPackTest, AHitboxNamingAJointTheSkeletonLacksIsRefusedNamingThatJ
   EXPECT_EQ(bound.error().joint, "Head");
 }
 
-// Until a Character is posed, hit detection places each Hitbox by its Joint in
-// the Rest pose, in the character's space.
-TEST_F(SkeletonPackTest, AHitboxAtRestIsPlacedByItsJointInTheCharactersSpace) {
-  const auto skeleton = ResolveSoldier();
-  const auto bound =
-      augusta::assets::BindHitboxes(skeleton, {HitboxOn("Root/Spine/Head", augusta::assets::BodyPart::kHead)});
-  ASSERT_TRUE(bound.has_value());
-
-  const auto placed = augusta::assets::PlaceHitboxesAtRest(skeleton, *bound);
-
-  ASSERT_EQ(placed.size(), 1U);
-  EXPECT_EQ(placed[0].part, augusta::assets::BodyPart::kHead);
-  EXPECT_EQ(placed[0].mesh.indices, (std::vector<std::uint32_t>{0, 1, 2}));
-  ExpectNear(placed[0].mesh.points[0], Vec3(0.0F, 1.0F, -0.5F));
-  ExpectNear(placed[0].mesh.points[1], Vec3(0.0F, 1.0F, -0.6F));
-  ExpectNear(placed[0].mesh.points[2], Vec3(0.0F, 1.1F, -0.5F));
-}
-
 TEST(FirstMissingBodyPartTest, NamesTheFirstBodyPartNoHitboxStandsFor) {
   using augusta::assets::BodyPart;
   using augusta::assets::FirstMissingBodyPart;

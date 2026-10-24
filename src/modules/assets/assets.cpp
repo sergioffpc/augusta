@@ -514,20 +514,6 @@ std::expected<std::vector<JointHitbox>, UnresolvedJoint> BindHitboxes(const Skel
   return bound;
 }
 
-std::vector<HitboxData> PlaceHitboxesAtRest(const Skeleton& skeleton, std::span<const JointHitbox> hitboxes) {
-  std::vector<HitboxData> placed;
-  placed.reserve(hitboxes.size());
-  for (const JointHitbox& bound : hitboxes) {
-    const math::Mat4& transform = skeleton.rest_transforms.at(bound.joint);
-    HitboxData hitbox = bound.hitbox;
-    for (math::Vec3& point : hitbox.mesh.points) {
-      point = math::TransformPoint(transform, point);
-    }
-    placed.push_back(std::move(hitbox));
-  }
-  return placed;
-}
-
 bool IsValidAssetType(std::uint8_t value) {
   switch (static_cast<AssetType>(value)) {
     case AssetType::kMesh:

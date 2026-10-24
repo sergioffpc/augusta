@@ -11,6 +11,7 @@
 #include "augusta/failure.h"
 #include "augusta/match.h"
 #include "augusta/math.h"
+#include "augusta/simulation.h"
 
 // Unit tests for the conversions Host makes at SimulationWorld's edge.
 namespace {
@@ -79,9 +80,9 @@ TEST(SimulationMappingTest, EachCharacterIsKeptByItsPath) {
   EXPECT_TRUE(converted.at("sniper").hitboxes.empty());
 }
 
-// Until SimulationWorld poses a Skeleton (ADR-0061), it judges a character's
-// hitboxes where their Joints hold them in the Rest pose.
-TEST(SimulationMappingTest, ACharactersHitboxesArePlacedByTheirJointsAtRest) {
+// SimulationWorld poses a character's hitboxes by its Skeleton (ADR-0061): it
+// is handed both, each hitbox in its Joint's space and bound to it.
+TEST(SimulationMappingTest, ACharacterKeepsItsSkeletonAndEachHitboxInItsJointsSpace) {
   const std::vector<augusta::scenario::Character> characters = {
       {.path = "medic",
        .hitboxes = {{.joint = 0, .hitbox = Triangle(BodyPart::kHead)}},
@@ -91,10 +92,14 @@ TEST(SimulationMappingTest, ACharactersHitboxesArePlacedByTheirJointsAtRest) {
 
   const auto converted = ToSimulation(characters);
 
-  ASSERT_EQ(converted.at("medic").hitboxes.size(), 1U);
-  ASSERT_EQ(converted.at("medic").hitboxes[0].triangles.size(), 1U);
-  EXPECT_EQ(converted.at("medic").hitboxes[0].triangles[0].a, Vec3(0.0F, 1.5F, 0.0F));
-  EXPECT_EQ(converted.at("medic").hitboxes[0].triangles[0].c, Vec3(0.0F, 2.5F, 0.0F));
+  const augusta::simulation::Character& medic = converted.at("medic");
+  ASSERT_EQ(medic.skeleton.joints.size(), 1U);
+  EXPECT_EQ(medic.skeleton.joints[0].name, "Root");
+  ASSERT_EQ(medic.hitboxes.size(), 1U);
+  EXPECT_EQ(medic.hitboxes[0].joint, 0U);
+  ASSERT_EQ(medic.hitboxes[0].triangles.size(), 1U);
+  EXPECT_EQ(medic.hitboxes[0].triangles[0].a, Vec3(0.0F, 0.0F, 0.0F));
+  EXPECT_EQ(medic.hitboxes[0].triangles[0].c, Vec3(0.0F, 1.0F, 0.0F));
 }
 
 }  // namespace

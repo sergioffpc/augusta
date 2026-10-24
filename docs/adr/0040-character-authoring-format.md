@@ -55,21 +55,23 @@ authored under the joint it moves with, as UsdSkel binds any prim rigidly to one
 joint: `SkelBindingAPI`, its `skel:joints` naming that joint and a constant
 `primvars:skel:jointIndices` of `[0]`, with `Character` the `SkelRoot` binding
 the skeleton. They are placed relative to the feet, standing, on a character
-that faces -Z, where a view of yaw 0 looks; the server lowers them with the
-stance as the client lowers the eye, and turns them about the vertical axis by
-the yaw its body faces (ADR-0038), so no character authors hitboxes per stance
-or per facing. Every hit on a player resolves to a body part (US-11), so the
-cooker refuses a hitbox without a body part or with another name, and a
-character without at least one hitbox for each of the three; and every hitbox
-moves with a joint, so it refuses a hitbox authored under no joint, or under one
-its skeleton lacks, naming the hitbox's prim. Each hitbox is a blob at its own
-prim's path under the character (e.g. `soldier/Character/HeadHitbox`): its body
-part as one byte, its joint's name as a string, then its geometry as a mesh
-blob, composed into its joint's rest space, so placing it is its joint's
-transform times its own, with no rest pose to undo. A map's hitbox has the same
-blob, naming no joint. Both packs carry them, and the server resolves every
-hitbox under a character's name at startup, refusing to run on a character it
-could not judge a hit on.
+that faces -Z, where a view of yaw 0 looks. The skeleton's root carries the
+stance and the facing (ADR-0061): the server poses it lowered with the stance as
+the client lowers the eye, scaling the vertical by the stance's height, and
+turned about the vertical axis by the yaw its body faces (ADR-0038), and every
+joint and the hitboxes bound to it move with the root, so no character authors
+hitboxes per stance or per facing. Every hit on a player resolves to a body part
+(US-11), so the cooker refuses a hitbox without a body part or with another
+name, and a character without at least one hitbox for each of the three; and
+every hitbox moves with a joint, so it refuses a hitbox authored under no joint,
+or under one its skeleton lacks, naming the hitbox's prim. Each hitbox is a blob
+at its own prim's path under the character (e.g.
+`soldier/Character/HeadHitbox`): its body part as one byte, its joint's name as
+a string, then its geometry as a mesh blob, composed into its joint's rest
+space, so placing it is its joint's transform times its own, with no rest pose
+to undo. A map's hitbox has the same blob, naming no joint. Both packs carry
+them, and the server resolves every hitbox under a character's name at startup,
+refusing to run on a character it could not judge a hit on.
 
 Characters are authored in USD, same toolchain and rationale as ADR-0016:
 Composer for assembly, Adobe's USD-Fileformat-plugins composing any glTF/FBX/OBJ
