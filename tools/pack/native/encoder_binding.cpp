@@ -80,7 +80,8 @@ void BindEnums(py::module_& module) {
       .value("CHARACTERS", assets::AssetType::kCharacters)
       .value("EYE", assets::AssetType::kEye)
       .value("CUE_SOUND", assets::AssetType::kCueSound)
-      .value("SKELETON", assets::AssetType::kSkeleton);
+      .value("SKELETON", assets::AssetType::kSkeleton)
+      .value("RIFLE", assets::AssetType::kRifle);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
@@ -90,6 +91,7 @@ void BindEnums(py::module_& module) {
 void BindConstants(py::module_& module) {
   module.attr("SCENE_PATH") = std::string(assets::kScenePath);
   module.attr("CHARACTERS_PATH") = std::string(assets::kCharactersPath);
+  module.attr("RIFLE_PATH") = std::string(assets::kRiflePath);
   module.attr("SOUNDS_PREFIX") = std::string(assets::kSoundsPrefix);
   module.attr("SCENE_NODE_NO_PARENT") = assets::kSceneNodeNoParent;
   module.attr("MAX_CHARACTERS") = assets::kMaxCharacters;
@@ -148,6 +150,26 @@ void BindGeometryTypes(py::module_& module) {
   py::class_<assets::EyeData>(module, "EyeData", "A character's eye, in its own root space (ADR-0040).")
       .def(py::init([](math::Vec3 position) { return assets::EyeData{.position = position}; }), py::arg("position"))
       .def_readwrite("position", &assets::EyeData::position);
+}
+
+void BindRifleTypes(py::module_& module) {
+  py::class_<assets::RifleMarker>(module, "RifleMarker",
+                                  "One of the rifle's markers: a frame in the rifle's space, pointing along its -Z "
+                                  "(ADR-0064).")
+      .def(py::init([](math::Vec3 translation, math::Quat rotation) {
+             return assets::RifleMarker{.translation = translation, .rotation = rotation};
+           }),
+           py::arg("translation"), py::arg("rotation"))
+      .def_readwrite("translation", &assets::RifleMarker::translation)
+      .def_readwrite("rotation", &assets::RifleMarker::rotation);
+  py::class_<assets::RifleData>(module, "RifleData", "The rifle's Grip, Muzzle and Sight (ADR-0064).")
+      .def(py::init([](assets::RifleMarker grip, assets::RifleMarker muzzle, assets::RifleMarker sight) {
+             return assets::RifleData{.grip = grip, .muzzle = muzzle, .sight = sight};
+           }),
+           py::arg("grip"), py::arg("muzzle"), py::arg("sight"))
+      .def_readwrite("grip", &assets::RifleData::grip)
+      .def_readwrite("muzzle", &assets::RifleData::muzzle)
+      .def_readwrite("sight", &assets::RifleData::sight);
 }
 
 void BindSceneNode(py::module_& module) {
@@ -258,6 +280,10 @@ void BindEncodeFunctions(py::module_& module) {
       "encode_eye_blob", [](const assets::EyeData& eye) { return BlobOrThrow(assets::EncodeEyeBlob(eye), "eye"); },
       py::arg("eye"), "An eye blob (ADR-0040).");
   module.def(
+      "encode_rifle_blob",
+      [](const assets::RifleData& rifle) { return BlobOrThrow(assets::EncodeRifleBlob(rifle), "rifle"); },
+      py::arg("rifle"), "A rifle blob: its Grip, Muzzle and Sight (ADR-0064).");
+  module.def(
       "encode_script_blob",
       [](const py::bytes& script) { return BlobOrThrow(assets::EncodeScriptBlob(std::string_view(script)), "script"); },
       py::arg("script"), "A script blob of a Lua script's text (ADR-0031).");
@@ -289,6 +315,7 @@ void BindPackEncoder(py::module_& module) {
   BindEnums(module);
   BindConstants(module);
   BindGeometryTypes(module);
+  BindRifleTypes(module);
   BindSceneNode(module);
   BindBlobTypes(module);
   BindEncodeFunctions(module);

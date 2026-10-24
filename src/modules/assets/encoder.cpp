@@ -186,6 +186,19 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& 
   return blob;
 }
 
+// Rifle blob wire format: the Grip, the Muzzle and the Sight, in that order,
+// each its translation (3x f32) then its rotation as x/y/z/w (4x f32), as a
+// spawn point's transform is.
+std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  for (const RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight}) {
+    writer.WriteVec3(marker->translation);
+    writer.WriteQuat(marker->rotation);
+  }
+  return blob;
+}
+
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script) {
   if (script.size() > kMaxScriptBytes) {
     return std::unexpected(EncodeError::kTooLarge);

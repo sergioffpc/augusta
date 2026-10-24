@@ -34,7 +34,7 @@ namespace augusta::assets {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 4;
+constexpr std::uint32_t kFormatVersion = 5;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -528,6 +528,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kEye:
     case AssetType::kCueSound:
     case AssetType::kSkeleton:
+    case AssetType::kRifle:
       return true;
   }
   return false;
@@ -762,6 +763,10 @@ std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_
 
 std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) const {
   return ResolveAsset<EyeData>(impl_->index, impl_->mapping, path, AssetType::kEye, DecodeEyeBlob);
+}
+
+std::expected<RifleData, ResolveError> Pack::ResolveRifle() const {
+  return ResolveAsset<RifleData>(impl_->index, impl_->mapping, kRiflePath, AssetType::kRifle, DecodeRifleBlob);
 }
 
 std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path) const {

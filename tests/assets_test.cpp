@@ -521,6 +521,63 @@ TEST_F(PackTest, EncodesAndResolvesACharactersEye) {
   EXPECT_EQ(pack->ResolveEye("medic/Character/Eye").error(), augusta::assets::ResolveError::kNotFound);
 }
 
+// The rifle's markers (ADR-0064): its Grip, Muzzle and Sight, each a frame in
+// the rifle's space, found at the one path every scenario's rifle has.
+TEST_F(PackTest, EncodesAndResolvesTheRiflesMarkers) {
+  const auto pack_path = MakePackPath("augusta_assets_test_rifle");
+  const auto keys = GenerateEd25519KeyPair();
+  const augusta::math::Quat quarter_turn(0.70710677F, 0.0F, 0.70710677F, 0.0F);
+  const augusta::assets::RifleData rifle{
+      .grip = {.translation = Vec3(0.0F, -0.1F, 0.0F)},
+      .muzzle = {.translation = Vec3(0.0F, 0.0F, -0.8F), .rotation = quarter_turn},
+      .sight = {.translation = Vec3(0.0F, 0.07F, -0.2F)},
+  };
+
+  const auto blob = augusta::assets::EncodeRifleBlob(rifle);
+  ASSERT_TRUE(blob.has_value());
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path,
+                                         {{.type = augusta::assets::AssetType::kRifle,
+                                           .path = std::string(augusta::assets::kRiflePath),
+                                           .data = *blob}},
+                                         keys.private_key)
+                  .has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  const auto resolved = pack->ResolveRifle();
+  ASSERT_TRUE(resolved.has_value());
+  EXPECT_EQ(*resolved, rifle);
+  EXPECT_EQ(pack->ResolveEye(augusta::assets::kRiflePath).error(), augusta::assets::ResolveError::kTypeMismatch);
+}
+
+TEST_F(PackTest, APackWithoutARifleResolvesNone) {
+  const auto pack_path = MakePackPath("augusta_assets_test_no_rifle");
+  const auto keys = GenerateEd25519KeyPair();
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path, {}, keys.private_key).has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveRifle().error(), augusta::assets::ResolveError::kNotFound);
+}
+
+TEST_F(PackTest, ARifleMissingAMarkerIsCorrupt) {
+  const auto pack_path = MakePackPath("augusta_assets_test_rifle_truncated");
+  const auto keys = GenerateEd25519KeyPair();
+  auto blob = augusta::assets::EncodeRifleBlob({}).value();
+  // The Sight's rotation, the last of its fields, cut off.
+  blob.resize(blob.size() - (4 * sizeof(float)));
+  ASSERT_TRUE(augusta::assets::WritePack(pack_path,
+                                         {{.type = augusta::assets::AssetType::kRifle,
+                                           .path = std::string(augusta::assets::kRiflePath),
+                                           .data = blob}},
+                                         keys.private_key)
+                  .has_value());
+  auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
+  ASSERT_TRUE(pack.has_value());
+
+  EXPECT_EQ(pack->ResolveRifle().error(), augusta::assets::ResolveError::kCorruptBlob);
+}
+
 // A character's hitboxes (ADR-0040, ADR-0061): each a body part, its Joint and
 // its geometry, found together under the character's path, in path order.
 class HitboxPackTest : public PackTest {
@@ -951,7 +1008,7 @@ TEST_F(PackTest, TheLayoutReadReturnsTheHeaderEntriesHashAndSignatureWritePackWr
   const auto layout = augusta::assets::ReadPackLayout(pack_path);
 
   ASSERT_TRUE(layout.has_value());
-  EXPECT_EQ(layout->version, 4U);
+  EXPECT_EQ(layout->version, 5U);
   EXPECT_EQ(layout->file_size, bytes.size());
   EXPECT_EQ(layout->data_offset, kWrittenHeaderSize);
   EXPECT_EQ(layout->index_offset, kWrittenHeaderSize + mesh.size() + script.size());
@@ -1020,7 +1077,7 @@ TEST_F(PackTest, APackKnowsItsFormatVersionAndSize) {
   const auto pack = augusta::assets::Pack::Load(pack_path, keys.public_key);
 
   ASSERT_TRUE(pack.has_value());
-  EXPECT_EQ(pack->Version(), 4U);
+  EXPECT_EQ(pack->Version(), 5U);
   EXPECT_EQ(pack->FileSize(), ReadFileBytes(pack_path).size());
 }
 
@@ -1077,7 +1134,7 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion2Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
-  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 4");
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 2; this build reads format 5");
 }
 
 // Requirements: NFR-08, NFR-12
@@ -1092,7 +1149,22 @@ TEST_F(PackLoadNegativeTest, RejectsAVersion3Pack) {
   const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
   ASSERT_FALSE(pack.has_value());
   EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
-  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 3; this build reads format 4");
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 3; this build reads format 5");
+}
+
+// Requirements: NFR-08, NFR-12
+// A version-4 pack has no rifle (ADR-0064): refused at load by the version
+// error, not loaded only to fail when the server resolves its rifle.
+TEST_F(PackLoadNegativeTest, RejectsAVersion4Pack) {
+  auto bytes = valid_bytes_;
+  bytes[4] = std::byte{4};
+  const auto path = MakePackPath("augusta_assets_test_version_4");
+  WriteFileBytes(path, bytes);
+
+  const auto pack = augusta::assets::Pack::Load(path, keys_.public_key);
+  ASSERT_FALSE(pack.has_value());
+  EXPECT_EQ(pack.error().code, augusta::assets::LoadErrorCode::kUnsupportedVersion);
+  EXPECT_EQ(augusta::assets::DescribeLoadError(pack.error()), "is pack format 4; this build reads format 5");
 }
 
 // Requirements: NFR-08, NFR-12

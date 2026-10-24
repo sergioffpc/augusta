@@ -358,6 +358,21 @@ std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
   return EyeData{.position = *position};
 }
 
+// Rifle blob wire format: see EncodeRifleBlob.
+std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  RifleData rifle;
+  for (RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight}) {
+    const auto translation = ReadVec3(reader);
+    const auto rotation = ReadQuat(reader);
+    if (!translation || !rotation) {
+      return std::nullopt;
+    }
+    *marker = {.translation = *translation, .rotation = *rotation};
+  }
+  return rifle;
+}
+
 // Script blob: the script's text as it is, with no framing and no terminator.
 std::optional<std::string> DecodeScriptBlob(std::span<const std::byte> blob) {
   if (blob.size() > kMaxScriptBytes) {

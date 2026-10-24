@@ -34,6 +34,10 @@ from conftest import VK_FORMAT_BC7_SRGB_BLOCK
 from pxr import Gf
 import pytest
 
+# A rifle stage with its three markers, for every cook that is not about the
+# rifle (ADR-0064).
+RIFLE_FIXTURE = FIXTURES_DIR / "rifle_fixture.usda"
+
 
 def cook_stage(stage_name, tmp_path, key_pair):
     """Cooks one fixture stage as a map with no characters.
@@ -46,6 +50,7 @@ def cook_stage(stage_name, tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / stage_name,
         [],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -186,6 +191,7 @@ def cook_texture(texture_format, tmp_path, key_pair, png=None):
     cook_scenario(
         stage_dir / "texture_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         client_path,
         tmp_path / "server.apak",
         key_pair.private_key,
@@ -288,6 +294,7 @@ def test_a_texture_whose_image_is_missing_is_refused(tmp_path, key_pair):
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -309,6 +316,7 @@ def test_a_texture_whose_image_is_not_a_png_or_jpeg_is_refused(
         cook_scenario(
             stage_dir / "texture_fixture.usda",
             [],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -324,6 +332,7 @@ def test_scripts_go_into_the_server_pack_only(tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -347,6 +356,7 @@ def cook_sounds(sounds, tmp_path, key_pair):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [],
+        RIFLE_FIXTURE,
         tmp_path / "client.apak",
         tmp_path / "server.apak",
         key_pair.private_key,
@@ -428,6 +438,7 @@ def test_more_characters_than_an_index_can_name_are_refused(tmp_path, key_pair):
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             characters,
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -443,6 +454,7 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
         cook_scenario(
             FIXTURES_DIR / "mesh_fixture.usda",
             [("TestMesh", FIXTURES_DIR / "mesh_fixture.usda")],
+            RIFLE_FIXTURE,
             tmp_path / "client.apak",
             tmp_path / "server.apak",
             key_pair.private_key,
@@ -577,6 +589,7 @@ def cook_character(hitboxes, tmp_path, key_pair, skeleton=_SKELETON):
     cook_scenario(
         FIXTURES_DIR / "mesh_fixture.usda",
         [("test", stage_path)],
+        RIFLE_FIXTURE,
         client_path,
         server_path,
         key_pair.private_key,
@@ -841,3 +854,119 @@ def test_a_hitbox_whose_body_part_is_unknown_is_refused(tmp_path, key_pair):
     assert raised.value.code == "hitbox_body_part_unknown"
     assert raised.value.prim_path == "test/Character/Tail"
     assert "tail" in raised.value.message
+
+
+def cook_rifle(rifle_stage_path, tmp_path, key_pair):
+    """Cooks the mesh fixture with the rifle at rifle_stage_path.
+
+    Returns:
+        (client, server) contents.
+    """
+    client_path = tmp_path / "client.apak"
+    server_path = tmp_path / "server.apak"
+    cook_scenario(
+        FIXTURES_DIR / "mesh_fixture.usda",
+        [],
+        rifle_stage_path,
+        client_path,
+        server_path,
+        key_pair.private_key,
+    )
+    return (
+        read_pack_contents(client_path, key_pair.public_key),
+        read_pack_contents(server_path, key_pair.public_key),
+    )
+
+
+def decode_rifle(blob):
+    """A rifle blob: the Grip, Muzzle and Sight, each (translation, xyzw)."""
+    values = struct.unpack("<21f", blob)
+    return [(values[i : i + 3], values[i + 3 : i + 7]) for i in (0, 7, 14)]
+
+
+def test_the_rifles_markers_go_into_both_packs(tmp_path, key_pair):
+    client, server = cook_rifle(RIFLE_FIXTURE, tmp_path, key_pair)
+
+    half = math.sqrt(0.5)
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.RIFLE) == {
+            _native.RIFLE_PATH
+        }
+        grip, muzzle, sight = decode_rifle(contents.blob(_native.RIFLE_PATH))
+        assert grip == (
+            pytest.approx((0, -0.1, 0.1)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+        # A quarter turn about +Y.
+        assert muzzle == (
+            pytest.approx((0, 0, -0.7)),
+            pytest.approx((0, half, 0, half)),
+        )
+        assert sight == (
+            pytest.approx((0, 0.07, -0.1)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+
+
+def test_no_rifle_mesh_goes_into_either_pack(tmp_path, key_pair):
+    client, server = cook_rifle(RIFLE_FIXTURE, tmp_path, key_pair)
+
+    for contents in (client, server):
+        assert not any(
+            path.startswith(_native.RIFLE_PATH)
+            for path in contents.paths_of_type(_native.AssetType.MESH)
+        )
+
+
+def test_a_z_up_rifles_markers_are_turned_y_up(tmp_path, key_pair):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            'upAxis = "Y"', 'upAxis = "Z"'
+        ),
+        encoding="utf-8",
+    )
+
+    client, _ = cook_rifle(stage_path, tmp_path, key_pair)
+
+    grip, _, _ = decode_rifle(client.blob(_native.RIFLE_PATH))
+    # Z-up (0, -0.1, 0.1) is Y-up (0, 0.1, 0.1).
+    assert grip[0] == pytest.approx((0, 0.1, 0.1))
+
+
+@pytest.mark.parametrize("marker", ["Grip", "Muzzle", "Sight"])
+def test_a_rifle_missing_a_marker_is_refused_naming_it_and_its_stage(
+    marker, tmp_path, key_pair
+):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            f'def Xform "{marker}"', 'def Xform "Elsewhere"'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CookError) as raised:
+        cook_rifle(stage_path, tmp_path, key_pair)
+
+    assert raised.value.code == "rifle_marker_missing"
+    assert marker in raised.value.message
+    assert str(stage_path) in raised.value.message
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+
+
+def test_a_rifle_stage_without_a_default_prim_is_refused(tmp_path, key_pair):
+    stage_path = tmp_path / "rifle.usda"
+    stage_path.write_text(
+        RIFLE_FIXTURE.read_text(encoding="utf-8").replace(
+            'defaultPrim = "Rifle"', ""
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CookError) as raised:
+        cook_rifle(stage_path, tmp_path, key_pair)
+
+    assert raised.value.code == "rifle_root_missing"
+    assert str(stage_path) in raised.value.message

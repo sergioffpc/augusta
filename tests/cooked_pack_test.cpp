@@ -91,6 +91,17 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
   }
 }
 
+// The server places every Muzzle from them (ADR-0064), so both packs hold the
+// example rifle's Grip, Muzzle and Sight: the Muzzle ahead of the Grip.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleRiflesMarkers) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto rifle = pack->ResolveRifle();
+    ASSERT_TRUE(rifle.has_value());
+    EXPECT_FLOAT_EQ(rifle->muzzle.translation.z, -0.62F);
+    EXPECT_FLOAT_EQ(rifle->sight.translation.y, 0.12F);
+  }
+}
+
 // The server judges hits against them and the client draws where a Shot lands,
 // so both packs hold the example character's hitboxes, one or more per body part.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart) {

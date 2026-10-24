@@ -28,6 +28,7 @@ set -euo pipefail
 readonly EXAMPLE_PIECES=(
   maps/firebase.usda
   characters/soldier.usda
+  rifles/rifle.usda
   sounds/gunshot.wav
   sounds/hit_marker.wav
   sounds/hit_taken.wav
