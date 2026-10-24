@@ -588,6 +588,23 @@ class Pack {
   /// server packs, with the same Joints.
   [[nodiscard]] std::expected<Skeleton, ResolveError> ResolveSkeleton(std::string_view character) const;
 
+  /// Resolves the ozz-animation Skeleton archive of the character named
+  /// character, at CharacterAnimationSkeletonPath (ADR-0066), as its bytes:
+  /// augusta_assets carries it without reading it. Present in both packs.
+  [[nodiscard]] std::expected<std::vector<std::byte>, ResolveError> ResolveAnimationSkeleton(
+      std::string_view character) const;
+
+  /// Resolves the Clip of the character named character that plays role, e.g.
+  /// "standing/forward", at CharacterClipPath (ADR-0066). The Hitbox pose's
+  /// Clips are in both packs, a Cosmetic layer's in the client's only.
+  [[nodiscard]] std::expected<ClipData, ResolveError> ResolveClip(std::string_view character,
+                                                                  std::string_view role) const;
+
+  /// Resolves the stance transition durations of the character named character,
+  /// at CharacterStanceTransitionsPath (ADR-0066). Present in both packs.
+  [[nodiscard]] std::expected<StanceTransitionsData, ResolveError> ResolveStanceTransitions(
+      std::string_view character) const;
+
   /// Resolves a spawn-point marker by its pack-relative path (ADR-0019/
   /// ADR-0032). Present in both client and server packs.
   [[nodiscard]] std::expected<SpawnPointData, ResolveError> ResolveSpawnPoint(std::string_view path) const;

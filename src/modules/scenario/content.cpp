@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "augusta/assets.h"
+#include "augusta/clips.h"
 #include "augusta/failure.h"
 #include "augusta/logging.h"
 #include "augusta/map.h"
@@ -30,9 +32,10 @@ failure::Failure ContentFailure(const assets::Pack& pack, std::vector<failure::C
   return {.code = failure::Code::kInvalidContent, .context = std::move(context), .detail = std::move(detail)};
 }
 
-// Each of paths as a Character with its hitboxes, its Skeleton and its eye, in
-// the same order, or the failure of the first that has no hitbox for a body part,
-// no Skeleton, a hitbox on a Joint its Skeleton lacks or no eye.
+// Each of paths as a Character with its hitboxes, its Skeleton, its eye and its
+// Clips, in the same order, or the failure of the first that has no hitbox for a
+// body part, no Skeleton, a hitbox on a Joint its Skeleton lacks, no eye or
+// Clips that do not load.
 std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const assets::Pack& pack,
                                                                        std::vector<std::string> paths) {
   std::vector<Character> characters;
@@ -60,10 +63,20 @@ std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const ass
     if (!eye) {
       return std::unexpected(ContentFailure(pack, context, assets::DescribeResolveError(eye.error(), "eye")));
     }
+    auto clips = animation::LoadClips(pack, path, *skeleton);
+    if (!clips) {
+      std::vector<failure::ContextField> clip_context = context;
+      if (clips.error().part == animation::ClipPart::kClip) {
+        clip_context.push_back({.key = "clip", .value = clips.error().role});
+      }
+      return std::unexpected(
+          ContentFailure(pack, std::move(clip_context), animation::DescribeClipLoadError(clips.error())));
+    }
     characters.push_back({.path = std::move(path),
                           .hitboxes = *std::move(bound),
                           .skeleton = *std::move(skeleton),
-                          .eye = eye->position});
+                          .eye = eye->position,
+                          .clips = std::make_shared<const animation::CharacterClips>(*std::move(clips))});
   }
   return characters;
 }

@@ -759,6 +759,21 @@ std::expected<Skeleton, ResolveError> Pack::ResolveSkeleton(std::string_view cha
   return skeleton;
 }
 
+std::expected<std::vector<std::byte>, ResolveError> Pack::ResolveAnimationSkeleton(std::string_view character) const {
+  return ResolveAsset<std::vector<std::byte>>(impl_->index, impl_->mapping, CharacterAnimationSkeletonPath(character),
+                                              AssetType::kAnimationSkeleton, DecodeAnimationSkeletonBlob);
+}
+
+std::expected<ClipData, ResolveError> Pack::ResolveClip(std::string_view character, std::string_view role) const {
+  return ResolveAsset<ClipData>(impl_->index, impl_->mapping, CharacterClipPath(character, role), AssetType::kClip,
+                                DecodeClipBlob);
+}
+
+std::expected<StanceTransitionsData, ResolveError> Pack::ResolveStanceTransitions(std::string_view character) const {
+  return ResolveAsset<StanceTransitionsData>(impl_->index, impl_->mapping, CharacterStanceTransitionsPath(character),
+                                             AssetType::kStanceTransitions, DecodeStanceTransitionsBlob);
+}
+
 std::expected<SpawnPointData, ResolveError> Pack::ResolveSpawnPoint(std::string_view path) const {
   return ResolveAsset<SpawnPointData>(impl_->index, impl_->mapping, path, AssetType::kSpawnPoint, DecodeSpawnPointBlob);
 }
