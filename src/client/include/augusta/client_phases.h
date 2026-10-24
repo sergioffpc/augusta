@@ -19,7 +19,7 @@
 /// boundary (augusta/application.h, ADR-0033): an unusable config or capture to
 /// reenact, a transport that does not start, a pack or content that does not
 /// load, a Session that ends on its own, a character that cannot be loaded.
-/// augustac's Lifecycle (client_application.h) runs these around
+/// augustac's Program (client_application.h) runs these around
 /// ClientRuntime (client.h), which classifies its run's failures with the
 /// functions below and passes its workers' first cause on as the supervisor
 /// recorded it. Nothing here needs a window or a GPU, so it is tested without

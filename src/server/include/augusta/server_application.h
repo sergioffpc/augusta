@@ -28,19 +28,19 @@ namespace augusta::server {
 [[nodiscard]] std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
     const std::expected<config::CommandLine, config::ConfigError>& command_line);
 
-/// augustad's Lifecycle for file_config: initialize starts the transport
+/// augustad's Program for file_config: initialize starts the transport
 /// (failure::Code::kTransportInitFailed), after the physics recording
 /// `debug.physics_recording` asks for in a Development build, which the
-/// Lifecycle holds until it goes (physics::StartRecording); construct verifies the pack and loads
+/// Program holds until it goes (physics::StartRecording); construct verifies the pack and loads
 /// its content (kInvalidContent), then constructs the ServerRuntime, which
 /// throws its failure already classified (a rejected map mesh, a listen address
 /// that can't be parsed or bound, a capture directory that can't be created;
 /// see host.h); run runs it until Stop() or its first cause. faults, for tests
 /// only, is asked at the transport's initialization, by the server at each of
 /// its sites (host.h) and by the runtime's supervisor, and must outlive the
-/// Lifecycle's run.
-[[nodiscard]] application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
-                                                                    failure::Faults* faults = nullptr);
+/// Program's run.
+[[nodiscard]] application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config,
+                                                                failure::Faults* faults = nullptr);
 
 }  // namespace augusta::server
 

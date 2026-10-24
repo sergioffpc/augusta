@@ -73,7 +73,7 @@ application::Outcome ClientProcess::Run() { return parts_->runtime->Run(); }
 
 namespace {
 
-// Loads what the runtime is made from and constructs it (ClientLifecycle).
+// Loads what the runtime is made from and constructs it (ClientProgram).
 std::expected<std::unique_ptr<ClientProcess>, failure::Failure> ConstructProcess(
     const config::ClientConfig& file_config, const std::optional<harness::Script>& reenactment,
     const std::optional<std::string>& replay, boost::uuids::uuid run) {
@@ -137,9 +137,9 @@ application::Outcome ListReplays(const config::ClientConfig& file_config) {
   return *std::move(listed);
 }
 
-application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig& file_config,
-                                                      std::optional<harness::Script> reenactment,
-                                                      std::optional<std::string> replay, boost::uuids::uuid run) {
+application::Program<ClientProcess> ClientProgram(const config::ClientConfig& file_config,
+                                                  std::optional<harness::Script> reenactment,
+                                                  std::optional<std::string> replay, boost::uuids::uuid run) {
   config::ClientConfig played = file_config;
   // A Captured player plays its capture's Character, not the config's.
   if (reenactment.has_value()) {
@@ -148,7 +148,7 @@ application::Lifecycle<ClientProcess> ClientLifecycle(const config::ClientConfig
   return {
       // Once, process-wide, before any ClientRuntime is constructed (link.h).
       // What the debug tools start is held by initialize, so it lasts as long
-      // as the Lifecycle: past the process and every World in it.
+      // as the Program: past the process and every World in it.
       .initialize =
           [start_debug_tools = DebugToolsStart(file_config)] {
             start_debug_tools();

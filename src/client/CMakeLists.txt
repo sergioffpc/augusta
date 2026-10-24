@@ -168,7 +168,7 @@ target_compile_definitions(augusta_client PRIVATE NOMINMAX)
 augusta_set_module_scope(augusta_client CLIENT_ONLY)
 
 # augustac's runs behind the application boundary (see client_application.h,
-# ADR-0033): listing a replay server's Replays, and the Lifecycle that starts
+# ADR-0033): listing a replay server's Replays, and the Program that starts
 # the transport and constructs and runs the client Runtime. What augustac's
 # entry point links of the Runtime: the Runtime and the transport are linked
 # privately, so it reaches neither.

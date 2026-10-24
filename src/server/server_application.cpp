@@ -151,12 +151,11 @@ std::expected<config::ServerConfig, failure::Failure> ReadServerConfig(
       });
 }
 
-application::Lifecycle<ServerRuntime> ServerLifecycle(const config::ServerConfig& file_config,
-                                                      failure::Faults* faults) {
+application::Program<ServerRuntime> ServerProgram(const config::ServerConfig& file_config, failure::Faults* faults) {
   return {
       // link::Init() must run once, process-wide, before any Server is
       // constructed - see link.h. What the debug tools start is held by
-      // initialize, so it lasts as long as the Lifecycle: past the runtime and
+      // initialize, so it lasts as long as the Program: past the runtime and
       // every World in it.
       .initialize =
           [faults, start_debug_tools = DebugToolsStart(file_config)] {

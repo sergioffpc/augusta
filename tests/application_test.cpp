@@ -22,13 +22,13 @@ namespace {
 
 using augusta::application::Conclude;
 using augusta::application::Execute;
-using augusta::application::Lifecycle;
 using augusta::application::Outcome;
+using augusta::application::Program;
 using augusta::failure::ClassifiedFailure;
 using augusta::failure::Code;
 using augusta::failure::Failure;
 
-// What a Lifecycle's phases did, in order, and when the runtime went.
+// What a Program's phases did, in order, and when the runtime went.
 using Trace = std::vector<std::string>;
 
 // A runtime that says when it goes, so a test can see it released.
@@ -46,9 +46,9 @@ class FakeRuntime {
   Trace& trace_;
 };
 
-// A Lifecycle whose phases all succeed and record themselves in trace; a test
+// A Program whose phases all succeed and record themselves in trace; a test
 // replaces the phase it makes fail.
-Lifecycle<FakeRuntime> Succeeding(Trace& trace) {
+Program<FakeRuntime> Succeeding(Trace& trace) {
   return {
       .initialize = [&trace]() -> std::expected<void, Failure> {
         trace.emplace_back("initialize");
@@ -77,13 +77,13 @@ std::string ContextOf(const Failure& failure, std::string_view key) {
 
 TEST(ApplicationTest, ARuntimeFailureReachesTheOutcomeWithItsTypedCause) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.run = [](FakeRuntime& /*runtime*/) -> Outcome {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.run = [](FakeRuntime& /*runtime*/) -> Outcome {
     return Failure{
         .code = Code::kTransportSendFailed, .context = {{.key = "thread", .value = "network"}}, .detail = "x"};
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kTransportSendFailed);
@@ -93,13 +93,13 @@ TEST(ApplicationTest, ARuntimeFailureReachesTheOutcomeWithItsTypedCause) {
 
 TEST(ApplicationTest, AnInitializationFailureIsTheOutcomeAndNothingIsConstructed) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.initialize = [&trace]() -> std::expected<void, Failure> {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.initialize = [&trace]() -> std::expected<void, Failure> {
     trace.emplace_back("initialize");
     return std::unexpected(Failure{.code = Code::kTransportInitFailed, .context = {}, .detail = "no sockets"});
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kTransportInitFailed);
@@ -108,13 +108,13 @@ TEST(ApplicationTest, AnInitializationFailureIsTheOutcomeAndNothingIsConstructed
 
 TEST(ApplicationTest, AConstructionFailureIsTheOutcomeAndNothingRuns) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.construct = [&trace]() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.construct = [&trace]() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
     trace.emplace_back("construct");
     return std::unexpected(Failure{.code = Code::kInvalidContent, .context = {}, .detail = "no map"});
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kInvalidContent);
@@ -123,10 +123,10 @@ TEST(ApplicationTest, AConstructionFailureIsTheOutcomeAndNothingRuns) {
 
 TEST(ApplicationTest, AnExceptionEscapingInitializationIsAClassifiedDependencyFailure) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.initialize = []() -> std::expected<void, Failure> { throw std::runtime_error("GameNetworkingSockets"); };
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.initialize = []() -> std::expected<void, Failure> { throw std::runtime_error("GameNetworkingSockets"); };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kDependencyInitFailed);
@@ -137,12 +137,12 @@ TEST(ApplicationTest, AnExceptionEscapingInitializationIsAClassifiedDependencyFa
 
 TEST(ApplicationTest, AnExceptionEscapingConstructionIsAClassifiedDependencyFailure) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.construct = []() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.construct = []() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
     throw std::runtime_error("failed to bind 127.0.0.1:1");
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kDependencyInitFailed);
@@ -155,12 +155,12 @@ TEST(ApplicationTest, AnExceptionEscapingConstructionIsAClassifiedDependencyFail
 // keeps its Code: a broken invariant is not taken for a dependency's failure.
 TEST(ApplicationTest, AClassifiedFailureThrownDuringConstructionKeepsItsCode) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.construct = []() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.construct = []() -> std::expected<std::unique_ptr<FakeRuntime>, Failure> {
     throw ClassifiedFailure(Failure{.code = Code::kInvariantViolated, .context = {}, .detail = "string too long"});
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kInvariantViolated);
@@ -170,13 +170,13 @@ TEST(ApplicationTest, AClassifiedFailureThrownDuringConstructionKeepsItsCode) {
 
 TEST(ApplicationTest, AnExceptionEscapingTheRunIsAClassifiedWorkerFailureAfterWhichTheRuntimeIsReleased) {
   Trace trace;
-  Lifecycle<FakeRuntime> lifecycle = Succeeding(trace);
-  lifecycle.run = [&trace](FakeRuntime& /*runtime*/) -> Outcome {
+  Program<FakeRuntime> program = Succeeding(trace);
+  program.run = [&trace](FakeRuntime& /*runtime*/) -> Outcome {
     trace.emplace_back("run");
     throw std::runtime_error("device removed");
   };
 
-  const Outcome outcome = Execute(lifecycle);
+  const Outcome outcome = Execute(program);
 
   ASSERT_TRUE(outcome.has_value());
   EXPECT_EQ(outcome->code, Code::kWorkerFailed);
