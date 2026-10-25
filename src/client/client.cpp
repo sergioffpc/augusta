@@ -59,8 +59,8 @@
 #include "augusta/physics_overlays.h"
 #include "augusta/version.h"
 #include "debug_index_entries.h"
-#include "network_panel.h"
-#include "profiling_panel.h"
+#include "debug_network_panel.h"
+#include "debug_profiling_panel.h"
 #endif
 
 namespace augusta::client {

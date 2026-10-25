@@ -246,8 +246,9 @@ jobs:
       - name: Lint
         id: lint
         # What the server-x64-linux job's Linux build can't lint, as it builds
-        # without the client. The client, the Renderer, the window module's
-        # GLFW half and their tests get .clang-tidy's full profile, from
+        # without the client or for Linux. The client, the Renderer, the window
+        # module's GLFW half, every module's Windows half (<module>_windows.cpp)
+        # and their tests get .clang-tidy's full profile, from
         # clang-cl's compile commands (tests/.clang-tidy leaves the tests'
         # literals alone); the audio module's output device gets
         # misc-include-cleaner alone (the Makefile's tidy target says why -w).
@@ -257,7 +258,7 @@ jobs:
         # renderer embeds its shaders and font from.
         run: |
           status=0
-          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/window/window.cpp' 'src/modules/window/glfw_keys.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
+          git ls-files 'src/client/*.cpp' 'src/modules/renderer/*.cpp' 'src/modules/window/window.cpp' 'src/modules/window/glfw_keys.cpp' 'src/*_windows.cpp' 'tests/client_*.cpp' 'tests/renderer_*.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows || status=1
           git ls-files 'src/modules/audio/output_miniaudio.cpp' 'src/modules/audio/miniaudio.cpp' | xargs -P "$NUMBER_OF_PROCESSORS" -n 1 clang-tidy-cache clang-tidy --quiet -p=build/x64-windows --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
@@ -373,7 +374,10 @@ jobs:
         # src/modules/audio/CMakeLists.txt), and aren't part of this
         # configure's build graph at all, so they have no compile_commands.json
         # entry here - excluded rather than linted against the wrong platform's
-        # (missing) compile flags. The renderer's vertices.cpp builds here but
+        # (missing) compile flags, as is every module's Windows half
+        # (<module>_windows.cpp), which the client job lints, and macOS half
+        # (<module>_macos.cpp), which no job builds. The renderer's
+        # vertices.cpp builds here but
         # is skipped too: the client job lints the whole Renderer, from its own
         # build.
         # One file per clang-tidy, on every core: a serial run over the
@@ -389,7 +393,7 @@ jobs:
         # are the client-x64-windows job's.
         run: |
           status=0
-          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
+          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -not -name '*_windows.cpp' -not -name '*_macos.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache

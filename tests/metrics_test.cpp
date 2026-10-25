@@ -23,7 +23,7 @@
 #include "augusta/faults.h"
 #include "augusta/logging.h"
 #include "augusta/tick.h"
-#include "liveness.h"
+#include "metrics_liveness.h"
 
 // The endpoint over real HTTP on the loopback, so its paths and their status
 // codes are checked as Prometheus and the liveness probe see them, and its

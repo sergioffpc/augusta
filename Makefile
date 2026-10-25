@@ -88,11 +88,21 @@ BUF = $(call toolchain_bin,buf)
 # Windows, the client's and the Renderer's tests too, as CI's client job lints
 # them; elsewhere, not the client's trees, the window module's GLFW half or the
 # output device, which CI's Linux build (without the client, AUGUSTA_CLIENT) has
-# no compile commands for.
+# no compile commands for. Never another platform's half of a module
+# (<module>_windows.cpp, <module>_linux.cpp, <module>_macos.cpp, and
+# <module>_posix.cpp, Linux's and macOS's), which this build doesn't compile.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
+OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp" ":(exclude)src/*_macos.cpp" ":(exclude)src/*_posix.cpp"
+TIDY_EXCLUDES += $(OTHER_PLATFORMS)
 else
+ifeq ($(shell uname -s),Darwin)
+OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp"
+else
+OTHER_PLATFORMS := ":(exclude)src/*_macos.cpp"
+endif
+TIDY_EXCLUDES += ":(exclude)src/*_windows.cpp" $(OTHER_PLATFORMS)
 TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
@@ -110,7 +120,7 @@ TIDY_SOURCES := $(shell $(LINT_LS_FILES) -- "src/*.cpp" "tools/agent/*.cpp" $(TI
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.
 ifeq ($(OS),Windows_NT)
-INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
+INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp" $(OTHER_PLATFORMS)
 JOBS ?= $(NUMBER_OF_PROCESSORS)
 else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"

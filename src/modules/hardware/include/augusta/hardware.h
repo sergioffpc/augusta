@@ -76,7 +76,8 @@ struct Gpu {
 };
 
 /// Asks the OS for each GPU it lists: DXGI's hardware adapters on Windows, the
-/// DRM cards on Linux. Never fails: empty if it finds none.
+/// DRM cards on Linux; none on macOS, whose GPUs are in IOKit's registry. Never
+/// fails: empty if it finds none.
 std::vector<Gpu> QueryGpus();
 
 /// gpu as logfmt fields (ADR-0029): name, vendor (its name for NVIDIA, AMD and
