@@ -147,10 +147,11 @@ class World {
   /// registered (see header comment). It holds no rules of the server's until
   /// Start gives it them, so nothing is predicted with rules of its own: until
   /// then its rifle holds no round and fires nothing. clips are the Clips of
-  /// the Character the local player plays, which its Stride advances by as the
-  /// server's does (ADR-0066); without them the Stride holds where the server
-  /// last put it.
-  explicit World(std::shared_ptr<const animation::CharacterClips> clips = nullptr);
+  /// the Character the local player plays, which its Stride and its changes of
+  /// stance advance by as the server's do (ADR-0066). Every Character has them;
+  /// they are null only for a name no pack has, which the server refuses to
+  /// join, so no tick is ever predicted without them.
+  explicit World(std::shared_ptr<const animation::CharacterClips> clips);
   ~World();
 
   /// Adds immovable level geometry to this world's physics, the same way SimulationWorld does.

@@ -94,16 +94,14 @@ enum class Phase {
   /// its Character's Skeleton relative to its parent and as its world
   /// transform, from its Clips at the stance, velocity and Stride Movement has
   /// just left its body with, its root where its position and yaw put it
-  /// (hitbox::RootOf). A Character without Clips is posed in its Rest pose
-  /// (animation::PoseAtRest). What HitDetection judges this tick's Shots against when
+  /// (hitbox::RootOf). What HitDetection judges this tick's Shots against when
   /// the Hitbox history holds no tick of the player yet, and what Commit keeps
   /// in it. Then hangs its rifle from its Character's weapon socket on its
   /// posed right hand and bends its left arm to the rifle's Fore-end by
   /// two-bone IK (animation::HoldRifle, ADR-0066), before HitDetection judges
   /// or Commit records the pose; and places the rifle's Muzzle and Sight where
   /// the socket holds it (weapon::PlaceMuzzle, ADR-0064, World::HeldRifleOf).
-  /// A Character without Clips or a weapon socket holds no rifle. Rounds still
-  /// leave the Eye.
+  /// Rounds still leave the Eye.
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -208,9 +206,12 @@ struct Character {
   /// at the character's root, so a Hitbox bound to joint 0 is in root space.
   assets::Skeleton skeleton{.joints = {assets::JointData{.name = std::string(kDefaultRootJoint)}},
                             .rest_transforms = {math::Mat4(1.0F)}};
-  /// Its Clips (ADR-0066), shared by every player who plays it: what Movement
-  /// advances each one's Stride by. Null for a Character without any, whose
-  /// players' Strides hold.
+  /// Its Clips (ADR-0066): what Movement advances each of its players' Stride
+  /// by and Posing poses each one by. Never null: every Character has them,
+  /// loading one refuses any without (animation::LoadClips). Shared, as they
+  /// are loaded once a Character and read by every player who plays it, in
+  /// every World built on the same content (a live Match, a Replay, a
+  /// Reenactment), and never changed after loading.
   // Initialized, so a designated initializer may leave it out.
   // NOLINTNEXTLINE(readability-redundant-member-init)
   std::shared_ptr<const animation::CharacterClips> clips{};

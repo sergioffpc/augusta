@@ -335,10 +335,9 @@ TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
   const auto clips = Load();
 
   ASSERT_TRUE(clips.has_value());
-  ASSERT_TRUE(clips->weapon_socket.has_value());
-  EXPECT_EQ(clips->weapon_socket->right_hand, 2U);
-  EXPECT_EQ(clips->weapon_socket->left_hand, 3U);
-  EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket->frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
+  EXPECT_EQ(clips->weapon_socket.right_hand, 2U);
+  EXPECT_EQ(clips->weapon_socket.left_hand, 3U);
+  EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket.frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
 }
 
 TEST_F(ClipsTest, ACharacterWithoutAWeaponSocketIsRefused) {

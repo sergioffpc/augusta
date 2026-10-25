@@ -29,6 +29,7 @@
 #include "augusta/simulation.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "character_fixture.h"
 #include "clips_fixture.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
@@ -87,7 +88,12 @@ constexpr std::size_t kMaxCommands = 240;  // Four seconds of input.
 constexpr float kPi = 3.14159265F;
 constexpr augusta::simulation::EntityId kPlayer = static_cast<augusta::simulation::EntityId>(1);
 const Vec3 kSpawn(0.0F, 0.0F, 0.0F);
-const augusta::simulation::Character kCharacter{.eye = Vec3(0.0F, 1.7F, 0.0F), .hitboxes = {}};
+// A Character that sees from 1.7 m up, no hitbox, its Clips holding it still
+// (character_fixture.h).
+augusta::simulation::Character TestCharacter() {
+  return augusta::character_fixture::Rigged(
+      augusta::simulation::Character{.eye = Vec3(0.0F, 1.7F, 0.0F), .hitboxes = {}});
+}
 
 CollisionMesh Floor() {
   constexpr float kExtent = 100.0F;
@@ -154,7 +160,7 @@ RC_GTEST_PROP(SimulationPropertyTest, StaminaStaysWithinTheBarWhateverThePlayerD
 
   augusta::simulation::World world(augusta::parameters::Parameters{.stamina = stamina}, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn, kCharacter);
+  world.AddPlayer(kPlayer, kSpawn, TestCharacter());
 
   for (const Command& command : commands) {
     const auto state = world.Tick({{.entity = kPlayer, .command = command}}, kTick).state;
@@ -193,7 +199,7 @@ RC_GTEST_PROP(SimulationPropertyTest, TheMagazineStaysWithinItsCapacityAndNoWind
 
   augusta::simulation::World world(parameters, kTickRate);
   RC_ASSERT(world.AddCollisionMesh(Floor()).has_value());
-  world.AddPlayer(kPlayer, kSpawn, kCharacter);
+  world.AddPlayer(kPlayer, kSpawn, TestCharacter());
 
   std::vector<std::size_t> fired;  // The ticks a round was fired on.
   for (std::size_t i = 0; i < commands.size(); ++i) {
@@ -229,9 +235,9 @@ augusta::simulation::Character WideTarget() {
     triangles.push_back({.a = -half, .b = half, .c = half + up});
     triangles.push_back({.a = -half, .b = half + up, .c = -half + up});
   }
-  return augusta::simulation::Character{
+  return augusta::character_fixture::Rigged(augusta::simulation::Character{
       .eye = Vec3(0.0F, 1.7F, 0.0F),
-      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}};
+      .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso, .triangles = std::move(triangles)}}});
 }
 
 // commands with every view brought to within a fifth of a turn of yaw toward
@@ -466,8 +472,7 @@ RC_GTEST_PROP(SimulationPropertyTest, AClientThatDivergedConvergesOnTheServersSt
 
   // Both sides advance the Stride and a change of stance by the same
   // Character's Clips.
-  augusta::simulation::Character character = kCharacter;
-  character.clips = augusta::clips_fixture::TestClips();
+  const augusta::simulation::Character character = TestCharacter();
   augusta::simulation::World server(parameters, kTickRate);
   RC_ASSERT(server.AddCollisionMesh(Floor()).has_value());
   server.AddPlayer(kPlayer, kSpawn, character);

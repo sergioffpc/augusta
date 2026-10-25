@@ -46,6 +46,8 @@
 #include "augusta/raw_link.h"
 #include "augusta/replay_catalog.h"
 #include "augusta/version.h"
+#include "clips_fixture.h"
+#include "scenario_fixture.h"
 
 // A replay server (ADR-0051) over loopback, driven by hand: what a Replay
 // viewer, a Replay list request and a Join request get from it, and the whole
@@ -135,13 +137,13 @@ Scenario TwoInALine() {
   return Scenario{
       .collision = {Floor()},
       .spawn_points = {Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, -kSpacing)},
-      .characters =
-          {{.path = kCharacter,
-            .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
-                         BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
-                         BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))},
-            .skeleton = RootOnly(),
-            .eye = Vec3(0.0F, kEyeHeight, 0.0F)}},
+      .characters = {augusta::scenario_fixture::Rigged(
+          {.path = kCharacter,
+           .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kHead, Vec3(-0.1F, 1.5F, -0.1F), Vec3(0.1F, 1.8F, 0.1F)),
+                        BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.9F, -0.1F), Vec3(0.2F, 1.5F, 0.1F)),
+                        BoxHitbox(augusta::assets::BodyPart::kLimb, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.9F, 0.1F))},
+           .skeleton = RootOnly(),
+           .eye = Vec3(0.0F, kEyeHeight, 0.0F)})},
       .client_pack = {}};
 }
 
@@ -257,7 +259,7 @@ std::string CaptureAKill(const std::filesystem::path& directory) {
   Host host(config, TwoInALine(), Policy());
   std::vector<std::unique_ptr<augusta::harness::Session>> sessions;
   for (int i = 0; i < 2; ++i) {
-    augusta::prediction::World world;
+    augusta::prediction::World world(augusta::clips_fixture::TestClips());
     EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
     sessions.push_back(std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{.server = {.address = host.ListenEndpoint().address}, .character = kCharacter},
@@ -678,7 +680,7 @@ class ReplayViewerTest : public ReplayServerTest {
     auto viewer = std::make_unique<augusta::harness::Session>(
         augusta::harness::SessionConfig{
             .server = {.address = server.ListenEndpoint().address}, .character = {}, .replay = capture, .run = run},
-        augusta::prediction::World());
+        augusta::prediction::World(augusta::clips_fixture::TestClips()));
     viewer->Connect();
     return viewer;
   }
@@ -792,7 +794,7 @@ TEST_F(ReplayViewerTest, APlayersClientIsRefusedAsAReplayServerRefusesAnyRequest
   const std::unique_ptr<ReplayServer> server = Serve();
   augusta::harness::Session player(
       augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address}, .character = kCharacter},
-      augusta::prediction::World());
+      augusta::prediction::World(augusta::clips_fixture::TestClips()));
   player.Connect();
 
   ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));
@@ -808,7 +810,7 @@ TEST_F(ReplayViewerTest, ACapturedPlayersClientIsRefusedAsAReplayServerRefusesAn
       augusta::harness::SessionConfig{.server = {.address = server->ListenEndpoint().address},
                                       .character = kCharacter,
                                       .spawn = augusta::math::Vec3(1.0F, 0.0F, 2.0F)},
-      augusta::prediction::World());
+      augusta::prediction::World(augusta::clips_fixture::TestClips()));
   player.Connect();
 
   ASSERT_TRUE(RunUntil(*server, player, [&] { return player.GetFailure().has_value(); }));

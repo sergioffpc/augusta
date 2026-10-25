@@ -33,9 +33,14 @@ add_executable(
 # The tick runs the example scenario's Game policy, as the server loads it from
 # its golden server pack; replication is host::Host's own
 # (augusta_host), and a render frame plays the golden client pack's cue sounds.
+# Its players' Clips are authored with ozz-animation's offline libraries, and
+# checked as they are built with GoogleTest's assertions (clips_fixture.h).
 target_link_libraries(
   augusta_benchmarks
   PRIVATE
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
     augusta_assets
     augusta_audio
     augusta_cues
@@ -280,12 +285,16 @@ target_link_libraries(
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_pose_agreement_tests DISCOVERY_TIMEOUT 30)
 
-# SimulationWorld with a Game policy script the test chooses (ADR-0022).
+# SimulationWorld with a Game policy script the test chooses (ADR-0022). Links
+# augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(
   augusta_policy_tests
   PRIVATE
     augusta_simulation
+    augusta_animation
+    ozz::animation_offline
     augusta_policy
     augusta_scenario_parameters_loader
     augusta_policy_loader
@@ -317,10 +326,19 @@ gtest_discover_tests(augusta_policy_actions_tests DISCOVERY_TIMEOUT 30)
 
 # The example scenario's shipped rules, loaded out of a pack built with
 # augusta_assets' pack encoder and run through SimulationWorld (ADR-0013).
+# Links augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
 add_executable(augusta_example_rules_tests example_rules_test.cpp)
 target_link_libraries(
   augusta_example_rules_tests
-  PRIVATE augusta_simulation augusta_policy_loader augusta_logging GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_simulation
+    augusta_policy_loader
+    augusta_logging
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
+    GTest::gtest_main
 )
 target_compile_definitions(
   augusta_example_rules_tests
@@ -521,11 +539,15 @@ add_executable(augusta_policy_loader_tests policy_loader_test.cpp)
 target_link_libraries(augusta_policy_loader_tests PRIVATE augusta_policy_loader GTest::gtest GTest::gtest_main)
 gtest_discover_tests(augusta_policy_loader_tests DISCOVERY_TIMEOUT 30)
 
+# Links augusta_animation and ozz-animation's offline libraries for the Clips its
+# prediction is built with (clips_fixture.h).
 add_executable(augusta_session_tests session_test.cpp)
 target_link_libraries(
   augusta_session_tests
   PRIVATE
     augusta_harness
+    augusta_animation
+    ozz::animation_offline
     augusta_server_connection_health
     augusta_host
     augusta_link
@@ -614,11 +636,15 @@ target_link_libraries(augusta_replay_catalog_tests PRIVATE augusta_host GTest::g
 gtest_discover_tests(augusta_replay_catalog_tests DISCOVERY_TIMEOUT 30)
 
 # A replay server (ADR-0051) over loopback, on a Match a live Host captured.
+# Links augusta_animation and ozz-animation's offline libraries for the Clips
+# its viewers' prediction is built with (clips_fixture.h).
 add_executable(augusta_replay_server_tests replay_server_test.cpp)
 target_link_libraries(
   augusta_replay_server_tests
   PRIVATE
     augusta_host_replay
+    augusta_animation
+    ozz::animation_offline
     augusta_harness
     augusta_link
     augusta_link_raw
@@ -694,22 +720,35 @@ target_link_libraries(augusta_intent_tests PRIVATE augusta_harness augusta_math 
 # Links PhysX through augusta_harness, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_intent_tests DISCOVERY_TIMEOUT 30)
 
+# Links augusta_animation and ozz-animation's offline libraries for the Clips its
+# prediction is built with (clips_fixture.h).
 add_executable(augusta_runner_tests runner_test.cpp)
 target_link_libraries(
   augusta_runner_tests
-  PRIVATE augusta_harness augusta_host augusta_link augusta_protocol GTest::gtest GTest::gtest_main
+  PRIVATE
+    augusta_harness
+    augusta_host
+    augusta_link
+    augusta_protocol
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
+    GTest::gtest_main
 )
 # Links networking and PhysX, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_runner_tests DISCOVERY_TIMEOUT 30)
 
 # Local transport failures at the runtime seams (ADR-0033): a real Host,
 # Session, Runner and ServerRuntime over loopback, the transport made to fail
-# by fault injection.
+# by fault injection. Links augusta_animation and ozz-animation's offline
+# libraries for the Clips its prediction is built with (clips_fixture.h).
 add_executable(augusta_transport_failure_tests transport_failure_test.cpp)
 target_link_libraries(
   augusta_transport_failure_tests
   PRIVATE
     augusta_harness
+    augusta_animation
+    ozz::animation_offline
     augusta_host
     augusta_link
     augusta_link_raw

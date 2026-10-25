@@ -31,6 +31,7 @@
 #include "augusta/math.h"
 #include "augusta/reenactment.h"
 #include "augusta/tick.h"
+#include "scenario_fixture.h"
 #include "session_test.h"
 
 // The reenactments debug tool end to end (ADR-0050), on a real server host and
@@ -102,9 +103,10 @@ class ReenactmentHostTest : public ::testing::Test {
     HostConfig config = TestHostConfig(WithPlayerCount(2));
     config.capture_directory = captures;
     config.reenactments = reenactments;
-    return std::make_unique<Host>(config, Scenario{.collision = {FloorAt(kFloorY)},
-                                                   .spawn_points = std::move(spawn_points),
-                                                   .characters = {{.path = kCharacter, .hitboxes = {}}}});
+    return std::make_unique<Host>(
+        config, Scenario{.collision = {FloorAt(kFloorY)},
+                         .spawn_points = std::move(spawn_points),
+                         .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   }
 
   // One step of the whole Match: every client of sessions still connected

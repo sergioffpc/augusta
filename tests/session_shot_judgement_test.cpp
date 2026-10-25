@@ -20,6 +20,7 @@
 #include "augusta/parameters.h"
 #include "augusta/protocol.h"
 #include "augusta/tick.h"
+#include "scenario_fixture.h"
 #include "session_test.h"
 
 // Shot judgements reaching a Session (ADR-0038, ADR-0074): end to end, on a
@@ -101,11 +102,12 @@ class ShotJudgementMatchTest : public ::testing::Test {
   static Scenario InALine() {
     return Scenario{.collision = {FloorAt(kFloorY)},
                     .spawn_points = {Vec3(0.0F, kFloorY, 0.0F), Vec3(0.0F, kFloorY, -kSpacing)},
-                    .characters = {{.path = kCharacter,
-                                    .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F),
-                                                           Vec3(0.2F, 1.8F, 0.1F))},
-                                    .skeleton = augusta::session_test::RootSkeleton(),
-                                    .eye = Vec3(0.0F, kEyeHeight, 0.0F)}}};
+                    .characters = {augusta::scenario_fixture::Rigged(
+                        {.path = kCharacter,
+                         .hitboxes = {BoxHitbox(augusta::assets::BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F),
+                                                Vec3(0.2F, 1.8F, 0.1F))},
+                         .skeleton = augusta::session_test::RootSkeleton(),
+                         .eye = Vec3(0.0F, kEyeHeight, 0.0F)})}};
   }
 
   // Joins two clients and plays them into a match, then settles it.

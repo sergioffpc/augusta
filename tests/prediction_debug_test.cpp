@@ -9,6 +9,7 @@
 #include "augusta/physics.h"
 #include "augusta/prediction.h"
 #include "augusta/tick.h"
+#include "clips_fixture.h"
 
 // PredictionWorld's Collision lines (Development build only, ADR-0074): the
 // client World's visualization, stepped once per tick and carried in the
@@ -48,7 +49,7 @@ Visualization Collision() {
 }
 
 TEST(PredictionCollisionTest, WithCollisionOnTheStateCarriesLinesAfterATick) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   world.Start(Vec3(0.0F, 0.0F, 0.0F), Parameters{});
   world.SetVisualization(Collision());
@@ -60,7 +61,7 @@ TEST(PredictionCollisionTest, WithCollisionOnTheStateCarriesLinesAfterATick) {
 }
 
 TEST(PredictionCollisionTest, WithCollisionOffTheStateCarriesNoLines) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   world.Start(Vec3(0.0F, 0.0F, 0.0F), Parameters{});
 
@@ -70,7 +71,7 @@ TEST(PredictionCollisionTest, WithCollisionOffTheStateCarriesNoLines) {
 }
 
 TEST(PredictionCollisionTest, TurnedOffAgainTheStateCarriesNoLines) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   world.Start(Vec3(0.0F, 0.0F, 0.0F), Parameters{});
   world.SetVisualization(Collision());
@@ -87,7 +88,7 @@ TEST(PredictionCollisionTest, TurnedOffAgainTheStateCarriesNoLines) {
 // had it, so every answer is a Reconciliation replay; with Collision on when
 // collision is set.
 std::vector<BodyState> PredictedWithReplays(bool collision) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   world.Start(Vec3(0.0F, 0.0F, 0.0F), Parameters{});
   if (collision) {

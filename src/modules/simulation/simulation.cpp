@@ -118,7 +118,7 @@ struct Rifle {
   weapon::State state{};
 };
 
-// A player's character's Clips, null for one without any (Character::clips).
+// A player's character's Clips (Character::clips).
 struct Clips {
   std::shared_ptr<const animation::CharacterClips> clips;
 };
@@ -128,8 +128,7 @@ struct Eye {
   math::Vec3 standing{};
 };
 
-// Where a player's rifle is, as Posing last placed it; nullopt until it has,
-// and for a Character without a weapon socket.
+// Where a player's rifle is, as Posing last placed it; nullopt until it has.
 struct Held {
   std::optional<HeldRifle> rifle;
 };
@@ -163,11 +162,6 @@ struct PlayerHit {
   float pitch = 0.0F;
   body_part::BodyPart part = body_part::BodyPart::kTorso;
 };
-
-// Where a player's body is and faces this tick, as the tick's State reports it.
-hitbox::Pose PoseOf(const Body& body, const Facing& facing) {
-  return hitbox::Pose{.position = body.state.position, .yaw = facing.yaw, .stance = body.state.stance};
-}
 
 // kMaxShootersDelay in ticks at tick_rate_hz: not a whole number at every rate.
 float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
@@ -370,9 +364,8 @@ struct World::Impl {
   // last tick left, and a change of stance by its transition duration, as
   // PredictionWorld's do from the same state.
   void OnMovement(float delta_time, Body& body, const Intent& intent, const Facing& facing, const Clips& clips) {
-    const physics::Pacing pacing =
-        clips.clips != nullptr ? animation::PacingOf(*clips.clips, body.state, facing.yaw) : physics::Pacing{};
-    body.state = physics.Step(body.handle, intent.input, delta_time, pacing);
+    body.state =
+        physics.Step(body.handle, intent.input, delta_time, animation::PacingOf(*clips.clips, body.state, facing.yaw));
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
@@ -395,29 +388,29 @@ struct World::Impl {
     Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
   }
 
-  // Poses one player's Skeleton by its Clips where Movement has just put its
-  // body, in its Rest pose for a Character without any; then hangs its rifle
-  // from its weapon socket and reaches it with its left hand, and places the
-  // rifle's Muzzle and Sight where the socket holds it. A Character without a
-  // weapon socket holds no rifle.
+  // Poses one player: its body where Movement has just put it, then its rifle
+  // held in its hands, then the rifle's markers where its hand holds them.
   void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
                 PosedJoints& posed, Held& held) {
-    if (clips.clips == nullptr) {
-      animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
-      held.rifle = std::nullopt;
-      return;
-    }
-    poser.Pose(*clips.clips, skeleton.skeleton,
-               animation::PoseInput{.body = body.state, .yaw = facing.yaw, .pitch = facing.pitch, .ads = facing.ads},
-               posed.posed);
-    if (!clips.clips->weapon_socket) {
-      held.rifle = std::nullopt;
-      return;
-    }
+    PoseBody(body, facing, skeleton.skeleton, *clips.clips, posed.posed);
     const math::Mat4 hand =
-        animation::HoldRifle(skeleton.skeleton, *clips.clips->weapon_socket, rifle_markers, posed.posed);
-    held.rifle =
-        HeldRifle{.muzzle = weapon::PlaceMuzzle(hand, rifle_markers), .sight = weapon::PlaceSight(hand, rifle_markers)};
+        animation::HoldRifle(skeleton.skeleton, clips.clips->weapon_socket, rifle_markers, posed.posed);
+    held.rifle = PlaceRifle(hand);
+  }
+
+  // Poses skeleton by clips, the body's Clips, at its body's state and where it
+  // faces.
+  void PoseBody(const Body& body, const Facing& facing, const assets::Skeleton& skeleton,
+                const animation::CharacterClips& clips, animation::SkeletonPose& posed) {
+    poser.Pose(clips, skeleton,
+               animation::PoseInput{.body = body.state, .yaw = facing.yaw, .pitch = facing.pitch, .ads = facing.ads},
+               posed);
+  }
+
+  // Where the rifle's Muzzle and Sight are, held at its Grip by hand.
+  [[nodiscard]] HeldRifle PlaceRifle(const math::Mat4& hand) const {
+    return HeldRifle{.muzzle = weapon::PlaceMuzzle(hand, rifle_markers),
+                     .sight = weapon::PlaceSight(hand, rifle_markers)};
   }
 
   // Announces shot in the tick's state and puts its bullet in flight, to be

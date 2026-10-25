@@ -19,6 +19,7 @@
 #include "augusta/host.h"
 #include "augusta/pcapng_file_writer.h"
 #include "augusta/version.h"
+#include "scenario_fixture.h"
 #include "session_test.h"
 
 // The transport's tap through a Host's and a Session's construction options
@@ -104,7 +105,9 @@ TEST(SessionTapTest, AClientAndAServerGivenATapEachWriteTheMessagesTheyExchanged
     HostConfig host_config = TestHostConfig();
     host_config.transport.tap = server_writer.get();
     Host host(host_config,
-              Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+              Scenario{.collision = {},
+                       .spawn_points = {},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
     SessionConfig session_config = TestSessionConfig(host.ListenEndpoint());
     session_config.transport.tap = client_writer.get();
     Session session(session_config, EmptyWorld());

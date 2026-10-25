@@ -79,7 +79,7 @@ class Poser {
 };
 
 /// Holds the rifle whose markers are rifle in posed, a pose of skeleton as
-/// Poser::Pose or PoseAtRest left it (ADR-0066): the rifle's Grip on socket,
+/// Poser::Pose left it (ADR-0066): the rifle's Grip on socket,
 /// where the pose put the Joint it moves with, and the left hand on the rifle's
 /// Fore-end, its elbow and shoulder turned by ozz-animation's two-bone IK, each
 /// Joint below them composed again. The elbow bends the way the pose bent it,

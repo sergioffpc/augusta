@@ -40,13 +40,9 @@ struct SkeletonPose {
   std::vector<math::Mat4> world;
 };
 
-/// Poses skeleton at pose in the Rest pose into posed: each Joint as the
-/// Skeleton holds it, and its Rest transform in the character's space put where
-/// pose puts the character's root. posed is overwritten, so a caller posing
-/// every tick keeps its storage.
-void PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose, SkeletonPose& posed);
-
-/// The world transforms of PoseAtRest alone, into a new vector.
+/// The world transforms of skeleton's Joints in the Rest pose at pose: each
+/// Joint's Rest transform in the character's space put where pose puts the
+/// character's root.
 [[nodiscard]] std::vector<math::Mat4> PoseAtRest(const assets::Skeleton& skeleton, const hitbox::Pose& pose);
 
 /// hitboxes, each in the space of its Joint of skeleton, placed where the Rest

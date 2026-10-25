@@ -83,7 +83,7 @@ enum PhaseIndex : std::size_t {
 struct World::Impl {
   flecs::world ecs;
   physics::World physics;
-  // The local player's Character's Clips, null without them.
+  // The local player's Character's Clips (World's constructor).
   std::shared_ptr<const animation::CharacterClips> clips;
   // M1 spike (issue #32): the one entity this pipeline predicts, ahead of
   // real ECS component shapes (see prediction.h's header comment) -
@@ -201,9 +201,8 @@ struct World::Impl {
   // space of command's yaw on its grid, a change of stance by its transition
   // duration): what SimulationWorld's Movement steps it by.
   physics::BodyState Move(const physics::BodyState& body, const command::Command& command, float delta_time) {
-    const physics::Pacing pacing =
-        clips != nullptr ? animation::PacingOf(*clips, body, math::SnapAngle(command.yaw)) : physics::Pacing{};
-    return physics.Step(local_body, command.movement, delta_time, pacing);
+    return physics.Step(local_body, command.movement, delta_time,
+                        animation::PacingOf(*clips, body, math::SnapAngle(command.yaw)));
   }
 
   void OnWeaponHandling(float delta_time) {

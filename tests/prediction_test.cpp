@@ -51,7 +51,7 @@ Command Walking() {
 
 // Requirements: US-04
 TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
 
   State state;
   for (int i = 0; i < 30; ++i) {
@@ -63,7 +63,7 @@ TEST(PredictionWorldTest, TicksTheLocalEntityForwardEachCall) {
 
 // Requirements: US-03
 TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
 
   world.Start(Vec3(5.0F, 0.0F, 7.0F), Parameters{});
@@ -78,7 +78,7 @@ TEST(PredictionWorldTest, StartPutsTheLocalPlayerAtTheSpawnPointOnTheFloor) {
 }
 
 TEST(PredictionWorldTest, StartReplacesTheStaminaRulesTheWorldWasBuiltWith) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
   Command sprint = Walking();
   sprint.movement.sprint = true;
   EXPECT_FLOAT_EQ(world.Tick(sprint, 0, std::nullopt, kFixedTick).local_body.stamina, 1.0F);
@@ -144,19 +144,6 @@ TEST(PredictionWorldTest, ACrouchsProgressAdvancesOverTheLocalCharactersTransiti
   EXPECT_EQ(state.local_body.stance_progress, 4 * 17);
 }
 
-TEST(PredictionWorldTest, WithoutClipsTheLocalPlayersStrideHolds) {
-  World world;
-  ASSERT_TRUE(world.AddCollisionMesh(Floor()).has_value());
-
-  State state;
-  for (int i = 0; i < kSettleTicks; ++i) {
-    state = world.Tick(Walking(), 0, std::nullopt, kFixedTick);
-  }
-
-  EXPECT_GT(state.local_body.position.x, 0.5F);
-  EXPECT_EQ(state.local_body.stride, 0);
-}
-
 // A resting player on a floor, ticked with sequences 1, 2, ... and no input.
 class ReconciliationTest : public ::testing::Test {
  protected:
@@ -191,7 +178,7 @@ class ReconciliationTest : public ::testing::Test {
     return Acknowledgement{.sequence = sequence, .body = body};
   }
 
-  World world_;
+  World world_{augusta::clips_fixture::TestClips()};
   augusta::tick::Sequence sequence_ = 0;
   std::vector<BodyState> states_;
   State latest_;
@@ -248,7 +235,7 @@ TEST_F(ReconciliationTest, AStaminaThatDiffersIsCorrectedEvenWhereThePositionAgr
   EXPECT_NEAR(state.local_body.stamina, kServerStamina, 0.01F);
 }
 
-// The fixture's world has no Clips, so its Stride holds where the server put it.
+// The fixture's body is still, so its Stride holds where the server put it.
 // Requirements: NFR-02
 TEST_F(ReconciliationTest, AStrideThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
   Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
@@ -260,8 +247,9 @@ TEST_F(ReconciliationTest, AStrideThatDiffersIsCorrectedEvenWhereEverythingElseA
 }
 
 // The server has the body standing up out of a crouch, a change the client
-// never predicted: the body poses differently, so the client takes it. The
-// fixture's world has no Clips, so this tick's Movement then ends the change.
+// never predicted: the body poses differently, so the client takes it. This
+// tick's Movement then advances the change by a tick of its Clips' 0.25 s
+// between standing and crouching: 17 steps of 255.
 // Requirements: NFR-02
 TEST_F(ReconciliationTest, AChangeOfStanceThatDiffersIsCorrectedEvenWhereEverythingElseAgrees) {
   Acknowledgement ack = ServerAgreesWithTheClientExcept(sequence_, Vec3(0.0F, 0.0F, 0.0F));
@@ -271,7 +259,7 @@ TEST_F(ReconciliationTest, AChangeOfStanceThatDiffersIsCorrectedEvenWhereEveryth
   const State state = Tick(ack);
 
   EXPECT_EQ(state.local_body.previous_stance, augusta::physics::Stance::kCrouching);
-  EXPECT_EQ(state.local_body.stance_progress, augusta::physics::kStanceProgressSteps);
+  EXPECT_EQ(state.local_body.stance_progress, 100 + 17);
 }
 
 // A step apart is rounding, as a millimetre of position is: not worth a replay.
@@ -485,7 +473,7 @@ class WeaponPredictionTest : public ::testing::Test {
     return Acknowledgement{.sequence = sequence, .body = state.local_body, .rifle = state.rifle};
   }
 
-  World world_;
+  World world_{augusta::clips_fixture::TestClips()};
   augusta::tick::Sequence sequence_ = 0;
   std::vector<State> states_;
   State latest_;
@@ -500,7 +488,7 @@ TEST_F(WeaponPredictionTest, AMatchStartsWithAFullMagazineOfTheServersRifle) {
 }
 
 TEST(PredictionWorldTest, BeforeAMatchStartsNothingFires) {
-  World world;
+  World world(augusta::clips_fixture::TestClips());
 
   const State state = world.Tick(Firing(), 0, std::nullopt, kFixedTick);
 

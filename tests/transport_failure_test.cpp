@@ -26,6 +26,8 @@
 #include "augusta/runner.h"
 #include "augusta/supervisor.h"
 #include "augusta/tick_messages.h"
+#include "clips_fixture.h"
+#include "scenario_fixture.h"
 #include "server.h"
 
 // Local transport failures at the runtime seams (ADR-0033): a send or receive
@@ -96,11 +98,13 @@ HostConfig HostConfigWith(Faults* faults) {
 }
 
 Scenario TestScenario() {
-  return Scenario{.collision = {Floor()}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}};
+  return Scenario{.collision = {Floor()},
+                  .spawn_points = {},
+                  .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}};
 }
 
 augusta::prediction::World WorldWithFloor() {
-  augusta::prediction::World world;
+  augusta::prediction::World world(augusta::clips_fixture::TestClips());
   EXPECT_TRUE(world.AddCollisionMesh(Floor()).has_value());
   return world;
 }

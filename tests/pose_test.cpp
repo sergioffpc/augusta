@@ -180,11 +180,11 @@ TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
   }
 }
 
-// The Aimer (clips_fixture.h) still, posed at a view's pitch and ADS: its Aim
-// offset bends it by its pitch, its ADS grip raises its Arm.
+// The Holder (clips_fixture.h) still, posed at a view's pitch and ADS: its Aim
+// offset bends it by its pitch, its ADS grip raises its right arm.
 class AimTest : public ::testing::Test {
  protected:
-  // The Aimer on the ground in stance, which it has finished changing to unless
+  // The Holder on the ground in stance, which it has finished changing to unless
   // a test names the stance it left and how far it has gone from it.
   SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false, Stance previous = Stance::kStanding,
                       std::uint8_t progress = static_cast<std::uint8_t>(augusta::physics::kStanceProgressSteps)) {
@@ -199,16 +199,16 @@ class AimTest : public ::testing::Test {
   }
 
   static Vec3 HeadOf(const SkeletonPose& posed) {
-    return augusta::math::TransformPoint(posed.world.at(fixture::kAimerHead), Vec3(0.0F));
+    return augusta::math::TransformPoint(posed.world.at(fixture::kHolderHead), Vec3(0.0F));
   }
 
   // Where the Arm's end is: 0.6 m down it from its shoulder.
   static Vec3 HandOf(const SkeletonPose& posed) {
-    return augusta::math::TransformPoint(posed.world.at(fixture::kAimerArm), Vec3(0.0F, -0.6F, 0.0F));
+    return augusta::math::TransformPoint(posed.world.at(fixture::kHolderRightArm), Vec3(0.0F, -0.6F, 0.0F));
   }
 
-  std::shared_ptr<const CharacterClips> clips_ = fixture::AimerClips();
-  Skeleton skeleton_ = fixture::AimerSkeleton();
+  std::shared_ptr<const CharacterClips> clips_ = fixture::HolderClips();
+  Skeleton skeleton_ = fixture::HolderSkeleton();
   Poser poser_;
 };
 
@@ -242,7 +242,7 @@ TEST_F(AimTest, HalfWayDownTheBodyBendsHalfAsFar) {
 // The hand 0.6 m down an Arm from a shoulder on a Pelvis pelvis high, swung up
 // ahead (-Z) by raise.
 Vec3 HandRaisedBy(float pelvis, float raise) {
-  return Vec3(fixture::kAimerShoulderSide, pelvis + fixture::kAimerShoulderAbovePelvis - (0.6F * std::cos(raise)),
+  return Vec3(fixture::kHolderShoulderSide, pelvis + fixture::kHolderShoulderAbovePelvis - (0.6F * std::cos(raise)),
               -0.6F * std::sin(raise));
 }
 
@@ -266,9 +266,9 @@ TEST_F(AimTest, AimingDownInADSBendsTheBodyAndRaisesTheArm) {
   // bend puts the shoulder, swung up ahead by the raise less the bend, which
   // tips it down.
   const float bend = fixture::kStandingAimBend;
-  const Vec3 shoulder(fixture::kAimerShoulderSide,
-                      fixture::kPelvisStanding + (fixture::kAimerShoulderAbovePelvis * std::cos(bend)),
-                      -fixture::kAimerShoulderAbovePelvis * std::sin(bend));
+  const Vec3 shoulder(fixture::kHolderShoulderSide,
+                      fixture::kPelvisStanding + (fixture::kHolderShoulderAbovePelvis * std::cos(bend)),
+                      -fixture::kHolderShoulderAbovePelvis * std::sin(bend));
   const float swing = fixture::kStandingAdsRaise - bend;
   ExpectNear(hand, shoulder + Vec3(0.0F, -0.6F * std::cos(swing), -0.6F * std::sin(swing)));
 }
@@ -370,7 +370,7 @@ class HoldTest : public ::testing::Test {
     body.grounded = true;
     Held held;
     poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, held.posed);
-    held.hand = augusta::animation::HoldRifle(skeleton_, *clips_->weapon_socket, rifle_, held.posed);
+    held.hand = augusta::animation::HoldRifle(skeleton_, clips_->weapon_socket, rifle_, held.posed);
     return held;
   }
 
@@ -386,7 +386,7 @@ class HoldTest : public ::testing::Test {
 
 // The right shoulder, on a Pelvis pelvis high.
 Vec3 RightShoulder(float pelvis) {
-  return Vec3(fixture::kAimerShoulderSide, pelvis + fixture::kAimerShoulderAbovePelvis, 0.0F);
+  return Vec3(fixture::kHolderShoulderSide, pelvis + fixture::kHolderShoulderAbovePelvis, 0.0F);
 }
 
 // Standing or crouched, the hand hangs kHolderArm below the shoulder; in ADS the
@@ -408,9 +408,9 @@ TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
 // arm hanging from it turned as far.
 TEST_F(HoldTest, TheRifleFollowsTheHandAsTheAimOffsetBendsTheBody) {
   const float bend = fixture::kStandingAimBend;
-  const Vec3 shoulder(fixture::kAimerShoulderSide,
-                      fixture::kPelvisStanding + (fixture::kAimerShoulderAbovePelvis * std::cos(bend)),
-                      -fixture::kAimerShoulderAbovePelvis * std::sin(bend));
+  const Vec3 shoulder(fixture::kHolderShoulderSide,
+                      fixture::kPelvisStanding + (fixture::kHolderShoulderAbovePelvis * std::cos(bend)),
+                      -fixture::kHolderShoulderAbovePelvis * std::sin(bend));
 
   const Held aiming_down = HoldAt(Stance::kStanding, -augusta::command::kMaxLookPitch);
 
@@ -456,7 +456,7 @@ TEST_F(HoldTest, TheLeftArmBendsAtItsElbowAndKeepsItsLengths) {
   const Vec3 hand = OriginOf(held.posed, fixture::kHolderLeftHand);
 
   ExpectNear(shoulder,
-             Vec3(-fixture::kAimerShoulderSide, fixture::kPelvisStanding + fixture::kAimerShoulderAbovePelvis, 0.0F));
+             Vec3(-fixture::kHolderShoulderSide, fixture::kPelvisStanding + fixture::kHolderShoulderAbovePelvis, 0.0F));
   EXPECT_NEAR(augusta::math::Length(elbow - shoulder), fixture::kHolderUpperArm, kTolerance);
   EXPECT_NEAR(augusta::math::Length(hand - elbow), fixture::kHolderForearm, kTolerance);
   const Vec3 midway = (shoulder + hand) / 2.0F;

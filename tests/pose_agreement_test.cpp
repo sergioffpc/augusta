@@ -163,9 +163,7 @@ class PoseAgreementTest : public ::testing::Test {
     const Character& character = CharacterOf(entity);
     SkeletonPose posed;
     poser_.Pose(*character.clips, character.skeleton, input, posed);
-    if (character.clips->weapon_socket) {
-      augusta::animation::HoldRifle(character.skeleton, *character.clips->weapon_socket, fixture::HolderRifle(), posed);
-    }
+    augusta::animation::HoldRifle(character.skeleton, character.clips->weapon_socket, fixture::HolderRifle(), posed);
     return posed;
   }
 
@@ -178,7 +176,7 @@ class PoseAgreementTest : public ::testing::Test {
       const auto rifle = world_.HeldRifleOf(kHolder);
       EXPECT_TRUE(rifle.has_value());
       if (rifle) {
-        const Mat4 hand = posed.world[fixture::kHolderRightHand] * holder_.clips->weapon_socket->frame;
+        const Mat4 hand = posed.world[fixture::kHolderRightHand] * holder_.clips->weapon_socket.frame;
         ExpectNear(augusta::weapon::PlaceMuzzle(hand, fixture::HolderRifle()), rifle->muzzle, 1e-5F, "muzzle");
       }
     }

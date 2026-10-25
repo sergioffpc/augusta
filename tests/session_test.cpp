@@ -69,6 +69,7 @@
 #include "augusta/version.h"
 #include "augusta/weapon.h"
 #include "connection_health.h"
+#include "scenario_fixture.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a
 // real client session, both without a window, a GPU or a wall-clock loop, in
@@ -162,7 +163,9 @@ class SessionTest : public ::testing::Test {
  protected:
   SessionTest()
       : host_(TestHostConfig(),
-              Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+              Scenario{.collision = {},
+                       .spawn_points = {},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), EmptyWorld()) {}
 
   // Runs both sides' network work until the session reports connected, or
@@ -241,7 +244,7 @@ class JoinTest : public ::testing::Test {
       : host_(TestHostConfig(WithPlayerCount(augusta::limits::kMaxPlayers)),
               Scenario{.collision = {},
                        .spawn_points = {},
-                       .characters = {{.path = kCharacter, .hitboxes = {}}},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})},
                        .client_pack = ClientPack(1)}) {}
 
   // A client pack hash told apart by its last byte.
@@ -321,7 +324,7 @@ TEST_F(JoinTest, SessionIdsFromTwoHostsNeverCollide) {
   Host other(TestHostConfig(WithPlayerCount(augusta::limits::kMaxPlayers)),
              Scenario{.collision = {},
                       .spawn_points = {},
-                      .characters = {{.path = kCharacter, .hitboxes = {}}},
+                      .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})},
                       .client_pack = ClientPack(1)});
   Session& here = AddClient();
   Session there(SessionConfig{.server = {.address = other.ListenEndpoint().address},
@@ -632,7 +635,9 @@ constexpr int kFallTicks = 120;
 // ticks, with collision as the map on both sides.
 augusta::prediction::State FallenBody(const std::vector<CollisionMesh>& collision) {
   Host host(TestHostConfig(),
-            Scenario{.collision = collision, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = collision,
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   augusta::prediction::World world = EmptyWorld();
   for (const CollisionMesh& mesh : collision) {
     EXPECT_TRUE(world.AddCollisionMesh(mesh).has_value());
@@ -666,9 +671,10 @@ TEST(MapSessionTest, APredictionWorldRefusesAMapMeshPhysicsRejects) {
 }
 
 TEST(MapHostTest, AHostAcceptsAMapAndKeepsTicking) {
-  Host host(
-      TestHostConfig(),
-      Scenario{.collision = {FloorAt(0.0F)}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+  Host host(TestHostConfig(),
+            Scenario{.collision = {FloorAt(0.0F)},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
 
   for (int i = 0; i < 10; ++i) {
     host.Tick(kFixedTick);
@@ -686,18 +692,20 @@ TEST(MapHostTest, AHostRefusesACharacterHitboxThatIsNotAWholeTriangleList) {
   EXPECT_EQ(CodeThrownBy([&] {
               Host(TestHostConfig(), Scenario{.collision = {},
                                               .spawn_points = {},
-                                              .characters = {{.path = kCharacter,
-                                                              .hitboxes = {augusta::session_test::OnRoot(hitbox)},
-                                                              .skeleton = augusta::session_test::RootSkeleton()}}});
+                                              .characters = {augusta::scenario_fixture::Rigged(
+                                                  {.path = kCharacter,
+                                                   .hitboxes = {augusta::session_test::OnRoot(hitbox)},
+                                                   .skeleton = augusta::session_test::RootSkeleton()})}});
             }),
             Code::kInvalidContent);
 }
 
 TEST(MapHostTest, AHostRefusesAMapMeshPhysicsRejects) {
   EXPECT_EQ(CodeThrownBy([] {
-              Host(TestHostConfig(), Scenario{.collision = {CollisionMesh{}},
-                                              .spawn_points = {},
-                                              .characters = {{.path = kCharacter, .hitboxes = {}}}});
+              Host(TestHostConfig(),
+                   Scenario{.collision = {CollisionMesh{}},
+                            .spawn_points = {},
+                            .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
             }),
             Code::kInvalidContent);
 }
@@ -718,9 +726,10 @@ class MovementTest : public ::testing::Test {
   // The client always knows the floor; the host knows server_map, which a test
   // may make differ from it to give the two something to disagree about.
   explicit MovementTest(std::vector<CollisionMesh> server_map)
-      : host_(TestHostConfig(), Scenario{.collision = std::move(server_map),
-                                         .spawn_points = {},
-                                         .characters = {{.path = kCharacter, .hitboxes = {}}}}),
+      : host_(TestHostConfig(),
+              Scenario{.collision = std::move(server_map),
+                       .spawn_points = {},
+                       .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}}),
         session_(TestSessionConfig(host_.ListenEndpoint()), WorldWithFloorAt(kGroundHeight)) {}
 
   void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
@@ -1072,13 +1081,14 @@ class LoopbackMatch : public ::testing::Test {
   // A host setup for the floor with spawn_points, the parameters and the tick rate.
   static HostSetup OnTheFloor(std::vector<Vec3> spawn_points, const Parameters& parameters = kTestParameters,
                               std::uint8_t tick_rate_hz = kTestTickRate) {
-    return HostSetup{.config = TestHostConfig(parameters, tick_rate_hz),
-                     .scenario = Scenario{.collision = {FloorAt(kFloorY)},
-                                          .spawn_points = std::move(spawn_points),
-                                          .characters = {{.path = kCharacter,
-                                                          .hitboxes = {},
-                                                          .skeleton = augusta::session_test::RootSkeleton()}}},
-                     .policy = {}};
+    return HostSetup{
+        .config = TestHostConfig(parameters, tick_rate_hz),
+        .scenario =
+            Scenario{.collision = {FloorAt(kFloorY)},
+                     .spawn_points = std::move(spawn_points),
+                     .characters = {augusta::scenario_fixture::Rigged(
+                         {.path = kCharacter, .hitboxes = {}, .skeleton = augusta::session_test::RootSkeleton()})}},
+        .policy = {}};
   }
 
   // Connects a new client and runs the network until the server has answered
@@ -2536,7 +2546,9 @@ TEST_F(SessionTest, AClientHoldsNoParametersUntilTheServerAdmitsIt) {
 // Requirements: US-22
 TEST(InvalidParametersTest, AClientDropsAJoinAcceptedWhoseTickRateFailsTheChecks) {
   Host host(TestHostConfig(kTestParameters, 0),
-            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
 
@@ -2580,7 +2592,9 @@ TEST(SessionFailureTest, AServerNobodyIsListeningAtIsUnreachable) {
 TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
   auto host = std::make_unique<Host>(
       TestHostConfig(),
-      Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+      Scenario{.collision = {},
+               .spawn_points = {},
+               .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host->ListenEndpoint()), EmptyWorld());
   session.Connect();
   ASSERT_TRUE(DriveIntoMatch(*host, {&session}));
@@ -2602,7 +2616,9 @@ TEST(SessionFailureTest, AServerThatGoesAwayDuringAMatchIsAConnectionLost) {
 
 TEST(SessionFailureTest, EndingTheSessionOneselfIsNotAFailure) {
   Host host(TestHostConfig(),
-            Scenario{.collision = {}, .spawn_points = {}, .characters = {{.path = kCharacter, .hitboxes = {}}}});
+            Scenario{.collision = {},
+                     .spawn_points = {},
+                     .characters = {augusta::scenario_fixture::Rigged({.path = kCharacter, .hitboxes = {}})}});
   Session session(TestSessionConfig(host.ListenEndpoint()), EmptyWorld());
   session.Connect();
   const auto deadline = std::chrono::steady_clock::now() + kPollDeadline;
@@ -3099,7 +3115,7 @@ class ImpossibleLobbyOf : public LoopbackMatch {
   static HostSetup TwoCharacters() {
     HostSetup setup = OnTheFloor({Vec3(10.0F, kFloorY, 0.0F), Vec3(20.0F, kFloorY, 5.0F), Vec3(30.0F, kFloorY, -5.0F)},
                                  WithPlayerCount(kPlayers));
-    setup.scenario.characters.push_back({.path = kOtherCharacter, .hitboxes = {}});
+    setup.scenario.characters.push_back(augusta::scenario_fixture::Rigged({.path = kOtherCharacter, .hitboxes = {}}));
     return setup;
   }
 

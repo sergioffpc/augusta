@@ -21,6 +21,7 @@
 #include "augusta/pose.h"
 #include "augusta/replay.h"
 #include "augusta/simulation.h"
+#include "character_fixture.h"
 #include "clips_fixture.h"
 
 // A Replay (ADR-0051) re-run on a SimulationWorld with no Map, from captures
@@ -73,7 +74,7 @@ Captured EndAt(std::uint32_t offset, std::optional<capture::Player> winner = std
 
 const std::unordered_map<std::string, Character>& Characters() {
   static const std::unordered_map<std::string, Character> characters = {
-      {kCharacter, Character{.eye = Vec3(0.0F, 1.6F, 0.0F), .hitboxes = {}}}};
+      {kCharacter, augusta::character_fixture::Rigged(Character{.eye = Vec3(0.0F, 1.6F, 0.0F), .hitboxes = {}})}};
   return characters;
 }
 
@@ -190,8 +191,7 @@ TEST(CaptureReplayTest, AReplayReproducesEachBodysStride) {
     events.push_back(CommandAt(offset, 1, walking));
   }
   events.push_back(EndAt(kWalkTicks));
-  Character walker = Characters().at(kCharacter);
-  walker.clips = augusta::clips_fixture::TestClips();
+  const Character& walker = Characters().at(kCharacter);
   const std::unordered_map<std::string, Character> characters = {{kCharacter, walker}};
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
@@ -263,8 +263,7 @@ TEST(CaptureReplayTest, AReplayReproducesEachBodysChangeOfStance) {
     events.push_back(CommandAt(offset, 1, offset < kCrouchFrom ? Command{} : crouching));
   }
   events.push_back(EndAt(kTicks));
-  Character crouch = Characters().at(kCharacter);
-  crouch.clips = augusta::clips_fixture::TestClips();
+  const Character& crouch = Characters().at(kCharacter);
   const std::unordered_map<std::string, Character> characters = {{kCharacter, crouch}};
   augusta::parameters::Parameters parameters;
   parameters.player_count = 2;
@@ -297,7 +296,7 @@ augusta::animation::SkeletonPose PoseOf(const Character& character, const august
   augusta::animation::SkeletonPose posed;
   poser.Pose(*character.clips, character.skeleton,
              {.body = body.body, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads}, posed);
-  augusta::animation::HoldRifle(character.skeleton, *character.clips->weapon_socket,
+  augusta::animation::HoldRifle(character.skeleton, character.clips->weapon_socket,
                                 augusta::clips_fixture::HolderRifle(), posed);
   return posed;
 }

@@ -94,9 +94,7 @@ struct CharacterClips {
   Clip air;
   assets::StanceTransitionsData transitions;
   /// Where the Hitbox pose hangs the rifle and reaches it with the left hand.
-  /// LoadClips always loads one; nullopt only for Clips a test builds by hand,
-  /// posed holding no rifle.
-  std::optional<WeaponSocket> weapon_socket;
+  WeaponSocket weapon_socket;
 
   /// The Clips of stance.
   [[nodiscard]] const StanceClips& Of(physics::Stance stance) const;

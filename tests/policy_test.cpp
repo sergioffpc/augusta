@@ -34,6 +34,7 @@
 #include "augusta/policy_loader.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
+#include "character_fixture.h"
 
 // SimulationWorld ticked with a Game policy script chosen by the test (ADR-0022,
 // ADR-0023): what a hook sees, what it may do and what happens when it fails,
@@ -68,7 +69,9 @@ constexpr SessionId Session(std::uint8_t last) {
 // Their sessions, unrelated to their bodies': "...0b" and "...0c" to a hook.
 constexpr SessionId kAliceSession = Session(11);
 constexpr SessionId kBobSession = Session(12);
-const Character kCharacter{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}};
+Character TestCharacter() {
+  return augusta::character_fixture::Rigged(Character{.eye = Vec3(0.0F, 1.5F, 0.0F), .hitboxes = {}});
+}
 
 // The Match end Game policy took on the tick of result, if it took one.
 std::optional<MatchEnd> MatchEndOf(const TickResult& result) {
@@ -97,7 +100,7 @@ Policy WithRules(std::string_view rules) {
 // A world with policy and Alice in it, playing the sniper.
 World WithAlice(Policy policy, const Parameters& parameters = Parameters{}) {
   World world(parameters, kTickRate, std::move(policy));
-  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
+  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter(),
                   PlayerIdentity{.session = kAliceSession, .character = "sniper"});
   return world;
 }
@@ -459,13 +462,13 @@ std::vector<MatchPlayer> ThreePlayers() {
   return {
       MatchPlayer{.entity = static_cast<EntityId>(11),
                   .identity = PlayerIdentity{.session = Session(4), .character = "sniper"},
-                  .character = kCharacter},
+                  .character = TestCharacter()},
       MatchPlayer{.entity = static_cast<EntityId>(12),
                   .identity = PlayerIdentity{.session = Session(5), .character = "soldier"},
-                  .character = kCharacter},
+                  .character = TestCharacter()},
       MatchPlayer{.entity = static_cast<EntityId>(13),
                   .identity = PlayerIdentity{.session = Session(6), .character = "medic"},
-                  .character = kCharacter},
+                  .character = TestCharacter()},
   };
 }
 
@@ -713,7 +716,7 @@ std::vector<MatchPlayer> Players(std::size_t count) {
     players.push_back(MatchPlayer{
         .entity = static_cast<EntityId>(100 + i),
         .identity = PlayerIdentity{.session = Session(static_cast<std::uint8_t>(i)), .character = "soldier"},
-        .character = kCharacter});
+        .character = TestCharacter()});
   }
   return players;
 }
@@ -799,7 +802,7 @@ TEST_F(PolicyTest, OnceOnTickHasEndedTheMatchItIsNotCalledAgainUntilTheNextMatch
   }
 
   world.EndMatch();
-  world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), kCharacter,
+  world.AddPlayer(kBob, Vec3(0.0F, 0.0F, 0.0F), TestCharacter(),
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
   const TickResult next = world.Tick({}, kTick);
   ASSERT_TRUE(MatchEndOf(next).has_value());
@@ -832,7 +835,7 @@ TEST_F(PolicyTest, OnTickSeesTheTickThePlayerCountAndEveryPlayerInTheMatch) {
     end
   )"),
                           parameters);
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter(),
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
 
   const std::string log = LogOfTicks(world, 1);
@@ -855,7 +858,7 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
       if #match.players == 1 then return {winner = match.players[1].session} end
     end
   )"));
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter(),
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
   ASSERT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 
@@ -872,7 +875,7 @@ TEST_F(PolicyTest, APlayerWhoLeftTheMatchIsAbsentFromWhatOnTickSees) {
 TEST_F(PolicyTest, TheNilSessionIsNeverTheWinner) {
   World world(Parameters{}, kTickRate,
               WithRules("function on_tick() return {winner = '00000000-0000-0000-0000-000000000000'} end"));
-  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
+  world.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), TestCharacter());
 
   EXPECT_FALSE(MatchEndOf(world.Tick({}, kTick)).has_value());
 }
@@ -895,10 +898,11 @@ Character Broad() {
   using augusta::ballistics::Triangle;
   const Vec3 up(0.0F, 2.0F, 0.0F);
   const Vec3 half(2.0F, 0.0F, 0.0F);
-  return Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
-                   .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso,
-                                 .triangles = {Triangle{.a = -half, .b = half, .c = half + up},
-                                               Triangle{.a = -half, .b = half + up, .c = -half + up}}}}};
+  return augusta::character_fixture::Rigged(
+      Character{.eye = Vec3(0.0F, 1.5F, 0.0F),
+                .hitboxes = {{.part = augusta::body_part::BodyPart::kTorso,
+                              .triangles = {Triangle{.a = -half, .b = half, .c = half + up},
+                                            Triangle{.a = -half, .b = half + up, .c = -half + up}}}}});
 }
 
 augusta::physics::CollisionMesh Floor() {
@@ -984,7 +988,7 @@ TEST_F(PolicyTest, EndingTheMatchTakesEveryPlayerAndEveryBulletInFlightOutOfTheW
   parameters.rifle.muzzle_velocity = 100.0F;
   parameters.ammo.flight.max_range = 1000.0F;
   World world = WithAlice(Policy{}, parameters);
-  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), kCharacter,
+  world.AddPlayer(kBob, Vec3(5.0F, 0.0F, 0.0F), TestCharacter(),
                   PlayerIdentity{.session = kBobSession, .character = "soldier"});
   Command fire;
   fire.fire = true;
