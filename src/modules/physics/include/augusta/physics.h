@@ -122,9 +122,9 @@ inline constexpr int kStanceProgressSteps = 255;
 /// each tick.
 struct BodyState {
   /// World-space position, in engine units (1 unit = 1 meter).
-  math::Vec3 position;
+  math::Vec3 position{};
   /// World-space linear velocity, in engine units per second.
-  math::Vec3 velocity;
+  math::Vec3 velocity{};
   /// The body's current stance, after any transition resolved this tick.
   Stance stance = Stance::kStanding;
   /// Remaining stamina, normalized to [0, 1]. 0 means fully depleted; 1 means
