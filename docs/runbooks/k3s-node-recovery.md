@@ -96,10 +96,10 @@ restores them.
   must `develop`'s chart, `ghcr.io/sergioffpc/charts/augustad`: its
   `OCIRepository` sets no `secretRef`.
 - On the workstation: `kubectl`, the `flux` CLI
-  ([as for a rollback](flux-rollback.md#prerequisites)) and `openssl`, the
-  day-to-day kubeconfig ([Cluster access](#cluster-access)), and this repository
-  with `origin/develop` fetched: the `flux-system` GitRepository tracks
-  `develop`.
+  ([as for a rollback](flux-rollback.md#prerequisites): the toolchain's, after
+  `source .toolchain/activate`) and `openssl`, the day-to-day kubeconfig
+  ([Cluster access](#cluster-access)), and this repository with `origin/develop`
+  fetched: the `flux-system` GitRepository tracks `develop`.
 
 ## The server's user
 

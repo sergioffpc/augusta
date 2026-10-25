@@ -7,19 +7,21 @@ it; this index says which one to look at.
 ## Developer environment
 
 - [`bootstrap.sh`](bootstrap.sh) sets up the development environment
-  (`docs/ENGINEERING.md`, Developer Environment): the toolchain, then the
+  (`docs/ENGINEERING.md`, Developer Environment): the platform, then the
   checkout. What differs per platform lives in [`bootstrap/`](bootstrap/):
   `linux.sh` (Ubuntu 26.04, the server and the dev container), `windows.sh` (the
-  client, in Git Bash as Administrator) and `macos.sh` (git, Git LFS and a
-  container engine only).
+  client, in Git Bash as Administrator) and `macos.sh` (Apple silicon, native).
+  Beside them, `versions.env` pins the toolchain's versions and `toolchain.sh`
+  installs them into the shared store and links a checkout's `.toolchain/`
+  (`make toolchain`, `make toolchain-check`).
 - [`dev-container.sh`](dev-container.sh) runs a command, or a shell, in this
-  checkout's Linux dev container; macOS builds nothing natively and builds
-  through it.
+  checkout's Linux dev container, for a Linux build on a host that has its own.
 - [`vcenv.cmd`](vcenv.cmd) runs a command inside the Visual Studio Build Tools
   x64 developer environment, so Ninja, clang-cl and vcpkg work from a plain
   terminal on Windows.
 - [`worktree.sh`](worktree.sh) adds or removes a worktree under
-  `augusta-wt/<name>`, with the submodules a build needs linked in.
+  `augusta-wt/<name>`, with the submodules a build needs linked in and its
+  `.toolchain/` made.
 
 ## Tests and reports
 

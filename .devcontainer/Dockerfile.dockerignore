@@ -3,3 +3,8 @@
 *
 !scripts/bootstrap.sh
 !scripts/bootstrap/linux.sh
+!scripts/bootstrap/toolchain.sh
+!scripts/bootstrap/toolchain/
+!scripts/bootstrap/versions.env
+!scripts/bootstrap/package.json
+!scripts/bootstrap/package-lock.json

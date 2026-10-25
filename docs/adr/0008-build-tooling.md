@@ -39,11 +39,12 @@ never collide with it.
 
 Windows compiles our code with `clang-cl` and links it with `lld-link`, from
 LLVM 21.1.8, the version that already gives `clang-format` and `clang-tidy` on
-both platforms: one LLVM version to bump. The `windows` and `windows-debug`
-presets name them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`);
-the Windows bootstrap installs that LLVM, and CI's and the release's Windows
-client jobs install it through `.github/actions/setup-windows-llvm`. The Visual
-Studio Build Tools and their developer environment (`scripts/vcenv.cmd`, CI's
+both platforms: one LLVM version to bump, `LLVM_VERSION` in
+`scripts/bootstrap/versions.env`. The `windows` and `windows-debug` presets name
+them (`CMAKE_CXX_COMPILER` `clang-cl`, `CMAKE_LINKER_TYPE` `LLD`); the Windows
+bootstrap installs that LLVM, and CI's and the release's Windows client jobs
+install it through `.github/actions/setup-windows-llvm`. The Visual Studio Build
+Tools and their developer environment (`scripts/vcenv.cmd`, CI's
 `.github/actions/setup-windows-msvc`) stay: `clang-cl` takes the MSVC STL, the
 CRT and the Windows SDK from them, and sets CMake's `MSVC`, so the MSVC build
 settings apply to it unchanged. Its `/W4 /WX` is clang's

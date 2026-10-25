@@ -402,8 +402,9 @@ jobs:
     # The macOS client, server and their tests (ADR-0008), a development
     # build no release publishes: the macos preset and its whole ctest suite,
     # the renderer smoke test among it on Homebrew's lavapipe. The runner is
-    # readied by the bootstrap's toolchain step alone, as a new Mac is, so a
-    # change that breaks the macOS bootstrap fails here too. No sanitized pass
+    # readied by the bootstrap's platform step alone, as a new Mac is, so a
+    # change that breaks the macOS bootstrap or its toolchain fails here too,
+    # the only check of the toolchain on macOS. No sanitized pass
     # and no macos-debug: client-x64-linux runs the sanitizers on the same code.
     # macOS 26, which the bootstrap targets (Mesa's KosmicKrisp needs it); the
     # image is arm64.
@@ -429,13 +430,19 @@ jobs:
         with:
           ref: ${{ env.NIGHTLY_REF }}
           submodules: true
-      - name: Bootstrap the toolchain
-        run: scripts/bootstrap.sh toolchain
+      - name: Bootstrap the platform
+        # The system's packages, and the toolchain's store filled.
+        run: scripts/bootstrap.sh platform
       - name: Put the bootstrap's PATH in place
         # What a new terminal would read from the profile the bootstrap wrote
-        # (~/.zprofile): GNU make and ~/.local/bin. Before sccache's action,
-        # which puts its own sccache ahead of it.
+        # (~/.zprofile): GNU make. Before sccache's action, which puts its own
+        # sccache ahead of it.
         run: echo "PATH=$(zsh -lc 'printf %s "$PATH"')" >> "$GITHUB_ENV"
+      - name: Link and check the toolchain
+        # The checkout's .toolchain/ from the store, at the versions it pins.
+        run: |
+          make toolchain
+          make toolchain-check
       - uses: ./.github/actions/restore-sccache-cache
       - uses: ./.github/actions/restore-vcpkg-cache
         with:
@@ -579,6 +586,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
+      # grype.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-toolchain
       - name: Download the latest release's SBOM
         # An executable no release has published yet (augustac-linux-x64
         # before the first release that ships it) has nothing to scan: a
@@ -612,12 +622,7 @@ jobs:
         # most ranges as "up to and including" with no fixed version, so only
         # fixed CVEs would leave out most of them. .grype.yaml has the CVEs
         # assessed as not reaching an executable, and why.
-        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
-        with:
-          sbom: sbom.spdx.json
-          config: .grype.yaml
-          severity-cutoff: high
-          output-format: table
+        run: grype sbom:sbom.spdx.json --config .grype.yaml --fail-on high --output table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
     # every ctest run above, a row per test and a column per run

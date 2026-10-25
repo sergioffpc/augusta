@@ -3,6 +3,9 @@
 # with the submodules a build needs: third_party/nvtx linked to the main
 # checkout's (a junction on Windows), and third_party/vcpkg as a worktree of the
 # main checkout's vcpkg at the commit the branch pins, with its tool copied in.
+# add then runs `make toolchain`, which links the worktree's .toolchain/ into
+# the shared store at the versions its branch pins (ADR-0077); remove takes
+# .toolchain/ with the worktree, links and copies only.
 #
 # Usage:
 #   scripts/worktree.sh add <name> <branch> [<base>]
@@ -93,6 +96,8 @@ add() {
   if [[ -f "${vcpkg}/${tool}" ]]; then
     cp "${vcpkg}/${tool}" "${wt}/third_party/vcpkg/"
   fi
+
+  make -C "${wt}" toolchain
 
   echo "worktree: ${wt} on ${branch}"
 }
