@@ -29,7 +29,9 @@ the system. PyPI tools (ruff, shfmt, shellcheck, gersemi, pymarkdown, yamllint,
 actionlint) are installed with `uv tool install`, as is ctcache from its pinned
 commit, with the Python that runs them kept in the store too, so a store
 restored on another machine (CI's cache) runs; release binaries, buf among them,
-are downloaded and verified.
+are downloaded and verified. luacheck has no release for macOS or Linux arm64:
+there the toolchain links the system's (Homebrew's, apt's), and
+`make toolchain-check` fails when its version is not the pin, as for LLVM.
 
 **A shared store, linked per checkout.** Each version of each tool is installed
 once per machine, in
@@ -57,20 +59,25 @@ runbooks source.
 
 **The editor points at `.toolchain/bin`.** The workspace settings name each
 extension's binary under `${workspaceFolder}/.toolchain/` (ruff, shfmt,
-shellcheck, buf, clangd, StyLua and luacheck) and Prettier's module by
-`prettier.prettierPath`. Even Better TOML can be given neither a
-workspace-relative path nor the toolchain's PATH, so its bundled Taplo keeps
-syntax and schema checks while TOML is not formatted on save; `pre-commit`
-formats it with the pinned Taplo. The extensions' own versions stay unpinned:
-the binary they run decides the output. The settings apply in a trusted
-workspace only; in Restricted Mode VS Code runs Ruff, Prettier and ShellCheck
-bundled and turns clangd and shfmt off.
+shellcheck, buf and clangd) and Prettier's module by `prettier.prettierPath`.
+buf's extension checks that the exact path exists, so on Windows `bin/` also
+holds `buf` beside `buf.exe`. Three extensions can be given neither
+`${workspaceFolder}` nor a workspace-relative path. StyLua's downloads the
+release `stylua.targetReleaseVersion` names instead, which
+`make toolchain-check` holds to the pin. luacheck's would run whichever luacheck
+is on VS Code's own PATH, so it is not recommended, and `pre-push` lints Lua.
+Even Better TOML's bundled Taplo keeps syntax and schema checks while TOML is
+not formatted on save; `pre-commit` formats it with the pinned Taplo. The
+extensions' own versions stay unpinned: the binary they run decides the output.
+The settings apply in a trusted workspace only; in Restricted Mode VS Code runs
+Ruff, Prettier and ShellCheck bundled and turns clangd and shfmt off.
 
 ## Considered Options
 
 - **The editor not formatting**: format-on-save and extension linting off where
   the versions differ, left to `pre-commit`. No drift in what is committed, but
-  no feedback while editing; kept only for Taplo.
+  no feedback while editing; kept only for Taplo and luacheck, whose extensions
+  can't be pointed at the toolchain.
 - **Wrapper scripts over `uv tool run`**: one version in one place with no
   install, but VS Code's extensions on Windows cannot run a bash wrapper and
   most run no `.cmd`.

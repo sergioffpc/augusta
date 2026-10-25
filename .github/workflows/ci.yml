@@ -94,12 +94,13 @@ jobs:
           set_output run_yaml \
             '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|^scripts/bootstrap/versions\.env$|(^|/)[^/]+\.ya?ml$)'
 
-          # The scenarios' Lua scripts, and the rules they are formatted and
-          # linted by.
+          # The scenarios' Lua scripts, the rules they are formatted and
+          # linted by, and the toolchain's pins.
           set_output run_lua \
-            "(\.lua$|^(stylua\.toml$|\.luacheckrc$|${ci_workflow}))"
+            "(\.lua$|^(stylua\.toml$|\.luacheckrc$|scripts/bootstrap/versions\.env$|${ci_workflow}))"
 
-          set_output run_toml "(\.toml$|^${ci_workflow})"
+          set_output run_toml \
+            "(\.toml$|^(scripts/bootstrap/versions\.env$|${ci_workflow}))"
 
           # Python, shell, Markdown, CMake, Protocol Buffers and the
           # workflows, the rules each is formatted and linted by, and the
@@ -114,12 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
       # The formatters and linters the Makefile's format-check/* targets run.
       - uses: ./.github/actions/setup-toolchain
-        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
       - name: Check the environments' pack formats
         # Every pack clusters/ names is of the pack format the engine reads,
         # so a change to the format fails here until every environment is
@@ -130,20 +129,6 @@ jobs:
         run: |
           uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks/test_check_pack_formats.py
           uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
-      - name: Install yamlfmt
-        if: needs.changes.outputs.run_yaml == 'true'
-        shell: bash
-        run: |
-          version=0.21.0
-          asset="yamlfmt_${version}_Linux_x86_64.tar.gz"
-          install_dir="$RUNNER_TEMP/yamlfmt"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/$asset" "https://github.com/google/yamlfmt/releases/download/v${version}/$asset"
-          printf '%s  %s\n' \
-            '1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566' \
-            "$install_dir/$asset" | sha256sum --check --status
-          tar -xzf "$install_dir/$asset" -C "$install_dir"
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Install clang-format
         if: needs.changes.outputs.run_build == 'true'
         run: sudo apt-get update && sudo apt-get install -y clang-format
@@ -157,49 +142,13 @@ jobs:
         run: python3 scripts/requirements-matrix.py --check
       - name: Check YAML formatting and lint
         if: needs.changes.outputs.run_yaml == 'true'
-        run: |
-          yamlfmt -conf .yamlfmt -lint
-          make format-check/yamllint
-      - name: Install StyLua and luacheck
-        if: needs.changes.outputs.run_lua == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/lua-tools"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/stylua.zip" \
-            https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip
-          curl -fsSLo "$install_dir/luacheck" \
-            https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck
-          printf '%s  %s\n' \
-            'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab' "$install_dir/stylua.zip" \
-            'd68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc' "$install_dir/luacheck" \
-            | sha256sum --check --status
-          unzip -q "$install_dir/stylua.zip" -d "$install_dir"
-          chmod +x "$install_dir/stylua" "$install_dir/luacheck"
-          echo "$install_dir" >> "$GITHUB_PATH"
+        run: make format-check/yamlfmt format-check/yamllint
       - name: Check Lua formatting and lint
         if: needs.changes.outputs.run_lua == 'true'
-        run: |
-          git ls-files -z -- '*.lua' | xargs -0 stylua --check
-          git ls-files -z -- '*.lua' | xargs -0 luacheck
-      - name: Install taplo
-        if: needs.changes.outputs.run_toml == 'true'
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/taplo"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/taplo.gz" \
-            https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz
-          printf '%s  %s\n' '8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156' "$install_dir/taplo.gz" \
-            | sha256sum --check --status
-          gunzip "$install_dir/taplo.gz"
-          chmod +x "$install_dir/taplo"
-          echo "$install_dir" >> "$GITHUB_PATH"
+        run: make format-check/stylua format-check/luacheck
       - name: Check TOML formatting and lint
         if: needs.changes.outputs.run_toml == 'true'
-        run: |
-          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
-          git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
+        run: make format-check/taplo
       # The Makefile's own checks, from the toolchain (setup-toolchain), as the
       # git hooks run them.
       - name: Check Python formatting and lint
@@ -217,12 +166,9 @@ jobs:
       - name: Check Markdown formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: make format-check/prettier format-check/pymarkdown
-      # uv runs buf at a pinned version, as the Makefile does.
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0 format -d --exit-code
-          uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0 lint
+        run: make format-check/buf
   client-x64-windows:
     needs: [changes, format]
     if: needs.changes.outputs.run_build == 'true'

@@ -176,18 +176,50 @@ install_release() {
   rm -rf "${tmp}"
 }
 
-# The hooks' and CI's format job's formatters that Homebrew doesn't keep at
-# CI's versions (yamlfmt, StyLua, taplo), the flux CLI at the cluster's Flux
-# and cosign at CI's: their darwin-arm64 releases, as scripts/bootstrap/linux.sh
-# installs Linux's.
+# The toolchain's darwin-arm64 release downloads, which
+# scripts/bootstrap/toolchain.sh installs, in globals: release_url, the asset
+# at the version scripts/bootstrap/versions.env pins; release_sha, its SHA-256;
+# release_member, the binary's path inside a tar.gz or zip.
+# Arguments:
+#   The tool.
+# Returns:
+#   1 when the tool has no release here: luacheck's has no macOS build, so
+#   Homebrew's is linked.
+# shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
+toolchain_release() {
+  local github=https://github.com
+  release_member=
+  case "$1" in
+    yamlfmt)
+      release_url="${github}/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Darwin_arm64.tar.gz"
+      release_sha=4b417ecb94339d57e4c122ecc948c1a00fe328b5853266de9806e652a92858fa
+      release_member=yamlfmt
+      ;;
+    stylua)
+      release_url="${github}/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-macos-aarch64.zip"
+      release_sha=92ff0889e16324801bc072692974bb67f8161e62010fc90f96c62a17f81f32c7
+      release_member=stylua
+      ;;
+    taplo)
+      # Taplo's tags have no "v".
+      release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-darwin-aarch64.gz"
+      release_sha=713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d
+      ;;
+    buf)
+      release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Darwin-arm64"
+      release_sha=6e6df0fef4522e4e43dfe7c341873c3f2c29ceb45a9dfa5e0bad5580b8b2022f
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# The flux CLI at the cluster's Flux and cosign at CI's, which Homebrew doesn't
+# keep at those versions: their darwin-arm64 releases, as
+# scripts/bootstrap/linux.sh installs Linux's.
 # Arguments:
 #   The bin directory.
 install_formatters() {
-  local bin="$1" tmp
-  install_release yamlfmt \
-    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Darwin_arm64.tar.gz" \
-    4b417ecb94339d57e4c122ecc948c1a00fe328b5853266de9806e652a92858fa yamlfmt \
-    "${bin}"
+  local bin="$1"
   install_release flux \
     "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_darwin_arm64.tar.gz" \
     2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd flux \
@@ -196,21 +228,6 @@ install_formatters() {
     "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-darwin-arm64" \
     5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084 - \
     "${bin}"
-  # StyLua's a zip, taplo's a gzip of the binary alone.
-  tmp="$(mktemp -d)"
-  download_verified \
-    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-macos-aarch64.zip" \
-    92ff0889e16324801bc072692974bb67f8161e62010fc90f96c62a17f81f32c7 \
-    "${tmp}/stylua.zip"
-  download_verified \
-    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-darwin-aarch64.gz" \
-    713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d \
-    "${tmp}/taplo.gz"
-  unzip -q "${tmp}/stylua.zip" -d "${tmp}"
-  gunzip "${tmp}/taplo.gz"
-  record_new_files "${bin}" stylua taplo
-  install -m 0755 "${tmp}/stylua" "${tmp}/taplo" "${bin}"
-  rm -rf "${tmp}"
 }
 
 # Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
@@ -268,7 +285,8 @@ install_toolchain() {
   # Ninja, as the presets build with; GNU make 4, the Makefile's (macOS's own
   # is 3.81); sccache, which the root CMakeLists.txt picks up from PATH;
   # pkg-config and autotools for the vcpkg ports that build with them. Git LFS
-  # (pre-push), which Apple's git has none of, and luacheck at CI's pinned
+  # (pre-push), which Apple's git has none of, and luacheck, which the
+  # toolchain links as luacheck has no macOS release, and holds to the pinned
   # LUACHECK_VERSION. uv, for yamllint and the rest uv runs. doxygen: `make
   # docs`. gh: for development. jq: with cosign, the release runbook's wait on
   # a signed image (docs/runbooks/cut-release.md). kubectl and helm, for the
@@ -310,9 +328,9 @@ install_toolchain() {
   # A tool missing here fails loud now, not at the first commit or push.
   hash -r
   require_commands cmake ninja make git git-lfs sccache uv clang-format \
-    clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo luacheck kubectl \
-    helm flux jq cosign podman tshark trivy kubeconform kyverno promtool amtool \
-    hadolint oras syft grype yq
+    clang-tidy clang-tidy-cache doxygen luacheck kubectl helm flux jq cosign \
+    podman tshark trivy kubeconform kyverno promtool amtool hadolint oras syft \
+    grype yq
 }
 
 # The submodules every build uses, as scripts/bootstrap/linux.sh's.

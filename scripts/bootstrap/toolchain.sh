@@ -35,7 +35,7 @@ readonly STORE="${XDG_CACHE_HOME:-${HOME}/.cache}/augusta/toolchain"
 
 # The toolchain's tools, by the names the store files them under.
 readonly TOOLS=(ruff shfmt shellcheck actionlint gersemi pymarkdown yamllint
-  ctcache node)
+  ctcache node yamlfmt stylua luacheck taplo buf)
 # Prettier, a Node package that package.json and package-lock.json beside this
 # script pin, which npm installs into .toolchain/node_modules.
 readonly PACKAGE="${SCRIPT_DIR}/package.json"
@@ -46,17 +46,21 @@ readonly PRETTIER="${TOOLCHAIN}/node_modules/prettier/bin/prettier.cjs"
 readonly INSTALLED_LOCKFILE="${TOOLCHAIN}/node_modules/.augusta-package-lock.json"
 
 # Describes a tool, in globals: version_name, the versions.env variable that
-# pins it, and version, its value; package, what uv installs; command, the
-# command it puts in .toolchain/bin; probe, the arguments that make it print its
-# version; expected, the line of that output the pinned version prints, or
-# nothing when its output names no version the pin gives. A wheel that packages
-# another project's binary (shellcheck-py, actionlint-py) adds a fourth number
-# of its own to the binary's version, which the binary does not report.
+# pins it, and version, its value; source, where it comes from: uv, which
+# installs package, or release, its platform's release download
+# (toolchain_release in scripts/bootstrap/<platform>.sh); command, the command
+# it puts in .toolchain/bin; bare, set when Windows' bin also needs that command
+# without .exe; probe, the arguments that make it print its version; expected,
+# the start of the line of that output the pinned version prints, up to a space
+# or the line's end, or nothing when its output names no version the pin gives.
+# A wheel that packages another project's binary (shellcheck-py, actionlint-py)
+# adds a fourth number of its own to the binary's version, which the binary does
+# not report.
 # Without a command substitution, as each forks, slowly on Windows.
 # Arguments:
 #   The tool.
 describe_tool() {
-  probe=(--version)
+  probe=(--version) source=uv bare=
   case "$1" in
     ruff)
       version_name=RUFF_VERSION command=ruff package="ruff==${RUFF_VERSION}"
@@ -103,6 +107,28 @@ describe_tool() {
       version_name=NODEJS_WHEEL_VERSION command=node
       package="nodejs-wheel==${NODEJS_WHEEL_VERSION}"
       expected="v${NODEJS_WHEEL_VERSION}"
+      ;;
+    yamlfmt)
+      version_name=YAMLFMT_VERSION command=yamlfmt source=release
+      expected="yamlfmt ${YAMLFMT_VERSION}"
+      ;;
+    stylua)
+      version_name=STYLUA_VERSION command=stylua source=release
+      expected="stylua ${STYLUA_VERSION}"
+      ;;
+    luacheck)
+      version_name=LUACHECK_VERSION command=luacheck source=release
+      expected="Luacheck: ${LUACHECK_VERSION}"
+      ;;
+    taplo)
+      version_name=TAPLO_VERSION command=taplo source=release
+      expected="taplo ${TAPLO_VERSION}"
+      ;;
+    buf)
+      # buf's extension runs the exact path its setting names, which has no
+      # .exe on Windows.
+      version_name=BUF_VERSION command=buf source=release bare=1
+      expected="${BUF_VERSION}"
       ;;
     *)
       echo "toolchain: unknown tool $1" >&2
@@ -164,6 +190,111 @@ link_file() {
   fi
 }
 
+# Git Bash takes a name without .exe for the .exe beside it, in test, ln, cp
+# and cygpath alike: only a directory listing tells the two apart.
+# Arguments:
+#   The file.
+# Returns:
+#   0 when its directory lists that exact name.
+listed() {
+  local file
+  for file in "${1%/*}/"*; do
+    [[ "${file}" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+# Gives a Windows executable of .toolchain/bin a second name without .exe,
+# unless it has it already: buf's extension checks that the exact path its
+# setting names exists before it runs it, and takes one name for every
+# platform. A hardlink, or a copy on another volume than the store, made by
+# Windows' own commands, as Git Bash's would write the .exe again.
+# Arguments:
+#   The command.
+link_bare() {
+  local bare="${TOOLCHAIN}/bin/$1" dir
+  dir="$(cygpath -w "${TOOLCHAIN}/bin")"
+  if listed "${bare}"; then
+    [[ "${bare}" -ef "${bare}.exe" ]] && return
+    rm -f "${bare}" 2>/dev/null || mv -f "${bare}" "${bare}.$$.old"
+  fi
+  cmd //c mklink //H "${dir}\\$1" "${dir}\\$1.exe" >/dev/null 2>&1 \
+    || cmd //c copy //y "${dir}\\$1.exe" "${dir}\\$1" >/dev/null
+}
+
+# Checks a file's SHA-256: GNU's sha256sum, or on macOS, whose own reads no
+# list from stdin, shasum.
+# Arguments:
+#   The SHA-256, the file.
+sha256_matches() {
+  if [[ "$(uname -s)" = Darwin ]]; then
+    printf '%s  %s\n' "$1" "$2" | shasum -a 256 --check --status
+  else
+    printf '%s  %s\n' "$1" "$2" | sha256sum --check --status
+  fi
+}
+
+# Installs the described tool's pinned release into the store, unless it is
+# there already: the asset toolchain_release names, checked against its
+# SHA-256, and the binary taken out of it.
+# Arguments:
+#   The tool.
+# shellcheck disable=SC2154 # release_*: toolchain_release sets them
+install_release() {
+  local dir="${STORE}/$1/${version}" asset binary exe=
+  [[ -f "${dir}/.installed" ]] && return
+  echo "toolchain: installing $1 ${version}"
+  windows && exe=.exe
+  rm -rf "${dir}"
+  mkdir -p "${dir}/bin"
+  asset="${dir}/${release_url##*/}"
+  binary="${dir}/bin/${command}${exe}"
+  curl --proto '=https' --tlsv1.2 -fsSLo "${asset}" "${release_url}"
+  if ! sha256_matches "${release_sha}" "${asset}"; then
+    echo "toolchain: SHA-256 mismatch for ${release_url}" >&2
+    rm -rf "${dir}"
+    exit 1
+  fi
+  case "${release_url}" in
+    *.tar.gz)
+      tar -xzf "${asset}" -C "${dir}" "${release_member}"
+      mv "${dir}/${release_member}" "${binary}"
+      ;;
+    *.zip)
+      if windows; then
+        extract_zip "${asset}" "${dir}"
+      else
+        unzip -qo "${asset}" "${release_member}" -d "${dir}"
+      fi
+      mv "${dir}/${release_member}" "${binary}"
+      ;;
+    *.gz) gunzip -c "${asset}" >"${binary}" ;;
+    *) mv "${asset}" "${binary}" ;;
+  esac
+  chmod +x "${binary}"
+  rm -f "${asset}"
+  # Last, so an install cut short is redone.
+  touch "${dir}/.installed"
+}
+
+# Links the system's command of a tool that has no release for this platform
+# (luacheck on macOS and Linux arm64, which Homebrew and apt install), the
+# first on PATH outside any .toolchain/bin: check then holds it to the pin.
+# Arguments:
+#   The tool.
+link_system() {
+  local dir dirs
+  IFS=: read -r -a dirs <<<"${PATH}"
+  for dir in "${dirs[@]}"; do
+    [[ "${dir}" == */.toolchain/bin || ! -x "${dir}/${command}" ]] && continue
+    link_file "${dir}/${command}" "${TOOLCHAIN}/bin/${command}"
+    return
+  done
+  echo "toolchain: $1 has no release for this platform, and no ${command}" \
+    "is on PATH to link: run scripts/bootstrap.sh, which installs it." >&2
+  exit 1
+}
+
 # Installs Prettier into .toolchain/node_modules with npm ci, from the lockfile,
 # unless it is installed from this lockfile already. npm's download cache is in
 # the store, so a reinstall (another worktree, CI's cached store) downloads
@@ -181,17 +312,37 @@ install_prettier() {
 }
 
 install() {
-  local tool file name linked=()
+  local tool file name linked=() platform=linux
   mkdir -p "${TOOLCHAIN}/bin"
+  # The platform's release downloads, toolchain_release.
+  case "$(uname -s)" in
+    Darwin) platform=macos ;;
+    MINGW* | MSYS* | CYGWIN*) platform=windows ;;
+  esac
+  # shellcheck source=/dev/null
+  . "${SCRIPT_DIR}/${platform}.sh"
   for tool in "${TOOLS[@]}"; do
     describe_tool "${tool}"
-    install_tool "${tool}"
+    if [[ "${source}" = release ]]; then
+      if ! toolchain_release "${tool}"; then
+        link_system "${tool}"
+        linked+=("${command}")
+        continue
+      fi
+      install_release "${tool}"
+    else
+      install_tool "${tool}"
+    fi
     for file in "${STORE}/${tool}/${version}/bin/${command}"{,.exe}; do
       [[ -e "${file}" ]] || continue
       name="$(basename "${file}")"
       link_file "${file}" "${TOOLCHAIN}/bin/${name}"
       linked+=("${name}")
     done
+    if [[ -n "${bare}" && "${platform}" = windows ]]; then
+      link_bare "${command}"
+      linked+=("${command}")
+    fi
   done
   # What a previous version linked and this one does not, or renamed away
   # while it ran: removed when nothing runs it any more.
@@ -266,8 +417,10 @@ check() {
       failures+=("${tool}: .toolchain/bin links another version than ${version_name}=${version}")
     elif [[ "${status}" != 0 ]]; then
       failures+=("${tool}: .toolchain/bin/${command} does not run")
-    elif [[ -n "${expected}" && "${output}" != *$'\n'"${expected}"$'\n'* ]]; then
+    elif [[ -n "${expected}" && "${output}" != *$'\n'"${expected}"[$'\n'\ ]* ]]; then
       failures+=("${tool}: .toolchain/bin/${command} is not ${version}, it prints: $(head -n 1 <<<"${contents}")")
+    elif [[ -n "${bare}" ]] && windows && ! listed "${TOOLCHAIN}/bin/${command}"; then
+      failures+=("${tool}: .toolchain/bin/${command} is missing, the name without .exe its extension runs")
     fi
   done
   # Prettier, at the version the lockfile pins: its "node_modules/prettier"
@@ -302,6 +455,13 @@ check() {
     fi
   done < <(grep -oE '(\$\{workspaceFolder\}/|")\.toolchain/[^"$:;]*' \
     "${ROOT}/.vscode/settings.json" | sort -u)
+  # StyLua's extension can't run .toolchain/bin's: it expands no variable, and
+  # looks for a relative path from the file system's root. It downloads the
+  # release the settings name instead, which must be the pinned one.
+  read_file "${ROOT}/.vscode/settings.json"
+  if [[ "${contents}" != *"\"stylua.targetReleaseVersion\": \"v${STYLUA_VERSION}\""* ]]; then
+    failures+=(".vscode/settings.json's stylua.targetReleaseVersion is not v${STYLUA_VERSION}")
+  fi
   if ((${#failures[@]} > 0)); then
     printf 'toolchain: %s\n' "${failures[@]}" >&2
     return 1

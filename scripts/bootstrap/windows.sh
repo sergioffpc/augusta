@@ -162,8 +162,48 @@ winget_install_pinned() {
   winget pin add --id "$1" --exact --version "$3" --force
 }
 
-# The formatters and linters the hooks and CI's format job run at pinned
-# versions, the flux CLI at the cluster's and cosign at CI's, which winget
+# The toolchain's release downloads, which scripts/bootstrap/toolchain.sh
+# installs, in globals: release_url, the asset at the version
+# scripts/bootstrap/versions.env pins; release_sha, its SHA-256;
+# release_member, the binary's path inside a tar.gz or zip.
+# Arguments:
+#   The tool.
+# Returns:
+#   1 when the tool has no release here.
+# shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
+toolchain_release() {
+  local github=https://github.com
+  release_member=
+  case "$1" in
+    yamlfmt)
+      release_url="${github}/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Windows_x86_64.tar.gz"
+      release_sha=07f80ce5d741eb4b0a9380ac78a19c7cb5bd44e2a9a47a5a04839e3ba54dd463
+      release_member=yamlfmt.exe
+      ;;
+    stylua)
+      release_url="${github}/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-windows-x86_64.zip"
+      release_sha=e77d0ea1226b8b389b43f702240091249a96eea25857281f90ea24d0eb9eb969
+      release_member=stylua.exe
+      ;;
+    luacheck)
+      # A standalone binary, its own Lua bundled.
+      release_url="${github}/lunarmodules/luacheck/releases/download/v${LUACHECK_VERSION}/luacheck.exe"
+      release_sha=0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b
+      ;;
+    taplo)
+      # Taplo's tags have no "v".
+      release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-windows-x86_64.gz"
+      release_sha=550fdc955343f8a196447a05346ecf8827e391726e4ded577bb00a0a36cf220c
+      ;;
+    buf)
+      release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Windows-x86_64.exe"
+      release_sha=13542f2892c4f774150ddb525266d6421d457b3e741297056b64427853526e36
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# The flux CLI at the cluster's version and cosign at CI's, which winget
 # doesn't keep: standalone releases in a user-local bin directory.
 # Arguments:
 #   The bin directory.
@@ -173,23 +213,6 @@ install_formatters() {
   mkdir -p "${bin}"
   tmp="$(mktemp -d)"
   download_verified \
-    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Windows_x86_64.tar.gz" \
-    07f80ce5d741eb4b0a9380ac78a19c7cb5bd44e2a9a47a5a04839e3ba54dd463 \
-    "${tmp}/yamlfmt.tar.gz"
-  download_verified \
-    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-windows-x86_64.zip" \
-    e77d0ea1226b8b389b43f702240091249a96eea25857281f90ea24d0eb9eb969 \
-    "${tmp}/stylua.zip"
-  download_verified \
-    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-windows-x86_64.gz" \
-    550fdc955343f8a196447a05346ecf8827e391726e4ded577bb00a0a36cf220c \
-    "${tmp}/taplo.exe.gz"
-  # luacheck's standalone release bundles its own Lua.
-  download_verified \
-    "https://github.com/lunarmodules/luacheck/releases/download/v${LUACHECK_VERSION}/luacheck.exe" \
-    0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b \
-    "${tmp}/luacheck.exe"
-  download_verified \
     "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_windows_amd64.zip" \
     1a23053bf9abbedbdac07237f5c6ae9b0da0bcb77ddbd103faa99839c6a7f562 \
     "${tmp}/flux.zip"
@@ -197,14 +220,9 @@ install_formatters() {
     "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-windows-amd64.exe" \
     9b85a88ebff2d9dd30ff4984a6f61f2cedc232dd87d81fa7f2ff3c0ed96c241c \
     "${tmp}/cosign.exe"
-  tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt.exe
-  extract_zip "${tmp}/stylua.zip" "${tmp}"
   extract_zip "${tmp}/flux.zip" "${tmp}"
-  gunzip "${tmp}/taplo.exe.gz"
-  record_new_files "${bin}" yamlfmt.exe stylua.exe taplo.exe luacheck.exe \
-    flux.exe cosign.exe
-  cp -f "${tmp}/yamlfmt.exe" "${tmp}/stylua.exe" "${tmp}/taplo.exe" \
-    "${tmp}/luacheck.exe" "${tmp}/flux.exe" "${tmp}/cosign.exe" "${bin}"
+  record_new_files "${bin}" flux.exe cosign.exe
+  cp -f "${tmp}/flux.exe" "${tmp}/cosign.exe" "${bin}"
   rm -rf "${tmp}"
   add_to_path User "${bin}"
 }
@@ -397,9 +415,9 @@ install_toolchain() {
   # on PATH - skipping" at commit time, which is easy to miss and leaves every
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
-    clang-format clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo \
-    luacheck kubectl helm flux jq cosign podman tshark trivy kubeconform \
-    kyverno promtool amtool hadolint oras syft grype yq
+    clang-format clang-tidy clang-tidy-cache doxygen kubectl helm flux jq \
+    cosign podman tshark trivy kubeconform kyverno promtool amtool hadolint \
+    oras syft grype yq
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"

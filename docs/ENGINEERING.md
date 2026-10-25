@@ -527,18 +527,19 @@ no self-hosted GitHub Actions runner in this pipeline).
   versions (trivy, kubeconform, the Kyverno CLI, promtool, amtool, hadolint,
   oras, syft, grype, and mikefarah's yq), Doxygen, the hooks' formatters and
   linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
-  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
-  CI's pinned versions), and CI's Linux vcpkg binary cache configuration (a
-  files provider in the checkout's `.vcpkg-bincache`). The image builds for the
-  host's architecture (amd64 or arm64) rather than emulating CI's amd64.
-  sccache's cache lives in a volume shared by every container of the repository;
-  the build trees in a volume per container, so they never collide with a
-  Windows build of the same checkout. One recipe, not a container beside a
-  separate host bootstrap: two recipes for the same toolchain drift apart. With
-  them come the Linux client's system packages (ADR-0008: X11, Wayland and
-  xkbcommon development files, and Mesa's Vulkan drivers and Xvfb for the
-  Renderer's smoke test), so the `linux` presets build and test `augustac` in
-  the container too. The Windows client has no container equivalent (see below).
+  Prettier and pymarkdown, at CI's pinned versions, and apt's luacheck, which
+  the toolchain links on arm64, where luacheck has no release), and CI's Linux
+  vcpkg binary cache configuration (a files provider in the checkout's
+  `.vcpkg-bincache`). The image builds for the host's architecture (amd64 or
+  arm64) rather than emulating CI's amd64. sccache's cache lives in a volume
+  shared by every container of the repository; the build trees in a volume per
+  container, so they never collide with a Windows build of the same checkout.
+  One recipe, not a container beside a separate host bootstrap: two recipes for
+  the same toolchain drift apart. With them come the Linux client's system
+  packages (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's
+  Vulkan drivers and Xvfb for the Renderer's smoke test), so the `linux` presets
+  build and test `augustac` in the container too. The Windows client has no
+  container equivalent (see below).
 - **Dev container from a terminal:** `scripts/dev-container.sh [command]` runs a
   command (a shell by default) in the dev container's image: one container per
   checkout, kept running, with the checkout mounted at its host path so a git
@@ -551,7 +552,7 @@ no self-hosted GitHub Actions runner in this pipeline).
 - **macOS (arm64, native, development only):** as on Linux, everything builds
   and is checked on the host: `scripts/bootstrap.sh` (its macOS half,
   `scripts/bootstrap/macos.sh`) installs the toolchain through Homebrew, and the
-  formatters, linters and CI tools Homebrew doesn't keep at CI's versions into
+  CI's and the operators' tools Homebrew doesn't keep at CI's versions into
   `~/.local/bin` from their releases, as `scripts/bootstrap/linux.sh` does into
   `/usr/local/bin`, but without sudo, which a managed Mac may grant only for a
   while; `~/.zprofile` puts that directory, and GNU make ahead of macOS's 3.81,
@@ -583,17 +584,17 @@ no self-hosted GitHub Actions runner in this pipeline).
   of not being able to side-by-side independent Build Tools versions per project
   — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
   and the formatters and linters uv runs, below, and ctcache, which `make tidy`
-  runs `clang-tidy` through), standalone yamlfmt, StyLua, luacheck and taplo,
-  and LLVM (`clang-cl` and `lld-link` for the build, `clang-format`/`clang-tidy`
-  for the hooks below), pinned to the LLVM version CI's Ubuntu runner ships and
-  CI's Windows jobs install, so a local build and the hooks agree with CI's
-  gates, kubectl, helm and the flux CLI, for the cluster, and cosign, jq, tshark
-  (through Wireshark) and the tools CI's own jobs run, as the Linux half's, with
-  Podman and its WSL 2 machine; auditd, which records a Linux kernel's syscalls,
-  has no Windows counterpart. It also puts Git's `bin` directory on PATH, so
-  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
-  VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  runs `clang-tidy` through), and LLVM (`clang-cl` and `lld-link` for the build,
+  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
+  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
+  the hooks agree with CI's gates, kubectl, helm and the flux CLI, for the
+  cluster, and cosign, jq, tshark (through Wireshark) and the tools CI's own
+  jobs run, as the Linux half's, with Podman and its WSL 2 machine; auditd,
+  which records a Linux kernel's syscalls, has no Windows counterpart. It also
+  puts Git's `bin` directory on PATH, so `bash scripts/<script>.sh` runs from
+  PowerShell and cmd, and the workspace's VS Code settings point the Kubernetes
+  extension and its terminals at the day-to-day kubeconfig,
+  `~/.kube/augusta.yaml`.
 - **Uninstall:** `scripts/bootstrap.sh uninstall` undoes a bootstrap on every
   platform: what its toolchain step installed that was not there before, which
   it records in a manifest of the machine's (each package, file, PATH entry,
@@ -635,14 +636,14 @@ no self-hosted GitHub Actions runner in this pipeline).
 ## Code Quality
 
 - Google C++ Style Guide (ADR-0012), enforced via `clang-format` and
-  `clang-tidy`; YAML uses the standalone `yamlfmt` v0.21.0 binary (two-space
-  indentation) and `yamllint` 1.37.1. `clang-format` and `yamlfmt` auto-format
-  staged files in the local `pre-commit` hook; `clang-tidy` checks changed C++
-  and `yamllint` checks changed YAML in `pre-push`. CI's `format` job runs the
-  formatters in check mode and strict YAML lint as the actual gate, since hooks
-  can be skipped (`--no-verify`) or missing/mismatched locally. `clang-tidy`
-  needs a full `compile_commands.json`, so it stays out of the commit hook and
-  runs on changed C++ before push. `make format` applies the formatters,
+  `clang-tidy`; YAML uses the toolchain's `yamlfmt` (two-space indentation) and
+  `yamllint` 1.37.1. `clang-format` and `yamlfmt` auto-format staged files in
+  the local `pre-commit` hook; `clang-tidy` checks changed C++ and `yamllint`
+  checks changed YAML in `pre-push`. CI's `format` job runs the formatters in
+  check mode and strict YAML lint as the actual gate, since hooks can be skipped
+  (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a full
+  `compile_commands.json`, so it stays out of the commit hook and runs on
+  changed C++ before push. `make format` applies the formatters,
   `make format-check` checks formatting and every linter but `clang-tidy`,
   `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`,
   through ctcache as CI's Lint steps do (CI, clang-tidy results), keeping its
@@ -652,20 +653,26 @@ no self-hosted GitHub Actions runner in this pipeline).
   `make format` and `make lint` on fewer files, with clang-tidy one file a
   process through the same ctcache results; `make test` and `make check` run
   `ctest` in parallel, as CI does.
-- A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua 2.5.2
+- A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
-  luacheck 1.2.0 (`.luacheckrc`), whose standard library is the engine's Lua
-  sandbox written out rather than a stock Lua's: what the sandbox takes out
-  (`print`, `pcall`, `io`, `os`, `math.random`...) is a warning, and what the
-  engine gives a script is known only where it is given - `server.tick_rate_hz`
-  to a Parameters script, each Game policy hook to the rules. StyLua formats
-  staged scripts in `pre-commit`, luacheck checks changed ones in `pre-push`,
-  and CI's `format` job runs both in check mode.
-- TOML files are formatted and linted by taplo 0.10.0 (`.taplo.toml`: the same
-  width and indent, arrays kept one entry a line where written so), which is
-  also the Even Better TOML extension's engine: it formats staged files in
-  `pre-commit`, lints changed ones in `pre-push`, and CI's `format` job runs
-  both in check mode.
+  luacheck (`.luacheckrc`), whose standard library is the engine's Lua sandbox
+  written out rather than a stock Lua's: what the sandbox takes out (`print`,
+  `pcall`, `io`, `os`, `math.random`...) is a warning, and what the engine gives
+  a script is known only where it is given - `server.tick_rate_hz` to a
+  Parameters script, each Game policy hook to the rules. StyLua formats staged
+  scripts in `pre-commit`, luacheck checks changed ones in `pre-push`, and CI's
+  `format` job runs both in check mode, each the toolchain's (ADR-0077). In VS
+  Code, StyLua's extension can be given no path to the toolchain's StyLua, so it
+  formats with the release its `stylua.targetReleaseVersion` setting downloads,
+  which `make toolchain-check` holds to the pin; luacheck's extension can be
+  given none either, and would run whichever luacheck is on VS Code's PATH, so
+  it is not recommended: Lua is linted at `pre-push`.
+- TOML files are formatted and linted by the toolchain's Taplo (`.taplo.toml`:
+  the same width and indent, arrays kept one entry a line where written so): it
+  formats staged files in `pre-commit`, lints changed ones in `pre-push`, and
+  CI's `format` job runs both in check mode. The Even Better TOML extension
+  keeps its bundled Taplo for syntax and schema checks, but does not format on
+  save: no setting can point it at the toolchain's.
 - Python, shell, the workflows, CMake and Markdown each have a formatter, a
   linter or both, every one the toolchain's (ADR-0077), at the version
   `scripts/bootstrap/versions.env` pins, but Prettier, which

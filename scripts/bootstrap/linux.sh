@@ -74,6 +74,66 @@ undo_entry() {
   esac
 }
 
+# The toolchain's release downloads for this machine's architecture, which
+# scripts/bootstrap/toolchain.sh installs, in globals: release_url, the asset
+# at the version scripts/bootstrap/versions.env pins; release_sha, its SHA-256;
+# release_member, the binary's path inside a tar.gz or zip.
+# Arguments:
+#   The tool.
+# Returns:
+#   1 when the tool has no release here: luacheck's has no arm64 build, so an
+#   arm64 machine (an Apple-silicon host's dev container) links apt's.
+# shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
+toolchain_release() {
+  local github=https://github.com
+  release_member=
+  case "$1-${HOSTTYPE}" in
+    yamlfmt-x86_64)
+      release_url="${github}/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_x86_64.tar.gz"
+      release_sha=1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566
+      release_member=yamlfmt
+      ;;
+    yamlfmt-aarch64)
+      release_url="${github}/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_arm64.tar.gz"
+      release_sha=5b2689c963b177271330c5ce8ca7396751107e5a826be46f03d2cb9b6f0c7784
+      release_member=yamlfmt
+      ;;
+    stylua-x86_64)
+      release_url="${github}/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-linux-x86_64.zip"
+      release_sha=bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
+      release_member=stylua
+      ;;
+    stylua-aarch64)
+      release_url="${github}/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-linux-aarch64.zip"
+      release_sha=0ef2ebf0b7e5a652b65c4cb96c6d9ffb3981a98547de3c764465bbf54a8d761a
+      release_member=stylua
+      ;;
+    luacheck-x86_64)
+      # A standalone binary, its own Lua bundled.
+      release_url="${github}/lunarmodules/luacheck/releases/download/v${LUACHECK_VERSION}/luacheck"
+      release_sha=d68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc
+      ;;
+    taplo-x86_64)
+      # Taplo's tags have no "v".
+      release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz"
+      release_sha=8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
+      ;;
+    taplo-aarch64)
+      release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-aarch64.gz"
+      release_sha=033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3
+      ;;
+    buf-x86_64)
+      release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-x86_64"
+      release_sha=8f2986298ad08f0cc1bf999b9797b7c383adf32d7edf0f73d6f1e1a701baeac1
+      ;;
+    buf-aarch64)
+      release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-aarch64"
+      release_sha=902b75267db7f4391e99b7fa0756050e5354234cc0437ef50eee9c788950c7a3
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
 # releases, at CI's versions.
 # Arguments:
@@ -160,8 +220,9 @@ install_toolchain() {
   # server-x64-linux job: clang-tidy.
   # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
   # pkg-config. For the hooks: clang-format, git-lfs (pre-push), and lua-check
-  # (luacheck), which this release packages at CI's pinned LUACHECK_VERSION for
-  # every architecture, unlike luacheck's own release. sccache: the root
+  # (luacheck), which the toolchain links on arm64, where luacheck's own release
+  # has no build: this release packages it at the pinned LUACHECK_VERSION, which
+  # `make toolchain-check` holds it to. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
   # for development. jq: with cosign, below, the release runbook's wait on a
   # signed image (docs/runbooks/cut-release.md). podman: the container engine,
@@ -243,32 +304,18 @@ install_toolchain() {
     manifest_add apt "${new_packages[@]}"
   fi
 
-  # The hooks' and CI's format job's formatters and linters that Ubuntu doesn't
-  # package at CI's versions: uv (for yamllint and the rest uv runs), yamlfmt,
-  # StyLua and taplo. uv is its latest release: what it runs is pinned. With
-  # them, the flux CLI at the cluster's Flux, and cosign at CI's, which Ubuntu
-  # packages only at an older major.
-  local arch yamlfmt_arch yamlfmt_sha stylua_arch stylua_sha taplo_arch \
-    taplo_sha flux_sha cosign_sha
+  # uv, which installs the toolchain's PyPI tools (scripts/bootstrap/toolchain.sh)
+  # and runs the rest, at its latest release: what it runs is pinned. The flux
+  # CLI at the cluster's Flux, and cosign at CI's, which Ubuntu packages only at
+  # an older major.
+  local arch flux_sha cosign_sha
   arch="$(dpkg --print-architecture)"
   case "${arch}" in
     amd64)
-      yamlfmt_arch=x86_64
-      yamlfmt_sha=1f300d9257b232bb3b541d7fb1b0e6b3c121bcbab381c86cd38cb8722be8a566
-      stylua_arch=x86_64
-      stylua_sha=bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
-      taplo_arch=x86_64
-      taplo_sha=8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
       flux_sha=b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473
       cosign_sha=c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
       ;;
     arm64)
-      yamlfmt_arch=arm64
-      yamlfmt_sha=5b2689c963b177271330c5ce8ca7396751107e5a826be46f03d2cb9b6f0c7784
-      stylua_arch=aarch64
-      stylua_sha=0ef2ebf0b7e5a652b65c4cb96c6d9ffb3981a98547de3c764465bbf54a8d761a
-      taplo_arch=aarch64
-      taplo_sha=033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3
       flux_sha=f3e159af616ec0b9bd0a405c2185cf09d06b74652c1de3c7f377e8166826651a
       cosign_sha=bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8
       ;;
@@ -293,27 +340,14 @@ install_toolchain() {
   local tmp
   tmp="$(mktemp -d)"
   download_verified \
-    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Linux_${yamlfmt_arch}.tar.gz" \
-    "${yamlfmt_sha}" "${tmp}/yamlfmt.tar.gz"
-  download_verified \
-    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-linux-${stylua_arch}.zip" \
-    "${stylua_sha}" "${tmp}/stylua.zip"
-  download_verified \
-    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-${taplo_arch}.gz" \
-    "${taplo_sha}" "${tmp}/taplo.gz"
-  download_verified \
     "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_${arch}.tar.gz" \
     "${flux_sha}" "${tmp}/flux.tar.gz"
   download_verified \
     "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${arch}" \
     "${cosign_sha}" "${tmp}/cosign"
-  tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt
-  unzip -q "${tmp}/stylua.zip" -d "${tmp}"
-  gunzip "${tmp}/taplo.gz"
   tar -xzf "${tmp}/flux.tar.gz" -C "${tmp}" flux
-  record_new_files /usr/local/bin yamlfmt stylua taplo flux cosign
-  as_root install -m 0755 "${tmp}/yamlfmt" "${tmp}/stylua" "${tmp}/taplo" \
-    "${tmp}/flux" "${tmp}/cosign" /usr/local/bin
+  record_new_files /usr/local/bin flux cosign
+  as_root install -m 0755 "${tmp}/flux" "${tmp}/cosign" /usr/local/bin
   rm -rf "${tmp}"
   install_ci_tools "${arch}" /usr/local/bin
 

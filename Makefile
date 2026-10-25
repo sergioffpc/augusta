@@ -72,8 +72,12 @@ YAMLLINT = $(call toolchain_bin,yamllint) --strict -c .yamllint
 # Prettier is a Node package, in .toolchain/node_modules, which the toolchain's
 # Node runs.
 PRETTIER = $(call toolchain_bin,node) .toolchain/node_modules/prettier/bin/prettier.cjs
-# Buf too, from npm: it reads buf.yaml's workspace, every .proto at once.
-BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
+YAMLFMT = $(call toolchain_bin,yamlfmt) -conf .yamlfmt
+STYLUA = $(call toolchain_bin,stylua)
+LUACHECK = $(call toolchain_bin,luacheck)
+TAPLO = $(call toolchain_bin,taplo)
+# buf reads buf.yaml's workspace, every .proto at once.
+BUF = $(call toolchain_bin,buf)
 
 # What CI's Lint steps run clang-tidy's full profile on: every src .cpp and the
 # C++ tools' (tools/agent), built with them, except the audio module's silent
@@ -214,9 +218,9 @@ docs:
 
 format:
 	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
-	yamlfmt -conf .yamlfmt
-	stylua $(shell git ls-files -- $(LUA_SOURCES))
-	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
+	$(YAMLFMT)
+	$(STYLUA) $(shell git ls-files -- $(LUA_SOURCES))
+	$(TAPLO) fmt $(shell git ls-files -- $(TOML_SOURCES))
 	$(RUFF) format $(shell git ls-files -- $(PYTHON_SOURCES))
 	$(SHFMT) -w $(shell git ls-files -- $(SHELL_SOURCES))
 	$(GERSEMI) -i $(shell git ls-files -- $(CMAKE_SOURCES))
@@ -231,16 +235,16 @@ format-check: $(FORMAT_CHECKS)
 format-check/clang-format:
 	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
 format-check/yamlfmt:
-	yamlfmt -conf .yamlfmt -lint
+	$(YAMLFMT) -lint
 format-check/yamllint:
 	$(YAMLLINT) .
 format-check/stylua:
-	stylua --check $(shell git ls-files -- $(LUA_SOURCES))
+	$(STYLUA) --check $(shell git ls-files -- $(LUA_SOURCES))
 format-check/luacheck:
-	luacheck $(shell git ls-files -- $(LUA_SOURCES))
+	$(LUACHECK) $(shell git ls-files -- $(LUA_SOURCES))
 format-check/taplo:
-	taplo fmt --check $(shell git ls-files -- $(TOML_SOURCES))
-	taplo lint $(shell git ls-files -- $(TOML_SOURCES))
+	$(TAPLO) fmt --check $(shell git ls-files -- $(TOML_SOURCES))
+	$(TAPLO) lint $(shell git ls-files -- $(TOML_SOURCES))
 format-check/ruff:
 	$(RUFF) format --check $(shell git ls-files -- $(PYTHON_SOURCES))
 	$(RUFF) check $(shell git ls-files -- $(PYTHON_SOURCES))
@@ -315,9 +319,9 @@ linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call cover
 
 format-files:
 	$(if $(call covered,$(CXX_SOURCES)),clang-format -i $(call covered,$(CXX_SOURCES)),@:)
-	$(if $(call covered,$(YAML_SOURCES)),yamlfmt -conf .yamlfmt $(call covered,$(YAML_SOURCES)),@:)
-	$(if $(call covered,$(LUA_SOURCES)),stylua $(call covered,$(LUA_SOURCES)),@:)
-	$(if $(call covered,$(TOML_SOURCES)),taplo fmt $(call covered,$(TOML_SOURCES)),@:)
+	$(if $(call covered,$(YAML_SOURCES)),$(YAMLFMT) $(call covered,$(YAML_SOURCES)),@:)
+	$(if $(call covered,$(LUA_SOURCES)),$(STYLUA) $(call covered,$(LUA_SOURCES)),@:)
+	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) fmt $(call covered,$(TOML_SOURCES)),@:)
 	$(if $(call covered,$(PYTHON_SOURCES)),$(RUFF) format --quiet $(call covered,$(PYTHON_SOURCES)),@:)
 	$(if $(call covered,$(SHELL_SOURCES)),$(SHFMT) -w $(call covered,$(SHELL_SOURCES)),@:)
 	$(if $(call covered,$(CMAKE_SOURCES)),$(GERSEMI) --quiet -i $(call covered,$(CMAKE_SOURCES)),@:)
@@ -339,9 +343,9 @@ lint-files:
 lint/yamllint:
 	$(if $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),$(YAMLLINT) $(call linted,$(YAML_SOURCES),.yamllint .yamlignore .gitignore),@:)
 lint/luacheck:
-	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),luacheck $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
+	$(if $(call linted,$(LUA_SOURCES),.luacheckrc),$(LUACHECK) $(call linted,$(LUA_SOURCES),.luacheckrc),@:)
 lint/taplo:
-	$(if $(call covered,$(TOML_SOURCES)),taplo lint $(call covered,$(TOML_SOURCES)),@:)
+	$(if $(call covered,$(TOML_SOURCES)),$(TAPLO) lint $(call covered,$(TOML_SOURCES)),@:)
 lint/ruff:
 	$(if $(call linted,$(PYTHON_SOURCES),ruff.toml),$(RUFF) check $(call linted,$(PYTHON_SOURCES),ruff.toml),@:)
 lint/shellcheck:

@@ -21,11 +21,6 @@ set -euo pipefail
 
 readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
 
-# CI's format job pins the same versions; bump them together, with the
-# platform files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
-  LUACHECK_VERSION=1.2.0
 # The flux CLI at the cluster's Flux, the Flux Version in
 # clusters/onprem/flux-system/gotk-components.yaml's header; bump them
 # together, with the platform files' checksums.
