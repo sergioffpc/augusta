@@ -156,79 +156,100 @@ undo_entry() {
   esac
 }
 
-# Installs a release's command into a bin directory: a plain binary, or one
-# member of a tar.gz.
+# The toolchain's darwin-arm64 release downloads, which
+# scripts/bootstrap/toolchain.sh installs, in globals: release_url, the asset
+# at the version scripts/bootstrap/versions.env pins; release_sha, its SHA-256;
+# release_member, the binary's path inside a tar.gz or zip.
 # Arguments:
-#   The command's name, the asset's URL, its SHA-256, the member ("-" for a
-#   plain binary), the bin directory.
-install_release() {
-  local name="$1" url="$2" sha="$3" member="$4" bin="$5" tmp
-  tmp="$(mktemp -d)"
-  download_verified "${url}" "${sha}" "${tmp}/${name}.download"
-  if [[ "${member}" = - ]]; then
-    mv "${tmp}/${name}.download" "${tmp}/${name}"
-  else
-    tar -xzf "${tmp}/${name}.download" -C "${tmp}" "${member}"
-    mv "${tmp}/${member}" "${tmp}/${name}"
-  fi
-  record_new_files "${bin}" "${name}"
-  install -m 0755 "${tmp}/${name}" "${bin}"
-  rm -rf "${tmp}"
-}
-
-# The hooks' and CI's format job's formatters that Homebrew doesn't keep at
-# CI's versions (yamlfmt, StyLua, taplo): their darwin-arm64 releases, as
-# scripts/bootstrap/linux.sh installs Linux's.
-# Arguments:
-#   The bin directory.
-install_formatters() {
-  local bin="$1" tmp
-  install_release yamlfmt \
-    "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Darwin_arm64.tar.gz" \
-    4b417ecb94339d57e4c122ecc948c1a00fe328b5853266de9806e652a92858fa yamlfmt \
-    "${bin}"
-  # StyLua's a zip, taplo's a gzip of the binary alone.
-  tmp="$(mktemp -d)"
-  download_verified \
-    "https://github.com/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-macos-aarch64.zip" \
-    92ff0889e16324801bc072692974bb67f8161e62010fc90f96c62a17f81f32c7 \
-    "${tmp}/stylua.zip"
-  download_verified \
-    "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-darwin-aarch64.gz" \
-    713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d \
-    "${tmp}/taplo.gz"
-  unzip -q "${tmp}/stylua.zip" -d "${tmp}"
-  gunzip "${tmp}/taplo.gz"
-  record_new_files "${bin}" stylua taplo
-  install -m 0755 "${tmp}/stylua" "${tmp}/taplo" "${bin}"
-  rm -rf "${tmp}"
-}
-
-# Prints the toolchain's release binaries, darwin-arm64's, which
-# scripts/bootstrap/toolchain.sh installs (ADR-0077) at the versions
-# scripts/bootstrap/versions.env pins: a line each of the tool, its release
-# asset, the asset's SHA-256, and the tool's path inside the tar.gz ("-" for a
-# plain binary). Bump each SHA-256 with its version.
-toolchain_releases() {
-  local tools
-  # promtool and amtool sit in a directory named after their archive.
-  local prometheus_dir="prometheus-${PROMETHEUS_VERSION}.darwin-arm64"
-  local alertmanager_dir="alertmanager-${ALERTMANAGER_VERSION}.darwin-arm64"
-  tools=(
-    "trivy https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_macOS-ARM64.tar.gz 4a77108cccf8e55c8d6823e1e759939a622277e66cd0daa3c1fc621ed69e4568 trivy"
-    "kubeconform https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-darwin-arm64.tar.gz f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67 kubeconform"
-    "kyverno https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_darwin_arm64.tar.gz 2cf5febbedaafca5d3c7819925a49f9723bf4c3337a1327b6f72970480af385a kyverno"
-    "promtool https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${prometheus_dir}.tar.gz 920df4d17e78b3b0175af144eb318b0c74d1cf7b1d1251b326966f0e81977260 ${prometheus_dir}/promtool"
-    "amtool https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/${alertmanager_dir}.tar.gz a3941879f340ef12a4cc1a479c82bd8520611265ea8d1ee25c88bd5f944d8293 ${alertmanager_dir}/amtool"
-    "hadolint https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-macos-arm64 5c09f3213f8e40406abe048233d985eebef336d4a6a20021be47fadb6cf480a2 -"
-    "oras https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_darwin_arm64.tar.gz d545a238f4c8be6dfae6c3d0ff5b09720c5588641d4a5180fb87c38a64500cc4 oras"
-    "syft https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_darwin_arm64.tar.gz 7e0bdad94c569fc6d5785c9a657bbae3d4c4e140ccb5eace3d0b5b6bc2b6dbcf syft"
-    "grype https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_darwin_arm64.tar.gz 938f050bb5076c8aa761867b39843abad2414dfe4cc82b7d36886e634f49c640 grype"
-    "yq https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_darwin_arm64 cceb0b8d71ea5294334121f8429f33f92b920e7217d904a2f9f35443968ac424 -"
-    "flux https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_darwin_arm64.tar.gz 2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd flux"
-    "cosign https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-darwin-arm64 5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084 -"
-  )
-  printf '%s\n' "${tools[@]}"
+#   The tool.
+# Returns:
+#   1 when the tool has no release here: luacheck's has no macOS build, so
+#   Homebrew's is linked.
+# shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
+toolchain_release() {
+  local github=https://github.com
+  release_member=
+  case "$1" in
+    yamlfmt)
+      release_url="${github}/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Darwin_arm64.tar.gz"
+      release_sha=4b417ecb94339d57e4c122ecc948c1a00fe328b5853266de9806e652a92858fa
+      release_member=yamlfmt
+      ;;
+    stylua)
+      release_url="${github}/JohnnyMorganz/StyLua/releases/download/v${STYLUA_VERSION}/stylua-macos-aarch64.zip"
+      release_sha=92ff0889e16324801bc072692974bb67f8161e62010fc90f96c62a17f81f32c7
+      release_member=stylua
+      ;;
+    taplo)
+      # Taplo's tags have no "v".
+      release_url="${github}/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-darwin-aarch64.gz"
+      release_sha=713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d
+      ;;
+    buf)
+      release_url="${github}/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Darwin-arm64"
+      release_sha=6e6df0fef4522e4e43dfe7c341873c3f2c29ceb45a9dfa5e0bad5580b8b2022f
+      ;;
+    # The tools CI's own jobs run and the operators' flux and cosign
+    # (scripts/bootstrap/versions.env).
+    trivy)
+      release_url="${github}/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_macOS-ARM64.tar.gz"
+      release_sha=4a77108cccf8e55c8d6823e1e759939a622277e66cd0daa3c1fc621ed69e4568
+      release_member=trivy
+      ;;
+    kubeconform)
+      release_url="${github}/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-darwin-arm64.tar.gz"
+      release_sha=f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67
+      release_member=kubeconform
+      ;;
+    kyverno)
+      release_url="${github}/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_darwin_arm64.tar.gz"
+      release_sha=2cf5febbedaafca5d3c7819925a49f9723bf4c3337a1327b6f72970480af385a
+      release_member=kyverno
+      ;;
+    promtool)
+      release_url="${github}/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.darwin-arm64.tar.gz"
+      release_sha=920df4d17e78b3b0175af144eb318b0c74d1cf7b1d1251b326966f0e81977260
+      release_member=prometheus-${PROMETHEUS_VERSION}.darwin-arm64/promtool
+      ;;
+    amtool)
+      release_url="${github}/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/alertmanager-${ALERTMANAGER_VERSION}.darwin-arm64.tar.gz"
+      release_sha=a3941879f340ef12a4cc1a479c82bd8520611265ea8d1ee25c88bd5f944d8293
+      release_member=alertmanager-${ALERTMANAGER_VERSION}.darwin-arm64/amtool
+      ;;
+    hadolint)
+      release_url="${github}/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-macos-arm64"
+      release_sha=5c09f3213f8e40406abe048233d985eebef336d4a6a20021be47fadb6cf480a2
+      ;;
+    oras)
+      release_url="${github}/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_darwin_arm64.tar.gz"
+      release_sha=d545a238f4c8be6dfae6c3d0ff5b09720c5588641d4a5180fb87c38a64500cc4
+      release_member=oras
+      ;;
+    syft)
+      release_url="${github}/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_darwin_arm64.tar.gz"
+      release_sha=7e0bdad94c569fc6d5785c9a657bbae3d4c4e140ccb5eace3d0b5b6bc2b6dbcf
+      release_member=syft
+      ;;
+    grype)
+      release_url="${github}/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_darwin_arm64.tar.gz"
+      release_sha=938f050bb5076c8aa761867b39843abad2414dfe4cc82b7d36886e634f49c640
+      release_member=grype
+      ;;
+    yq)
+      release_url="${github}/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_darwin_arm64"
+      release_sha=cceb0b8d71ea5294334121f8429f33f92b920e7217d904a2f9f35443968ac424
+      ;;
+    flux)
+      release_url="${github}/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_darwin_arm64.tar.gz"
+      release_sha=2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd
+      release_member=flux
+      ;;
+    cosign)
+      release_url="${github}/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-darwin-arm64"
+      release_sha=5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 install_toolchain() {
@@ -257,7 +278,8 @@ install_toolchain() {
   # Ninja, as the presets build with; GNU make 4, the Makefile's (macOS's own
   # is 3.81); sccache, which the root CMakeLists.txt picks up from PATH;
   # pkg-config and autotools for the vcpkg ports that build with them. Git LFS
-  # (pre-push), which Apple's git has none of, and luacheck at CI's pinned
+  # (pre-push), which Apple's git has none of, and luacheck, which the
+  # toolchain links as luacheck has no macOS release, and holds to the pinned
   # LUACHECK_VERSION. uv, for yamllint and the rest uv runs. doxygen: `make
   # docs`. gh: for development. jq: with the toolchain's cosign, the release
   # runbook's wait on a signed image (docs/runbooks/cut-release.md). kubectl
@@ -291,15 +313,12 @@ install_toolchain() {
   uv tool list 2>/dev/null | grep -q '^ctcache ' || manifest_add uv-tool ctcache
   uv tool install "${CTCACHE_PACKAGE}"
 
-  install_formatters "${LOCAL_BIN}"
-
   start_podman_machine
 
   # A tool missing here fails loud now, not at the first commit or push.
   hash -r
   require_commands cmake ninja make git git-lfs sccache uv clang-format \
-    clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo luacheck kubectl \
-    helm jq podman tshark
+    clang-tidy clang-tidy-cache doxygen luacheck kubectl helm jq podman tshark
 }
 
 # The submodules every build uses, as scripts/bootstrap/linux.sh's.

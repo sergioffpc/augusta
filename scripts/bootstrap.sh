@@ -21,11 +21,6 @@ set -euo pipefail
 
 readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
 
-# CI's format job pins the same versions; bump them together, with the
-# platform files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
-  LUACHECK_VERSION=1.2.0
 # ctcache, at the commit the toolchain pins (scripts/bootstrap/versions.env).
 # Piped from curl there is no file beside this one, nor any need of it: the
 # clone's own copy runs.
@@ -47,28 +42,6 @@ platform() {
       exit 1
       ;;
   esac
-}
-
-# Checks the files a checksum list on stdin names, quietly: GNU's sha256sum,
-# or on macOS, whose own reads no list from stdin, shasum.
-sha256_check() {
-  if [[ "$(uname -s)" = Darwin ]]; then
-    shasum -a 256 --check --status
-  else
-    sha256sum --check --status
-  fi
-}
-
-# Downloads a URL to a file and checks its SHA-256.
-# Arguments:
-#   The URL, the expected SHA-256, the file.
-download_verified() {
-  curl --proto '=https' --tlsv1.2 -fsSLo "$3" "$1"
-  printf '%s  %s\n' "$2" "$3" | sha256_check \
-    || {
-      echo "bootstrap: SHA-256 mismatch for $1" >&2
-      exit 1
-    }
 }
 
 # Fails with the list of commands missing from PATH.

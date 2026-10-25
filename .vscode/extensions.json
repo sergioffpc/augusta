@@ -6,8 +6,6 @@
     "bufbuild.vscode-buf",
     // Python: lint and format against ruff.toml.
     "charliermarsh.ruff",
-    // Lua: lint Composer scripts against .luacheckrc.
-    "dwenegar.vscode-luacheck",
     // All files: apply .editorconfig (indent, line endings, final newline).
     "editorconfig.editorconfig",
     // Markdown: format against .prettierrc.yaml.
@@ -43,9 +41,16 @@
     "shader-slang.slang-language-extension",
     // Lua: language server for Composer scripts.
     "sumneko.lua",
-    // TOML: syntax and formatting against .taplo.toml.
+    // TOML: syntax and schema checks against .taplo.toml; the pre-commit hook
+    // formats it, with the toolchain's Taplo.
     "tamasfe.even-better-toml",
     // Shell: lint scripts with ShellCheck.
     "timonwong.shellcheck"
+  ],
+  "unwantedRecommendations": [
+    // Lua: luacheck's extension runs whichever luacheck is on VS Code's own
+    // PATH, as it can be given no path to the toolchain's (ADR-0077): the
+    // pre-push hook lints Lua with the toolchain's luacheck instead.
+    "dwenegar.vscode-luacheck"
   ]
 }
