@@ -157,8 +157,8 @@ struct BodyState {
 /// What a body's Clips (ADR-0066) pace its Movement by, which World::Step takes
 /// from its caller (animation::PacingOf): how far one Stride, a cycle of two
 /// steps, takes the body at its gait, in meters, and how long each change
-/// between two stances takes. The default, without Clips, holds the Stride and
-/// ends a change of stance on the tick it starts.
+/// between two stances takes. The default holds the Stride and ends a change of
+/// stance on the tick it starts.
 struct Pacing {
   float stride_length = 0.0F;
   assets::StanceTransitionsData transitions{};

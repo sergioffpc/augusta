@@ -29,6 +29,8 @@ build's PhysX records, through OmniPVD's runtime that the PhysX overlay port
 ## Not its responsibility
 
 - Bullet trajectories: gameplay (`augusta/ballistics.h`), not PhysX.
+- The stride length and the transition durations a body is paced by: animation,
+  from its Character's Clips (`PacingOf`).
 - Bit-exact agreement between client and server: not guaranteed; reconciliation
   corrects the client.
 - Particles: renderer.

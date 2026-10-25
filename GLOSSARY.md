@@ -490,10 +490,10 @@ carry none. _Avoid_: Bone, node, transform (a Joint has a transform; it is not
 one)
 
 **Rest pose**: The Hitbox pose a Character is in when nothing animates it — the
-pose it was authored in. What the engine poses a player by when its Character
-has no Clips, and what a Skeleton's Joint transforms describe as authored.
-_Avoid_: Bind pose (that names the pose a mesh was skinned in, a client
-concern), T-pose, default pose, idle (an idle is a Clip, not the absence of one)
+pose it was authored in. What a Skeleton's Joint transforms describe as
+authored, and where a Debug overlay places a Character's Hitboxes. _Avoid_: Bind
+pose (that names the pose a mesh was skinned in, a client concern), T-pose,
+default pose, idle (an idle is a Clip, not the absence of one)
 
 **Cosmetic layer**: Something the client draws on top of a player's Hitbox pose
 without moving a Hitbox, such as foot placement, a flinch or a reload. _Avoid_:
@@ -508,6 +508,16 @@ distance its body moves and never by time. _Avoid_: Gait phase, cycle time
 
 **Aim offset**: The poses that bend a player's body by the pitch of its view.
 _Avoid_: Aim layer, look pose
+
+**Blend space**: A stance's Clips laid out over the body's velocity in its own
+space — idle, forward, backward, the sides, optional diagonals and, standing,
+sprint — whose weights at the body's velocity blend its pose, each Clip
+synchronised by the Stride. _Avoid_: State machine (the pose has no state of its
+own), locomotion graph
+
+**ADS grip**: A stance's pose of a player aiming down sights, added whole onto
+its body's pose while ADS is set: it shoulders the rifle with its Sight on the
+Eye. _Avoid_: ADS pose, aim layer (the Aim offset is the pitch's)
 
 **Shot**: One bullet fired, as the Authoritative server announces it to every
 client: who fired it, at which tick, from where and in which direction. Clients

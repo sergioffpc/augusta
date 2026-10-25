@@ -41,7 +41,8 @@ struct Character {
   /// Where it sees from standing, relative to its feet (ADR-0040).
   math::Vec3 eye{};
   /// Its Clips (ADR-0066), loaded once and shared, never changed, by whatever
-  /// poses it. Null only for a character a test builds by hand.
+  /// poses it: every World built on this content. Never null: a character
+  /// whose Clips do not load is refused.
   // NOLINTNEXTLINE(readability-redundant-member-init)
   std::shared_ptr<const animation::CharacterClips> clips{};
 };

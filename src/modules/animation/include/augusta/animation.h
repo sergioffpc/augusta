@@ -13,9 +13,9 @@
 /// from a player's Hitbox pose, each of its Joints relative to its parent and
 /// the world transform that composes, which gameplay's hitbox::Place places the
 /// Hitboxes bound to them by. The pose is its Clips' (augusta/pose.h); this
-/// header holds what a pose is and the Rest pose, which poses a Character
-/// without Clips, its root where the position and facing put it
-/// (hitbox::RootOf). Pure, with no world or state of its
+/// header holds what a pose is and the Rest pose's world transforms, its root
+/// where the position and facing put it (hitbox::RootOf). Pure, with no world
+/// or state of its
 /// own: which players are posed, when, and what a posed Hitbox is judged
 /// against are SimulationWorld's, in its Posing phase. Its one other consumer
 /// is a Development build's client (ADR-0074), whose Hitboxes Debug overlay

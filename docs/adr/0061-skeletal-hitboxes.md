@@ -98,8 +98,7 @@ format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
 - **The root carries the position and the facing alone.** The skeleton's root is
   where the body's position puts it, turned about the vertical by its yaw
   (ADR-0040); the stance does not scale it. How low a body is in a stance is
-  that stance's Clips' (ADR-0066). A character without Clips, which only a test
-  builds, stands in its rest pose in every stance.
+  that stance's Clips' (ADR-0066), which every character has.
 - **No replicated state is added.** In the rest pose there is nothing to
   remember: position, yaw and stance are already in the Authoritative State. The
   protocol, the Authoritative State update and the Match capture are untouched
