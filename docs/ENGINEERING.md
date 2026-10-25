@@ -643,12 +643,16 @@ no self-hosted GitHub Actions runner in this pipeline).
   check mode and strict YAML lint as the actual gate, since hooks can be skipped
   (`--no-verify`) or missing/mismatched locally. `clang-tidy` needs a full
   `compile_commands.json`, so it stays out of the commit hook and runs on
-  changed C++ before push. `make format` applies the formatters,
-  `make format-check` checks formatting and every linter but `clang-tidy`,
-  `make lint` also runs `clang-tidy`, and `make tidy` alone runs `clang-tidy`,
-  through ctcache as CI's Lint steps do (CI, clang-tidy results), keeping its
-  results under `build/ctcache`; both bootstraps install it. The hooks name no
-  tool themselves: `pre-commit` runs `make format-files` on the staged files and
+  changed C++ before push. `clang-format`, `clang-tidy` and the editor's
+  `clangd` run from `.toolchain/bin`, which `make toolchain` links to the
+  system's LLVM of the major `.github/actions/setup-windows-llvm` pins
+  (ADR-0077), and `make toolchain-check` fails on one of another major, such as
+  Apple's `clangd`. `make format` applies the formatters, `make format-check`
+  checks formatting and every linter but `clang-tidy`, `make lint` also runs
+  `clang-tidy`, and `make tidy` alone runs `clang-tidy`, through ctcache as CI's
+  Lint steps do (CI, clang-tidy results), keeping its results under
+  `build/ctcache`; both bootstraps install it. The hooks name no tool
+  themselves: `pre-commit` runs `make format-files` on the staged files and
   `pre-push` runs `make lint-files` on the changed ones, the same commands as
   `make format` and `make lint` on fewer files, with clang-tidy one file a
   process through the same ctcache results; `make test` and `make check` run

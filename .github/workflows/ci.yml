@@ -117,6 +117,10 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
+      # LLVM's, which the toolchain links: Ubuntu's, of the major the
+      # presets compile with.
+      - name: Install LLVM's clang-format, clang-tidy and clangd
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy clangd
       # The formatters and linters the Makefile's format-check/* targets run.
       - uses: ./.github/actions/setup-toolchain
       - name: Check the environments' pack formats
@@ -129,12 +133,9 @@ jobs:
         run: |
           uv run --no-project --with pyyaml==6.0.3 --with pytest==9.1.1 pytest checks/test_check_pack_formats.py
           uv run --no-project --with pyyaml==6.0.3 python scripts/check-pack-formats.py
-      - name: Install clang-format
-        if: needs.changes.outputs.run_build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+        run: make format-check/clang-format
       - name: Check the tests' requirement markers
         # Every requirement a test names is one docs/REQUIREMENTS.md has, and
         # every marker is directly above a test (ADR-0013).
@@ -319,8 +320,9 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-linux-build
         with:
-          # The same distro version as the clang the presets compile with.
-          extra-packages: clang-tidy
+          # The same distro version as the clang the presets compile with,
+          # which the toolchain links.
+          extra-packages: clang-format clang-tidy clangd
           # It installs the tools' ports (the manifest's agent and pack
           # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
           # other Linux job does and whose saves would drop: a cache of its own.

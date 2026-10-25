@@ -15,7 +15,9 @@ runs:
       shell: bash
       # MSYS_NO_PATHCONV: Git Bash would otherwise take the NSIS installer's /S
       # and /D= for paths and rewrite them. The checksum is this version's
-      # installer's: a bump changes both.
+      # installer's: a bump changes both. LLVM_VERSION's major is also the one
+      # every platform's .toolchain/bin links (scripts/bootstrap/toolchain.sh
+      # reads it here).
       env:
         MSYS_NO_PATHCONV: 1
         LLVM_VERSION: 21.1.8

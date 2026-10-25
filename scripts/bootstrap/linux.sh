@@ -219,9 +219,11 @@ install_toolchain() {
   # ninja-build, autoconf, autoconf-archive, automake, libtool. From the
   # server-x64-linux job: clang-tidy.
   # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
-  # pkg-config. For the hooks: clang-format, git-lfs (pre-push), and lua-check
-  # (luacheck), which the toolchain links on arm64, where luacheck's own release
-  # has no build: this release packages it at the pinned LUACHECK_VERSION, which
+  # pkg-config. clangd: the editor's, which .toolchain/bin links with
+  # clang-format and clang-tidy (scripts/bootstrap/toolchain.sh). For the
+  # hooks: clang-format, git-lfs (pre-push), and lua-check (luacheck), which
+  # the toolchain links on arm64, where luacheck's own release has no build:
+  # this release packages it at the pinned LUACHECK_VERSION, which
   # `make toolchain-check` holds it to. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
   # for development. jq: with cosign, below, the release runbook's wait on a
@@ -252,6 +254,7 @@ install_toolchain() {
     clang
     clang-format
     clang-tidy
+    clangd
     cmake
     curl
     doxygen
