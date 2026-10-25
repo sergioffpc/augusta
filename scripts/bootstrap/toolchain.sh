@@ -316,12 +316,13 @@ install_release() {
   fi
   case "${release_url}" in
     *.tar.gz)
-      tar -xzf "${asset}" -C "${dir}" "${release_member}"
+      # From stdin: GNU tar reads a file named C:/... as on a host C.
+      tar -xzf - -C "${dir}" "${release_member}" <"${asset}"
       mv "${dir}/${release_member}" "${binary}"
       ;;
     *.zip)
       if windows; then
-        extract_zip "${asset}" "${dir}"
+        extract_zip "${asset}" "${dir}" "${release_member}"
       else
         unzip -qo "${asset}" "${release_member}" -d "${dir}"
       fi
@@ -330,6 +331,10 @@ install_release() {
     *.gz) gunzip -c "${asset}" >"${binary}" ;;
     *) mv "${asset}" "${binary}" ;;
   esac
+  # The directory the binary was in, empty now.
+  if [[ "${release_member}" == */* ]]; then
+    rm -rf "${dir:?}/${release_member%%/*}"
+  fi
   chmod +x "${binary}"
   rm -f "${asset}"
   # Last, so an install cut short is redone.

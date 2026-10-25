@@ -16,10 +16,10 @@ windows_dir() {
 # Extracts a zip archive into a directory, with Windows' own bsdtar: Git Bash's
 # tar reads no zip, and it has no unzip.
 # Arguments:
-#   The archive, the directory.
+#   The archive, the directory, then the members to extract, or none for all.
 extract_zip() {
   "$(windows_dir SystemRoot)/System32/tar.exe" -xf "$(cygpath -w "$1")" \
-    -C "$(cygpath -w "$2")"
+    -C "$(cygpath -w "$2")" "${@:3}"
 }
 
 # Appends a directory to a registry PATH, Machine or User, unless it is there,
