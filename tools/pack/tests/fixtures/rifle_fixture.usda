@@ -5,8 +5,8 @@
     metersPerUnit = 1
 )
 
-# A rifle stage (ADR-0064): its Grip, Muzzle and Sight, each pointing along its
-# -Z, and a visual mesh the cooker leaves out of both packs.
+# A rifle stage (ADR-0064): its Grip, Muzzle, Sight and Fore-end, each pointing
+# along its -Z, and a visual mesh the cooker leaves out of both packs.
 def Xform "Rifle"
 {
     def Xform "Grip"
@@ -25,6 +25,12 @@ def Xform "Rifle"
     def Xform "Sight"
     {
         double3 xformOp:translate = (0, 0.07, -0.1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "ForeEnd"
+    {
+        double3 xformOp:translate = (0, -0.05, -0.35)
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 

@@ -85,7 +85,8 @@ void BindEnums(py::module_& module) {
       .value("ANIMATION_SKELETON", assets::AssetType::kAnimationSkeleton)
       .value("CLIP", assets::AssetType::kClip)
       .value("STANCE_TRANSITIONS", assets::AssetType::kStanceTransitions)
-      .value("RIFLE", assets::AssetType::kRifle);
+      .value("RIFLE", assets::AssetType::kRifle)
+      .value("WEAPON_SOCKET", assets::AssetType::kWeaponSocket);
   py::enum_<assets::BodyPart>(module, "BodyPart", "Where on a player a hitbox is (US-11).")
       .value("HEAD", assets::BodyPart::kHead)
       .value("TORSO", assets::BodyPart::kTorso)
@@ -169,14 +170,30 @@ void BindRifleTypes(py::module_& module) {
            py::arg("translation"), py::arg("rotation"))
       .def_readwrite("translation", &assets::RifleMarker::translation)
       .def_readwrite("rotation", &assets::RifleMarker::rotation);
-  py::class_<assets::RifleData>(module, "RifleData", "The rifle's Grip, Muzzle and Sight (ADR-0064).")
-      .def(py::init([](assets::RifleMarker grip, assets::RifleMarker muzzle, assets::RifleMarker sight) {
-             return assets::RifleData{.grip = grip, .muzzle = muzzle, .sight = sight};
+  py::class_<assets::RifleData>(module, "RifleData", "The rifle's Grip, Muzzle, Sight and Fore-end (ADR-0064).")
+      .def(py::init([](assets::RifleMarker grip, assets::RifleMarker muzzle, assets::RifleMarker sight,
+                       assets::RifleMarker fore_end) {
+             return assets::RifleData{.grip = grip, .muzzle = muzzle, .sight = sight, .fore_end = fore_end};
            }),
-           py::arg("grip"), py::arg("muzzle"), py::arg("sight"))
+           py::arg("grip"), py::arg("muzzle"), py::arg("sight"), py::arg("fore_end"))
       .def_readwrite("grip", &assets::RifleData::grip)
       .def_readwrite("muzzle", &assets::RifleData::muzzle)
-      .def_readwrite("sight", &assets::RifleData::sight);
+      .def_readwrite("sight", &assets::RifleData::sight)
+      .def_readwrite("fore_end", &assets::RifleData::fore_end);
+  py::class_<assets::WeaponSocketData>(module, "WeaponSocketData",
+                                       "A character's weapon socket on its right hand's Joint, and its left hand's "
+                                       "Joint (ADR-0066).")
+      .def(py::init([](std::string joint, math::Vec3 translation, math::Quat rotation, std::string left_hand) {
+             return assets::WeaponSocketData{.joint = std::move(joint),
+                                             .translation = translation,
+                                             .rotation = rotation,
+                                             .left_hand = std::move(left_hand)};
+           }),
+           py::arg("joint"), py::arg("translation"), py::arg("rotation"), py::arg("left_hand"))
+      .def_readwrite("joint", &assets::WeaponSocketData::joint)
+      .def_readwrite("translation", &assets::WeaponSocketData::translation)
+      .def_readwrite("rotation", &assets::WeaponSocketData::rotation)
+      .def_readwrite("left_hand", &assets::WeaponSocketData::left_hand);
 }
 
 void BindSceneNode(py::module_& module) {
@@ -289,7 +306,13 @@ void BindEncodeFunctions(py::module_& module) {
   module.def(
       "encode_rifle_blob",
       [](const assets::RifleData& rifle) { return BlobOrThrow(assets::EncodeRifleBlob(rifle), "rifle"); },
-      py::arg("rifle"), "A rifle blob: its Grip, Muzzle and Sight (ADR-0064).");
+      py::arg("rifle"), "A rifle blob: its Grip, Muzzle, Sight and Fore-end (ADR-0064).");
+  module.def(
+      "encode_weapon_socket_blob",
+      [](const assets::WeaponSocketData& socket) {
+        return BlobOrThrow(assets::EncodeWeaponSocketBlob(socket), "weapon socket");
+      },
+      py::arg("socket"), "A weapon socket blob (ADR-0066).");
   module.def(
       "encode_script_blob",
       [](const py::bytes& script) { return BlobOrThrow(assets::EncodeScriptBlob(std::string_view(script)), "script"); },

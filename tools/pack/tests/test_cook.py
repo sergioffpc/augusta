@@ -25,6 +25,7 @@ from conftest import decode_skeleton
 from conftest import decode_spawn_point
 from conftest import decode_stance_transitions
 from conftest import decode_texture
+from conftest import decode_weapon_socket
 from conftest import encode_png
 from conftest import FIXTURES_DIR
 from conftest import KTX2_SUPERCOMPRESSION_ZSTD
@@ -38,7 +39,7 @@ from conftest import VK_FORMAT_BC7_SRGB_BLOCK
 from pxr import Gf
 import pytest
 
-# A rifle stage with its three markers, for every cook that is not about the
+# A rifle stage with its four markers, for every cook that is not about the
 # rifle (ADR-0064).
 RIFLE_FIXTURE = FIXTURES_DIR / "rifle_fixture.usda"
 
@@ -468,8 +469,9 @@ def test_a_character_named_as_a_root_prim_of_the_map_is_refused(
     assert raised.value.prim_path == "TestMesh"
 
 
-# A character stage (ADR-0040): the Eye every character has, its Skeleton, and
-# the given hitboxes, each a 0.2 m cube at its height above the feet.
+# A character stage (ADR-0040): the Eye every character has, its Skeleton, its
+# weapon socket, and the given hitboxes, each a 0.2 m cube at its height above
+# the feet.
 _CHARACTER_STAGE = """#usda 1.0
 (
     defaultPrim = "Character"
@@ -485,6 +487,7 @@ def Xform "Character"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 SKELETON
+SOCKET
 HITBOXES
 }
 """
@@ -571,6 +574,52 @@ def _hitbox_prim(name, body_part, height, joint):
 
 
 _SKELETON = _skeleton_prim(_JOINTS)
+
+
+def _socket_prim(
+    joint="Root/Hips/Chest",
+    left_hand="Root/Hips/Chest/Neck",
+    translation=(0.3, 1.2, -0.2),
+    degrees=0.0,
+):
+    """A WeaponSocket prim bound rigidly to joint, as a hitbox is.
+
+    Placed at translation in the character's space, turned degrees about +Y,
+    and naming left_hand as the left hand's joint. No binding if joint is
+    None, and no left hand if left_hand is None.
+    """
+    binding_schema = (
+        ' (\n        prepend apiSchemas = ["SkelBindingAPI"]\n    )'
+        if joint is not None
+        else ""
+    )
+    binding = (
+        f'        uniform token[] skel:joints = ["{joint}"]\n'
+        "        int[] primvars:skel:jointIndices = [0] (\n"
+        '            elementSize = 1\n            interpolation = "constant"\n'
+        "        )\n"
+        if joint is not None
+        else ""
+    )
+    left_hand_line = (
+        f'        uniform token augusta:leftHand = "{left_hand}"\n'
+        if left_hand is not None
+        else ""
+    )
+    return (
+        f'    def Xform "WeaponSocket"{binding_schema}\n'
+        "    {\n"
+        f"{binding}"
+        f"{left_hand_line}"
+        f"        double3 xformOp:translate = {translation}\n"
+        f"        float3 xformOp:rotateXYZ = (0, {degrees}, 0)\n"
+        '        uniform token[] xformOpOrder = ["xformOp:translate", '
+        '"xformOp:rotateXYZ"]\n'
+        "    }\n"
+    )
+
+
+_SOCKET = _socket_prim()
 
 
 @dataclass(frozen=True)
@@ -726,13 +775,15 @@ def cook_character(
     joints=_JOINTS,
     clips=None,
     transitions=None,
+    socket=_SOCKET,
 ):
     """Cooks a map with one character, named test, holding hitboxes.
 
     Its Skeleton is the skeleton prim's text, none if it is empty, and joints
     the (name, rest transform) its Clips are authored on. Its Clips are clips
     by role, every required one if None, and its stance transitions
-    transitions, _TRANSITIONS if None.
+    transitions, _TRANSITIONS if None. Its weapon socket is the socket prim's
+    text, none if it is empty.
 
     Returns:
         (client, server) contents.
@@ -745,7 +796,9 @@ def cook_character(
         joints,
     )
     stage_path.write_text(
-        _CHARACTER_STAGE.replace("SKELETON", skeleton + clips_prim).replace(
+        _CHARACTER_STAGE.replace("SKELETON", skeleton + clips_prim)
+        .replace("SOCKET", socket)
+        .replace(
             "HITBOXES", "".join(_hitbox_prim(*hitbox) for hitbox in hitboxes)
         ),
         encoding="utf-8",
@@ -828,6 +881,77 @@ def test_a_characters_eye_goes_into_both_packs(tmp_path, key_pair):
         ) == pytest.approx((0, 1.7, 0))
 
 
+def test_a_characters_weapon_socket_goes_into_both_packs_in_its_joints_space(
+    tmp_path, key_pair
+):
+    client, server = cook_character(
+        _EVERY_BODY_PART,
+        tmp_path,
+        key_pair,
+        socket=_socket_prim(degrees=90.0),
+    )
+
+    half = math.sqrt(0.5)
+    for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.WEAPON_SOCKET) == {
+            "test/Character/WeaponSocket"
+        }
+        socket = decode_weapon_socket(
+            contents.blob("test/Character/WeaponSocket")
+        )
+        assert socket.joint == "Root/Hips/Chest"
+        # 1.2 m above the feet, and the chest at 1.3 m.
+        assert socket.translation == pytest.approx((0.3, -0.1, -0.2))
+        # A quarter turn about +Y.
+        assert socket.rotation == pytest.approx((0, half, 0, half))
+        assert socket.left_hand == "Root/Hips/Chest/Neck"
+
+
+@pytest.mark.parametrize(
+    ("socket", "code", "named"),
+    [
+        ("", "weapon_socket_missing", "WeaponSocket"),
+        (_socket_prim(joint=None), "weapon_socket_joint_missing", ""),
+        (
+            _socket_prim(joint="Root/Hips/Hand"),
+            "weapon_socket_joint_unknown",
+            "Root/Hips/Hand",
+        ),
+        (_socket_prim(left_hand=None), "left_hand_missing", "augusta:leftHand"),
+        (
+            _socket_prim(left_hand="Root/Hips/LeftHand"),
+            "left_hand_unknown",
+            "Root/Hips/LeftHand",
+        ),
+        # The Hips' parent is the Root, and the Root has none: no arm.
+        (
+            _socket_prim(left_hand="Root/Hips"),
+            "left_hand_arm_missing",
+            "Root/Hips",
+        ),
+    ],
+    ids=[
+        "no_socket",
+        "socket_under_no_joint",
+        "socket_under_an_unknown_joint",
+        "no_left_hand",
+        "left_hand_unknown",
+        "left_hand_without_an_arm",
+    ],
+)
+def test_a_character_without_a_weapon_socket_and_a_left_hand_is_refused(
+    socket, code, named, tmp_path, key_pair
+):
+    with pytest.raises(CookError) as raised:
+        cook_character(_EVERY_BODY_PART, tmp_path, key_pair, socket=socket)
+
+    assert raised.value.code == code
+    assert raised.value.prim_path.startswith("test/Character")
+    assert named in raised.value.message
+    assert not (tmp_path / "client.apak").exists()
+    assert not (tmp_path / "server.apak").exists()
+
+
 def test_a_characters_hitbox_is_cooked_into_its_joints_space(
     tmp_path, key_pair
 ):
@@ -847,6 +971,7 @@ def test_a_hitbox_under_a_turned_joint_is_cooked_turned_back(
     joints = [
         ("Root", _rest((0, 0, 0))),
         ("Root/Neck", _rest((0, 1.3, 0), axis=(1, 0, 0), degrees=90.0)),
+        ("Root/Neck/Chin", _rest((0, 0.1, 0))),
     ]
     hitboxes = [
         ("Head", "head", 1.8, "Root/Neck"),
@@ -860,6 +985,7 @@ def test_a_hitbox_under_a_turned_joint_is_cooked_turned_back(
         key_pair,
         skeleton=_skeleton_prim(joints),
         joints=joints,
+        socket=_socket_prim(joint="Root", left_hand="Root/Neck/Chin"),
     )
 
     points = decode_hitbox(client.blob("test/Character/Head")).points
@@ -925,10 +1051,11 @@ def test_a_skeleton_rooted_away_from_the_characters_origin_is_refused(
 
 
 def _joints(count):
-    """A skeleton of count joints: a root at the feet, and children of it."""
+    """A skeleton of count joints: a root at the feet, an arm, its children."""
     return [
         ("Root", _rest((0, 0, 0))),
-        *((f"Root/J{i}", _rest((0, 1, 0))) for i in range(count - 1)),
+        ("Root/Arm", _rest((0, 1, 0))),
+        *((f"Root/Arm/J{i}", _rest((0, 1, 0))) for i in range(count - 2)),
     ]
 
 
@@ -946,6 +1073,7 @@ def test_a_skeleton_with_as_many_joints_as_the_format_allows_cooks(
         key_pair,
         skeleton=_skeleton_prim(joints),
         joints=joints,
+        socket=_socket_prim(joint="Root", left_hand="Root/Arm/J0"),
     )
 
     assert len(decode_skeleton(client.blob("test/Character/Skeleton"))) == 128
@@ -1347,9 +1475,12 @@ def cook_rifle(rifle_stage_path, tmp_path, key_pair):
 
 
 def decode_rifle(blob):
-    """A rifle blob: the Grip, Muzzle and Sight, each (translation, xyzw)."""
-    values = struct.unpack("<21f", blob)
-    return [(values[i : i + 3], values[i + 3 : i + 7]) for i in (0, 7, 14)]
+    """A rifle blob: the Grip, Muzzle, Sight and Fore-end.
+
+    Each as (translation, xyzw).
+    """
+    values = struct.unpack("<28f", blob)
+    return [(values[i : i + 3], values[i + 3 : i + 7]) for i in (0, 7, 14, 21)]
 
 
 def test_the_rifles_markers_go_into_both_packs(tmp_path, key_pair):
@@ -1360,7 +1491,9 @@ def test_the_rifles_markers_go_into_both_packs(tmp_path, key_pair):
         assert contents.paths_of_type(_native.AssetType.RIFLE) == {
             _native.RIFLE_PATH
         }
-        grip, muzzle, sight = decode_rifle(contents.blob(_native.RIFLE_PATH))
+        grip, muzzle, sight, fore_end = decode_rifle(
+            contents.blob(_native.RIFLE_PATH)
+        )
         assert grip == (
             pytest.approx((0, -0.1, 0.1)),
             pytest.approx((0, 0, 0, 1)),
@@ -1372,6 +1505,10 @@ def test_the_rifles_markers_go_into_both_packs(tmp_path, key_pair):
         )
         assert sight == (
             pytest.approx((0, 0.07, -0.1)),
+            pytest.approx((0, 0, 0, 1)),
+        )
+        assert fore_end == (
+            pytest.approx((0, -0.05, -0.35)),
             pytest.approx((0, 0, 0, 1)),
         )
 
@@ -1397,12 +1534,12 @@ def test_a_z_up_rifles_markers_are_turned_y_up(tmp_path, key_pair):
 
     client, _ = cook_rifle(stage_path, tmp_path, key_pair)
 
-    grip, _, _ = decode_rifle(client.blob(_native.RIFLE_PATH))
+    grip, _, _, _ = decode_rifle(client.blob(_native.RIFLE_PATH))
     # Z-up (0, -0.1, 0.1) is Y-up (0, 0.1, 0.1).
     assert grip[0] == pytest.approx((0, 0.1, 0.1))
 
 
-@pytest.mark.parametrize("marker", ["Grip", "Muzzle", "Sight"])
+@pytest.mark.parametrize("marker", ["Grip", "Muzzle", "Sight", "ForeEnd"])
 def test_a_rifle_missing_a_marker_is_refused_naming_it_and_its_stage(
     marker, tmp_path, key_pair
 ):

@@ -128,7 +128,8 @@ struct Eye {
   math::Vec3 standing{};
 };
 
-// Where a player's rifle is, as Posing last placed it; nullopt until it has.
+// Where a player's rifle is, as Posing last placed it; nullopt until it has,
+// and for a Character without a weapon socket.
 struct Held {
   std::optional<HeldRifle> rifle;
 };
@@ -319,16 +320,10 @@ struct World::Impl {
         .write<Bullet>()
         .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
                      Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
-    ecs.system<const Body, const Facing, const CharacterSkeleton, const Clips, PosedJoints>("PosingSystem")
+    ecs.system<const Body, const Facing, const CharacterSkeleton, const Clips, PosedJoints, Held>("PosingSystem")
         .kind(phases[kPosing])
         .each([this](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
-                     PosedJoints& posed) { OnPosing(body, facing, skeleton, clips, posed); });
-    // After PosingSystem, in the same phase: the hand is placed once the body is posed.
-    ecs.system<const Body, const Facing, const Eye, const Rifle, Held>("HoldingSystem")
-        .kind(phases[kPosing])
-        .each([this](const Body& body, const Facing& facing, const Eye& eye, const Rifle& rifle, Held& held) {
-          OnHolding(body, facing, eye, rifle, held);
-        });
+                     PosedJoints& posed, Held& held) { OnPosing(body, facing, skeleton, clips, posed, held); });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
@@ -401,25 +396,26 @@ struct World::Impl {
   }
 
   // Poses one player's Skeleton by its Clips where Movement has just put its
-  // body; in its Rest pose for a Character without any.
+  // body, in its Rest pose for a Character without any; then hangs its rifle
+  // from its weapon socket and reaches it with its left hand, and places the
+  // rifle's Muzzle and Sight where the socket holds it. A Character without a
+  // weapon socket holds no rifle.
   void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
-                PosedJoints& posed) {
+                PosedJoints& posed, Held& held) {
     if (clips.clips == nullptr) {
       animation::PoseAtRest(skeleton.skeleton, PoseOf(body, facing), posed.posed);
+      held.rifle = std::nullopt;
       return;
     }
     poser.Pose(*clips.clips, skeleton.skeleton,
                animation::PoseInput{.body = body.state, .yaw = facing.yaw, .pitch = facing.pitch, .ads = facing.ads},
                posed.posed);
-  }
-
-  // Places one player's rifle where a Desktop player holds it, its view turned
-  // by its rifle's Recoil offset.
-  void OnHolding(const Body& body, const Facing& facing, const Eye& eye, const Rifle& rifle, Held& held) const {
-    const math::Vec3 eye_position = body.state.position + physics::LowerToStance(eye.standing, body.state.stance);
+    if (!clips.clips->weapon_socket) {
+      held.rifle = std::nullopt;
+      return;
+    }
     const math::Mat4 hand =
-        weapon::DesktopHand(eye_position, facing.yaw + rifle.state.recoil.yaw, facing.pitch + rifle.state.recoil.pitch,
-                            facing.ads, parameters.rifle, rifle_markers);
+        animation::HoldRifle(skeleton.skeleton, *clips.clips->weapon_socket, rifle_markers, posed.posed);
     held.rifle =
         HeldRifle{.muzzle = weapon::PlaceMuzzle(hand, rifle_markers), .sight = weapon::PlaceSight(hand, rifle_markers)};
   }

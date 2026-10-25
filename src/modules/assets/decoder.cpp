@@ -362,7 +362,7 @@ std::optional<EyeData> DecodeEyeBlob(std::span<const std::byte> blob) {
 std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
   RifleData rifle;
-  for (RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight}) {
+  for (RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight, &rifle.fore_end}) {
     const auto translation = ReadVec3(reader);
     const auto rotation = ReadQuat(reader);
     if (!translation || !rotation) {
@@ -371,6 +371,22 @@ std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob) {
     *marker = {.translation = *translation, .rotation = *rotation};
   }
   return rifle;
+}
+
+// Weapon socket blob wire format: see EncodeWeaponSocketBlob.
+std::optional<WeaponSocketData> DecodeWeaponSocketBlob(std::span<const std::byte> blob) {
+  ByteReader reader(blob);
+  auto joint = reader.ReadString();
+  const auto translation = ReadVec3(reader);
+  const auto rotation = ReadQuat(reader);
+  auto left_hand = reader.ReadString();
+  if (!joint || !translation || !rotation || !left_hand) {
+    return std::nullopt;
+  }
+  return WeaponSocketData{.joint = *std::move(joint),
+                          .translation = *translation,
+                          .rotation = *rotation,
+                          .left_hand = *std::move(left_hand)};
 }
 
 // Script blob: the script's text as it is, with no framing and no terminator.

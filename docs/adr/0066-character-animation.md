@@ -62,10 +62,20 @@ as today, with no turning in place. Each of them and the stance's ADS grip is
 authored as a whole pose, and the level one is the reference the others add
 their difference from: the lowest or highest by how far the pitch is toward it,
 the ADS grip whole while ADS is set, each added onto the locomotion pose. The
-weapon hangs from a socket on the right hand, so its Muzzle follows the pose
-(ADR-0064), and the left hand reaches its fore-end by two-bone IK. The grip, ADS
-and the left hand's IK are Hitbox pose and run on both sides, so a player's view
-pitch and ADS are replicated.
+weapon hangs from a **weapon socket** on the right hand, so its Muzzle follows
+the pose (ADR-0064), and the left hand reaches its **Fore-end** by two-bone IK.
+The Character authors the socket as its `WeaponSocket` prim, bound rigidly to
+its right hand's Joint as a Hitbox is, its frame where the rifle's Grip goes,
+naming its left hand's Joint in `augusta:leftHand`; that Joint's parent and
+grandparent are the elbow and the shoulder the IK turns. The rifle authors its
+Fore-end as a marker beside its Grip. The cooker refuses a Character without a
+socket, one bound to no Joint of its Skeleton, and a left hand missing, unknown
+or without an elbow and a shoulder, and a rifle without a Fore-end, naming them.
+The elbow bends the way the pose bent it, toward the side of the line from the
+shoulder to the hand it was on, so the Clips decide where it points; a Fore-end
+out of the arm's reach leaves the arm straight toward it. The grip, ADS and the
+left hand's IK are Hitbox pose and run on both sides, so a player's view pitch
+and ADS are replicated.
 
 **Desktop and VR.** A Desktop player's pose is evaluated from its Clips; a VR
 player's is its bounded Tracked pose (ADR-0063). From there both take one path:

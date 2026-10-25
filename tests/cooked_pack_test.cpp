@@ -92,13 +92,26 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersEye) {
 }
 
 // The server places every Muzzle from them (ADR-0064), so both packs hold the
-// example rifle's Grip, Muzzle and Sight: the Muzzle ahead of the Grip.
+// example rifle's Grip, Muzzle, Sight and Fore-end: the Muzzle ahead of the
+// Grip, the Fore-end between them.
 TEST_F(CookedPackTest, BothPacksHoldTheExampleRiflesMarkers) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto rifle = pack->ResolveRifle();
     ASSERT_TRUE(rifle.has_value());
     EXPECT_FLOAT_EQ(rifle->muzzle.translation.z, -0.62F);
     EXPECT_FLOAT_EQ(rifle->sight.translation.y, 0.12F);
+    EXPECT_FLOAT_EQ(rifle->fore_end.translation.z, -0.35F);
+  }
+}
+
+// Both packs pose the example character holding the rifle (ADR-0066), so both
+// hold its weapon socket, on its right hand, and name its left hand.
+TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersWeaponSocket) {
+  for (const Pack* pack : {&*client_, &*server_}) {
+    const auto socket = pack->ResolveWeaponSocket("soldier");
+    ASSERT_TRUE(socket.has_value());
+    EXPECT_EQ(socket->joint, "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand");
+    EXPECT_EQ(socket->left_hand, "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand");
   }
 }
 
@@ -108,7 +121,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersHitboxesForEveryBodyPart
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto hitboxes = pack->ResolveHitboxes("soldier");
     ASSERT_TRUE(hitboxes.has_value());
-    EXPECT_EQ(hitboxes->size(), 6U);
+    EXPECT_EQ(hitboxes->size(), 8U);
     EXPECT_EQ(augusta::assets::FirstMissingBodyPart(*hitboxes), std::nullopt);
     for (const augusta::assets::HitboxData& hitbox : *hitboxes) {
       EXPECT_FALSE(hitbox.joint.empty());
@@ -166,7 +179,7 @@ TEST_F(CookedPackTest, BothPacksLoadTheSameExampleSkeletonAndEveryHitboxResolves
     ASSERT_TRUE(hitboxes.has_value());
     const auto bound = augusta::assets::BindHitboxes(*server_skeleton, *std::move(hitboxes));
     ASSERT_TRUE(bound.has_value()) << bound.error().joint;
-    EXPECT_EQ(bound->size(), 6U);
+    EXPECT_EQ(bound->size(), 8U);
   }
 }
 

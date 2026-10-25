@@ -60,6 +60,7 @@ enum class AssetType : std::uint8_t {
   kClip,
   kStanceTransitions,
   kRifle,
+  kWeaponSocket,
 };
 
 /// True if value is one of AssetType's defined enumerators - an index
@@ -357,19 +358,42 @@ struct RifleMarker {
 };
 
 /// A scenario's rifle (ADR-0064): its Grip, where the holding hand holds it;
-/// its Muzzle, the end of its barrel, pointing the way the barrel does; and its
+/// its Muzzle, the end of its barrel, pointing the way the barrel does; its
 /// Sight, the point the Eye looks through in ADS, pointing along its line of
-/// sight. No mesh: nothing that reads a pack draws or tests the rifle itself.
+/// sight; and its Fore-end, where the left hand holds it (ADR-0066). No mesh:
+/// nothing that reads a pack draws or tests the rifle itself.
 struct RifleData {
   RifleMarker grip;
   RifleMarker muzzle;
   RifleMarker sight;
+  RifleMarker fore_end;
 
   bool operator==(const RifleData&) const = default;
 };
 
 /// Pack-relative path of a scenario's rifle (ADR-0064), in both of its packs.
 inline constexpr std::string_view kRiflePath = "Rifle";
+
+/// A character's weapon socket (ADR-0066): the Joint of its right hand, which
+/// the rifle hangs from, and the frame in that Joint's space where the rifle's
+/// Grip goes; and the Joint of its left hand, whose parent and grandparent are
+/// the arm that reaches the rifle's Fore-end by two-bone IK. Each Joint by its
+/// name, the path within the Skeleton (JointData).
+struct WeaponSocketData {
+  std::string joint;
+  math::Vec3 translation{0.0F, 0.0F, 0.0F};
+  math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
+  std::string left_hand;
+
+  bool operator==(const WeaponSocketData&) const = default;
+};
+
+/// Pack-relative path of the weapon socket of the character named character
+/// (ADR-0066): its `Character` root prim's `WeaponSocket` child, e.g.
+/// "soldier/Character/WeaponSocket".
+[[nodiscard]] inline std::string CharacterWeaponSocketPath(std::string_view character) {
+  return std::format("{}/Character/WeaponSocket", character);
+}
 
 /// Pack-relative path of the Skeleton of the character named character (its
 /// name in the scenario's manifest): its `Character` root prim's `Skeleton`
@@ -638,9 +662,13 @@ class Pack {
   /// ADR-0040). Present in both client and server packs.
   [[nodiscard]] std::expected<EyeData, ResolveError> ResolveEye(std::string_view path) const;
 
-  /// Resolves the scenario's rifle at kRiflePath: its Grip, Muzzle and Sight
-  /// (ADR-0064). Present in both client and server packs.
+  /// Resolves the scenario's rifle at kRiflePath: its Grip, Muzzle, Sight and
+  /// Fore-end (ADR-0064, ADR-0066). Present in both client and server packs.
   [[nodiscard]] std::expected<RifleData, ResolveError> ResolveRifle() const;
+
+  /// Resolves the weapon socket of the character named character, at
+  /// CharacterWeaponSocketPath (ADR-0066). Present in both packs.
+  [[nodiscard]] std::expected<WeaponSocketData, ResolveError> ResolveWeaponSocket(std::string_view character) const;
 
   /// Resolves a sound by its pack-relative path (ADR-0020). Present in the client
   /// pack only.

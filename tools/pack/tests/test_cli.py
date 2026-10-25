@@ -46,15 +46,21 @@ def test_the_example_scenario_cooks_into_a_signed_pack_pair(tmp_path):
             "Head",
             "Torso",
             "LeftArm",
+            "LeftForearm",
             "RightArm",
+            "RightForearm",
             "LeftLeg",
             "RightLeg",
         )
     }
     assert client.paths_of_type(_native.AssetType.HITBOX) == hitboxes
     assert server.paths_of_type(_native.AssetType.HITBOX) == hitboxes
-    # Its Clips, from their own files under animations/ (ADR-0066).
+    # Its Clips, from their own files under animations/, and its weapon
+    # socket (ADR-0066).
     for contents in (client, server):
+        assert contents.paths_of_type(_native.AssetType.WEAPON_SOCKET) == {
+            "soldier/Character/WeaponSocket"
+        }
         assert "soldier/Character/Clips/standing/forward" in (
             contents.paths_of_type(_native.AssetType.CLIP)
         )

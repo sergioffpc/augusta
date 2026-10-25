@@ -52,9 +52,9 @@ struct Rifle {
   float ads_recoil_scale = 1.0F;
   /// The vertical field of view aiming down sights zooms to, in radians.
   float ads_field_of_view = 1.0F;
-  /// Where a Desktop player holds the rifle from the hip (DesktopHand): its ADS
-  /// hold moved by this much, in meters, in the view's own space (x right, y
-  /// up, z back, as command::ViewRotation turns it).
+  /// Where a Desktop player holds the rifle from the hip: its ADS hold moved by
+  /// this much, in meters, in the view's own space (x right, y up, z back, as
+  /// command::ViewRotation turns it).
   math::Vec3 hip_offset{};
   /// The kick of each round of a burst, in order, at most
   /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
@@ -87,13 +87,15 @@ struct RecoilOffset {
 
 /// The rifle's authored markers (ADR-0064), each in the rifle's own space, each
 /// pointing along its -Z: the Grip, where the holding hand holds it; the Muzzle,
-/// the end of its barrel, pointing the way the barrel does; and the Sight, the
-/// point the Eye looks through in ADS, pointing along its line of sight. By
-/// default all three at the rifle's origin.
+/// the end of its barrel, pointing the way the barrel does; the Sight, the
+/// point the Eye looks through in ADS, pointing along its line of sight; and the
+/// Fore-end, where the left hand holds it (ADR-0066). By default all four at the
+/// rifle's origin.
 struct Markers {
   math::Mat4 grip{1.0F};
   math::Mat4 muzzle{1.0F};
   math::Mat4 sight{1.0F};
+  math::Mat4 fore_end{1.0F};
 
   bool operator==(const Markers&) const = default;
 };
@@ -101,21 +103,16 @@ struct Markers {
 /// Where the Muzzle of the rifle markers describes is, held by hand at its
 /// Grip: hand times the Grip's inverse times the Muzzle (ADR-0064). The one
 /// function the server and the client place a Muzzle with, whatever the hand:
-/// a Desktop player's (DesktopHand), a posed one's or a tracked one's.
+/// a posed one's (its weapon socket, ADR-0066) or a tracked one's.
 [[nodiscard]] math::Mat4 PlaceMuzzle(const math::Mat4& hand, const Markers& markers);
 
 /// Where the Sight of the rifle markers describes is, held by hand at its Grip,
 /// as PlaceMuzzle places the Muzzle.
 [[nodiscard]] math::Mat4 PlaceSight(const math::Mat4& hand, const Markers& markers);
 
-/// Where a Desktop player's holding hand is, in the world, looking from eye
-/// along the view of yaw and pitch (command::ViewRotation) with the rifle
-/// markers describes. In ADS the rifle is shouldered with its Sight on the Eye
-/// and its line of sight along the view; from the hip it is that hold moved by
-/// rifle's hip offset, in the view's space. Synthesized from the view, until a
-/// posed or a tracked hand takes its place.
-[[nodiscard]] math::Mat4 DesktopHand(const math::Vec3& eye, float yaw, float pitch, bool ads, const Rifle& rifle,
-                                     const Markers& markers);
+/// Where the Fore-end of the rifle markers describes is, held by hand at its
+/// Grip, as PlaceMuzzle places the Muzzle: where the left hand reaches.
+[[nodiscard]] math::Mat4 PlaceForeEnd(const math::Mat4& hand, const Markers& markers);
 
 /// One player's rifle between two ticks.
 struct State {

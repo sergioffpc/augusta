@@ -11,21 +11,24 @@ relative to its parent and the world transform that composes, which places the
 Hitboxes bound to them. The pose is evaluated from the Character's Clips with
 ozz-animation's sampling and blending (`augusta/pose.h`): its stance's blend
 space at its velocity, each Clip synchronised by the Stride between its Foot
-contacts, the stance a change of stance left blended in by its progress, onto a
-root its position and facing place, as a pure function of replicated state; a
-Character without Clips stands in its Rest pose.
+contacts, the stance a change of stance left blended in by its progress, its Aim
+offset and ADS grip added on top, onto a root its position and facing place, as
+a pure function of replicated state; a Character without Clips stands in its
+Rest pose. Then the rifle held in that pose (`HoldRifle`): its Grip on the
+weapon socket of the right hand, and the left arm bent by ozz-animation's
+two-bone IK so the left hand reaches the rifle's Fore-end.
 
 A Character's Clips, loaded from its verified pack with ozz-animation's runtime
 alone (`augusta/clips.h`): its ozz-animation Skeleton, mapped Joint by Joint to
 its Skeleton, each Clip the Hitbox pose uses by role, with its stride length and
-Foot contacts, and its stance transition durations; refused, naming the part,
-when one is missing or does not load. A stance's blend space over the body's
-velocity (`augusta/locomotion.h`): the Clips that make its pose there and their
-weights, and the stride length its Stride advances by, which Movement hands
-physics on both sides with the transition durations (`PacingOf`).
-ozz-animation's SIMD values are never held in a standard template instantiated
-on one (`std::array<SimdFloat4, N>`): clang-cl aligns those to 8 bytes only
-(`tests/animation_ozz_jobs_test.cpp`).
+Foot contacts, its stance transition durations and its weapon socket, mapped to
+its Skeleton's Joints; refused, naming the part, when one is missing or does not
+load. A stance's blend space over the body's velocity (`augusta/locomotion.h`):
+the Clips that make its pose there and their weights, and the stride length its
+Stride advances by, which Movement hands physics on both sides with the
+transition durations (`PacingOf`). ozz-animation's SIMD values are never held in
+a standard template instantiated on one (`std::array<SimdFloat4, N>`): clang-cl
+aligns those to 8 bytes only (`tests/animation_ozz_jobs_test.cpp`).
 
 ## Not its responsibility
 

@@ -14,6 +14,7 @@
 #include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 #include "clips_fixture.h"
 
 // A player's Hitbox pose evaluated from its Character's Clips (ADR-0066), on
@@ -284,6 +285,116 @@ TEST_F(AimTest, ThroughAChangeOfStanceTheStanceItLeftKeepsItsOwnAimOffset) {
   const Vec3 head = HeadOf(posed);
 
   ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
+}
+
+// The Holder (clips_fixture.h) still, holding its rifle: the rifle on the
+// weapon socket of its right hand, wherever its pose puts that hand, and its
+// left hand on the rifle's Fore-end, its left arm bent by two-bone IK to reach
+// it (ADR-0066).
+class HoldTest : public ::testing::Test {
+ protected:
+  struct Held {
+    SkeletonPose posed;
+    // Where the rifle's Grip is held: HoldRifle's hand.
+    augusta::math::Mat4 hand{1.0F};
+  };
+
+  Held HoldAt(Stance stance, float pitch, bool ads = false) {
+    BodyState body;
+    body.stance = stance;
+    Held held;
+    poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, held.posed);
+    held.hand = augusta::animation::HoldRifle(skeleton_, *clips_->weapon_socket, rifle_, held.posed);
+    return held;
+  }
+
+  static Vec3 OriginOf(const SkeletonPose& posed, std::uint32_t joint) {
+    return augusta::math::TranslationOf(posed.world.at(joint));
+  }
+
+  std::shared_ptr<const CharacterClips> clips_ = fixture::HolderClips();
+  Skeleton skeleton_ = fixture::HolderSkeleton();
+  augusta::weapon::Markers rifle_ = fixture::HolderRifle();
+  Poser poser_;
+};
+
+// The right shoulder, on a Pelvis pelvis high.
+Vec3 RightShoulder(float pelvis) {
+  return Vec3(fixture::kAimerShoulderSide, pelvis + fixture::kAimerShoulderAbovePelvis, 0.0F);
+}
+
+// Standing or crouched, the hand hangs kHolderArm below the shoulder; in ADS the
+// grip swings the arm straight ahead, and the hand with it.
+TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
+  const Held standing = HoldAt(Stance::kStanding, 0.0F);
+  const Held crouched = HoldAt(Stance::kCrouching, 0.0F);
+  const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
+
+  ExpectNear(augusta::math::TranslationOf(standing.hand),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F));
+  ExpectNear(augusta::math::TranslationOf(crouched.hand),
+             RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, 0.0F));
+  ExpectNear(augusta::math::TranslationOf(ads.hand),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, 0.0F, -fixture::kHolderArm));
+}
+
+// Aiming down, the Pelvis bends 45 degrees ahead: the shoulder with it, and the
+// arm hanging from it turned as far.
+TEST_F(HoldTest, TheRifleFollowsTheHandAsTheAimOffsetBendsTheBody) {
+  const float bend = fixture::kStandingAimBend;
+  const Vec3 shoulder(fixture::kAimerShoulderSide,
+                      fixture::kPelvisStanding + (fixture::kAimerShoulderAbovePelvis * std::cos(bend)),
+                      -fixture::kAimerShoulderAbovePelvis * std::sin(bend));
+
+  const Held aiming_down = HoldAt(Stance::kStanding, -augusta::command::kMaxLookPitch);
+
+  ExpectNear(augusta::math::TranslationOf(aiming_down.hand),
+             shoulder + Vec3(0.0F, -fixture::kHolderArm * std::cos(bend), fixture::kHolderArm * std::sin(bend)));
+}
+
+// The hand is the socket's, so the rifle's Muzzle is kHolderMuzzle along the
+// hand's -Z: ahead of the hanging hand, and straight up from the hand the ADS
+// grip has swung ahead, which turns the hand a quarter about +X.
+TEST_F(HoldTest, TheMuzzleIsWhereTheHandHoldsTheRifle) {
+  const Held standing = HoldAt(Stance::kStanding, 0.0F);
+  const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
+
+  ExpectNear(augusta::math::TranslationOf(augusta::weapon::PlaceMuzzle(standing.hand, rifle_)),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderMuzzle));
+  ExpectNear(augusta::math::TranslationOf(augusta::weapon::PlaceMuzzle(ads.hand, rifle_)),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, fixture::kHolderMuzzle, -fixture::kHolderArm));
+}
+
+// The Fore-end is kHolderForeEnd along the hand's -Z: ahead of the hanging hand,
+// above the raised one. Both are within the left arm's reach.
+TEST_F(HoldTest, TheLeftHandReachesTheRiflesForeEnd) {
+  const Held standing = HoldAt(Stance::kStanding, 0.0F);
+  const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
+  const Held crouched = HoldAt(Stance::kCrouching, 0.0F);
+
+  ExpectNear(OriginOf(standing.posed, fixture::kHolderLeftHand),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderForeEnd));
+  ExpectNear(OriginOf(ads.posed, fixture::kHolderLeftHand),
+             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, fixture::kHolderForeEnd, -fixture::kHolderArm));
+  ExpectNear(OriginOf(crouched.posed, fixture::kHolderLeftHand),
+             RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderForeEnd));
+}
+
+// The IK turns the left shoulder and elbow alone: the shoulder stays where the
+// body puts it, each bone keeps its length, and the elbow bends the way its
+// Clip bends it, out of the line from shoulder to hand and below it.
+TEST_F(HoldTest, TheLeftArmBendsAtItsElbowAndKeepsItsLengths) {
+  const Held held = HoldAt(Stance::kStanding, 0.0F);
+  const Vec3 shoulder = OriginOf(held.posed, fixture::kHolderLeftArm);
+  const Vec3 elbow = OriginOf(held.posed, fixture::kHolderLeftForearm);
+  const Vec3 hand = OriginOf(held.posed, fixture::kHolderLeftHand);
+
+  ExpectNear(shoulder,
+             Vec3(-fixture::kAimerShoulderSide, fixture::kPelvisStanding + fixture::kAimerShoulderAbovePelvis, 0.0F));
+  EXPECT_NEAR(augusta::math::Length(elbow - shoulder), fixture::kHolderUpperArm, kTolerance);
+  EXPECT_NEAR(augusta::math::Length(hand - elbow), fixture::kHolderForearm, kTolerance);
+  const Vec3 midway = (shoulder + hand) / 2.0F;
+  EXPECT_LT(elbow.y, midway.y);
 }
 
 }  // namespace

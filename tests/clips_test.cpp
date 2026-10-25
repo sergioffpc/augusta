@@ -24,6 +24,7 @@
 #include <ozz/base/maths/transform.h>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/pack_encoder.h"
 #include "augusta/physics.h"
 
@@ -143,6 +144,19 @@ AssetEntry ClipEntry(std::string_view role, float stride_length, std::vector<std
           .data = blob.value_or(std::vector<std::byte>{})};
 }
 
+// The Character's Weapon socket: on its spine, 10 cm ahead of it, its left hand
+// at its foot, whose leg is the arm.
+AssetEntry WeaponSocketEntry(std::string_view left_hand = "Root/LeftLeg/Foot") {
+  const auto blob = augusta::assets::EncodeWeaponSocketBlob({.joint = "Root/Spine",
+                                                             .translation = augusta::math::Vec3(0.0F, 0.0F, -0.1F),
+                                                             .rotation = augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F),
+                                                             .left_hand = std::string(left_hand)});
+  EXPECT_TRUE(blob.has_value());
+  return {.type = AssetType::kWeaponSocket,
+          .path = augusta::assets::CharacterWeaponSocketPath(kCharacter),
+          .data = blob.value_or(std::vector<std::byte>{})};
+}
+
 class ClipsTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -159,6 +173,7 @@ class ClipsTest : public ::testing::Test {
     for (const auto& [role, stride_length] : kRequiredRoles) {
       entries_.push_back(ClipEntry(role, stride_length, ClipArchive(Soldier().joints.size())));
     }
+    entries_.push_back(WeaponSocketEntry());
   }
 
   void TearDown() override { std::filesystem::remove(path_); }
@@ -303,6 +318,41 @@ TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().part, ClipPart::kSkeleton);
   EXPECT_EQ(clips.error().reason, "has a joint Root/Neck the character's skeleton lacks");
+}
+
+// The socket's Joints by their index in the Character's Skeleton: the spine
+// third, the foot fourth.
+TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
+  const auto clips = Load();
+
+  ASSERT_TRUE(clips.has_value());
+  ASSERT_TRUE(clips->weapon_socket.has_value());
+  EXPECT_EQ(clips->weapon_socket->joint, 2U);
+  EXPECT_EQ(clips->weapon_socket->left_hand, 3U);
+  EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket->frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
+}
+
+TEST_F(ClipsTest, ACharacterWithoutAWeaponSocketIsRefused) {
+  Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().part, ClipPart::kWeaponSocket);
+  EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()), "weapon socket: not found");
+}
+
+// The leg's parent is the root, which has none: no arm to bend.
+TEST_F(ClipsTest, ALeftHandWithoutAnArmIsRefused) {
+  Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
+  entries_.push_back(WeaponSocketEntry("Root/LeftLeg"));
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().part, ClipPart::kWeaponSocket);
+  EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
+            "weapon socket: left hand Root/LeftLeg has no arm: a parent and a grandparent");
 }
 
 TEST_F(ClipsTest, ACharacterWithoutStanceTransitionsIsRefused) {

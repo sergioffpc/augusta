@@ -238,15 +238,32 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& 
   return blob;
 }
 
-// Rifle blob wire format: the Grip, the Muzzle and the Sight, in that order,
-// each its translation (3x f32) then its rotation as x/y/z/w (4x f32), as a
-// spawn point's transform is.
+// Rifle blob wire format: the Grip, the Muzzle, the Sight and the Fore-end, in
+// that order, each its translation (3x f32) then its rotation as x/y/z/w (4x
+// f32), as a spawn point's transform is.
 std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
-  for (const RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight}) {
+  for (const RifleMarker* marker : {&rifle.grip, &rifle.muzzle, &rifle.sight, &rifle.fore_end}) {
     writer.WriteVec3(marker->translation);
     writer.WriteQuat(marker->rotation);
+  }
+  return blob;
+}
+
+// Weapon socket blob wire format: its Joint's name (a string), its translation
+// (3x f32) and rotation as x/y/z/w (4x f32) in that Joint's space, then the
+// left hand's Joint's name (a string).
+std::expected<std::vector<std::byte>, EncodeError> EncodeWeaponSocketBlob(const WeaponSocketData& socket) {
+  std::vector<std::byte> blob;
+  ByteWriter writer(blob);
+  if (!writer.WriteString(socket.joint)) {
+    return std::unexpected(EncodeError::kTooLarge);
+  }
+  writer.WriteVec3(socket.translation);
+  writer.WriteQuat(socket.rotation);
+  if (!writer.WriteString(socket.left_hand)) {
+    return std::unexpected(EncodeError::kTooLarge);
   }
   return blob;
 }

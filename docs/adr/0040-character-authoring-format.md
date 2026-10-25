@@ -70,6 +70,17 @@ left and one right Foot contact within it or whose root does not move along the
 ground, an idle with a Foot contact or whose root does, and a pair of stances
 without a positive transition duration.
 
+A character holds the rifle by its **weapon socket** (ADR-0066), the
+`WeaponSocket` child of `Character`: bound rigidly to its right hand's joint as
+a hitbox is, placed where the rifle's Grip goes, pointing the way the rifle does
+along its -Z, and naming its left hand's joint in `augusta:leftHand`, the hand
+that reaches the rifle's Fore-end, whose parent and grandparent are the elbow
+and shoulder it bends. The cooker writes it at
+`<character name>/Character/WeaponSocket` in both packs, its frame in its
+joint's rest space, and refuses a character without one, one bound to no joint
+or to one its skeleton lacks, and a left hand missing, unknown or without a
+parent and a grandparent, naming the socket's prim or the character's.
+
 A character is hittable through its **hitboxes**, authored in its own stage
 under `Character`: each is geometry (a `UsdGeomMesh`, `Cube` or `Capsule`,
 usually a guide so it is never drawn) marked `augusta:hitbox`, and names the

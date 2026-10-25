@@ -12,10 +12,12 @@
 #include <vector>
 
 #include <ozz/animation/runtime/blending_job.h>
+#include <ozz/animation/runtime/ik_two_bone_job.h>
 #include <ozz/animation/runtime/sampling_job.h>
 #include <ozz/animation/runtime/skeleton.h>
 #include <ozz/base/maths/internal/simd_math_config.h>
 #include <ozz/base/maths/simd_math.h>
+#include <ozz/base/maths/simd_quaternion.h>
 #include <ozz/base/maths/soa_float.h>
 #include <ozz/base/maths/soa_quaternion.h>
 #include <ozz/base/maths/soa_transform.h>
@@ -28,6 +30,7 @@
 #include "augusta/locomotion.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 namespace augusta::animation {
 
@@ -91,6 +94,44 @@ std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
   std::array<float, 4> lanes{};
   ozz::math::StorePtrU(value, lanes.data());
   return lanes;
+}
+
+// Below this, a length is none: a bone along another, or no pole.
+constexpr float kDegenerate = 1e-5F;
+
+ozz::math::SimdFloat4 SimdOf(const math::Vec3& vector, float w = 0.0F) {
+  return ozz::math::simd_float4::Load(vector.x, vector.y, vector.z, w);
+}
+
+ozz::math::Float4x4 SimdOf(const math::Mat4& matrix) {
+  ozz::math::Float4x4 simd;
+  for (int column = 0; column < 4; ++column) {
+    simd.cols[column] =
+        ozz::math::simd_float4::Load(matrix[column].x, matrix[column].y, matrix[column].z, matrix[column].w);
+  }
+  return simd;
+}
+
+math::Quat QuatOf(const ozz::math::SimdQuaternion& quaternion) {
+  const std::array<float, 4> xyzw = LanesOf(quaternion.xyzw);
+  return {xyzw[3], xyzw[0], xyzw[1], xyzw[2]};
+}
+
+// The part of offset off the line along direction, a unit vector.
+math::Vec3 OffTheLine(const math::Vec3& offset, const math::Vec3& direction) {
+  return offset - (direction * math::Dot(offset, direction));
+}
+
+// Composes posed's world transforms from its root and its local ones, parents
+// before children.
+void ComposeWorld(const assets::Skeleton& skeleton, SkeletonPose& posed) {
+  const math::Mat4 root = hitbox::RootOf(posed.root);
+  posed.world.resize(skeleton.joints.size());
+  for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
+    const assets::JointData& data = skeleton.joints[joint];
+    const math::Mat4& parent = data.parent == assets::kJointNoParent ? root : posed.world.at(data.parent);
+    posed.world[joint] = Compose(parent, posed.local[joint], data.scale);
+  }
 }
 
 }  // namespace
@@ -261,13 +302,57 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
 
   // Composed from the root down, parents before children.
   posed.root = hitbox::Pose{.position = input.body.position, .yaw = input.yaw, .stance = input.body.stance};
-  const math::Mat4 root = hitbox::RootOf(posed.root);
-  posed.world.resize(skeleton.joints.size());
-  for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
-    const assets::JointData& data = skeleton.joints[joint];
-    const math::Mat4& parent = data.parent == assets::kJointNoParent ? root : posed.world.at(data.parent);
-    posed.world[joint] = Compose(parent, posed.local[joint], data.scale);
+  ComposeWorld(skeleton, posed);
+}
+
+math::Mat4 HoldRifle(const assets::Skeleton& skeleton, const WeaponSocket& socket, const weapon::Markers& rifle,
+                     SkeletonPose& posed) {
+  const math::Mat4 hand = posed.world.at(socket.joint) * socket.frame;
+  const std::uint32_t end = socket.left_hand;
+  const std::uint32_t mid = skeleton.joints.at(end).parent;
+  const std::uint32_t start = skeleton.joints.at(mid).parent;
+  const math::Vec3 shoulder = math::TranslationOf(posed.world.at(start));
+  const math::Vec3 elbow = math::TranslationOf(posed.world.at(mid));
+  const math::Vec3 wrist = math::TranslationOf(posed.world.at(end));
+
+  // The elbow points where the pose bent it, off the line from the shoulder to
+  // the hand; down, for an arm held straight.
+  math::Vec3 pole = OffTheLine(elbow - shoulder, math::Normalize(wrist - shoulder));
+  if (math::Length(pole) < kDegenerate) {
+    pole = math::Vec3(0.0F, -1.0F, 0.0F);
   }
+  // It opens about the axis across both bones, or for a straight arm across the
+  // upper arm and the pole; in the elbow's own space, as the job takes it.
+  math::Vec3 axis = math::Cross(shoulder - elbow, wrist - elbow);
+  if (math::Length(axis) < kDegenerate) {
+    axis = math::Cross(shoulder - elbow, pole);
+  }
+  const math::Mat4 into_elbow = math::Inverse(posed.world.at(mid));
+  const math::Vec3 mid_axis =
+      math::Normalize(math::TransformPoint(into_elbow, axis) - math::TransformPoint(into_elbow, math::Vec3(0.0F)));
+
+  const ozz::math::Float4x4 start_joint = SimdOf(posed.world.at(start));
+  const ozz::math::Float4x4 mid_joint = SimdOf(posed.world.at(mid));
+  const ozz::math::Float4x4 end_joint = SimdOf(posed.world.at(end));
+  ozz::math::SimdQuaternion start_correction;
+  ozz::math::SimdQuaternion mid_correction;
+  ozz::animation::IKTwoBoneJob reaching;
+  reaching.target = SimdOf(math::TranslationOf(weapon::PlaceForeEnd(hand, rifle)), 1.0F);
+  reaching.pole_vector = SimdOf(pole);
+  reaching.mid_axis = SimdOf(mid_axis);
+  reaching.start_joint = &start_joint;
+  reaching.mid_joint = &mid_joint;
+  reaching.end_joint = &end_joint;
+  reaching.start_joint_correction = &start_correction;
+  reaching.mid_joint_correction = &mid_correction;
+  [[maybe_unused]] const bool reached_ok = reaching.Run();
+  // The axis is normalised, and every pointer set.
+  assert(reached_ok);
+
+  posed.local.at(start).rotation = posed.local.at(start).rotation * QuatOf(start_correction);
+  posed.local.at(mid).rotation = posed.local.at(mid).rotation * QuatOf(mid_correction);
+  ComposeWorld(skeleton, posed);
+  return hand;
 }
 
 }  // namespace augusta::animation
