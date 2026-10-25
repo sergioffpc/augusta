@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_SERVER_LIVENESS_H_
-#define AUGUSTA_SERVER_LIVENESS_H_
+#ifndef AUGUSTA_SERVER_METRICS_LIVENESS_H_
+#define AUGUSTA_SERVER_METRICS_LIVENESS_H_
 
 #include <chrono>
 
@@ -23,4 +23,4 @@ inline constexpr std::chrono::seconds kLivenessWindow{5};
 
 }  // namespace augusta::server
 
-#endif  // AUGUSTA_SERVER_LIVENESS_H_
+#endif  // AUGUSTA_SERVER_METRICS_LIVENESS_H_

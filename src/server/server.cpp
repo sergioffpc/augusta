@@ -26,8 +26,8 @@
 #include "augusta/pcapng_file_writer.h"
 #include "augusta/version.h"
 #endif
-#include "connection_health.h"
 #include "metrics.h"
+#include "metrics_connection_health.h"
 
 namespace augusta::server {
 

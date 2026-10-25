@@ -9,36 +9,9 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
-#include <vector>
 
+#include "hardware_platform.h"
 #include "proc_files.h"
-
-#ifdef _WIN32
-#include <utility>
-
-#include <windows.h>
-// After <windows.h>, whose types they use.
-#include <dxgi.h>
-#include <wrl/client.h>
-#elifdef __APPLE__
-#include <mach/host_info.h>
-#include <mach/kern_return.h>
-#include <mach/mach_host.h>
-#include <mach/mach_init.h>
-#include <mach/message.h>
-#include <mach/vm_statistics.h>
-#include <sys/sysctl.h>
-#include <sys/utsname.h>
-#include <unistd.h>
-#else
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <utility>
-
-#include <sys/utsname.h>
-#endif
 
 namespace augusta::hardware {
 
@@ -46,15 +19,6 @@ namespace {
 
 constexpr std::uint64_t kBytesPerKib = 1024;
 constexpr std::uint64_t kBytesPerMib = kBytesPerKib * kBytesPerKib;
-
-std::string_view Trim(std::string_view text) {
-  constexpr std::string_view kSpace = " \t\r\n";
-  const std::size_t first = text.find_first_not_of(kSpace);
-  if (first == std::string_view::npos) {
-    return {};
-  }
-  return text.substr(first, text.find_last_not_of(kSpace) - first + 1);
-}
 
 // The value on the first line of text naming key, before separator, trimmed;
 // nullopt if no line does. Only blanks may come between key and separator, so
@@ -133,222 +97,16 @@ std::string VendorName(std::uint32_t vendor_id) {
   }
 }
 
-#ifdef _WIN32
-
-// text, UTF-16, in UTF-8; empty if it cannot be converted.
-std::string Utf8(std::wstring_view text) {
-  if (text.empty()) {
-    return {};
-  }
-  const int size =
-      WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
-  if (size <= 0) {
-    return {};
-  }
-  std::string converted(static_cast<std::size_t>(size), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), converted.data(), size, nullptr, nullptr);
-  return converted;
-}
-
-// A string under HKEY_LOCAL_MACHINE; empty if there is none.
-std::string RegistryString(const char* key, const char* value) {
-  DWORD size = 0;
-  if (RegGetValueA(HKEY_LOCAL_MACHINE, key, value, RRF_RT_REG_SZ, nullptr, nullptr, &size) != ERROR_SUCCESS) {
-    return {};
-  }
-  std::string text(size, '\0');
-  if (RegGetValueA(HKEY_LOCAL_MACHINE, key, value, RRF_RT_REG_SZ, nullptr, text.data(), &size) != ERROR_SUCCESS) {
-    return {};
-  }
-  // size counts the terminating null.
-  text.resize(size > 0 ? size - 1 : 0);
-  return text;
-}
-
-std::optional<DWORD> RegistryDword(const char* key, const char* value) {
-  DWORD number = 0;
-  DWORD size = sizeof(number);
-  if (RegGetValueA(HKEY_LOCAL_MACHINE, key, value, RRF_RT_REG_DWORD, nullptr, &number, &size) != ERROR_SUCCESS) {
-    return std::nullopt;
-  }
-  return number;
-}
-
-// From the registry rather than GetVersionEx, which reports the version the
-// executable's manifest declares, not the one running.
-std::string QueryOs() {
-  constexpr const char* kKey = R"(SOFTWARE\Microsoft\Windows NT\CurrentVersion)";
-  const std::optional<DWORD> major = RegistryDword(kKey, "CurrentMajorVersionNumber");
-  const std::optional<DWORD> minor = RegistryDword(kKey, "CurrentMinorVersionNumber");
-  const std::string build = RegistryString(kKey, "CurrentBuildNumber");
-  if (!major || !minor || build.empty()) {
-    return {};
-  }
-  std::string os = std::format("Windows {}.{}.{}", *major, *minor, build);
-  if (const std::string release = RegistryString(kKey, "DisplayVersion"); !release.empty()) {
-    os += std::format(" ({})", release);
-  }
-  return os;
-}
-
-std::string QueryCpuModel() {
-  return std::string(Trim(RegistryString(R"(HARDWARE\DESCRIPTION\System\CentralProcessor\0)", "ProcessorNameString")));
-}
-
-Limits QueryLimits() { return {}; }
-
-Memory QueryMemory() {
-  MEMORYSTATUSEX status{};
-  status.dwLength = sizeof(status);
-  if (GlobalMemoryStatusEx(&status) == 0) {
-    return {};
-  }
-  return {.total_bytes = status.ullTotalPhys, .available_bytes = status.ullAvailPhys};
-}
-
-// Each hardware adapter DXGI lists, the software rasterizer left out: its
-// name, and its user-mode driver's version as Device Manager shows it
-// (32.0.15.6094). DXGI names no driver.
-std::vector<Gpu> ListGpus() {
-  std::vector<Gpu> gpus;
-  Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
-  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
-    return gpus;
-  }
-  Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-  for (UINT index = 0; factory->EnumAdapters1(index, &adapter) != DXGI_ERROR_NOT_FOUND; ++index) {
-    DXGI_ADAPTER_DESC1 description{};
-    if (FAILED(adapter->GetDesc1(&description)) || (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) {
-      continue;
-    }
-    std::string version;
-    if (LARGE_INTEGER umd{}; SUCCEEDED(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umd))) {
-      const auto high = static_cast<std::uint32_t>(umd.HighPart);
-      const auto low = static_cast<std::uint32_t>(umd.LowPart);
-      version = std::format("{}.{}.{}.{}", HIWORD(high), LOWORD(high), HIWORD(low), LOWORD(low));
-    }
-    gpus.push_back({.name = Utf8(description.Description),
-                    .vendor_id = description.VendorId,
-                    .device_id = description.DeviceId,
-                    .driver = {},
-                    .driver_version = std::move(version)});
-  }
-  return gpus;
-}
-
-#elifdef __APPLE__
-
-// A sysctl string by name; empty if there is none.
-std::string SysctlString(const char* name) {
-  std::size_t size = 0;
-  if (sysctlbyname(name, nullptr, &size, nullptr, 0) != 0 || size == 0) {
-    return {};
-  }
-  std::string text(size, '\0');
-  if (sysctlbyname(name, text.data(), &size, nullptr, 0) != 0) {
-    return {};
-  }
-  // size counts the terminating null.
-  text.resize(size > 0 ? size - 1 : 0);
-  return text;
-}
-
-std::string QueryOs() {
-  const std::string version = SysctlString("kern.osproductversion");
-  utsname name{};
-  if (uname(&name) != 0) {
-    return version.empty() ? std::string{} : std::format("macOS {}", version);
-  }
-  const std::string kernel = std::format("{} {}", name.sysname, name.release);
-  return version.empty() ? kernel : std::format("macOS {} ({})", version, kernel);
-}
-
-std::string QueryCpuModel() { return std::string(Trim(SysctlString("machdep.cpu.brand_string"))); }
-
-// The physical memory, and what is free or inactive of it: the pages the
-// system hands out without paging anything out.
-Memory QueryMemory() {
-  std::uint64_t total = 0;
-  std::size_t size = sizeof(total);
-  if (sysctlbyname("hw.memsize", &total, &size, nullptr, 0) != 0) {
-    return {};
-  }
-  vm_statistics64_data_t statistics{};
-  mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-  const auto page_size = sysconf(_SC_PAGESIZE);
-  if (host_statistics64(mach_host_self(), HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&statistics), &count) !=
-          KERN_SUCCESS ||
-      page_size <= 0) {
-    return {.total_bytes = total, .available_bytes = 0};
-  }
-  const std::uint64_t free_pages = std::uint64_t{statistics.free_count} + statistics.inactive_count;
-  return {.total_bytes = total, .available_bytes = free_pages * static_cast<std::uint64_t>(page_size)};
-}
-
-// macOS has no cgroups.
-Limits QueryLimits() { return {}; }
-
-// Not listed: macOS's GPUs are in IOKit's registry, which nothing here reads.
-std::vector<Gpu> ListGpus() { return {}; }
-
-#else
-
-// Empty if path can't be read.
-std::string ReadFile(const std::filesystem::path& path) {
-  std::ifstream file(path);
-  return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-}
-
-std::string QueryOs() {
-  const std::string distribution = PrettyNameFromOsRelease(ReadFile("/etc/os-release"));
-  utsname name{};
-  if (uname(&name) != 0) {
-    return distribution;
-  }
-  const std::string kernel = std::format("{} {}", name.sysname, name.release);
-  return distribution.empty() ? kernel : std::format("{} ({})", distribution, kernel);
-}
-
-std::string QueryCpuModel() { return CpuModelFromCpuinfo(ReadFile("/proc/cpuinfo")); }
-
-Memory QueryMemory() { return MemoryFromMeminfo(ReadFile("/proc/meminfo")); }
-
-// The process's own cgroup, which a container sees at the root of its cgroup
-// namespace.
-Limits QueryLimits() {
-  return {.cpus = CpusFromCpuMax(ReadFile("/sys/fs/cgroup/cpu.max")),
-          .memory_bytes = BytesFromMemoryMax(ReadFile("/sys/fs/cgroup/memory.max"))};
-}
-
-// Each GPU the kernel's DRM lists as /sys/class/drm/card<n>, in the order it
-// numbers them, with its driver module's version where the module gives one
-// (an out-of-tree one, as NVIDIA's; an in-tree one is the kernel's).
-std::vector<Gpu> ListGpus() {
-  std::vector<std::filesystem::path> cards;
-  std::error_code error;
-  for (std::filesystem::directory_iterator it("/sys/class/drm", error), end; !error && it != end; it.increment(error)) {
-    const std::string name = it->path().filename().string();
-    if (name.starts_with("card") && name.size() > 4 && name.find_first_not_of("0123456789", 4) == std::string::npos) {
-      cards.push_back(it->path());
-    }
-  }
-  std::ranges::sort(cards);
-  std::vector<Gpu> gpus;
-  for (const auto& card : cards) {
-    if (std::optional<Gpu> gpu = GpuFromUevent(ReadFile(card / "device" / "uevent"))) {
-      if (!gpu->driver.empty()) {
-        gpu->driver_version =
-            std::string(Trim(ReadFile(std::filesystem::path("/sys/module") / gpu->driver / "version")));
-      }
-      gpus.push_back(*std::move(gpu));
-    }
-  }
-  return gpus;
-}
-
-#endif
-
 }  // namespace
+
+std::string_view Trim(std::string_view text) {
+  constexpr std::string_view kSpace = " \t\r\n";
+  const std::size_t first = text.find_first_not_of(kSpace);
+  if (first == std::string_view::npos) {
+    return {};
+  }
+  return text.substr(first, text.find_last_not_of(kSpace) - first + 1);
+}
 
 std::string CpuModelFromCpuinfo(std::string_view cpuinfo) {
   return std::string(ValueOf(cpuinfo, "model name", ':').value_or(""));
@@ -416,8 +174,6 @@ std::string DescribeMachine(const Machine& machine) {
       Mib(machine.memory.total_bytes), Mib(machine.memory.available_bytes),
       machine.limits.cpus ? std::format("{}", *machine.limits.cpus) : "none", LimitMib(machine.limits.memory_bytes));
 }
-
-std::vector<Gpu> QueryGpus() { return ListGpus(); }
 
 std::string DescribeGpu(const Gpu& gpu) {
   return std::format("name={} vendor={} device_id={:#06x} driver={} driver_version={}", Quoted(gpu.name),

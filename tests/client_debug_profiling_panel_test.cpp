@@ -9,7 +9,7 @@
 
 #include "augusta/debug_panels.h"
 #include "augusta/renderer.h"
-#include "profiling_panel.h"
+#include "debug_profiling_panel.h"
 
 // The Profiling Debug panel (ADR-0075): a window of N frames for Nsight
 // Systems to capture, and Aftermath's status, built and updated without
