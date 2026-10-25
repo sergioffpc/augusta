@@ -60,11 +60,14 @@ BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
 # Windows, the client's and the Renderer's tests too, as CI's client job lints
 # them; elsewhere, not the client's trees, the window module's GLFW half or the
 # output device, which CI's Linux build (without the client, AUGUSTA_CLIENT) has
-# no compile commands for.
+# no compile commands for. Never the other platform's half of a module
+# (<module>_windows.cpp, <module>_linux.cpp), which this build doesn't compile.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
+TIDY_EXCLUDES += ":(exclude)src/*_linux.cpp"
 else
+TIDY_EXCLUDES += ":(exclude)src/*_windows.cpp"
 TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
@@ -82,7 +85,7 @@ TIDY_SOURCES := $(shell $(LINT_LS_FILES) -- "src/*.cpp" "tools/agent/*.cpp" $(TI
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.
 ifeq ($(OS),Windows_NT)
-INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
+INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp" ":(exclude)src/*_linux.cpp"
 JOBS ?= $(NUMBER_OF_PROCESSORS)
 else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
