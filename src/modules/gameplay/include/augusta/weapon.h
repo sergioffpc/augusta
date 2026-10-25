@@ -52,10 +52,6 @@ struct Rifle {
   float ads_recoil_scale = 1.0F;
   /// The vertical field of view aiming down sights zooms to, in radians.
   float ads_field_of_view = 1.0F;
-  /// Where a Desktop player holds the rifle from the hip: its ADS hold moved by
-  /// this much, in meters, in the view's own space (x right, y up, z back, as
-  /// command::ViewRotation turns it).
-  math::Vec3 hip_offset{};
   /// The kick of each round of a burst, in order, at most
   /// limits::kMaxRecoilKicks; past the last, the last repeats. Empty: no recoil.
   std::vector<RecoilKick> recoil_pattern;

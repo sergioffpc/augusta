@@ -19,7 +19,6 @@
 #include "augusta/command.h"
 #include "augusta/failure.h"
 #include "augusta/link_types.h"
-#include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/protocol.h"
@@ -298,9 +297,6 @@ protocol::ParametersWire ToWire(const parameters::Parameters& parameters) {
       .ads_field_of_view = rifle.ads_field_of_view,
       .recoil_pattern = {},
       .magazine_capacity = rifle.magazine_capacity,
-      .hip_offset_right = rifle.hip_offset.x,
-      .hip_offset_up = rifle.hip_offset.y,
-      .hip_offset_back = rifle.hip_offset.z,
   };
   rifle_wire.recoil_pattern.reserve(rifle.recoil_pattern.size());
   for (const weapon::RecoilKick& kick : rifle.recoil_pattern) {
@@ -345,7 +341,6 @@ parameters::Parameters FromWire(const protocol::ParametersWire& parameters) {
     result.rifle.recoil_pattern.push_back(weapon::RecoilKick{.pitch = kick.pitch, .yaw = kick.yaw});
   }
   result.rifle.magazine_capacity = rifle.magazine_capacity;
-  result.rifle.hip_offset = math::Vec3(rifle.hip_offset_right, rifle.hip_offset_up, rifle.hip_offset_back);
   result.ammo.flight.gravity = parameters.ammo.gravity;
   result.ammo.flight.max_range = parameters.ammo.max_range;
   result.ammo.damage = {

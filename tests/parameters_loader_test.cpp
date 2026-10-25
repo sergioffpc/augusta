@@ -43,7 +43,6 @@ constexpr std::string_view kCombat = R"(
     recoil_recovery_per_second = 0.2,
     ads_recoil_scale = 0.5,
     ads_field_of_view = 0.7,
-    hip_offset = { right = 0.15, up = -0.2, back = 0.05 },
   },
   ammo = {
     gravity = 9.81,
@@ -114,9 +113,6 @@ TEST(ParametersLoaderTest, ReadsEveryValueOfACompleteScript) {
   EXPECT_FLOAT_EQ(rifle.recoil_recovery_per_second, 0.2F);
   EXPECT_FLOAT_EQ(rifle.ads_recoil_scale, 0.5F);
   EXPECT_FLOAT_EQ(rifle.ads_field_of_view, 0.7F);
-  EXPECT_FLOAT_EQ(rifle.hip_offset.x, 0.15F);
-  EXPECT_FLOAT_EQ(rifle.hip_offset.y, -0.2F);
-  EXPECT_FLOAT_EQ(rifle.hip_offset.z, 0.05F);
   EXPECT_FLOAT_EQ(loaded->ammo.flight.gravity, 9.81F);
   EXPECT_FLOAT_EQ(loaded->ammo.flight.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, 100.0F);
@@ -132,9 +128,6 @@ TEST(ParametersLoaderCombatTest, AMissingCombatKeyIsAnErrorNamingItsPath) {
               "rifle.magazine_capacity");
   ExpectError(Replacing("ads_field_of_view = 0.7,", ""), ParametersLoadErrorCode::kMissingKey,
               "rifle.ads_field_of_view");
-  ExpectError(Replacing("hip_offset = { right = 0.15, up = -0.2, back = 0.05 },", ""),
-              ParametersLoadErrorCode::kMissingKey, "rifle.hip_offset");
-  ExpectError(Replacing("back = 0.05", ""), ParametersLoadErrorCode::kMissingKey, "rifle.hip_offset.back");
   ExpectError(Replacing("recoil_pattern = { { pitch = 0.01, yaw = 0.002 }, { pitch = 0.008, yaw = -0.002 } },", ""),
               ParametersLoadErrorCode::kMissingKey, "rifle.recoil_pattern");
   ExpectError(Replacing("{ pitch = 0.01, yaw = 0.002 }", "{ pitch = 0.01 }"), ParametersLoadErrorCode::kMissingKey,
@@ -157,8 +150,6 @@ TEST(ParametersLoaderCombatTest, AnUnknownCombatKeyIsAnErrorNamingItsPath) {
   ExpectError(Replacing("reload_seconds = 2.5,", "reload_seconds = 2.5, spread = 0.01,"),
               ParametersLoadErrorCode::kUnknownKey, "rifle.spread");
   ExpectError(Replacing("limb = 25", "limb = 25, neck = 80"), ParametersLoadErrorCode::kUnknownKey, "ammo.damage.neck");
-  ExpectError(Replacing("back = 0.05", "back = 0.05, forward = 0"), ParametersLoadErrorCode::kUnknownKey,
-              "rifle.hip_offset.forward");
   ExpectError(Replacing("{ pitch = 0.008, yaw = -0.002 }", "{ pitch = 0.008, yaw = -0.002, roll = 1 }"),
               ParametersLoadErrorCode::kUnknownKey, "rifle.recoil_pattern[2].roll");
 }
@@ -171,8 +162,6 @@ TEST(ParametersLoaderCombatTest, ACombatValueOfTheWrongTypeIsAnErrorNamingItsPat
               "rifle.muzzle_velocity");
   ExpectError(Replacing("damage = { head = 100, torso = 34, limb = 25 }", "damage = 50"),
               ParametersLoadErrorCode::kWrongType, "ammo.damage");
-  ExpectError(Replacing("{ right = 0.15, up = -0.2, back = 0.05 }", "0.2"), ParametersLoadErrorCode::kWrongType,
-              "rifle.hip_offset");
   ExpectError(Replacing("yaw = 0.002", "yaw = '0.002'"), ParametersLoadErrorCode::kWrongType,
               "rifle.recoil_pattern[1].yaw");
   ExpectError(Replacing("{ pitch = 0.008, yaw = -0.002 }", "0.008"), ParametersLoadErrorCode::kWrongType,
@@ -210,7 +199,6 @@ TEST(ParametersLoaderCombatTest, ACombatValueOutsideItsRangeIsOutOfRange) {
               "rifle.rounds_per_minute");
   ExpectError(Replacing("ads_recoil_scale = 0.5", "ads_recoil_scale = 2"), ParametersLoadErrorCode::kOutOfRange,
               "rifle.ads_recoil_scale");
-  ExpectError(Replacing("up = -0.2", "up = 1/0"), ParametersLoadErrorCode::kOutOfRange, "rifle.hip_offset");
   ExpectError(Replacing("max_range = 1000", "max_range = 0"), ParametersLoadErrorCode::kOutOfRange, "ammo.max_range");
   ExpectError(Replacing("torso = 34", "torso = -1"), ParametersLoadErrorCode::kOutOfRange, "ammo.damage.torso");
   ExpectError(Replacing("starting_health = 100", "starting_health = 0/0"), ParametersLoadErrorCode::kOutOfRange,
@@ -554,7 +542,6 @@ TEST(ParametersExampleTest, TheExampleScriptLoadsToTheDocumentedDefaults) {
   EXPECT_FLOAT_EQ(loaded->rifle.rounds_per_minute, 600.0F);
   EXPECT_FLOAT_EQ(loaded->rifle.muzzle_velocity, 800.0F);
   EXPECT_EQ(loaded->rifle.recoil_pattern.size(), 30U);
-  EXPECT_FLOAT_EQ(loaded->rifle.hip_offset.y, -0.2F);
   EXPECT_FLOAT_EQ(loaded->ammo.flight.max_range, 1000.0F);
   EXPECT_FLOAT_EQ(loaded->ammo.damage.head, loaded->starting_health);
   EXPECT_FLOAT_EQ(loaded->starting_health, 100.0F);
