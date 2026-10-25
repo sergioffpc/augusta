@@ -8,16 +8,16 @@
 # install puts each pinned version that is missing into the shared store,
 # ${XDG_CACHE_HOME:-~/.cache}/augusta/toolchain/<tool>/<version>/, once per
 # machine, then links .toolchain/bin into it (hardlinks or copies on Windows,
-# where a symlink may be refused) and writes .toolchain/activate. It links the
-# system LLVM's clangd, clang-format and clang-tidy there too, of the major
-# .github/actions/setup-windows-llvm pins. It is what `make toolchain` runs,
-# and quick when nothing changed.
+# where a symlink may be refused) and writes .toolchain/activate. Prettier, which
+# package-lock.json pins, goes into .toolchain/node_modules with npm ci, the
+# toolchain's Node running it. It links the system LLVM's clangd, clang-format
+# and clang-tidy there too, of the major .github/actions/setup-windows-llvm
+# pins. It is what `make toolchain` runs, and quick when nothing changed.
 #
 # check reads and changes nothing: it fails, naming each culprit, when a tool
-# .toolchain/bin links is not the pinned version (LLVM's: major) or does not
-# run, or when a path .vscode/settings.json names under .toolchain/ does not
-# exist. It is what
-# `make toolchain-check` runs.
+# .toolchain/bin links or Prettier is not the pinned version (LLVM's: major) or
+# does not run, or when a path .vscode/settings.json names under .toolchain/
+# does not exist. It is what `make toolchain-check` runs.
 #
 # Beside the bootstrap scripts, not in the Makefile, as the dev container's
 # image build copies only scripts/.
@@ -36,7 +36,15 @@ readonly STORE="${XDG_CACHE_HOME:-${HOME}/.cache}/augusta/toolchain"
 
 # The toolchain's tools, by the names the store files them under.
 readonly TOOLS=(ruff shfmt shellcheck actionlint gersemi pymarkdown yamllint
-  ctcache)
+  ctcache node)
+# Prettier, a Node package that package.json and package-lock.json beside this
+# script pin, which npm installs into .toolchain/node_modules.
+readonly PACKAGE="${SCRIPT_DIR}/package.json"
+readonly LOCKFILE="${SCRIPT_DIR}/package-lock.json"
+readonly PRETTIER="${TOOLCHAIN}/node_modules/prettier/bin/prettier.cjs"
+# The lockfile npm last installed .toolchain/node_modules from, which npm ci
+# deletes as it starts.
+readonly INSTALLED_LOCKFILE="${TOOLCHAIN}/node_modules/.augusta-package-lock.json"
 
 # LLVM's tools, which .toolchain/bin links to the system's LLVM: a package
 # manager installs it, pinned to its major (ADR-0008), not the store.
@@ -94,6 +102,12 @@ describe_tool() {
       version_name=CTCACHE_COMMIT command=clang-tidy-cache
       package="ctcache @ git+https://github.com/matus-chochlik/ctcache@${CTCACHE_COMMIT}"
       probe=(--help) expected=
+      ;;
+    node)
+      # Node from its PyPI wheel, which runs Prettier: uv's launcher of it.
+      version_name=NODEJS_WHEEL_VERSION command=node
+      package="nodejs-wheel==${NODEJS_WHEEL_VERSION}"
+      expected="v${NODEJS_WHEEL_VERSION}"
       ;;
     *)
       echo "toolchain: unknown tool $1" >&2
@@ -243,6 +257,22 @@ link_llvm_tool() {
   fi
 }
 
+# Installs Prettier into .toolchain/node_modules with npm ci, from the lockfile,
+# unless it is installed from this lockfile already. npm's download cache is in
+# the store, so a reinstall (another worktree, CI's cached store) downloads
+# nothing.
+install_prettier() {
+  local npm="${STORE}/node/${NODEJS_WHEEL_VERSION}/bin/npm"
+  cmp -s "${LOCKFILE}" "${INSTALLED_LOCKFILE}" && return
+  echo "toolchain: installing Prettier from $(native_path "${LOCKFILE}")"
+  cp "${PACKAGE}" "${LOCKFILE}" "${TOOLCHAIN}/"
+  "${npm}" ci --prefix "$(native_path "${TOOLCHAIN}")" \
+    --cache "$(native_path "${STORE}/npm-cache")" --prefer-offline \
+    --ignore-scripts --no-audit --no-fund --no-update-notifier --loglevel=error
+  # Last, so an install cut short is redone.
+  cp "${LOCKFILE}" "${INSTALLED_LOCKFILE}"
+}
+
 install() {
   local tool file name linked=()
   mkdir -p "${TOOLCHAIN}/bin"
@@ -277,6 +307,7 @@ install() {
       rm -f "${file}" 2>/dev/null || true
     fi
   done
+  install_prettier
   cat >"${TOOLCHAIN}/activate" <<EOF
 # Puts this checkout's toolchain first on PATH (ADR-0077): source it.
 case ":\${PATH}:" in
@@ -301,7 +332,7 @@ read_file() {
 }
 
 check() {
-  local failures=() tool linked output path probes status
+  local failures=() tool linked output path probes status lockfile pin
   if [[ ! -d "${TOOLCHAIN}/bin" ]]; then
     echo "toolchain: ${TOOLCHAIN}/bin does not exist." >&2
     return 1
@@ -327,6 +358,12 @@ check() {
       echo "${status}" >"${probes}/${tool}.status"
     } &
   done
+  {
+    status=0
+    "${TOOLCHAIN}/bin/node" "${PRETTIER}" --version >"${probes}/prettier" 2>&1 \
+      || status=$?
+    echo "${status}" >"${probes}/prettier.status"
+  } &
   wait
   # Each a line between newlines, matched whole, without forking: a fork per
   # tool would cost the hook seconds on Windows.
@@ -361,6 +398,26 @@ check() {
       failures+=("${tool}: .toolchain/bin/${tool} ($(readlink -f "${TOOLCHAIN}/bin/${tool}")) is not LLVM ${llvm_major}, it prints: $(head -n 1 <<<"${contents}")")
     fi
   done
+  # Prettier, at the version the lockfile pins: its "node_modules/prettier"
+  # entry's first "version", matched without forking.
+  read_file "${LOCKFILE}"
+  lockfile="${contents}"
+  pin="${contents#*\"node_modules/prettier\": \{}"
+  pin="${pin#*\"version\": \"}"
+  pin="${pin%%\"*}"
+  read_file "${INSTALLED_LOCKFILE}"
+  if [[ "${contents}" != "${lockfile}" ]]; then
+    failures+=("prettier: .toolchain/node_modules is not installed from package-lock.json's prettier ${pin}")
+  else
+    read_file "${probes}/prettier.status"
+    status="${contents%$'\n'}"
+    read_file "${probes}/prettier"
+    if [[ "${status}" != 0 ]]; then
+      failures+=("prettier: ${PRETTIER#"${ROOT}/"} does not run")
+    elif [[ $'\n'"${contents}" != *$'\n'"${pin}"$'\n'* ]]; then
+      failures+=("prettier: ${PRETTIER#"${ROOT}/"} is not ${pin}, it prints: $(head -n 1 <<<"${contents}")")
+    fi
+  fi
   # The editor's binaries: an extension whose path names nothing falls back to
   # its bundled copy without a word. A binary passes with or without .exe, as
   # Windows' bin has only the one and the others' only the other.
