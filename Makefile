@@ -69,6 +69,8 @@ ACTIONLINT = $(call toolchain_bin,actionlint) -shellcheck=$(call toolchain_bin,s
 GERSEMI = $(call toolchain_bin,gersemi)
 PYMARKDOWN = $(call toolchain_bin,pymarkdown) --config .pymarkdown.json
 YAMLLINT = $(call toolchain_bin,yamllint) --strict -c .yamllint
+# LLVM's, which .toolchain/bin links to the system's of the pinned major.
+CLANG_FORMAT = $(call toolchain_bin,clang-format)
 # Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
 PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
 # Buf too, from npm: it reads buf.yaml's workspace, every .proto at once.
@@ -212,7 +214,7 @@ docs:
 	doxygen tools/docs/Doxyfile
 
 format:
-	clang-format -i $(shell git ls-files -- $(CXX_SOURCES))
+	$(CLANG_FORMAT) -i $(shell git ls-files -- $(CXX_SOURCES))
 	yamlfmt -conf .yamlfmt
 	stylua $(shell git ls-files -- $(LUA_SOURCES))
 	taplo fmt $(shell git ls-files -- $(TOML_SOURCES))
@@ -228,7 +230,7 @@ FORMAT_CHECKS := $(addprefix format-check/,clang-format yamlfmt yamllint stylua 
 .PHONY: $(FORMAT_CHECKS)
 format-check: $(FORMAT_CHECKS)
 format-check/clang-format:
-	clang-format --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
+	$(CLANG_FORMAT) --dry-run --Werror $(shell git ls-files -- $(CXX_SOURCES))
 format-check/yamlfmt:
 	yamlfmt -conf .yamlfmt -lint
 format-check/yamllint:
@@ -267,20 +269,20 @@ tidy: configure
 	$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "CTCACHE_DIR=$(CTCACHE_DIR)" $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 
-# clang-tidy through the toolchain's ctcache, as CI's Lint steps run it: a
+# The toolchain's clang-tidy through its ctcache, as CI's Lint steps run it: a
 # file whose preprocessed source, configuration and arguments passed before is
 # skipped. On macOS, Homebrew's clang takes its SDK from a configuration file
-# that clang-tidy does not read: the SDK that clang resolves, handed to
-# clang-tidy.
+# that clang-tidy does not read: the SDK that the clang beside the linked
+# clang-tidy resolves, handed to clang-tidy.
 ifeq ($(shell uname -s),Darwin)
-TIDY_SYSROOT := --extra-arg=-isysroot$(shell $(or $(HOMEBREW_PREFIX),/opt/homebrew)/opt/llvm@21/bin/clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
+TIDY_SYSROOT := --extra-arg=-isysroot$(shell $(dir $(realpath .toolchain/bin/clang-tidy))clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
 endif
-CLANG_TIDY = $(call toolchain_bin,clang-tidy-cache) clang-tidy $(TIDY_SYSROOT)
+CLANG_TIDY = $(call toolchain_bin,clang-tidy-cache) $(call toolchain_bin,clang-tidy) $(TIDY_SYSROOT)
 # ctcache's results live under build/, for every preset, apart per clang-tidy
-# version (the first number `clang-tidy --version` prints), which ctcache's key
-# leaves out. Recursive, so only tidy and lint-files run clang-tidy for it, and
-# hand it to the per-file targets.
-CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
+# version (the first number the toolchain's `clang-tidy --version` prints),
+# which ctcache's key leaves out. Recursive, so only tidy and lint-files run
+# clang-tidy for it, and hand it to the per-file targets.
+CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell $(call toolchain_bin,clang-tidy) --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
 $(TIDY_CHECKS): tidy/%:
@@ -313,7 +315,7 @@ covered = $(filter $(FILES),$(shell git ls-files --cached --others --exclude-sta
 linted = $(if $(filter $(2),$(FILES)),$(shell git ls-files -- $(1)),$(call covered,$(1)))
 
 format-files:
-	$(if $(call covered,$(CXX_SOURCES)),clang-format -i $(call covered,$(CXX_SOURCES)),@:)
+	$(if $(call covered,$(CXX_SOURCES)),$(CLANG_FORMAT) -i $(call covered,$(CXX_SOURCES)),@:)
 	$(if $(call covered,$(YAML_SOURCES)),yamlfmt -conf .yamlfmt $(call covered,$(YAML_SOURCES)),@:)
 	$(if $(call covered,$(LUA_SOURCES)),stylua $(call covered,$(LUA_SOURCES)),@:)
 	$(if $(call covered,$(TOML_SOURCES)),taplo fmt $(call covered,$(TOML_SOURCES)),@:)
