@@ -84,7 +84,7 @@ undo_entry() {
 #   The tool.
 # Returns:
 #   1 when the tool has no release here: luacheck's has no arm64 build, so an
-#   arm64 machine (an Apple-silicon host's dev container) links apt's.
+#   arm64 machine (an Apple-silicon host's dev container) builds its rock.
 # shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
 toolchain_release() {
   local github=https://github.com
@@ -267,10 +267,9 @@ install_platform() {
   # Already on CI's runner image: make, cmake, git, curl, zip, unzip, tar,
   # pkg-config. clangd: the editor's, which .toolchain/bin links with
   # clang-format and clang-tidy (scripts/bootstrap/toolchain.sh). For the
-  # hooks: clang-format, git-lfs (pre-push), and lua-check (luacheck), which
-  # the toolchain links on arm64, where luacheck's own release has no build:
-  # this release packages it at the pinned LUACHECK_VERSION, which
-  # `make toolchain-check` holds it to. sccache: the root
+  # hooks: clang-format, git-lfs (pre-push), and LuaRocks, which builds the
+  # toolchain's luacheck on arm64, where luacheck's own release has no build.
+  # sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
   # for development. jq: with the toolchain's cosign, the release runbook's
   # wait on a signed image (docs/runbooks/cut-release.md). podman: the
@@ -325,7 +324,7 @@ install_platform() {
     lld
     lldb
     llvm
-    lua-check
+    luarocks
     make
     mesa-vulkan-drivers
     ninja-build

@@ -140,7 +140,7 @@ undo_entry() {
 #   The tool.
 # Returns:
 #   1 when the tool has no release here: luacheck's has no macOS build, so
-#   Homebrew's is linked.
+#   Homebrew's LuaRocks builds its rock.
 # shellcheck disable=SC2034 # release_*: scripts/bootstrap/toolchain.sh reads them
 toolchain_release() {
   local github=https://github.com
@@ -254,9 +254,8 @@ install_platform() {
   # Ninja, as the presets build with; GNU make 4, the Makefile's (macOS's own
   # is 3.81); sccache, which the root CMakeLists.txt picks up from PATH;
   # pkg-config and autotools for the vcpkg ports that build with them. Git LFS
-  # (pre-push), which Apple's git has none of, and luacheck, which the
-  # toolchain links as luacheck has no macOS release, and holds to the pinned
-  # LUACHECK_VERSION. uv, for yamllint and the rest uv runs. doxygen: `make
+  # (pre-push), which Apple's git has none of, and LuaRocks, which builds the
+  # toolchain's luacheck, as luacheck has no macOS release. uv, for yamllint and the rest uv runs. doxygen: `make
   # docs`. gh: for development. jq: with the toolchain's cosign, the release
   # runbook's wait on a signed image (docs/runbooks/cut-release.md). kubectl
   # and helm, for the server's k3s cluster and its chart (charts/augustad).
@@ -266,7 +265,7 @@ install_platform() {
   # build has KosmicKrisp, a conformant Vulkan on Metal (Apple silicon), and
   # lavapipe, the software Vulkan the renderer smoke test draws on.
   brew_install autoconf autoconf-archive automake cmake doxygen gh git git-lfs \
-    helm jq kubernetes-cli libtool lld@21 lldb llvm@21 luacheck make mesa \
+    helm jq kubernetes-cli libtool lld@21 lldb llvm@21 luarocks make mesa \
     ninja pkg-config podman sccache uv vulkan-loader wireshark
 
   # GNU make ahead of macOS's 3.81 in /usr/bin, by the directory Homebrew keeps
@@ -279,7 +278,7 @@ install_platform() {
 
   # A tool missing here fails loud now, not at the first commit or push.
   hash -r
-  require_commands cmake ninja make git git-lfs sccache uv doxygen luacheck \
+  require_commands cmake ninja make git git-lfs sccache uv doxygen luarocks \
     kubectl helm jq podman tshark
 }
 

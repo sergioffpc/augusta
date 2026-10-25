@@ -546,8 +546,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   toolchain's cosign, for a release's wait on its signed image), Podman (the
   container engine), tshark (the Wireshark dissector's test), auditd
   (`scripts/augustad-seccomp.sh record`), Doxygen, uv (which installs the
-  toolchain's PyPI tools), apt's luacheck (which the toolchain links on arm64,
-  where luacheck has no release), and CI's Linux vcpkg binary cache
+  toolchain's PyPI tools), LuaRocks (which builds the toolchain's luacheck on
+  arm64, where luacheck has no release), and CI's Linux vcpkg binary cache
   configuration (a files provider in the checkout's `.vcpkg-bincache`). The
   image builds for the host's architecture (amd64 or arm64) rather than
   emulating CI's amd64. sccache's cache lives in a volume shared by every
@@ -575,19 +575,19 @@ no self-hosted GitHub Actions runner in this pipeline).
   and fills the toolchain's store, without sudo, which a managed Mac may grant
   only for a while; `~/.zprofile` puts GNU make ahead of macOS's 3.81 on PATH.
   LLVM 21 is keg-only, off PATH: `.toolchain/bin` links its `clangd`,
-  `clang-format` and `clang-tidy`, and Homebrew's luacheck, which has no macOS
-  release. The `pre-commit` and `pre-push` hooks run the toolchain on the host.
-  The `macos` and `macos-debug` presets build the client, the server and their
-  tests natively with Homebrew's LLVM 21 (`cmake/LlvmMacosToolchain.cmake`,
-  ADR-0008), never Apple's clang, for vcpkg's `arm64-osx`
-  (`triplets/arm64-osx.cmake`). The client renders on Mesa's KosmicKrisp, a
-  conformant Vulkan over Metal (macOS 26, Apple silicon): the Renderer turns on
-  the portability extensions a Vulkan-on-Metal driver may need, and the window
-  module opens Homebrew's Vulkan loader, which GLFW does not find there by
-  itself. PhysX and NVRHI come from overlay ports (`ports/`) that add macOS to
-  what vcpkg's support; PhysX builds on the CPU alone. The Command Line Tools
-  give the SDK, and Xcode is not needed. No CI job builds it, so it breaks
-  unnoticed; Aftermath and Nsight do not exist there.
+  `clang-format` and `clang-tidy`, and Homebrew's LuaRocks builds the
+  toolchain's luacheck, which has no macOS release. The `pre-commit` and
+  `pre-push` hooks run the toolchain on the host. The `macos` and `macos-debug`
+  presets build the client, the server and their tests natively with Homebrew's
+  LLVM 21 (`cmake/LlvmMacosToolchain.cmake`, ADR-0008), never Apple's clang, for
+  vcpkg's `arm64-osx` (`triplets/arm64-osx.cmake`). The client renders on Mesa's
+  KosmicKrisp, a conformant Vulkan over Metal (macOS 26, Apple silicon): the
+  Renderer turns on the portability extensions a Vulkan-on-Metal driver may
+  need, and the window module opens Homebrew's Vulkan loader, which GLFW does
+  not find there by itself. PhysX and NVRHI come from overlay ports (`ports/`)
+  that add macOS to what vcpkg's support; PhysX builds on the CPU alone. The
+  Command Line Tools give the SDK, and Xcode is not needed. No CI job builds it,
+  so it breaks unnoticed; Aftermath and Nsight do not exist there.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
   and their tests compile with `clang-cl` and links with `lld-link`, from the

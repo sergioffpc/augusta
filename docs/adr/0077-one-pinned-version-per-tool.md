@@ -32,8 +32,8 @@ actionlint) are installed with `uv tool install`, as is ctcache from its pinned
 commit, with the Python that runs them kept in the store too, so a store
 restored on another machine (CI's cache) runs; release binaries, buf among them,
 are downloaded and verified. luacheck has no release for macOS or Linux arm64:
-there the toolchain links the system's (Homebrew's, apt's), and
-`make toolchain-check` fails when its version is not the pin, as for LLVM.
+there the system's LuaRocks (Homebrew's, apt's) builds its pinned rock into the
+store, whose dependencies (argparse, LuaFileSystem) are LuaRocks' latest.
 
 **A shared store, linked per checkout.** Each version of each tool is installed
 once per machine, in

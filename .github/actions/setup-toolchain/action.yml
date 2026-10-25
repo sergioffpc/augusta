@@ -30,6 +30,14 @@ runs:
             break
           fi
         done
+    # luacheck has no arm64 release: LuaRocks builds its rock, and clang its
+    # dependencies' C modules.
+    - name: Install LuaRocks
+      if: runner.os == 'Linux' && runner.arch == 'ARM64'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang luarocks
     - name: Cache the toolchain's store
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

@@ -60,7 +60,8 @@ readonly LLVM_TOOLS=(clangd clang-format clang-tidy)
 # Describes a tool, in globals: version_name, the versions.env variable that
 # pins it, and version, its value; source, where it comes from: uv, which
 # installs package, or release, its platform's release download
-# (toolchain_release in scripts/bootstrap/<platform>.sh); command, the command
+# (toolchain_release in scripts/bootstrap/<platform>.sh); rock, the LuaRocks
+# rock that builds it where its release has no build; command, the command
 # it puts in .toolchain/bin; bare, set when Windows' bin also needs that command
 # without .exe; probe, the arguments that make it print its version; expected,
 # the start of the line of that output the pinned version prints, up to a space
@@ -72,7 +73,7 @@ readonly LLVM_TOOLS=(clangd clang-format clang-tidy)
 # Arguments:
 #   The tool.
 describe_tool() {
-  probe=(--version) source=uv bare=
+  probe=(--version) source=uv bare= rock=
   case "$1" in
     ruff)
       version_name=RUFF_VERSION command=ruff package="ruff==${RUFF_VERSION}"
@@ -129,7 +130,9 @@ describe_tool() {
       expected="stylua ${STYLUA_VERSION}"
       ;;
     luacheck)
+      # No release for macOS or Linux arm64, where its rock builds it.
       version_name=LUACHECK_VERSION command=luacheck source=release
+      rock=luacheck
       expected="Luacheck: ${LUACHECK_VERSION}"
       ;;
     taplo)
@@ -343,22 +346,31 @@ install_release() {
   touch "${dir}/.installed"
 }
 
-# Links the system's command of a tool that has no release for this platform
-# (luacheck on macOS and Linux arm64, which Homebrew and apt install), the
-# first on PATH outside any .toolchain/bin: check then holds it to the pin.
+# Builds the described tool's pinned version from its LuaRocks rock into the
+# store, unless it is there already: luacheck, whose release has no build for
+# macOS or Linux arm64. With the system's LuaRocks and its Lua, which the
+# bootstrap installs, and clang for the C modules of the rock's dependencies.
 # Arguments:
 #   The tool.
-link_system() {
-  local dir dirs
-  IFS=: read -r -a dirs <<<"${PATH}"
-  for dir in "${dirs[@]}"; do
-    [[ "${dir}" == */.toolchain/bin || ! -x "${dir}/${command}" ]] && continue
-    link_file "${dir}/${command}" "${TOOLCHAIN}/bin/${command}"
-    return
-  done
-  echo "toolchain: $1 has no release for this platform, and no ${command}" \
-    "is on PATH to link: run scripts/bootstrap.sh, which installs it." >&2
-  exit 1
+install_rock() {
+  local dir="${STORE}/$1/${version}"
+  [[ -f "${dir}/.installed" ]] && return
+  if [[ -z "${rock}" ]]; then
+    echo "toolchain: $1 has no release for this platform." >&2
+    exit 1
+  fi
+  if ! command -v luarocks >/dev/null; then
+    echo "toolchain: $1 has no release for this platform, and LuaRocks," \
+      "which builds it, is not on PATH: run scripts/bootstrap.sh platform." >&2
+    exit 1
+  fi
+  echo "toolchain: building $1 ${version}"
+  rm -rf "${dir}"
+  mkdir -p "${dir}"
+  luarocks --tree "${dir}" install "${rock}" "${version}" CC=clang LD=clang \
+    >/dev/null
+  # Last, so an install cut short is redone.
+  touch "${dir}/.installed"
 }
 
 # Sets the global major to the LLVM major a tool's --version output names
@@ -471,8 +483,7 @@ load_platform() {
   . "${SCRIPT_DIR}/${platform}.sh"
 }
 
-# Installs each pinned version the store lacks: a tool with no release for this
-# platform is the system's, which install links.
+# Installs each pinned version the store lacks.
 fill_store() {
   local tool
   for tool in "${TOOLS[@]}"; do
@@ -481,6 +492,8 @@ fill_store() {
       install_tool "${tool}"
     elif toolchain_release "${tool}"; then
       install_release "${tool}"
+    else
+      install_rock "${tool}"
     fi
   done
 }
@@ -506,11 +519,6 @@ install() {
   fill_store
   for tool in "${TOOLS[@]}"; do
     describe_tool "${tool}"
-    if [[ "${source}" = release ]] && ! toolchain_release "${tool}"; then
-      link_system "${tool}"
-      linked+=("${command}")
-      continue
-    fi
     for file in "${STORE}/${tool}/${version}/bin/${command}"{,.exe}; do
       [[ -e "${file}" ]] || continue
       name="$(basename "${file}")"
