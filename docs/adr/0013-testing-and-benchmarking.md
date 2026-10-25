@@ -18,6 +18,7 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
 | Pack contract (golden packs)                    |                     | ✅                  |                           | ✅                             |
 | ASan + UBSan                                    |                     | ✅ without client   | ✅ with client            | ✅ with client                 |
 | Linux client build and `ctest`                  |                     |                     | ✅                        | ✅                             |
+| macOS build and `ctest`                         |                     |                     | ✅                        | ✅                             |
 | Fuzzing                                         |                     | ✅ ~60 s per target | ✅ ~30 min per target     | ✅ ~30 min per target          |
 | TSan                                            |                     |                     | ✅                        | ✅                             |
 | Netcode under an impaired link                  |                     |                     | ✅                        | ✅                             |
@@ -57,6 +58,15 @@ more stages it runs at, chosen by how long it takes and how noisy its result is.
   and runs the whole `ctest` suite with it, the Renderer's smoke test among it
   on Ubuntu's lavapipe in a virtual X server (`xvfb-run`), and fails if the
   smoke test was not built.
+- **The macOS development build is built and tested by the nightly alone**
+  (`client-arm64-macos`, on an arm64 macOS 26 runner, and so by every release,
+  which it gates like any other nightly job though no release publishes it). The
+  runner is readied by the bootstrap's toolchain step alone, as a new Mac is, so
+  the macOS bootstrap is tested with the build. It builds the `macos` preset,
+  client and server, and runs the whole `ctest` suite, the Renderer's smoke test
+  among it on Homebrew's lavapipe, and fails if the smoke test was not built. No
+  sanitized pass and no `macos-debug`: the sanitizers run on the same code on
+  Linux. No pull request builds macOS, a development build alone (ADR-0008).
 - **Every sanitizer report fails the test it came from**, in a pull request, a
   night or a local `ctest --preset linux-san` alike. ASan and LeakSanitizer halt
   on their first report by themselves. UBSan by default prints its report and

@@ -75,7 +75,8 @@ linked dynamically from Homebrew's prefix as its LLVM documents, lld links, and
 LLVM's binary tools stand in for Apple's; the Command Line Tools give the SDK
 alone. `cmake/LlvmMacosToolchain.cmake` states it, chainloaded as on Linux, from
 the macos presets and from `triplets/arm64-osx.cmake`, so its ports build with
-it too.
+it too. The nightly builds and tests it (`client-arm64-macos`, ADR-0013), which
+so gates every release.
 
 clang is then the project's one compiler: `clang-cl` on Windows, LLVM's clang on
 Linux and macOS. The root project refuses any other when it is configured - GCC,

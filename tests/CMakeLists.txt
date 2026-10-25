@@ -880,6 +880,27 @@ if(AUGUSTA_CLIENT)
       smoke_test_environment
       "VK_DRIVER_FILES=${CMAKE_CURRENT_BINARY_DIR}/lvp_icd.json;VK_ADD_LAYER_PATH=${vcpkg_installed}/bin;VK_LOADER_DEBUG=error,warn;--modify;PATH=path_list_prepend:${vcpkg_installed}/bin"
     )
+  elseif(APPLE)
+    # On macOS lavapipe is Homebrew's (its mesa, which scripts/bootstrap/macos.sh
+    # installs), under the prefix cmake/LlvmMacosToolchain.cmake finds Homebrew
+    # in, through Homebrew's loader, as the client itself runs. Its window
+    # needs no virtual display: macOS always has one. The layer's manifest
+    # names its library without a folder, as on Linux: vcpkg's lib, put on
+    # the dynamic linker's path.
+    find_file(
+      AUGUSTA_LAVAPIPE_ICD
+      NAMES lvp_icd.json lvp_icd.aarch64.json lvp_icd.arm64.json
+      PATHS "${augusta_homebrew}/share/vulkan/icd.d"
+      NO_DEFAULT_PATH
+      DOC "Homebrew's lavapipe ICD manifest, which the renderer smoke test draws on"
+    )
+    set(no_smoke_test_reason "no lavapipe in ${augusta_homebrew}/share/vulkan/icd.d (Homebrew's mesa)")
+    if(AUGUSTA_LAVAPIPE_ICD)
+      set(
+        smoke_test_environment
+        "VK_DRIVER_FILES=${AUGUSTA_LAVAPIPE_ICD};VK_ADD_LAYER_PATH=${vcpkg_installed}/share/vulkan/explicit_layer.d;VK_LOADER_DEBUG=error,warn;--modify;DYLD_LIBRARY_PATH=path_list_prepend:${vcpkg_installed}/lib"
+      )
+    endif()
   elseif(NOT WIN32)
     # On Linux lavapipe is the system's (Mesa's Vulkan drivers, which
     # scripts/bootstrap/linux.sh installs), through the system's loader, as the

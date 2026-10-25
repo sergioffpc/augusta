@@ -1,7 +1,7 @@
 name: Restore the vcpkg binary cache
 description: >
-  Restores into .vcpkg-bincache the newest vcpkg binary cache any Linux job
-  saved (see save-vcpkg-cache), and records what it restored, and under which
+  Restores into .vcpkg-bincache the newest vcpkg binary cache a job of this
+  runner's OS saved (see save-vcpkg-cache), and records what it restored, and under which
   prefix, for save-vcpkg-cache. The directory exists afterwards even when
   nothing was restored, so a job can always hand it on.
 inputs:
@@ -11,8 +11,9 @@ inputs:
       the others don't, such as one turning on a manifest feature no other job
       does: their saves keep only the packages they installed, so in the shared
       cache the job's ports would be dropped by the next save. With nothing
-      saved under it yet, the shared x64 cache is restored. Empty for
-      the shared cache. It must not begin with another cache's prefix, which
+      saved under it yet, a Linux job restores the shared x64 cache, and a
+      macOS job (nightly-jobs.yml's client-arm64-macos), which shares no
+      package with Linux's, nothing. Empty for the shared Linux cache. It must not begin with another cache's prefix, which
       would then restore and prune its entries.
     required: false
     default: ""
@@ -46,7 +47,9 @@ runs:
       run: |
         if [ -n "$OWN_PREFIX" ]; then
           echo "value=$OWN_PREFIX" >> "$GITHUB_OUTPUT"
-          echo "fallback=vcpkg-bincache-linux-clang-" >> "$GITHUB_OUTPUT"
+          if [ "$RUNNER_OS" = Linux ]; then
+            echo "fallback=vcpkg-bincache-linux-clang-" >> "$GITHUB_OUTPUT"
+          fi
         elif [ "$RUNNER_ARCH" = ARM64 ]; then
           echo "value=vcpkg-bincache-linux-arm64-" >> "$GITHUB_OUTPUT"
         else

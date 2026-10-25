@@ -55,13 +55,14 @@ decisions already made in ARCHITECTURE.md:
 ## CI/CD
 
 - **Provider:** GitHub Actions — native Windows and Linux runners match the
-  client/server platform split exactly.
+  client/server platform split exactly; the nightly adds an arm64 macOS runner
+  for the macOS development build.
 - **Job names:** a job that builds a deliverable (the client, the server, the
   server image) for one platform ends in that platform's vcpkg triplet,
   `<name>-<arch>-<os>`: `client-x64-windows`, `client-x64-linux`,
-  `server-x64-linux`, `container-publish-arm64-linux`. A matrix job names each
-  of its instances that way. A job that builds no single platform's deliverable
-  (`format`, `changes`, `container-index`) has no suffix.
+  `client-arm64-macos`, `server-x64-linux`, `container-publish-arm64-linux`. A
+  matrix job names each of its instances that way. A job that builds no single
+  platform's deliverable (`format`, `changes`, `container-index`) has no suffix.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
@@ -184,11 +185,13 @@ decisions already made in ARCHITECTURE.md:
   high case count, a `llvm-cov` coverage report, the Linux client's Shipping
   build and tests, then its Development build's under ASan and UBSan
   (`client-x64-linux`: no pull request builds it; the server-only jobs stay
-  Development builds, since their tests include the tools'), and the hot-path
-  micro-benchmarks, whose history is kept on the `benchmarks` branch (started by
-  the first night if absent) and charted on the documentation site; a failure, a
-  benchmark more than twice as slow as the night before among them, opens or
-  updates a `nightly-failure` issue (ADR-0013).
+  Development builds, since their tests include the tools'), the macOS
+  development build and tests, on a runner readied by the macOS bootstrap
+  (`client-arm64-macos`, the smoke test on Homebrew's lavapipe), and the
+  hot-path micro-benchmarks, whose history is kept on the `benchmarks` branch
+  (started by the first night if absent) and charted on the documentation site;
+  a failure, a benchmark more than twice as slow as the night before among them,
+  opens or updates a `nightly-failure` issue (ADR-0013).
 - **Not in CI:** profiling (NVTX with Nsight Systems/Graphics, interactive
   tools, not CI checks), and NFR-01's tick rate under load (checked by hand on
   the cluster before a release, ADR-0013).
@@ -565,8 +568,9 @@ no self-hosted GitHub Actions runner in this pipeline).
   loader, which GLFW does not find there by itself. PhysX and NVRHI come from
   overlay ports (`ports/`) that add macOS to what vcpkg's support; PhysX builds
   on the CPU alone. The Command Line Tools give the SDK, and Xcode is not
-  needed. No CI job builds it, so it breaks unnoticed; Aftermath and Nsight do
-  not exist there.
+  needed. The nightly builds and tests it (`client-arm64-macos`), so a change
+  that breaks it fails a night and gates the next release, though no pull
+  request builds it; Aftermath and Nsight do not exist there.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
   and their tests compile with `clang-cl` and links with `lld-link`, from the
