@@ -30,7 +30,6 @@
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
 #include "character_fixture.h"
-#include "clips_fixture.h"
 
 // Property-based tests of the simulation (ADR-0013), through the Worlds' public
 // interfaces: a player's stamina stays a fraction and its magazine within its
