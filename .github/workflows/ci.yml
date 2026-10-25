@@ -430,7 +430,8 @@ jobs:
         # configure's build graph at all, so they have no compile_commands.json
         # entry here - excluded rather than linted against the wrong platform's
         # (missing) compile flags, as is every module's Windows half
-        # (<module>_windows.cpp), which the client job lints. The renderer's
+        # (<module>_windows.cpp), which the client job lints, and macOS half
+        # (<module>_macos.cpp), which no job builds. The renderer's
         # vertices.cpp builds here but
         # is skipped too: the client job lints the whole Renderer, from its own
         # build.
@@ -447,7 +448,7 @@ jobs:
         # are the client-x64-windows job's.
         run: |
           status=0
-          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -not -name '*_windows.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
+          find src tools/agent -name '*.cpp' -not -path 'tools/*/tests/*' -not -path 'src/client/*' -not -path 'src/modules/renderer/*' -not -path 'src/modules/audio/output_miniaudio.cpp' -not -path 'src/modules/audio/miniaudio.cpp' -not -path 'src/modules/window/window.cpp' -not -path 'src/modules/window/glfw_keys.cpp' -not -name '*_windows.cpp' -not -name '*_macos.cpp' -print0 | xargs -0 -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy -p build/x64-linux || status=1
           git ls-files 'tests/*.cpp' 'tools/agent/tests/*.cpp' ':!:tests/client_*' | xargs -P "$(nproc)" -n 1 clang-tidy-cache clang-tidy --quiet -p build/x64-linux --checks=-*,misc-include-cleaner --extra-arg=-w || status=1
           exit "$status"
       - uses: ./.github/actions/save-ctcache-cache
