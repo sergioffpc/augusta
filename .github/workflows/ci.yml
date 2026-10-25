@@ -70,8 +70,9 @@ jobs:
           # The paths more than one output matches, each written only here.
           ci_workflow='\.github/workflows/ci\.yml$'
           charts='charts/'
-          # The server and what builds its image.
-          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
+          # The server and what builds its image: vcpkg's overlay ports and
+          # triplets among it, which every dependency is built by.
+          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|ports/|triplets/|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
           # The build jobs also build and test the tools (tools/agent,
           # tools/pack, tools/wireshark): their native and Python sources, the
