@@ -27,7 +27,7 @@
 #include "augusta/logging.h"
 #include "augusta/tick.h"
 #include "augusta/version.h"
-#include "liveness.h"
+#include "metrics_liveness.h"
 
 namespace augusta::server {
 namespace {

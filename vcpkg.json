@@ -5,6 +5,7 @@
     "abseil",
     "benchmark",
     "blake3",
+    "boost-asio",
     "boost-beast",
     "boost-dll",
     "boost-interprocess",

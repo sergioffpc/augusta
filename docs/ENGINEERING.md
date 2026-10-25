@@ -539,22 +539,34 @@ no self-hosted GitHub Actions runner in this pipeline).
   xkbcommon development files, and Mesa's Vulkan drivers and Xvfb for the
   Renderer's smoke test), so the `linux` presets build and test `augustac` in
   the container too. The Windows client has no container equivalent (see below).
-- **macOS (through the dev container):** nothing builds natively on macOS (the
-  presets are Linux's and Windows'), and nothing is installed there but git, Git
-  LFS and Podman (or a Docker already there, which the scripts take where there
-  is no Podman), which `scripts/bootstrap.sh` installs through Homebrew (its
-  macOS half, `scripts/bootstrap/macos.sh`, which also creates the container).
-  `scripts/dev-container.sh [command]` runs a command (a shell by default) in
-  the dev container's image from a terminal: one container per checkout, kept
-  running, with the checkout mounted at its host path so a git worktree's `.git`
-  resolves inside too, a `build/` volume of its own, and sccache's and vcpkg's
-  caches in volumes every checkout shares.
-  `scripts/dev-container.sh make configure PRESET=linux-debug` gives the hooks
-  the compile commands clang-tidy needs. On macOS the `pre-commit` and
-  `pre-push` hooks run their formatters and linters through it; git itself
-  (identity, signing, credentials, LFS) stays on the host. A second bootstrap of
-  the hooks' tools for macOS would drift from the container's, as two recipes
-  for one toolchain do.
+- **Dev container from a terminal:** `scripts/dev-container.sh [command]` runs a
+  command (a shell by default) in the dev container's image: one container per
+  checkout, kept running, with the checkout mounted at its host path so a git
+  worktree's `.git` resolves inside too, a `build/` volume of its own, and
+  sccache's and vcpkg's caches in volumes every checkout shares. No bootstrap
+  creates it; it is for a Linux build on a host that has its own. It bootstraps
+  `third_party/vcpkg/vcpkg` for Linux in the shared checkout, which a native
+  macOS build then cannot run: delete it and the next native configure
+  bootstraps it again.
+- **macOS (arm64, native, development only):** as on Linux, everything builds
+  and is checked on the host: `scripts/bootstrap.sh` (its macOS half,
+  `scripts/bootstrap/macos.sh`) installs the toolchain through Homebrew, and the
+  formatters, linters and CI tools Homebrew doesn't keep at CI's versions into
+  `~/.local/bin` from their releases, as `scripts/bootstrap/linux.sh` does into
+  `/usr/local/bin`, but without sudo, which a managed Mac may grant only for a
+  while; `~/.zprofile` puts that directory, and GNU make ahead of macOS's 3.81,
+  on PATH. The `pre-commit` and `pre-push` hooks run them on the host. The
+  `macos` and `macos-debug` presets build the client, the server and their tests
+  natively with Homebrew's LLVM 21 (`cmake/LlvmMacosToolchain.cmake`, ADR-0008),
+  never Apple's clang, for vcpkg's `arm64-osx` (`triplets/arm64-osx.cmake`). The
+  client renders on Mesa's KosmicKrisp, a conformant Vulkan over Metal (macOS
+  26, Apple silicon): the Renderer turns on the portability extensions a
+  Vulkan-on-Metal driver may need, and the window module opens Homebrew's Vulkan
+  loader, which GLFW does not find there by itself. PhysX and NVRHI come from
+  overlay ports (`ports/`) that add macOS to what vcpkg's support; PhysX builds
+  on the CPU alone. The Command Line Tools give the SDK, and Xcode is not
+  needed. No CI job builds it, so it breaks unnoticed; Aftermath and Nsight do
+  not exist there.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
   and their tests compile with `clang-cl` and links with `lld-link`, from the

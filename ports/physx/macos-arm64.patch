@@ -1,0 +1,216 @@
+diff --git a/physx/include/foundation/PxFPU.h b/physx/include/foundation/PxFPU.h
+--- a/physx/include/foundation/PxFPU.h
++++ b/physx/include/foundation/PxFPU.h
+@@ -85,7 +85,7 @@ PX_FOUNDATION_API void PxDisableFPExceptions();
+ 
+ #if PX_WINDOWS_FAMILY
+ #include "foundation/windows/PxWindowsFPU.h"
+-#elif (PX_LINUX && PX_SSE2) || PX_OSX
++#elif (PX_LINUX || PX_OSX) && PX_SSE2
+ #include "foundation/unix/PxUnixFPU.h"
+ #else
+ PX_INLINE physx::PxSIMDGuard::PxSIMDGuard(bool)
+diff --git a/physx/include/foundation/PxPreprocessor.h b/physx/include/foundation/PxPreprocessor.h
+--- a/physx/include/foundation/PxPreprocessor.h
++++ b/physx/include/foundation/PxPreprocessor.h
+@@ -519,7 +519,7 @@ protected:                  \
+ //#define DISABLE_CUDA_PHYSX
+ #ifndef DISABLE_CUDA_PHYSX
+ 	//CUDA is currently supported on x86_64 windows and linux, and ARM_64 linux
+-	#define PX_SUPPORT_GPU_PHYSX ((PX_X64 && (PX_WINDOWS_FAMILY || PX_LINUX)) || (PX_A64 && PX_LINUX))
++	#define PX_SUPPORT_GPU_PHYSX ((PX_X64 && (PX_WINDOWS_FAMILY || PX_LINUX)) || (PX_A64 && (PX_LINUX || PX_OSX)))
+ #else
+ 	#define PX_SUPPORT_GPU_PHYSX 0
+ #endif
+diff --git a/physx/include/foundation/PxSIMDHelpers.h b/physx/include/foundation/PxSIMDHelpers.h
+--- a/physx/include/foundation/PxSIMDHelpers.h
++++ b/physx/include/foundation/PxSIMDHelpers.h
+@@ -48,7 +48,7 @@ namespace physx
+ 			const QuatV qV = V4LoadU(&q.x);
+ 			Vec3V column0V, column1V, column2V;
+ 			QuatGetMat33V(qV, column0V, column1V, column2V);
+-#if defined(PX_SIMD_DISABLED) || (PX_LINUX && (PX_ARM || PX_A64))
++#if defined(PX_SIMD_DISABLED) || ((PX_LINUX || PX_OSX) && (PX_ARM || PX_A64))
+ 			V3StoreU(column0V, column0);
+ 			V3StoreU(column1V, column1);
+ 			V3StoreU(column2V, column2);
+diff --git a/physx/source/foundation/FdTempAllocator.cpp b/physx/source/foundation/FdTempAllocator.cpp
+--- a/physx/source/foundation/FdTempAllocator.cpp
++++ b/physx/source/foundation/FdTempAllocator.cpp
+@@ -64,7 +64,7 @@ void* PxTempAllocator::allocate(size_t size, const char* filename, PxI32 line)
+ 	if(!size)
+ 		return 0;
+ 
+-	PxU32 index = PxMax(PxHighestSetBit(PxU32(size) + sizeof(Chunk) - 1), sMinIndex);
++	PxU32 index = PxMax(PxHighestSetBit(PxU64(PxU32(size) + sizeof(Chunk) - 1)), sMinIndex);
+ 
+ 	Chunk* chunk = 0;
+ 	if(index < sMaxIndex)
+diff --git a/physx/source/foundation/unix/FdUnixFPU.cpp b/physx/source/foundation/unix/FdUnixFPU.cpp
+--- a/physx/source/foundation/unix/FdUnixFPU.cpp
++++ b/physx/source/foundation/unix/FdUnixFPU.cpp
+@@ -32,7 +32,7 @@
+ PX_COMPILE_TIME_ASSERT(8 * sizeof(uint32_t) >= sizeof(fenv_t));
+ #endif
+ 
+-#if PX_OSX
++#if PX_OSX && PX_SSE2
+ // osx defines SIMD as standard for floating point operations.
+ #include <xmmintrin.h>
+ #endif
+@@ -41,7 +41,7 @@ physx::PxFPUGuard::PxFPUGuard()
+ {
+ #if defined(__CYGWIN__)
+ #pragma message "FPUGuard::FPUGuard() is not implemented"
+-#elif PX_OSX
++#elif PX_OSX && PX_SSE2
+ 	mControlWords[0] = _mm_getcsr();
+ 	// set default (disable exceptions: _MM_MASK_MASK) and FTZ (_MM_FLUSH_ZERO_ON), DAZ (_MM_DENORMALS_ZERO_ON: (1<<6))
+ 	_mm_setcsr(_MM_MASK_MASK | _MM_FLUSH_ZERO_ON | (1 << 6));
+@@ -66,7 +66,7 @@ physx::PxFPUGuard::~PxFPUGuard()
+ {
+ #if defined(__CYGWIN__)
+ #pragma message "PxFPUGuard::~PxFPUGuard() is not implemented"
+-#elif PX_OSX
++#elif PX_OSX && PX_SSE2
+ 	// restore control word and clear exception flags
+ 	// (setting exception state flags cause exceptions on the first following fp operation)
+ 	_mm_setcsr(mControlWords[0] & ~_MM_EXCEPT_MASK);
+@@ -82,7 +82,7 @@ PX_FOUNDATION_API void physx::PxEnableFPExceptions()
+ #if PX_LINUX && !defined(__EMSCRIPTEN__)
+ 	feclearexcept(FE_ALL_EXCEPT);
+ 	feenableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
+-#elif PX_OSX
++#elif PX_OSX && PX_SSE2
+ 	// clear any pending exceptions
+ 	// (setting exception state flags cause exceptions on the first following fp operation)
+ 	uint32_t control = _mm_getcsr() & ~_MM_EXCEPT_MASK;
+@@ -98,7 +98,7 @@ PX_FOUNDATION_API void physx::PxDisableFPExceptions()
+ {
+ #if PX_LINUX && !defined(__EMSCRIPTEN__)
+ 	fedisableexcept(FE_ALL_EXCEPT);
+-#elif PX_OSX
++#elif PX_OSX && PX_SSE2
+ 	// clear any pending exceptions
+ 	// (setting exception state flags cause exceptions on the first following fp operation)
+ 	uint32_t control = _mm_getcsr() & ~_MM_EXCEPT_MASK;
+diff --git a/physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp b/physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp
+--- a/physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp
++++ b/physx/source/physx/src/gpu/PxPhysXGpuModuleLoader.cpp
+@@ -237,7 +237,15 @@ namespace physx
+ 		}
+ 	}
+ 
+-#endif // PX_LINUX
++#elif PX_OSX
++
++	// No PhysXGpu exists for macOS: the functions stay null, and PhysX runs on
++	// the CPU alone.
++	void PxLoadPhysxGPUModule(const char*)
++	{
++	}
++
++#endif // PX_OSX
+ 
+ } // end physx namespace
+ 
+diff --git a/physx/source/physx/src/omnipvd/NpOmniPvd.cpp b/physx/source/physx/src/omnipvd/NpOmniPvd.cpp
+--- a/physx/source/physx/src/omnipvd/NpOmniPvd.cpp
++++ b/physx/source/physx/src/omnipvd/NpOmniPvd.cpp
+@@ -123,6 +123,8 @@ namespace physx
+ 		bool success;
+ #if PX_WIN64
+ 		success = mLoader->loadOmniPvd("PVDRuntime_64.dll");
++#elif PX_OSX
++		success = mLoader->loadOmniPvd("libPVDRuntime_64.dylib");
+ #else
+ 		success = mLoader->loadOmniPvd("libPVDRuntime_64.so");
+ #endif
+diff --git a/physx/source/physxextensions/src/serialization/SnSerialUtils.cpp b/physx/source/physxextensions/src/serialization/SnSerialUtils.cpp
+--- a/physx/source/physxextensions/src/serialization/SnSerialUtils.cpp
++++ b/physx/source/physxextensions/src/serialization/SnSerialUtils.cpp
+@@ -38,7 +38,7 @@ using namespace physx;
+ namespace
+ {
+ 
+-#define SN_NUM_BINARY_PLATFORMS 9
++#define SN_NUM_BINARY_PLATFORMS 10
+ const PxU32 sBinaryPlatformTags[SN_NUM_BINARY_PLATFORMS] =
+ {
+ 	PX_MAKE_FOURCC('W','_','3','2'),
+@@ -49,7 +49,8 @@ const PxU32 sBinaryPlatformTags[SN_NUM_BINARY_PLATFORMS] =
+ 	PX_MAKE_FOURCC('M','_','6','4'),
+ 	PX_MAKE_FOURCC('N','X','3','2'),
+ 	PX_MAKE_FOURCC('N','X','6','4'),
+-	PX_MAKE_FOURCC('L','A','6','4')
++	PX_MAKE_FOURCC('L','A','6','4'),
++	PX_MAKE_FOURCC('M','A','6','4')
+ };
+ 
+ const char* sBinaryPlatformNames[SN_NUM_BINARY_PLATFORMS] =
+@@ -62,7 +63,8 @@ const char* sBinaryPlatformNames[SN_NUM_BINARY_PLATFORMS] =
+ 	"mac64",
+ 	"switch32",
+ 	"switch64",
+-	"linuxaarch64"
++	"linuxaarch64",
++	"macaarch64"
+ };
+ 
+ }
+@@ -89,6 +91,8 @@ PxU32 getBinaryPlatformTag()
+ 	return sBinaryPlatformTags[7];
+ #elif PX_LINUX && PX_A64
+ 	return sBinaryPlatformTags[8];
++#elif PX_OSX && PX_A64
++	return sBinaryPlatformTags[9];
+ #else
+ 	#error Unknown binary platform
+ #endif
+--- a/physx/pvdruntime/include/OmniPvdLoader.h
++++ b/physx/pvdruntime/include/OmniPvdLoader.h
+@@ -37,7 +37,7 @@
+ 	#ifndef _WINDOWS_ // windows already included otherwise
+ 		#include <foundation/windows/PxWindowsInclude.h>
+ 	#endif
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 	#include <dlfcn.h>
+ #endif
+ 
+@@ -96,7 +96,7 @@
+ 
+ #ifdef OMNI_PVD_WIN
+ 	mLibraryHandle = LoadLibraryA(libFile);
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 	mLibraryHandle = dlopen(libFile, RTLD_NOW);
+ #endif
+ 
+@@ -117,7 +117,7 @@
+ 
+ 		mCreateOmniPvdMemoryStream = (createOmniPvdMemoryStreamFp)GetProcAddress((HINSTANCE)mLibraryHandle, "createOmniPvdMemoryStream");
+ 		mDestroyOmniPvdMemoryStream = (destroyOmniPvdMemoryStreamFp)GetProcAddress((HINSTANCE)mLibraryHandle, "destroyOmniPvdMemoryStream");
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 		mCreateOmniPvdWriter = (createOmniPvdWriterFp)dlsym(mLibraryHandle, "createOmniPvdWriter");
+ 		mDestroyOmniPvdWriter = (destroyOmniPvdWriterFp)dlsym(mLibraryHandle, "destroyOmniPvdWriter");
+ 
+@@ -149,7 +149,7 @@
+ 		{
+ #ifdef OMNI_PVD_WIN
+ 			FreeLibrary((HINSTANCE)mLibraryHandle);
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 			dlclose(mLibraryHandle);
+ #endif		
+ 			mLibraryHandle = 0;
+@@ -168,7 +168,7 @@
+ 	{
+ #ifdef OMNI_PVD_WIN
+ 		FreeLibrary((HINSTANCE)mLibraryHandle);
+-#elif defined(__linux__)
++#elif defined(__linux__) || defined(__APPLE__)
+ 		dlclose(mLibraryHandle);
+ #endif		
+ 		mLibraryHandle = 0;

@@ -68,7 +68,7 @@ add_test(
 # (scripts/stage-client.sh, ADR-0058): the check itself, against a stand-in for
 # augustac's build, so it runs on every pull request although augustac's Linux
 # build does not.
-if(NOT WIN32)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_test(
     NAME augusta_stage_client_linux
     COMMAND
@@ -86,6 +86,6 @@ set_tests_properties(
   augusta_glue_boundary
   PROPERTIES LABELS check
 )
-if(NOT WIN32)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_tests_properties(augusta_stage_client_linux PROPERTIES LABELS check)
 endif()

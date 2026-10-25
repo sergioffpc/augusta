@@ -43,6 +43,9 @@ std::optional<std::size_t> ChooseDevice(std::span<const DeviceCandidate> candida
 
 std::vector<const char*> DeviceExtensions(bool gpu_crash_dumps, std::span<const std::string_view> available) {
   std::vector<const char*> extensions{kSwapchainExtension};
+  if (std::ranges::contains(available, std::string_view(kPortabilitySubsetExtension))) {
+    extensions.push_back(kPortabilitySubsetExtension);
+  }
   if (gpu_crash_dumps) {
     for (const char* aftermath : {kDiagnosticsConfigExtension, kDiagnosticCheckpointsExtension}) {
       if (std::ranges::contains(available, std::string_view(aftermath))) {

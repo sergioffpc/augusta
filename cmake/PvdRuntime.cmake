@@ -8,9 +8,12 @@ include_guard(GLOBAL)
 set(augusta_pvd_runtime "")
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND AUGUSTA_DEBUG_TOOLS)
   # Windows' dynamic triplet puts the DLL in bin, as every port's; the static
-  # Linux triplet puts the shared library in lib (ports/physx/portfile.cmake).
+  # Linux and macOS triplets put the shared library in lib
+  # (ports/physx/portfile.cmake).
   if(WIN32)
     set(augusta_pvd_runtime "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin/PVDRuntime_64.dll")
+  elseif(APPLE)
+    set(augusta_pvd_runtime "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/libPVDRuntime_64.dylib")
   else()
     set(augusta_pvd_runtime "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/libPVDRuntime_64.so")
   endif()
@@ -18,8 +21,9 @@ endif()
 set(AUGUSTA_PVD_RUNTIME "${augusta_pvd_runtime}" CACHE INTERNAL "OmniPVD's runtime library, empty when not staged")
 
 # Copies OmniPVD's runtime beside target, an executable whose physics can
-# record, after each build; does nothing where it is not staged. On Linux the
-# executable then finds it there ($ORIGIN), as PhysX opens it by name alone.
+# record, after each build; does nothing where it is not staged. On Linux and
+# macOS the executable then finds it there ($ORIGIN, @loader_path), as PhysX
+# opens it by name alone.
 function(augusta_stage_pvd_runtime target)
   if(NOT AUGUSTA_PVD_RUNTIME)
     return()
@@ -31,7 +35,9 @@ function(augusta_stage_pvd_runtime target)
     COMMENT "Staging OmniPVD's runtime beside ${target}"
     VERBATIM
   )
-  if(NOT WIN32)
+  if(APPLE)
+    set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "@loader_path")
+  elseif(NOT WIN32)
     set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "$ORIGIN")
   endif()
 endfunction()

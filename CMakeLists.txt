@@ -71,6 +71,17 @@ endif()
 project(augusta LANGUAGES CXX)
 augusta_require_server_platform()
 
+# clang is the one compiler the project builds with (ADR-0008): clang-cl on
+# Windows, LLVM's clang on Linux and macOS. Another - GCC, MSVC's cl, Apple's
+# clang - is refused here rather than built with by accident.
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  message(
+    FATAL_ERROR
+    "augusta builds with clang alone (ADR-0008), not ${CMAKE_CXX_COMPILER_ID}: "
+    "configure through a preset (cmake --preset ..., make), which names it."
+  )
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

@@ -68,7 +68,7 @@
 #include "augusta/tick.h"
 #include "augusta/version.h"
 #include "augusta/weapon.h"
-#include "connection_health.h"
+#include "metrics_connection_health.h"
 #include "scenario_fixture.h"
 
 // The seam the M3 tickets test through (issue #73): a real server host and a

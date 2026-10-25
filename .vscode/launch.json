@@ -1,30 +1,33 @@
 {
   "version": "0.2.0",
-  // Each config's preLaunchTask (tasks.json) builds only the executable it
-  // launches, from whichever CMake Tools preset is currently active (status
-  // bar / command palette) - switch to the matching preset
-  // (windows/windows-debug, linux/linux-debug) before F5-ing a given config,
-  // or the binary it launches may be stale.
+  // Each config's preLaunchTask (tasks.json) configures and builds only the
+  // executable it launches, from the preset its build type names on this OS
+  // (windows/windows-debug, linux/linux-debug, macos/macos-debug) - CMake
+  // Tools' active preset plays no part.
   //
-  // The (MSVC) configs start from config/augustac.yaml / config/augustad.yaml
+  // Every config starts from config/augustac.yaml / config/augustad.yaml
   // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
-  // hold this machine's paths. Create them before the first F5. The (lldb)
-  // configs pass none: they run on Linux, where those Windows paths don't exist.
+  // hold this machine's paths. Create them before the first F5.
   "configurations": [
     // The (lldb) configs below debug the Linux build of augustad (the real
-    // deployment target, ADR-0026) through LLVM's lldb-dap extension, which
-    // runs the lldb-dap on PATH - the dev container's, from the lldb package
-    // scripts/bootstrap.sh installs. For debugging augustad natively on
-    // Windows during dev, use the (MSVC) Server configs instead - augustad
-    // builds for both platforms (see the top-level CMakeLists.txt: src/server
-    // isn't WIN32-gated the way src/client and src/modules/renderer are).
+    // deployment target, ADR-0026) and of augustac through LLVM's lldb-dap
+    // extension, which runs the lldb-dap on PATH - the dev container's, from
+    // the lldb package scripts/bootstrap.sh installs. On macOS (their "osx"
+    // halves) they debug the macos presets' native build instead, with
+    // Homebrew's lldb-dap, which is off PATH (scripts/bootstrap/macos.sh). For
+    // debugging natively on Windows during dev, use the (MSVC) configs instead.
     {
       "name": "Debug Server - Release (lldb)",
       "type": "lldb-dap",
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "CMake: build augustad"
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
+      "preLaunchTask": "Build augustad (Release)",
+      "osx": {
+        "program": "${workspaceFolder}/build/arm64-macos/src/server/augustad",
+        "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
+      }
     },
     {
       "name": "Debug Server - Debug (lldb)",
@@ -32,7 +35,50 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux-debug/src/server/augustad",
       "cwd": "${workspaceFolder}",
-      "preLaunchTask": "CMake: build augustad"
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
+      "preLaunchTask": "Build augustad (Debug)",
+      "osx": {
+        "program": "${workspaceFolder}/build/arm64-macos-debug/src/server/augustad",
+        "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
+      }
+    },
+    {
+      "name": "Debug Client - Release (lldb)",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/x64-linux/src/client/augustac",
+      "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
+      "preLaunchTask": "Build augustac (Release)",
+      "osx": {
+        "program": "${workspaceFolder}/build/arm64-macos/src/client/augustac",
+        "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap"
+      }
+    },
+    {
+      "name": "Debug Client - Debug (lldb)",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/x64-linux-debug/src/client/augustac",
+      "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
+      "preLaunchTask": "Build augustac (Debug)",
+      // A Debug client runs under Vulkan's validation layer, vcpkg's
+      // (ADR-0059): the loader finds its manifest through VK_ADD_LAYER_PATH,
+      // and the manifest names the library alone, which the debug build's
+      // lib folder holds.
+      "env": {
+        "VK_ADD_LAYER_PATH": "${workspaceFolder}/build/x64-linux-debug/vcpkg_installed/x64-linux/share/vulkan/explicit_layer.d",
+        "LD_LIBRARY_PATH": "${workspaceFolder}/build/x64-linux-debug/vcpkg_installed/x64-linux/debug/lib"
+      },
+      "osx": {
+        "program": "${workspaceFolder}/build/arm64-macos-debug/src/client/augustac",
+        "debugAdapterExecutable": "/opt/homebrew/opt/lldb/bin/lldb-dap",
+        "env": {
+          "VK_ADD_LAYER_PATH": "${workspaceFolder}/build/arm64-macos-debug/vcpkg_installed/arm64-osx/share/vulkan/explicit_layer.d",
+          "DYLD_LIBRARY_PATH": "${workspaceFolder}/build/arm64-macos-debug/vcpkg_installed/arm64-osx/debug/lib"
+        }
+      }
     },
     {
       "name": "Debug Server - Release (MSVC)",
@@ -41,7 +87,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
-      "preLaunchTask": "CMake: build augustad",
+      "preLaunchTask": "Build augustad (Release)",
       "externalConsole": true
     },
     {
@@ -51,7 +97,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows-debug\\src\\server\\augustad.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
-      "preLaunchTask": "CMake: build augustad",
+      "preLaunchTask": "Build augustad (Debug)",
       "externalConsole": true
     },
     {
@@ -61,7 +107,7 @@
       "program": "${workspaceFolder}\\build\\x64-windows\\src\\client\\augustac.exe",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
-      "preLaunchTask": "CMake: build augustac",
+      "preLaunchTask": "Build augustac (Release)",
       "externalConsole": true
     },
     {
@@ -79,7 +125,7 @@
           "value": "${workspaceFolder}\\build\\x64-windows-debug\\vcpkg_installed\\x64-windows\\debug\\bin"
         }
       ],
-      "preLaunchTask": "CMake: build augustac",
+      "preLaunchTask": "Build augustac (Debug)",
       "externalConsole": true
     }
   ]

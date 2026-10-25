@@ -6,7 +6,9 @@ add_library(augusta_physics STATIC physics.cpp map.cpp)
 target_include_directories(augusta_physics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_physics PUBLIC augusta_assets augusta_math PRIVATE augusta_logging)
 
-if(MSVC)
+# lld's Mach-O port, like lld-link, resolves across the archives in any order,
+# and has no --start-group either.
+if(MSVC OR APPLE)
   target_link_libraries(augusta_physics PRIVATE unofficial::omniverse-physx-sdk::sdk)
 else()
   # PhysXCharacterKinematic and PhysXExtensions reference each other's
