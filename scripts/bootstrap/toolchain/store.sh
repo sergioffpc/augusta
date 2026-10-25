@@ -129,13 +129,18 @@ fill_store() {
 # Installs Prettier into a directory with npm ci, from package.json and its
 # lockfile, which it copies there: with the toolchain's Node, and npm's
 # download cache in the store, so a reinstall (another worktree, CI's cached
-# store) downloads nothing.
+# store) downloads nothing. The directory goes to npm by its physical path:
+# npm resolves a path through a symlink (macOS's /var, where mktemp puts its
+# directories, is /private/var's) and then takes the directory for a linked
+# package the lockfile lacks.
 # Arguments:
 #   The directory.
 npm_ci() {
-  cp "${PACKAGE}" "${LOCKFILE}" "$1/"
+  local dir
+  dir="$(cd "$1" && pwd -P)"
+  cp "${PACKAGE}" "${LOCKFILE}" "${dir}/"
   "${STORE}/node/${NODEJS_WHEEL_VERSION}/bin/npm" ci \
-    --prefix "$(native_path "$1")" \
+    --prefix "$(native_path "${dir}")" \
     --cache "$(native_path "${STORE}/npm-cache")" --prefer-offline \
     --ignore-scripts --no-audit --no-fund --no-update-notifier --loglevel=error
 }
