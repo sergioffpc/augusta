@@ -3,7 +3,7 @@
 # version scripts/bootstrap/versions.env pins, run from the checkout's
 # .toolchain/bin by the editor, the terminal, the hooks and CI.
 #
-# Usage: scripts/bootstrap/toolchain.sh install|check
+# Usage: scripts/bootstrap/toolchain.sh install|check|store|store-dir
 #
 # install puts each pinned version that is missing into the shared store,
 # ${XDG_CACHE_HOME:-~/.cache}/augusta/toolchain/<tool>/<version>/, once per
@@ -18,6 +18,10 @@
 # .toolchain/bin links or Prettier is not the pinned version (LLVM's: major) or
 # does not run, or when a path .vscode/settings.json names under .toolchain/
 # does not exist. It is what `make toolchain-check` runs.
+#
+# store fills the store alone, with no checkout: what the bootstrap's platform
+# step runs, and the dev container's image. store-dir prints the store's path,
+# which the bootstrap's uninstall removes.
 #
 # Beside the bootstrap scripts, not in the Makefile, as the dev container's
 # image build copies only scripts/.
@@ -443,38 +447,76 @@ link_llvm_tool() {
 # the store, so a reinstall (another worktree, CI's cached store) downloads
 # nothing.
 install_prettier() {
-  local npm="${STORE}/node/${NODEJS_WHEEL_VERSION}/bin/npm"
   cmp -s "${LOCKFILE}" "${INSTALLED_LOCKFILE}" && return
   echo "toolchain: installing Prettier from $(native_path "${LOCKFILE}")"
   cp "${PACKAGE}" "${LOCKFILE}" "${TOOLCHAIN}/"
-  "${npm}" ci --prefix "$(native_path "${TOOLCHAIN}")" \
-    --cache "$(native_path "${STORE}/npm-cache")" --prefer-offline \
-    --ignore-scripts --no-audit --no-fund --no-update-notifier --loglevel=error
+  npm_ci "${TOOLCHAIN}"
   # Last, so an install cut short is redone.
   cp "${LOCKFILE}" "${INSTALLED_LOCKFILE}"
 }
 
-install() {
-  local tool file name linked=() platform=linux
-  mkdir -p "${TOOLCHAIN}/bin"
-  # The platform's release downloads, toolchain_release.
+# Runs npm ci in a directory holding package.json and its lockfile, with the
+# toolchain's Node and npm's download cache in the store.
+# Arguments:
+#   The directory.
+npm_ci() {
+  "${STORE}/node/${NODEJS_WHEEL_VERSION}/bin/npm" ci \
+    --prefix "$(native_path "$1")" \
+    --cache "$(native_path "${STORE}/npm-cache")" --prefer-offline \
+    --ignore-scripts --no-audit --no-fund --no-update-notifier --loglevel=error
+}
+
+# Sets the global platform (linux, macos or windows) and sources its bootstrap
+# script, for its release downloads, toolchain_release.
+load_platform() {
+  platform=linux
   case "$(uname -s)" in
     Darwin) platform=macos ;;
     MINGW* | MSYS* | CYGWIN*) platform=windows ;;
   esac
   # shellcheck source=/dev/null
   . "${SCRIPT_DIR}/${platform}.sh"
+}
+
+# Installs each pinned version the store lacks: a tool with no release for this
+# platform is the system's, which install links.
+fill_store() {
+  local tool
   for tool in "${TOOLS[@]}"; do
     describe_tool "${tool}"
-    if [[ "${source}" = release ]]; then
-      if ! toolchain_release "${tool}"; then
-        link_system "${tool}"
-        linked+=("${command}")
-        continue
-      fi
-      install_release "${tool}"
-    else
+    if [[ "${source}" = uv ]]; then
       install_tool "${tool}"
+    elif toolchain_release "${tool}"; then
+      install_release "${tool}"
+    fi
+  done
+}
+
+# Fills the store alone, outside any checkout: the bootstrap's platform step,
+# once per machine, and the dev container's image, so that a checkout's
+# `make toolchain` then only links. npm's download cache takes Prettier's
+# packages, which npm ci then installs into each checkout without a download.
+store() {
+  local scratch
+  load_platform
+  fill_store
+  scratch="$(mktemp -d)"
+  cp "${PACKAGE}" "${LOCKFILE}" "${scratch}/"
+  npm_ci "${scratch}"
+  rm -rf "${scratch}"
+}
+
+install() {
+  local tool file name linked=()
+  mkdir -p "${TOOLCHAIN}/bin"
+  load_platform
+  fill_store
+  for tool in "${TOOLS[@]}"; do
+    describe_tool "${tool}"
+    if [[ "${source}" = release ]] && ! toolchain_release "${tool}"; then
+      link_system "${tool}"
+      linked+=("${command}")
+      continue
     fi
     for file in "${STORE}/${tool}/${version}/bin/${command}"{,.exe}; do
       [[ -e "${file}" ]] || continue
@@ -650,8 +692,10 @@ main() {
   case "${1:-}" in
     install) install ;;
     check) check ;;
+    store) store ;;
+    store-dir) echo "${STORE}" ;;
     *)
-      echo "usage: $0 install|check" >&2
+      echo "usage: $0 install|check|store|store-dir" >&2
       exit 2
       ;;
   esac

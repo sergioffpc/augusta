@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # The Linux/server half of scripts/bootstrap.sh (sourced by it), on Ubuntu
 # 26.04, CI's runner release, whose distro clang/clang-tidy/clang-format fix
-# CI's LLVM major. .devcontainer's image hashes this file and bootstrap.sh
-# (scripts/dev-container.sh), so a Windows-only change doesn't rebuild it.
+# CI's LLVM major. .devcontainer's image hashes this file, bootstrap.sh and the
+# toolchain's (scripts/dev-container.sh), so a Windows-only change doesn't
+# rebuild it.
 
 # Runs its arguments as root: directly when already root (an image build),
 # through sudo otherwise.
@@ -14,12 +15,13 @@ as_root() {
   fi
 }
 
-# Where uv keeps ctcache's tool environment and the Python it fetches, for
-# every user.
+# Where an earlier bootstrap had uv keep ctcache's tool environment and the
+# Python it fetched, for every user, before the toolchain's store took it: its
+# manifest's uv-tool and dir entries still name them.
 readonly UV_SHARED=/usr/local/share/uv
 
-# Runs uv as root on the shared tool directory. uv by its path, which sudo's
-# own PATH may lack.
+# Runs uv as root on the shared tool directory, to undo an earlier bootstrap's
+# uv-tool entry. uv by its path, which sudo's own PATH may lack.
 uv_shared() {
   as_root env UV_TOOL_DIR="${UV_SHARED}/tools" UV_TOOL_BIN_DIR=/usr/local/bin \
     UV_PYTHON_INSTALL_DIR="${UV_SHARED}/python" "$(command -v uv)" "$@"
@@ -250,7 +252,7 @@ toolchain_release() {
   esac
 }
 
-install_toolchain() {
+install_platform() {
   # shellcheck source=/dev/null
   . /etc/os-release
   if [[ "${ID}" != ubuntu || "${VERSION_ID}" != 26.04 ]]; then
@@ -358,14 +360,6 @@ install_toolchain() {
     curl -LsSf https://astral.sh/uv/install.sh \
       | as_root env UV_UNMANAGED_INSTALL=/usr/local/bin sh
   fi
-  # ctcache (scripts/bootstrap.sh) for every user, the dev container's too: its
-  # tool environment and the Python uv may fetch for it under /usr/local, not
-  # root's home. uv by its path, which sudo's own PATH may lack.
-  [[ -e "${UV_SHARED}" ]] || manifest_add dir "${UV_SHARED}"
-  if ! uv_shared tool list 2>/dev/null | grep -q '^ctcache '; then
-    manifest_add uv-tool ctcache
-  fi
-  uv_shared tool install "${CTCACHE_PACKAGE}"
 
   # kubectl and helm, for the server's k3s cluster and its chart
   # (charts/augustad): each one's latest stable release, which Ubuntu doesn't

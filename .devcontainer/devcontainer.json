@@ -26,7 +26,10 @@
     "source=augusta-sccache,target=/home/ubuntu/.cache/sccache,type=volume",
     // The build trees, one volume per container: a host build of the same
     // checkout keeps its own build/, whose CMake caches name other paths.
-    "source=augusta-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume"
+    "source=augusta-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume",
+    // The toolchain's links, one volume per container likewise: the host's
+    // .toolchain/ links into its own store, at another path, for another OS.
+    "source=augusta-toolchain-${devcontainerId},target=${containerWorkspaceFolder}/.toolchain,type=volume"
   ],
   // augustad's default listen port (config/augustad.example.yaml), published
   // on the host so a native Windows augustac reaches it at 127.0.0.1:27015.

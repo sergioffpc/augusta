@@ -6,12 +6,8 @@
 # host, at CI's versions. macOS's /bin/bash is 3.2, which runs this.
 #
 # Without sudo, which a managed Mac may grant only for a while: Homebrew's
-# installs are the user's, and the tools it doesn't keep go in the user's
-# ~/.local/bin, where uv puts its own.
-
-# The user's bin directory: the release tools, ctcache (uv's tool bin
-# directory), and links to LLVM 21's clang-format and clang-tidy.
-readonly LOCAL_BIN="${HOME}/.local/bin"
+# installs are the user's, and the toolchain's store (scripts/bootstrap.sh) is
+# in the user's cache.
 
 # The login shells' profile, zsh's (macOS's default shell), which takes the
 # PATH entries the bootstrap adds.
@@ -73,18 +69,6 @@ require_uninstall_rights() {
   :
 }
 
-# Records each of a directory's files that does not exist yet, before the
-# install that writes it.
-# Arguments:
-#   The directory, then the files' names.
-record_new_files() {
-  local dir="$1" name
-  shift
-  for name in "$@"; do
-    [[ -e "${dir}/${name}" ]] || manifest_add file "${dir}/${name}"
-  done
-}
-
 # Installs Homebrew formulae, recording those that were not installed.
 # Arguments:
 #   The formulae.
@@ -95,14 +79,6 @@ brew_install() {
       || manifest_add brew "${formula}"
   done
   brew install "$@"
-}
-
-# Links a command into the user's bin directory.
-# Arguments:
-#   The command's name there, the file it links to.
-link_command() {
-  record_new_files "${LOCAL_BIN}" "$1"
-  ln -sf "$2" "${LOCAL_BIN}/$1"
 }
 
 # Prints the container engine scripts/dev-container.sh takes.
@@ -252,7 +228,7 @@ toolchain_release() {
   esac
 }
 
-install_toolchain() {
+install_platform() {
   if [[ "$(uname -m)" != arm64 ]]; then
     echo "bootstrap: macOS builds on Apple silicon alone (the macos presets)." >&2
     exit 1
@@ -293,32 +269,18 @@ install_toolchain() {
     helm jq kubernetes-cli libtool lld@21 lldb llvm@21 luacheck make mesa \
     ninja pkg-config podman sccache uv vulkan-loader wireshark
 
-  # The user's bin directory on PATH, after the rest; and GNU make ahead of
-  # macOS's 3.81 in /usr/bin, by the directory Homebrew keeps it in under its
-  # usual name, as its formula says. Single quotes: the profile expands them.
-  local brew_prefix
-  brew_prefix="$(brew --prefix)"
-  [[ -e "${LOCAL_BIN}" ]] || manifest_add dir "${LOCAL_BIN}"
-  mkdir -p "${LOCAL_BIN}"
-  # shellcheck disable=SC2016 # expanded by the profile
-  add_to_profile 'export PATH="${PATH}:${HOME}/.local/bin"'
-  add_to_profile "export PATH=\"${brew_prefix}/opt/make/libexec/gnubin:\${PATH}\""
-
-  # LLVM 21 is keg-only, off PATH: its clang-format and clang-tidy by the names
-  # the hooks and the Makefile call.
-  link_command clang-format "${brew_prefix}/opt/llvm@21/bin/clang-format"
-  link_command clang-tidy "${brew_prefix}/opt/llvm@21/bin/clang-tidy"
-
-  # ctcache (scripts/bootstrap.sh), in uv's tool bin directory, the same.
-  uv tool list 2>/dev/null | grep -q '^ctcache ' || manifest_add uv-tool ctcache
-  uv tool install "${CTCACHE_PACKAGE}"
+  # GNU make ahead of macOS's 3.81 in /usr/bin, by the directory Homebrew keeps
+  # it in under its usual name, as its formula says. LLVM 21 is keg-only, off
+  # PATH: `make toolchain` links its clangd, clang-format and clang-tidy into
+  # .toolchain/bin.
+  add_to_profile "export PATH=\"$(brew --prefix)/opt/make/libexec/gnubin:\${PATH}\""
 
   start_podman_machine
 
   # A tool missing here fails loud now, not at the first commit or push.
   hash -r
-  require_commands cmake ninja make git git-lfs sccache uv clang-format \
-    clang-tidy clang-tidy-cache doxygen luacheck kubectl helm jq podman tshark
+  require_commands cmake ninja make git git-lfs sccache uv doxygen luacheck \
+    kubectl helm jq podman tshark
 }
 
 # The submodules every build uses, as scripts/bootstrap/linux.sh's.

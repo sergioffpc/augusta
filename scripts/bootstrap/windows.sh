@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # The Windows client half of scripts/bootstrap.sh (sourced by it), run in Git
 # Bash as Administrator: VS Build Tools system-wide (default install location,
-# no --installPath) plus the rest of the client toolchain, winget-driven.
+# no --installPath) plus the rest of the client's system packages,
+# winget-driven.
 
 # Prints a Windows environment variable's directory as a Git Bash path. Through
 # cmd, which reads the names case-insensitively, as Windows does: Git Bash
@@ -276,18 +277,6 @@ start_podman_machine() {
   fi
 }
 
-# Installs ctcache (scripts/bootstrap.sh) in uv's user tool directory, which
-# winget's uv leaves off PATH: added to the User PATH, and to this process's
-# for the checks after it.
-install_ctcache() {
-  local bin
-  uv tool list 2>/dev/null | grep -q '^ctcache ' || manifest_add uv-tool ctcache
-  uv tool install "${CTCACHE_PACKAGE}"
-  bin="$(uv tool dir --bin | tr -d '\r')"
-  add_to_path User "${bin}"
-  PATH="${PATH}:$(cygpath -u "${bin}")"
-}
-
 # Adds Visual Studio components to the latest Build Tools install that lacks
 # any of them: winget_install skips an existing install, so a component added
 # here after a machine was bootstrapped would otherwise never reach it.
@@ -327,7 +316,7 @@ add_build_tools_components() {
   fi
 }
 
-install_toolchain() {
+install_platform() {
   require_administrator
 
   # ATL: vcpkg's llvm port, which Mesa's lavapipe (the renderer smoke test's
@@ -397,7 +386,6 @@ install_toolchain() {
   done
 
   refresh_path
-  install_ctcache
   start_podman_machine
 
   # A silently-missing tool here doesn't fail loud until much later - e.g.
@@ -405,8 +393,7 @@ install_toolchain() {
   # on PATH - skipping" at commit time, which is easy to miss and leaves every
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
-    clang-format clang-tidy clang-tidy-cache doxygen kubectl helm jq podman \
-    tshark
+    clang-format clang-tidy doxygen kubectl helm jq podman tshark
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
