@@ -37,6 +37,8 @@ readonly VCPKG_CACHE="${HOME_IN}/.cache/augusta-vcpkg"
 # whose change rebuilds it.
 readonly IMAGE_FILES=(.devcontainer/Dockerfile scripts/bootstrap.sh
   scripts/bootstrap/linux.sh scripts/bootstrap/toolchain.sh
+  scripts/bootstrap/toolchain/check.sh scripts/bootstrap/toolchain/link.sh
+  scripts/bootstrap/toolchain/store.sh scripts/bootstrap/toolchain/tools.sh
   scripts/bootstrap/versions.env scripts/bootstrap/package.json
   scripts/bootstrap/package-lock.json)
 

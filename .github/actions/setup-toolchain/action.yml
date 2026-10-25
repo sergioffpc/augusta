@@ -5,8 +5,8 @@ description: >
   pins and installs Prettier from scripts/bootstrap/package-lock.json,
   `make toolchain-check` fails the job when one differs, and .toolchain/bin
   goes on PATH for the later steps. The store, npm's download cache among it,
-  is cached on the hash of the versions, of the lockfile and of the script that
-  installs them, so only a bump installs. Run it after uv's setup.
+  is cached on the hash of the versions, of the lockfile and of the scripts
+  that install them, so only a bump installs. Run it after uv's setup.
 runs:
   using: composite
   steps:
@@ -42,7 +42,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/augusta/toolchain
-        key: toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap/versions.env', 'scripts/bootstrap/package-lock.json', 'scripts/bootstrap/toolchain.sh') }}
+        key: toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap/versions.env', 'scripts/bootstrap/package-lock.json', 'scripts/bootstrap/toolchain.sh', 'scripts/bootstrap/toolchain/*.sh') }}
     - name: Make and check the toolchain
       shell: bash
       run: |

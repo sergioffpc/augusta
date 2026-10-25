@@ -73,7 +73,7 @@ jobs:
           # The toolchain the jobs run their tools from: its pins, what
           # installs them, Prettier's lockfile, Linux's release checksums, and
           # the action.
-          toolchain='scripts/bootstrap/(versions\.env|package-lock\.json|toolchain\.sh|linux\.sh)$|\.github/actions/setup-toolchain/'
+          toolchain='scripts/bootstrap/(versions\.env|package-lock\.json|toolchain\.sh|toolchain/.*|linux\.sh)$|\.github/actions/setup-toolchain/'
           # The server and what builds its image.
           server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
