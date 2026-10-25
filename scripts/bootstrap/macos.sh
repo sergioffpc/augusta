@@ -262,9 +262,10 @@ install_platform() {
   # sccache, which the root CMakeLists.txt picks up from PATH; pkg-config and
   # autotools for the vcpkg ports that build with them. Git LFS (pre-push),
   # which Apple's git has none of, and LuaRocks, which builds the toolchain's
-  # luacheck, as luacheck has no macOS release. uv, for yamllint and the rest uv
-  # runs. doxygen: `make docs`. gh: for development. jq: with the toolchain's
-  # cosign, the release runbook's wait on a signed image
+  # luacheck, as luacheck has no macOS release (for the toolchain's own Lua 5.4,
+  # not Homebrew's 5.5, which it does not load on). uv, for yamllint and the
+  # rest uv runs. doxygen: `make docs`. gh: for development. jq: with the
+  # toolchain's cosign, the release runbook's wait on a signed image
   # (docs/runbooks/cut-release.md). kubectl and helm, for the server's k3s
   # cluster and its chart (charts/augustad). Podman: the container engine, for
   # the server image. Wireshark's tshark: the Wireshark dissector's test

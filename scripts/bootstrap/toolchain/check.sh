@@ -53,6 +53,18 @@ fail() {
   failures+=("$*")
 }
 
+# Records a probe that failed to run, with its exit status and the first line
+# it printed, which says why.
+# Globals:
+#   status, contents: the probe's, from read_probe.
+# Arguments:
+#   What failed to run.
+fail_to_run() {
+  local line
+  line="$(head -n 1 <<<"${contents}")"
+  fail "$1 does not run (exit ${status})${line:+, it prints: ${line}}"
+}
+
 # Checks each tool .toolchain/bin links: that install linked its pinned
 # version, and that the tool runs and prints it. Each a line between newlines,
 # matched whole, without forking: a fork per tool would cost the hook seconds
@@ -69,7 +81,7 @@ check_tools() {
       fail "${tool}: .toolchain/bin links another version than" \
         "${version_name}=${version}"
     elif [[ "${status}" != 0 ]]; then
-      fail "${tool}: .toolchain/bin/${command} does not run"
+      fail_to_run "${tool}: .toolchain/bin/${command}"
     elif [[ -n "${expected}" &&
       "${output}" != *$'\n'"${expected}"[$'\n'\ ]* ]]; then
       fail "${tool}: .toolchain/bin/${command} is not ${version}, it prints:" \
@@ -93,7 +105,7 @@ check_llvm_tools() {
       fail "${tool}: .toolchain/bin/${tool} does not exist: install LLVM" \
         "${LLVM_MAJOR}'s, then run make toolchain"
     elif [[ "${status}" != 0 ]]; then
-      fail "${tool}: .toolchain/bin/${tool} does not run"
+      fail_to_run "${tool}: .toolchain/bin/${tool}"
     elif [[ "${major}" != "${LLVM_MAJOR}" ]]; then
       fail "${tool}: .toolchain/bin/${tool}" \
         "($(readlink -f "${TOOLCHAIN}/bin/${tool}")) is not LLVM" \
@@ -119,7 +131,7 @@ check_prettier() {
   fi
   read_probe prettier
   if [[ "${status}" != 0 ]]; then
-    fail "prettier: ${PRETTIER#"${ROOT}/"} does not run"
+    fail_to_run "prettier: ${PRETTIER#"${ROOT}/"}"
   elif [[ $'\n'"${contents}" != *$'\n'"${pin}"$'\n'* ]]; then
     fail "prettier: ${PRETTIER#"${ROOT}/"} is not ${pin}, it prints:" \
       "$(head -n 1 <<<"${contents}")"

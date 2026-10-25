@@ -78,10 +78,36 @@ install_release() {
   rm -f "${asset}"
 }
 
+# Builds the pinned Lua from lua.org's source into a directory, for a rock to
+# be built for and run on: the system's Lua may be one the rock does not load
+# on (Homebrew's is 5.5).
+# Arguments:
+#   The directory.
+install_lua() {
+  local src_dir="$1/lua-${LUA_VERSION}" target=linux
+  local tarball="${src_dir}.tar.gz"
+  if [[ "${PLATFORM}" = macos ]]; then
+    target=macosx
+  fi
+  curl --proto '=https' --tlsv1.2 -fsSLo "${tarball}" \
+    "https://www.lua.org/ftp/lua-${LUA_VERSION}.tar.gz"
+  if ! sha256_matches "${LUA_SHA256}" "${tarball}"; then
+    echo "toolchain: SHA-256 mismatch for lua-${LUA_VERSION}.tar.gz" >&2
+    rm -rf "$1"
+    exit 1
+  fi
+  tar -xzf - -C "$1" <"${tarball}"
+  make -C "${src_dir}" --no-print-directory "${target}" CC=clang >/dev/null
+  make -C "${src_dir}" --no-print-directory install INSTALL_TOP="$1/lua" \
+    >/dev/null
+  rm -rf "${src_dir}" "${tarball}"
+}
+
 # Builds the described tool from its LuaRocks rock into a directory of the
 # store: luacheck, whose release has no build for macOS or Linux arm64. With
-# the system's LuaRocks and its Lua, which the bootstrap installs, and clang
-# for the C modules of the rock's dependencies.
+# the system's LuaRocks, for the pinned Lua built into the directory, whose
+# interpreter the rock's command then runs on, and clang for the C modules of
+# the rock's dependencies.
 # Globals:
 #   rock, command, version (describe_tool's).
 # Arguments:
@@ -97,8 +123,9 @@ install_rock() {
       "scripts/bootstrap.sh platform." >&2
     exit 1
   fi
-  luarocks --tree "$1" install "${rock}" "${version}" CC=clang LD=clang \
-    >/dev/null
+  install_lua "$1"
+  luarocks --lua-dir "$1/lua" --lua-version "${LUA_VERSION%.*}" --tree "$1" \
+    install "${rock}" "${version}" CC=clang LD=clang >/dev/null
 }
 
 # Installs each pinned version the store lacks into its <tool>/<version>/,
