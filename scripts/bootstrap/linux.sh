@@ -352,8 +352,9 @@ install_platform() {
     manifest_add apt "${new_packages[@]}"
   fi
 
-  # uv, which installs the toolchain's PyPI tools (scripts/bootstrap/toolchain.sh)
-  # and runs the rest, at its latest release: what it runs is pinned.
+  # uv, which installs the toolchain's PyPI tools
+  # (scripts/bootstrap/toolchain.sh) and runs the rest, at its latest release:
+  # what it runs is pinned.
   if ! command -v uv >/dev/null 2>&1; then
     record_new_files /usr/local/bin uv uvx
     curl -LsSf https://astral.sh/uv/install.sh \

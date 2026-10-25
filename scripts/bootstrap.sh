@@ -20,8 +20,8 @@
 # uninstall undoes them: the checkout step's readying (.toolchain/, vcpkg's tool
 # and binary cache, the hooks, the submodules; never the repository's files),
 # and what the platform step installed that was not there before, the store
-# among it, as its manifest records it, newest first. A machine bootstrapped before the manifest has
-# none: what it installed then stays.
+# among it, as its manifest records it, newest first. A machine bootstrapped
+# before the manifest has none: what it installed then stays.
 set -euo pipefail
 
 readonly REPOSITORY=https://github.com/sergioffpc/augusta.git

@@ -6,8 +6,8 @@
 # host, at CI's versions. macOS's /bin/bash is 3.2, which runs this.
 #
 # Without sudo, which a managed Mac may grant only for a while: Homebrew's
-# installs are the user's, and the toolchain's store (scripts/bootstrap.sh) is
-# in the user's cache.
+# installs are the user's, and the toolchain's store
+# (scripts/bootstrap/toolchain.sh) is in the user's cache.
 
 # The login shells' profile, zsh's (macOS's default shell), which takes the
 # PATH entries the bootstrap adds.
@@ -246,24 +246,25 @@ install_platform() {
     exit 1
   fi
 
-  # As scripts/bootstrap/linux.sh's apt packages, from Homebrew. LLVM 21 and
-  # its lld, CI's (ADR-0008): the compiler and linker (the macos presets,
-  # cmake/LlvmMacosToolchain.cmake), and clang-format and clang-tidy, which
-  # the hooks run, so they format and lint as CI's do. LLVM's lldb, which
-  # llvm@21 leaves out, for the (lldb) launch configs (.vscode). CMake and
-  # Ninja, as the presets build with; GNU make 4, the Makefile's (macOS's own
-  # is 3.81); sccache, which the root CMakeLists.txt picks up from PATH;
-  # pkg-config and autotools for the vcpkg ports that build with them. Git LFS
-  # (pre-push), which Apple's git has none of, and LuaRocks, which builds the
-  # toolchain's luacheck, as luacheck has no macOS release. uv, for yamllint and the rest uv runs. doxygen: `make
-  # docs`. gh: for development. jq: with the toolchain's cosign, the release
-  # runbook's wait on a signed image (docs/runbooks/cut-release.md). kubectl
-  # and helm, for the server's k3s cluster and its chart (charts/augustad).
-  # Podman: the container engine, for the server image. Wireshark's tshark: the Wireshark dissector's
-  # test (tools/wireshark). The client's: the Vulkan loader, which it finds
-  # through Homebrew's prefix (src/modules/window), and Mesa, whose macOS 26
-  # build has KosmicKrisp, a conformant Vulkan on Metal (Apple silicon), and
-  # lavapipe, the software Vulkan the renderer smoke test draws on.
+  # As scripts/bootstrap/linux.sh's apt packages, from Homebrew. LLVM 21 and its
+  # lld, CI's (ADR-0008): the compiler and linker (the macos presets,
+  # cmake/LlvmMacosToolchain.cmake), and clang-format and clang-tidy, which the
+  # hooks run, so they format and lint as CI's do. LLVM's lldb, which llvm@21
+  # leaves out, for the (lldb) launch configs (.vscode). CMake and Ninja, as the
+  # presets build with; GNU make 4, the Makefile's (macOS's own is 3.81);
+  # sccache, which the root CMakeLists.txt picks up from PATH; pkg-config and
+  # autotools for the vcpkg ports that build with them. Git LFS (pre-push),
+  # which Apple's git has none of, and LuaRocks, which builds the toolchain's
+  # luacheck, as luacheck has no macOS release. uv, for yamllint and the rest uv
+  # runs. doxygen: `make docs`. gh: for development. jq: with the toolchain's
+  # cosign, the release runbook's wait on a signed image
+  # (docs/runbooks/cut-release.md). kubectl and helm, for the server's k3s
+  # cluster and its chart (charts/augustad). Podman: the container engine, for
+  # the server image. Wireshark's tshark: the Wireshark dissector's test
+  # (tools/wireshark). The client's: the Vulkan loader, which it finds through
+  # Homebrew's prefix (src/modules/window), and Mesa, whose macOS 26 build has
+  # KosmicKrisp, a conformant Vulkan on Metal (Apple silicon), and lavapipe, the
+  # software Vulkan the renderer smoke test draws on.
   brew_install autoconf autoconf-archive automake cmake doxygen gh git git-lfs \
     helm jq kubernetes-cli libtool lld@21 lldb llvm@21 luarocks make mesa \
     ninja pkg-config podman sccache uv vulkan-loader wireshark
@@ -272,7 +273,9 @@ install_platform() {
   # it in under its usual name, as its formula says. LLVM 21 is keg-only, off
   # PATH: `make toolchain` links its clangd, clang-format and clang-tidy into
   # .toolchain/bin.
-  add_to_profile "export PATH=\"$(brew --prefix)/opt/make/libexec/gnubin:\${PATH}\""
+  local gnubin
+  gnubin="$(brew --prefix)/opt/make/libexec/gnubin"
+  add_to_profile "export PATH=\"${gnubin}:\${PATH}\""
 
   start_podman_machine
 
