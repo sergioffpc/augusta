@@ -31,7 +31,7 @@ on:
 # must grant them all.
 env:
   NIGHTLY_REF: ${{ inputs.ref }}
-# Every job but client-x64-linux configures with the client off
+# Every Linux job but client-x64-linux configures with the client off
 # (AUGUSTA_CLIENT): each checks what augustad and the shared core are built
 # from, as ci.yml's Linux jobs do, and client-x64-linux alone builds the Linux
 # client.
@@ -398,6 +398,76 @@ jobs:
             --git-package third_party/nvtx \
             build/x64-linux-shipping/vcpkg_installed/x64-linux > "$RUNNER_TEMP/augustac.spdx.json"
           python3 scripts/sbom-cpes.py "$RUNNER_TEMP/augustac.spdx.json" > /dev/null
+  client-arm64-macos:
+    # The macOS client, server and their tests (ADR-0008), a development
+    # build no release publishes: the macos preset and its whole ctest suite,
+    # the renderer smoke test among it on Homebrew's lavapipe. The runner is
+    # readied by the bootstrap's platform step alone, as a new Mac is, so a
+    # change that breaks the macOS bootstrap or its toolchain fails here too,
+    # the only check of the toolchain on macOS. No sanitized pass
+    # and no macos-debug: client-x64-linux runs the sanitizers on the same code.
+    # macOS 26, which the bootstrap targets (Mesa's KosmicKrisp needs it); the
+    # image is arm64.
+    runs-on: macos-26
+    permissions:
+      contents: read
+      # Deleting superseded cache entries (.github/actions/prune-cache).
+      actions: write
+    env:
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite"
+      # vcpkg's own CMake and Ninja rather than Homebrew's, whose versions are
+      # part of every package's ABI hash, as setup-linux-build says.
+      VCPKG_FORCE_DOWNLOADED_BINARIES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+          submodules: true
+      - name: Bootstrap the platform
+        # The system's packages, and the toolchain's store filled.
+        run: scripts/bootstrap.sh platform
+      - name: Put the bootstrap's PATH in place
+        # What a new terminal would read from the profile the bootstrap wrote
+        # (~/.zprofile): GNU make. Before sccache's action, which puts its own
+        # sccache ahead of it.
+        run: echo "PATH=$(zsh -lc 'printf %s "$PATH"')" >> "$GITHUB_ENV"
+      - name: Link and check the toolchain
+        # The checkout's .toolchain/ from the store, at the versions it pins.
+        run: |
+          make toolchain
+          make toolchain-check
+      - uses: ./.github/actions/restore-sccache-cache
+      - uses: ./.github/actions/restore-vcpkg-cache
+        with:
+          # It installs the client's ports for arm64-osx, which no other job
+          # does: a cache of its own.
+          prefix: vcpkg-bincache-client-macos-
+      - name: Bootstrap vcpkg
+        run: ./third_party/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - name: Configure
+        run: cmake --preset macos
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-vcpkg-cache
+      - name: Build
+        run: cmake --build --preset macos --target all augusta_tests
+      - if: ${{ !inputs.release }}
+        uses: ./.github/actions/save-sccache-cache
+      - name: Check that the smoke test is built
+        # tests/CMakeLists.txt leaves it out, with only a configure message,
+        # where it finds no lavapipe.
+        run: test -x build/arm64-macos/tests/augusta_client_renderer_smoke_tests
+      - name: Test
+        # In the runner's own display session, where the smoke test and the
+        # window's tests open their hidden windows.
+        run: ctest --preset macos --output-junit "$GITHUB_WORKSPACE/junit/client-macos.xml"
+      - name: Upload the test results
+        # For test-report below, also after a failing test.
+        if: success() || failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-client-macos
+          path: junit/
+          if-no-files-found: ignore
   benchmarks:
     # The hot-path micro-benchmarks (ADR-0013), compared with the history the
     # nights before kept on the benchmarks branch, one history per runner CPU
@@ -510,7 +580,7 @@ jobs:
         with:
           ref: ${{ env.NIGHTLY_REF }}
       # grype.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       - name: Download the latest release's SBOM
         # An executable no release has published yet (augustac-linux-x64
@@ -549,12 +619,13 @@ jobs:
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
     # every ctest run above, a row per test and a column per run
-    # (client-x64-linux has two, linux and linux-san), and the coverage job's
+    # (client-x64-linux has two, linux and linux-san; client-arm64-macos one,
+    # macos), and the coverage job's
     # llvm-cov report. Uploaded as a run artifact; the documentation site
     # publishes the latest scheduled night's under tests/ (ADR-0046), so a
     # release's stays an artifact of its run. Also after a failing test, which
     # is when it is read.
-    needs: [property-tests, tsan, netcode, coverage, client-x64-linux]
+    needs: [property-tests, tsan, netcode, coverage, client-x64-linux, client-arm64-macos]
     if: always()
     runs-on: ubuntu-26.04
     permissions:
@@ -575,7 +646,7 @@ jobs:
           pattern: coverage-report
           path: coverage-report
           merge-multiple: true
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - name: Render
         run: scripts/test-report.sh junit coverage-report test-report
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -586,7 +657,7 @@ jobs:
   # reports on every job it waits for, and release.yml waits for the whole
   # call. Not from a release (inputs.release), whose failure fails its run.
   report-failure:
-    needs: [property-tests, fuzz, tsan, netcode, coverage, client-x64-linux, benchmarks, sbom-scan, test-report]
+    needs: [property-tests, fuzz, tsan, netcode, coverage, client-x64-linux, client-arm64-macos, benchmarks, sbom-scan, test-report]
     if: always() && !inputs.release && contains(needs.*.result, 'failure')
     runs-on: ubuntu-26.04
     permissions:

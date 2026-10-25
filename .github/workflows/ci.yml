@@ -74,8 +74,9 @@ jobs:
           # installs them, Prettier's lockfile, Linux's release checksums, and
           # the action.
           toolchain='scripts/bootstrap/(versions\.env|package-lock\.json|toolchain\.sh|toolchain/.*|linux\.sh)$|\.github/actions/setup-toolchain/'
-          # The server and what builds its image.
-          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
+          # The server and what builds its image: vcpkg's overlay ports and
+          # triplets among it, which every dependency is built by.
+          server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|ports/|triplets/|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
           # The build jobs also build and test the tools (tools/agent,
           # tools/pack, tools/wireshark): their native and Python sources, the
@@ -118,7 +119,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
       # The formatters and linters the Makefile's format-check/* targets run.
@@ -197,7 +198,7 @@ jobs:
       - uses: ./.github/actions/setup-windows-vcpkg
         with:
           feed-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -328,7 +329,7 @@ jobs:
           # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
           # other Linux job does and whose saves would drop: a cache of its own.
           vcpkg-cache-prefix: vcpkg-bincache-tools-linux-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -538,7 +539,7 @@ jobs:
             exit 1
           fi
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
       - uses: ./.github/actions/setup-toolchain
@@ -822,7 +823,7 @@ jobs:
       - name: Lint Helm chart
         run: helm lint charts/augustad
       # hadolint, and the trivy build-server-image scans with.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       - name: Lint Dockerfile
         # .hadolint.yaml has the rules it doesn't apply, and why.
@@ -906,7 +907,7 @@ jobs:
       AUGUSTA_CONTAINER_ENGINE: docker
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
@@ -980,7 +981,7 @@ jobs:
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -1067,7 +1068,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # trivy, cosign and syft.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       - name: Build and scan server image
         id: image
@@ -1128,7 +1129,7 @@ jobs:
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
@@ -1197,7 +1198,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       # oras, cosign and yq.
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - uses: ./.github/actions/setup-toolchain
       # Docker's login, which cosign and oras read, and Helm's own.
       - name: Log in to GHCR

@@ -39,8 +39,15 @@ remove_from_profile() {
 # runs its Linux containers there, the server image's build among them. With
 # every core and half the memory: that build compiles the vcpkg dependencies in
 # it. The machine mounts only the home directory (podman machine init's
-# default), where the checkout is.
+# default), where the checkout is. A Mac that is itself a virtual machine
+# without nested virtualization, as CI's runner (nightly-jobs.yml), can run
+# none: it is left without, and builds natively all the same.
 start_podman_machine() {
+  if [[ "$(sysctl -n kern.hv_support 2>/dev/null || echo 0)" != 1 ]]; then
+    echo "bootstrap: this Mac can't run virtual machines, so Podman's machine" \
+      "isn't started: the server image won't build here." >&2
+    return
+  fi
   if ! podman machine inspect >/dev/null 2>&1; then
     manifest_add podman-machine
     podman machine init --cpus "$(sysctl -n hw.ncpu)" \
