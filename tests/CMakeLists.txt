@@ -1108,12 +1108,45 @@ set(test_directories ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fuz
 if(AUGUSTA_TOOLS)
   list(APPEND test_directories ${CMAKE_SOURCE_DIR}/tools/agent/tests)
 endif()
+
+# On Windows vcpkg gives each executable a POST_BUILD step, z-applocal
+# (VCPKG_APPLOCAL_DEPS), that copies the DLLs it loads from the triplet's bin
+# beside it. The executables of a test directory share its output directory, so
+# when it holds no DLLs yet, dozens of those steps write the same DLLs at once
+# and some fail on a locked file ("Access is denied."). On a 64-core host 5 of 9
+# rebuilds of augusta_tests from an empty tests/ failed, 15 targets in all, and
+# 7 of 9 with test discovery out of the build (PRE_TEST): the copies collide
+# with each other (#1306). So augusta_test_dlls copies every DLL of the
+# triplet's bin into each directory first, keeping the timestamps that
+# z-applocal compares, and each test executable waits for it: z-applocal then
+# finds them up to date and copies nothing. The whole bin, not what the tests
+# load, so that no list goes stale when a dependency is added.
+set(copy_test_dlls OFF)
+if(WIN32 AND VCPKG_APPLOCAL_DEPS)
+  set(copy_test_dlls ON)
+  add_custom_target(augusta_test_dlls COMMENT "Copying vcpkg's DLLs into the test directories")
+endif()
+
 foreach(directory IN LISTS test_directories)
+  if(copy_test_dlls)
+    get_property(binary_directory DIRECTORY ${directory} PROPERTY BINARY_DIR)
+    add_custom_command(
+      TARGET augusta_test_dlls
+      POST_BUILD
+      COMMAND
+        ${CMAKE_COMMAND} "-DBIN_DIR=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}$<$<CONFIG:Debug>:/debug>/bin"
+        -DDESTINATION=${binary_directory} -P ${CMAKE_SOURCE_DIR}/cmake/CopyDlls.cmake
+      VERBATIM
+    )
+  endif()
   get_property(directory_targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
   foreach(target IN LISTS directory_targets)
     get_target_property(target_type ${target} TYPE)
     if(target_type STREQUAL "EXECUTABLE")
       add_dependencies(augusta_tests ${target})
+      if(copy_test_dlls)
+        add_dependencies(${target} augusta_test_dlls)
+      endif()
     endif()
   endforeach()
 endforeach()
