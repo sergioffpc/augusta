@@ -26,6 +26,7 @@
   "shfmt.executablePath": "${workspaceFolder}/.toolchain/bin/shfmt",
   "shellcheck.executablePath": "${workspaceFolder}/.toolchain/bin/shellcheck",
   "stylua.searchBinaryInPATH": true,
+  "prettier.prettierPath": ".toolchain/node_modules/prettier",
 
   "Lua.runtime.version": "Lua 5.5",
   "Lua.runtime.builtin": {

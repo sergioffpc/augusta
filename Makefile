@@ -69,8 +69,9 @@ ACTIONLINT = $(call toolchain_bin,actionlint) -shellcheck=$(call toolchain_bin,s
 GERSEMI = $(call toolchain_bin,gersemi)
 PYMARKDOWN = $(call toolchain_bin,pymarkdown) --config .pymarkdown.json
 YAMLLINT = $(call toolchain_bin,yamllint) --strict -c .yamllint
-# Prettier is a Node package: uv runs Node from its PyPI wheel, and npx Prettier.
-PRETTIER := uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9
+# Prettier is a Node package, in .toolchain/node_modules, which the toolchain's
+# Node runs.
+PRETTIER = $(call toolchain_bin,node) .toolchain/node_modules/prettier/bin/prettier.cjs
 # Buf too, from npm: it reads buf.yaml's workspace, every .proto at once.
 BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
 
