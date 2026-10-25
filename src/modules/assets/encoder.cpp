@@ -251,13 +251,13 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleDa
   return blob;
 }
 
-// Weapon socket blob wire format: its Joint's name (a string), its translation
+// Weapon socket blob wire format: its right hand's Joint's name (a string), its translation
 // (3x f32) and rotation as x/y/z/w (4x f32) in that Joint's space, then the
 // left hand's Joint's name (a string).
 std::expected<std::vector<std::byte>, EncodeError> EncodeWeaponSocketBlob(const WeaponSocketData& socket) {
   std::vector<std::byte> blob;
   ByteWriter writer(blob);
-  if (!writer.WriteString(socket.joint)) {
+  if (!writer.WriteString(socket.right_hand)) {
     return std::unexpected(EncodeError::kTooLarge);
   }
   writer.WriteVec3(socket.translation);

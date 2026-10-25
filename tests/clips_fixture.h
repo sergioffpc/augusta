@@ -574,8 +574,8 @@ inline std::shared_ptr<const animation::CharacterClips> HolderClips(bool holding
   clips->air = HolderClip(kPelvisStanding);
   clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
   if (holding) {
-    clips->weapon_socket =
-        animation::WeaponSocket{.joint = kHolderRightHand, .frame = math::Mat4(1.0F), .left_hand = kHolderLeftHand};
+    clips->weapon_socket = animation::WeaponSocket{
+        .right_hand = kHolderRightHand, .frame = math::Mat4(1.0F), .left_hand = kHolderLeftHand};
   }
   return clips;
 }

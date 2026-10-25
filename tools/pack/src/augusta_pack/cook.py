@@ -1108,7 +1108,7 @@ def _cook_weapon_socket(
         path=prim_path,
         data=_native.encode_weapon_socket_blob(
             _native.WeaponSocketData(
-                joint=joint,
+                right_hand=joint,
                 translation=translation,
                 rotation=rotation,
                 left_hand=left_hand,

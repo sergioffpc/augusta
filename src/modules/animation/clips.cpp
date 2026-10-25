@@ -30,15 +30,50 @@ namespace {
 // physics::Stance.
 constexpr std::array<std::string_view, physics::kStanceCount> kStanceNames = {"standing", "crouching", "prone"};
 
-// object out of archive, an ozz-animation archive of one, or why it is none.
+// The refusal of part for cause, about the Clip of role for a ClipPart::kClip;
+// a cause that names more has its caller set it.
+ClipLoadError Refusal(ClipPart part, ClipLoadCause cause, std::string role = {}) {
+  return ClipLoadError{.part = part,
+                       .cause = cause,
+                       .role = std::move(role),
+                       .resolve = assets::ResolveError::kNotFound,
+                       .joint = {},
+                       .count = 0,
+                       .expected = 0};
+}
+
+// The refusal of part, which the pack could not give for error.
+ClipLoadError Unresolved(ClipPart part, assets::ResolveError error, std::string role = {}) {
+  ClipLoadError refusal = Refusal(part, ClipLoadCause::kUnresolved, std::move(role));
+  refusal.resolve = error;
+  return refusal;
+}
+
+// The refusal of part for cause, which names joint.
+ClipLoadError Naming(ClipPart part, ClipLoadCause cause, std::string_view joint) {
+  ClipLoadError refusal = Refusal(part, cause);
+  refusal.joint = joint;
+  return refusal;
+}
+
+// The refusal of part for cause, count found where expected were.
+ClipLoadError Counting(ClipPart part, ClipLoadCause cause, std::size_t count, std::size_t expected,
+                       std::string role = {}) {
+  ClipLoadError refusal = Refusal(part, cause, std::move(role));
+  refusal.count = count;
+  refusal.expected = expected;
+  return refusal;
+}
+
+// object out of archive, an ozz-animation archive of one; nullopt when it is none.
 template <typename Object>
-std::expected<Object, std::string> Unarchive(std::span<const std::byte> archive) {
+std::optional<Object> Unarchive(std::span<const std::byte> archive) {
   ozz::io::MemoryStream stream;
   stream.Write(archive.data(), archive.size());
   stream.Seek(0, ozz::io::Stream::kSet);
   ozz::io::IArchive input(&stream);
   if (!input.TestTag<Object>()) {
-    return std::unexpected("is not an ozz-animation archive of its kind");
+    return std::nullopt;
   }
   Object object;
   input >> object;
@@ -47,30 +82,34 @@ std::expected<Object, std::string> Unarchive(std::span<const std::byte> archive)
 
 std::expected<ozz::animation::Skeleton, ClipLoadError> LoadSkeleton(const assets::Pack& pack,
                                                                     std::string_view character) {
-  const auto failed = [](std::string reason) {
-    return std::unexpected(ClipLoadError{.part = ClipPart::kSkeleton, .role = {}, .reason = std::move(reason)});
-  };
   const auto archive = pack.ResolveAnimationSkeleton(character);
   if (!archive) {
-    return failed(assets::DescribeResolveError(archive.error(), "animation skeleton"));
+    return std::unexpected(Unresolved(ClipPart::kSkeleton, archive.error()));
   }
   auto skeleton = Unarchive<ozz::animation::Skeleton>(*archive);
   if (!skeleton) {
-    return failed(std::move(skeleton.error()));
+    return std::unexpected(Refusal(ClipPart::kSkeleton, ClipLoadCause::kNotAnArchive));
   }
   if (skeleton->num_joints() == 0) {
-    return failed("has no joint");
+    return std::unexpected(Refusal(ClipPart::kSkeleton, ClipLoadCause::kNoJoint));
   }
   return *std::move(skeleton);
+}
+
+// The index of the Joint named name in skeleton; nullopt when it has none.
+std::optional<std::uint32_t> IndexOf(const assets::Skeleton& skeleton, std::string_view name) {
+  for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
+    if (skeleton.joints[joint].name == name) {
+      return static_cast<std::uint32_t>(joint);
+    }
+  }
+  return std::nullopt;
 }
 
 // For each Joint of animated, its index in skeleton, found by name, or why
 // the two do not hold the same Joints.
 std::expected<std::vector<std::uint32_t>, ClipLoadError> JointsOf(const ozz::animation::Skeleton& animated,
                                                                   const assets::Skeleton& skeleton) {
-  const auto failed = [](std::string reason) {
-    return std::unexpected(ClipLoadError{.part = ClipPart::kSkeleton, .role = {}, .reason = std::move(reason)});
-  };
   std::unordered_map<std::string_view, std::uint32_t> index_of;
   for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
     index_of.emplace(skeleton.joints[joint].name, static_cast<std::uint32_t>(joint));
@@ -79,12 +118,13 @@ std::expected<std::vector<std::uint32_t>, ClipLoadError> JointsOf(const ozz::ani
   for (const char* const name : animated.joint_names()) {
     const auto found = index_of.find(name);
     if (found == index_of.end()) {
-      return failed(std::format("has a joint {} the character's skeleton lacks", name));
+      return std::unexpected(Naming(ClipPart::kSkeleton, ClipLoadCause::kUnknownJoint, name));
     }
     joints.push_back(found->second);
   }
   if (joints.size() != skeleton.joints.size()) {
-    return failed(std::format("has {} joints, the character's skeleton {}", joints.size(), skeleton.joints.size()));
+    return std::unexpected(
+        Counting(ClipPart::kSkeleton, ClipLoadCause::kJointCountMismatch, joints.size(), skeleton.joints.size()));
   }
   return joints;
 }
@@ -94,23 +134,21 @@ std::expected<std::vector<std::uint32_t>, ClipLoadError> JointsOf(const ozz::ani
 std::expected<std::optional<Clip>, ClipLoadError> LoadClip(const assets::Pack& pack, std::string_view character,
                                                            const ozz::animation::Skeleton& skeleton,
                                                            const std::string& role, bool optional) {
-  const auto failed = [&role](std::string reason) {
-    return std::unexpected(ClipLoadError{.part = ClipPart::kClip, .role = role, .reason = std::move(reason)});
-  };
   auto data = pack.ResolveClip(character, role);
   if (!data) {
     if (optional && data.error() == assets::ResolveError::kNotFound) {
       return std::nullopt;
     }
-    return failed(assets::DescribeResolveError(data.error(), "clip"));
+    return std::unexpected(Unresolved(ClipPart::kClip, data.error(), role));
   }
   auto animation = Unarchive<ozz::animation::Animation>(data->archive);
   if (!animation) {
-    return failed(std::move(animation.error()));
+    return std::unexpected(Refusal(ClipPart::kClip, ClipLoadCause::kNotAnArchive, role));
   }
   if (animation->num_tracks() != skeleton.num_joints()) {
-    return failed(
-        std::format("has {} tracks for a skeleton of {} joints", animation->num_tracks(), skeleton.num_joints()));
+    return std::unexpected(Counting(ClipPart::kClip, ClipLoadCause::kTrackCountMismatch,
+                                    static_cast<std::size_t>(animation->num_tracks()),
+                                    static_cast<std::size_t>(skeleton.num_joints()), role));
   }
   return Clip{.animation = *std::move(animation),
               .stride_length = data->stride_length,
@@ -165,34 +203,23 @@ std::expected<void, ClipLoadError> LoadStance(const assets::Pack& pack, std::str
 // The Weapon socket of character, its Joints found by name in skeleton.
 std::expected<WeaponSocket, ClipLoadError> LoadWeaponSocket(const assets::Pack& pack, std::string_view character,
                                                             const assets::Skeleton& skeleton) {
-  const auto failed = [](std::string reason) {
-    return std::unexpected(ClipLoadError{.part = ClipPart::kWeaponSocket, .role = {}, .reason = std::move(reason)});
-  };
   const auto data = pack.ResolveWeaponSocket(character);
   if (!data) {
-    return failed(assets::DescribeResolveError(data.error(), "weapon socket"));
+    return std::unexpected(Unresolved(ClipPart::kWeaponSocket, data.error()));
   }
-  const auto index_of = [&skeleton](std::string_view name) -> std::optional<std::uint32_t> {
-    for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
-      if (skeleton.joints[joint].name == name) {
-        return static_cast<std::uint32_t>(joint);
-      }
-    }
-    return std::nullopt;
-  };
-  const auto joint = index_of(data->joint);
-  if (!joint) {
-    return failed(std::format("names a joint {} the character's skeleton lacks", data->joint));
+  const auto right_hand = IndexOf(skeleton, data->right_hand);
+  if (!right_hand) {
+    return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kUnknownRightHand, data->right_hand));
   }
-  const auto left_hand = index_of(data->left_hand);
+  const auto left_hand = IndexOf(skeleton, data->left_hand);
   if (!left_hand) {
-    return failed(std::format("names a left hand {} the character's skeleton lacks", data->left_hand));
+    return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kUnknownLeftHand, data->left_hand));
   }
   const std::uint32_t elbow = skeleton.joints[*left_hand].parent;
   if (elbow == assets::kJointNoParent || skeleton.joints[elbow].parent == assets::kJointNoParent) {
-    return failed(std::format("left hand {} has no arm: a parent and a grandparent", data->left_hand));
+    return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kLeftHandHasNoArm, data->left_hand));
   }
-  return WeaponSocket{.joint = *joint,
+  return WeaponSocket{.right_hand = *right_hand,
                       .frame = math::ToMat4(data->translation, data->rotation, math::Vec3(1.0F)),
                       .left_hand = *left_hand};
 }
@@ -203,22 +230,55 @@ const StanceClips& CharacterClips::Of(physics::Stance stance) const {
   return stances[static_cast<std::size_t>(stance)];
 }
 
-float CharacterClips::TransitionDuration(physics::Stance from, physics::Stance to) const {
-  return physics::TransitionDuration(transitions, from, to);
+namespace {
+
+// What part is called in a message, as DescribeResolveError names it too.
+std::string_view NameOf(ClipPart part) {
+  switch (part) {
+    case ClipPart::kSkeleton:
+      return "animation skeleton";
+    case ClipPart::kClip:
+      return "clip";
+    case ClipPart::kTransitions:
+      return "stance transitions";
+    case ClipPart::kWeaponSocket:
+      return "weapon socket";
+  }
+  return "clips";
 }
 
-std::string DescribeClipLoadError(const ClipLoadError& error) {
-  switch (error.part) {
-    case ClipPart::kSkeleton:
-      return std::format("animation skeleton: {}", error.reason);
-    case ClipPart::kClip:
-      return std::format("clip {}: {}", error.role, error.reason);
-    case ClipPart::kTransitions:
-      return std::format("stance transitions: {}", error.reason);
-    case ClipPart::kWeaponSocket:
-      return std::format("weapon socket: {}", error.reason);
+// Why error's part did not load, as a phrase.
+std::string CauseOf(const ClipLoadError& error) {
+  switch (error.cause) {
+    case ClipLoadCause::kUnresolved:
+      return assets::DescribeResolveError(error.resolve, NameOf(error.part));
+    case ClipLoadCause::kNotAnArchive:
+      return "is not an ozz-animation archive of its kind";
+    case ClipLoadCause::kNoJoint:
+      return "has no joint";
+    case ClipLoadCause::kUnknownJoint:
+      return std::format("has a joint {} the character's skeleton lacks", error.joint);
+    case ClipLoadCause::kJointCountMismatch:
+      return std::format("has {} joints, the character's skeleton {}", error.count, error.expected);
+    case ClipLoadCause::kTrackCountMismatch:
+      return std::format("has {} tracks for a skeleton of {} joints", error.count, error.expected);
+    case ClipLoadCause::kUnknownRightHand:
+      return std::format("names a right hand {} the character's skeleton lacks", error.joint);
+    case ClipLoadCause::kUnknownLeftHand:
+      return std::format("names a left hand {} the character's skeleton lacks", error.joint);
+    case ClipLoadCause::kLeftHandHasNoArm:
+      return std::format("left hand {} has no arm: a parent and a grandparent", error.joint);
   }
-  return error.reason;
+  return "does not load";
+}
+
+}  // namespace
+
+std::string DescribeClipLoadError(const ClipLoadError& error) {
+  if (error.part == ClipPart::kClip) {
+    return std::format("clip {}: {}", error.role, CauseOf(error));
+  }
+  return std::format("{}: {}", NameOf(error.part), CauseOf(error));
 }
 
 std::expected<CharacterClips, ClipLoadError> LoadClips(const assets::Pack& pack, std::string_view character,
@@ -248,10 +308,7 @@ std::expected<CharacterClips, ClipLoadError> LoadClips(const assets::Pack& pack,
   clips.air = **std::move(air);
   const auto transitions = pack.ResolveStanceTransitions(character);
   if (!transitions) {
-    return std::unexpected(
-        ClipLoadError{.part = ClipPart::kTransitions,
-                      .role = {},
-                      .reason = assets::DescribeResolveError(transitions.error(), "stance transitions")});
+    return std::unexpected(Unresolved(ClipPart::kTransitions, transitions.error()));
   }
   clips.transitions = *transitions;
   auto socket = LoadWeaponSocket(pack, character, skeleton);

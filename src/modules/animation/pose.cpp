@@ -331,7 +331,7 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
 
 math::Mat4 HoldRifle(const assets::Skeleton& skeleton, const WeaponSocket& socket, const weapon::Markers& rifle,
                      SkeletonPose& posed) {
-  const math::Mat4 hand = posed.world.at(socket.joint) * socket.frame;
+  const math::Mat4 hand = posed.world.at(socket.right_hand) * socket.frame;
   const std::uint32_t end = socket.left_hand;
   const std::uint32_t mid = skeleton.joints.at(end).parent;
   const std::uint32_t start = skeleton.joints.at(mid).parent;

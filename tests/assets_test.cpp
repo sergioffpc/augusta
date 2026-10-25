@@ -587,7 +587,7 @@ TEST_F(PackTest, EncodesAndResolvesAWeaponSocket) {
   const auto pack_path = MakePackPath("augusta_assets_test_weapon_socket");
   const auto keys = GenerateEd25519KeyPair();
   const augusta::assets::WeaponSocketData socket{
-      .joint = "Root/Spine/RightArm/RightHand",
+      .right_hand = "Root/Spine/RightArm/RightHand",
       .translation = Vec3(0.0F, -0.05F, -0.02F),
       .rotation = augusta::math::Quat(0.70710677F, 0.0F, 0.70710677F, 0.0F),
       .left_hand = "Root/Spine/LeftArm/LeftForearm/LeftHand",
@@ -613,7 +613,7 @@ TEST_F(PackTest, EncodesAndResolvesAWeaponSocket) {
 TEST_F(PackTest, AWeaponSocketWithoutItsLeftHandIsCorrupt) {
   const auto pack_path = MakePackPath("augusta_assets_test_weapon_socket_truncated");
   const auto keys = GenerateEd25519KeyPair();
-  auto blob = augusta::assets::EncodeWeaponSocketBlob({.joint = "Root", .left_hand = "Root/Arm/Hand"}).value();
+  auto blob = augusta::assets::EncodeWeaponSocketBlob({.right_hand = "Root", .left_hand = "Root/Arm/Hand"}).value();
   // The left hand's name cut short.
   blob.resize(blob.size() - 2);
   ASSERT_TRUE(augusta::assets::WritePack(pack_path,

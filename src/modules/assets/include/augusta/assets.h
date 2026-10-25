@@ -380,7 +380,7 @@ inline constexpr std::string_view kRiflePath = "Rifle";
 /// the arm that reaches the rifle's Fore-end by two-bone IK. Each Joint by its
 /// name, the path within the Skeleton (JointData).
 struct WeaponSocketData {
-  std::string joint;
+  std::string right_hand;
   math::Vec3 translation{0.0F, 0.0F, 0.0F};
   math::Quat rotation{1.0F, 0.0F, 0.0F, 0.0F};
   std::string left_hand;

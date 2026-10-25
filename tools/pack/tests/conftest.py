@@ -160,7 +160,7 @@ def decode_skeleton(blob: bytes) -> list[Joint]:
 
 @dataclass(frozen=True)
 class WeaponSocket:
-    joint: str
+    right_hand: str
     translation: tuple[float, float, float]
     # x, y, z, w.
     rotation: tuple[float, float, float, float]
@@ -170,12 +170,12 @@ class WeaponSocket:
 def decode_weapon_socket(blob: bytes) -> WeaponSocket:
     """A weapon socket blob.
 
-    The blob is its joint's name as a u32 length and its bytes, its
-    translation xyz and rotation xyzw, all f32, then the left hand's joint's
-    name as the first is.
+    The blob is its right hand's joint's name as a u32 length and its bytes,
+    its translation xyz and rotation xyzw, all f32, then the left hand's
+    joint's name as the first is.
     """
     (length,) = struct.unpack_from("<I", blob, 0)
-    joint = blob[4 : 4 + length].decode("utf-8")
+    right_hand = blob[4 : 4 + length].decode("utf-8")
     offset = 4 + length
     transform = struct.unpack_from("<7f", blob, offset)
     offset += 28
@@ -183,7 +183,7 @@ def decode_weapon_socket(blob: bytes) -> WeaponSocket:
     left_hand = blob[offset + 4 : offset + 4 + length].decode("utf-8")
     assert offset + 4 + length == len(blob)
     return WeaponSocket(
-        joint, tuple(transform[0:3]), tuple(transform[3:7]), left_hand
+        right_hand, tuple(transform[0:3]), tuple(transform[3:7]), left_hand
     )
 
 

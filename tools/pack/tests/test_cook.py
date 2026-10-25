@@ -899,7 +899,7 @@ def test_a_characters_weapon_socket_goes_into_both_packs_in_its_joints_space(
         socket = decode_weapon_socket(
             contents.blob("test/Character/WeaponSocket")
         )
-        assert socket.joint == "Root/Hips/Chest"
+        assert socket.right_hand == "Root/Hips/Chest"
         # 1.2 m above the feet, and the chest at 1.3 m.
         assert socket.translation == pytest.approx((0.3, -0.1, -0.2))
         # A quarter turn about +Y.

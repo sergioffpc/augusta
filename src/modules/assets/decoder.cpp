@@ -376,14 +376,14 @@ std::optional<RifleData> DecodeRifleBlob(std::span<const std::byte> blob) {
 // Weapon socket blob wire format: see EncodeWeaponSocketBlob.
 std::optional<WeaponSocketData> DecodeWeaponSocketBlob(std::span<const std::byte> blob) {
   ByteReader reader(blob);
-  auto joint = reader.ReadString();
+  auto right_hand = reader.ReadString();
   const auto translation = ReadVec3(reader);
   const auto rotation = ReadQuat(reader);
   auto left_hand = reader.ReadString();
-  if (!joint || !translation || !rotation || !left_hand) {
+  if (!right_hand || !translation || !rotation || !left_hand) {
     return std::nullopt;
   }
-  return WeaponSocketData{.joint = *std::move(joint),
+  return WeaponSocketData{.right_hand = *std::move(right_hand),
                           .translation = *translation,
                           .rotation = *rotation,
                           .left_hand = *std::move(left_hand)};

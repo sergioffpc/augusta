@@ -2,6 +2,7 @@
 #define AUGUSTA_CLIPS_H_
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -68,7 +69,7 @@ struct StanceClips {
 /// IK, each Joint an index in the Character's assets::Skeleton.
 struct WeaponSocket {
   /// The Joint of its right hand, which the socket moves with.
-  std::uint32_t joint = 0;
+  std::uint32_t right_hand = 0;
   /// The socket in that Joint's space: where the rifle's Grip goes, pointing
   /// along its -Z as the Grip does.
   math::Mat4 frame{1.0F};
@@ -99,10 +100,6 @@ struct CharacterClips {
 
   /// The Clips of stance.
   [[nodiscard]] const StanceClips& Of(physics::Stance stance) const;
-
-  /// How long a change between stances from and to takes, in seconds, either
-  /// way; 0 from a stance to itself.
-  [[nodiscard]] float TransitionDuration(physics::Stance from, physics::Stance to) const;
 };
 
 /// The part of a Character's Clips that did not load.
@@ -117,13 +114,48 @@ enum class ClipPart {
   kWeaponSocket,
 };
 
-/// Why LoadClips refused a Character's Clips.
+/// Why a part of a Character's Clips did not load.
+enum class ClipLoadCause {
+  /// The pack could not give it: ClipLoadError::resolve says why.
+  kUnresolved,
+  /// It is not an ozz-animation archive of its kind.
+  kNotAnArchive,
+  /// The ozz-animation Skeleton has no Joint.
+  kNoJoint,
+  /// The ozz-animation Skeleton has a Joint, ClipLoadError::joint, the
+  /// Character's Skeleton lacks.
+  kUnknownJoint,
+  /// The ozz-animation Skeleton has ClipLoadError::count Joints, the
+  /// Character's Skeleton ClipLoadError::expected.
+  kJointCountMismatch,
+  /// The Clip has ClipLoadError::count tracks, its ozz-animation Skeleton
+  /// ClipLoadError::expected Joints.
+  kTrackCountMismatch,
+  /// The Weapon socket names a right hand, ClipLoadError::joint, the
+  /// Character's Skeleton lacks.
+  kUnknownRightHand,
+  /// The Weapon socket names a left hand, ClipLoadError::joint, the
+  /// Character's Skeleton lacks.
+  kUnknownLeftHand,
+  /// The Weapon socket's left hand, ClipLoadError::joint, has no arm: no parent
+  /// or no grandparent.
+  kLeftHandHasNoArm,
+};
+
+/// Why LoadClips refused a Character's Clips: the part and the cause, and what
+/// the cause names.
 struct ClipLoadError {
   ClipPart part = ClipPart::kClip;
+  ClipLoadCause cause = ClipLoadCause::kUnresolved;
   /// The Clip's role, e.g. "standing/forward", for a kClip; empty otherwise.
   std::string role;
-  /// Why, e.g. "not found".
-  std::string reason;
+  /// Why the pack could not give the part, for a kUnresolved.
+  assets::ResolveError resolve = assets::ResolveError::kNotFound;
+  /// The Joint named, for a cause that names one.
+  std::string joint;
+  /// What was found and what was expected, for a count that does not match.
+  std::size_t count = 0;
+  std::size_t expected = 0;
 };
 
 /// A message for error fit to log or print, e.g. "clip standing/forward: not

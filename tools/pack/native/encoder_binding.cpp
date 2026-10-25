@@ -183,14 +183,14 @@ void BindRifleTypes(py::module_& module) {
   py::class_<assets::WeaponSocketData>(module, "WeaponSocketData",
                                        "A character's weapon socket on its right hand's Joint, and its left hand's "
                                        "Joint (ADR-0066).")
-      .def(py::init([](std::string joint, math::Vec3 translation, math::Quat rotation, std::string left_hand) {
-             return assets::WeaponSocketData{.joint = std::move(joint),
+      .def(py::init([](std::string right_hand, math::Vec3 translation, math::Quat rotation, std::string left_hand) {
+             return assets::WeaponSocketData{.right_hand = std::move(right_hand),
                                              .translation = translation,
                                              .rotation = rotation,
                                              .left_hand = std::move(left_hand)};
            }),
-           py::arg("joint"), py::arg("translation"), py::arg("rotation"), py::arg("left_hand"))
-      .def_readwrite("joint", &assets::WeaponSocketData::joint)
+           py::arg("right_hand"), py::arg("translation"), py::arg("rotation"), py::arg("left_hand"))
+      .def_readwrite("right_hand", &assets::WeaponSocketData::right_hand)
       .def_readwrite("translation", &assets::WeaponSocketData::translation)
       .def_readwrite("rotation", &assets::WeaponSocketData::rotation)
       .def_readwrite("left_hand", &assets::WeaponSocketData::left_hand);

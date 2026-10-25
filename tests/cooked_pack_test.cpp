@@ -110,7 +110,7 @@ TEST_F(CookedPackTest, BothPacksHoldTheExampleCharactersWeaponSocket) {
   for (const Pack* pack : {&*client_, &*server_}) {
     const auto socket = pack->ResolveWeaponSocket("soldier");
     ASSERT_TRUE(socket.has_value());
-    EXPECT_EQ(socket->joint, "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand");
+    EXPECT_EQ(socket->right_hand, "Root/Pelvis/Spine/RightShoulder/RightElbow/RightHand");
     EXPECT_EQ(socket->left_hand, "Root/Pelvis/Spine/LeftShoulder/LeftElbow/LeftHand");
   }
 }

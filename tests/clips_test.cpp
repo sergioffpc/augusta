@@ -35,6 +35,7 @@
 namespace {
 
 using augusta::animation::CharacterClips;
+using augusta::animation::ClipLoadCause;
 using augusta::animation::ClipLoadError;
 using augusta::animation::ClipPart;
 using augusta::animation::LoadClips;
@@ -147,7 +148,7 @@ AssetEntry ClipEntry(std::string_view role, float stride_length, std::vector<std
 // The Character's Weapon socket: on its spine, 10 cm ahead of it, its left hand
 // at its foot, whose leg is the arm.
 AssetEntry WeaponSocketEntry(std::string_view left_hand = "Root/LeftLeg/Foot") {
-  const auto blob = augusta::assets::EncodeWeaponSocketBlob({.joint = "Root/Spine",
+  const auto blob = augusta::assets::EncodeWeaponSocketBlob({.right_hand = "Root/Spine",
                                                              .translation = augusta::math::Vec3(0.0F, 0.0F, -0.1F),
                                                              .rotation = augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F),
                                                              .left_hand = std::string(left_hand)});
@@ -200,8 +201,8 @@ class ClipsTest : public ::testing::Test {
     const auto pack = augusta::assets::Pack::Load(path_, keys.public_key);
     EXPECT_TRUE(pack.has_value());
     if (!pack) {
-      return std::unexpected(
-          ClipLoadError{.part = ClipPart::kSkeleton, .role = {}, .reason = "the pack does not load"});
+      // The pack's own failure is the one reported above.
+      return std::unexpected(ClipLoadError{});
     }
     return LoadClips(*pack, kCharacter, Soldier());
   }
@@ -240,14 +241,13 @@ TEST_F(ClipsTest, AnOptionalClipACharacterLacksIsNone) {
   EXPECT_FALSE(clips->Of(Stance::kCrouching).sprint.has_value());
 }
 
-TEST_F(ClipsTest, EachPairOfStancesTakesItsTransitionDurationEitherWay) {
+TEST_F(ClipsTest, EachPairOfStancesTakesItsTransitionDuration) {
   const auto clips = Load();
 
   ASSERT_TRUE(clips.has_value()) << augusta::animation::DescribeClipLoadError(clips.error());
-  EXPECT_FLOAT_EQ(clips->TransitionDuration(Stance::kStanding, Stance::kCrouching), 0.25F);
-  EXPECT_FLOAT_EQ(clips->TransitionDuration(Stance::kProne, Stance::kStanding), 0.8F);
-  EXPECT_FLOAT_EQ(clips->TransitionDuration(Stance::kCrouching, Stance::kProne), 0.6F);
-  EXPECT_FLOAT_EQ(clips->TransitionDuration(Stance::kProne, Stance::kProne), 0.0F);
+  EXPECT_FLOAT_EQ(clips->transitions.standing_crouching, 0.25F);
+  EXPECT_FLOAT_EQ(clips->transitions.standing_prone, 0.8F);
+  EXPECT_FLOAT_EQ(clips->transitions.crouching_prone, 0.6F);
 }
 
 // ozz-animation keeps the Joints depth first: each is mapped to the Character's
@@ -271,6 +271,8 @@ TEST_F(ClipsTest, AMissingRequiredClipIsRefusedNamingIt) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().role, "crouching/right");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kUnresolved);
+  EXPECT_EQ(clips.error().resolve, augusta::assets::ResolveError::kNotFound);
   EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()), "clip crouching/right: not found");
 }
 
@@ -281,7 +283,7 @@ TEST_F(ClipsTest, AClipThatIsNoAnimationIsRefusedNamingIt) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().role, "standing/aim_up");
-  EXPECT_FALSE(clips.error().reason.empty());
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kNotAnArchive);
 }
 
 TEST_F(ClipsTest, AClipOfAnotherSkeletonIsRefusedNamingIt) {
@@ -291,7 +293,11 @@ TEST_F(ClipsTest, AClipOfAnotherSkeletonIsRefusedNamingIt) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().role, "prone/idle");
-  EXPECT_EQ(clips.error().reason, "has 3 tracks for a skeleton of 4 joints");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kTrackCountMismatch);
+  EXPECT_EQ(clips.error().count, 3U);
+  EXPECT_EQ(clips.error().expected, 4U);
+  EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
+            "clip prone/idle: has 3 tracks for a skeleton of 4 joints");
 }
 
 TEST_F(ClipsTest, ACharacterWithoutAnAnimationSkeletonIsRefused) {
@@ -317,7 +323,10 @@ TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().part, ClipPart::kSkeleton);
-  EXPECT_EQ(clips.error().reason, "has a joint Root/Neck the character's skeleton lacks");
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kUnknownJoint);
+  EXPECT_EQ(clips.error().joint, "Root/Neck");
+  EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
+            "animation skeleton: has a joint Root/Neck the character's skeleton lacks");
 }
 
 // The socket's Joints by their index in the Character's Skeleton: the spine
@@ -327,7 +336,7 @@ TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
 
   ASSERT_TRUE(clips.has_value());
   ASSERT_TRUE(clips->weapon_socket.has_value());
-  EXPECT_EQ(clips->weapon_socket->joint, 2U);
+  EXPECT_EQ(clips->weapon_socket->right_hand, 2U);
   EXPECT_EQ(clips->weapon_socket->left_hand, 3U);
   EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket->frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
 }
@@ -351,6 +360,8 @@ TEST_F(ClipsTest, ALeftHandWithoutAnArmIsRefused) {
 
   ASSERT_FALSE(clips.has_value());
   EXPECT_EQ(clips.error().part, ClipPart::kWeaponSocket);
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kLeftHandHasNoArm);
+  EXPECT_EQ(clips.error().joint, "Root/LeftLeg");
   EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
             "weapon socket: left hand Root/LeftLeg has no arm: a parent and a grandparent");
 }
