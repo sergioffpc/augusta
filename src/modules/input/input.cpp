@@ -175,7 +175,8 @@ void Input::Apply(const window::MouseMoveEvent& event) {
     // Screen x grows rightward and a rightward turn is a negative yaw; screen
     // y grows downward and looking up is a positive pitch.
     yaw_ = WrapYaw(yaw_ - ((event.x - last_cursor_->x) * mouse_sensitivity_));
-    pitch_ = std::clamp(pitch_ - ((event.y - last_cursor_->y) * mouse_sensitivity_), -kMaxLookPitch, kMaxLookPitch);
+    pitch_ = std::clamp(pitch_ - ((event.y - last_cursor_->y) * mouse_sensitivity_), -command::kMaxLookPitch,
+                        command::kMaxLookPitch);
   }
   last_cursor_ = event;
 }

@@ -1,5 +1,6 @@
 #include "augusta/pose.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -15,11 +16,14 @@
 #include <ozz/animation/runtime/skeleton.h>
 #include <ozz/base/maths/internal/simd_math_config.h>
 #include <ozz/base/maths/simd_math.h>
+#include <ozz/base/maths/soa_float.h>
+#include <ozz/base/maths/soa_quaternion.h>
 #include <ozz/base/maths/soa_transform.h>
 
 #include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/clips.h"
+#include "augusta/command.h"
 #include "augusta/hitbox.h"
 #include "augusta/locomotion.h"
 #include "augusta/math.h"
@@ -56,6 +60,32 @@ float RatioAt(const Clip& clip, std::uint8_t stride) {
   return std::fmod(*left + from_left, 1.0F);
 }
 
+// Samples clip at ratio into output, with context.
+void Sample(const Clip& clip, float ratio, ozz::animation::SamplingJob::Context& context,
+            std::vector<ozz::math::SoaTransform>& output) {
+  ozz::animation::SamplingJob sampling;
+  sampling.animation = &clip.animation;
+  sampling.context = &context;
+  sampling.ratio = ratio;
+  sampling.output = {output.data(), output.size()};
+  [[maybe_unused]] const bool sampled = sampling.Run();
+  // LoadClips checked every Clip's tracks against the Skeleton.
+  assert(sampled);
+}
+
+// Turns pose into what it adds onto reference, the way ozz-animation's additive
+// layers take it: its translation less reference's, its rotation after
+// reference's undone, its scale over reference's.
+void ToDifference(std::span<const ozz::math::SoaTransform> reference, std::span<ozz::math::SoaTransform> pose) {
+  for (std::size_t block = 0; block < pose.size(); ++block) {
+    const ozz::math::SoaTransform& from = reference[block];
+    ozz::math::SoaTransform& each = pose[block];
+    each.translation = each.translation - from.translation;
+    each.rotation = ozz::math::Conjugate(from.rotation) * each.rotation;
+    each.scale = each.scale / from.scale;
+  }
+}
+
 // One SoA block's lanes of a SIMD value, read with ozz's own unaligned store.
 std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
   std::array<float, 4> lanes{};
@@ -69,6 +99,10 @@ std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
 // of stance is under way, the one it left.
 constexpr std::size_t kBlendedStances = 2;
 
+// The Clips an Aim offset and an ADS grip sample: the level aim, which the
+// others add their difference from, the lowest or the highest, and the grip.
+enum AimSlot : std::uint8_t { kLevel, kPitched, kGrip, kAimSlots };
+
 struct Poser::Buffers {
   // One per Clip a blend space blends at once, for each stance blended: each
   // samples one of them, so a Clip sampled tick after tick keeps its context's
@@ -79,6 +113,11 @@ struct Poser::Buffers {
   // two stances blended by the change's progress.
   std::array<std::vector<ozz::math::SoaTransform>, kBlendedStances> stances;
   std::vector<ozz::math::SoaTransform> blended;
+  // One per Clip of a stance's Aim offset and ADS grip, by AimSlot.
+  std::array<ozz::animation::SamplingJob::Context, kAimSlots> aim_contexts;
+  std::array<std::vector<ozz::math::SoaTransform>, kAimSlots> aim_sampled;
+  // A stance's blended pose with them added, before it takes the stance's place.
+  std::vector<ozz::math::SoaTransform> aimed;
 
   // Fits every buffer to skeleton.
   void Fit(const ozz::animation::Skeleton& skeleton) {
@@ -93,6 +132,51 @@ struct Poser::Buffers {
       stance.resize(soa_joints);
     }
     blended.resize(soa_joints);
+    for (std::size_t slot = 0; slot < kAimSlots; ++slot) {
+      if (aim_contexts.at(slot).max_tracks() < skeleton.num_joints()) {
+        aim_contexts.at(slot).Resize(skeleton.num_joints());
+      }
+      aim_sampled.at(slot).resize(soa_joints);
+    }
+    aimed.resize(soa_joints);
+  }
+
+  // Adds stance's Aim offset at pitch, and its ADS grip if ads, onto
+  // stances[index]: the lowest or highest aim's difference from the level one,
+  // weighted by how far pitch is toward it, and the grip's whole.
+  void AddAim(const ozz::animation::Skeleton& skeleton, const StanceClips& stance, float pitch, bool ads,
+              std::size_t index) {
+    const float toward = std::min(std::fabs(pitch) / command::kMaxLookPitch, 1.0F);
+    if (toward == 0.0F && !ads) {
+      return;
+    }
+    std::array<ozz::animation::BlendingJob::Layer, 2> additive{};
+    std::size_t count = 0;
+    std::vector<ozz::math::SoaTransform>& level = aim_sampled.at(kLevel);
+    Sample(stance.aim_center, 0.0F, aim_contexts.at(kLevel), level);
+    if (toward > 0.0F) {
+      std::vector<ozz::math::SoaTransform>& pitched = aim_sampled.at(kPitched);
+      Sample(pitch < 0.0F ? stance.aim_down : stance.aim_up, 0.0F, aim_contexts.at(kPitched), pitched);
+      ToDifference(level, pitched);
+      additive.at(count++) = {.weight = toward, .transform = {pitched.data(), pitched.size()}, .joint_weights = {}};
+    }
+    if (ads) {
+      std::vector<ozz::math::SoaTransform>& grip = aim_sampled.at(kGrip);
+      Sample(stance.ads, 0.0F, aim_contexts.at(kGrip), grip);
+      ToDifference(level, grip);
+      additive.at(count++) = {.weight = 1.0F, .transform = {grip.data(), grip.size()}, .joint_weights = {}};
+    }
+    std::vector<ozz::math::SoaTransform>& pose = stances.at(index);
+    const ozz::animation::BlendingJob::Layer whole{
+        .weight = 1.0F, .transform = {pose.data(), pose.size()}, .joint_weights = {}};
+    ozz::animation::BlendingJob adding;
+    adding.layers = {&whole, 1};
+    adding.additive_layers = {additive.data(), count};
+    adding.rest_pose = skeleton.joint_rest_poses();
+    adding.output = {aimed.data(), aimed.size()};
+    [[maybe_unused]] const bool added = adding.Run();
+    assert(added);
+    pose.swap(aimed);
   }
 
   // Blends layers into output over skeleton's rest pose.
@@ -116,14 +200,7 @@ struct Poser::Buffers {
       const ClipWeight& each = blend.clips.at(each_clip);
       const std::size_t slot = (index * kMaxBlendedClips) + each_clip;
       std::vector<ozz::math::SoaTransform>& output = sampled.at(slot);
-      ozz::animation::SamplingJob sampling;
-      sampling.animation = &each.clip->animation;
-      sampling.context = &contexts.at(slot);
-      sampling.ratio = RatioAt(*each.clip, input.body.stride);
-      sampling.output = {output.data(), output.size()};
-      [[maybe_unused]] const bool sampled_ok = sampling.Run();
-      // LoadClips checked every Clip's tracks against the Skeleton.
-      assert(sampled_ok);
+      Sample(*each.clip, RatioAt(*each.clip, input.body.stride), contexts.at(slot), output);
       layers.at(each_clip) = {.weight = each.weight, .transform = {output.data(), output.size()}, .joint_weights = {}};
     }
     Blend(clips.skeleton, {layers.data(), blend.count}, stances.at(index));
@@ -140,12 +217,15 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
   Buffers& buffers = *buffers_;
   buffers.Fit(clips.skeleton);
 
-  // The stance's blend space; while a change of stance is under way, the
-  // stance it left blended into it by how far the change has gone.
+  // The stance's blend space, its Aim offset and ADS grip on top; while a
+  // change of stance is under way, the stance it left, posed the same way,
+  // blended into it by how far the change has gone.
   buffers.BlendStance(clips, input.body.stance, input, 0);
+  buffers.AddAim(clips.skeleton, clips.Of(input.body.stance), input.pitch, input.ads, 0);
   const std::vector<ozz::math::SoaTransform>* pose = &buffers.stances.at(0);
   if (input.body.previous_stance != input.body.stance && input.body.stance_progress < physics::kStanceProgressSteps) {
     buffers.BlendStance(clips, input.body.previous_stance, input, 1);
+    buffers.AddAim(clips.skeleton, clips.Of(input.body.previous_stance), input.pitch, input.ads, 1);
     const float progress =
         static_cast<float>(input.body.stance_progress) / static_cast<float>(physics::kStanceProgressSteps);
     const std::array<ozz::animation::BlendingJob::Layer, kBlendedStances> layers{{

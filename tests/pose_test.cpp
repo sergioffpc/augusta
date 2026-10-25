@@ -11,6 +11,7 @@
 #include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/clips.h"
+#include "augusta/command.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
 #include "clips_fixture.h"
@@ -169,6 +170,120 @@ TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
   for (std::size_t joint = 0; joint < first.world.size(); ++joint) {
     EXPECT_EQ(first.world[joint], again.world[joint]);
   }
+}
+
+// The Aimer (clips_fixture.h) still, posed at a view's pitch and ADS: its Aim
+// offset bends it by its pitch, its ADS grip raises its Arm.
+class AimTest : public ::testing::Test {
+ protected:
+  // The Aimer in stance, which it has finished changing to unless a test
+  // names the stance it left and how far it has gone from it.
+  SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false, Stance previous = Stance::kStanding,
+                      std::uint8_t progress = static_cast<std::uint8_t>(augusta::physics::kStanceProgressSteps)) {
+    BodyState body;
+    body.stance = stance;
+    body.previous_stance = previous;
+    body.stance_progress = progress;
+    SkeletonPose posed;
+    poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, posed);
+    return posed;
+  }
+
+  static Vec3 HeadOf(const SkeletonPose& posed) {
+    return augusta::math::TransformPoint(posed.world.at(fixture::kAimerHead), Vec3(0.0F));
+  }
+
+  // Where the Arm's end is: 0.6 m down it from its shoulder.
+  static Vec3 HandOf(const SkeletonPose& posed) {
+    return augusta::math::TransformPoint(posed.world.at(fixture::kAimerArm), Vec3(0.0F, -0.6F, 0.0F));
+  }
+
+  std::shared_ptr<const CharacterClips> clips_ = fixture::AimerClips();
+  Skeleton skeleton_ = fixture::AimerSkeleton();
+  Poser poser_;
+};
+
+// The head kHeadAbovePelvis from a Pelvis pelvis high, bent ahead (-Z) by bend.
+Vec3 HeadBentBy(float pelvis, float bend) {
+  return Vec3(0.0F, pelvis + (fixture::kHeadAbovePelvis * std::cos(bend)), -fixture::kHeadAbovePelvis * std::sin(bend));
+}
+
+constexpr float kLowest = -augusta::command::kMaxLookPitch;
+constexpr float kHighest = augusta::command::kMaxLookPitch;
+
+TEST_F(AimTest, AimingAtTheLowestPitchBendsTheBodyByItsAimDown) {
+  const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kLowest));
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
+}
+
+TEST_F(AimTest, AimingAtTheHighestPitchLeansTheBodyBackByItsAimUp) {
+  const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kHighest));
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, -fixture::kStandingAimBend));
+}
+
+// Half way down, the Aim offset bends it half as far as at the lowest pitch.
+TEST_F(AimTest, HalfWayDownTheBodyBendsHalfAsFar) {
+  const Vec3 head = HeadOf(PoseAt(Stance::kStanding, kLowest / 2.0F));
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend / 2.0F));
+}
+
+// The hand 0.6 m down an Arm from a shoulder on a Pelvis pelvis high, swung up
+// ahead (-Z) by raise.
+Vec3 HandRaisedBy(float pelvis, float raise) {
+  return Vec3(fixture::kAimerShoulderSide, pelvis + fixture::kAimerShoulderAbovePelvis - (0.6F * std::cos(raise)),
+              -0.6F * std::sin(raise));
+}
+
+TEST_F(AimTest, WithoutADSTheArmHangsAndWithItTheADSGripRaisesIt) {
+  const Vec3 hanging = HandOf(PoseAt(Stance::kStanding, 0.0F));
+  const Vec3 raised = HandOf(PoseAt(Stance::kStanding, 0.0F, true));
+
+  ExpectNear(hanging, HandRaisedBy(fixture::kPelvisStanding, 0.0F));
+  ExpectNear(raised, HandRaisedBy(fixture::kPelvisStanding, fixture::kStandingAdsRaise));
+}
+
+// Aiming down in ADS, the body bends and the arm is raised from the bent
+// shoulder: both add onto the pose.
+TEST_F(AimTest, AimingDownInADSBendsTheBodyAndRaisesTheArm) {
+  const SkeletonPose posed = PoseAt(Stance::kStanding, kLowest, true);
+  const Vec3 head = HeadOf(posed);
+  const Vec3 hand = HandOf(posed);
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
+  // The Arm turns with the bent Pelvis and is raised within it: from where the
+  // bend puts the shoulder, swung up ahead by the raise less the bend, which
+  // tips it down.
+  const float bend = fixture::kStandingAimBend;
+  const Vec3 shoulder(fixture::kAimerShoulderSide,
+                      fixture::kPelvisStanding + (fixture::kAimerShoulderAbovePelvis * std::cos(bend)),
+                      -fixture::kAimerShoulderAbovePelvis * std::sin(bend));
+  const float swing = fixture::kStandingAdsRaise - bend;
+  ExpectNear(hand, shoulder + Vec3(0.0F, -0.6F * std::cos(swing), -0.6F * std::sin(swing)));
+}
+
+TEST_F(AimTest, EachStanceBendsAndRaisesByItsOwnAimOffsetAndADSGrip) {
+  const SkeletonPose crouched = PoseAt(Stance::kCrouching, kLowest, true);
+  const SkeletonPose prone = PoseAt(Stance::kProne, kHighest);
+  const Vec3 crouched_head = HeadOf(crouched);
+  const Vec3 prone_head = HeadOf(prone);
+  const Vec3 crouched_hand = HandOf(PoseAt(Stance::kCrouching, 0.0F, true));
+
+  ExpectNear(crouched_head, HeadBentBy(fixture::kPelvisCrouching, fixture::kCrouchingAimBend));
+  ExpectNear(prone_head, HeadBentBy(fixture::kPelvisProne, -fixture::kProneAimBend));
+  ExpectNear(crouched_hand, HandRaisedBy(fixture::kPelvisCrouching, fixture::kCrouchingAdsRaise));
+}
+
+// Just crouched from standing, aiming down, the body is still all standing's:
+// standing's own Aim offset bends it, so a change of stance never straightens
+// an aiming body.
+TEST_F(AimTest, ThroughAChangeOfStanceTheStanceItLeftKeepsItsOwnAimOffset) {
+  const SkeletonPose posed = PoseAt(Stance::kCrouching, kLowest, false, Stance::kStanding, 0);
+  const Vec3 head = HeadOf(posed);
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
 }
 
 }  // namespace

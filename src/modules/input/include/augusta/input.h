@@ -98,10 +98,6 @@ struct Config {
   Keymap keymap = kDefaultKeymap;
 };
 
-/// The steepest pitch, up or down, Input lets the view reach, in radians: just
-/// short of straight up/down.
-inline constexpr float kMaxLookPitch = 1.55F;
-
 /// Where the player aims now: the yaw and pitch of its view, as a Command's,
 /// and whether it holds ADS.
 struct Aim {
