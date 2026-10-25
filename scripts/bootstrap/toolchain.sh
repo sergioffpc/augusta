@@ -223,7 +223,7 @@ install_tool() {
   UV_TOOL_BIN_DIR="$(native_path "${dir}/bin")" \
   UV_PYTHON_INSTALL_DIR="$(native_path "${STORE}/python")" \
   UV_PYTHON_PREFERENCE=only-managed \
-    uv tool install --quiet "${package}"
+    uv tool install --quiet --python "${PYTHON_VERSION}" "${package}"
   # Last, so an install cut short is redone.
   touch "${dir}/.installed"
 }
