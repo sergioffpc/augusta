@@ -33,7 +33,10 @@ commit, with the Python that runs them kept in the store too, so a store
 restored on another machine (CI's cache) runs; release binaries, buf among them,
 are downloaded and verified. luacheck has no release for macOS or Linux arm64:
 there the system's LuaRocks (Homebrew's, apt's) builds its pinned rock into the
-store, whose dependencies (argparse, LuaFileSystem) are LuaRocks' latest.
+store, whose dependencies (argparse, LuaFileSystem) are LuaRocks' latest. The
+rock is built for, and runs on, a pinned Lua 5.4 built from lua.org's source
+into the same store directory, never the system's Lua: luacheck loads on Lua 5.1
+to 5.4, and Homebrew's Lua is 5.5.
 
 **A shared store, linked per checkout.** Each version of each tool is installed
 once per machine, in
