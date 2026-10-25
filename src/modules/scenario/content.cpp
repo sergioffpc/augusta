@@ -83,8 +83,8 @@ std::expected<std::vector<Character>, failure::Failure> ReadCharacters(const ass
   return characters;
 }
 
-// The scenario's rifle (ADR-0064): its Grip, Muzzle and Sight, each a frame in
-// the rifle's space, as Posing places them.
+// The scenario's rifle (ADR-0064): its Grip, Muzzle, Sight and Fore-end, each a
+// frame in the rifle's space, as Posing places them.
 std::expected<weapon::Markers, failure::Failure> ReadRifle(const assets::Pack& pack) {
   const auto rifle = pack.ResolveRifle();
   if (!rifle) {
@@ -94,7 +94,10 @@ std::expected<weapon::Markers, failure::Failure> ReadRifle(const assets::Pack& p
   const auto frame = [](const assets::RifleMarker& marker) {
     return math::ToMat4(marker.translation, marker.rotation, math::Vec3(1.0F));
   };
-  return weapon::Markers{.grip = frame(rifle->grip), .muzzle = frame(rifle->muzzle), .sight = frame(rifle->sight)};
+  return weapon::Markers{.grip = frame(rifle->grip),
+                         .muzzle = frame(rifle->muzzle),
+                         .sight = frame(rifle->sight),
+                         .fore_end = frame(rifle->fore_end)};
 }
 
 // The scenario's Parameters script, out of the pack (it was cooked into the

@@ -34,7 +34,7 @@ namespace augusta::assets {
 
 namespace {
 
-constexpr std::uint32_t kFormatVersion = 6;
+constexpr std::uint32_t kFormatVersion = 7;
 // The header's flags byte: whether it names a client pack's hash.
 constexpr std::uint8_t kHeaderHasClientPack = 1U << 0U;
 // magic + version(u32) + data_offset(u64) + index_offset(u64) + index_count(u32)
@@ -532,6 +532,7 @@ bool IsValidAssetType(std::uint8_t value) {
     case AssetType::kClip:
     case AssetType::kStanceTransitions:
     case AssetType::kRifle:
+    case AssetType::kWeaponSocket:
       return true;
   }
   return false;
@@ -785,6 +786,11 @@ std::expected<EyeData, ResolveError> Pack::ResolveEye(std::string_view path) con
 
 std::expected<RifleData, ResolveError> Pack::ResolveRifle() const {
   return ResolveAsset<RifleData>(impl_->index, impl_->mapping, kRiflePath, AssetType::kRifle, DecodeRifleBlob);
+}
+
+std::expected<WeaponSocketData, ResolveError> Pack::ResolveWeaponSocket(std::string_view character) const {
+  return ResolveAsset<WeaponSocketData>(impl_->index, impl_->mapping, CharacterWeaponSocketPath(character),
+                                        AssetType::kWeaponSocket, DecodeWeaponSocketBlob);
 }
 
 std::expected<AudioData, ResolveError> Pack::ResolveAudio(std::string_view path) const {

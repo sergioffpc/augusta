@@ -6,7 +6,9 @@
 #include "augusta/animation.h"
 #include "augusta/assets.h"
 #include "augusta/clips.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 /// \file
 /// A player's Hitbox pose evaluated from its Character's Clips (ADR-0066), with
@@ -21,7 +23,9 @@
 /// the body by the view's pitch and its ADS grip raises its arms, each an
 /// additive layer of its difference from the level aim. The root is where the
 /// body's position and yaw put it (hitbox::RootOf); how low the body is, is its
-/// stances' Clips'.
+/// stances' Clips'. Then HoldRifle hangs the rifle from the weapon socket on its
+/// right hand, wherever the pose put that hand, and bends its left arm by
+/// ozz-animation's two-bone IK so the left hand reaches the rifle's Fore-end.
 ///
 /// A pure function of replicated state: the Poser holds ozz-animation's
 /// working buffers alone, so posing the same state twice gives the same pose,
@@ -72,6 +76,18 @@ class Poser {
   struct Buffers;
   std::unique_ptr<Buffers> buffers_;
 };
+
+/// Holds the rifle whose markers are rifle in posed, a pose of skeleton as
+/// Poser::Pose or PoseAtRest left it (ADR-0066): the rifle's Grip on socket,
+/// where the pose put the Joint it moves with, and the left hand on the rifle's
+/// Fore-end, its elbow and shoulder turned by ozz-animation's two-bone IK, each
+/// Joint below them composed again. The elbow bends the way the pose bent it,
+/// out of the line from the shoulder to the hand (down, for an arm the pose
+/// holds straight); a Fore-end out of the arm's reach leaves it straight toward
+/// it. Returns where the Grip is held, the hand weapon::PlaceMuzzle places the
+/// rifle's Muzzle from. socket must be skeleton's (LoadClips checked it).
+math::Mat4 HoldRifle(const assets::Skeleton& skeleton, const WeaponSocket& socket, const weapon::Markers& rifle,
+                     SkeletonPose& posed);
 
 }  // namespace augusta::animation
 

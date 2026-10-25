@@ -8,7 +8,7 @@
 def Xform "Rifle"
 {
     # The rifle's markers (ADR-0064), each pointing along its -Z, the way the
-    # barrel points: the cooker writes these three frames into both packs and
+    # barrel points: the cooker writes these four frames into both packs and
     # nothing else of this stage. Guide markers like the soldier's Eye, so none
     # is ever rendered or cooked as geometry. The rifle's own space has the Grip
     # at its origin.
@@ -41,6 +41,17 @@ def Xform "Rifle"
         float3[] extent = [(-0.01, -0.01, -0.01), (0.01, 0.01, 0.01)]
         uniform token purpose = "guide"
         double3 xformOp:translate = (0, 0.12, -0.05)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    # Where the left hand holds it (ADR-0066): under the barrel, ahead of the
+    # Grip.
+    def Sphere "ForeEnd"
+    {
+        double radius = 0.01
+        float3[] extent = [(-0.01, -0.01, -0.01), (0.01, 0.01, 0.01)]
+        uniform token purpose = "guide"
+        double3 xformOp:translate = (0, 0.03, -0.35)
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 }

@@ -17,6 +17,7 @@
 #include "augusta/parameters.h"
 #include "augusta/simulation.h"
 #include "augusta/weapon.h"
+#include "clips_fixture.h"
 
 // Unit tests for the conversions Host makes at SimulationWorld's edge.
 namespace {
@@ -121,8 +122,9 @@ TEST(SimulationMappingTest, ACharacterKeepsItsClips) {
 }
 
 // Every server places its players' Muzzles from the scenario's rifle (ADR-0064):
-// in ADS its Sight is on the Eye and its Muzzle where the rifle has it ahead of
-// its Sight.
+// held on the hand of a player playing the Holder (clips_fixture.h), which
+// hangs unturned, its Muzzle where the rifle has it ahead of its Sight, to
+// within the turn ozz-animation quantizes a Clip's rotations to.
 TEST(SimulationMappingTest, ASimulationHoldsTheScenariosRifle) {
   augusta::scenario::Scenario scenario;
   scenario.rifle = augusta::weapon::Markers{
@@ -135,16 +137,17 @@ TEST(SimulationMappingTest, ASimulationHoldsTheScenariosRifle) {
   auto world = augusta::host::BuildSimulation(augusta::parameters::Parameters{}, 60, scenario, {});
   const augusta::simulation::EntityId alice{1};
   world.AddPlayer(alice, Vec3(0.0F, 0.0F, 0.0F),
-                  augusta::simulation::Character{.eye = Vec3(0.0F, 1.6F, 0.0F), .hitboxes = {}});
+                  augusta::simulation::Character{.eye = Vec3(0.0F, 1.6F, 0.0F),
+                                                 .hitboxes = {},
+                                                 .skeleton = augusta::clips_fixture::HolderSkeleton(),
+                                                 .clips = augusta::clips_fixture::HolderClips()});
 
-  augusta::command::Command aiming;
-  aiming.ads = true;
-  static_cast<void>(world.Tick({{.entity = alice, .command = aiming}}, 1.0F / 60.0F));
+  static_cast<void>(world.Tick({{.entity = alice, .command = augusta::command::Command{}}}, 1.0F / 60.0F));
 
   const auto held = world.HeldRifleOf(alice);
   ASSERT_TRUE(held.has_value());
   const Vec3 muzzle_from_sight = Vec3(held->muzzle[3]) - Vec3(held->sight[3]);
-  EXPECT_NEAR(augusta::math::Length(muzzle_from_sight - Vec3(0.0F, -0.06F, -0.57F)), 0.0F, 1e-4F);
+  EXPECT_NEAR(augusta::math::Length(muzzle_from_sight - Vec3(0.0F, -0.06F, -0.57F)), 0.0F, 1e-3F);
 }
 
 }  // namespace

@@ -1055,7 +1055,9 @@ class HitTest : public ::testing::Test {
     return parameters;
   }
 
-  HitTest() : world_(WithDamage(), kTickRate) { EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value()); }
+  explicit HitTest(const augusta::weapon::Markers& rifle = {}) : world_(WithDamage(), kTickRate, {}, rifle) {
+    EXPECT_TRUE(world_.AddCollisionMesh(Floor()).has_value());
+  }
 
   void SetUp() override {
     world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
@@ -1729,6 +1731,27 @@ Character Aimer() {
                    .clips = fixture::AimerClips()};
 }
 
+// The Holder (clips_fixture.h) as a Character: the Aimer's head and torso, its
+// right arm, and its left forearm, a box 10 cm across from its elbow to 5 cm
+// past its hand. Holding no rifle unless holding.
+Character Holder(bool holding = true) {
+  namespace fixture = augusta::clips_fixture;
+  CharacterHitbox head = Box(BodyPart::kHead, Vec3(-0.1F, 0.0F, -0.1F), Vec3(0.1F, 0.3F, 0.1F));
+  head.joint = fixture::kHolderHead;
+  CharacterHitbox torso = Box(BodyPart::kTorso, Vec3(-0.2F, 0.0F, -0.1F), Vec3(0.2F, 0.6F, 0.1F));
+  torso.joint = fixture::kHolderPelvis;
+  CharacterHitbox right_arm =
+      Box(BodyPart::kLimb, Vec3(-0.05F, -fixture::kHolderArm, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  right_arm.joint = fixture::kHolderRightArm;
+  CharacterHitbox left_forearm =
+      Box(BodyPart::kLimb, Vec3(-0.05F, -fixture::kHolderForearm - 0.05F, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
+  left_forearm.joint = fixture::kHolderLeftForearm;
+  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                   .hitboxes = {head, torso, right_arm, left_forearm},
+                   .skeleton = fixture::HolderSkeleton(),
+                   .clips = fixture::HolderClips(holding)};
+}
+
 // HitTest's Alice and Bob, Bob playing the Aimer and facing -X, across Alice's
 // line of fire: as his Aim offset bends him ahead or back, or his ADS grip
 // raises his arm ahead, they move to Alice's left or right (ADR-0066).
@@ -1858,6 +1881,54 @@ TEST_F(AnimatedHitTest, ThePoseSwitchesToTheGroundsOnTheTickAPlayerLands) {
   ASSERT_EQ(landing.size(), 1U);
   EXPECT_EQ(landing[0].part, BodyPart::kLimb);
   EXPECT_TRUE(before.empty());
+}
+
+// HitTest's Alice and Bob, with the test rifle (clips_fixture.h's
+// HolderRifle), Bob playing the Holder and facing -X, his left side to Alice:
+// his left hand reaches his rifle's Fore-end, kHolderForeEnd ahead of his right
+// hand, which hangs kHolderArm below his right shoulder (ADR-0066).
+class HeldHitTest : public HitTest {
+ protected:
+  HeldHitTest() : HitTest(augusta::clips_fixture::HolderRifle()) {}
+
+  void SetUp() override {}
+
+  // Puts Bob in the world, holding his rifle if holding, and settles.
+  void BobHolds(bool holding) {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Target());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Holder(holding));
+    bob_ = Command{};
+    bob_.yaw = std::numbers::pi_v<float> / 2.0F;
+    Wait(kSettleTicks);
+  }
+
+  // The Fore-end from his feet: ahead of him is -X, his right -Z.
+  static Vec3 ForeEnd() {
+    namespace fixture = augusta::clips_fixture;
+    return Vec3(-fixture::kHolderForeEnd,
+                fixture::kPelvisStanding + fixture::kAimerShoulderAbovePelvis - fixture::kHolderArm,
+                -fixture::kAimerShoulderSide);
+  }
+};
+
+// Where his left hand holds the rifle, only his left forearm, bent there by the
+// IK, is: holding no rifle, his left arm hangs by his side.
+// Requirements: US-11
+TEST_F(HeldHitTest, AShotAtTheLeftForearmHitsItWhereTheIKBendsItToTheRifle) {
+  BobHolds(true);
+
+  const std::vector<Hit> hits = ShootAt(ForeEnd());
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[0].part, BodyPart::kLimb);
+}
+
+// Requirements: US-11
+TEST_F(HeldHitTest, WithoutTheRifleTheLeftForearmIsNotThere) {
+  BobHolds(false);
+
+  EXPECT_TRUE(ShootAt(ForeEnd()).empty());
 }
 
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
@@ -2169,35 +2240,21 @@ TEST_F(HitTest, ABulletWhoseShooterLeftStillHits) {
   EXPECT_EQ(hits[0].target, kBob);
 }
 
-// Alice's rifle, held where her view puts it (ADR-0064): the test rifle with
-// its markers authored along -Z, the Grip at its origin, the Sight 8 cm above
-// it and 10 cm behind, and the Muzzle 2 cm above it and 70 cm ahead, so the
-// Muzzle is 6 cm below the Sight and 80 cm ahead of it. From the hip, it is
-// held 20 cm right of the ADS hold, 30 cm below and 10 cm back. It kicks up by
-// 1/32 rad a round and never recovers.
+// Alice playing the Holder (clips_fixture.h), holding its rifle on the weapon
+// socket of her posed right hand (ADR-0064, ADR-0066): the rifle's Grip on her
+// hand, its Muzzle kHolderMuzzle along the hand's -Z, its Sight on the Grip.
 class HeldRifleTest : public FireTest {
  protected:
-  static constexpr float kViewYaw = 0.75F;
-  static constexpr float kViewPitch = -0.25F;
-  static constexpr float kKick = 1.0F / 32.0F;
-  static constexpr float kTolerance = 0.002F;
+  static constexpr float kTolerance = 0.005F;
 
-  static Parameters WithAHipOffsetAndRecoil() {
-    Parameters parameters = WithTheTestRifle();
-    parameters.rifle.hip_offset = Vec3(0.2F, -0.3F, 0.1F);
-    parameters.rifle.recoil_pattern = {{.pitch = kKick, .yaw = 0.0F}};
-    return parameters;
+  HeldRifleTest() : FireTest(WithTheTestRifle(), augusta::clips_fixture::HolderRifle()) {}
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Holder());
+    for (int i = 0; i < kSettleTicks; ++i) {
+      world_.Tick({}, kTick);
+    }
   }
-
-  static augusta::weapon::Markers TheRifle() {
-    return augusta::weapon::Markers{
-        .grip = augusta::math::Mat4(1.0F),
-        .muzzle = glm::translate(augusta::math::Mat4(1.0F), Vec3(0.0F, 0.02F, -0.7F)),
-        .sight = glm::translate(augusta::math::Mat4(1.0F), Vec3(0.0F, 0.08F, 0.1F)),
-    };
-  }
-
-  HeldRifleTest() : FireTest(WithAHipOffsetAndRecoil(), TheRifle()) {}
 
   static Command Aiming(float yaw, float pitch, bool ads) {
     Command command{};
@@ -2220,6 +2277,12 @@ class HeldRifleTest : public FireTest {
   // Where a marker points: its -Z, as the barrel does.
   static Vec3 PointingOf(const augusta::math::Mat4& marker) { return augusta::math::Normalize(-Vec3(marker[2])); }
 
+  // Her right shoulder, from her feet, facing -Z, her Pelvis pelvis high.
+  static Vec3 RightShoulder(float pelvis) {
+    namespace fixture = augusta::clips_fixture;
+    return Vec3(fixture::kAimerShoulderSide, pelvis + fixture::kAimerShoulderAbovePelvis, 0.0F);
+  }
+
   static void ExpectNear(const Vec3& actual, const Vec3& expected) {
     EXPECT_NEAR(actual.x, expected.x, kTolerance);
     EXPECT_NEAR(actual.y, expected.y, kTolerance);
@@ -2227,77 +2290,70 @@ class HeldRifleTest : public FireTest {
   }
 };
 
+// From the hip her arm hangs, the hand kHolderArm below the shoulder, and the
+// rifle points ahead from it.
 // Requirements: US-06
-TEST_F(HeldRifleTest, InAdsTheSightIsOnTheEyeAndTheMuzzleAheadOfItAlongTheView) {
-  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
-
-  const auto held = HeldAfter(Aiming(0.0F, 0.0F, true));
-
-  ExpectNear(PositionOf(held.sight), eye);
-  ExpectNear(PositionOf(held.muzzle), eye + Vec3(0.0F, -0.06F, -0.8F));
-  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 0.0F, -1.0F));
-}
-
-// Requirements: US-06
-TEST_F(HeldRifleTest, InAdsTheBarrelFollowsTheYawAndThePitchOfTheView) {
-  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
-  const Vec3 view = augusta::command::ViewDirection(kViewYaw, kViewPitch);
-
-  const auto held = HeldAfter(Aiming(kViewYaw, kViewPitch, true));
-
-  ExpectNear(PositionOf(held.sight), eye);
-  ExpectNear(PointingOf(held.muzzle), view);
-  const Vec3 ahead = PositionOf(held.muzzle) - eye;
-  EXPECT_NEAR(augusta::math::Dot(ahead, view), 0.8F, kTolerance);
-  EXPECT_NEAR(augusta::math::Length(ahead - (view * augusta::math::Dot(ahead, view))), 0.06F, kTolerance);
-}
-
-// Requirements: US-07
-TEST_F(HeldRifleTest, FromTheHipTheRifleIsHeldAtTheHipOffsetFromTheAdsHold) {
-  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
+TEST_F(HeldRifleTest, TheRifleHangsFromTheWeaponSocketOfThePosedRightHand) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
 
   const auto held = HeldAfter(Aiming(0.0F, 0.0F, false));
 
-  ExpectNear(PositionOf(held.sight), eye + Vec3(0.2F, -0.3F, 0.1F));
-  ExpectNear(PositionOf(held.muzzle), eye + Vec3(0.2F, -0.36F, -0.7F));
+  ExpectNear(PositionOf(held.sight), hand);
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
+  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 0.0F, -1.0F));
 }
 
-// Requirements: US-07
-TEST_F(HeldRifleTest, FromTheHipTheMuzzleIsAheadOfTheBodyAlongTheViewAndOffTheLineOfSight) {
-  const Vec3 eye = Feet() + Vec3(0.0F, 1.5F, 0.0F);
-  const Vec3 view = augusta::command::ViewDirection(kViewYaw, kViewPitch);
-
-  const auto held = HeldAfter(Aiming(kViewYaw, kViewPitch, false));
-
-  const Vec3 ahead = PositionOf(held.muzzle) - eye;
-  EXPECT_GT(augusta::math::Dot(ahead, view), 0.5F);
-  EXPECT_GT(augusta::math::Length(ahead - (view * augusta::math::Dot(ahead, view))), 0.2F);
-  ExpectNear(PointingOf(held.muzzle), view);
-}
-
-// The eye is 1.5 m up a body 2.1 m tall standing and 1.3 m crouching.
+// Her ADS grip swings her arm straight ahead, turning her hand a quarter about
+// +X: the rifle on it points up.
 // Requirements: US-06
-TEST_F(HeldRifleTest, TheSightFollowsTheEyeLoweredForTheStance) {
-  Command crouched = Aiming(0.0F, 0.0F, true);
+TEST_F(HeldRifleTest, InAdsTheRifleFollowsTheHandTheADSGripRaises) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, 0.0F, -fixture::kHolderArm);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, true));
+
+  ExpectNear(PositionOf(held.sight), hand);
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, fixture::kHolderMuzzle, 0.0F));
+  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 1.0F, 0.0F));
+}
+
+// Crouched, her crouching Clips hold her Pelvis lower, and the hand with it.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheRifleFollowsTheHandDownIntoACrouch) {
+  namespace fixture = augusta::clips_fixture;
+  Command crouched = Aiming(0.0F, 0.0F, false);
   crouched.movement.desired_stance = Stance::kCrouching;
-  const Vec3 feet = Feet();
+  for (int i = 0; i < kSettleTicks; ++i) {
+    Tick(crouched);
+  }
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
 
   const auto held = HeldAfter(crouched);
 
-  ExpectNear(PositionOf(held.sight), feet + Vec3(0.0F, 1.5F * 1.3F / 2.1F, 0.0F));
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
 }
 
-// Requirements: US-09
-TEST_F(HeldRifleTest, TheBarrelFollowsTheRecoilOffset) {
-  Command firing = Aiming(kViewYaw, kViewPitch, false);
-  firing.fire = true;
+// Facing a quarter turn to her left (yaw +pi/2 looks down -X), her right is -Z.
+// Requirements: US-06
+TEST_F(HeldRifleTest, TheRifleTurnsWithTheBody) {
+  namespace fixture = augusta::clips_fixture;
+  const float quarter_turn = std::numbers::pi_v<float> / 2.0F;
+  const Vec3 shoulder = RightShoulder(fixture::kPelvisStanding);
+  const Vec3 hand = Feet() + Vec3(0.0F, shoulder.y - fixture::kHolderArm, -shoulder.x);
 
-  const State state = Tick(firing);
-  const auto held = world_.HeldRifleOf(kAlice);
+  const auto held = HeldAfter(Aiming(quarter_turn, 0.0F, false));
 
-  ASSERT_TRUE(held.has_value());
-  ASSERT_EQ(state.bodies.front().rifle.recoil.pitch, kKick);
-  ExpectNear(PointingOf(held->muzzle), augusta::command::ViewDirection(kViewYaw, kViewPitch + kKick));
+  ExpectNear(PositionOf(held.muzzle), hand + Vec3(-fixture::kHolderMuzzle, 0.0F, 0.0F));
+  ExpectNear(PointingOf(held.muzzle), Vec3(-1.0F, 0.0F, 0.0F));
+}
+
+// Requirements: US-06
+TEST_F(HeldRifleTest, APlayerWhoseCharacterHasNoWeaponSocketHoldsNoRifle) {
+  world_.AddPlayer(kBob, Vec3(5.0F, 0.5F, 0.0F), kCharacter);
+  Tick(Command{});
+
+  EXPECT_FALSE(world_.HeldRifleOf(kBob).has_value());
 }
 
 // Requirements: US-07

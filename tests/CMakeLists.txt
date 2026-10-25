@@ -736,7 +736,12 @@ target_link_libraries(augusta_tick_messages_tests PRIVATE augusta_host augusta_p
 gtest_discover_tests(augusta_tick_messages_tests DISCOVERY_TIMEOUT 30)
 
 add_executable(augusta_simulation_mapping_tests simulation_mapping_test.cpp)
-target_link_libraries(augusta_simulation_mapping_tests PRIVATE augusta_host GTest::gtest GTest::gtest_main)
+# Links augusta_animation and ozz-animation's offline libraries for the Clips it
+# authors (clips_fixture.h).
+target_link_libraries(
+  augusta_simulation_mapping_tests
+  PRIVATE augusta_host augusta_animation ozz::animation_offline GTest::gtest GTest::gtest_main
+)
 # Links PhysX through augusta_physics, so the same first-launch cost applies as above.
 gtest_discover_tests(augusta_simulation_mapping_tests DISCOVERY_TIMEOUT 30)
 

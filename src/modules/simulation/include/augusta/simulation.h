@@ -97,12 +97,13 @@ enum class Phase {
   /// (hitbox::RootOf). A Character without Clips is posed in its Rest pose
   /// (animation::PoseAtRest). What HitDetection judges this tick's Shots against when
   /// the Hitbox history holds no tick of the player yet, and what Commit keeps
-  /// in it. Then places its rifle (ADR-0064, World::HeldRifleOf): its holding
-  /// hand a Desktop player's (weapon::DesktopHand), from its eye lowered for
-  /// its stance and its last Command's view and ADS, the view turned by the
-  /// Recoil offset WeaponHandling left its rifle with; and its Muzzle and Sight
-  /// where that hand holds them (weapon::PlaceMuzzle). Rounds still leave the
-  /// Eye.
+  /// in it. Then hangs its rifle from its Character's weapon socket on its
+  /// posed right hand and bends its left arm to the rifle's Fore-end by
+  /// two-bone IK (animation::HoldRifle, ADR-0066), before HitDetection judges
+  /// or Commit records the pose; and places the rifle's Muzzle and Sight where
+  /// the socket holds it (weapon::PlaceMuzzle, ADR-0064, World::HeldRifleOf).
+  /// A Character without Clips or a weapon socket holds no rifle. Rounds still
+  /// leave the Eye.
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -510,7 +511,8 @@ class World {
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
   /// Where entity's rifle is, as the last tick's Posing placed it; nullopt for
-  /// a player not in the world, dead, or not yet posed by a tick.
+  /// a player not in the world, dead, not yet posed by a tick, or whose
+  /// Character has no weapon socket.
   [[nodiscard]] std::optional<HeldRifle> HeldRifleOf(EntityId entity) const;
 
 #if AUGUSTA_DEBUG_TOOLS

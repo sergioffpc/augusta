@@ -62,11 +62,19 @@ CHARACTER_EYE_PRIM = "Eye"
 # Skeleton (ADR-0061), which client and server read at <character
 # name>/Character/Skeleton.
 CHARACTER_SKELETON_PRIM = "Skeleton"
+# The child of CHARACTER_ROOT_PRIM every character stage has: its weapon
+# socket (ADR-0066), bound to its right hand's joint, the frame the rifle's
+# Grip hangs from. Client and server read it at <character
+# name>/Character/WeaponSocket.
+CHARACTER_WEAPON_SOCKET_PRIM = "WeaponSocket"
+# The joint of the left hand, on a weapon socket: the hand that reaches the
+# rifle's Fore-end by two-bone IK (ADR-0066).
+_LEFT_HAND_ATTR = "augusta:leftHand"
 # The children of a rifle stage's default prim that are its markers
 # (ADR-0064), each a frame pointing along its -Z: where the holding hand holds
-# it, the end of its barrel and the point the Eye looks through in ADS. In the
-# order the rifle blob carries them.
-RIFLE_MARKER_PRIMS = ("Grip", "Muzzle", "Sight")
+# it, the end of its barrel, the point the Eye looks through in ADS and where
+# the left hand holds it (ADR-0066). In the order the rifle blob carries them.
+RIFLE_MARKER_PRIMS = ("Grip", "Muzzle", "Sight", "ForeEnd")
 # How far a root joint's transform may be from the character's root and still
 # be at it: float noise in an authored matrix, not a misplaced skeleton.
 _ROOT_TOLERANCE = 1e-6
@@ -742,8 +750,9 @@ def _maybe_cook_texture_prim(
 # True for the AssetType values ADR-0019 puts in the server pack: collision
 # geometry, hitboxes, spawn points, character eyes (the server fires each
 # Shot from its shooter's eye, ADR-0040), character skeletons (the same
-# joints on either side, ADR-0061) and the rifle's markers (the server places
-# each Muzzle, ADR-0064). Mesh/texture/scene are client-only
+# joints on either side, ADR-0061), the rifle's markers (the server places
+# each Muzzle, ADR-0064) and character weapon sockets (the server poses the
+# rifle and the left arm, ADR-0066). Mesh/texture/scene are client-only
 # (scene is handled separately, since it needs its mesh/material
 # references stripped rather than being dropped outright).
 _SERVER_PACK_ASSET_TYPES = frozenset(
@@ -757,6 +766,7 @@ _SERVER_PACK_ASSET_TYPES = frozenset(
         _native.AssetType.CLIP,
         _native.AssetType.STANCE_TRANSITIONS,
         _native.AssetType.RIFLE,
+        _native.AssetType.WEAPON_SOCKET,
     }
 )
 
@@ -823,6 +833,7 @@ class _OpenedCharacter:
     prims: list[Usd.Prim]
     eye_path: Sdf.Path
     skeleton: _Skeleton
+    weapon_socket: _native.AssetEntry
     animation: _Animation
 
 
@@ -982,9 +993,21 @@ def _read_hitbox_joint(
 ) -> str:
     """The name of the joint a character's hitbox prim is authored under.
 
-    A hitbox is bound rigidly to one joint as UsdSkel binds any prim: a
+    Raises CookError (hitbox_joint_missing, hitbox_joint_unknown) unless it is
+    bound to one, as _read_bound_joint reads it.
+    """
+    return _read_bound_joint(prim, prim_path, skeleton, "hitbox")
+
+
+def _read_bound_joint(
+    prim: Usd.Prim, prim_path: str, skeleton: _Skeleton, what: str
+) -> str:
+    """The name of the joint a character's prim, a what, is authored under.
+
+    The prim is bound rigidly to one joint as UsdSkel binds any prim: a
     constant primvars:skel:jointIndices of one index, into the prim's
-    skel:joints if it has them, else into its Skeleton's joints.
+    skel:joints if it has them, else into its Skeleton's joints. Raises
+    CookError, <what>_joint_missing or <what>_joint_unknown, unless it is.
     """
     binding = UsdSkel.BindingAPI(prim)
     primvar = binding.GetJointIndicesPrimvar()
@@ -999,20 +1022,99 @@ def _read_hitbox_joint(
         or not 0 <= indices[0] < len(order)
     ):
         raise CookError(
-            "hitbox_joint_missing",
+            f"{what}_joint_missing",
             prim_path,
-            "a hitbox must be authored under the joint it moves with: bound "
-            "rigidly to one, by a constant primvars:skel:jointIndices of one "
-            "index into skel:joints",
+            f"a {what.replace('_', ' ')} must be authored under the joint it "
+            "moves with: bound rigidly to one, by a constant "
+            "primvars:skel:jointIndices of one index into skel:joints",
         )
     joint = str(order[indices[0]])
     if joint not in skeleton.rest_to_root:
         raise CookError(
-            "hitbox_joint_unknown",
+            f"{what}_joint_unknown",
             prim_path,
             f"names joint {joint!r}, which {skeleton.path} does not have",
         )
     return joint
+
+
+def _cook_weapon_socket(
+    character_name: str,
+    default_prim: Usd.Prim,
+    stage_path: Path,
+    skeleton: _Skeleton,
+    correction: Gf.Matrix4d,
+) -> _native.AssetEntry:
+    """The character's weapon socket and left hand (ADR-0066), for both packs.
+
+    The socket is the Character prim's WeaponSocket child, bound to the joint
+    of its right hand as a hitbox is; its frame, where the rifle's Grip goes,
+    is cooked into that joint's space, corrected as the joint is, its scale
+    dropped. Its augusta:leftHand names the left hand's joint, whose parent
+    and grandparent are the arm the left hand reaches the rifle's Fore-end
+    with. Raises CookError for a character without a socket, one bound to no
+    joint of the Skeleton, and a left hand missing, unknown or without an arm.
+    """
+    prim_path = (
+        f"{character_name}/{CHARACTER_ROOT_PRIM}/{CHARACTER_WEAPON_SOCKET_PRIM}"
+    )
+    prim = default_prim.GetChild(CHARACTER_WEAPON_SOCKET_PRIM)
+    if not prim:
+        raise CookError(
+            "weapon_socket_missing",
+            f"{character_name}/{CHARACTER_ROOT_PRIM}",
+            f"{stage_path}: a character's {CHARACTER_ROOT_PRIM!r} prim must "
+            f"have a {CHARACTER_WEAPON_SOCKET_PRIM!r} child, on its right "
+            "hand, where the rifle's Grip hangs",
+        )
+    joint = _read_bound_joint(prim, prim_path, skeleton, "weapon_socket")
+    attr = prim.GetAttribute(_LEFT_HAND_ATTR)
+    left_hand = str(attr.Get()) if attr and attr.HasValue() else ""
+    if not left_hand:
+        raise CookError(
+            "left_hand_missing",
+            prim_path,
+            f"a weapon socket must name, in {_LEFT_HAND_ATTR}, the joint of "
+            "the left hand that reaches the rifle's Fore-end",
+        )
+    names = [each.name for each in skeleton.joints]
+    if left_hand not in names:
+        raise CookError(
+            "left_hand_unknown",
+            prim_path,
+            f"names left hand {left_hand!r}, which {skeleton.path} does not "
+            "have",
+        )
+    parent = skeleton.joints[names.index(left_hand)].parent
+    if (
+        parent == _native.JOINT_NO_PARENT
+        or skeleton.joints[parent].parent == _native.JOINT_NO_PARENT
+    ):
+        raise CookError(
+            "left_hand_arm_missing",
+            prim_path,
+            f"left hand {left_hand!r} needs a parent and a grandparent in "
+            f"{skeleton.path}: the arm it reaches the rifle's Fore-end with",
+        )
+    local_to_root = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
+        Usd.TimeCode.Default()
+    )
+    in_joint = local_to_root * skeleton.rest_to_root[joint].GetInverse()
+    translation, rotation, _ = _decompose(
+        correction.GetInverse() * in_joint * correction
+    )
+    return _native.AssetEntry(
+        type=_native.AssetType.WEAPON_SOCKET,
+        path=prim_path,
+        data=_native.encode_weapon_socket_blob(
+            _native.WeaponSocketData(
+                joint=joint,
+                translation=translation,
+                rotation=rotation,
+                left_hand=left_hand,
+            )
+        ),
+    )
 
 
 class _Kind(enum.Enum):
@@ -1545,7 +1647,7 @@ def _sound_entries(sounds: CueSounds) -> list[_native.AssetEntry]:
 
 
 def _cook_rifle(stage_path: Path) -> _native.AssetEntry:
-    """The rifle's Grip, Muzzle and Sight out of its stage (ADR-0064).
+    """The rifle's markers out of its stage (ADR-0064, ADR-0066).
 
     Each marker is a child of the stage's default prim, read as its frame in
     the stage's root space, corrected to the runtime's Y-up meters; its scale
@@ -1584,12 +1686,14 @@ def _cook_rifle(stage_path: Path) -> _native.AssetEntry:
         markers.append(
             _native.RifleMarker(translation=translation, rotation=rotation)
         )
-    grip, muzzle, sight = markers
+    grip, muzzle, sight, fore_end = markers
     return _native.AssetEntry(
         type=_native.AssetType.RIFLE,
         path=_native.RIFLE_PATH,
         data=_native.encode_rifle_blob(
-            _native.RifleData(grip=grip, muzzle=muzzle, sight=sight)
+            _native.RifleData(
+                grip=grip, muzzle=muzzle, sight=sight, fore_end=fore_end
+            )
         ),
     )
 
@@ -1704,6 +1808,15 @@ def cook_scenario(
         skeleton = _read_skeleton(
             character_name, default_prim, stage_path, character_correction
         )
+        # The rifle hangs from its right hand, and its left reaches the
+        # rifle (ADR-0066).
+        weapon_socket = _cook_weapon_socket(
+            character_name,
+            default_prim,
+            stage_path,
+            skeleton,
+            character_correction,
+        )
         # Every Hitbox pose is posed from its Clips (ADR-0066).
         animation = _cook_animation(
             character_name, default_prim, skeleton, character_correction
@@ -1721,6 +1834,7 @@ def cook_scenario(
                 prims=character_prims,
                 eye_path=eye_prim.GetPath(),
                 skeleton=skeleton,
+                weapon_socket=weapon_socket,
                 animation=animation,
             )
         )
@@ -1815,6 +1929,7 @@ def cook_scenario(
                 f"{character.stage_path}: a character needs a hitbox for each "
                 f"body part, and has none for {', '.join(missing)}",
             )
+        entries.append(character.weapon_socket)
         entries.extend(character.animation.entries)
         client_only_entries.extend(character.animation.client_entries)
 

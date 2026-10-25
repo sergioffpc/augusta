@@ -100,9 +100,9 @@ The script also seeds a small worked example from
 [composer/examples/authoring/](composer/examples/authoring/), piece by piece:
 `authoring/maps/firebase.usda` (a floor, a prop, a spawn point),
 `authoring/characters/soldier.usda` (ADR-0040), `authoring/animations/` (its
-Clips, a file each, ADR-0066), `authoring/rifles/rifle.usda` (its Grip, Muzzle
-and Sight, ADR-0064), `authoring/sounds/` (placeholder cue sounds, ADR-0020),
-`authoring/scripts/parameters/rules_of_engagement.lua` (ADR-0039),
+Clips, a file each, ADR-0066), `authoring/rifles/rifle.usda` (its Grip, Muzzle,
+Sight and Fore-end, ADR-0064), `authoring/sounds/` (placeholder cue sounds,
+ADR-0020), `authoring/scripts/parameters/rules_of_engagement.lua` (ADR-0039),
 `authoring/scripts/rules/last_man_standing.lua` (ADR-0022), and
 `authoring/scenarios/firebase.yaml` (the manifest composing them, ADR-0041) -
 committed to this repo so a fresh environment has something to cook straight

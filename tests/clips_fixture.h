@@ -23,13 +23,15 @@
 #include "augusta/clips.h"
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/weapon.h"
 
 // A Character's Clips authored in memory for a test (ADR-0066), with
 // ozz-animation's offline libraries, so a test never depends on the shipped
 // Character's art: TestClips, a Skeleton of its root Joint alone and still
 // Clips, each locomotion Clip with the stride length and duration the test gives
-// it; the Walker, whose Clips move its Joints, for a test of a pose; and the
-// Aimer, whose Aim offset and ADS grip bend and raise it.
+// it; the Walker, whose Clips move its Joints, for a test of a pose; the
+// Aimer, whose Aim offset and ADS grip bend and raise it; and the Holder, the
+// Aimer holding the rifle.
 namespace augusta::clips_fixture {
 
 // A still Clip duration seconds long, one track for the root Joint, which a
@@ -425,6 +427,172 @@ inline std::shared_ptr<const animation::CharacterClips> AimerClips() {
   clips->air = AimerClip(kPelvisStanding);
   clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
   return clips;
+}
+
+// The Holder: the Aimer holding the rifle (ADR-0066). Its right arm is the
+// Aimer's Arm, with a RightHand at its end, kHolderArm down it, and the weapon
+// socket on that hand; its left arm hangs from a shoulder as far to the
+// Pelvis's left, a LeftForearm kHolderUpperArm down it, bent ahead at the elbow
+// by kHolderElbowBend, and a LeftHand kHolderForearm down that. Its Clips bend
+// and raise it as the Aimer's do, the left arm held as it is in every one, so
+// where the left hand ends up is the IK's.
+inline constexpr float kHolderArm = 0.6F;
+inline constexpr float kHolderUpperArm = 0.5F;
+inline constexpr float kHolderForearm = 0.5F;
+inline constexpr float kHolderElbowBend = 0.5235988F;  // 30 degrees
+
+// The Holder's Joints, in its assets::Skeleton's order, which is ozz-animation's
+// too.
+inline constexpr std::uint32_t kHolderRoot = 0;
+inline constexpr std::uint32_t kHolderPelvis = 1;
+inline constexpr std::uint32_t kHolderHead = 2;
+inline constexpr std::uint32_t kHolderRightArm = 3;
+inline constexpr std::uint32_t kHolderRightHand = 4;
+inline constexpr std::uint32_t kHolderLeftArm = 5;
+inline constexpr std::uint32_t kHolderLeftForearm = 6;
+inline constexpr std::uint32_t kHolderLeftHand = 7;
+
+// Each Holder Joint's name, parent and translation from it, in order.
+struct HolderJoint {
+  const char* name;
+  std::uint32_t parent;
+  math::Vec3 translation;
+};
+inline std::array<HolderJoint, 8> HolderJoints() {
+  return {{
+      {"Root", assets::kJointNoParent, math::Vec3(0.0F)},
+      {"Root/Pelvis", kHolderRoot, math::Vec3(0.0F, kPelvisStanding, 0.0F)},
+      {"Root/Pelvis/Head", kHolderPelvis, math::Vec3(0.0F, kHeadAbovePelvis, 0.0F)},
+      {"Root/Pelvis/RightArm", kHolderPelvis, math::Vec3(kAimerShoulderSide, kAimerShoulderAbovePelvis, 0.0F)},
+      {"Root/Pelvis/RightArm/RightHand", kHolderRightArm, math::Vec3(0.0F, -kHolderArm, 0.0F)},
+      {"Root/Pelvis/LeftArm", kHolderPelvis, math::Vec3(-kAimerShoulderSide, kAimerShoulderAbovePelvis, 0.0F)},
+      {"Root/Pelvis/LeftArm/LeftForearm", kHolderLeftArm, math::Vec3(0.0F, -kHolderUpperArm, 0.0F)},
+      {"Root/Pelvis/LeftArm/LeftForearm/LeftHand", kHolderLeftForearm, math::Vec3(0.0F, -kHolderForearm, 0.0F)},
+  }};
+}
+
+// The Holder's Skeleton, standing upright in its Rest pose, its arms down.
+inline assets::Skeleton HolderSkeleton() {
+  assets::Skeleton skeleton;
+  for (const HolderJoint& joint : HolderJoints()) {
+    const math::Mat4 local = math::ToMat4(joint.translation, math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F));
+    skeleton.joints.push_back({.name = joint.name, .parent = joint.parent, .translation = joint.translation});
+    skeleton.rest_transforms.push_back(
+        joint.parent == assets::kJointNoParent ? local : skeleton.rest_transforms[joint.parent] * local);
+  }
+  return skeleton;
+}
+
+// A Holder Clip one second long, its Pelvis pelvis high and bent ahead by bend,
+// its right arm swung up ahead by raise, as AimerClip's; with a stride_length, a
+// still walk of it.
+inline animation::Clip HolderClip(float pelvis, float bend = 0.0F, float raise = 0.0F, float stride_length = 0.0F) {
+  using ozz::math::Float3;
+  using ozz::math::Quaternion;
+  const std::array<HolderJoint, 8> joints = HolderJoints();
+  ozz::animation::offline::RawAnimation raw;
+  raw.duration = 1.0F;
+  raw.tracks.resize(joints.size());
+  for (std::size_t joint = 0; joint < joints.size(); ++joint) {
+    const math::Vec3& at = joints.at(joint).translation;
+    raw.tracks[joint].translations.push_back({.time = 0.0F, .value = Float3(at.x, at.y, at.z)});
+  }
+  raw.tracks[kHolderPelvis].translations[0].value = Float3(0.0F, pelvis, 0.0F);
+  // A turn about +X tips +Y back, to +Z, and swings -Y ahead, to -Z.
+  raw.tracks[kHolderPelvis].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), -bend)});
+  raw.tracks[kHolderRightArm].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), raise)});
+  raw.tracks[kHolderLeftForearm].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), kHolderElbowBend)});
+  auto built = ozz::animation::offline::AnimationBuilder()(raw);
+  EXPECT_TRUE(built);
+  animation::Clip clip{.animation = std::move(*built), .stride_length = stride_length, .foot_contacts = {}};
+  if (stride_length > 0.0F) {
+    clip.foot_contacts = {{.foot = assets::Foot::kLeft, .ratio = 0.0F}, {.foot = assets::Foot::kRight, .ratio = 0.5F}};
+  }
+  return clip;
+}
+
+// A Holder stance's Clips, as AimerStanceOf's.
+inline animation::StanceClips HolderStanceOf(float pelvis, float bend, float raise, float forward, float backward,
+                                             float left, float right, bool sides = true) {
+  animation::StanceClips clips;
+  clips.idle = HolderClip(pelvis);
+  clips.forward = HolderClip(pelvis, 0.0F, 0.0F, forward);
+  clips.backward = HolderClip(pelvis, 0.0F, 0.0F, backward);
+  clips.aim_down = HolderClip(pelvis, bend);
+  clips.aim_center = HolderClip(pelvis);
+  clips.aim_up = HolderClip(pelvis, -bend);
+  clips.ads = HolderClip(pelvis, 0.0F, raise);
+  if (sides) {
+    clips.left = HolderClip(pelvis, 0.0F, 0.0F, left);
+    clips.right = HolderClip(pelvis, 0.0F, 0.0F, right);
+  }
+  return clips;
+}
+
+// The ozz-animation RawSkeleton Joint of the Holder's joint, its children under
+// it.
+inline ozz::animation::offline::RawSkeleton::Joint HolderRawJoint(std::uint32_t joint) {
+  const std::array<HolderJoint, 8> joints = HolderJoints();
+  ozz::animation::offline::RawSkeleton::Joint raw;
+  raw.name = joints.at(joint).name;
+  raw.transform = ozz::math::Transform::identity();
+  const math::Vec3& at = joints.at(joint).translation;
+  raw.transform.translation = ozz::math::Float3(at.x, at.y, at.z);
+  for (std::uint32_t child = 0; child < joints.size(); ++child) {
+    if (joints.at(child).parent == joint) {
+      raw.children.push_back(HolderRawJoint(child));
+    }
+  }
+  return raw;
+}
+
+// The Holder's Clips, with TestClips' stride lengths, and its weapon socket:
+// on its RightHand, unturned, its left hand its LeftHand. None unless holding,
+// for a Holder holding no rifle.
+inline std::shared_ptr<const animation::CharacterClips> HolderClips(bool holding = true) {
+  ozz::animation::offline::RawSkeleton raw;
+  raw.roots.push_back(HolderRawJoint(kHolderRoot));
+  auto skeleton = ozz::animation::offline::SkeletonBuilder()(raw);
+  EXPECT_TRUE(skeleton);
+
+  auto clips = std::make_shared<animation::CharacterClips>();
+  clips->skeleton = std::move(*skeleton);
+  for (std::uint32_t joint = 0; joint < HolderJoints().size(); ++joint) {
+    clips->joints.push_back(joint);
+  }
+  animation::StanceClips standing = HolderStanceOf(kPelvisStanding, kStandingAimBend, kStandingAdsRaise,
+                                                   kStandingForward, kStandingBackward, kStandingLeft, kStandingRight);
+  standing.sprint = HolderClip(kPelvisStanding, 0.0F, 0.0F, kStandingSprint);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kStanding)] = std::move(standing);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kCrouching)] =
+      HolderStanceOf(kPelvisCrouching, kCrouchingAimBend, kCrouchingAdsRaise, kCrouchingForward, 1.2F, 1.3F, 1.3F);
+  clips->stances[static_cast<std::size_t>(physics::Stance::kProne)] =
+      HolderStanceOf(kPelvisProne, kProneAimBend, kProneAdsRaise, kProneForward, kProneBackward, 0.0F, 0.0F, false);
+  clips->air = HolderClip(kPelvisStanding);
+  clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
+  if (holding) {
+    clips->weapon_socket =
+        animation::WeaponSocket{.joint = kHolderRightHand, .frame = math::Mat4(1.0F), .left_hand = kHolderLeftHand};
+  }
+  return clips;
+}
+
+// The Holder's rifle: its Grip at its origin, its Fore-end kHolderForeEnd ahead
+// of it and its Muzzle kHolderMuzzle ahead, each unturned, along -Z.
+inline constexpr float kHolderForeEnd = 0.4F;
+inline constexpr float kHolderMuzzle = 0.7F;
+inline weapon::Markers HolderRifle() {
+  return weapon::Markers{
+      .grip = math::Mat4(1.0F),
+      .muzzle =
+          math::ToMat4(math::Vec3(0.0F, 0.0F, -kHolderMuzzle), math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)),
+      .sight = math::Mat4(1.0F),
+      .fore_end =
+          math::ToMat4(math::Vec3(0.0F, 0.0F, -kHolderForeEnd), math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)),
+  };
 }
 
 }  // namespace augusta::clips_fixture

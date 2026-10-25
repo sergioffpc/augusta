@@ -13,14 +13,16 @@
 #include <ozz/animation/runtime/skeleton.h>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 /// \file
 /// A Character's Clips (GLOSSARY.md, ADR-0066), loaded from its verified pack
 /// with ozz-animation's runtime alone: no USD reaches a process. LoadClips reads
-/// its ozz-animation Skeleton, each Clip it has by role, and its stance
-/// transition durations, and refuses a Character whose Clips are missing or do
-/// not load, naming the Clip, so a server never admits a player it cannot pose.
+/// its ozz-animation Skeleton, each Clip it has by role, its stance transition
+/// durations and its Weapon socket, and refuses a Character whose Clips are
+/// missing or do not load, naming the Clip, so a server never admits a player it
+/// cannot pose.
 ///
 /// The ozz-animation types are held as they are. ozz's SIMD values must never be
 /// held in a standard template instantiated on one (std::array<SimdFloat4, N>):
@@ -61,10 +63,24 @@ struct StanceClips {
   Clip ads;
 };
 
+/// A Character's Weapon socket (ADR-0066): where on its right hand the rifle's
+/// Grip hangs, and the left hand that reaches the rifle's Fore-end by two-bone
+/// IK, each Joint an index in the Character's assets::Skeleton.
+struct WeaponSocket {
+  /// The Joint of its right hand, which the socket moves with.
+  std::uint32_t joint = 0;
+  /// The socket in that Joint's space: where the rifle's Grip goes, pointing
+  /// along its -Z as the Grip does.
+  math::Mat4 frame{1.0F};
+  /// The Joint of its left hand. Its parent, the elbow, and that Joint's
+  /// parent, the shoulder, are the arm that bends to reach the Fore-end.
+  std::uint32_t left_hand = 0;
+};
+
 /// A Character's Clips, as the Hitbox pose uses them: its ozz-animation
-/// Skeleton, each stance's Clips, its `air` Clip and how long each change of
-/// stance takes. A Cosmetic layer's Clips are the client's (ADR-0066) and not
-/// loaded here.
+/// Skeleton, each stance's Clips, its `air` Clip, how long each change of
+/// stance takes and its Weapon socket. A Cosmetic layer's Clips are the
+/// client's (ADR-0066) and not loaded here.
 struct CharacterClips {
   /// The Character's Skeleton as ozz-animation keeps its Joints: depth first,
   /// which may differ from assets::Skeleton's order (see joints).
@@ -76,6 +92,10 @@ struct CharacterClips {
   std::array<StanceClips, physics::kStanceCount> stances;
   Clip air;
   assets::StanceTransitionsData transitions;
+  /// Where the Hitbox pose hangs the rifle and reaches it with the left hand.
+  /// LoadClips always loads one; nullopt only for Clips a test builds by hand,
+  /// posed holding no rifle.
+  std::optional<WeaponSocket> weapon_socket;
 
   /// The Clips of stance.
   [[nodiscard]] const StanceClips& Of(physics::Stance stance) const;
@@ -93,6 +113,8 @@ enum class ClipPart {
   kClip,
   /// Its stance transition durations.
   kTransitions,
+  /// Its Weapon socket.
+  kWeaponSocket,
 };
 
 /// Why LoadClips refused a Character's Clips.
@@ -112,8 +134,9 @@ struct ClipLoadError {
 /// scenario's manifest) out of pack, whose assets::Skeleton is skeleton: its
 /// ozz-animation Skeleton, which must hold skeleton's Joints, every Clip the
 /// Hitbox pose uses (each required one, and each optional one it has), each a
-/// track for each Joint, and its stance transitions. Refuses the first part
-/// missing or not loading.
+/// track for each Joint, its stance transitions, and its Weapon socket, whose
+/// Joints must be skeleton's, its left hand's with a parent and a grandparent.
+/// Refuses the first part missing or not loading.
 [[nodiscard]] std::expected<CharacterClips, ClipLoadError> LoadClips(const assets::Pack& pack,
                                                                      std::string_view character,
                                                                      const assets::Skeleton& skeleton);

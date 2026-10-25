@@ -19,6 +19,7 @@
 #include <ozz/base/io/stream.h>
 
 #include "augusta/assets.h"
+#include "augusta/math.h"
 #include "augusta/physics.h"
 
 namespace augusta::animation {
@@ -161,6 +162,41 @@ std::expected<void, ClipLoadError> LoadStance(const assets::Pack& pack, std::str
       .and_then([&] { return required("ads", clips.ads); });
 }
 
+// The Weapon socket of character, its Joints found by name in skeleton.
+std::expected<WeaponSocket, ClipLoadError> LoadWeaponSocket(const assets::Pack& pack, std::string_view character,
+                                                            const assets::Skeleton& skeleton) {
+  const auto failed = [](std::string reason) {
+    return std::unexpected(ClipLoadError{.part = ClipPart::kWeaponSocket, .role = {}, .reason = std::move(reason)});
+  };
+  const auto data = pack.ResolveWeaponSocket(character);
+  if (!data) {
+    return failed(assets::DescribeResolveError(data.error(), "weapon socket"));
+  }
+  const auto index_of = [&skeleton](std::string_view name) -> std::optional<std::uint32_t> {
+    for (std::size_t joint = 0; joint < skeleton.joints.size(); ++joint) {
+      if (skeleton.joints[joint].name == name) {
+        return static_cast<std::uint32_t>(joint);
+      }
+    }
+    return std::nullopt;
+  };
+  const auto joint = index_of(data->joint);
+  if (!joint) {
+    return failed(std::format("names a joint {} the character's skeleton lacks", data->joint));
+  }
+  const auto left_hand = index_of(data->left_hand);
+  if (!left_hand) {
+    return failed(std::format("names a left hand {} the character's skeleton lacks", data->left_hand));
+  }
+  const std::uint32_t elbow = skeleton.joints[*left_hand].parent;
+  if (elbow == assets::kJointNoParent || skeleton.joints[elbow].parent == assets::kJointNoParent) {
+    return failed(std::format("left hand {} has no arm: a parent and a grandparent", data->left_hand));
+  }
+  return WeaponSocket{.joint = *joint,
+                      .frame = math::ToMat4(data->translation, data->rotation, math::Vec3(1.0F)),
+                      .left_hand = *left_hand};
+}
+
 }  // namespace
 
 const StanceClips& CharacterClips::Of(physics::Stance stance) const {
@@ -179,6 +215,8 @@ std::string DescribeClipLoadError(const ClipLoadError& error) {
       return std::format("clip {}: {}", error.role, error.reason);
     case ClipPart::kTransitions:
       return std::format("stance transitions: {}", error.reason);
+    case ClipPart::kWeaponSocket:
+      return std::format("weapon socket: {}", error.reason);
   }
   return error.reason;
 }
@@ -216,6 +254,11 @@ std::expected<CharacterClips, ClipLoadError> LoadClips(const assets::Pack& pack,
                       .reason = assets::DescribeResolveError(transitions.error(), "stance transitions")});
   }
   clips.transitions = *transitions;
+  auto socket = LoadWeaponSocket(pack, character, skeleton);
+  if (!socket) {
+    return std::unexpected(std::move(socket.error()));
+  }
+  clips.weapon_socket = *socket;
   return clips;
 }
 

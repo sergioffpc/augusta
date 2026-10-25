@@ -71,6 +71,10 @@ std::expected<std::vector<std::byte>, EncodeError> EncodeEyeBlob(const EyeData& 
 /// Encodes rifle into the pack's rifle-blob byte layout (ADR-0064).
 std::expected<std::vector<std::byte>, EncodeError> EncodeRifleBlob(const RifleData& rifle);
 
+/// Encodes socket into the pack's weapon-socket-blob byte layout (ADR-0066):
+/// kTooLarge for a Joint's name longer than a pack path.
+std::expected<std::vector<std::byte>, EncodeError> EncodeWeaponSocketBlob(const WeaponSocketData& socket);
+
 /// Encodes script, a Lua script's text, into the pack's script-blob byte layout
 /// (ADR-0031): the text itself, with no framing.
 std::expected<std::vector<std::byte>, EncodeError> EncodeScriptBlob(std::string_view script);

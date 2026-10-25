@@ -526,8 +526,16 @@ its player holds it. _Avoid_: Eye (the Eye is where a player sees from, never
 where a round leaves), shot origin
 
 **Grip**: Where on a rifle the holding hand holds it: one of the rifle's
-markers, with the Muzzle and the Sight, authored in its stage. _Avoid_: Handle,
-hand position
+markers, with the Muzzle, the Sight and the Fore-end, authored in its stage.
+_Avoid_: Handle, hand position
+
+**Fore-end**: Where on a rifle the support hand holds it, ahead of the Grip: one
+of the rifle's markers, which the left hand reaches by two-bone IK. _Avoid_:
+Handguard (the part, not the marker), support grip
+
+**Weapon socket**: Where on a Character's right hand the rifle's Grip hangs,
+authored with the Character, and the left hand that reaches the rifle's
+Fore-end. _Avoid_: Attachment point, hand bone, grip bone
 
 **Sight**: The point on a rifle the Eye looks through in ADS, and its line of
 sight: one of the rifle's markers. In ADS a Desktop player holds the rifle with
