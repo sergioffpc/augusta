@@ -258,6 +258,11 @@ JoinRefusal FromWire(protocol::JoinRefusalWire reason) {
   std::unreachable();
 }
 
+// A change of stance's progress travels as it is, so the step that ends one is
+// the same on both sides of the wire: the protocol, a codec below the engine,
+// cannot name physics' own.
+static_assert(protocol::BodyStateWire::kStanceProgressOver == physics::kStanceProgressSteps);
+
 protocol::BodyStateWire ToWire(const physics::BodyState& body) {
   return protocol::BodyStateWire{
       .position = body.position,
