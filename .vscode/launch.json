@@ -5,11 +5,9 @@
   // (windows/windows-debug, linux/linux-debug, macos/macos-debug) - CMake
   // Tools' active preset plays no part.
   //
-  // The (MSVC) configs start from config/augustac.yaml / config/augustad.yaml
+  // Every config starts from config/augustac.yaml / config/augustad.yaml
   // (ADR-0034): local copies of config/*.example.yaml, git-ignored because they
-  // hold this machine's paths. Create them before the first F5. The (lldb)
-  // configs pass none: they run on Linux and macOS, where those Windows paths
-  // don't exist.
+  // hold this machine's paths. Create them before the first F5.
   "configurations": [
     // The (lldb) configs below debug the Linux build of augustad (the real
     // deployment target, ADR-0026) and of augustac through LLVM's lldb-dap
@@ -24,6 +22,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux/src/server/augustad",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Release)",
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos/src/server/augustad",
@@ -36,6 +35,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux-debug/src/server/augustad",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustad.yaml"],
       "preLaunchTask": "Build augustad (Debug)",
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos-debug/src/server/augustad",
@@ -48,6 +48,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux/src/client/augustac",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "Build augustac (Release)",
       "osx": {
         "program": "${workspaceFolder}/build/arm64-macos/src/client/augustac",
@@ -60,6 +61,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/x64-linux-debug/src/client/augustac",
       "cwd": "${workspaceFolder}",
+      "args": ["--config", "${workspaceFolder}/config/augustac.yaml"],
       "preLaunchTask": "Build augustac (Debug)",
       // A Debug client runs under Vulkan's validation layer, vcpkg's
       // (ADR-0059): the loader finds its manifest through VK_ADD_LAYER_PATH,
