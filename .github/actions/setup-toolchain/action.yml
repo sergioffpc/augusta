@@ -16,6 +16,20 @@ runs:
       if: runner.os == 'Windows'
       shell: bash
       run: command -v make >/dev/null || choco install make --no-progress -y
+    # LLVM's, which the toolchain links: Ubuntu's, of the major the presets
+    # compile with, unless the job installed them already (setup-linux-build).
+    # Windows' come from setup-windows-llvm, which the job runs first.
+    - name: Install LLVM's clang-format, clang-tidy and clangd
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        for tool in clang-format clang-tidy clangd; do
+          if ! command -v "$tool" >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y clang-format clang-tidy clangd
+            break
+          fi
+        done
     - name: Cache the toolchain's store
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

@@ -71,8 +71,9 @@ jobs:
           ci_workflow='\.github/workflows/ci\.yml$'
           charts='charts/'
           # The toolchain the jobs run their tools from: its pins, what
-          # installs them, Linux's release checksums, and the action.
-          toolchain='scripts/bootstrap/(versions\.env|toolchain\.sh|linux\.sh)$|\.github/actions/setup-toolchain/'
+          # installs them, Prettier's lockfile, Linux's release checksums, and
+          # the action.
+          toolchain='scripts/bootstrap/(versions\.env|package-lock\.json|toolchain\.sh|linux\.sh)$|\.github/actions/setup-toolchain/'
           # The server and what builds its image.
           server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
@@ -120,11 +121,6 @@ jobs:
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
-      # LLVM's, which the toolchain links: Ubuntu's, of the major the
-      # presets compile with.
-      - name: Install LLVM's clang-format, clang-tidy and clangd
-        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
-        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy clangd
       # The formatters and linters the Makefile's format-check/* targets run.
       - uses: ./.github/actions/setup-toolchain
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
@@ -1030,6 +1026,7 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions/setup-toolchain
+            .github/actions/setup-windows-llvm
             .github/actions/sign-and-attest-server-image
             .github/actions/sign-artifact
             .vscode
@@ -1179,6 +1176,7 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions/setup-toolchain
+            .github/actions/setup-windows-llvm
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap
