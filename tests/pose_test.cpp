@@ -134,6 +134,31 @@ TEST_F(PoseTest, ThePositionAndTheYawMoveAndTurnThePose) {
   ExpectNear(FootOf(posed, fixture::kWalkerLeftLeg), Vec3(5.0F - kFootAhead, kFootUp, 2.0F + fixture::kHipSide));
 }
 
+// Down from standing into a crouch, still: the Pelvis is held at each stance's
+// height by its idle, so the head moves down with the change's progress.
+TEST_F(PoseTest, ThroughAChangeOfStanceTheHeadMovesDownByItsProgress) {
+  BodyState body;
+  body.stance = Stance::kCrouching;
+  body.previous_stance = Stance::kStanding;
+  SkeletonPose started;
+  SkeletonPose a_fifth;
+  SkeletonPose over;
+
+  body.stance_progress = 0;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, started);
+  body.stance_progress = 51;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, a_fifth);
+  body.stance_progress = augusta::physics::kStanceProgressSteps;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, over);
+
+  const float standing = fixture::kPelvisStanding + fixture::kHeadAbovePelvis;
+  const float crouched = fixture::kPelvisCrouching + fixture::kHeadAbovePelvis;
+  ExpectNear(HeadOf(started), Vec3(0.0F, standing, 0.0F));
+  // 51 steps of 255 are a fifth of the way down.
+  ExpectNear(HeadOf(a_fifth), Vec3(0.0F, standing + ((crouched - standing) / 5.0F), 0.0F));
+  ExpectNear(HeadOf(over), Vec3(0.0F, crouched, 0.0F));
+}
+
 // Posing is a function of what it is given alone: the same state posed again
 // after another gives the same pose.
 TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
@@ -151,11 +176,16 @@ TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
 // offset bends it by its pitch, its ADS grip raises its Arm.
 class AimTest : public ::testing::Test {
  protected:
-  SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false) {
+  // The Aimer in stance, which it has finished changing to unless a test
+  // names the stance it left and how far it has gone from it.
+  SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false, Stance previous = Stance::kStanding,
+                      std::uint8_t progress = static_cast<std::uint8_t>(augusta::physics::kStanceProgressSteps)) {
     BodyState body;
     body.position = Vec3(0.0F);
     body.velocity = Vec3(0.0F);
     body.stance = stance;
+    body.previous_stance = previous;
+    body.stance_progress = progress;
     SkeletonPose posed;
     poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, posed);
     return posed;
@@ -246,6 +276,16 @@ TEST_F(AimTest, EachStanceBendsAndRaisesByItsOwnAimOffsetAndADSGrip) {
   ExpectNear(crouched_head, HeadBentBy(fixture::kPelvisCrouching, fixture::kCrouchingAimBend));
   ExpectNear(prone_head, HeadBentBy(fixture::kPelvisProne, -fixture::kProneAimBend));
   ExpectNear(crouched_hand, HandRaisedBy(fixture::kPelvisCrouching, fixture::kCrouchingAdsRaise));
+}
+
+// Just crouched from standing, aiming down, the body is still all standing's:
+// standing's own Aim offset bends it, so a change of stance never straightens
+// an aiming body.
+TEST_F(AimTest, ThroughAChangeOfStanceTheStanceItLeftKeepsItsOwnAimOffset) {
+  const SkeletonPose posed = PoseAt(Stance::kCrouching, kLowest, false, Stance::kStanding, 0);
+  const Vec3 head = HeadOf(posed);
+
+  ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
 }
 
 }  // namespace

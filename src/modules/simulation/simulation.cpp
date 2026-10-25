@@ -372,11 +372,12 @@ struct World::Impl {
   }
 
   // The Stride advances by the stride length at the stance and velocity the
-  // last tick left, as PredictionWorld's does from the same state.
+  // last tick left, and a change of stance by its transition duration, as
+  // PredictionWorld's do from the same state.
   void OnMovement(float delta_time, Body& body, const Intent& intent, const Facing& facing, const Clips& clips) {
-    const float stride_length =
-        clips.clips != nullptr ? animation::StrideLength(*clips.clips, body.state, facing.yaw) : 0.0F;
-    body.state = physics.Step(body.handle, intent.input, delta_time, stride_length);
+    const physics::Pacing pacing =
+        clips.clips != nullptr ? animation::PacingOf(*clips.clips, body.state, facing.yaw) : physics::Pacing{};
+    body.state = physics.Step(body.handle, intent.input, delta_time, pacing);
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
