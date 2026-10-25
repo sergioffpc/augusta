@@ -114,7 +114,7 @@ help:
 	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
 	$(info $()  all           the default: build)
 	$(info $()  configure     cmake --preset)
-	$(info $()  build         configure, then compile the binaries (no tests))
+	$(info $()  build         configure, then compile the binaries (no tests), or TARGETS=augustad ... alone)
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
@@ -136,8 +136,10 @@ help:
 configure:
 	$(RUN) cmake --preset $(PRESET)
 
+# TARGETS narrows the build to those CMake targets, as the VS Code launch
+# configs' tasks (.vscode/tasks.json) build only the executable they debug.
 build: configure
-	$(RUN) cmake --build --preset $(PRESET)
+	$(RUN) cmake --build --preset $(PRESET) $(if $(TARGETS),--target $(TARGETS))
 
 # The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
