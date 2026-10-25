@@ -314,10 +314,12 @@ struct World::Impl {
         .write<Bullet>()
         .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
                      Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
-    ecs.system<const Body, const Facing, const CharacterSkeleton, const Clips, PosedJoints, Held>("PosingSystem")
+    ecs.system<const Body, const Facing, const Rifle, const CharacterSkeleton, const Clips, PosedJoints, Held>(
+           "PosingSystem")
         .kind(phases[kPosing])
-        .each([this](const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
-                     PosedJoints& posed, Held& held) { OnPosing(body, facing, skeleton, clips, posed, held); });
+        .each([this](const Body& body, const Facing& facing, const Rifle& rifle, const CharacterSkeleton& skeleton,
+                     const Clips& clips, PosedJoints& posed,
+                     Held& held) { OnPosing(body, facing, rifle, skeleton, clips, posed, held); });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
@@ -389,13 +391,14 @@ struct World::Impl {
   }
 
   // Poses one player: its body where Movement has just put it, then its rifle
-  // held in its hands, then the rifle's markers where its hand holds them.
-  void OnPosing(const Body& body, const Facing& facing, const CharacterSkeleton& skeleton, const Clips& clips,
-                PosedJoints& posed, Held& held) {
+  // held in its hands, then the rifle's markers where its hand holds them,
+  // turned by the Recoil offset WeaponHandling has just left it with.
+  void OnPosing(const Body& body, const Facing& facing, const Rifle& rifle, const CharacterSkeleton& skeleton,
+                const Clips& clips, PosedJoints& posed, Held& held) {
     PoseBody(body, facing, skeleton.skeleton, *clips.clips, posed.posed);
     const math::Mat4 hand =
         animation::HoldRifle(skeleton.skeleton, clips.clips->weapon_socket, rifle_markers, posed.posed);
-    held.rifle = PlaceRifle(hand);
+    held.rifle = PlaceRifle(weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.state.recoil));
   }
 
   // Poses skeleton by clips, the body's Clips, at its body's state and where it

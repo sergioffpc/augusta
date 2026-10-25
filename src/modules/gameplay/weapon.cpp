@@ -105,4 +105,14 @@ math::Mat4 PlaceForeEnd(const math::Mat4& hand, const Markers& markers) {
   return hand * math::Inverse(markers.grip) * markers.fore_end;
 }
 
+math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const RecoilOffset& recoil) {
+  // The hand in the frame of the view at the Grip, then out of the frame of the
+  // view turned by recoil, at the same Grip.
+  const math::Vec3 grip = math::TranslationOf(hand);
+  const math::Mat4 view = math::ToMat4(grip, command::ViewRotation(yaw, pitch), math::Vec3(1.0F));
+  const math::Mat4 kicked =
+      math::ToMat4(grip, command::ViewRotation(yaw + recoil.yaw, pitch + recoil.pitch), math::Vec3(1.0F));
+  return kicked * math::Inverse(view) * hand;
+}
+
 }  // namespace augusta::weapon

@@ -544,10 +544,11 @@ its Sight on the Eye. _Avoid_: Scope, aim point
 **Recoil offset**: How far a rifle points off its player's view, as a pitch and
 a yaw: every round of a Burst adds its kick to it, scaled down in ADS, and it
 shrinks back to zero while the trigger is not pulled. A Shot leaves along the
-view turned by it. It is the rifle's, predicted and reconciled with it, and
-never part of a Command's view. _Avoid_: Spread (recoil is a fixed pattern, not
-random), kick (a kick is one round's addition to the offset), view punch, aim
-punch
+view turned by it, and the rifle held turns by it about its Grip; the body that
+holds the rifle does not. It is the rifle's, predicted and reconciled with it,
+and never part of a Command's view. _Avoid_: Spread (recoil is a fixed pattern,
+not random), kick (a kick is one round's addition to the offset), view punch,
+aim punch
 
 **Shooter's delay**: How far in the past the shooter saw other players when it
 fired: from the Seen time its fire Command reports to the tick the server takes

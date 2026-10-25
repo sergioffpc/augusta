@@ -100,8 +100,10 @@ enum class Phase {
   /// posed right hand and bends its left arm to the rifle's Fore-end by
   /// two-bone IK (animation::HoldRifle, ADR-0066), before HitDetection judges
   /// or Commit records the pose; and places the rifle's Muzzle and Sight where
-  /// the socket holds it (weapon::PlaceMuzzle, ADR-0064, World::HeldRifleOf).
-  /// Rounds still leave the Eye.
+  /// the socket holds it, the rifle turned about its Grip by the Recoil offset
+  /// WeaponHandling has just left it with (weapon::Recoiled, weapon::PlaceMuzzle,
+  /// ADR-0064, World::HeldRifleOf); the body does not take the recoil. Rounds
+  /// still leave the Eye.
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.

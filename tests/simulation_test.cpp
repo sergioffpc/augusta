@@ -1935,6 +1935,38 @@ TEST_F(BackwardRifleHitTest, TheLeftForearmIsWhereTheRiflesForeEndIsAndNowhereEl
   EXPECT_TRUE(ShootAt(ForeEnd()).empty());
 }
 
+// HeldHitTest with a rifle whose first round kicks it kKick up.
+class RecoiledHitTest : public HeldHitTest {
+ protected:
+  static constexpr float kKick = 0.25F;
+
+  static Parameters WithAKick() {
+    Parameters parameters = WithDamage();
+    parameters.rifle.recoil_pattern = {{.pitch = kKick, .yaw = 0.0F}};
+    return parameters;
+  }
+
+  RecoiledHitTest() : HeldHitTest(augusta::clips_fixture::HolderRifle(), WithAKick()) {}
+};
+
+// Bob's round kicks his rifle up, and it stays so, the rifle recovering
+// nothing: the Recoil offset turns the rifle he holds, not his body, so his left
+// forearm is still where the IK bent it to the Fore-end of the rifle unkicked
+// (ADR-0064).
+// Requirements: US-07, US-11
+TEST_F(RecoiledHitTest, ARecoilKickTurnsNothingOfTheBodyThatHoldsTheRifle) {
+  bob_.fire = true;
+  Wait(1);
+  bob_.fire = false;
+  ASSERT_NEAR(Entity(Tick(Command{}), kBob).rifle.recoil.pitch, kKick, 1e-6F);
+
+  const std::vector<Hit> hits = ShootAt(ForeEnd());
+
+  ASSERT_EQ(hits.size(), 1U);
+  EXPECT_EQ(hits[0].target, kBob);
+  EXPECT_EQ(hits[0].part, BodyPart::kLimb);
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);
@@ -2357,5 +2389,40 @@ TEST_F(HeldRifleTest, TheRifleTurnsWithTheBody) {
 // Requirements: US-06
 // Requirements: US-07
 TEST_F(HeldRifleTest, APlayerNotInTheWorldHoldsNoRifle) { EXPECT_FALSE(world_.HeldRifleOf(kBob).has_value()); }
+
+// HeldRifleTest with a rifle whose first round kicks it kKickPitch up and
+// kKickYaw left, and recovers nothing.
+class RecoiledRifleTest : public HeldRifleTest {
+ protected:
+  static constexpr float kKickPitch = 0.25F;
+  static constexpr float kKickYaw = 0.125F;
+
+  static Parameters WithAKick() {
+    Parameters parameters = WithTheTestRifle();
+    parameters.rifle.recoil_pattern = {{.pitch = kKickPitch, .yaw = kKickYaw}};
+    return parameters;
+  }
+
+  RecoiledRifleTest() : HeldRifleTest(WithAKick()) {}
+};
+
+// From the hip, the kick turns her rifle about its Grip, where her hand still
+// holds it: its Muzzle points along her view turned by the kick, as the round
+// leaves (ADR-0064).
+// Requirements: US-07
+TEST_F(RecoiledRifleTest, ARecoilKickTurnsTheRifleAboutItsGrip) {
+  namespace fixture = augusta::clips_fixture;
+  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F);
+  Command firing = Aiming(0.0F, 0.0F, false);
+  firing.fire = true;
+  Tick(firing);
+  const Vec3 kicked = augusta::command::ViewDirection(kKickYaw, kKickPitch);
+
+  const auto held = HeldAfter(Aiming(0.0F, 0.0F, false));
+
+  ExpectNear(PositionOf(held.sight), hand);
+  ExpectNear(PointingOf(held.muzzle), kicked);
+  ExpectNear(PositionOf(held.muzzle), hand + (fixture::kHolderMuzzle * kicked));
+}
 
 }  // namespace

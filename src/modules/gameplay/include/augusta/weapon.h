@@ -110,6 +110,11 @@ struct Markers {
 /// Grip, as PlaceMuzzle places the Muzzle: where the left hand reaches.
 [[nodiscard]] math::Mat4 PlaceForeEnd(const math::Mat4& hand, const Markers& markers);
 
+/// hand, which holds the rifle at its Grip, turned about the Grip by recoil:
+/// as recoil turns a view of yaw and pitch, which a Shot leaves along
+/// (ADR-0064). Only the rifle turns; the body that holds it does not.
+[[nodiscard]] math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const RecoilOffset& recoil);
+
 /// One player's rifle between two ticks.
 struct State {
   /// How long, in seconds, until the next round may fire; 0 or less when one

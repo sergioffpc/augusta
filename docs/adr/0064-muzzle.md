@@ -33,12 +33,22 @@ the rifle's zero range, a Parameter (ADR-0039): above or below it a round lands
 above or below the sight, as with a real rifle. A desktop's line of sight is
 from the Eye along the view; a VR player brings the sight to its eye itself.
 
-**Recoil and ADS in VR.** A desktop's Recoil offset stays on its view. A VR
-player's turns the barrel about the Grip, with the same pattern of kicks and the
-same return, and the player brings the rifle back with its hands. A VR player is
-in ADS when its Tracked pose's Eye is on the rifle's line of sight within a
-tolerance, which scales its recoil as ADS does; a VR Command's ADS flag is
-ignored.
+**Recoil turns the rifle about its Grip.** A desktop's Recoil offset turns the
+view a Shot leaves along, and the rifle its pose holds turns with it: the Posing
+phase turns the hand that holds the Grip by the turn the offset gives the view,
+about the Grip, before it places the Muzzle and the Sight. The pivot is the
+Grip, not the shoulder, because only the rifle takes the recoil: the body's
+posed Joints and Hitboxes do not, since the Recoil offset is not replicated and
+a client must be able to pose the same body from the Authoritative State. A turn
+about the Grip keeps the rifle in the posed hand, where one about the shoulder
+would carry it out of it; the left hand stays on the Fore-end as the pose held
+it. A VR player's Recoil offset turns the barrel about the same Grip, with the
+same pattern of kicks and the same return, and the player brings the rifle back
+with its hands.
+
+**ADS in VR.** A VR player is in ADS when its Tracked pose's Eye is on the
+rifle's line of sight within a tolerance, which scales its recoil as ADS does; a
+VR Command's ADS flag is ignored.
 
 **A Muzzle in a wall fires into the wall.** The server tests the segment from
 the holding arm's shoulder joint to the Muzzle against the Map; if it is
