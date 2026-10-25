@@ -86,6 +86,7 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.stance, expected.stance);
   EXPECT_EQ(actual.stamina, augusta::math::SnapStamina(expected.stamina));
   EXPECT_EQ(actual.exhausted, expected.exhausted);
+  EXPECT_EQ(actual.grounded, expected.grounded);
   EXPECT_EQ(actual.stride, expected.stride);
   EXPECT_EQ(actual.previous_stance, expected.previous_stance);
   EXPECT_EQ(actual.stance_progress, expected.stance_progress);
@@ -272,6 +273,28 @@ TEST(LinkMessagesTest, AnExhaustedBodyReachesTheClientStillExhausted) {
   ASSERT_EQ(received.bodies.size(), 2U);
   EXPECT_TRUE(received.bodies[0].body.exhausted);
   EXPECT_FALSE(received.bodies[1].body.exhausted);
+}
+
+// The grounded flag (ADR-0062) reaches every client beside the exhausted and
+// ADS flags it shares a bitfield with, so a client poses a body in the air as
+// the server did.
+TEST(LinkMessagesTest, AGroundedBodyReachesTheClientStillGroundedAndOneInTheAirStillInIt) {
+  BodyState grounded = Body(1.0F, Stance::kStanding);
+  grounded.grounded = true;
+  grounded.exhausted = true;
+  const augusta::link::AuthoritativeState sent{
+      .tick = 7,
+      .acknowledged_sequence = 3,
+      .bodies = {{.entity = EntityId{1}, .body = grounded, .ads = true},
+                 {.entity = EntityId{2}, .body = Body(2.0F, Stance::kProne)}},
+  };
+
+  const augusta::link::AuthoritativeState received = FromWire(ThroughTheWire(ToWire(sent)));
+
+  ASSERT_EQ(received.bodies.size(), 2U);
+  ExpectSameBody(received.bodies[0].body, grounded);
+  EXPECT_TRUE(received.bodies[0].ads);
+  EXPECT_FALSE(received.bodies[1].body.grounded);
 }
 
 // Pitch and ADS reach every client in the body state, beside the exhausted

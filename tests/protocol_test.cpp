@@ -1394,6 +1394,17 @@ TEST(ProtocolTest, ABodysAdsFlagIsTheBitAboveItsExhaustedFlag) {
   EXPECT_EQ(both.body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds);
 }
 
+// The grounded flag in the bit above ADS (ADR-0038, ADR-0062).
+TEST(ProtocolTest, ABodysGroundedFlagIsTheBitAboveItsAdsFlag) {
+  const EntityStateWire grounded = BodyOf(OneBody(VarintField(8, 0b10010)));
+  const EntityStateWire all = BodyOf(OneBody(VarintField(8, 0b11100)));
+
+  EXPECT_EQ(grounded.body.stance, StanceWire::kProne);
+  EXPECT_EQ(grounded.body.flags, BodyStateWire::kGrounded);
+  EXPECT_EQ(all.body.stance, StanceWire::kStanding);
+  EXPECT_EQ(all.body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds | BodyStateWire::kGrounded);
+}
+
 // The previous stance in bits 5-6, numbered as the stance is (ADR-0038).
 TEST(ProtocolTest, ABodysPreviousStanceIsBitsFiveAndSix) {
   const EntityStateWire from_prone = BodyOf(OneBody(VarintField(8, 0b100'0001)));
@@ -1406,14 +1417,10 @@ TEST(ProtocolTest, ABodysPreviousStanceIsBitsFiveAndSix) {
   EXPECT_EQ(Decode(OneBody(VarintField(8, 0b110'0000))).error(), DecodeError::kInvalidEnum);
 }
 
-// Bit 4, between the flags and the previous stance, and every bit above the
-// previous stance.
+// Every bit above the previous stance.
 // Requirements: NFR-12
-TEST(ProtocolTest, ABodysBitsBesideItsStancesAndFlagsAreReserved) {
-  for (unsigned bit = 4; bit < 32; ++bit) {
-    if (bit == 5 || bit == 6) {
-      continue;
-    }
+TEST(ProtocolTest, ABodysBitsAboveItsStancesAndFlagsAreReserved) {
+  for (unsigned bit = 7; bit < 32; ++bit) {
     EXPECT_EQ(Decode(OneBody(VarintField(8, 1ULL << bit))).error(), DecodeError::kReservedBits) << bit;
   }
 }
@@ -1602,7 +1609,7 @@ TEST(ProtocolEncodeTest, AFlagBitTheFieldDoesNotHaveIsNotEncoded) {
   CommandWire command;
   command.flags = CommandWire::kReload << 1U;
   EntityStateWire body;
-  body.body.flags = BodyStateWire::kAds << 1U;
+  body.body.flags = BodyStateWire::kGrounded << 1U;
 
   EXPECT_EQ(RefusalOf(CommandsWire{.commands = {SequencedCommandWire{.sequence = 1, .command = command}}}),
             EncodeError::kReservedBits);

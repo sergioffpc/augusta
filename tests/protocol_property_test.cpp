@@ -332,7 +332,7 @@ rc::Gen<BodyStateWire> Body() {
       rc::gen::set(&BodyStateWire::position, Vec3OnGrid(kPositionGrid)),
       rc::gen::set(&BodyStateWire::velocity, Vec3OnGrid(kVelocityGrid)),
       rc::gen::set(&BodyStateWire::stamina, OnGrid(kStaminaGrid)),
-      rc::gen::set(&BodyStateWire::flags, rc::gen::inRange<std::uint8_t>(0, BodyStateWire::kAds << 1U)),
+      rc::gen::set(&BodyStateWire::flags, rc::gen::inRange<std::uint8_t>(0, BodyStateWire::kGrounded << 1U)),
       rc::gen::set(&BodyStateWire::stance, Stance()), rc::gen::set(&BodyStateWire::stride),
       rc::gen::set(&BodyStateWire::previous_stance, Stance()), rc::gen::set(&BodyStateWire::stance_progress));
 }

@@ -13,13 +13,15 @@
 /// ozz-animation's sampling and blending: its stance's blend space at its
 /// velocity in its own space (augusta/locomotion.h), each Clip sampled where the
 /// Stride puts it between the Clip's two Foot contacts, so two blended Clips
-/// always land the same foot together. On top, the stance's Aim offset bends the
-/// body by the view's pitch and its ADS grip raises its arms, each an additive
-/// layer of its difference from the level aim. While a change of stance is under
-/// way, the stance it left is posed the same way, its own Aim offset and ADS
-/// grip on it, and blended into the new one by how far the change has gone
-/// (physics::BodyState::stance_progress). The root is where the body's position
-/// and yaw put it (hitbox::RootOf); how low the body is, is its stances' Clips'.
+/// always land the same foot together. While a change of stance is under way,
+/// the stance it left is posed the same way and blended into the new one by how
+/// far the change has gone (physics::BodyState::stance_progress). Off the
+/// ground, its air Clip by its vertical velocity takes the place of both. On
+/// top of each stance posed, before the two blend, the stance's Aim offset bends
+/// the body by the view's pitch and its ADS grip raises its arms, each an
+/// additive layer of its difference from the level aim. The root is where the
+/// body's position and yaw put it (hitbox::RootOf); how low the body is, is its
+/// stances' Clips'.
 ///
 /// A pure function of replicated state: the Poser holds ozz-animation's
 /// working buffers alone, so posing the same state twice gives the same pose,
@@ -27,11 +29,16 @@
 /// with one; a client will pose players the same way (ADR-0061).
 namespace augusta::animation {
 
+/// How fast a body rises at the start of its air Clip, and falls at its end, in
+/// meters a second: the Clip is sampled by the body's vertical velocity between
+/// them, faster held at either end.
+inline constexpr float kAirVerticalSpeed = 5.0F;
+
 /// What a player's Hitbox pose follows from: all of it in its Authoritative
 /// State.
 struct PoseInput {
   /// Its body, as Movement left it this tick: its position, velocity, stance,
-  /// Stride and change of stance.
+  /// Stride, change of stance and whether it is on the ground.
   physics::BodyState body{};
   /// Where it faces, in radians, as a Command's yaw (command::Command).
   float yaw = 0.0F;

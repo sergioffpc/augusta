@@ -222,6 +222,35 @@ inline animation::StanceClips WalkerStanceOf(float pelvis, float forward, float 
   return clips;
 }
 
+// How far the Walker's air Clip swings a leg, in radians: 90 degrees, so the
+// leg lies level with its hip.
+inline constexpr float kAirTuck = 1.5707964F;
+
+// The Walker's air Clip, its Pelvis standing high: its left leg tucked kAirTuck
+// ahead throughout, its right leg swinging from kAirTuck ahead at its start
+// (rising) through straight down halfway (the top of a jump) to kAirTuck behind
+// at its end (falling). Neither is where a Clip on the ground puts a leg.
+inline animation::Clip WalkerAirClip() {
+  using ozz::math::Float3;
+  using ozz::math::Quaternion;
+  ozz::animation::offline::RawAnimation raw;
+  raw.duration = 1.0F;
+  // ozz-animation's order: Root, Pelvis, Head, LeftLeg, RightLeg.
+  raw.tracks.resize(5);
+  raw.tracks[1].translations.push_back({.time = 0.0F, .value = Float3(0.0F, kPelvisStanding, 0.0F)});
+  raw.tracks[2].translations.push_back({.time = 0.0F, .value = Float3(0.0F, kHeadAbovePelvis, 0.0F)});
+  raw.tracks[3].translations.push_back({.time = 0.0F, .value = Float3(-kHipSide, 0.0F, 0.0F)});
+  raw.tracks[4].translations.push_back({.time = 0.0F, .value = Float3(kHipSide, 0.0F, 0.0F)});
+  const Float3 across(1.0F, 0.0F, 0.0F);
+  raw.tracks[3].rotations.push_back({.time = 0.0F, .value = Quaternion::FromAxisAngle(across, kAirTuck)});
+  raw.tracks[4].rotations.push_back({.time = 0.0F, .value = Quaternion::FromAxisAngle(across, kAirTuck)});
+  raw.tracks[4].rotations.push_back({.time = 0.5F, .value = Quaternion::identity()});
+  raw.tracks[4].rotations.push_back({.time = 1.0F, .value = Quaternion::FromAxisAngle(across, -kAirTuck)});
+  auto built = ozz::animation::offline::AnimationBuilder()(raw);
+  EXPECT_TRUE(built);
+  return animation::Clip{.animation = std::move(*built), .stride_length = 0.0F, .foot_contacts = {}};
+}
+
 // Where standing's right walk lands each foot: a quarter of a cycle later than
 // every other walk does, so blending it with one unsynchronised would cross
 // their legs.
@@ -266,7 +295,7 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
       WalkerStanceOf(kPelvisCrouching, kCrouchingForward, 1.2F, 1.3F, 1.3F);
   clips->stances[static_cast<std::size_t>(physics::Stance::kProne)] =
       WalkerStanceOf(kPelvisProne, kProneForward, kProneBackward, 0.0F, 0.0F, false);
-  clips->air = WalkerClip(kPelvisStanding, 1.0F);
+  clips->air = WalkerAirClip();
   clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
   return clips;
 }

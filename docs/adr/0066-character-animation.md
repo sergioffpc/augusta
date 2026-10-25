@@ -61,11 +61,11 @@ level and highest pitch, bends the body by its pitch; the body turns by its yaw
 as today, with no turning in place. Each of them and the stance's ADS grip is
 authored as a whole pose, and the level one is the reference the others add
 their difference from: the lowest or highest by how far the pitch is toward it,
-the ADS grip whole while ADS is set, each added onto the locomotion pose. The
-weapon hangs from a socket on the right hand, so its Muzzle follows the pose
-(ADR-0064), and the left hand reaches its fore-end by two-bone IK. The grip, ADS
-and the left hand's IK are Hitbox pose and run on both sides, so a player's view
-pitch and ADS are replicated.
+the ADS grip whole while ADS is set, each added onto the locomotion pose, or the
+air Clip's off the ground. The weapon hangs from a socket on the right hand, so
+its Muzzle follows the pose (ADR-0064), and the left hand reaches its fore-end
+by two-bone IK. The grip, ADS and the left hand's IK are Hitbox pose and run on
+both sides, so a player's view pitch and ADS are replicated.
 
 **Desktop and VR.** A Desktop player's pose is evaluated from its Clips; a VR
 player's is its bounded Tracked pose (ADR-0063). From there both take one path:
