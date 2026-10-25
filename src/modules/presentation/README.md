@@ -23,6 +23,10 @@ the struck one filled, the round's flight flown as Tracers fly it against the
 same Map, and the point struck; it reports whether the Debug subscribe should
 ask for Shot judgements, which the client Runtime sends.
 
+A remote player's interpolated body carries every input of its Hitbox pose, so
+the Animation module poses it from that as the server poses it from its
+Authoritative State, within a tolerance (ADR-0061).
+
 Each frame it also reports the interpolation buffer's slack: how far the newest
 Authoritative State update is ahead of the time remote players are shown at, in
 seconds, positive while updates wait and zero or below once the buffer has run
@@ -46,5 +50,7 @@ dry. The Network Debug panel reads it against the Interpolation delay.
 [ADR-0024](../../../docs/adr/0024-client-world-phase-pipelines.md),
 [ADR-0044](../../../docs/adr/0044-shot-lag-compensation-and-replication.md),
 [ADR-0045](../../../docs/adr/0045-dynamic-bodies.md),
+[ADR-0061](../../../docs/adr/0061-skeletal-hitboxes.md),
+[ADR-0066](../../../docs/adr/0066-character-animation.md),
 [ADR-0074](../../../docs/adr/0074-debug-tools-compiled-out-of-shipping-builds.md),
 [ADR-0075](../../../docs/adr/0075-debug-overlays-and-panels-are-values.md).

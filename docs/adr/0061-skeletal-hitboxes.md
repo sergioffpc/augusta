@@ -138,6 +138,15 @@ format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
 - **No bit-exact agreement across platforms.** The Windows client and the Linux
   server may differ in the last bits of a pose. The server's is authoritative,
   the client's only draws, and tests comparing them use a tolerance.
+- **A client poses the interpolated state.** Between two Authoritative State
+  updates a client interpolates every input of the pose and poses the result:
+  position, velocity, pitch and the progress of a change of stance both updates
+  are of linearly, the facing along the shorter arc, the Stride the shorter way
+  round its cycle, and the stance, a change of stance otherwise, the ground and
+  ADS from the nearer update. The server judges between two ticks by
+  interpolating their posed Joints (ADR-0044) instead. On a tick the two agree
+  but for the wire's grids; between two, within a few centimetres where a Clip
+  turns a Joint back, and not while a discrete input changes between them.
 
 ## Considered Options
 

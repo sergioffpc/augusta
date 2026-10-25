@@ -261,6 +261,25 @@ target_link_libraries(
 # Links PhysX, so the same first-launch cost applies as below.
 gtest_discover_tests(augusta_shooters_delay_budget_tests DISCOVERY_TIMEOUT 30)
 
+# Client and server agree on the pose (ADR-0061): simulation's Authoritative
+# State over the protocol to presentation's interpolation, each posed by
+# animation. Links ozz-animation's offline libraries for the Clips it authors
+# (clips_fixture.h).
+add_executable(augusta_pose_agreement_tests pose_agreement_test.cpp)
+target_link_libraries(
+  augusta_pose_agreement_tests
+  PRIVATE
+    augusta_simulation
+    augusta_presentation
+    augusta_link_messages
+    augusta_animation
+    ozz::animation_offline
+    GTest::gtest
+    GTest::gtest_main
+)
+# Links PhysX, so the same first-launch cost applies as below.
+gtest_discover_tests(augusta_pose_agreement_tests DISCOVERY_TIMEOUT 30)
+
 # SimulationWorld with a Game policy script the test chooses (ADR-0022).
 add_executable(augusta_policy_tests policy_test.cpp)
 target_link_libraries(

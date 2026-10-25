@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -8,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include "augusta/animation.h"
 #include "augusta/capture.h"
 #include "augusta/capture_records.h"
 #include "augusta/command.h"
@@ -16,6 +18,7 @@
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
 #include "augusta/policy.h"
+#include "augusta/pose.h"
 #include "augusta/replay.h"
 #include "augusta/simulation.h"
 #include "clips_fixture.h"
@@ -285,6 +288,62 @@ TEST(CaptureReplayTest, AReplayReproducesEachBodysChangeOfStance) {
     under_way = under_way || replayed.stance_progress < augusta::physics::kStanceProgressSteps;
   }
   EXPECT_TRUE(under_way);
+}
+
+// A body's Hitbox pose as the Posing phase poses it from its state: its Clips,
+// then its rifle held.
+augusta::animation::SkeletonPose PoseOf(const Character& character, const augusta::simulation::EntityState& body) {
+  augusta::animation::Poser poser;
+  augusta::animation::SkeletonPose posed;
+  poser.Pose(*character.clips, character.skeleton,
+             {.body = body.body, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads}, posed);
+  augusta::animation::HoldRifle(character.skeleton, *character.clips->weapon_socket,
+                                augusta::clips_fixture::HolderRifle(), posed);
+  return posed;
+}
+
+// The pose is a pure function of the Authoritative State (ADR-0061), every
+// input of which the Commands re-run reproduce: a body walking, crouching,
+// sweeping its view and raising its rifle to ADS is posed tick by tick as the
+// live Match posed it, Joint for Joint, its left hand on the rifle by IK.
+// Requirements: US-21
+TEST(CaptureReplayTest, AReplayReproducesThePosesOfTheMatch) {
+  constexpr std::uint32_t kTicks = 40;
+  std::vector<Command> commands;
+  std::vector<Captured> events;
+  for (std::uint32_t offset = 0; offset < kTicks; ++offset) {
+    Command command;
+    command.movement.direction = Vec3(0.0F, 0.0F, -1.0F);
+    command.movement.desired_stance =
+        offset >= kTicks / 2 ? augusta::physics::Stance::kCrouching : augusta::physics::Stance::kStanding;
+    command.pitch = -1.0F + (0.05F * static_cast<float>(offset));
+    command.ads = offset >= kTicks / 4;
+    commands.push_back(command);
+    events.push_back(CommandAt(offset, 1, command));
+  }
+  events.push_back(EndAt(kTicks));
+  const Character holder{.eye = Vec3(0.0F, 1.7F, 0.0F),
+                         .hitboxes = {},
+                         .skeleton = augusta::clips_fixture::HolderSkeleton(),
+                         .clips = augusta::clips_fixture::HolderClips()};
+  const std::unordered_map<std::string, Character> characters = {{kCharacter, holder}};
+  augusta::parameters::Parameters parameters;
+  parameters.player_count = 2;
+  Replay replay(CaptureOf(std::move(events)), augusta::simulation::World(parameters, kTickRate), characters);
+  augusta::simulation::World live(parameters, kTickRate);
+  live.AddPlayer(augusta::simulation::EntityId{1}, Vec3(10.0F, 0.0F, 0.0F), holder);
+  live.AddPlayer(augusta::simulation::EntityId{2}, Vec3(-10.0F, 0.0F, 4.0F), holder);
+
+  const std::vector<ReplayTick> ticks = RunToEnd(replay);
+
+  ASSERT_EQ(ticks.size(), kTicks + 1);
+  for (std::uint32_t i = 0; i < ticks.size(); ++i) {
+    const Command& command = commands.at(std::min<std::size_t>(i, commands.size() - 1));
+    const augusta::simulation::State state =
+        live.Tick({{.entity = augusta::simulation::EntityId{1}, .command = command}}, 1.0F / kTickRate).state;
+    ASSERT_NE(BodyOf(ticks[i], 1), nullptr);
+    EXPECT_EQ(PoseOf(holder, *BodyOf(ticks[i], 1)).world, PoseOf(holder, state.bodies.at(0)).world) << "tick " << i;
+  }
 }
 
 // A round fired at offset 10 whose Seen time was 2 ticks older is judged 2

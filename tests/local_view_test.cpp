@@ -267,7 +267,7 @@ TEST(SpectatorTest, WithNoOneLeftAliveNoOneIsWatched) {
   EXPECT_EQ(spectator.Update(kPlayers, {}, true), std::nullopt);
 }
 
-// Remote pitch is not replicated, so the watched view looks level.
+// A watched player looking level: the view looks level.
 // Requirements: US-13
 TEST(WatchedCameraTest, TheCameraIsAtTheWatchedPlayersEyeForItsStanceLookingLevelWhereItFaces) {
   const RemoteBody crouching{.position = Vec3(3.0F, 1.0F, -4.0F),

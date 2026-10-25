@@ -30,7 +30,8 @@
 /// A pure function of replicated state: the Poser holds ozz-animation's
 /// working buffers alone, so posing the same state twice gives the same pose,
 /// whatever was posed between. SimulationWorld's Posing phase poses every player
-/// with one; a client will pose players the same way (ADR-0061).
+/// with one; a client poses a remote player the same way, from its interpolated
+/// state (presentation::PoseInputOf, ADR-0061).
 namespace augusta::animation {
 
 /// How fast a body rises at the start of its air Clip, and falls at its end, in

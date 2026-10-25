@@ -114,6 +114,68 @@ TEST(RemoteInterpolatorTest, PitchIsInterpolatedAndAdsSwitchesAtTheMidpoint) {
   EXPECT_TRUE(Only(interpolator, 5.0F).ads);
 }
 
+// The Stride moves between the two updates as the body walked it, which is the
+// shorter way round its cycle: from 250 to 6 is 12 steps on, through 0.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, TheStrideMovesTheShorterWayRoundItsCycle) {
+  BodyState earlier = At(0.0F);
+  earlier.stride = 250;
+  BodyState later = At(0.0F);
+  later.stride = 6;
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0F, earlier, Facing(0.0F));
+  interpolator.Record(kEntityA, 1.0F, later, Facing(0.0F));
+
+  EXPECT_EQ(Only(interpolator, 0.25F).stride, 253);
+  EXPECT_EQ(Only(interpolator, 0.75F).stride, 3);
+  EXPECT_EQ(Only(interpolator, 5.0F).stride, 6);
+}
+
+// Two updates of one change of stance: its progress moves between them.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, AChangeOfStancesProgressMovesBetweenTwoUpdatesOfIt) {
+  BodyState earlier = At(0.0F, Stance::kCrouching);
+  earlier.previous_stance = Stance::kStanding;
+  earlier.stance_progress = 100;
+  BodyState later = earlier;
+  later.stance_progress = 200;
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0F, earlier, Facing(0.0F));
+  interpolator.Record(kEntityA, 1.0F, later, Facing(0.0F));
+
+  const RemoteBody body = Only(interpolator, 0.25F);
+
+  EXPECT_EQ(body.stance, Stance::kCrouching);
+  EXPECT_EQ(body.previous_stance, Stance::kStanding);
+  EXPECT_EQ(body.stance_progress, 125);
+}
+
+// A change that is not the same one in both updates (here, one that starts
+// between them) is the nearer update's, as the stance is; so is whether the
+// body is on the ground.
+// Requirements: NFR-02
+TEST(RemoteInterpolatorTest, ADifferentChangeOfStanceAndTheGroundSwitchAtTheMidpoint) {
+  BodyState earlier = At(0.0F, Stance::kStanding);
+  earlier.grounded = false;
+  BodyState later = At(0.0F, Stance::kProne);
+  later.previous_stance = Stance::kStanding;
+  later.stance_progress = 5;
+  later.grounded = true;
+  RemoteInterpolator interpolator;
+  interpolator.Record(kEntityA, 0.0F, earlier, Facing(0.0F));
+  interpolator.Record(kEntityA, 1.0F, later, Facing(0.0F));
+
+  const RemoteBody before = Only(interpolator, 0.25F);
+  const RemoteBody after = Only(interpolator, 0.75F);
+
+  EXPECT_EQ(before.stance_progress, augusta::physics::kStanceProgressSteps);
+  EXPECT_FALSE(before.grounded);
+  EXPECT_EQ(after.stance, Stance::kProne);
+  EXPECT_EQ(after.previous_stance, Stance::kStanding);
+  EXPECT_EQ(after.stance_progress, 5);
+  EXPECT_TRUE(after.grounded);
+}
+
 // From just short of a half turn left to just short of one right is a small
 // turn through the back, not most of a turn through the front.
 // Requirements: NFR-02, US-17
