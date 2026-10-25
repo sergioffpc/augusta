@@ -152,6 +152,9 @@ store() {
   local scratch
   fill_store
   scratch="$(mktemp -d)"
+  # Its real path: macOS's temporary directory is under /var, a symlink, and
+  # npm ci takes a symlinked prefix for a package the lockfile lacks.
+  scratch="$(cd "${scratch}" && pwd -P)"
   npm_ci "${scratch}"
   rm -rf "${scratch}"
 }
