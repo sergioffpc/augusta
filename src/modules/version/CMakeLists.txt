@@ -5,7 +5,8 @@ add_library(
   STATIC
   version.cpp
   $<$<PLATFORM_ID:Windows>:version_windows.cpp>
-  $<$<NOT:$<PLATFORM_ID:Windows>>:version_linux.cpp>
+  $<$<PLATFORM_ID:Darwin>:version_macos.cpp>
+  $<$<PLATFORM_ID:Linux>:version_linux.cpp>
 )
 target_include_directories(augusta_version PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 augusta_set_module_scope(augusta_version SHARED)

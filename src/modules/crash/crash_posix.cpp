@@ -14,9 +14,16 @@
 #include "augusta/crash.h"
 #include "crash_platform.h"
 
-// SIGBUS is POSIX's, which <csignal> need not declare.
+// SIGBUS is POSIX's, which <csignal> need not declare; open's flags POSIX's
+// too. macOS's SDK declares both in <sys/...>, which these include.
+#ifdef __APPLE__
+#include <pthread.h>
+#include <sys/fcntl.h>
+#include <sys/signal.h>
+#else
 #include <fcntl.h>
 #include <signal.h>  // NOLINT(modernize-deprecated-headers)
+#endif
 #include <sys/resource.h>
 #include <time.h>  // NOLINT(modernize-deprecated-headers) - POSIX's nanosleep.
 #include <unistd.h>
@@ -31,12 +38,26 @@ namespace {
 
 constexpr std::array kFatalSignals{SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
 
+// The calling thread's system-wide ID, never 0: Linux's TID, macOS's thread ID
+// (which has no gettid).
+#ifdef __APPLE__
+using ThreadId = std::uint64_t;
+ThreadId CurrentThread() {
+  ThreadId id = 0;
+  pthread_threadid_np(nullptr, &id);
+  return id;
+}
+#else
+using ThreadId = pid_t;
+ThreadId CurrentThread() { return gettid(); }
+#endif
+
 // The thread reporting a crash, or 0 until one does. A second thread that
 // crashes meanwhile waits for that report to end the process, so the two
 // threads' lines never interleave; a fault in the report itself ends the
 // process at once. Lock-free, as a handler needs.
-std::atomic<pid_t> g_reporter{0};
-static_assert(std::atomic<pid_t>::is_always_lock_free, "the fatal-signal handler takes the report");
+std::atomic<ThreadId> g_reporter{0};
+static_assert(std::atomic<ThreadId>::is_always_lock_free, "the fatal-signal handler takes the report");
 
 // The Run's log file, opened ahead of any crash, if given.
 std::optional<int> g_log_file;
@@ -68,6 +89,7 @@ _Unwind_Reason_Code CollectFrame(_Unwind_Context* context, void* sink_arg) {
   if (sink.depth == sink.frames.size()) {
     return _URC_END_OF_STACK;
   }
+  // NOLINTNEXTLINE(misc-include-cleaner) - <unwind.h>'s, which on macOS declares it in an internal header.
   sink.frames[sink.depth] = reinterpret_cast<void*>(_Unwind_GetIP(context));
   ++sink.depth;
   return _URC_NO_REASON;
@@ -97,13 +119,14 @@ void RestoreDefaultActions() {
 [[noreturn]] void WaitForTheReport() {
   for (;;) {
     const timespec second{.tv_sec = 1, .tv_nsec = 0};
+    // NOLINTNEXTLINE(misc-include-cleaner) - <time.h>'s, which on macOS declares it in an internal header.
     nanosleep(&second, nullptr);
   }
 }
 
 extern "C" void HandleFatalSignal(int signal) {
-  const pid_t self = gettid();
-  pid_t reporter = 0;
+  const ThreadId self = CurrentThread();
+  ThreadId reporter = 0;
   if (!g_reporter.compare_exchange_strong(reporter, self)) {
     if (reporter != self) {
       WaitForTheReport();

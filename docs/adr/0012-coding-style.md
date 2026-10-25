@@ -54,3 +54,6 @@ unversioned and in the module's root, since renaming it would rename the
 generated C++ namespace, and the engine version versions the protocol. What no
 tool checks is written by hand: 80 columns, and a comment on every message and
 field whose meaning is not obvious from its name.
+
+Every formatter and linter above runs at one pinned version, the same in the
+editor, the hooks and CI, from the checkout's toolchain (ADR-0077).

@@ -18,5 +18,13 @@ if(AUGUSTA_CLIENT)
   # GLFW declares its Vulkan functions (window_vulkan.h's) only with Vulkan's
   # header, which this has it include.
   target_compile_definitions(augusta_window PRIVATE GLFW_INCLUDE_VULKAN)
+  # On macOS, the Vulkan loader Homebrew's vulkan-loader installs
+  # (scripts/bootstrap/macos.sh), which window.cpp opens through the rpath every
+  # executable linking the module gets: GLFW alone does not find it there.
+  if(APPLE)
+    find_library(AUGUSTA_VULKAN_LOADER NAMES vulkan.1 vulkan REQUIRED)
+    get_filename_component(vulkan_loader_dir "${AUGUSTA_VULKAN_LOADER}" DIRECTORY)
+    target_link_options(augusta_window INTERFACE "LINKER:-rpath,${vulkan_loader_dir}")
+  endif()
   augusta_set_module_scope(augusta_window CLIENT_ONLY)
 endif()

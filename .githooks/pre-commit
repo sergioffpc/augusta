@@ -3,11 +3,6 @@
 # formatters `make format` runs, and stages what they changed. CI's format
 # checks remain the actual gate if the hook is bypassed with --no-verify.
 
-# macOS has none of the formatters: they run in the dev container.
-if [[ "$(uname -s)" = Darwin ]]; then
-  exec scripts/dev-container.sh .githooks/pre-commit
-fi
-
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [[ -n "${staged}" ]] || exit 0
 

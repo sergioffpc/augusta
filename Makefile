@@ -18,13 +18,21 @@ SHELL := cmd.exe
 .SHELLFLAGS := /c
 PRESET ?= windows
 RUN := scripts\vcenv.cmd
+else ifeq ($(shell uname -s),Darwin)
+PRESET ?= macos
+RUN :=
 else
 PRESET ?= linux
 RUN :=
 endif
 
-# Every preset's binaryDir is build/x64-<preset> (CMakePresets.json).
+# Every preset's binaryDir is build/x64-<preset>, the macOS ones'
+# build/arm64-<preset> (CMakePresets.json).
+ifneq ($(filter macos%,$(PRESET)),)
+BUILD_DIR := build/arm64-$(PRESET)
+else
 BUILD_DIR := build/x64-$(PRESET)
+endif
 
 CXX_SOURCES := "src/*.cpp" "src/*.h" "tests/*.cpp" "tests/*.h" "tools/*.cpp" "tools/*.h"
 LUA_SOURCES := "*.lua"
@@ -60,14 +68,21 @@ BUF := uv tool run --from nodejs-wheel==24.19.0 npx --yes @bufbuild/buf@1.73.0
 # Windows, the client's and the Renderer's tests too, as CI's client job lints
 # them; elsewhere, not the client's trees, the window module's GLFW half or the
 # output device, which CI's Linux build (without the client, AUGUSTA_CLIENT) has
-# no compile commands for. Never the other platform's half of a module
-# (<module>_windows.cpp, <module>_linux.cpp), which this build doesn't compile.
+# no compile commands for. Never another platform's half of a module
+# (<module>_windows.cpp, <module>_linux.cpp, <module>_macos.cpp, and
+# <module>_posix.cpp, Linux's and macOS's), which this build doesn't compile.
 TIDY_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp"
 ifeq ($(OS),Windows_NT)
 TIDY_CLIENT_TESTS := "tests/client_*.cpp" "tests/renderer_*.cpp"
-TIDY_EXCLUDES += ":(exclude)src/*_linux.cpp"
+OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp" ":(exclude)src/*_macos.cpp" ":(exclude)src/*_posix.cpp"
+TIDY_EXCLUDES += $(OTHER_PLATFORMS)
 else
-TIDY_EXCLUDES += ":(exclude)src/*_windows.cpp"
+ifeq ($(shell uname -s),Darwin)
+OTHER_PLATFORMS := ":(exclude)src/*_linux.cpp"
+else
+OTHER_PLATFORMS := ":(exclude)src/*_macos.cpp"
+endif
+TIDY_EXCLUDES += ":(exclude)src/*_windows.cpp" $(OTHER_PLATFORMS)
 TIDY_EXCLUDES += ":(exclude)src/client/*" ":(exclude)src/modules/renderer/*"
 TIDY_EXCLUDES += ":(exclude)src/modules/audio/output_miniaudio.cpp" ":(exclude)src/modules/audio/miniaudio.cpp"
 TIDY_EXCLUDES += ":(exclude)src/modules/window/window.cpp" ":(exclude)src/modules/window/glfw_keys.cpp"
@@ -85,11 +100,11 @@ TIDY_SOURCES := $(shell $(LINT_LS_FILES) -- "src/*.cpp" "tools/agent/*.cpp" $(TI
 # third-party headers into errors that cut the parse short and leave includes
 # looking unused.
 ifeq ($(OS),Windows_NT)
-INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp" ":(exclude)src/*_linux.cpp"
+INCLUDE_EXCLUDES := ":(exclude)src/modules/audio/output_none.cpp" $(OTHER_PLATFORMS)
 JOBS ?= $(NUMBER_OF_PROCESSORS)
 else
 INCLUDE_EXCLUDES := $(TIDY_EXCLUDES) ":(exclude)tests/client_*"
-JOBS ?= $(shell nproc)
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 endif
 INCLUDE_SOURCES := $(filter-out $(TIDY_SOURCES),$(shell $(LINT_LS_FILES) -- "src/*.cpp" "tests/*.cpp" "tools/agent/tests/*.cpp" $(INCLUDE_EXCLUDES)))
 # One target per file, so a parallel make runs them side by side.
@@ -109,7 +124,7 @@ help:
 	$(info Targets (PRESET=$(PRESET), override with PRESET=windows-debug, linux-san, ...):)
 	$(info $()  all           the default: build)
 	$(info $()  configure     cmake --preset)
-	$(info $()  build         configure, then compile the binaries (no tests))
+	$(info $()  build         configure, then compile the binaries (no tests), or TARGETS=augustad ... alone)
 	$(info $()  test          build, then compile the tests and run ctest)
 	$(info $()  check         configure, then the repository's structural checks (checks/) and their pytest)
 	$(info $()  coverage      test under the linux-coverage preset, then its report into build/x64-linux-coverage/report)
@@ -131,8 +146,10 @@ help:
 configure:
 	$(RUN) cmake --preset $(PRESET)
 
+# TARGETS narrows the build to those CMake targets, as the VS Code launch
+# configs' tasks (.vscode/tasks.json) build only the executable they debug.
 build: configure
-	$(RUN) cmake --build --preset $(PRESET)
+	$(RUN) cmake --build --preset $(PRESET) $(if $(TARGETS),--target $(TARGETS))
 
 # The tests are not part of build (ADR-0008): augusta_tests builds them.
 test: build
@@ -234,6 +251,11 @@ tidy: configure
 # prints), which ctcache's key leaves out. Recursive, so only tidy and lint-files
 # run clang-tidy for it, and hand it to the per-file targets.
 CLANG_TIDY := clang-tidy-cache clang-tidy
+# On macOS, Homebrew's clang takes its SDK from a configuration file that
+# clang-tidy does not read: the SDK that clang resolves, handed to clang-tidy.
+ifeq ($(shell uname -s),Darwin)
+CLANG_TIDY += --extra-arg=-isysroot$(shell $(or $(HOMEBREW_PREFIX),/opt/homebrew)/opt/llvm@21/bin/clang++ -\#\#\# -x c++ -c /dev/null 2>&1 | sed -n 's/.*"-isysroot" "\([^"]*\)".*/\1/p')
+endif
 CTCACHE_DIR = $(abspath build/ctcache)/$(firstword $(filter 1% 2% 3% 4% 5% 6% 7% 8% 9%,$(shell clang-tidy --version)))
 
 .PHONY: $(TIDY_CHECKS) $(INCLUDE_CHECKS)
@@ -274,7 +296,7 @@ format-files:
 LINT_CHECKS := $(addprefix lint/,yamllint luacheck taplo ruff shellcheck pymarkdown actionlint buf)
 LINT_TIDY := $(strip $(filter $(addprefix tidy/,$(FILES)),$(TIDY_CHECKS)) $(filter $(addprefix include-cleaner/,$(FILES)),$(INCLUDE_CHECKS)))
 lint-files:
-	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)) - on macOS through scripts/dev-container.sh)))
+	$(if $(LINT_TIDY),$(if $(wildcard $(BUILD_DIR)/compile_commands.json),,$(error $(BUILD_DIR)/compile_commands.json not found: configure a build first (make configure PRESET=$(PRESET)))))
 	$(if $(filter tidy/src/modules/protocol/protocol.cpp,$(LINT_TIDY)),$(RUN) cmake --build --preset $(PRESET) --target augusta_protocol_generated,@:)
 	$(MAKE) --no-print-directory -j $(JOBS) -k -Otarget "FILES=$(FILES)" $(if $(strip $(LINT_TIDY)),"CTCACHE_DIR=$(CTCACHE_DIR)") $(LINT_CHECKS) $(LINT_TIDY)
 

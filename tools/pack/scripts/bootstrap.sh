@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds the hermetic cooking environment for the Asset Pipeline (ADR-0030)
 # entirely under <assets-root>, in Git Bash on Windows or on Linux - the
-# platforms vcpkg's ktx port, which the cooker's _native module wraps
-# (ADR-0017), builds for.
+# platforms usd-optimize, which the cooker depends on, ships wheels for. On
+# macOS it runs in the dev container (scripts/dev-container.sh).
 #
 # Cooking (always): a self-contained Python environment (uv-managed - no
 # system/global Python involved) with the tools/pack Python project installed
@@ -118,8 +118,9 @@ main() {
     compiler=(clang++ ld.lld)
   else
     echo "bootstrap: the cooker runs on Windows (Git Bash) or Linux only -" \
-      "vcpkg's ktx port, which its _native module wraps" \
-      "(ADR-0017), builds for no other platform." >&2
+      "usd-optimize, which it depends on, ships wheels for no other" \
+      "platform. On macOS, run it in the dev container:" \
+      "scripts/dev-container.sh $0 <assets-root>." >&2
     exit 1
   fi
 

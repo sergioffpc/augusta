@@ -13,7 +13,7 @@
 /// \file
 /// The handler's two halves, private to the module: crash.cpp formats a
 /// crash's lines and keeps what Install was given, on every platform;
-/// crash_windows.cpp or crash_linux.cpp, the one the platform builds, writes
+/// crash_windows.cpp or crash_posix.cpp, the one the platform builds, writes
 /// the lines, walks the stack and catches the crash. Everything but
 /// OpenLogFile and InstallHandlers runs inside a handler, so it allocates
 /// nothing, takes no lock and calls only async-signal-safe functions.
@@ -31,8 +31,8 @@ void OpenLogFile(const std::filesystem::path& path);
 void WriteLine(std::string_view line);
 
 /// One line per frame of a crash's stack, innermost first, written through
-/// line, each ending in context: its function on Linux (FormatFrameLine), its
-/// module and offset on Windows (FormatModuleFrameLine).
+/// line, each ending in context: its function on Linux and macOS
+/// (FormatFrameLine), its module and offset on Windows (FormatModuleFrameLine).
 void WriteFrameLines(std::span<void* const> frames, std::string_view subsystem, std::chrono::sys_seconds now,
                      std::string_view context, Line& line);
 

@@ -1,7 +1,7 @@
 # What a crash leaves in the log: the fatal signal and a symbolized stack
-# (ADR-0047). Abseil symbolizes on Linux, being async-signal-safe where the
-# alternatives (std::stacktrace, Boost.Stacktrace) allocate. On Windows dbghelp
-# writes the minidump (ADR-0055). crash.cpp formats the lines on every platform;
+# (ADR-0047). Abseil symbolizes on Linux and macOS, being async-signal-safe
+# where the alternatives (std::stacktrace, Boost.Stacktrace) allocate. On
+# Windows dbghelp writes the minidump (ADR-0055). crash.cpp formats the lines on every platform;
 # the platform's own file catches the crash and writes them (crash_platform.h).
 find_package(absl CONFIG REQUIRED)
 add_library(
@@ -9,7 +9,7 @@ add_library(
   STATIC
   crash.cpp
   $<$<PLATFORM_ID:Windows>:crash_windows.cpp>
-  $<$<NOT:$<PLATFORM_ID:Windows>>:crash_linux.cpp>
+  $<$<NOT:$<PLATFORM_ID:Windows>>:crash_posix.cpp>
 )
 target_include_directories(augusta_crash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Its lines end in logging's context, which logging keeps for it to read
