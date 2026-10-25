@@ -89,6 +89,13 @@ void ToDifference(std::span<const ozz::math::SoaTransform> reference, std::span<
   }
 }
 
+// Where the air Clip is at vertical_speed, as a ratio of its duration: its start
+// rising at kAirVerticalSpeed or faster, its end falling as fast, linearly
+// between, so the top of a jump is halfway through it.
+float AirRatio(float vertical_speed) {
+  return std::clamp((kAirVerticalSpeed - vertical_speed) / (kAirVerticalSpeed + kAirVerticalSpeed), 0.0F, 1.0F);
+}
+
 // One SoA block's lanes of a SIMD value, read with ozz's own unaligned store.
 std::array<float, 4> LanesOf(const ozz::math::SimdFloat4& value) {
   std::array<float, 4> lanes{};
@@ -246,6 +253,44 @@ struct Poser::Buffers {
     }
     Blend(clips.skeleton, {layers.data(), blend.count}, stances.at(index));
   }
+
+  // The air Clip alone at input's vertical velocity, into stances[0].
+  void PoseInTheAir(const CharacterClips& clips, const PoseInput& input) {
+    std::vector<ozz::math::SoaTransform>& output = sampled.at(0);
+    Sample(clips.air, AirRatio(input.body.velocity.y), contexts.at(0), output);
+    const std::array<ozz::animation::BlendingJob::Layer, 1> layer{
+        {{.weight = 1.0F, .transform = {output.data(), output.size()}, .joint_weights = {}}}};
+    Blend(clips.skeleton, layer, stances.at(0));
+  }
+
+  // Off the ground, the air Clip alone in place of both stances, from the tick
+  // the body leaves the ground to the tick it lands: no crossfade, which would
+  // need a time of its own (ADR-0066). On it, the stance's blend space; while a
+  // change of stance is under way, the stance it left blended into it by how
+  // far the change has gone. Each stance posed has its own Aim offset and ADS
+  // grip on top before the two blend. Returns the buffer the result is in.
+  const std::vector<ozz::math::SoaTransform>& PoseStances(const CharacterClips& clips, const PoseInput& input) {
+    if (!input.body.grounded) {
+      PoseInTheAir(clips, input);
+    } else {
+      BlendStance(clips, input.body.stance, input, 0);
+    }
+    AddAim(clips.skeleton, clips.Of(input.body.stance), input.pitch, input.ads, 0);
+    if (!input.body.grounded || input.body.previous_stance == input.body.stance ||
+        input.body.stance_progress >= physics::kStanceProgressSteps) {
+      return stances.at(0);
+    }
+    BlendStance(clips, input.body.previous_stance, input, 1);
+    AddAim(clips.skeleton, clips.Of(input.body.previous_stance), input.pitch, input.ads, 1);
+    const float progress =
+        static_cast<float>(input.body.stance_progress) / static_cast<float>(physics::kStanceProgressSteps);
+    const std::array<ozz::animation::BlendingJob::Layer, kBlendedStances> layers{{
+        {.weight = progress, .transform = {stances.at(0).data(), stances.at(0).size()}, .joint_weights = {}},
+        {.weight = 1.0F - progress, .transform = {stances.at(1).data(), stances.at(1).size()}, .joint_weights = {}},
+    }};
+    Blend(clips.skeleton, layers, blended);
+    return blended;
+  }
 };
 
 Poser::Poser() : buffers_(std::make_unique<Buffers>()) {}
@@ -258,34 +303,13 @@ void Poser::Pose(const CharacterClips& clips, const assets::Skeleton& skeleton, 
   Buffers& buffers = *buffers_;
   buffers.Fit(clips.skeleton);
 
-  // The stance's blend space, its Aim offset and ADS grip on top; while a
-  // change of stance is under way, the stance it left, posed the same way,
-  // blended into it by how far the change has gone.
-  buffers.BlendStance(clips, input.body.stance, input, 0);
-  buffers.AddAim(clips.skeleton, clips.Of(input.body.stance), input.pitch, input.ads, 0);
-  const std::vector<ozz::math::SoaTransform>* pose = &buffers.stances.at(0);
-  if (input.body.previous_stance != input.body.stance && input.body.stance_progress < physics::kStanceProgressSteps) {
-    buffers.BlendStance(clips, input.body.previous_stance, input, 1);
-    buffers.AddAim(clips.skeleton, clips.Of(input.body.previous_stance), input.pitch, input.ads, 1);
-    const float progress =
-        static_cast<float>(input.body.stance_progress) / static_cast<float>(physics::kStanceProgressSteps);
-    const std::array<ozz::animation::BlendingJob::Layer, kBlendedStances> layers{{
-        {.weight = progress,
-         .transform = {buffers.stances.at(0).data(), buffers.stances.at(0).size()},
-         .joint_weights = {}},
-        {.weight = 1.0F - progress,
-         .transform = {buffers.stances.at(1).data(), buffers.stances.at(1).size()},
-         .joint_weights = {}},
-    }};
-    Buffers::Blend(clips.skeleton, layers, buffers.blended);
-    pose = &buffers.blended;
-  }
+  const std::vector<ozz::math::SoaTransform>& pose = buffers.PoseStances(clips, input);
 
   // Each ozz-animation Joint into its Joint of the Skeleton, lane by lane.
   posed.local.resize(skeleton.joints.size());
   const auto joint_count = static_cast<std::size_t>(clips.skeleton.num_joints());
   for (std::size_t block = 0; block * 4 < joint_count; ++block) {
-    const ozz::math::SoaTransform& soa = pose->at(block);
+    const ozz::math::SoaTransform& soa = pose.at(block);
     const std::array<float, 4> tx = LanesOf(soa.translation.x);
     const std::array<float, 4> ty = LanesOf(soa.translation.y);
     const std::array<float, 4> tz = LanesOf(soa.translation.z);

@@ -154,15 +154,16 @@ enum class BodyPartWire : std::uint8_t {
 struct BodyStateWire {
   /// The bits of flags: the body ran its stamina out and has not yet
   /// recovered; its player aims down sights, as the Command the server applied
-  /// said.
+  /// said; it stood on something as of its last Movement (ADR-0062).
   static constexpr std::uint8_t kExhausted = 1U << 0U;
   static constexpr std::uint8_t kAds = 1U << 1U;
+  static constexpr std::uint8_t kGrounded = 1U << 2U;
 
   math::Vec3 position{};
   math::Vec3 velocity{};
   /// Remaining stamina, 0 to 1.
   float stamina = 1.0F;
-  /// Any of kExhausted and kAds; no other bit.
+  /// Any of kExhausted, kAds and kGrounded; no other bit.
   std::uint8_t flags = 0;
   StanceWire stance = StanceWire::kStanding;
   /// Where the body is in its Stride, a cycle of two steps, in 256ths of one.

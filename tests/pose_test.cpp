@@ -46,8 +46,8 @@ constexpr std::uint8_t kRightContact = 128;
 
 class PoseTest : public ::testing::Test {
  protected:
-  // The Walker posed at a body with this velocity, stance and Stride, its feet
-  // at position and facing yaw.
+  // The Walker posed on the ground at a body with this velocity, stance and
+  // Stride, its feet at position and facing yaw.
   SkeletonPose PoseAt(const Vec3& velocity, Stance stance, std::uint8_t stride, const Vec3& position = Vec3(0.0F),
                       float yaw = 0.0F) {
     BodyState body;
@@ -55,6 +55,12 @@ class PoseTest : public ::testing::Test {
     body.velocity = velocity;
     body.stance = stance;
     body.stride = stride;
+    body.grounded = true;
+    return PoseOf(body, yaw);
+  }
+
+  // The Walker posed at body, facing yaw.
+  SkeletonPose PoseOf(const BodyState& body, float yaw = 0.0F) {
     SkeletonPose posed;
     poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = yaw}, posed);
     return posed;
@@ -141,6 +147,7 @@ TEST_F(PoseTest, ThroughAChangeOfStanceTheHeadMovesDownByItsProgress) {
   BodyState body;
   body.stance = Stance::kCrouching;
   body.previous_stance = Stance::kStanding;
+  body.grounded = true;
   SkeletonPose started;
   SkeletonPose a_fifth;
   SkeletonPose over;
@@ -177,14 +184,15 @@ TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {
 // offset bends it by its pitch, its ADS grip raises its Arm.
 class AimTest : public ::testing::Test {
  protected:
-  // The Aimer in stance, which it has finished changing to unless a test
-  // names the stance it left and how far it has gone from it.
+  // The Aimer on the ground in stance, which it has finished changing to unless
+  // a test names the stance it left and how far it has gone from it.
   SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false, Stance previous = Stance::kStanding,
                       std::uint8_t progress = static_cast<std::uint8_t>(augusta::physics::kStanceProgressSteps)) {
     BodyState body;
     body.stance = stance;
     body.previous_stance = previous;
     body.stance_progress = progress;
+    body.grounded = true;
     SkeletonPose posed;
     poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, posed);
     return posed;
@@ -287,6 +295,63 @@ TEST_F(AimTest, ThroughAChangeOfStanceTheStanceItLeftKeepsItsOwnAimOffset) {
   ExpectNear(head, HeadBentBy(fixture::kPelvisStanding, fixture::kStandingAimBend));
 }
 
+// A standing body off the ground, at the origin, moving at velocity.
+BodyState InTheAir(const Vec3& velocity) {
+  BodyState body;
+  body.position = Vec3(0.0F);
+  body.velocity = velocity;
+  body.stride = kLeftContact;
+  return body;
+}
+
+// The Walker's air Clip lays a leg level with its hip, 1 m ahead (-Z) or behind.
+const Vec3 kLeftFootTucked(-fixture::kHipSide, fixture::kPelvisStanding, -1.0F);
+const Vec3 kRightFootAhead(fixture::kHipSide, fixture::kPelvisStanding, -1.0F);
+const Vec3 kRightFootBehind(fixture::kHipSide, fixture::kPelvisStanding, 1.0F);
+const Vec3 kRightFootDown(fixture::kHipSide, 0.0F, 0.0F);
+
+// Walking ahead at a left Foot contact, its left leg would be kLegSwing ahead;
+// off the ground the air Clip has it tucked level with its hip instead.
+TEST_F(PoseTest, OffTheGroundABodyIsPosedByItsAirClipInPlaceOfItsBlendSpace) {
+  const SkeletonPose posed = PoseOf(InTheAir(kWalking));
+
+  ExpectNear(FootOf(posed, fixture::kWalkerLeftLeg), kLeftFootTucked);
+}
+
+// From rising at kAirVerticalSpeed (its start) to falling as fast (its end),
+// the top of a jump halfway; faster is held at either end.
+TEST_F(PoseTest, TheAirClipIsSampledByTheBodysVerticalVelocityFromRisingToFalling) {
+  constexpr float kSpeed = augusta::animation::kAirVerticalSpeed;
+
+  const SkeletonPose rising = PoseOf(InTheAir(Vec3(0.0F, kSpeed, 0.0F)));
+  const SkeletonPose top = PoseOf(InTheAir(Vec3(0.0F)));
+  const SkeletonPose falling = PoseOf(InTheAir(Vec3(0.0F, -kSpeed, 0.0F)));
+  const SkeletonPose rising_faster = PoseOf(InTheAir(Vec3(0.0F, 4.0F * kSpeed, 0.0F)));
+  const SkeletonPose falling_faster = PoseOf(InTheAir(Vec3(0.0F, -4.0F * kSpeed, 0.0F)));
+
+  ExpectNear(FootOf(rising, fixture::kWalkerRightLeg), kRightFootAhead);
+  ExpectNear(FootOf(top, fixture::kWalkerRightLeg), kRightFootDown);
+  ExpectNear(FootOf(falling, fixture::kWalkerRightLeg), kRightFootBehind);
+  ExpectNear(FootOf(rising_faster, fixture::kWalkerRightLeg), kRightFootAhead);
+  ExpectNear(FootOf(falling_faster, fixture::kWalkerRightLeg), kRightFootBehind);
+}
+
+// The pose switches on the tick the body lands, with nothing of the air Clip
+// left: posed on the ground right after the air, it is the ground's pose.
+TEST_F(PoseTest, TheTickABodyLandsItIsPosedOnTheGroundWithNoCrossfade) {
+  BodyState landed = InTheAir(kWalking);
+  landed.grounded = true;
+  const SkeletonPose ground = PoseOf(landed);
+  PoseOf(InTheAir(kWalking));
+  const SkeletonPose after_the_air = PoseOf(landed);
+
+  ExpectNear(FootOf(after_the_air, fixture::kWalkerLeftLeg), Vec3(-fixture::kHipSide, kFootUp, -kFootAhead));
+  ASSERT_EQ(ground.world.size(), after_the_air.world.size());
+  for (std::size_t joint = 0; joint < ground.world.size(); ++joint) {
+    EXPECT_EQ(ground.world[joint], after_the_air.world[joint]);
+  }
+}
+
 // The Holder (clips_fixture.h) still, holding its rifle: the rifle on the
 // weapon socket of its right hand, wherever its pose puts that hand, and its
 // left hand on the rifle's Fore-end, its left arm bent by two-bone IK to reach
@@ -302,6 +367,7 @@ class HoldTest : public ::testing::Test {
   Held HoldAt(Stance stance, float pitch, bool ads = false) {
     BodyState body;
     body.stance = stance;
+    body.grounded = true;
     Held held;
     poser_.Pose(*clips_, skeleton_, PoseInput{.body = body, .yaw = 0.0F, .pitch = pitch, .ads = ads}, held.posed);
     held.hand = augusta::animation::HoldRifle(skeleton_, *clips_->weapon_socket, rifle_, held.posed);

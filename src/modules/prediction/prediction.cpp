@@ -57,12 +57,13 @@ int StrideDistance(std::uint8_t a, std::uint8_t b) {
 
 // Position is what the player sees, but a stance, an exhaustion or a stamina
 // that differs changes what the next commands do, so those count as well; and a
-// Stride or a change of stance's progress, which pose the body every side sees.
-// The progress advances by whole steps of time alone, so any difference is a
-// misprediction, never rounding.
+// Stride, a grounded flag or a change of stance's progress, which pose the body
+// every side sees. The progress advances by whole steps of time alone, so any
+// difference is a misprediction, never rounding.
 bool BodyNeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
   return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
          authoritative.stance != predicted.stance || authoritative.exhausted != predicted.exhausted ||
+         authoritative.grounded != predicted.grounded ||
          std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance ||
          StrideDistance(authoritative.stride, predicted.stride) > kStrideTolerance ||
          authoritative.previous_stance != predicted.previous_stance ||

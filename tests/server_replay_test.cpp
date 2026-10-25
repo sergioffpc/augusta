@@ -209,6 +209,43 @@ TEST(CaptureReplayTest, AReplayReproducesEachBodysStride) {
   EXPECT_NE(BodyOf(ticks.back(), 1)->body.stride, 0);
 }
 
+// A World with a floor 1 m below the capture's spawns, which its bodies fall to.
+augusta::simulation::World WithAFloorBelowTheSpawns(const augusta::parameters::Parameters& parameters) {
+  constexpr float kExtent = 50.0F;
+  constexpr float kY = -1.0F;
+  augusta::simulation::World world(parameters, kTickRate);
+  EXPECT_TRUE(world
+                  .AddCollisionMesh({.points = {Vec3(-kExtent, kY, -kExtent), Vec3(-kExtent, kY, kExtent),
+                                                Vec3(kExtent, kY, kExtent), Vec3(kExtent, kY, -kExtent)},
+                                     .indices = {0, 1, 2, 0, 2, 3}})
+                  .has_value());
+  return world;
+}
+
+// The Commands re-run put each body on the ground on the tick they did live,
+// so kGrounded, and the air Clip it poses a body by, comes back with them.
+// Requirements: US-21
+TEST(CaptureReplayTest, AReplayReproducesWhenEachBodyIsOnTheGround) {
+  constexpr std::uint32_t kTicks = 60;
+  augusta::parameters::Parameters parameters;
+  parameters.player_count = 2;
+  Replay replay(CaptureOf({EndAt(kTicks)}), WithAFloorBelowTheSpawns(parameters), Characters());
+  augusta::simulation::World live = WithAFloorBelowTheSpawns(parameters);
+  live.AddPlayer(augusta::simulation::EntityId{1}, Vec3(10.0F, 0.0F, 0.0F), Characters().at(kCharacter));
+  live.AddPlayer(augusta::simulation::EntityId{2}, Vec3(-10.0F, 0.0F, 4.0F), Characters().at(kCharacter));
+
+  const std::vector<ReplayTick> ticks = RunToEnd(replay);
+
+  ASSERT_EQ(ticks.size(), kTicks + 1);
+  for (std::uint32_t i = 0; i < ticks.size(); ++i) {
+    const augusta::simulation::State state = live.Tick({}, 1.0F / kTickRate).state;
+    ASSERT_NE(BodyOf(ticks[i], 1), nullptr);
+    EXPECT_EQ(BodyOf(ticks[i], 1)->body.grounded, state.bodies.at(0).body.grounded) << "tick " << i;
+  }
+  EXPECT_FALSE(BodyOf(ticks.front(), 1)->body.grounded);
+  EXPECT_TRUE(BodyOf(ticks.back(), 1)->body.grounded);
+}
+
 // As the Stride, a change of stance's progress is re-advanced by the Commands
 // on the Characters' Clips: a body crouching from offset 3 is posed between
 // standing and crouching tick by tick as the live Match's.
