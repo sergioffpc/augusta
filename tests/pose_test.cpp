@@ -390,7 +390,7 @@ Vec3 RightShoulder(float pelvis) {
 }
 
 // Standing or crouched, the hand hangs kHolderArm below the shoulder; in ADS the
-// grip swings the arm straight ahead, and the hand with it.
+// grip swings the arm straight ahead and brings the hand to the Eye.
 TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held crouched = HoldAt(Stance::kCrouching, 0.0F);
@@ -400,8 +400,7 @@ TEST_F(HoldTest, TheRifleIsHeldOnTheRightHandsSocketInEveryStanceAndInADS) {
              RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, 0.0F));
   ExpectNear(augusta::math::TranslationOf(crouched.hand),
              RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, 0.0F));
-  ExpectNear(augusta::math::TranslationOf(ads.hand),
-             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, 0.0F, -fixture::kHolderArm));
+  ExpectNear(augusta::math::TranslationOf(ads.hand), fixture::kHolderEye);
 }
 
 // Aiming down, the Pelvis bends 45 degrees ahead: the shoulder with it, and the
@@ -419,8 +418,8 @@ TEST_F(HoldTest, TheRifleFollowsTheHandAsTheAimOffsetBendsTheBody) {
 }
 
 // The hand is the socket's, so the rifle's Muzzle is kHolderMuzzle along the
-// hand's -Z: ahead of the hanging hand, and straight up from the hand the ADS
-// grip has swung ahead, which turns the hand a quarter about +X.
+// hand's -Z: ahead of the hanging hand, and ahead of the Eye, where the ADS
+// grip holds the hand turned back level.
 TEST_F(HoldTest, TheMuzzleIsWhereTheHandHoldsTheRifle) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
@@ -428,11 +427,11 @@ TEST_F(HoldTest, TheMuzzleIsWhereTheHandHoldsTheRifle) {
   ExpectNear(augusta::math::TranslationOf(augusta::weapon::PlaceMuzzle(standing.hand, rifle_)),
              RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderMuzzle));
   ExpectNear(augusta::math::TranslationOf(augusta::weapon::PlaceMuzzle(ads.hand, rifle_)),
-             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, fixture::kHolderMuzzle, -fixture::kHolderArm));
+             fixture::kHolderEye + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle));
 }
 
 // The Fore-end is kHolderForeEnd along the hand's -Z: ahead of the hanging hand,
-// above the raised one. Both are within the left arm's reach.
+// and ahead of the Eye in ADS. Both are within the left arm's reach.
 TEST_F(HoldTest, TheLeftHandReachesTheRiflesForeEnd) {
   const Held standing = HoldAt(Stance::kStanding, 0.0F);
   const Held ads = HoldAt(Stance::kStanding, 0.0F, true);
@@ -441,7 +440,7 @@ TEST_F(HoldTest, TheLeftHandReachesTheRiflesForeEnd) {
   ExpectNear(OriginOf(standing.posed, fixture::kHolderLeftHand),
              RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderForeEnd));
   ExpectNear(OriginOf(ads.posed, fixture::kHolderLeftHand),
-             RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, fixture::kHolderForeEnd, -fixture::kHolderArm));
+             fixture::kHolderEye + Vec3(0.0F, 0.0F, -fixture::kHolderForeEnd));
   ExpectNear(OriginOf(crouched.posed, fixture::kHolderLeftHand),
              RightShoulder(fixture::kPelvisCrouching) + Vec3(0.0F, -fixture::kHolderArm, -fixture::kHolderForeEnd));
 }

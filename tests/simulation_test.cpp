@@ -1740,7 +1740,7 @@ Character Holder() {
   CharacterHitbox left_forearm =
       Box(BodyPart::kLimb, Vec3(-0.05F, -fixture::kHolderForearm - 0.05F, -0.05F), Vec3(0.05F, 0.0F, 0.05F));
   left_forearm.joint = fixture::kHolderLeftForearm;
-  return Character{.eye = Vec3(0.0F, 1.7F, 0.0F),
+  return Character{.eye = fixture::kHolderEye,
                    .hitboxes = {head, torso, right_arm, left_forearm},
                    .skeleton = fixture::HolderSkeleton(),
                    .clips = fixture::HolderClips()};
@@ -2342,18 +2342,20 @@ TEST_F(HeldRifleTest, TheRifleHangsFromTheWeaponSocketOfThePosedRightHand) {
   ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 0.0F, -1.0F));
 }
 
-// Her ADS grip swings her arm straight ahead, turning her hand a quarter about
-// +X: the rifle on it points up.
+// Standing, her ADS grip shoulders the rifle: its Sight on her Eye, and its
+// barrel along her view, the Muzzle kHolderMuzzle ahead of the Eye (ADR-0064).
 // Requirements: US-06
-TEST_F(HeldRifleTest, InAdsTheRifleFollowsTheHandTheADSGripRaises) {
+TEST_F(HeldRifleTest, InAdsTheSightIsOnTheEyeAndTheBarrelAlongTheView) {
   namespace fixture = augusta::clips_fixture;
-  const Vec3 hand = Feet() + RightShoulder(fixture::kPelvisStanding) + Vec3(0.0F, 0.0F, -fixture::kHolderArm);
+  const Vec3 eye = Feet() + fixture::kHolderEye;
+  const Vec3 view(0.0F, 0.0F, -1.0F);
 
   const auto held = HeldAfter(Aiming(0.0F, 0.0F, true));
 
-  ExpectNear(PositionOf(held.sight), hand);
-  ExpectNear(PositionOf(held.muzzle), hand + Vec3(0.0F, fixture::kHolderMuzzle, 0.0F));
-  ExpectNear(PointingOf(held.muzzle), Vec3(0.0F, 1.0F, 0.0F));
+  ExpectNear(PositionOf(held.sight), eye);
+  ExpectNear(PointingOf(held.sight), view);
+  ExpectNear(PointingOf(held.muzzle), view);
+  ExpectNear(PositionOf(held.muzzle), eye + (fixture::kHolderMuzzle * view));
 }
 
 // Crouched, her crouching Clips hold her Pelvis lower, and the hand with it.

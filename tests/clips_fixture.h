@@ -429,7 +429,8 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
 // down it with the weapon socket on it, and its LeftArm, a LeftForearm
 // kHolderUpperArm down it, bent ahead at the elbow by kHolderElbowBend, and a
 // LeftHand kHolderForearm down that. Its aim_down bends the Pelvis forward, its
-// aim_up back, and its ads swings the right arm up ahead of it; every other
+// aim_up back, and its ads swings the right arm up ahead of it and shoulders
+// the rifle, standing, with its Sight on the Eye (HolderAdsClip); every other
 // Clip holds it upright, its right arm down, and every one holds the left arm
 // as it is, so where the left hand ends up is the IK's. Each stance bends and
 // raises it by its own angles, so a test can tell whose it took.
@@ -445,6 +446,8 @@ inline constexpr float kStandingAdsRaise = 1.5707964F;   // 90 degrees
 inline constexpr float kCrouchingAdsRaise = 1.0471976F;  // 60 degrees
 inline constexpr float kProneAdsRaise = 0.5235988F;      // 30 degrees
 inline constexpr float kHolderArm = 0.6F;
+// Where the Holder sees from, standing, from its feet: its Character's Eye.
+inline constexpr math::Vec3 kHolderEye{0.0F, 1.7F, 0.0F};
 inline constexpr float kHolderUpperArm = 0.5F;
 inline constexpr float kHolderForearm = 0.5F;
 inline constexpr float kHolderElbowBend = 0.5235988F;  // 30 degrees
@@ -491,10 +494,9 @@ inline assets::Skeleton HolderSkeleton() {
   return skeleton;
 }
 
-// A Holder Clip one second long, its Pelvis pelvis high and bent ahead by bend,
-// its right arm swung up ahead by raise; with a stride_length, a
-// still walk of it.
-inline animation::Clip HolderClip(float pelvis, float bend = 0.0F, float raise = 0.0F, float stride_length = 0.0F) {
+// A Holder Clip's raw animation, one second long: its Pelvis pelvis high and
+// bent ahead by bend, its right arm swung up ahead by raise.
+inline ozz::animation::offline::RawAnimation HolderRaw(float pelvis, float bend, float raise) {
   using ozz::math::Float3;
   using ozz::math::Quaternion;
   const std::array<HolderJoint, 8> joints = HolderJoints();
@@ -513,13 +515,39 @@ inline animation::Clip HolderClip(float pelvis, float bend = 0.0F, float raise =
       {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), raise)});
   raw.tracks[kHolderLeftForearm].rotations.push_back(
       {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), kHolderElbowBend)});
+  return raw;
+}
+
+// raw built into a Clip; with a stride_length, a still walk of it.
+inline animation::Clip HolderBuilt(const ozz::animation::offline::RawAnimation& raw, float stride_length) {
   auto built = ozz::animation::offline::AnimationBuilder()(raw);
   EXPECT_TRUE(built);
-  animation::Clip clip{.animation = std::move(*built), .stride_length = stride_length, .foot_contacts = {}};
-  if (stride_length > 0.0F) {
-    clip.foot_contacts = {{.foot = assets::Foot::kLeft, .ratio = 0.0F}, {.foot = assets::Foot::kRight, .ratio = 0.5F}};
-  }
-  return clip;
+  return animation::Clip{
+      .animation = std::move(*built), .stride_length = stride_length, .foot_contacts = StepsOf(stride_length)};
+}
+
+// A Holder Clip one second long, as HolderRaw's; with a stride_length, a still
+// walk of it.
+inline animation::Clip HolderClip(float pelvis, float bend = 0.0F, float raise = 0.0F, float stride_length = 0.0F) {
+  return HolderBuilt(HolderRaw(pelvis, bend, raise), stride_length);
+}
+
+// A Holder's ADS grip, its Pelvis pelvis high: its right arm swung up ahead by
+// raise, and its hand turned back against the raise, so the rifle on it points
+// ahead, and moved along the arm to where, standing, the Eye is: the Grip, and
+// the Sight on it, sit on the Eye, the barrel along a level view. In a lower
+// stance it is as high above the Pelvis as standing's.
+inline animation::Clip HolderAdsClip(float pelvis, float raise) {
+  using ozz::math::Float3;
+  using ozz::math::Quaternion;
+  ozz::animation::offline::RawAnimation raw = HolderRaw(pelvis, 0.0F, raise);
+  const math::Vec3 shoulder(kHolderShoulderSide, pelvis + kHolderShoulderAbovePelvis, 0.0F);
+  const math::Vec3 eye(kHolderEye.x, pelvis + (kHolderEye.y - kPelvisStanding), kHolderEye.z);
+  const math::Vec3 along = glm::angleAxis(-raise, math::Vec3(1.0F, 0.0F, 0.0F)) * (eye - shoulder);
+  raw.tracks[kHolderRightHand].translations[0].value = Float3(along.x, along.y, along.z);
+  raw.tracks[kHolderRightHand].rotations.push_back(
+      {.time = 0.0F, .value = Quaternion::FromAxisAngle(Float3(1.0F, 0.0F, 0.0F), -raise)});
+  return HolderBuilt(raw, 0.0F);
 }
 
 // A Holder stance's Clips, its Pelvis pelvis high: its Aim offset bends it by
@@ -534,7 +562,7 @@ inline animation::StanceClips HolderStanceOf(float pelvis, float bend, float rai
   clips.aim_down = HolderClip(pelvis, bend);
   clips.aim_center = HolderClip(pelvis);
   clips.aim_up = HolderClip(pelvis, -bend);
-  clips.ads = HolderClip(pelvis, 0.0F, raise);
+  clips.ads = HolderAdsClip(pelvis, raise);
   if (sides) {
     clips.left = HolderClip(pelvis, 0.0F, 0.0F, left);
     clips.right = HolderClip(pelvis, 0.0F, 0.0F, right);
