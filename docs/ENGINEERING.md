@@ -59,10 +59,11 @@ decisions already made in ARCHITECTURE.md:
   for the macOS development build.
 - **Job names:** a job that builds a deliverable (the client, the server, the
   server image) for one platform ends in that platform's vcpkg triplet,
-  `<name>-<arch>-<os>`: `client-x64-windows`, `client-x64-linux`,
-  `client-arm64-macos`, `server-x64-linux`, `container-publish-arm64-linux`. A
-  matrix job names each of its instances that way. A job that builds no single
-  platform's deliverable (`format`, `changes`, `container-index`) has no suffix.
+  `<name>-<arch>-<os>`, but for macOS, named as its presets name it rather than
+  vcpkg's `osx`: `client-x64-windows`, `client-x64-linux`, `client-arm64-macos`,
+  `server-x64-linux`, `container-publish-arm64-linux`. A matrix job names each
+  of its instances that way. A job that builds no single platform's deliverable
+  (`format`, `changes`, `container-index`) has no suffix.
 - **Trigger:** `push` to `main`/`develop`, and `pull_request` targeting either;
   a separate nightly workflow runs on `develop` (ADR-0013). A `changes` job
   diffs against the base commit first and skips build/test/lint entirely when
@@ -138,13 +139,15 @@ decisions already made in ARCHITECTURE.md:
       keeps only the packages its job installed, so a job installing ports no
       other does keeps an entry of its own: each job turning on a manifest
       feature the others don't (`client-x64-linux` the `client` feature,
-      `server-x64-linux` the tools' `agent` and `pack` features). vcpkg builds
-      its ports through the overlay `x64-linux` triplet with the project's LLVM
-      toolchain (ADR-0008), which no preset changes. So the entry's packages are
-      the same whatever preset a job configures, and the server image's
-      dependency layer, built on the same Ubuntu, restores them too: the
-      container jobs mount the entry read-only into its `vcpkg install`, and it
-      builds from source only the packages the entry lacks.
+      `server-x64-linux` the tools' `agent` and `pack` features), and the
+      nightly's `client-arm64-macos`, whose `arm64-osx` packages no Linux job
+      shares. vcpkg builds its ports through the overlay `x64-linux` triplet
+      with the project's LLVM toolchain (ADR-0008), which no preset changes. So
+      the entry's packages are the same whatever preset a job configures, and
+      the server image's dependency layer, built on the same Ubuntu, restores
+      them too: the container jobs mount the entry read-only into its
+      `vcpkg install`, and it builds from source only the packages the entry
+      lacks.
     - Compiler cache: sccache on its local disk backend, never its
       GitHub-Actions-cache one, whose one entry per object exhausts the cache's
       request quota. Each job carries the directory between runs as one entry of
