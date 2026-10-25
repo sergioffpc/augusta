@@ -417,6 +417,13 @@ jobs:
       # vcpkg's own CMake and Ninja rather than Homebrew's, whose versions are
       # part of every package's ABI hash, as setup-linux-build says.
       VCPKG_FORCE_DOWNLOADED_BINARIES: "1"
+      # Homebrew updates itself before the bootstrap installs, as on a new Mac,
+      # which the runner image turns off. Without it, each image's Homebrew
+      # pours the llvm@21 bottle of its own snapshot. While GitHub rolls out an
+      # image, runs on the old and the new one built with different compiler
+      # binaries, which are part of every vcpkg package's ABI hash and every
+      # sccache key. So each run missed the caches the run before saved.
+      HOMEBREW_NO_AUTO_UPDATE: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
