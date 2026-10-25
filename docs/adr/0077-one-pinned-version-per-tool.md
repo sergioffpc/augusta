@@ -102,3 +102,7 @@ Ruff, Prettier and ShellCheck bundled and turns clangd and shfmt off.
   `make toolchain` makes it.
 - Uninstalling the `platform` step removes the store; each checkout's
   `.toolchain/` goes with the checkout.
+- On Windows the store's path must stay short: past about 130 characters (an
+  `XDG_CACHE_HOME` deep in a temporary directory), the files of pymarkdown's and
+  ctcache's environments pass Windows' 260-character path limit and those tools
+  fail. The default, `%USERPROFILE%\.cache`, is short enough.
