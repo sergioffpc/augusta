@@ -15,6 +15,7 @@
   "C_Cpp.intelliSenseEngine": "disabled",
   "editor.detectIndentation": false,
 
+  "clangd.path": "${workspaceFolder}/.toolchain/bin/clangd",
   "clangd.arguments": [
     "--compile-commands-dir=${workspaceFolder}",
     "--background-index",
@@ -26,6 +27,7 @@
   "shfmt.executablePath": "${workspaceFolder}/.toolchain/bin/shfmt",
   "shellcheck.executablePath": "${workspaceFolder}/.toolchain/bin/shellcheck",
   "stylua.searchBinaryInPATH": true,
+  "prettier.prettierPath": ".toolchain/node_modules/prettier",
 
   "Lua.runtime.version": "Lua 5.5",
   "Lua.runtime.builtin": {

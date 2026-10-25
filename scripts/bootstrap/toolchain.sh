@@ -8,13 +8,16 @@
 # install puts each pinned version that is missing into the shared store,
 # ${XDG_CACHE_HOME:-~/.cache}/augusta/toolchain/<tool>/<version>/, once per
 # machine, then links .toolchain/bin into it (hardlinks or copies on Windows,
-# where a symlink may be refused) and writes .toolchain/activate. It is what
-# `make toolchain` runs, and quick when nothing changed.
+# where a symlink may be refused) and writes .toolchain/activate. Prettier, which
+# package-lock.json pins, goes into .toolchain/node_modules with npm ci, the
+# toolchain's Node running it. It links the system LLVM's clangd, clang-format
+# and clang-tidy there too, of the major .github/actions/setup-windows-llvm
+# pins. It is what `make toolchain` runs, and quick when nothing changed.
 #
 # check reads and changes nothing: it fails, naming each culprit, when a tool
-# .toolchain/bin links is not the pinned version or does not run, or when a
-# path .vscode/settings.json names under .toolchain/ does not exist. It is what
-# `make toolchain-check` runs.
+# .toolchain/bin links or Prettier is not the pinned version (LLVM's: major) or
+# does not run, or when a path .vscode/settings.json names under .toolchain/
+# does not exist. It is what `make toolchain-check` runs.
 #
 # Beside the bootstrap scripts, not in the Makefile, as the dev container's
 # image build copies only scripts/.
@@ -33,8 +36,20 @@ readonly STORE="${XDG_CACHE_HOME:-${HOME}/.cache}/augusta/toolchain"
 
 # The toolchain's tools, by the names the store files them under.
 readonly TOOLS=(ruff shfmt shellcheck actionlint gersemi pymarkdown yamllint
-  ctcache trivy kubeconform kyverno promtool amtool hadolint oras syft grype yq
-  flux cosign)
+  ctcache node trivy kubeconform kyverno promtool amtool hadolint oras syft
+  grype yq flux cosign)
+# Prettier, a Node package that package.json and package-lock.json beside this
+# script pin, which npm installs into .toolchain/node_modules.
+readonly PACKAGE="${SCRIPT_DIR}/package.json"
+readonly LOCKFILE="${SCRIPT_DIR}/package-lock.json"
+readonly PRETTIER="${TOOLCHAIN}/node_modules/prettier/bin/prettier.cjs"
+# The lockfile npm last installed .toolchain/node_modules from, which npm ci
+# deletes as it starts.
+readonly INSTALLED_LOCKFILE="${TOOLCHAIN}/node_modules/.augusta-package-lock.json"
+
+# LLVM's tools, which .toolchain/bin links to the system's LLVM: a package
+# manager installs it, pinned to its major (ADR-0008), not the store.
+readonly LLVM_TOOLS=(clangd clang-format clang-tidy)
 
 # Describes a tool, in globals: version_name, the versions.env variable that
 # pins it, and version, its value; package, what uv installs, or nothing for a
@@ -137,6 +152,12 @@ describe_tool() {
     cosign)
       version_name=COSIGN_VERSION probe=(version)
       expected="GitVersion:    v${COSIGN_VERSION}"
+      ;;
+    node)
+      # Node from its PyPI wheel, which runs Prettier: uv's launcher of it.
+      version_name=NODEJS_WHEEL_VERSION command=node
+      package="nodejs-wheel==${NODEJS_WHEEL_VERSION}"
+      expected="v${NODEJS_WHEEL_VERSION}"
       ;;
     *)
       echo "toolchain: unknown tool $1" >&2
@@ -276,6 +297,110 @@ link_file() {
   fi
 }
 
+# Sets the global llvm_major to the LLVM major the repository pins: that of the
+# exact version CI's Windows jobs install, which the bootstrap's packages and
+# the Linux runner's give too. Read there, not written again, without forking.
+read_llvm_major() {
+  local action=.github/actions/setup-windows-llvm/action.yml
+  local pattern='LLVM_VERSION: *([0-9]+)\.'
+  read_file "${ROOT}/${action}"
+  if [[ ! "${contents}" =~ ${pattern} ]]; then
+    echo "toolchain: ${action} names no LLVM_VERSION" >&2
+    exit 1
+  fi
+  llvm_major="${BASH_REMATCH[1]}"
+}
+
+# Sets the global major to the LLVM major a tool's --version output names
+# ("clang-format version 21.1.8", "LLVM version 21.1.8", "Apple clangd version
+# 17.0.0"), or to nothing.
+# Arguments:
+#   The output.
+read_major() {
+  local pattern='version ([0-9]+)\.'
+  major=
+  if [[ "$1" =~ ${pattern} ]]; then
+    major="${BASH_REMATCH[1]}"
+  fi
+}
+
+# Prints the system's binary of an LLVM tool at the pinned major, or nothing:
+# the platform's LLVM of that major (apt's, Homebrew's keg), then PATH's (where
+# CI's Windows jobs put theirs, ahead of the runner image's), then the Windows
+# installer's. Never .toolchain/bin's own, which PATH may hold.
+# Arguments:
+#   The tool.
+find_llvm_tool() {
+  local candidate output candidates=(
+    "/usr/lib/llvm-${llvm_major}/bin/$1"
+    "${HOMEBREW_PREFIX:-/opt/homebrew}/opt/llvm@${llvm_major}/bin/$1"
+    "$(command -v "$1-${llvm_major}" || true)"
+    "$(command -v "$1" || true)"
+  )
+  if windows; then
+    candidates+=("$(cygpath -u "${PROGRAMFILES:-C:\\Program Files}")/LLVM/bin/$1")
+  fi
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "${candidate}.exe" ]]; then
+      candidate+=.exe
+    fi
+    [[ -n "${candidate}" && -f "${candidate}" && -x "${candidate}" ]] || continue
+    if [[ "${candidate%/*}" -ef "${TOOLCHAIN}/bin" ]]; then
+      continue
+    fi
+    output="$("${candidate}" --version 2>/dev/null)" || continue
+    read_major "${output}"
+    if [[ "${major}" == "${llvm_major}" ]]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+}
+
+# Links an LLVM tool into .toolchain/bin, unless it is linked already.
+# clangd and clang-tidy take clang's own headers from beside the binary they
+# run as (../lib/clang/<major>/include), which a symlink resolves to the
+# system's LLVM. So Windows takes a native symlink where it may (Developer
+# Mode, an administrator), else a hardlink or a copy, kept while its time is
+# the system binary's, with those headers copied beside .toolchain/bin.
+# Arguments:
+#   The system's binary, the link.
+link_llvm_tool() {
+  if ! windows; then
+    link_file "$1" "$2"
+    return
+  fi
+  if [[ ! -e "$2" || ! ("$2" -ef "$1" || (! "$2" -nt "$1" && ! "$2" -ot "$1")) ]]; then
+    if [[ -e "$2" || -L "$2" ]]; then
+      rm -f "$2" 2>/dev/null || mv -f "$2" "$2.$$.old"
+    fi
+    MSYS=winsymlinks:nativestrict ln -s "$1" "$2" 2>/dev/null \
+      || ln "$1" "$2" 2>/dev/null || cp -p "$1" "$2"
+  fi
+  local headers="${TOOLCHAIN}/lib/clang/${llvm_major}/include"
+  if [[ ! -L "$2" && ! -d "${headers}" ]]; then
+    mkdir -p "$(dirname "${headers}")"
+    cp -R "$(dirname "$(dirname "$1")")/lib/clang/${llvm_major}/include" \
+      "${headers}"
+  fi
+}
+
+# Installs Prettier into .toolchain/node_modules with npm ci, from the lockfile,
+# unless it is installed from this lockfile already. npm's download cache is in
+# the store, so a reinstall (another worktree, CI's cached store) downloads
+# nothing.
+install_prettier() {
+  local npm="${STORE}/node/${NODEJS_WHEEL_VERSION}/bin/npm"
+  cmp -s "${LOCKFILE}" "${INSTALLED_LOCKFILE}" && return
+  echo "toolchain: installing Prettier from $(native_path "${LOCKFILE}")"
+  cp "${PACKAGE}" "${LOCKFILE}" "${TOOLCHAIN}/"
+  "${npm}" ci --prefix "$(native_path "${TOOLCHAIN}")" \
+    --cache "$(native_path "${STORE}/npm-cache")" --prefer-offline \
+    --ignore-scripts --no-audit --no-fund --no-update-notifier --loglevel=error
+  # Last, so an install cut short is redone.
+  cp "${LOCKFILE}" "${INSTALLED_LOCKFILE}"
+}
+
 install() {
   local tool file name linked=()
   mkdir -p "${TOOLCHAIN}/bin"
@@ -289,6 +414,19 @@ install() {
       linked+=("${name}")
     done
   done
+  # LLVM's tools when the system has them at the pinned major, else said and
+  # left out, which check then fails on.
+  read_llvm_major
+  for tool in "${LLVM_TOOLS[@]}"; do
+    file="$(find_llvm_tool "${tool}")"
+    if [[ -z "${file}" ]]; then
+      echo "toolchain: no LLVM ${llvm_major} ${tool} found: install it (scripts/bootstrap.sh)" >&2
+      continue
+    fi
+    name="$(basename "${file}")"
+    link_llvm_tool "${file}" "${TOOLCHAIN}/bin/${name}"
+    linked+=("${name}")
+  done
   # What a previous version linked and this one does not, or renamed away
   # while it ran: removed when nothing runs it any more.
   for file in "${TOOLCHAIN}/bin/"*; do
@@ -297,6 +435,7 @@ install() {
       rm -f "${file}" 2>/dev/null || true
     fi
   done
+  install_prettier
   cat >"${TOOLCHAIN}/activate" <<EOF
 # Puts this checkout's toolchain first on PATH (ADR-0077): source it.
 case ":\${PATH}:" in
@@ -321,7 +460,7 @@ read_file() {
 }
 
 check() {
-  local failures=() tool linked output path probes status
+  local failures=() tool linked output path probes status lockfile pin
   if [[ ! -d "${TOOLCHAIN}/bin" ]]; then
     echo "toolchain: ${TOOLCHAIN}/bin does not exist." >&2
     return 1
@@ -340,6 +479,19 @@ check() {
       echo "${status}" >"${probes}/${tool}.status"
     } &
   done
+  for tool in "${LLVM_TOOLS[@]}"; do
+    {
+      status=0
+      "${TOOLCHAIN}/bin/${tool}" --version >"${probes}/${tool}" 2>&1 || status=$?
+      echo "${status}" >"${probes}/${tool}.status"
+    } &
+  done
+  {
+    status=0
+    "${TOOLCHAIN}/bin/node" "${PRETTIER}" --version >"${probes}/prettier" 2>&1 \
+      || status=$?
+    echo "${status}" >"${probes}/prettier.status"
+  } &
   wait
   # Each a line between newlines, matched whole (a tool's version line up to a
   # space), without forking: a fork per tool would cost the hook seconds on
@@ -360,6 +512,41 @@ check() {
       failures+=("${tool}: .toolchain/bin/${command} is not ${version}, it prints: $(head -n 1 <<<"${contents}")")
     fi
   done
+  # LLVM's, of the major it is pinned to, as linked from the system's now.
+  read_llvm_major
+  for tool in "${LLVM_TOOLS[@]}"; do
+    read_file "${probes}/${tool}.status"
+    status="${contents%$'\n'}"
+    read_file "${probes}/${tool}"
+    read_major "${contents}"
+    if [[ ! -e "${TOOLCHAIN}/bin/${tool}" ]]; then
+      failures+=("${tool}: .toolchain/bin/${tool} does not exist: install LLVM ${llvm_major}'s, then run make toolchain")
+    elif [[ "${status}" != 0 ]]; then
+      failures+=("${tool}: .toolchain/bin/${tool} does not run")
+    elif [[ "${major}" != "${llvm_major}" ]]; then
+      failures+=("${tool}: .toolchain/bin/${tool} ($(readlink -f "${TOOLCHAIN}/bin/${tool}")) is not LLVM ${llvm_major}, it prints: $(head -n 1 <<<"${contents}")")
+    fi
+  done
+  # Prettier, at the version the lockfile pins: its "node_modules/prettier"
+  # entry's first "version", matched without forking.
+  read_file "${LOCKFILE}"
+  lockfile="${contents}"
+  pin="${contents#*\"node_modules/prettier\": \{}"
+  pin="${pin#*\"version\": \"}"
+  pin="${pin%%\"*}"
+  read_file "${INSTALLED_LOCKFILE}"
+  if [[ "${contents}" != "${lockfile}" ]]; then
+    failures+=("prettier: .toolchain/node_modules is not installed from package-lock.json's prettier ${pin}")
+  else
+    read_file "${probes}/prettier.status"
+    status="${contents%$'\n'}"
+    read_file "${probes}/prettier"
+    if [[ "${status}" != 0 ]]; then
+      failures+=("prettier: ${PRETTIER#"${ROOT}/"} does not run")
+    elif [[ $'\n'"${contents}" != *$'\n'"${pin}"$'\n'* ]]; then
+      failures+=("prettier: ${PRETTIER#"${ROOT}/"} is not ${pin}, it prints: $(head -n 1 <<<"${contents}")")
+    fi
+  fi
   # The editor's binaries: an extension whose path names nothing falls back to
   # its bundled copy without a word. A binary passes with or without .exe, as
   # Windows' bin has only the one and the others' only the other.

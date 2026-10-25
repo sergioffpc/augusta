@@ -108,7 +108,7 @@ jobs:
           # workflows, the rules each is formatted and linted by, and the
           # toolchain's pins and the editor paths its check reads.
           set_output run_lint \
-            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml|scripts/bootstrap/versions\.env|\.vscode/settings\.json)$)'
+            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml|scripts/bootstrap/versions\.env|scripts/bootstrap/package(-lock)?\.json|\.vscode/settings\.json)$)'
   format:
     needs: changes
     if: >-
@@ -120,6 +120,11 @@ jobs:
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
+      # LLVM's, which the toolchain links: Ubuntu's, of the major the
+      # presets compile with.
+      - name: Install LLVM's clang-format, clang-tidy and clangd
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy clangd
       # The formatters and linters the Makefile's format-check/* targets run.
       - uses: ./.github/actions/setup-toolchain
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
@@ -147,12 +152,9 @@ jobs:
             "$install_dir/$asset" | sha256sum --check --status
           tar -xzf "$install_dir/$asset" -C "$install_dir"
           echo "$install_dir" >> "$GITHUB_PATH"
-      - name: Install clang-format
-        if: needs.changes.outputs.run_build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: Check C++ formatting
         if: needs.changes.outputs.run_build == 'true'
-        run: find src tests tools \( -name '*.cpp' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+        run: make format-check/clang-format
       - name: Check the tests' requirement markers
         # Every requirement a test names is one docs/REQUIREMENTS.md has, and
         # every marker is directly above a test (ADR-0013).
@@ -217,13 +219,10 @@ jobs:
       - name: Check CMake formatting
         if: needs.changes.outputs.run_lint == 'true'
         run: make format-check/gersemi
-      # uv runs Prettier and buf at pinned versions, as the Makefile does.
       - name: Check Markdown formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
-            | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
-          make format-check/pymarkdown
+        run: make format-check/prettier format-check/pymarkdown
+      # uv runs buf at a pinned version, as the Makefile does.
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: |
@@ -379,8 +378,9 @@ jobs:
           lfs: true
       - uses: ./.github/actions/setup-linux-build
         with:
-          # The same distro version as the clang the presets compile with.
-          extra-packages: clang-tidy
+          # The same distro version as the clang the presets compile with,
+          # which the toolchain links.
+          extra-packages: clang-format clang-tidy clangd
           # It installs the tools' ports (the manifest's agent and pack
           # features: pybind11 and Python, meshoptimizer, ktx and stb), which no
           # other Linux job does and whose saves would drop: a cache of its own.
