@@ -1,5 +1,6 @@
-# vcpkg's own x64-windows, with LLVM and Mesa built release-only. vcpkg.json's
-# overlay puts it in place of the built-in triplet of the same name.
+# vcpkg's own x64-windows, with LLVM and Mesa built release-only (ADR-0008).
+# vcpkg.json's overlay puts it in place of the built-in triplet of the same
+# name.
 set(VCPKG_TARGET_ARCHITECTURE x64)
 set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE dynamic)
