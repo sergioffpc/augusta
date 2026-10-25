@@ -33,20 +33,24 @@ readonly STORE="${XDG_CACHE_HOME:-${HOME}/.cache}/augusta/toolchain"
 
 # The toolchain's tools, by the names the store files them under.
 readonly TOOLS=(ruff shfmt shellcheck actionlint gersemi pymarkdown yamllint
-  ctcache)
+  ctcache trivy kubeconform kyverno promtool amtool hadolint oras syft grype yq
+  flux cosign)
 
 # Describes a tool, in globals: version_name, the versions.env variable that
-# pins it, and version, its value; package, what uv installs; command, the
-# command it puts in .toolchain/bin; probe, the arguments that make it print its
-# version; expected, the line of that output the pinned version prints, or
-# nothing when its output names no version the pin gives. A wheel that packages
-# another project's binary (shellcheck-py, actionlint-py) adds a fourth number
-# of its own to the binary's version, which the binary does not report.
+# pins it, and version, its value; package, what uv installs, or nothing for a
+# release binary, which the platform's toolchain_releases names; command, the
+# command it puts in .toolchain/bin, the tool's own name unless it says; probe,
+# the arguments that make it print its version; expected, the start of the
+# line of that output the pinned version prints, up to a space or the line's
+# end, or nothing when its output names no version the pin gives. A wheel that
+# packages another project's binary (shellcheck-py, actionlint-py) adds a
+# fourth number of its own to the binary's version, which the binary does not
+# report.
 # Without a command substitution, as each forks, slowly on Windows.
 # Arguments:
 #   The tool.
 describe_tool() {
-  probe=(--version)
+  probe=(--version) command="$1" package=
   case "$1" in
     ruff)
       version_name=RUFF_VERSION command=ruff package="ruff==${RUFF_VERSION}"
@@ -88,6 +92,52 @@ describe_tool() {
       package="ctcache @ git+https://github.com/matus-chochlik/ctcache@${CTCACHE_COMMIT}"
       probe=(--help) expected=
       ;;
+    # The release binaries: each platform's scripts/bootstrap/<platform>.sh
+    # names their assets (toolchain_releases).
+    trivy)
+      version_name=TRIVY_VERSION expected="Version: ${TRIVY_VERSION}"
+      ;;
+    kubeconform)
+      version_name=KUBECONFORM_VERSION probe=(-v)
+      expected="v${KUBECONFORM_VERSION}"
+      ;;
+    kyverno)
+      version_name=KYVERNO_VERSION probe=(version)
+      expected="Version: ${KYVERNO_VERSION}"
+      ;;
+    promtool)
+      version_name=PROMETHEUS_VERSION
+      expected="promtool, version ${PROMETHEUS_VERSION}"
+      ;;
+    amtool)
+      version_name=ALERTMANAGER_VERSION
+      expected="amtool, version ${ALERTMANAGER_VERSION}"
+      ;;
+    hadolint)
+      version_name=HADOLINT_VERSION
+      expected="Haskell Dockerfile Linter ${HADOLINT_VERSION}"
+      ;;
+    oras)
+      version_name=ORAS_VERSION probe=(version)
+      expected="Version:        ${ORAS_VERSION}"
+      ;;
+    syft)
+      version_name=SYFT_VERSION expected="syft ${SYFT_VERSION}"
+      ;;
+    grype)
+      version_name=GRYPE_VERSION expected="grype ${GRYPE_VERSION}"
+      ;;
+    yq)
+      version_name=YQ_VERSION
+      expected="yq (https://github.com/mikefarah/yq/) version v${YQ_VERSION}"
+      ;;
+    flux)
+      version_name=FLUX_VERSION expected="flux version ${FLUX_VERSION}"
+      ;;
+    cosign)
+      version_name=COSIGN_VERSION probe=(version)
+      expected="GitVersion:    v${COSIGN_VERSION}"
+      ;;
     *)
       echo "toolchain: unknown tool $1" >&2
       exit 1
@@ -114,21 +164,99 @@ native_path() {
 }
 
 # Installs the described tool's pinned version into the store, unless it is
-# there already. Its tool environment and the Python that runs it both live
-# in the store, so a store restored on another machine (CI's cache) runs.
+# there already. A PyPI tool's environment and the Python that runs it both
+# live in the store, so a store restored on another machine (CI's cache) runs.
 install_tool() {
   local dir="${STORE}/$1/${version}"
   [[ -f "${dir}/.installed" ]] && return
   echo "toolchain: installing $1 ${version}"
   rm -rf "${dir}"
   mkdir -p "${dir}"
-  UV_TOOL_DIR="$(native_path "${dir}/tools")" \
-  UV_TOOL_BIN_DIR="$(native_path "${dir}/bin")" \
-  UV_PYTHON_INSTALL_DIR="$(native_path "${STORE}/python")" \
-  UV_PYTHON_PREFERENCE=only-managed \
-    uv tool install --quiet "${package}"
+  if [[ -n "${package}" ]]; then
+    UV_TOOL_DIR="$(native_path "${dir}/tools")" \
+    UV_TOOL_BIN_DIR="$(native_path "${dir}/bin")" \
+    UV_PYTHON_INSTALL_DIR="$(native_path "${STORE}/python")" \
+    UV_PYTHON_PREFERENCE=only-managed \
+      uv tool install --quiet "${package}"
+  else
+    install_release_binary "$1" "${dir}"
+  fi
   # Last, so an install cut short is redone.
   touch "${dir}/.installed"
+}
+
+# Reads the platform's release binaries into the global releases, once: the
+# lines its scripts/bootstrap/<platform>.sh's toolchain_releases prints, where
+# their SHA-256s live. That script also gives Windows its extract_zip.
+load_releases() {
+  [[ -n "${releases:-}" ]] && return
+  local platform
+  case "$(uname -s)" in
+    Linux) platform=linux ;;
+    Darwin) platform=macos ;;
+    *) platform=windows ;;
+  esac
+  # shellcheck source=/dev/null
+  . "${SCRIPT_DIR}/${platform}.sh"
+  releases="$(toolchain_releases)"
+}
+
+# Downloads a file and checks its SHA-256, removing it on a mismatch.
+# Arguments:
+#   The URL, the expected SHA-256, the file.
+download_verified() {
+  local actual
+  curl --proto '=https' --tlsv1.2 -fsSLo "$3" "$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$3")"
+  else
+    actual="$(shasum -a 256 "$3")"
+  fi
+  if [[ "${actual%% *}" != "$2" ]]; then
+    rm -f "$3"
+    echo "toolchain: SHA-256 mismatch for $1" >&2
+    exit 1
+  fi
+}
+
+# Installs a release binary into a store directory's bin: downloaded, checked
+# and, from an archive, extracted.
+# Arguments:
+#   The tool, the store directory.
+install_release_binary() {
+  local name url sha member found='' exe='' asset
+  load_releases
+  while read -r name url sha member; do
+    if [[ "${name}" = "$1" ]]; then
+      found=1
+      break
+    fi
+  done <<<"${releases}"
+  if [[ -z "${found}" ]]; then
+    echo "toolchain: no release of $1 for this platform" >&2
+    exit 1
+  fi
+  windows && exe=.exe
+  asset="$2/${url##*/}"
+  download_verified "${url}" "${sha}" "${asset}"
+  mkdir -p "$2/bin"
+  if [[ "${member}" = - ]]; then
+    mv "${asset}" "$2/bin/${command}${exe}"
+  else
+    mkdir "$2/archive"
+    case "${asset}" in
+      *.tar.gz) tar -xzf "${asset}" -C "$2/archive" "${member}" ;;
+      # Git Bash's tar reads no zip, and it has no unzip.
+      *.zip) if windows; then
+        extract_zip "${asset}" "$2/archive"
+      else
+        unzip -q "${asset}" "${member}" -d "$2/archive"
+      fi ;;
+    esac
+    mv "$2/archive/${member}" "$2/bin/${command}${exe}"
+    rm -rf "$2/archive" "${asset}"
+  fi
+  chmod +x "$2/bin/${command}${exe}"
 }
 
 # Links a file of the store into .toolchain/bin, unless it is linked already.
@@ -213,8 +341,9 @@ check() {
     } &
   done
   wait
-  # Each a line between newlines, matched whole, without forking: a fork per
-  # tool would cost the hook seconds on Windows.
+  # Each a line between newlines, matched whole (a tool's version line up to a
+  # space), without forking: a fork per tool would cost the hook seconds on
+  # Windows.
   read_file "${TOOLCHAIN}/versions.env"
   linked=$'\n'"${contents}"$'\n'
   for tool in "${TOOLS[@]}"; do
@@ -227,7 +356,7 @@ check() {
       failures+=("${tool}: .toolchain/bin links another version than ${version_name}=${version}")
     elif [[ "${status}" != 0 ]]; then
       failures+=("${tool}: .toolchain/bin/${command} does not run")
-    elif [[ -n "${expected}" && "${output}" != *$'\n'"${expected}"$'\n'* ]]; then
+    elif [[ -n "${expected}" && "${output}" != *$'\n'"${expected}"[$' \n']* ]]; then
       failures+=("${tool}: .toolchain/bin/${command} is not ${version}, it prints: $(head -n 1 <<<"${contents}")")
     fi
   done

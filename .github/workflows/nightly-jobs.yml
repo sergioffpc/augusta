@@ -509,6 +509,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
+      # grype.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       - name: Download the latest release's SBOM
         # An executable no release has published yet (augustac-linux-x64
         # before the first release that ships it) has nothing to scan: a
@@ -542,12 +545,7 @@ jobs:
         # most ranges as "up to and including" with no fixed version, so only
         # fixed CVEs would leave out most of them. .grype.yaml has the CVEs
         # assessed as not reaching an executable, and why.
-        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
-        with:
-          sbom: sbom.spdx.json
-          config: .grype.yaml
-          severity-cutoff: high
-          output-format: table
+        run: grype sbom:sbom.spdx.json --config .grype.yaml --fail-on high --output table
   test-report:
     # The nightly's tests in one HTML report (ADR-0013, scripts/test-report.sh):
     # every ctest run above, a row per test and a column per run

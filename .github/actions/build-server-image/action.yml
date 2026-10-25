@@ -6,8 +6,9 @@ description: >
   for the image container-publish-x64-linux then pushes, so what it publishes
   is an image that was scanned, and on main container-publish-arm64-linux for
   the arm64 image it pushes itself. Tags it sha-<12> (sha-<12>-arm64 with
-  arch-suffix); the branch tag is the publishing job's. Assumes the repository is checked out with its submodules and
-  buildx is set up; a job that reads or writes the cache logs in to GHCR first.
+  arch-suffix); the branch tag is the publishing job's. Assumes the repository is checked out with its submodules,
+  buildx is set up, and the toolchain too (setup-toolchain), whose trivy scans
+  the image; a job that reads or writes the cache logs in to GHCR first.
 inputs:
   preset:
     description: >
@@ -58,24 +59,6 @@ runs:
     # restores from rather than build all its packages from source, when that
     # layer isn't cached already.
     - uses: ./.github/actions/restore-vcpkg-cache
-    - name: Install trivy
-      shell: bash
-      run: |
-        install_dir="$RUNNER_TEMP/trivy"
-        mkdir -p "$install_dir"
-        if [ "$RUNNER_ARCH" = ARM64 ]; then
-          asset=Linux-ARM64
-          sha256=a1ee9f6ffb7d112b64ff726a2a0717c21175c1114361391f4a132956751a13b3
-        else
-          asset=Linux-64bit
-          sha256=c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
-        fi
-        curl -fsSLo "$install_dir/trivy.tar.gz" \
-          "https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_${asset}.tar.gz"
-        printf '%s  %s\n' "$sha256" "$install_dir/trivy.tar.gz" \
-          | sha256sum --check --status
-        tar -xzf "$install_dir/trivy.tar.gz" -C "$install_dir" trivy
-        echo "$install_dir" >> "$GITHUB_PATH"
     # The architecture variant the runner's apt takes, and the clang-21 the
     # archive has for it now, as setup-linux-build installs it on the jobs
     # whose vcpkg binaries the build stage restores (Dockerfile says why). The

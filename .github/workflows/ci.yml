@@ -70,6 +70,9 @@ jobs:
           # The paths more than one output matches, each written only here.
           ci_workflow='\.github/workflows/ci\.yml$'
           charts='charts/'
+          # The toolchain the jobs run their tools from: its pins, what
+          # installs them, Linux's release checksums, and the action.
+          toolchain='scripts/bootstrap/(versions\.env|toolchain\.sh|linux\.sh)$|\.github/actions/setup-toolchain/'
           # The server and what builds its image.
           server='src/|cmake/|CMakeLists\.txt$|CMakePresets\.json$|vcpkg\.json$|third_party/|scripts/augustad-seccomp\.sh$|clusters/onprem/node/augustad-seccomp\.json$|Dockerfile$|\.dockerignore$|chisel/'
 
@@ -82,14 +85,14 @@ jobs:
             "^(${server}|tests/|checks/|tools/agent/|tools/pack/|tools/wireshark/|tools/composer/examples/|tools/(pyproject\.toml|uv\.lock)$|config/|clusters/onprem/node/augusta-publish-receive\.sh$|\.clang-format$|\.clang-tidy$|${ci_workflow}|\.github/actions/)"
 
           set_output run_container \
-            "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
+            "^(${server}|\.hadolint\.yaml$|${charts}|${ci_workflow}|${toolchain}|\.github/actions/(build-server-image|restore-vcpkg-cache)/)"
 
           # What Flux applies to the cluster: its own manifests, the chart the
           # HelmReleases there install, and the Kyverno policies (and their
           # negative fixtures) both are checked against, all under clusters/;
           # and the k3s release they run on.
           set_output run_manifests \
-            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow})"
+            "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow}|${toolchain})"
 
           set_output run_yaml \
             '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|^scripts/bootstrap/versions\.env$|(^|/)[^/]+\.ya?ml$)'
@@ -563,7 +566,8 @@ jobs:
     # templating, not what it renders. Flux's own resources are checked
     # against the CRDs gotk-components.yaml installs, so a Flux upgrade
     # brings its schemas with it. Then the cluster's Kyverno policies run over
-    # all of it (ADR-0057). kubectl and yq come with the runner image.
+    # all of it (ADR-0057). kubectl comes with the runner image; kubeconform,
+    # the Kyverno CLI, promtool, amtool and yq are the toolchain's.
     needs: changes
     if: needs.changes.outputs.run_manifests == 'true'
     runs-on: ubuntu-26.04
@@ -591,35 +595,20 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
-      - name: Install kubeconform
+      - uses: ./.github/actions/setup-toolchain
+      - name: Download kubeconform's openapi2jsonschema.py
+        # From the tag of the toolchain's kubeconform: a bump of
+        # KUBECONFORM_VERSION fails here until its SHA-256 is bumped too.
         shell: bash
         run: |
-          install_dir="$RUNNER_TEMP/kubeconform"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/kubeconform.tar.gz" \
-            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
-          curl -fsSLo "$install_dir/openapi2jsonschema.py" \
-            https://raw.githubusercontent.com/yannh/kubeconform/v0.8.0/scripts/openapi2jsonschema.py
+          # shellcheck source=/dev/null
+          . scripts/bootstrap/versions.env
+          mkdir -p "$RUNNER_TEMP/kubeconform"
+          curl -fsSLo "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
+            "https://raw.githubusercontent.com/yannh/kubeconform/v$KUBECONFORM_VERSION/scripts/openapi2jsonschema.py"
           printf '%s  %s\n' \
-            '9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883' "$install_dir/kubeconform.tar.gz" \
-            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$install_dir/openapi2jsonschema.py" \
+            'd145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3' "$RUNNER_TEMP/kubeconform/openapi2jsonschema.py" \
             | sha256sum --check --status
-          tar -xzf "$install_dir/kubeconform.tar.gz" -C "$install_dir" kubeconform
-          echo "$install_dir" >> "$GITHUB_PATH"
-      - name: Install the Kyverno CLI
-        # The release of the Kyverno the cluster runs
-        # (clusters/onprem/infrastructure/kyverno.yaml), bumped with it.
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/kyverno"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/kyverno.tar.gz" \
-            https://github.com/kyverno/kyverno/releases/download/v1.19.1/kyverno-cli_v1.19.1_linux_x86_64.tar.gz
-          printf '%s  %s\n' \
-            'b38228f367fc0fdc2b08f4c83ea50ac5f16c60ff8d62d76a66157c33c47b70ae' "$install_dir/kyverno.tar.gz" \
-            | sha256sum --check --status
-          tar -xzf "$install_dir/kyverno.tar.gz" -C "$install_dir" kyverno
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Validate the chart, rendered per environment
         # With each HelmRelease's own values, as Flux renders it, and with the
         # chart of the ref its source follows: develop's branch (the chart CI
@@ -780,26 +769,6 @@ jobs:
               -schema-location "$RUNNER_TEMP/monitoring-crd-schemas/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
               "$rendered"
           done
-      - name: Install promtool and amtool
-        # The releases of the Prometheus and Alertmanager the cluster runs
-        # (clusters/onprem/infrastructure/monitoring.yaml), bumped with them.
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/prometheus"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/prometheus.tar.gz" \
-            https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz
-          curl -fsSLo "$install_dir/alertmanager.tar.gz" \
-            https://github.com/prometheus/alertmanager/releases/download/v0.34.1/alertmanager-0.34.1.linux-amd64.tar.gz
-          printf '%s  %s\n' \
-            '2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0' "$install_dir/prometheus.tar.gz" \
-            '265b9d1e55ef0d5306a436018af6d2b686c2ce051f03d968f7464ecb1372a7e8' "$install_dir/alertmanager.tar.gz" \
-            | sha256sum --check --status
-          tar -xzf "$install_dir/prometheus.tar.gz" -C "$install_dir" --strip-components=1 \
-            prometheus-3.15.0.linux-amd64/promtool
-          tar -xzf "$install_dir/alertmanager.tar.gz" -C "$install_dir" --strip-components=1 \
-            alertmanager-0.34.1.linux-amd64/amtool
-          echo "$install_dir" >> "$GITHUB_PATH"
       - name: Test the alert rules and Alertmanager's routes
         # A rule kubeconform admits can still never fire, or fire late, and a
         # route can send an alert nowhere. promtool tests the
@@ -906,18 +875,9 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint Helm chart
         run: helm lint charts/augustad
-      - name: Install hadolint
-        shell: bash
-        run: |
-          install_dir="$RUNNER_TEMP/hadolint"
-          mkdir -p "$install_dir"
-          curl -fsSLo "$install_dir/hadolint" \
-            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
-          printf '%s  %s\n' \
-            'c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507' "$install_dir/hadolint" \
-            | sha256sum --check --status
-          chmod +x "$install_dir/hadolint"
-          echo "$install_dir" >> "$GITHUB_PATH"
+      # hadolint, and the trivy build-server-image scans with.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       - name: Lint Dockerfile
         # .hadolint.yaml has the rules it doesn't apply, and why.
         run: hadolint Dockerfile
@@ -1064,13 +1024,18 @@ jobs:
       REPOSITORY: ghcr.io/${{ github.repository_owner }}/augustad
       SHA_TAG: sha-${{ needs.container-verify.outputs.short-sha }}
     steps:
-      # For the signing and attesting actions, and the branch's head, alone: it
-      # builds nothing.
+      # For the signing and attesting actions, the toolchain whose cosign and
+      # syft they run, and the branch's head, alone: it builds nothing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
+            .github/actions/setup-toolchain
             .github/actions/sign-and-attest-server-image
             .github/actions/sign-artifact
+            .vscode
+            scripts/bootstrap
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1155,6 +1120,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # trivy, cosign and syft.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       - name: Build and scan server image
         id: image
         uses: ./.github/actions/build-server-image
@@ -1206,10 +1174,16 @@ jobs:
       attestations: write
       artifact-metadata: write
     steps:
-      # For the signing action alone.
+      # For the signing action, and the toolchain whose cosign it runs, alone.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions/sign-artifact
+          sparse-checkout: |
+            .github/actions/setup-toolchain
+            .github/actions/sign-artifact
+            .vscode
+            scripts/bootstrap
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -1276,7 +1250,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+      # oras, cosign and yq.
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: ./.github/actions/setup-toolchain
       # Docker's login, which cosign and oras read, and Helm's own.
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

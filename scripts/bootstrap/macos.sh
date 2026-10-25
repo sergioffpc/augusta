@@ -177,9 +177,8 @@ install_release() {
 }
 
 # The hooks' and CI's format job's formatters that Homebrew doesn't keep at
-# CI's versions (yamlfmt, StyLua, taplo), the flux CLI at the cluster's Flux
-# and cosign at CI's: their darwin-arm64 releases, as scripts/bootstrap/linux.sh
-# installs Linux's.
+# CI's versions (yamlfmt, StyLua, taplo): their darwin-arm64 releases, as
+# scripts/bootstrap/linux.sh installs Linux's.
 # Arguments:
 #   The bin directory.
 install_formatters() {
@@ -187,14 +186,6 @@ install_formatters() {
   install_release yamlfmt \
     "https://github.com/google/yamlfmt/releases/download/v${YAMLFMT_VERSION}/yamlfmt_${YAMLFMT_VERSION}_Darwin_arm64.tar.gz" \
     4b417ecb94339d57e4c122ecc948c1a00fe328b5853266de9806e652a92858fa yamlfmt \
-    "${bin}"
-  install_release flux \
-    "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_darwin_arm64.tar.gz" \
-    2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd flux \
-    "${bin}"
-  install_release cosign \
-    "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-darwin-arm64" \
-    5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084 - \
     "${bin}"
   # StyLua's a zip, taplo's a gzip of the binary alone.
   tmp="$(mktemp -d)"
@@ -213,14 +204,13 @@ install_formatters() {
   rm -rf "${tmp}"
 }
 
-# Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
-# darwin-arm64 releases, at CI's versions.
-# Arguments:
-#   The bin directory.
-install_ci_tools() {
-  local bin="$1" tools tool name url sha member
-  # Each: the command, its release asset, the asset's SHA-256, and the
-  # command's path inside the archive ("-" for a plain binary).
+# Prints the toolchain's release binaries, darwin-arm64's, which
+# scripts/bootstrap/toolchain.sh installs (ADR-0077) at the versions
+# scripts/bootstrap/versions.env pins: a line each of the tool, its release
+# asset, the asset's SHA-256, and the tool's path inside the tar.gz ("-" for a
+# plain binary). Bump each SHA-256 with its version.
+toolchain_releases() {
+  local tools
   # promtool and amtool sit in a directory named after their archive.
   local prometheus_dir="prometheus-${PROMETHEUS_VERSION}.darwin-arm64"
   local alertmanager_dir="alertmanager-${ALERTMANAGER_VERSION}.darwin-arm64"
@@ -235,11 +225,10 @@ install_ci_tools() {
     "syft https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_darwin_arm64.tar.gz 7e0bdad94c569fc6d5785c9a657bbae3d4c4e140ccb5eace3d0b5b6bc2b6dbcf syft"
     "grype https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_darwin_arm64.tar.gz 938f050bb5076c8aa761867b39843abad2414dfe4cc82b7d36886e634f49c640 grype"
     "yq https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_darwin_arm64 cceb0b8d71ea5294334121f8429f33f92b920e7217d904a2f9f35443968ac424 -"
+    "flux https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_darwin_arm64.tar.gz 2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd flux"
+    "cosign https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-darwin-arm64 5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084 -"
   )
-  for tool in "${tools[@]}"; do
-    read -r name url sha member <<<"${tool}"
-    install_release "${name}" "${url}" "${sha}" "${member}" "${bin}"
-  done
+  printf '%s\n' "${tools[@]}"
 }
 
 install_toolchain() {
@@ -270,10 +259,10 @@ install_toolchain() {
   # pkg-config and autotools for the vcpkg ports that build with them. Git LFS
   # (pre-push), which Apple's git has none of, and luacheck at CI's pinned
   # LUACHECK_VERSION. uv, for yamllint and the rest uv runs. doxygen: `make
-  # docs`. gh: for development. jq: with cosign, the release runbook's wait on
-  # a signed image (docs/runbooks/cut-release.md). kubectl and helm, for the
-  # server's k3s cluster and its chart (charts/augustad). Podman: the container
-  # engine, for the server image. Wireshark's tshark: the Wireshark dissector's
+  # docs`. gh: for development. jq: with the toolchain's cosign, the release
+  # runbook's wait on a signed image (docs/runbooks/cut-release.md). kubectl
+  # and helm, for the server's k3s cluster and its chart (charts/augustad).
+  # Podman: the container engine, for the server image. Wireshark's tshark: the Wireshark dissector's
   # test (tools/wireshark). The client's: the Vulkan loader, which it finds
   # through Homebrew's prefix (src/modules/window), and Mesa, whose macOS 26
   # build has KosmicKrisp, a conformant Vulkan on Metal (Apple silicon), and
@@ -303,7 +292,6 @@ install_toolchain() {
   uv tool install "${CTCACHE_PACKAGE}"
 
   install_formatters "${LOCAL_BIN}"
-  install_ci_tools "${LOCAL_BIN}"
 
   start_podman_machine
 
@@ -311,8 +299,7 @@ install_toolchain() {
   hash -r
   require_commands cmake ninja make git git-lfs sccache uv clang-format \
     clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo luacheck kubectl \
-    helm flux jq cosign podman tshark trivy kubeconform kyverno promtool amtool \
-    hadolint oras syft grype yq
+    helm jq podman tshark
 }
 
 # The submodules every build uses, as scripts/bootstrap/linux.sh's.

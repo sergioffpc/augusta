@@ -74,14 +74,21 @@ undo_entry() {
   esac
 }
 
-# Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
-# releases, at CI's versions.
-# Arguments:
-#   The dpkg architecture, the bin directory.
-install_ci_tools() {
-  local arch="$1" bin="$2" tools tool name url sha member tmp
-  # Each: the command, its release asset, the asset's SHA-256, and the
-  # command's path inside the archive ("-" for a plain binary).
+# Prints the toolchain's release binaries for this machine's architecture,
+# which scripts/bootstrap/toolchain.sh installs (ADR-0077) at the versions
+# scripts/bootstrap/versions.env pins: a line each of the tool, its release
+# asset, the asset's SHA-256, and the tool's path inside the tar.gz ("-" for a
+# plain binary). Bump each SHA-256 with its version.
+toolchain_releases() {
+  local arch tools
+  case "$(uname -m)" in
+    x86_64) arch=amd64 ;;
+    aarch64) arch=arm64 ;;
+    *)
+      echo "toolchain: unsupported architecture: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
   local trivy="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}"
   local kubeconform="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform"
   local kyverno="https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}"
@@ -95,6 +102,8 @@ install_ci_tools() {
   local syft="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}"
   local grype="https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}"
   local yq="https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq"
+  local flux="https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}"
+  local cosign="https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign"
   case "${arch}" in
     amd64)
       tools=(
@@ -108,6 +117,8 @@ install_ci_tools() {
         "syft ${syft}_linux_amd64.tar.gz 54a87372498168b2d033e876fd41fa4e8035b872699e525a57046e1f2f09c860 syft"
         "grype ${grype}_linux_amd64.tar.gz 1d444c5e7360471815f7158f71935fcecc68a3c417d85c7344f770854300bba2 grype"
         "yq ${yq}_linux_amd64 c5f056448f973ae7d39b5401949648a78f2dc1947d6a8eb65be60d5c504b9385 -"
+        "flux ${flux}_linux_amd64.tar.gz b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473 flux"
+        "cosign ${cosign}-linux-amd64 c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74 -"
       )
       ;;
     arm64)
@@ -122,28 +133,12 @@ install_ci_tools() {
         "syft ${syft}_linux_arm64.tar.gz ee6d4566373a05b344bc6b5f1706f14419bf9338ba39ff686e247deefe9b8818 syft"
         "grype ${grype}_linux_arm64.tar.gz 32aceeb8ee837244775fcb522372c8b3a47914986385f3148f4ee2c930482a84 grype"
         "yq ${yq}_linux_arm64 88a1016bc1d657375a35864e4f44b6f333df8ff97b559f51bba0adcb2169df09 -"
+        "flux ${flux}_linux_arm64.tar.gz f3e159af616ec0b9bd0a405c2185cf09d06b74652c1de3c7f377e8166826651a flux"
+        "cosign ${cosign}-linux-arm64 bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8 -"
       )
       ;;
-    *)
-      echo "bootstrap: unsupported architecture: ${arch}" >&2
-      exit 1
-      ;;
   esac
-  tmp="$(mktemp -d)"
-  for tool in "${tools[@]}"; do
-    read -r name url sha member <<<"${tool}"
-    download_verified "${url}" "${sha}" "${tmp}/${name}.download"
-    if [[ "${member}" = - ]]; then
-      mv "${tmp}/${name}.download" "${tmp}/${name}"
-    else
-      mkdir "${tmp}/${name}.d"
-      tar -xzf "${tmp}/${name}.download" -C "${tmp}/${name}.d" "${member}"
-      mv "${tmp}/${name}.d/${member}" "${tmp}/${name}"
-    fi
-    record_new_files "${bin}" "${name}"
-    as_root install -m 0755 "${tmp}/${name}" "${bin}"
-  done
-  rm -rf "${tmp}"
+  printf '%s\n' "${tools[@]}"
 }
 
 install_toolchain() {
@@ -163,12 +158,12 @@ install_toolchain() {
   # (luacheck), which this release packages at CI's pinned LUACHECK_VERSION for
   # every architecture, unlike luacheck's own release. sccache: the root
   # CMakeLists.txt picks it up from PATH. doxygen: `make docs`. lldb and gh:
-  # for development. jq: with cosign, below, the release runbook's wait on a
-  # signed image (docs/runbooks/cut-release.md). podman: the container engine,
-  # for scripts/dev-container.sh and the server image. tshark: the Wireshark
-  # dissector's test (tools/wireshark), as CI's job installs it, so preseeded
-  # to install dumpcap without setuid and ask nothing. auditd:
-  # scripts/augustad-seccomp.sh record.
+  # for development. jq: with the toolchain's cosign, the release runbook's
+  # wait on a signed image (docs/runbooks/cut-release.md). podman: the
+  # container engine, for scripts/dev-container.sh and the server image.
+  # tshark: the Wireshark dissector's test (tools/wireshark), as CI's job
+  # installs it, so preseeded to install dumpcap without setuid and ask
+  # nothing. auditd: scripts/augustad-seccomp.sh record.
   # The client's (AUGUSTA_CLIENT), as the nightly's client-x64-linux job
   # installs them: vcpkg's GLFW builds against the system's X11 (libx11-dev,
   # libxcursor-dev, libxi-dev, libxinerama-dev, libxrandr-dev), Wayland
@@ -245,11 +240,9 @@ install_toolchain() {
 
   # The hooks' and CI's format job's formatters and linters that Ubuntu doesn't
   # package at CI's versions: uv (for yamllint and the rest uv runs), yamlfmt,
-  # StyLua and taplo. uv is its latest release: what it runs is pinned. With
-  # them, the flux CLI at the cluster's Flux, and cosign at CI's, which Ubuntu
-  # packages only at an older major.
+  # StyLua and taplo. uv is its latest release: what it runs is pinned.
   local arch yamlfmt_arch yamlfmt_sha stylua_arch stylua_sha taplo_arch \
-    taplo_sha flux_sha cosign_sha
+    taplo_sha
   arch="$(dpkg --print-architecture)"
   case "${arch}" in
     amd64)
@@ -259,8 +252,6 @@ install_toolchain() {
       stylua_sha=bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab
       taplo_arch=x86_64
       taplo_sha=8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
-      flux_sha=b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473
-      cosign_sha=c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
       ;;
     arm64)
       yamlfmt_arch=arm64
@@ -269,8 +260,6 @@ install_toolchain() {
       stylua_sha=0ef2ebf0b7e5a652b65c4cb96c6d9ffb3981a98547de3c764465bbf54a8d761a
       taplo_arch=aarch64
       taplo_sha=033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3
-      flux_sha=f3e159af616ec0b9bd0a405c2185cf09d06b74652c1de3c7f377e8166826651a
-      cosign_sha=bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8
       ;;
     *)
       echo "bootstrap: unsupported architecture: ${arch}" >&2
@@ -301,21 +290,13 @@ install_toolchain() {
   download_verified \
     "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-${taplo_arch}.gz" \
     "${taplo_sha}" "${tmp}/taplo.gz"
-  download_verified \
-    "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_${arch}.tar.gz" \
-    "${flux_sha}" "${tmp}/flux.tar.gz"
-  download_verified \
-    "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-${arch}" \
-    "${cosign_sha}" "${tmp}/cosign"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt
   unzip -q "${tmp}/stylua.zip" -d "${tmp}"
   gunzip "${tmp}/taplo.gz"
-  tar -xzf "${tmp}/flux.tar.gz" -C "${tmp}" flux
-  record_new_files /usr/local/bin yamlfmt stylua taplo flux cosign
+  record_new_files /usr/local/bin yamlfmt stylua taplo
   as_root install -m 0755 "${tmp}/yamlfmt" "${tmp}/stylua" "${tmp}/taplo" \
-    "${tmp}/flux" "${tmp}/cosign" /usr/local/bin
+    /usr/local/bin
   rm -rf "${tmp}"
-  install_ci_tools "${arch}" /usr/local/bin
 
   # kubectl and helm, for the server's k3s cluster and its chart
   # (charts/augustad): each one's latest stable release, which Ubuntu doesn't

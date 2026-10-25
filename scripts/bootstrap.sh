@@ -26,28 +26,6 @@ readonly REPOSITORY=https://github.com/sergioffpc/augusta.git
 # shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
 readonly YAMLFMT_VERSION=0.21.0 STYLUA_VERSION=2.5.2 TAPLO_VERSION=0.10.0 \
   LUACHECK_VERSION=1.2.0
-# The flux CLI at the cluster's Flux, the Flux Version in
-# clusters/onprem/flux-system/gotk-components.yaml's header; bump them
-# together, with the platform files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly FLUX_VERSION=2.9.5
-# cosign at the release .github/actions/sign-artifact's cosign-installer
-# installs, so that a local cosign verify (docs/runbooks/cut-release.md) reads
-# the signatures CI writes; bump them together, with the platform files'
-# checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly COSIGN_VERSION=3.0.6
-# The tools CI's own jobs run, at the versions they install, so each job can
-# be run locally: trivy (.github/actions/build-server-image), kubeconform, the
-# Kyverno CLI, promtool, amtool and hadolint (ci.yml), oras (setup-oras's
-# default), syft (sbom-action's) and grype (scan-action's). yq is
-# mikefarah's, which the runner image has unpinned and Ubuntu doesn't package
-# (its yq is another tool). Bump each with its CI pin, and with the platform
-# files' checksums.
-# shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly TRIVY_VERSION=0.75.0 KUBECONFORM_VERSION=0.8.0 KYVERNO_VERSION=1.19.1 \
-  PROMETHEUS_VERSION=3.15.0 ALERTMANAGER_VERSION=0.34.1 HADOLINT_VERSION=2.15.1 \
-  ORAS_VERSION=1.3.1 SYFT_VERSION=1.54.0 GRYPE_VERSION=0.118.0 YQ_VERSION=4.53.6
 # ctcache, at the commit the toolchain pins (scripts/bootstrap/versions.env).
 # Piped from curl there is no file beside this one, nor any need of it: the
 # clone's own copy runs.

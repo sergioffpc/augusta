@@ -520,25 +520,26 @@ no self-hosted GitHub Actions runner in this pipeline).
   with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
   LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy and ctcache (which
   `make tidy` runs it through, at CI's pinned commit), clang-format, GitHub CLI,
-  kubectl, helm, the flux CLI at the cluster's Flux version, cosign at the
-  version CI signs with and jq (for a release's wait on its signed image),
-  Podman (the container engine), tshark (the Wireshark dissector's test), auditd
-  (`scripts/augustad-seccomp.sh record`), the tools CI's own jobs run at CI's
-  versions (trivy, kubeconform, the Kyverno CLI, promtool, amtool, hadolint,
-  oras, syft, grype, and mikefarah's yq), Doxygen, the hooks' formatters and
-  linters (uv for yamllint, ruff, shfmt, shellcheck, actionlint, gersemi,
-  Prettier and pymarkdown, standalone yamlfmt, StyLua, luacheck and taplo, at
-  CI's pinned versions), and CI's Linux vcpkg binary cache configuration (a
-  files provider in the checkout's `.vcpkg-bincache`). The image builds for the
-  host's architecture (amd64 or arm64) rather than emulating CI's amd64.
-  sccache's cache lives in a volume shared by every container of the repository;
-  the build trees in a volume per container, so they never collide with a
-  Windows build of the same checkout. One recipe, not a container beside a
-  separate host bootstrap: two recipes for the same toolchain drift apart. With
-  them come the Linux client's system packages (ADR-0008: X11, Wayland and
-  xkbcommon development files, and Mesa's Vulkan drivers and Xvfb for the
-  Renderer's smoke test), so the `linux` presets build and test `augustac` in
-  the container too. The Windows client has no container equivalent (see below).
+  kubectl, helm, jq (with the toolchain's cosign, for a release's wait on its
+  signed image), Podman (the container engine), tshark (the Wireshark
+  dissector's test), auditd (`scripts/augustad-seccomp.sh record`), Doxygen, the
+  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
+  actionlint, gersemi, Prettier and pymarkdown, standalone yamlfmt, StyLua,
+  luacheck and taplo, at CI's pinned versions), and CI's Linux vcpkg binary
+  cache configuration (a files provider in the checkout's `.vcpkg-bincache`).
+  The flux CLI, cosign and the tools CI's own jobs run (trivy, kubeconform, the
+  Kyverno CLI, promtool, amtool, hadolint, oras, syft, grype and mikefarah's yq)
+  are the toolchain's: `make toolchain` installs them at the versions
+  `scripts/bootstrap/versions.env` pins. The image builds for the host's
+  architecture (amd64 or arm64) rather than emulating CI's amd64. sccache's
+  cache lives in a volume shared by every container of the repository; the build
+  trees in a volume per container, so they never collide with a Windows build of
+  the same checkout. One recipe, not a container beside a separate host
+  bootstrap: two recipes for the same toolchain drift apart. With them come the
+  Linux client's system packages (ADR-0008: X11, Wayland and xkbcommon
+  development files, and Mesa's Vulkan drivers and Xvfb for the Renderer's smoke
+  test), so the `linux` presets build and test `augustac` in the container too.
+  The Windows client has no container equivalent (see below).
 - **Dev container from a terminal:** `scripts/dev-container.sh [command]` runs a
   command (a shell by default) in the dev container's image: one container per
   checkout, kept running, with the checkout mounted at its host path so a git
@@ -587,13 +588,14 @@ no self-hosted GitHub Actions runner in this pipeline).
   and LLVM (`clang-cl` and `lld-link` for the build, `clang-format`/`clang-tidy`
   for the hooks below), pinned to the LLVM version CI's Ubuntu runner ships and
   CI's Windows jobs install, so a local build and the hooks agree with CI's
-  gates, kubectl, helm and the flux CLI, for the cluster, and cosign, jq, tshark
-  (through Wireshark) and the tools CI's own jobs run, as the Linux half's, with
-  Podman and its WSL 2 machine; auditd, which records a Linux kernel's syscalls,
-  has no Windows counterpart. It also puts Git's `bin` directory on PATH, so
-  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
-  VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  gates, kubectl and helm, for the cluster, and jq and tshark (through
+  Wireshark), as the Linux half's, with Podman and its WSL 2 machine (flux,
+  cosign and the tools CI's own jobs run being the toolchain's there too);
+  auditd, which records a Linux kernel's syscalls, has no Windows counterpart.
+  It also puts Git's `bin` directory on PATH, so `bash scripts/<script>.sh` runs
+  from PowerShell and cmd, and the workspace's VS Code settings point the
+  Kubernetes extension and its terminals at the day-to-day kubeconfig,
+  `~/.kube/augusta.yaml`.
 - **Uninstall:** `scripts/bootstrap.sh uninstall` undoes a bootstrap on every
   platform: what its toolchain step installed that was not there before, which
   it records in a manifest of the machine's (each package, file, PATH entry,

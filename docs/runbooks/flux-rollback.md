@@ -70,8 +70,12 @@ alone is reverted on `develop` instead.
 - `kubectl`, `helm` and the `flux` CLI at the cluster's Flux version, the
   `Flux Version` in
   [`gotk-components.yaml`](../../clusters/onprem/flux-system/gotk-components.yaml)'s
-  header: `scripts/bootstrap.sh` installs all three, `flux` at its
-  `FLUX_VERSION`.
+  header: `scripts/bootstrap.sh` installs `kubectl` and `helm`, and `flux` is
+  the toolchain's, at the `FLUX_VERSION`
+  [`versions.env`](../../scripts/bootstrap/versions.env) pins. Run
+  `make toolchain` in this repository's checkout, then
+  `source .toolchain/activate` in the shell that runs the steps, so `flux` is
+  that one.
 - `gh`, authenticated, with permission to merge pull requests to `develop` and
   `main` ([branch rules](cut-release.md#prerequisites)).
 

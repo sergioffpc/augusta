@@ -163,8 +163,8 @@ winget_install_pinned() {
 }
 
 # The formatters and linters the hooks and CI's format job run at pinned
-# versions, the flux CLI at the cluster's and cosign at CI's, which winget
-# doesn't keep: standalone releases in a user-local bin directory.
+# versions, which winget doesn't keep: standalone releases in a user-local bin
+# directory.
 # Arguments:
 #   The bin directory.
 install_formatters() {
@@ -189,35 +189,23 @@ install_formatters() {
     "https://github.com/lunarmodules/luacheck/releases/download/v${LUACHECK_VERSION}/luacheck.exe" \
     0f1c69c4d09f1ebb4d8df14c215e4553e2e639bd4cb7bf3c639b0daa6198317b \
     "${tmp}/luacheck.exe"
-  download_verified \
-    "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_windows_amd64.zip" \
-    1a23053bf9abbedbdac07237f5c6ae9b0da0bcb77ddbd103faa99839c6a7f562 \
-    "${tmp}/flux.zip"
-  download_verified \
-    "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-windows-amd64.exe" \
-    9b85a88ebff2d9dd30ff4984a6f61f2cedc232dd87d81fa7f2ff3c0ed96c241c \
-    "${tmp}/cosign.exe"
   tar -xzf "${tmp}/yamlfmt.tar.gz" -C "${tmp}" yamlfmt.exe
   extract_zip "${tmp}/stylua.zip" "${tmp}"
-  extract_zip "${tmp}/flux.zip" "${tmp}"
   gunzip "${tmp}/taplo.exe.gz"
-  record_new_files "${bin}" yamlfmt.exe stylua.exe taplo.exe luacheck.exe \
-    flux.exe cosign.exe
+  record_new_files "${bin}" yamlfmt.exe stylua.exe taplo.exe luacheck.exe
   cp -f "${tmp}/yamlfmt.exe" "${tmp}/stylua.exe" "${tmp}/taplo.exe" \
-    "${tmp}/luacheck.exe" "${tmp}/flux.exe" "${tmp}/cosign.exe" "${bin}"
+    "${tmp}/luacheck.exe" "${bin}"
   rm -rf "${tmp}"
   add_to_path User "${bin}"
 }
 
-# Installs the tools CI's own jobs run (scripts/bootstrap.sh), from their
-# releases, at CI's versions, in the bin directory install_formatters puts on
-# PATH.
-# Arguments:
-#   The bin directory.
-install_ci_tools() {
-  local bin="$1" tools tool name url sha member tmp
-  # Each: the command, its release asset, the asset's SHA-256, and the
-  # command's path inside the zip ("-" for a plain executable).
+# Prints the toolchain's release binaries, windows-amd64's, which
+# scripts/bootstrap/toolchain.sh installs (ADR-0077) at the versions
+# scripts/bootstrap/versions.env pins: a line each of the tool, its release
+# asset, the asset's SHA-256, and the tool's path inside the zip ("-" for a
+# plain executable). Bump each SHA-256 with its version.
+toolchain_releases() {
+  local tools
   # promtool and amtool sit in a directory named after their archive.
   local prometheus_dir="prometheus-${PROMETHEUS_VERSION}.windows-amd64"
   local alertmanager_dir="alertmanager-${ALERTMANAGER_VERSION}.windows-amd64"
@@ -232,22 +220,10 @@ install_ci_tools() {
     "syft https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_windows_amd64.zip 77f4b472779058e819eec9a054753a5071a996aaa40db31a290f8b256748593f syft.exe"
     "grype https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_windows_amd64.zip 82fb07f246e61526e8f2bf187fc6bb29ed23c7450cda6e9d1868a60fb942fc98 grype.exe"
     "yq https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_windows_amd64.exe ece3dd8bb50d39f93610506273ea262feb91e5c486bbddbb10abf91b2a6c0f14 -"
+    "flux https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_windows_amd64.zip 1a23053bf9abbedbdac07237f5c6ae9b0da0bcb77ddbd103faa99839c6a7f562 flux.exe"
+    "cosign https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-windows-amd64.exe 9b85a88ebff2d9dd30ff4984a6f61f2cedc232dd87d81fa7f2ff3c0ed96c241c -"
   )
-  mkdir -p "${bin}"
-  tmp="$(mktemp -d)"
-  for tool in "${tools[@]}"; do
-    read -r name url sha member <<<"${tool}"
-    download_verified "${url}" "${sha}" "${tmp}/${name}.download"
-    record_new_files "${bin}" "${name}.exe"
-    if [[ "${member}" = - ]]; then
-      cp -f "${tmp}/${name}.download" "${bin}/${name}.exe"
-    else
-      mkdir "${tmp}/${name}.d"
-      extract_zip "${tmp}/${name}.download" "${tmp}/${name}.d"
-      cp -f "${tmp}/${name}.d/${member}" "${bin}/${name}.exe"
-    fi
-  done
-  rm -rf "${tmp}"
+  printf '%s\n' "${tools[@]}"
 }
 
 # Starts Podman's virtual machine, creating it first if there is none: Podman
@@ -352,13 +328,13 @@ install_toolchain() {
   # runner image. The pin keeps `winget upgrade` on that major.
   winget_install_pinned LLVM.LLVM 21.1.8 '21.*'
   # kubectl and helm, for the server's k3s cluster and its chart
-  # (charts/augustad), and with flux (install_formatters) the cluster
+  # (charts/augustad), and with the toolchain's flux the cluster
   # runbooks' day-to-day access (scripts/operator-kubeconfig.sh): each one's
   # latest stable release, as scripts/bootstrap/linux.sh's.
   winget_install Kubernetes.kubectl
   winget_install Helm.Helm
-  # jq: with cosign (install_formatters), the release runbook's wait on a
-  # signed image (docs/runbooks/cut-release.md).
+  # jq: with the toolchain's cosign, the release runbook's wait on a signed
+  # image (docs/runbooks/cut-release.md).
   winget_install jqlang.jq
   # Podman: the container engine, for scripts/dev-container.sh and the server
   # image. Wireshark for its tshark: the Wireshark dissector's test
@@ -387,7 +363,6 @@ install_toolchain() {
   local tools_bin
   tools_bin="$(windows_dir LOCALAPPDATA)/Programs/augusta-tools"
   install_formatters "${tools_bin}"
-  install_ci_tools "${tools_bin}"
   refresh_path
   install_ctcache
   start_podman_machine
@@ -398,8 +373,7 @@ install_toolchain() {
   # local commit unformatted. Check now, once, instead.
   require_commands cmake ninja make git sccache uv clang-cl lld-link \
     clang-format clang-tidy clang-tidy-cache doxygen yamlfmt stylua taplo \
-    luacheck kubectl helm flux jq cosign podman tshark trivy kubeconform \
-    kyverno promtool amtool hadolint oras syft grype yq
+    luacheck kubectl helm jq podman tshark
 
   local program_files_x86 vs_install
   program_files_x86="$(windows_dir 'ProgramFiles(x86)')"
