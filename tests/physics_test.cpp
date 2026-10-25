@@ -693,10 +693,13 @@ class StrideTest : public ::testing::Test {
     walk_.direction = Vec3(1.0F, 0.0F, 0.0F);
   }
 
-  BodyState Walk(int ticks, float stride_length) {
+  BodyState Walk(int ticks, float stride_length) { return Run(ticks, walk_, stride_length); }
+
+  // Steps the body ticks times by input, paced by stride_length.
+  BodyState Run(int ticks, const MovementInput& input, float stride_length) {
     BodyState state{};
     for (int i = 0; i < ticks; ++i) {
-      state = world_.Step(body_, walk_, kFixedTick, {.stride_length = stride_length});
+      state = world_.Step(body_, input, kFixedTick, {.stride_length = stride_length});
     }
     return state;
   }
@@ -722,10 +725,14 @@ TEST_F(StrideTest, TheSameDistanceOverALongerStrideLengthAdvancesItLess) {
   EXPECT_LE(StrideDistance(state.stride, kStartStride + (kStrideSteps / 4)), 8);
 }
 
+// Paced by the stride length a walk advances it by, a body standing still moves
+// nowhere, so its Stride holds, where the same body walking advances it.
 TEST_F(StrideTest, AStillBodyHoldsItsStride) {
-  const BodyState state = Settle(world_, body_, MovementInput{}, 30);
+  const BodyState still = Run(15, MovementInput{}, 1.5F);
+  const BodyState walking = Walk(15, 1.5F);
 
-  EXPECT_EQ(state.stride, kStartStride);
+  EXPECT_EQ(still.stride, kStartStride);
+  EXPECT_GT(StrideDistance(walking.stride, kStartStride), kStrideSteps / 4);
 }
 
 TEST_F(StrideTest, WithoutAStrideLengthTheStrideHolds) {
