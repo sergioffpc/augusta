@@ -346,12 +346,11 @@ install_platform() {
   # with (ADR-0008), taking the MSVC STL, the CRT and the Windows SDK from the
   # Build Tools above, and clang-format and clang-tidy, see docs/ENGINEERING.md,
   # Code Quality, which back the .githooks/pre-commit and .githooks/pre-push
-  # hooks. Pinned to the clang CI runs (the ubuntu-26.04 runner's distro
-  # package, and the version .github/actions/setup-windows-llvm installs):
-  # another version compiles, formats and lints differently, so a local build
-  # and the hooks would disagree with CI's gates. Bump it together with the
-  # runner image. The pin keeps `winget upgrade` on that major.
-  winget_install_pinned LLVM.LLVM 21.1.8 '21.*'
+  # hooks. Pinned to the clang CI runs, LLVM_VERSION
+  # (scripts/bootstrap/versions.env): another version compiles, formats and
+  # lints differently, so a local build and the hooks would disagree with CI's
+  # gates. The pin keeps `winget upgrade` on that major.
+  winget_install_pinned LLVM.LLVM "${LLVM_VERSION}" "${LLVM_VERSION%%.*}.*"
   # kubectl and helm, for the server's k3s cluster and its chart
   # (charts/augustad), and with the toolchain's flux the cluster
   # runbooks' day-to-day access (scripts/operator-kubeconfig.sh): each one's

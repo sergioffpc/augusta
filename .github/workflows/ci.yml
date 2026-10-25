@@ -972,7 +972,6 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions/setup-toolchain
-            .github/actions/setup-windows-llvm
             .github/actions/sign-and-attest-server-image
             .github/actions/sign-artifact
             .vscode
@@ -1122,7 +1121,6 @@ jobs:
         with:
           sparse-checkout: |
             .github/actions/setup-toolchain
-            .github/actions/setup-windows-llvm
             .github/actions/sign-artifact
             .vscode
             scripts/bootstrap

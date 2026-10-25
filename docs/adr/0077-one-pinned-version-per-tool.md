@@ -20,7 +20,9 @@ and the rest. LLVM's `clangd`, `clang-format` and `clang-tidy` belong to the
 toolchain as links, so the editor's clangd is the hooks' LLVM.
 
 **One file of versions.** `scripts/bootstrap/versions.env` (`NAME=VALUE`) holds
-every version, which the Makefile includes and bash sources; each
+every version, which the Makefile includes and bash sources, LLVM's
+(`LLVM_VERSION`) among them: CI's Windows jobs and the Windows bootstrap install
+that release, and `.toolchain/bin` links its major's tools. Each
 `scripts/bootstrap/<platform>.sh` holds its downloads' SHA-256s beside it.
 Prettier is the exception: `scripts/bootstrap/package.json` and its
 `package-lock.json` pin it, with the lockfile's integrity hashes, installed by

@@ -183,6 +183,9 @@ main() {
   # only the command substitution.
   local platform
   platform="$(platform)"
+  # The pins, which the platform's packages take LLVM's from.
+  # shellcheck source=/dev/null
+  . "$(dirname "${BASH_SOURCE[0]}")/bootstrap/versions.env"
   # shellcheck source=/dev/null
   . "$(dirname "${BASH_SOURCE[0]}")/bootstrap/${platform}.sh"
   case "${1:-}" in
