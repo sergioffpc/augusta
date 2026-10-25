@@ -94,6 +94,10 @@ tools/agent/src/augusta_agent/*.ilk
 config/augustac.yaml
 config/augustad.yaml
 
+# Cooked, signed packs (tools/README.md) when the checkout is the assets root -
+# cook output, not source.
+/packs/
+
 # Claude Code per-user state (project .claude/settings.json stays tracked)
 .claude/settings.local.json
 .claude/worktrees/
