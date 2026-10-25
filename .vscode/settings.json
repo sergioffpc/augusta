@@ -22,6 +22,9 @@
     "--header-insertion=never"
   ],
 
+  "ruff.path": ["${workspaceFolder}/.toolchain/bin/ruff", "${workspaceFolder}/.toolchain/bin/ruff.exe"],
+  "shfmt.executablePath": "${workspaceFolder}/.toolchain/bin/shfmt",
+  "shellcheck.executablePath": "${workspaceFolder}/.toolchain/bin/shellcheck",
   "stylua.searchBinaryInPATH": true,
 
   "Lua.runtime.version": "Lua 5.5",
@@ -55,9 +58,18 @@
   "vs-kubernetes": {
     "vs-kubernetes.kubeconfig": "${userHome}/.kube/augusta.yaml"
   },
-  "terminal.integrated.env.windows": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
-  "terminal.integrated.env.linux": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
-  "terminal.integrated.env.osx": { "KUBECONFIG": "${userHome}/.kube/augusta.yaml" },
+  "terminal.integrated.env.windows": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin;${env:PATH}"
+  },
+  "terminal.integrated.env.linux": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin:${env:PATH}"
+  },
+  "terminal.integrated.env.osx": {
+    "KUBECONFIG": "${userHome}/.kube/augusta.yaml",
+    "PATH": "${workspaceFolder}/.toolchain/bin:${env:PATH}"
+  },
 
   "git.detectSubmodules": false,
   "git.autofetch": true,

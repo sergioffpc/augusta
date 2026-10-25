@@ -26,8 +26,10 @@ Prettier is the exception: `scripts/bootstrap/package.json` and its
 `package-lock.json` pin it, with the lockfile's integrity hashes, installed by
 `npm ci` under the Node of the pinned `nodejs-wheel`, so no Node is installed on
 the system. PyPI tools (ruff, shfmt, shellcheck, gersemi, pymarkdown, yamllint,
-actionlint) are installed with `uv tool install`; release binaries, buf among
-them, are downloaded and verified.
+actionlint) are installed with `uv tool install`, as is ctcache from its pinned
+commit, with the Python that runs them kept in the store too, so a store
+restored on another machine (CI's cache) runs; release binaries, buf among them,
+are downloaded and verified.
 
 **A shared store, linked per checkout.** Each version of each tool is installed
 once per machine, in

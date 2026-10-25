@@ -667,32 +667,32 @@ no self-hosted GitHub Actions runner in this pipeline).
   `pre-commit`, lints changed ones in `pre-push`, and CI's `format` job runs
   both in check mode.
 - Python, shell, the workflows, CMake and Markdown each have a formatter, a
-  linter or both, every one run by uv at a pinned version (`uv tool run`), so
-  nothing is installed for them but uv. Python follows the Google Python Style
-  Guide (ADR-0012): ruff 0.16.10 formats and lints (`ruff.toml`: 80 columns; the
-  guide's checks - pylint's, naming, Google-convention docstrings, one import
-  per line, no relative imports - and bugbear, pyupgrade and simplify). Shell
-  scripts and the git hooks follow the Google Shell Style Guide (ADR-0012), in
-  Bash: shfmt 4.2.0 formats (by `.editorconfig`: two-space indent, indented
-  `case` patterns, a continued `|` or `&&` starting the next line) and
-  shellcheck 0.11.0 lints (`.shellcheckrc`: the guide's optional checks,
-  `[[ ]]`, braced and quoted expansions). The workflows: actionlint 1.7.12
-  (`.github/actionlint.yaml`), with shellcheck on their `run:` scripts. CMake:
-  gersemi 0.29.2 formats (`.gersemirc`: 120 columns, two-space indent, the
-  project's own functions read from `cmake/`). Markdown follows the Google
-  Markdown style guide (ADR-0012): Prettier 3.9.9 formats (`.prettierrc.yaml`),
-  with Node run from its PyPI wheel: paragraphs wrapped at 80 columns, a nested
-  list or a block in a list item indented 4 spaces (as the guide asks and MkDocs
-  needs), and code blocks left as written. pymarkdown 0.9.40 lints with
-  markdownlint's rules (`.pymarkdown.json`) set to the guide (80 columns but for
-  headings, tables, code blocks and a long URL; ATX headings; fenced code
-  blocks; no trailing whitespace), less what the guide leaves to the writer
-  (ordered-list numbering, emphasis as a heading) and what Prettier decides
-  (blank lines around lists, table alignment). The repository has no PowerShell
-  scripts: its scripts are Bash, and the one Windows-native helper,
-  `scripts/vcenv.cmd`, is a batch file. The formatters run on staged files in
-  `pre-commit`, the linters on changed files in `pre-push`, and CI's `format`
-  job runs all of them in check mode.
+  linter or both, every one the toolchain's (ADR-0077), at the version
+  `scripts/bootstrap/versions.env` pins, but Prettier, which uv runs at a pinned
+  version (`uv tool run`). Python follows the Google Python Style Guide
+  (ADR-0012): ruff formats and lints (`ruff.toml`: 80 columns; the guide's
+  checks - pylint's, naming, Google-convention docstrings, one import per line,
+  no relative imports - and bugbear, pyupgrade and simplify). Shell scripts and
+  the git hooks follow the Google Shell Style Guide (ADR-0012), in Bash: shfmt
+  formats (by `.editorconfig`: two-space indent, indented `case` patterns, a
+  continued `|` or `&&` starting the next line) and shellcheck lints
+  (`.shellcheckrc`: the guide's optional checks, `[[ ]]`, braced and quoted
+  expansions). The workflows: actionlint (`.github/actionlint.yaml`), with
+  shellcheck on their `run:` scripts. CMake: gersemi formats (`.gersemirc`: 120
+  columns, two-space indent, the project's own functions read from `cmake/`).
+  Markdown follows the Google Markdown style guide (ADR-0012): Prettier 3.9.9
+  formats (`.prettierrc.yaml`), with Node run from its PyPI wheel: paragraphs
+  wrapped at 80 columns, a nested list or a block in a list item indented 4
+  spaces (as the guide asks and MkDocs needs), and code blocks left as written.
+  pymarkdown lints with markdownlint's rules (`.pymarkdown.json`) set to the
+  guide (80 columns but for headings, tables, code blocks and a long URL; ATX
+  headings; fenced code blocks; no trailing whitespace), less what the guide
+  leaves to the writer (ordered-list numbering, emphasis as a heading) and what
+  Prettier decides (blank lines around lists, table alignment). The repository
+  has no PowerShell scripts: its scripts are Bash, and the one Windows-native
+  helper, `scripts/vcenv.cmd`, is a batch file. The formatters run on staged
+  files in `pre-commit`, the linters on changed files in `pre-push`, and CI's
+  `format` job runs all of them in check mode.
 - JSON has no tool of its own: `CMakePresets.json` and `vcpkg.json` are
   validated by CMake and vcpkg on every configure, and the `.vscode` files are
   the editor's, formatted by it on save.

@@ -48,13 +48,15 @@ readonly COSIGN_VERSION=3.0.6
 readonly TRIVY_VERSION=0.75.0 KUBECONFORM_VERSION=0.8.0 KYVERNO_VERSION=1.19.1 \
   PROMETHEUS_VERSION=3.15.0 ALERTMANAGER_VERSION=0.34.1 HADOLINT_VERSION=2.15.1 \
   ORAS_VERSION=1.3.1 SYFT_VERSION=1.54.0 GRYPE_VERSION=0.118.0 YQ_VERSION=4.53.6
-# ctcache, which the Makefile's tidy target runs clang-tidy through, at the
-# commit .github/actions/restore-ctcache-cache installs; bump them together. A
-# commit, as ctcache isn't on PyPI.
-readonly CTCACHE_REPOSITORY=https://github.com/matus-chochlik/ctcache
-readonly CTCACHE_COMMIT=857b14271d3ded5511c2e6a60f2dc20c1e4b5680
+# ctcache, at the commit the toolchain pins (scripts/bootstrap/versions.env).
+# Piped from curl there is no file beside this one, nor any need of it: the
+# clone's own copy runs.
+if [[ -f "$(dirname "${BASH_SOURCE[0]:-}")/bootstrap/versions.env" ]]; then
+  # shellcheck source=/dev/null
+  . "$(dirname "${BASH_SOURCE[0]}")/bootstrap/versions.env"
+fi
 # shellcheck disable=SC2034 # used by the sourced scripts/bootstrap/*.sh
-readonly CTCACHE_PACKAGE="ctcache @ git+${CTCACHE_REPOSITORY}@${CTCACHE_COMMIT}"
+readonly CTCACHE_PACKAGE="ctcache @ git+https://github.com/matus-chochlik/ctcache@${CTCACHE_COMMIT:-}"
 
 # Prints the platform: linux, windows (Git Bash) or macos.
 platform() {

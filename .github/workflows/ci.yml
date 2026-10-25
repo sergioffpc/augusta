@@ -92,7 +92,7 @@ jobs:
             "^(${charts}|clusters/|scripts/bootstrap-node\.sh$|${ci_workflow})"
 
           set_output run_yaml \
-            '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|(^|/)[^/]+\.ya?ml$)'
+            '(^\.(yamlfmt|yamllint|yamlignore|gitignore)$|^scripts/bootstrap/versions\.env$|(^|/)[^/]+\.ya?ml$)'
 
           # The scenarios' Lua scripts, and the rules they are formatted and
           # linted by.
@@ -102,9 +102,10 @@ jobs:
           set_output run_toml "(\.toml$|^${ci_workflow})"
 
           # Python, shell, Markdown, CMake, Protocol Buffers and the
-          # workflows, and the rules each is formatted and linted by.
+          # workflows, the rules each is formatted and linted by, and the
+          # toolchain's pins and the editor paths its check reads.
           set_output run_lint \
-            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml)$)'
+            '(\.(py|sh|md|cmake|proto)$|(^|/)CMakeLists\.txt$|^\.githooks/|^\.github/workflows/|^\.github/actionlint\.yaml$|^(ruff\.toml|\.shellcheckrc|\.gersemirc|\.pymarkdown\.json|\.prettierrc\.yaml|\.editorconfig|buf\.yaml|scripts/bootstrap/versions\.env|\.vscode/settings\.json)$)'
   format:
     needs: changes
     if: >-
@@ -116,6 +117,9 @@ jobs:
         if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
         with:
           enable-cache: true
+      # The formatters and linters the Makefile's format-check/* targets run.
+      - uses: ./.github/actions/setup-toolchain
+        if: needs.changes.outputs.run_build == 'true' || needs.changes.outputs.run_yaml == 'true' || needs.changes.outputs.run_lint == 'true'
       - name: Check the environments' pack formats
         # Every pack clusters/ names is of the pack format the engine reads,
         # so a change to the format fails here until every environment is
@@ -155,7 +159,7 @@ jobs:
         if: needs.changes.outputs.run_yaml == 'true'
         run: |
           yamlfmt -conf .yamlfmt -lint
-          uv tool run --from yamllint==1.37.1 yamllint --strict -c .yamllint .
+          make format-check/yamllint
       - name: Install StyLua and luacheck
         if: needs.changes.outputs.run_lua == 'true'
         shell: bash
@@ -196,33 +200,27 @@ jobs:
         run: |
           git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo fmt --check
           git ls-files -z -- '*.toml' ':!:third_party/*' | xargs -0 taplo lint
-      # uv runs the rest at pinned versions, as the Makefile's format-check and
-      # the git hooks do.
+      # The Makefile's own checks, from the toolchain (setup-toolchain), as the
+      # git hooks run them.
       - name: Check Python formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 format --check
-          git ls-files -z -- '*.py' ':!:third_party/*' | xargs -0 uv tool run ruff@0.16.10 check
+        run: make format-check/ruff
       - name: Check shell formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shfmt-py==4.2.0 shfmt -d
-          git ls-files -z -- '*.sh' '.githooks/*' | xargs -0 uv tool run --from shellcheck-py==0.11.0.1 shellcheck
+        run: make format-check/shfmt format-check/shellcheck
       - name: Lint the workflows
         if: needs.changes.outputs.run_lint == 'true'
-        run: uv tool run --from actionlint-py==1.7.12.25 --with shellcheck-py==0.11.0.1 actionlint
+        run: make format-check/actionlint
       - name: Check CMake formatting
         if: needs.changes.outputs.run_lint == 'true'
-        run: |
-          git ls-files -z -- 'CMakeLists.txt' '*/CMakeLists.txt' '*.cmake' ':!:third_party/*' \
-            | xargs -0 uv tool run gersemi@0.29.2 --check
+        run: make format-check/gersemi
+      # uv runs Prettier and buf at pinned versions, as the Makefile does.
       - name: Check Markdown formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: |
           git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
             | xargs -0 uv tool run --from nodejs-wheel==24.19.0 npx --yes prettier@3.9.9 --log-level warn --check
-          git ls-files -z -- '*.md' ':!:third_party/*' ':!:CHANGELOG.md' \
-            | xargs -0 uv tool run --from pymarkdownlnt==0.9.40 pymarkdown --config .pymarkdown.json scan
+          make format-check/pymarkdown
       - name: Check Protocol Buffers formatting and lint
         if: needs.changes.outputs.run_lint == 'true'
         run: |
@@ -259,6 +257,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/restore-ctcache-cache
       - name: Install the tools' packages
         # The interpreter the tools' modules are built against, the Agents'
@@ -387,6 +386,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: tools/uv.lock
+      - uses: ./.github/actions/setup-toolchain
       - uses: ./.github/actions/restore-ctcache-cache
       - name: Install the tools' packages
         # As the client-x64-windows job does, and the Wireshark dissector's

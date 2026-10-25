@@ -1,0 +1,32 @@
+name: Set up the toolchain
+description: >
+  The checkout's toolchain (ADR-0077), as a developer's: `make toolchain` links
+  .toolchain/bin to the shared store at the versions scripts/bootstrap/versions.env
+  pins, `make toolchain-check` fails the job when one differs, and .toolchain/bin
+  goes on PATH for the later steps. The store is cached on the hash of the
+  versions and of the script that installs them, so only a bump installs. Run it
+  after uv's setup.
+runs:
+  using: composite
+  steps:
+    - name: Install make
+      # The Windows image has Chocolatey but not GNU make, which the bootstrap
+      # installs with winget.
+      if: runner.os == 'Windows'
+      shell: bash
+      run: command -v make >/dev/null || choco install make --no-progress -y
+    - name: Cache the toolchain's store
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/augusta/toolchain
+        key: toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap/versions.env', 'scripts/bootstrap/toolchain.sh') }}
+    - name: Make and check the toolchain
+      shell: bash
+      run: |
+        make toolchain
+        make toolchain-check
+        bin="$PWD/.toolchain/bin"
+        if [ "$RUNNER_OS" = Windows ]; then
+          bin="$(cygpath -w "$bin")"
+        fi
+        echo "$bin" >> "$GITHUB_PATH"
