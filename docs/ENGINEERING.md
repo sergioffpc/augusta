@@ -508,66 +508,86 @@ no self-hosted GitHub Actions runner in this pipeline).
   default listen port (UDP 27015) on the host, so a native Windows `augustac`
   reaches a container-hosted `augustad` at `127.0.0.1:27015`. Published rather
   than forwarded: VS Code's port forwarding is TCP-only.
+- **Toolchain:** the whole set of tools the repository pins (ADR-0077): the
+  formatters and linters, the tools CI's jobs run, the operators' flux and
+  cosign, ctcache, and links to the system LLVM's `clangd`, `clang-format` and
+  `clang-tidy`. What a package manager installs (LLVM, CMake, Ninja, uv, git,
+  Podman, kubectl, helm, …) is the system's, not the toolchain's.
+  `scripts/bootstrap/versions.env` pins each tool's version, and
+  `scripts/bootstrap/package-lock.json` Prettier's. Each version is installed
+  once per machine into the shared store,
+  `${XDG_CACHE_HOME:-~/.cache}/augusta/toolchain/<tool>/<version>/`, and every
+  checkout and worktree has a git-ignored `.toolchain/` whose `bin/` links into
+  it (hardlinks or copies on Windows), so each runs the versions its own branch
+  pins. `make toolchain` installs whatever version the store lacks and relinks
+  `.toolchain/bin`, quickly when nothing changed: run it after a pull that bumps
+  a version. `make toolchain-check` fails on each tool that is not its pinned
+  version, and `pre-commit` runs it. The Makefile, the hooks and CI run
+  `.toolchain/bin`; VS Code's terminals put it first on PATH, and sourcing
+  `.toolchain/activate` does the same in any other shell.
+- **Bootstrap:** `scripts/bootstrap.sh` has two steps, which it runs in order
+  when given none. `platform`, once per machine, installs the system's packages
+  and fills the store; `checkout` readies the checkout (submodules, vcpkg, the
+  hooks) and runs `make toolchain`. `scripts/worktree.sh add` runs
+  `make toolchain` in the worktree it makes.
 - **Server, shared core and Linux client (Linux, dev container or host):**
   `.devcontainer/` gives this side as a container, for VS Code or Codespaces,
   without mutating a host, and `scripts/bootstrap.sh` installs the same on an
   Ubuntu 26.04 host (its Linux half, `scripts/bootstrap/linux.sh`; the image
-  hashes only the two, so a Windows-only change doesn't rebuild it). The script
-  is the one recipe for it: the image runs its `toolchain` step, the container's
-  post-create its `checkout` step (submodules, vcpkg, hooks), and a host both.
-  It installs CI's runner Ubuntu release's packages, whose LLVM major is CI's,
-  with the toolchain `.github/actions/setup-linux-build` installs (kept in step
-  with it by hand), LLVM's toolchain (ADR-0008: clang, lld, libc++, libunwind,
-  LLVM's binary tools, lldb), CMake, Ninja, vcpkg, clang-tidy and ctcache (which
-  `make tidy` runs it through, at CI's pinned commit), clang-format, GitHub CLI,
-  kubectl, helm, jq (with the toolchain's cosign, for a release's wait on its
-  signed image), Podman (the container engine), tshark (the Wireshark
-  dissector's test), auditd (`scripts/augustad-seccomp.sh record`), Doxygen, the
-  hooks' formatters and linters (uv for yamllint, ruff, shfmt, shellcheck,
-  actionlint, gersemi, Prettier and pymarkdown, at CI's pinned versions, and
-  apt's luacheck, which the toolchain links on arm64, where luacheck has no
-  release), and CI's Linux vcpkg binary cache configuration (a files provider in
-  the checkout's `.vcpkg-bincache`). The flux CLI, cosign and the tools CI's own
-  jobs run (trivy, kubeconform, the Kyverno CLI, promtool, amtool, hadolint,
-  oras, syft, grype and mikefarah's yq) are the toolchain's: `make toolchain`
-  installs them at the versions `scripts/bootstrap/versions.env` pins. The image
-  builds for the host's architecture (amd64 or arm64) rather than emulating CI's
-  amd64. sccache's cache lives in a volume shared by every container of the
-  repository; the build trees in a volume per container, so they never collide
-  with a Windows build of the same checkout. One recipe, not a container beside
-  a separate host bootstrap: two recipes for the same toolchain drift apart.
-  With them come the Linux client's system packages (ADR-0008: X11, Wayland and
-  xkbcommon development files, and Mesa's Vulkan drivers and Xvfb for the
-  Renderer's smoke test), so the `linux` presets build and test `augustac` in
-  the container too. The Windows client has no container equivalent (see below).
+  hashes only the two and the toolchain's files, so a Windows-only change
+  doesn't rebuild it). The script is the one recipe for it: the image runs its
+  `platform` step, which fills the store in the image user's cache, the
+  container's post-create its `checkout` step, whose `make toolchain` then only
+  links, and a host both. It installs CI's runner Ubuntu release's packages,
+  whose LLVM major is CI's, with those `.github/actions/setup-linux-build`
+  installs (kept in step with it by hand), LLVM's toolchain (ADR-0008: clang,
+  lld, libc++, libunwind, LLVM's binary tools, lldb, clang-tidy, clang-format,
+  clangd), CMake, Ninja, vcpkg, GitHub CLI, kubectl, helm, jq (with the
+  toolchain's cosign, for a release's wait on its signed image), Podman (the
+  container engine), tshark (the Wireshark dissector's test), auditd
+  (`scripts/augustad-seccomp.sh record`), Doxygen, uv (which installs the
+  toolchain's PyPI tools), apt's luacheck (which the toolchain links on arm64,
+  where luacheck has no release), and CI's Linux vcpkg binary cache
+  configuration (a files provider in the checkout's `.vcpkg-bincache`). The
+  image builds for the host's architecture (amd64 or arm64) rather than
+  emulating CI's amd64. sccache's cache lives in a volume shared by every
+  container of the repository; the build trees and `.toolchain/` in volumes per
+  container, so they never collide with a Windows build of the same checkout,
+  nor the container's links with the host's, which name the host's store. One
+  recipe, not a container beside a separate host bootstrap: two recipes for the
+  same packages drift apart. With them come the Linux client's system packages
+  (ADR-0008: X11, Wayland and xkbcommon development files, and Mesa's Vulkan
+  drivers and Xvfb for the Renderer's smoke test), so the `linux` presets build
+  and test `augustac` in the container too. The Windows client has no container
+  equivalent (see below).
 - **Dev container from a terminal:** `scripts/dev-container.sh [command]` runs a
   command (a shell by default) in the dev container's image: one container per
   checkout, kept running, with the checkout mounted at its host path so a git
-  worktree's `.git` resolves inside too, a `build/` volume of its own, and
-  sccache's and vcpkg's caches in volumes every checkout shares. No bootstrap
-  creates it; it is for a Linux build on a host that has its own. It bootstraps
-  `third_party/vcpkg/vcpkg` for Linux in the shared checkout, which a native
-  macOS build then cannot run: delete it and the next native configure
+  worktree's `.git` resolves inside too, `build/` and `.toolchain/` volumes of
+  its own, and sccache's and vcpkg's caches in volumes every checkout shares. No
+  bootstrap creates it; it is for a Linux build on a host that has its own. It
+  bootstraps `third_party/vcpkg/vcpkg` for Linux in the shared checkout, which a
+  native macOS build then cannot run: delete it and the next native configure
   bootstraps it again.
 - **macOS (arm64, native, development only):** as on Linux, everything builds
   and is checked on the host: `scripts/bootstrap.sh` (its macOS half,
-  `scripts/bootstrap/macos.sh`) installs the toolchain through Homebrew, and the
-  CI's and the operators' tools Homebrew doesn't keep at CI's versions into
-  `~/.local/bin` from their releases, as `scripts/bootstrap/linux.sh` does into
-  `/usr/local/bin`, but without sudo, which a managed Mac may grant only for a
-  while; `~/.zprofile` puts that directory, and GNU make ahead of macOS's 3.81,
-  on PATH. The `pre-commit` and `pre-push` hooks run them on the host. The
-  `macos` and `macos-debug` presets build the client, the server and their tests
-  natively with Homebrew's LLVM 21 (`cmake/LlvmMacosToolchain.cmake`, ADR-0008),
-  never Apple's clang, for vcpkg's `arm64-osx` (`triplets/arm64-osx.cmake`). The
-  client renders on Mesa's KosmicKrisp, a conformant Vulkan over Metal (macOS
-  26, Apple silicon): the Renderer turns on the portability extensions a
-  Vulkan-on-Metal driver may need, and the window module opens Homebrew's Vulkan
-  loader, which GLFW does not find there by itself. PhysX and NVRHI come from
-  overlay ports (`ports/`) that add macOS to what vcpkg's support; PhysX builds
-  on the CPU alone. The Command Line Tools give the SDK, and Xcode is not
-  needed. No CI job builds it, so it breaks unnoticed; Aftermath and Nsight do
-  not exist there.
+  `scripts/bootstrap/macos.sh`) installs the system's packages through Homebrew
+  and fills the toolchain's store, without sudo, which a managed Mac may grant
+  only for a while; `~/.zprofile` puts GNU make ahead of macOS's 3.81 on PATH.
+  LLVM 21 is keg-only, off PATH: `.toolchain/bin` links its `clangd`,
+  `clang-format` and `clang-tidy`, and Homebrew's luacheck, which has no macOS
+  release. The `pre-commit` and `pre-push` hooks run the toolchain on the host.
+  The `macos` and `macos-debug` presets build the client, the server and their
+  tests natively with Homebrew's LLVM 21 (`cmake/LlvmMacosToolchain.cmake`,
+  ADR-0008), never Apple's clang, for vcpkg's `arm64-osx`
+  (`triplets/arm64-osx.cmake`). The client renders on Mesa's KosmicKrisp, a
+  conformant Vulkan over Metal (macOS 26, Apple silicon): the Renderer turns on
+  the portability extensions a Vulkan-on-Metal driver may need, and the window
+  module opens Homebrew's Vulkan loader, which GLFW does not find there by
+  itself. PhysX and NVRHI come from overlay ports (`ports/`) that add macOS to
+  what vcpkg's support; PhysX builds on the CPU alone. The Command Line Tools
+  give the SDK, and Xcode is not needed. No CI job builds it, so it breaks
+  unnoticed; Aftermath and Nsight do not exist there.
 - **Client (Windows, native):** built and run natively — never cross-compiled
   from Linux: vcpkg's dependencies build with MSVC `cl`. The client, the server
   and their tests compile with `clang-cl` and links with `lld-link`, from the
@@ -577,31 +597,32 @@ no self-hosted GitHub Actions runner in this pipeline).
   against; the dependencies stay on `cl` under vcpkg's `x64-windows` triplet
   (ADR-0008). The same `scripts/bootstrap.sh`, run in Git Bash as Administrator
   (its Windows half, `scripts/bootstrap/windows.sh`, winget-driven; one entry
-  point and one `checkout` step and set of pinned formatter versions for both
-  platforms, and no PowerShell: Git for Windows is the one prerequisite, which
-  cloning needs anyway) installs Visual Studio Build Tools system-wide (default
-  install location) — simpler than pinning a project-specific path, at the cost
-  of not being able to side-by-side independent Build Tools versions per project
-  — plus the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (for yamllint
-  and the formatters and linters uv runs, below, and ctcache, which `make tidy`
-  runs `clang-tidy` through), and LLVM (`clang-cl` and `lld-link` for the build,
-  `clang-format`/`clang-tidy` for the hooks below), pinned to the LLVM version
-  CI's Ubuntu runner ships and CI's Windows jobs install, so a local build and
-  the hooks agree with CI's gates, kubectl and helm, for the cluster, and jq and
-  tshark (through Wireshark), as the Linux half's, with Podman and its WSL 2
-  machine (flux, cosign and the tools CI's own jobs run being the toolchain's
-  there too); auditd, which records a Linux kernel's syscalls, has no Windows
-  counterpart. It also puts Git's `bin` directory on PATH, so
-  `bash scripts/<script>.sh` runs from PowerShell and cmd, and the workspace's
-  VS Code settings point the Kubernetes extension and its terminals at the
-  day-to-day kubeconfig, `~/.kube/augusta.yaml`.
+  point and one `checkout` step and toolchain for every platform, and no
+  PowerShell: Git for Windows is the one prerequisite, which cloning needs
+  anyway) installs Visual Studio Build Tools system-wide (default install
+  location) — simpler than pinning a project-specific path, at the cost of not
+  being able to side-by-side independent Build Tools versions per project — plus
+  the Windows SDK, CMake, Ninja, GNU make, vcpkg, Git, uv (which installs the
+  toolchain's PyPI tools), and LLVM (`clang-cl` and `lld-link` for the build,
+  and the `clangd`, `clang-format` and `clang-tidy` `.toolchain/bin` links),
+  pinned to the LLVM version CI's Ubuntu runner ships and CI's Windows jobs
+  install, so a local build and the hooks agree with CI's gates, kubectl and
+  helm, for the cluster, and jq and tshark (through Wireshark), as the Linux
+  half's, with Podman and its WSL 2 machine (flux, cosign and the tools CI's own
+  jobs run being the toolchain's there too); auditd, which records a Linux
+  kernel's syscalls, has no Windows counterpart. It also puts Git's `bin`
+  directory on PATH, so `bash scripts/<script>.sh` runs from PowerShell and cmd,
+  and the workspace's VS Code settings point the Kubernetes extension and its
+  terminals at the day-to-day kubeconfig, `~/.kube/augusta.yaml`.
 - **Uninstall:** `scripts/bootstrap.sh uninstall` undoes a bootstrap on every
-  platform: what its toolchain step installed that was not there before, which
+  platform: what its `platform` step installed that was not there before, which
   it records in a manifest of the machine's (each package, file, PATH entry,
-  Visual Studio component, winget pin and Podman machine), newest first, and its
-  checkout step's readying, never the repository's files. Only what the
-  bootstrap itself installed goes: a tool that was there before stays, as does
-  what a machine bootstrapped before the manifest installed then.
+  Visual Studio component, winget pin and Podman machine, and the toolchain's
+  store), newest first, and its `checkout` step's readying, `.toolchain/` among
+  it, never the repository's files. `uninstall platform` and
+  `uninstall checkout` undo one step alone. Only what the bootstrap itself
+  installed goes: a tool that was there before stays, as does what a machine
+  bootstrapped before the manifest installed then.
 - **Asset cooker setup (opt-in):** `tools/pack/scripts/bootstrap.sh` (Windows in
   Git Bash, or Linux - the platforms vcpkg's `ktx` port, which the cooker's
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
@@ -628,7 +649,10 @@ no self-hosted GitHub Actions runner in this pipeline).
   Tools, clangd/clang-format, EditorConfig, Lua, YAML/Helm, GitHub Actions) — VS
   Code prompts to install these whenever the folder is opened, on either side
   (dev container or native Windows); the dev container installs the
-  Linux-relevant subset itself.
+  Linux-relevant subset itself. The workspace settings point the extensions'
+  binaries at `${workspaceFolder}/.toolchain/` (ADR-0077), and VS Code applies
+  them only in a trusted workspace: in Restricted Mode, Ruff, Prettier and
+  ShellCheck run their bundled copies, and clangd and shfmt turn off.
 - **Dependency hermeticity:** the `vcpkg.json` manifest (ADR-0025) is what
   actually makes dependency acquisition reproducible on both sides — not a
   container.
@@ -651,12 +675,12 @@ no self-hosted GitHub Actions runner in this pipeline).
   checks formatting and every linter but `clang-tidy`, `make lint` also runs
   `clang-tidy`, and `make tidy` alone runs `clang-tidy`, through ctcache as CI's
   Lint steps do (CI, clang-tidy results), keeping its results under
-  `build/ctcache`; both bootstraps install it. The hooks name no tool
-  themselves: `pre-commit` runs `make format-files` on the staged files and
-  `pre-push` runs `make lint-files` on the changed ones, the same commands as
-  `make format` and `make lint` on fewer files, with clang-tidy one file a
-  process through the same ctcache results; `make test` and `make check` run
-  `ctest` in parallel, as CI does.
+  `build/ctcache`; the toolchain holds it. The hooks name no tool themselves:
+  `pre-commit` runs `make format-files` on the staged files and `pre-push` runs
+  `make lint-files` on the changed ones, the same commands as `make format` and
+  `make lint` on fewer files, with clang-tidy one file a process through the
+  same ctcache results; `make test` and `make check` run `ctest` in parallel, as
+  CI does.
 - A scenario's Lua scripts (ADR-0022, ADR-0039) are formatted by StyLua
   (`stylua.toml`: two-space indentation, 120 columns, as the C++) and linted by
   luacheck (`.luacheckrc`), whose standard library is the engine's Lua sandbox
