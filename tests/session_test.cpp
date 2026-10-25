@@ -19,6 +19,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -120,6 +121,7 @@ using augusta::session_test::kScriptedEntity;
 using augusta::session_test::kScriptedSession;
 using augusta::session_test::kTestParameters;
 using augusta::session_test::kTestTickRate;
+using augusta::session_test::NeverArrived;
 using augusta::session_test::OtherScriptedSession;
 using augusta::session_test::Pointers;
 using augusta::session_test::RawClient;
@@ -1055,9 +1057,11 @@ class LoopbackMatch : public ::testing::Test {
   static constexpr float kFloorY = 0.0F;
   static constexpr int kSettleTicks = 30;
   static constexpr auto kNetworkDelay = std::chrono::milliseconds(8);
-  // How long Step waits for the commands it sent to reach the server: far more
-  // than loopback delivery takes, even under the sanitizers.
-  static constexpr auto kStepPatience = std::chrono::milliseconds(250);
+  // How long a step waits for the commands it sent while the test loses packets
+  // on purpose: far more than loopback delivery takes, even under the
+  // sanitizers, so a command that was not lost has arrived. Otherwise a step
+  // waits up to ExchangeUntil's kPollDeadline, which only a fault outlasts.
+  static constexpr auto kLossPatience = std::chrono::milliseconds(250);
 
   // What a host needs, split the way Host's own constructor wants it: config
   // file/script settings, the map and the scenario's Game policy, separately.
@@ -1116,31 +1120,72 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
+  // The network conditions every connection made from now on simulates
+  // (augusta::link::SimulateNetworkConditions). Under any packet loss, a step
+  // knows the commands it sends may never arrive.
+  void SimulateNetworkConditions(const augusta::link::SimulatedConditions& conditions) {
+    augusta::link::SimulateNetworkConditions(conditions);
+    losing_packets_ = conditions.loss_percent > 0.0F;
+  }
+
+  // Runs the network, serve() on each pass, until missing() describes nothing
+  // the step still waits for: a command on its way to the server, or a state
+  // on its way to a client. Under the packet loss of SimulateNetworkConditions,
+  // kLossPatience ends the wait too, and the step goes on without what was
+  // lost. Otherwise only a fault outlasts ExchangeUntil's kPollDeadline, and
+  // the test fails fatally there, with missing()'s description: the step must
+  // not tick the server without what it waited for. Returns whether it may.
+  template <typename Missing, typename Serve>
+  bool AwaitArrival(Missing missing, Serve serve) {
+    const auto give_up = std::chrono::steady_clock::now() + kLossPatience;
+    const bool ended = ExchangeUntil(host_, Pointers(sessions_), [&] {
+      serve();
+      return !missing().has_value() || (losing_packets_ && std::chrono::steady_clock::now() >= give_up);
+    });
+    const std::optional<std::string> never = ended ? std::nullopt : missing();
+    if (never.has_value()) {
+      FailWaitingFor(*never);
+    }
+    return !never.has_value();
+  }
+
+  // AwaitArrival's failure, fatal: FAIL returns only from a void function.
+  static void FailWaitingFor(const std::string& never) { FAIL() << never; }
+
   // One tick of the whole match: every client predicts and sends its command
   // of commands (one per client, in the order they connected), the server ticks
   // once every command a connected client in the match sent has reached it (or
-  // that client has since heard its match end, or kStepPatience has passed),
-  // the states come back. Returns the server's. Waiting for the commands rather
-  // than for a fixed time keeps a slow run (the sanitizers build) from ticking
-  // the server before a command arrives, which would hold that player's last
-  // movement (ADR-0038) and turn into a correction no real mismatch caused. The
-  // patience bounds a test that loses commands on purpose.
+  // that client has since heard its match end), as AwaitArrival waits, and the
+  // states come back. Returns the server's, or nothing once the test has failed
+  // fatally. Waiting for the commands rather than for a fixed time keeps a slow
+  // run (the sanitizers build, a loaded parallel ctest) from ticking the server
+  // before a command arrives, which would hold that player's last movement
+  // (ADR-0038) and shift what the test expects onto another tick.
   augusta::simulation::TickResult StepEach(const std::vector<Command>& commands) {
-    std::vector<std::pair<const Session*, augusta::host::SessionId>> sending;
+    if (HasFatalFailure()) {
+      return {};
+    }
+    std::vector<std::size_t> sending;
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       const auto& session = sessions_[i];
       if (session->GetServerView()->GetPhase() == Phase::kMatch &&
           session->GetConnectionState() == ConnectionState::kConnected) {
-        sending.emplace_back(session.get(), session->GetServerView()->accepted->session);
+        sending.push_back(i);
       }
       states_[session.get()] = session->Tick(commands.at(i), kFixedTick);
     }
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      return std::chrono::steady_clock::now() >= give_up || std::ranges::all_of(sending, [&](const auto& sent) {
-               return host_.QueuedCommands(sent.second) > 0 || sent.first->GetServerView()->GetPhase() != Phase::kMatch;
-             });
-    });
+    const auto missing = [&]() -> std::optional<std::string> {
+      for (const std::size_t i : sending) {
+        const auto view = sessions_[i]->GetServerView();
+        if (host_.QueuedCommands(view->accepted->session) == 0 && view->GetPhase() == Phase::kMatch) {
+          return NeverArrived(i, *sessions_[i]);
+        }
+      }
+      return std::nullopt;
+    };
+    if (!AwaitArrival(missing, [] {})) {
+      return {};
+    }
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
@@ -1158,8 +1203,12 @@ class LoopbackMatch : public ::testing::Test {
     }
   }
 
-  // Ticks the server once, with the network work around it.
+  // Ticks the server once, with the network work around it, unless the test
+  // has failed fatally.
   augusta::simulation::State ServerTick() {
+    if (HasFatalFailure()) {
+      return {};
+    }
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
     augusta::simulation::State state = host_.Tick(kFixedTick).state;
@@ -1206,6 +1255,8 @@ class LoopbackMatch : public ::testing::Test {
   Host host_;
   std::vector<std::unique_ptr<Session>> sessions_;
   std::map<const Session*, augusta::prediction::State> states_;
+  // Whether SimulateNetworkConditions last set any packet loss.
+  bool losing_packets_ = false;
 };
 
 // A host on the floor, with three spawn points, whose matches start with kPlayers players.
@@ -2656,7 +2707,7 @@ class RobustnessOf : public MatchOf<kPlayers> {
  protected:
   static constexpr auto kSilentPeerDeadline = std::chrono::seconds(20);
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { this->SimulateNetworkConditions({}); }
 };
 
 using RobustnessTest = RobustnessOf<1>;
@@ -2689,13 +2740,13 @@ TEST_F(FullMatchRobustnessTest, AfterAClientDisconnectsItsPlayerIsAbsentFromOthe
 // Requirements: NFR-06
 TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsRemovedOnceItTimesOut) {
   // Set before the connection exists: the timeout only reaches new connections.
-  augusta::link::SimulateNetworkConditions({.timeout_ms = 500});
+  SimulateNetworkConditions({.timeout_ms = 500});
   Join();
   ASSERT_TRUE(StartMatch());
   Run(kSettleTicks);
 
   // Every packet is lost from here on, so the client is gone without a word.
-  augusta::link::SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = 500});
+  SimulateNetworkConditions({.loss_percent = 100.0F, .timeout_ms = 500});
   std::size_t players = 1;
   std::uint32_t ticks_run = 0;
   // The transport only notices a silent peer when it asks for a reply and gets none, which
@@ -2706,7 +2757,7 @@ TEST_F(RobustnessTest, AClientThatDropsWithoutClosingKeepsTheServerTickingAndIsR
     players = ServerTick().bodies.size();
     ++ticks_run;
   }
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   EXPECT_EQ(players, 0U);
   EXPECT_GT(ticks_run, 0U);
@@ -3636,7 +3687,7 @@ class FireMatchOf : public LoopbackMatch {
 
   FireMatchOf() : LoopbackMatch(Armed()) {}
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { SimulateNetworkConditions({}); }
 
   void SetUp() override {
     for (std::uint8_t i = 0; i < kPlayers; ++i) {
@@ -3809,7 +3860,7 @@ TEST_F(FireDuelTest, EveryClientIsToldOfAShotWithItsShooterTickOriginAndDirectio
 TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
   constexpr float kLossPercent = 20.0F;
   constexpr int kTicks = 90;
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // What the server fired, which is what every client must be told.
   std::vector<augusta::simulation::Shot> fired;
@@ -3824,7 +3875,7 @@ TEST_F(FireDuelTest, WithPacketLossEveryClientStillReceivesEveryShot) {
     std::this_thread::sleep_for(kNetworkDelay);
     Exchange();
   }
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_GT(fired.size(), 10U);
   ASSERT_TRUE(ReceiveShots(fired.size()));
@@ -3971,7 +4022,7 @@ TEST_F(PredictedFireTest, AClientThatFiresAndReloadsPredictsTheAmmoTheServerHasA
 // Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr int kOneWayLatencyMs = 50;
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
 
   FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
 
@@ -3986,13 +4037,13 @@ TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllAr
 // Requirements: US-07, NFR-02
 TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrectsItsRifle) {
   constexpr float kLossPercent = 20.0F;
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   FireReloadAndFire([&](const Command& command) { PredictAndDeliver(command); });
 
   // The last commands sent under loss may be lost for good, with nothing newer
   // to repeat them; a few more over a clean network carry them.
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
   constexpr int kRecoveryTicks = 10;
   for (int i = 0; i < kRecoveryTicks; ++i) {
     PredictAndDeliver(Command{});
@@ -4010,7 +4061,7 @@ TEST_F(PredictedFireTest, WithPacketLossAClientWhoseInputsAllArriveNeverCorrects
 TEST_F(PredictedFireTest, AtAHundredMillisecondsOfLatencyAClientWhoseInputsAllArriveNeverCorrectsItsRecoil) {
   constexpr int kOneWayLatencyMs = 50;
   constexpr int kBurstTicks = 20;
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
   Command aiming = Firing();
   aiming.ads = true;
   float highest = 0.0F;
@@ -4501,7 +4552,7 @@ class LagCompensatedHitTest : public HitMatchOf<2> {
   // The Interpolation delay, about 100 ms, in ticks of kFixedTick.
   static constexpr std::uint32_t kInterpolationTicks = 6;
 
-  void TearDown() override { augusta::link::SimulateNetworkConditions({}); }
+  void TearDown() override { SimulateNetworkConditions({}); }
 
   // Whether the server holds a command of every client for its next tick.
   [[nodiscard]] bool EveryoneHasACommandQueued() const {
@@ -4541,7 +4592,7 @@ TEST_F(LagCompensatedHitTest, AClientFiringAtAStrafingTargetUnderItsCrosshairAtI
   Session& shooter = Standing(0);
   Session& target = Standing(1);
   CommandOf(target).movement.direction = Vec3(1.0F, 0.0F, 0.0F);
-  augusta::link::SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
+  SimulateNetworkConditions({.latency_ms = kOneWayLatencyMs});
   for (int i = 0; i < 60; ++i) {
     PlayAhead(shooter, target);
   }
@@ -4951,14 +5002,14 @@ TEST_F(DeathTest, TheDeadBodyIsGoneFromEveryClientsStateFromThenOn) {
 TEST_F(DeathTest, WithPacketLossEveryClientStillReceivesTheDeath) {
   constexpr float kLossPercent = 20.0F;
   Session& victim = Standing(1);
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // A round's fire command can be lost for good: the shooter fires until the server has a death.
   for (int attempt = 0; attempt < 10 && deaths_.empty(); ++attempt) {
     ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   }
   Fight(30);
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_EQ(deaths_.size(), 1U);
   ASSERT_TRUE(ExchangeUntil(host_, Pointers(sessions_), [&] {
@@ -5337,14 +5388,14 @@ TEST_F(LastStandingDuelTest, WithPacketLossBothAreStillToldTheMatchEndedAndWhoWo
   constexpr float kLossPercent = 20.0F;
   Session& shooter = Standing(0);
   Session& victim = Standing(1);
-  augusta::link::SimulateNetworkConditions({.loss_percent = kLossPercent});
+  SimulateNetworkConditions({.loss_percent = kLossPercent});
 
   // A round's fire command can be lost for good: the shooter fires until the match is over.
   for (int attempt = 0; attempt < 20 && match_ends_.empty(); ++attempt) {
     ShootAt(victim, Vec3(0.0F, kHeadHeight, 0.0F));
   }
   Fight(30);
-  augusta::link::SimulateNetworkConditions({});
+  SimulateNetworkConditions({});
 
   ASSERT_EQ(match_ends_.size(), 1U);
   ASSERT_TRUE(EveryoneToldTheMatchEnded());
@@ -5751,30 +5802,50 @@ class AdversaryMatch : public LoopbackMatch {
 
   // One tick: the adversary sends message, if it holds a command, and every
   // honest Session its command of honest_commands_; the server ticks once every
-  // command sent has arrived, or kStepPatience has passed, and everyone is told
-  // of the tick. Returns the server's.
+  // command sent has arrived, as AwaitArrival waits, and everyone is told of
+  // the tick. Returns the server's, or nothing once the test has failed fatally.
   augusta::simulation::TickResult Play(const protocol::CommandsWire& message = {}) {
-    std::vector<augusta::host::SessionId> sending;
+    if (HasFatalFailure()) {
+      return {};
+    }
+    // Before the Match has settled, the adversary may not have been told of a tick yet.
+    const auto told = adversary_.NewestState();
+    const std::string next_tick =
+        told.has_value() ? "tick " + std::to_string(told->tick + 1) : "the first tick it is told of";
+    // Who sent a command for the next tick: the adversary, or the honest Session of that index.
+    std::vector<std::optional<std::size_t>> sending;
     if (!message.commands.empty()) {
       adversary_.Send(message);
-      sending.push_back(*adversary_.GetSessionId());
+      sending.emplace_back(std::nullopt);
     }
     for (std::size_t i = 0; i < sessions_.size(); ++i) {
       Session& session = *sessions_[i];
       if (session.GetServerView()->GetPhase() == Phase::kMatch && session.GetServerView()->OwnAlive()) {
-        sending.push_back(session.GetServerView()->accepted->session);
+        sending.emplace_back(i);
       }
       states_[&session] = session.Tick(honest_commands_.at(i), kFixedTick);
     }
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      adversary_.Serve();
-      return std::chrono::steady_clock::now() >= give_up ||
-             std::ranges::all_of(sending,
-                                 [&](augusta::host::SessionId session) { return host_.QueuedCommands(session) > 0; });
-    });
+    const auto missing = [&]() -> std::optional<std::string> {
+      for (const std::optional<std::size_t>& sender : sending) {
+        const augusta::host::SessionId session =
+            sender.has_value() ? sessions_[*sender]->GetServerView()->accepted->session : *adversary_.GetSessionId();
+        if (host_.QueuedCommands(session) == 0) {
+          std::ostringstream named;
+          named << "the command of "
+                << (sender.has_value() ? "honest client " + std::to_string(*sender) : "the adversary") << " (Session "
+                << session << ") never reached the server, for " << next_tick;
+          return named.str();
+        }
+      }
+      return std::nullopt;
+    };
+    if (!AwaitArrival(missing, [&] { adversary_.Serve(); })) {
+      return {};
+    }
     augusta::simulation::TickResult result = host_.Tick(kFixedTick);
-    Deliver(result.state.tick);
+    if (!Deliver(result.state.tick)) {
+      return {};
+    }
     const std::vector<Shot> taken = sessions_.front()->TakeShots(*sessions_.front()->GetServerView());
     told_shots_.insert(told_shots_.end(), taken.begin(), taken.end());
     return result;
@@ -5808,20 +5879,25 @@ class AdversaryMatch : public LoopbackMatch {
 
  private:
   // Runs the network until the adversary and every honest Session have been
-  // told of tick, or kStepPatience has passed.
-  void Deliver(Tick tick) {
-    const auto give_up = std::chrono::steady_clock::now() + kStepPatience;
-    const auto told = [&] {
+  // told of tick, as AwaitArrival waits; returns whether Play may go on.
+  bool Deliver(Tick tick) {
+    const auto untold = [&]() -> std::optional<std::string> {
+      std::ostringstream named;
       const auto newest = adversary_.NewestState();
-      return newest.has_value() && newest->tick >= tick && std::ranges::all_of(sessions_, [&](const auto& session) {
-               const auto state = session->GetServerView()->authoritative;
-               return state.has_value() && state->tick >= tick;
-             });
+      if (!newest.has_value() || newest->tick < tick) {
+        named << "the adversary was never told of tick " << tick;
+        return named.str();
+      }
+      for (std::size_t i = 0; i < sessions_.size(); ++i) {
+        const auto state = sessions_[i]->GetServerView()->authoritative;
+        if (!state.has_value() || state->tick < tick) {
+          named << "honest client " << i << " was never told of tick " << tick;
+          return named.str();
+        }
+      }
+      return std::nullopt;
     };
-    ExchangeUntil(host_, Pointers(sessions_), [&] {
-      adversary_.Serve();
-      return told() || std::chrono::steady_clock::now() >= give_up;
-    });
+    return AwaitArrival(untold, [&] { adversary_.Serve(); });
   }
 
   // Every Shot the first honest Session has been told of.
