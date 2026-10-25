@@ -181,8 +181,6 @@ class AimTest : public ::testing::Test {
   SkeletonPose PoseAt(Stance stance, float pitch, bool ads = false, Stance previous = Stance::kStanding,
                       std::uint8_t progress = static_cast<std::uint8_t>(augusta::physics::kStanceProgressSteps)) {
     BodyState body;
-    body.position = Vec3(0.0F);
-    body.velocity = Vec3(0.0F);
     body.stance = stance;
     body.previous_stance = previous;
     body.stance_progress = progress;
