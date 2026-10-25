@@ -12,6 +12,7 @@
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/pose.h"
 #include "augusta/tick.h"
 
 /// \file
@@ -146,10 +147,13 @@ struct Aim {
   bool ads = false;
 };
 
-/// One remote player's body as shown this frame: position, velocity and the
-/// view's pitch linearly interpolated between the two surrounding updates, and
-/// facing along the shorter arc between them (math::LerpAngle, as the server
-/// poses its hitboxes, ADR-0044); stance and ADS (discrete states, not
+/// One remote player's body as shown this frame, with everything its Hitbox
+/// pose follows from (PoseInputOf): position, velocity and the view's pitch
+/// linearly interpolated between the two surrounding updates, facing along the
+/// shorter arc between them (math::LerpAngle, as the server poses its hitboxes,
+/// ADR-0044), the Stride the shorter way round its cycle, and the progress of a
+/// change of stance both updates are of; the stance, a change of stance
+/// otherwise, whether it is on the ground and ADS (discrete states, not
 /// numbers) taken from whichever of the two is nearer the sample point.
 struct RemoteBody {
   math::Vec3 position{};
@@ -161,7 +165,23 @@ struct RemoteBody {
   physics::Stance stance = physics::Stance::kStanding;
   /// Whether its player aims down sights.
   bool ads = false;
+  /// Where it is in its Stride (physics::BodyState::stride).
+  std::uint8_t stride = 0;
+  /// The stance its last change of stance left, and how far that change has
+  /// gone (physics::BodyState::previous_stance, stance_progress).
+  physics::Stance previous_stance = physics::Stance::kStanding;
+  std::uint8_t stance_progress = physics::kStanceProgressSteps;
+  /// Whether it is on the ground (physics::BodyState::grounded).
+  bool grounded = false;
 };
+
+/// What body's Hitbox pose follows from (ADR-0061): the Animation module poses
+/// it from this as the server poses the body from its Authoritative State, and
+/// the two agree within a tolerance, not bit for bit. Between two updates that
+/// differ in a discrete state (ADS, on the ground, or a change of stance that is
+/// not the same one in both), body is posed as the nearer update, where the
+/// server's Hitbox history judges the Joints between the two (ADR-0044).
+[[nodiscard]] animation::PoseInput PoseInputOf(const RemoteBody& body);
 
 /// One entity's interpolated body, as Sample returns it.
 struct RemotePlayer {

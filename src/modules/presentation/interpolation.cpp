@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -11,6 +12,7 @@
 
 #include "augusta/math.h"
 #include "augusta/physics.h"
+#include "augusta/pose.h"
 #include "augusta/tick.h"
 
 namespace augusta::presentation {
@@ -28,7 +30,37 @@ RemoteBody AsRemote(const physics::BodyState& body, const Aim& aim) {
                     .yaw = aim.yaw,
                     .pitch = aim.pitch,
                     .stance = body.stance,
-                    .ads = aim.ads};
+                    .ads = aim.ads,
+                    .stride = body.stride,
+                    .previous_stance = body.previous_stance,
+                    .stance_progress = body.stance_progress,
+                    .grounded = body.grounded};
+}
+
+// The Stride t of the way from from to to, the shorter way round its cycle.
+std::uint8_t LerpStride(std::uint8_t from, std::uint8_t to, float t) {
+  constexpr int kHalfCycle = physics::kStrideSteps / 2;
+  // How far on to is from from, from -kHalfCycle to kHalfCycle - 1 steps.
+  const int on = ((to - from + kHalfCycle + physics::kStrideSteps) % physics::kStrideSteps) - kHalfCycle;
+  const auto moved = static_cast<int>(std::lround(static_cast<float>(on) * t));
+  return static_cast<std::uint8_t>((from + moved + physics::kStrideSteps) % physics::kStrideSteps);
+}
+
+// The body t of the way from earlier to later, each with where its player
+// aimed: what RemoteBody says moves between them, the rest the nearer's.
+RemoteBody Between(const physics::BodyState& earlier, const Aim& earlier_aim, const physics::BodyState& later,
+                   const Aim& later_aim, float t) {
+  RemoteBody body = t < kMidpointFraction ? AsRemote(earlier, earlier_aim) : AsRemote(later, later_aim);
+  body.position = math::Lerp(earlier.position, later.position, t);
+  body.velocity = math::Lerp(earlier.velocity, later.velocity, t);
+  body.yaw = math::LerpAngle(earlier_aim.yaw, later_aim.yaw, t);
+  body.pitch = std::lerp(earlier_aim.pitch, later_aim.pitch, t);
+  body.stride = LerpStride(earlier.stride, later.stride, t);
+  if (earlier.stance == later.stance && earlier.previous_stance == later.previous_stance) {
+    body.stance_progress = static_cast<std::uint8_t>(std::lround(
+        std::lerp(static_cast<float>(earlier.stance_progress), static_cast<float>(later.stance_progress), t)));
+  }
+  return body;
 }
 
 }  // namespace
@@ -75,6 +107,18 @@ SeenTime SeenTimeAt(double sample_time, double tick_duration, tick::Tick oldest_
       std::clamp(sample_time / tick_duration, static_cast<double>(oldest_tick), static_cast<double>(newest_tick));
   const double whole = std::floor(ticks);
   return SeenTime{.tick = static_cast<tick::Tick>(whole), .fraction = static_cast<float>(ticks - whole)};
+}
+
+animation::PoseInput PoseInputOf(const RemoteBody& body) {
+  physics::BodyState state;
+  state.position = body.position;
+  state.velocity = body.velocity;
+  state.stance = body.stance;
+  state.stride = body.stride;
+  state.previous_stance = body.previous_stance;
+  state.stance_progress = body.stance_progress;
+  state.grounded = body.grounded;
+  return animation::PoseInput{.body = state, .yaw = body.yaw, .pitch = body.pitch, .ads = body.ads};
 }
 
 RemoteInterpolator::History::History(const Update& first) {
@@ -148,15 +192,7 @@ std::vector<RemotePlayer> RemoteInterpolator::Sample(double sample_time) const {
       const Update& earlier = updates[later - 1];
       const Update& next = updates[later];
       const auto t = static_cast<float>((sample_time - earlier.server_time) / (next.server_time - earlier.server_time));
-      const Update& nearer = t < kMidpointFraction ? earlier : next;
-      body = RemoteBody{
-          .position = math::Lerp(earlier.body.position, next.body.position, t),
-          .velocity = math::Lerp(earlier.body.velocity, next.body.velocity, t),
-          .yaw = math::LerpAngle(earlier.aim.yaw, next.aim.yaw, t),
-          .pitch = std::lerp(earlier.aim.pitch, next.aim.pitch, t),
-          .stance = nearer.body.stance,
-          .ads = nearer.aim.ads,
-      };
+      body = Between(earlier.body, earlier.aim, next.body, next.aim, t);
     }
     result.push_back(RemotePlayer{.entity = buffered.entity, .body = body, .character = {}});
   }

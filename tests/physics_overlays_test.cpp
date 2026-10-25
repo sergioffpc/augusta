@@ -225,7 +225,7 @@ TEST(HitboxesTest, AnotherPlayersHitboxesAreOutlinedWhereItsInterpolatedPoseStan
   ExpectNear(shapes.segments[3].from, Vec3(3.0F, 0.3F, -1.0F));
 }
 
-TEST(HitboxesTest, TheHitboxesAreTurnedAndLoweredAsTheServerPlacesThem) {
+TEST(HitboxesTest, TheHitboxesAreTurnedAsTheServerPlacesThem) {
   const RemoteBody body{.position = Vec3(-2.0F, 0.5F, 4.0F),
                         .velocity = Vec3(1.0F, 0.0F, 0.0F),
                         .yaw = std::numbers::pi_v<float> / 2.0F,
