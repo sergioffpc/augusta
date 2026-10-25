@@ -156,8 +156,9 @@ math::Vec3 LocalVelocity(const math::Vec3& velocity, float yaw) {
   return glm::angleAxis(-yaw, math::Vec3(0.0F, 1.0F, 0.0F)) * velocity;
 }
 
-float StrideLength(const CharacterClips& clips, const physics::BodyState& body, float yaw) {
-  return StrideLength(clips.Of(body.stance), LocalVelocity(body.velocity, yaw));
+physics::Pacing PacingOf(const CharacterClips& clips, const physics::BodyState& body, float yaw) {
+  return {.stride_length = StrideLength(clips.Of(body.stance), LocalVelocity(body.velocity, yaw)),
+          .transitions = clips.transitions};
 }
 
 }  // namespace augusta::animation

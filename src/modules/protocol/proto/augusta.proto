@@ -202,7 +202,8 @@ message Body {
   sint32 velocity_x = 5;
   sint32 velocity_y = 6;
   sint32 velocity_z = 7;
-  // Bits 0-1: the stance; bit 2: exhausted; bit 3: ADS; bit 4: grounded.
+  // Bits 0-1: the stance; bit 2: exhausted; bit 3: ADS; bit 4: grounded; bits
+  // 5-6: the previous stance, the one its last change of stance left.
   uint32 bits = 8;
   // On the stamina grid.
   uint32 stamina = 9;
@@ -212,6 +213,9 @@ message Body {
   sint32 pitch = 11;
   // Where it is in its Stride, a cycle of two steps, in 256ths of one: 0 to 255.
   uint32 stride = 12;
+  // How much of its last change of stance is still to go, in 255ths of it: 0 to
+  // 255, 0 once it is over, so a body not changing stance sends none.
+  uint32 stance_to_go = 13;
 }
 
 // Server to client: the Authoritative State of one server tick.

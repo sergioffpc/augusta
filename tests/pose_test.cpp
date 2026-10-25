@@ -139,6 +139,32 @@ TEST_F(PoseTest, ThePositionAndTheYawMoveAndTurnThePose) {
   ExpectNear(FootOf(posed, fixture::kWalkerLeftLeg), Vec3(5.0F - kFootAhead, kFootUp, 2.0F + fixture::kHipSide));
 }
 
+// Down from standing into a crouch, still: the Pelvis is held at each stance's
+// height by its idle, so the head moves down with the change's progress.
+TEST_F(PoseTest, ThroughAChangeOfStanceTheHeadMovesDownByItsProgress) {
+  BodyState body;
+  body.stance = Stance::kCrouching;
+  body.previous_stance = Stance::kStanding;
+  body.grounded = true;
+  SkeletonPose started;
+  SkeletonPose a_fifth;
+  SkeletonPose over;
+
+  body.stance_progress = 0;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, started);
+  body.stance_progress = 51;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, a_fifth);
+  body.stance_progress = augusta::physics::kStanceProgressSteps;
+  poser_.Pose(*clips_, skeleton_, PoseInput{.body = body}, over);
+
+  const float standing = fixture::kPelvisStanding + fixture::kHeadAbovePelvis;
+  const float crouched = fixture::kPelvisCrouching + fixture::kHeadAbovePelvis;
+  ExpectNear(HeadOf(started), Vec3(0.0F, standing, 0.0F));
+  // 51 steps of 255 are a fifth of the way down.
+  ExpectNear(HeadOf(a_fifth), Vec3(0.0F, standing + ((crouched - standing) / 5.0F), 0.0F));
+  ExpectNear(HeadOf(over), Vec3(0.0F, crouched, 0.0F));
+}
+
 // Posing is a function of what it is given alone: the same state posed again
 // after another gives the same pose.
 TEST_F(PoseTest, ThePoseOfAStateIsTheSameWhateverWasPosedBefore) {

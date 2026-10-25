@@ -139,7 +139,7 @@ TEST_F(LocomotionTest, ABodysStrideLengthIsItsStancesAtItsVelocityInTheSpaceItFa
   body.velocity = Vec3(-1.0F, 0.0F, 0.0F);
   body.stance = Stance::kCrouching;
 
-  EXPECT_NEAR(StrideLength(*clips_, body, yaw), fixture::kCrouchingForward, kTolerance);
+  EXPECT_NEAR(PacingOf(*clips_, body, yaw).stride_length, fixture::kCrouchingForward, kTolerance);
 }
 
 }  // namespace

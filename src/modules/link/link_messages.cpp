@@ -268,6 +268,8 @@ protocol::BodyStateWire ToWire(const physics::BodyState& body) {
                                          (body.grounded ? protocol::BodyStateWire::kGrounded : 0U)),
       .stance = ToWire(body.stance),
       .stride = body.stride,
+      .previous_stance = ToWire(body.previous_stance),
+      .stance_progress = body.stance_progress,
   };
 }
 
@@ -280,6 +282,8 @@ physics::BodyState FromWire(const protocol::BodyStateWire& body) {
   result.exhausted = (body.flags & protocol::BodyStateWire::kExhausted) != 0;
   result.grounded = (body.flags & protocol::BodyStateWire::kGrounded) != 0;
   result.stride = body.stride;
+  result.previous_stance = FromWire(body.previous_stance);
+  result.stance_progress = body.stance_progress;
   return result;
 }
 

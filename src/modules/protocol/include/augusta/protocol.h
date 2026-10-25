@@ -168,6 +168,13 @@ struct BodyStateWire {
   StanceWire stance = StanceWire::kStanding;
   /// Where the body is in its Stride, a cycle of two steps, in 256ths of one.
   std::uint8_t stride = 0;
+  /// The stance its last change of stance left, and how far that change has
+  /// gone, in 255ths of it: 255 is over.
+  StanceWire previous_stance = StanceWire::kStanding;
+  std::uint8_t stance_progress = kStanceProgressOver;
+
+  /// stance_progress of a change of stance that is over.
+  static constexpr std::uint8_t kStanceProgressOver = 255;
 
   bool operator==(const BodyStateWire&) const = default;
 };

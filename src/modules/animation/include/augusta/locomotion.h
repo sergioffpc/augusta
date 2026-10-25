@@ -58,11 +58,11 @@ struct LocomotionBlend {
 /// forward Clip's, so a body starting to move from rest advances its Stride.
 [[nodiscard]] float StrideLength(const StanceClips& clips, const math::Vec3& local_velocity);
 
-/// The stride length Movement steps body by (physics::World::Step): in its
+/// What Movement steps body by (physics::World::Step): the stride length in its
 /// stance's blend space of clips, at its velocity in the space of yaw, where it
-/// faces. body is as the last tick left it, so its velocity is the one its pose
-/// last showed.
-[[nodiscard]] float StrideLength(const CharacterClips& clips, const physics::BodyState& body, float yaw);
+/// faces, and clips' transition durations. body is as the last tick left it, so
+/// its velocity is the one its pose last showed.
+[[nodiscard]] physics::Pacing PacingOf(const CharacterClips& clips, const physics::BodyState& body, float yaw);
 
 }  // namespace augusta::animation
 

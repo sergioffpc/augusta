@@ -57,13 +57,17 @@ int StrideDistance(std::uint8_t a, std::uint8_t b) {
 
 // Position is what the player sees, but a stance, an exhaustion or a stamina
 // that differs changes what the next commands do, so those count as well; and a
-// Stride or a grounded flag, which pose the body every side sees.
+// Stride, a grounded flag or a change of stance's progress, which pose the body
+// every side sees. The progress advances by whole steps of time alone, so any
+// difference is a misprediction, never rounding.
 bool BodyNeedsCorrection(const physics::BodyState& authoritative, const physics::BodyState& predicted) {
   return math::Length(authoritative.position - predicted.position) >= kPositionTolerance ||
          authoritative.stance != predicted.stance || authoritative.exhausted != predicted.exhausted ||
          authoritative.grounded != predicted.grounded ||
          std::abs(authoritative.stamina - predicted.stamina) >= kStaminaTolerance ||
-         StrideDistance(authoritative.stride, predicted.stride) > kStrideTolerance;
+         StrideDistance(authoritative.stride, predicted.stride) > kStrideTolerance ||
+         authoritative.previous_stance != predicted.previous_stance ||
+         authoritative.stance_progress != predicted.stance_progress;
 }
 
 enum PhaseIndex : std::size_t {
@@ -192,13 +196,14 @@ struct World::Impl {
     tick_state.local_body = Move(tick_state.local_body, tick_command, delta_time);
   }
 
-  // Steps the local body, which body is the state of, by command, its Stride by
-  // the stride length at body's stance and velocity in the space of command's
-  // yaw on its grid: what SimulationWorld's Movement steps it by.
+  // Steps the local body, which body is the state of, by command, paced by its
+  // Clips (its Stride by the stride length at body's stance and velocity in the
+  // space of command's yaw on its grid, a change of stance by its transition
+  // duration): what SimulationWorld's Movement steps it by.
   physics::BodyState Move(const physics::BodyState& body, const command::Command& command, float delta_time) {
-    const float stride_length =
-        clips != nullptr ? animation::StrideLength(*clips, body, math::SnapAngle(command.yaw)) : 0.0F;
-    return physics.Step(local_body, command.movement, delta_time, stride_length);
+    const physics::Pacing pacing =
+        clips != nullptr ? animation::PacingOf(*clips, body, math::SnapAngle(command.yaw)) : physics::Pacing{};
+    return physics.Step(local_body, command.movement, delta_time, pacing);
   }
 
   void OnWeaponHandling(float delta_time) {

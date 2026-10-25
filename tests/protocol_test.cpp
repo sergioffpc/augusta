@@ -1133,6 +1133,41 @@ TEST(ProtocolTest, ABodysStrideBeyondAByteIsRefused) {
   EXPECT_EQ(Decode(OneBody(VarintField(12, 256))).error(), DecodeError::kOutOfRange);
 }
 
+// A body's change of stance travels as its previous stance and one byte of
+// progress (ADR-0038, ADR-0066), the progress over its whole range.
+TEST(ProtocolTest, ABodysChangeOfStanceRoundTripsAtBothEndsOfItsProgress) {
+  AuthoritativeStateWire sent;
+  EntityStateWire started = BodyAt(1, 1.0F);
+  started.body.stance = StanceWire::kCrouching;
+  started.body.previous_stance = StanceWire::kStanding;
+  started.body.stance_progress = 0;
+  EntityStateWire over = BodyAt(2, 2.0F);
+  over.body.previous_stance = StanceWire::kProne;
+  over.body.stance_progress = 255;
+  EntityStateWire between = BodyAt(3, 3.0F);
+  between.body.stance = StanceWire::kProne;
+  between.body.previous_stance = StanceWire::kCrouching;
+  between.body.stance_progress = 77;
+  sent.bodies = {started, over, between};
+
+  const auto received = std::get<AuthoritativeStateWire>(RoundTrip(sent));
+
+  ASSERT_EQ(received.bodies.size(), 3U);
+  EXPECT_EQ(received.bodies[0].body, started.body);
+  EXPECT_EQ(received.bodies[1].body, over.body);
+  EXPECT_EQ(received.bodies[2].body, between.body);
+}
+
+// The progress travels as what is still to go of the change, so a body whose
+// change is over sends none; no count is beyond a byte, so one beyond is
+// refused (ADR-0038).
+TEST(ProtocolTest, ABodysStanceProgressTravelsAsTheByteStillToGo) {
+  EXPECT_EQ(BodyOf(OneBody({})).body.stance_progress, BodyStateWire::kStanceProgressOver);
+  EXPECT_EQ(BodyOf(OneBody(VarintField(13, 255))).body.stance_progress, 0);
+  EXPECT_EQ(BodyOf(OneBody(VarintField(13, 55))).body.stance_progress, 200);
+  EXPECT_EQ(Decode(OneBody(VarintField(13, 256))).error(), DecodeError::kOutOfRange);
+}
+
 // Each Encode builds its message on an arena local to the call, whose first
 // block is on the stack, so the payload is its one allocation (ADR-0007).
 TEST(ProtocolTest, AnAuthoritativeStateOfAFullMatchIsEncodedInOneAllocation) {
@@ -1370,9 +1405,22 @@ TEST(ProtocolTest, ABodysGroundedFlagIsTheBitAboveItsAdsFlag) {
   EXPECT_EQ(all.body.flags, BodyStateWire::kExhausted | BodyStateWire::kAds | BodyStateWire::kGrounded);
 }
 
+// The previous stance in bits 5-6, numbered as the stance is (ADR-0038).
+TEST(ProtocolTest, ABodysPreviousStanceIsBitsFiveAndSix) {
+  const EntityStateWire from_prone = BodyOf(OneBody(VarintField(8, 0b100'0001)));
+  const EntityStateWire from_crouching = BodyOf(OneBody(VarintField(8, 0b010'0000)));
+
+  EXPECT_EQ(from_prone.body.stance, StanceWire::kCrouching);
+  EXPECT_EQ(from_prone.body.previous_stance, StanceWire::kProne);
+  EXPECT_EQ(from_crouching.body.stance, StanceWire::kStanding);
+  EXPECT_EQ(from_crouching.body.previous_stance, StanceWire::kCrouching);
+  EXPECT_EQ(Decode(OneBody(VarintField(8, 0b110'0000))).error(), DecodeError::kInvalidEnum);
+}
+
+// Every bit above the previous stance.
 // Requirements: NFR-12
-TEST(ProtocolTest, ABodysBitsAboveItsStanceAndFlagsAreReserved) {
-  for (unsigned bit = 5; bit < 32; ++bit) {
+TEST(ProtocolTest, ABodysBitsAboveItsStancesAndFlagsAreReserved) {
+  for (unsigned bit = 7; bit < 32; ++bit) {
     EXPECT_EQ(Decode(OneBody(VarintField(8, 1ULL << bit))).error(), DecodeError::kReservedBits) << bit;
   }
 }

@@ -74,6 +74,8 @@ BodyState Body(float x, Stance stance) {
   body.stance = stance;
   body.stamina = 0.4F;
   body.stride = static_cast<std::uint8_t>(200 + static_cast<int>(x));
+  body.previous_stance = stance == Stance::kProne ? Stance::kStanding : Stance::kProne;
+  body.stance_progress = static_cast<std::uint8_t>(100 + static_cast<int>(x));
   return body;
 }
 
@@ -86,6 +88,8 @@ void ExpectSameBody(const BodyState& actual, const BodyState& expected) {
   EXPECT_EQ(actual.exhausted, expected.exhausted);
   EXPECT_EQ(actual.grounded, expected.grounded);
   EXPECT_EQ(actual.stride, expected.stride);
+  EXPECT_EQ(actual.previous_stance, expected.previous_stance);
+  EXPECT_EQ(actual.stance_progress, expected.stance_progress);
 }
 
 TEST(LinkMessagesTest, ACommandTheClientSendsReachesTheServerUnchanged) {

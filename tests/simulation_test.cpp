@@ -283,6 +283,22 @@ TEST_F(SimulationTest, AStillPlayerHoldsItsStride) {
   EXPECT_EQ(Body(state, kAlice).stride, walked);
 }
 
+// Movement advances a player's change of stance over its Clips' transition
+// duration for the two stances: 0.25 s from standing to crouching, 17 steps of
+// 255 a tick, as PredictionWorld advances the local player's.
+TEST_F(SimulationTest, ACrouchingPlayersProgressAdvancesOverItsClipsTransitionDuration) {
+  world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), WithClips());
+  Run(kSettleTicks, {});
+  Command crouch{};
+  crouch.movement.desired_stance = Stance::kCrouching;
+
+  const State state = Run(4, {PlayerCommand{.entity = kAlice, .command = crouch}});
+
+  EXPECT_EQ(Body(state, kAlice).stance, Stance::kCrouching);
+  EXPECT_EQ(Body(state, kAlice).previous_stance, Stance::kStanding);
+  EXPECT_EQ(Body(state, kAlice).stance_progress, 4 * 17);
+}
+
 TEST_F(SimulationTest, APlayerWhoseCharacterHasNoClipsHoldsItsStride) {
   world_.AddPlayer(kAlice, Vec3(0.0F, 0.0F, 0.0F), kCharacter);
   Run(kSettleTicks, {});
@@ -1644,33 +1660,34 @@ TEST_F(AnimatedHitTest, AShotAtAStandingHeadsHeightHitsAStandingPlayerAndMissesA
   EXPECT_EQ(crouched_head[0].part, BodyPart::kHead);
 }
 
-// Bob crouches on one tick, his Pelvis down from 1 m to 0.6 m. Halfway between
-// the tick before and that one, Lag compensation interpolates his posed Joints
-// (ADR-0044): his Pelvis 0.8 m up, his head 1.4 m to 1.7 m, below where it was
-// standing and above where it is crouched.
+// Bob crouches, his Pelvis going down from 1 m to 0.6 m over the Walker's
+// 0.25 s from standing to crouching: 17 steps of progress a tick, 119 of 255
+// on the 7th tick and 136 on the 8th. A Seen time halfway between those two
+// ticks is judged against Joints Lag compensation interpolates between them
+// (ADR-0044), the change exactly halfway: his Pelvis 0.8 m up, his head 1.4 m
+// to 1.7 m and his torso 0.8 m to 1.4 m. A Shot at 1.55 m, which would hit his
+// standing torso and miss his crouched head, hits his head there; one at
+// 1.8 m, his standing head, misses.
 // Requirements: US-11, NFR-02
-TEST_F(AnimatedHitTest, ASeenTimeBetweenTwoStancesIsJudgedAgainstTheJointsBetweenThem) {
+TEST_F(AnimatedHitTest, HalfwayThroughAChangeOfStanceAShotHitsTheBodyHalfwayDown) {
   bob_.movement.desired_stance = Stance::kCrouching;
-  augusta::tick::Tick crouched = 0;
-  for (int i = 0; i < kSettleTicks && crouched == 0; ++i) {
+  augusta::tick::Tick past_halfway = 0;
+  for (int i = 0; i < kSettleTicks && past_halfway == 0; ++i) {
     const State state = Tick(Command{});
-    if (Entity(state, kBob).body.stance == Stance::kCrouching) {
-      crouched = state.tick;
+    const auto& body = Entity(state, kBob).body;
+    if (body.stance == Stance::kCrouching && body.stance_progress >= 128) {
+      ASSERT_EQ(body.stance_progress, 136);
+      past_halfway = state.tick;
     }
   }
-  ASSERT_NE(crouched, 0U);
-  const Vec3 standing_head(0.0F, 1.8F, 0.0F);
-  const Vec3 halfway_head(0.0F, 1.45F, 0.0F);
+  ASSERT_NE(past_halfway, 0U);
 
-  const std::vector<Hit> standing = ShootAt(standing_head, crouched - 1, 0.0F);
-  const std::vector<Hit> halfway_standing = ShootAt(standing_head, crouched - 1, 0.5F);
-  const std::vector<Hit> halfway = ShootAt(halfway_head, crouched - 1, 0.5F);
+  const std::vector<Hit> between = ShootAt(Vec3(0.0F, 1.55F, 0.0F), past_halfway - 1, 0.5F);
+  const std::vector<Hit> standing_head = ShootAt(Vec3(0.0F, 1.8F, 0.0F), past_halfway - 1, 0.5F);
 
-  ASSERT_EQ(standing.size(), 1U);
-  EXPECT_EQ(standing[0].part, BodyPart::kHead);
-  EXPECT_TRUE(halfway_standing.empty());
-  ASSERT_EQ(halfway.size(), 1U);
-  EXPECT_EQ(halfway[0].part, BodyPart::kHead);
+  ASSERT_EQ(between.size(), 1U);
+  EXPECT_EQ(between[0].part, BodyPart::kHead);
+  EXPECT_TRUE(standing_head.empty());
 }
 
 // Bob walks ahead at his forward walk's speed, facing -X, so his legs swing

@@ -8,8 +8,8 @@ Orchestrates PredictionWorld: the client's ECS pipeline, run once per fixed tick
 on the Prediction thread, predicting the local player only. It reconciles
 against the server's state by replaying the unacknowledged commands
 (`augusta/reconciliation.h`) and emits an immutable Prediction State each tick.
-It advances the local player's Stride by its Character's Clips, as
-SimulationWorld does, so Reconciliation corrects a Stride as it corrects a
+It advances the local player's Stride and change of stance by its Character's
+Clips, as SimulationWorld does, so Reconciliation corrects them as it corrects a
 position. It also holds the one definition of a correction: it adds up, from the
 Prediction States' running totals, how often and how far Reconciliation moved
 the body and how often it corrected the rifle, for the harness's netcode

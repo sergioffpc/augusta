@@ -168,17 +168,7 @@ const StanceClips& CharacterClips::Of(physics::Stance stance) const {
 }
 
 float CharacterClips::TransitionDuration(physics::Stance from, physics::Stance to) const {
-  using physics::Stance;
-  if (from == to) {
-    return 0.0F;
-  }
-  if (from != Stance::kProne && to != Stance::kProne) {
-    return transitions.standing_crouching;
-  }
-  if (from != Stance::kCrouching && to != Stance::kCrouching) {
-    return transitions.standing_prone;
-  }
-  return transitions.crouching_prone;
+  return physics::TransitionDuration(transitions, from, to);
 }
 
 std::string DescribeClipLoadError(const ClipLoadError& error) {
