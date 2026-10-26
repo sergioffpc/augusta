@@ -6,7 +6,7 @@
 
 #include "augusta/hardware.h"
 
-/// ile
+/// \file
 /// What QueryMachine asks the OS, private to the module: hardware_windows.cpp,
 /// hardware_linux.cpp or hardware_macos.cpp, the one the platform builds, asks
 /// it; hardware.cpp puts the answers together and describes them on every

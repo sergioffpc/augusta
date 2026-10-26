@@ -6,7 +6,7 @@
 
 /// \file
 /// Where a server bound to port 0 listens, private to the module:
-/// GameNetworkingSockets refuses port 0, so networking.cpp asks this for one.
+/// GameNetworkingSockets refuses port 0, so gns_adapter.cpp asks this for one.
 namespace augusta::networking {
 
 /// A UDP port no socket on this machine holds, as the OS picks for a socket
