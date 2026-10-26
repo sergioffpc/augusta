@@ -56,8 +56,9 @@ rifle's line of sight within a tolerance, which scales its recoil as ADS does; a
 VR Command's ADS flag is ignored.
 
 **A Muzzle in a wall fires into the wall.** The server tests the segment from
-the holding arm's shoulder joint to the Muzzle against the Map; if it is
-blocked, the round hits the Map where it is, and does not fly on.
+the holding arm's shoulder joint, the grandparent of the weapon socket's right
+hand, to the Muzzle against the Map; if it is blocked, the round hits the Map
+where the segment enters it, and does not fly on (ADR-0044).
 
 ## Considered Options
 

@@ -81,7 +81,10 @@ and shoulder it bends. The cooker writes it at
 `<character name>/Character/WeaponSocket` in both packs, its frame in its
 joint's rest space, and refuses a character without one, one bound to no joint
 or to one its skeleton lacks, and a left hand missing, unknown or without a
-parent and a grandparent, naming the socket's prim or the character's.
+parent and a grandparent, naming the socket's prim or the character's. The right
+hand's grandparent is the shoulder a Muzzle in a wall is found from (ADR-0044):
+loading a character's Clips refuses a right hand without a parent and a
+grandparent, naming it, as it refuses such a left hand.
 
 A character is hittable through its **hitboxes**, authored in its own stage
 under `Character`: each is geometry (a `UsdGeomMesh`, `Cube` or `Capsule`,

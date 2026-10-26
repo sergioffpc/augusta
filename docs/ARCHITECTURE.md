@@ -399,18 +399,18 @@ Authoritative State, its combat events included, and the Game policy actions
 taken on it, typed and validated in C++ (ADR-0022), which `host::Host` acts on
 after the tick.
 
-| Phase              | Category                      | Responsibility                                                                                                                                                           |
-| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CommandIngestion   | Mechanism                     | Applies validated client commands to this tick's entities                                                                                                                |
-| Movement           | Mechanism                     | PhysX integration, stamina, collision resolution (US-04, US-05)                                                                                                          |
-| Dynamics           | Mechanism                     | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop                           |
-| WeaponHandling     | Mechanism                     | Aim/ADS, fire, reload, recoil (US-06–US-09)                                                                                                                              |
-| Posing             | Mechanism                     | Evaluates every living player's Hitbox pose from its Clips (ADR-0061, ADR-0066); fires each round WeaponHandling fired from the rifle's Muzzle, zeroed (ADR-0064)        |
-| Ballistics         | Mechanism                     | Advances in-flight bullet trajectories (US-10)                                                                                                                           |
-| HitDetection       | Mechanism                     | Impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044); its test runs inside Ballistics's step, so it has no system of its own |
-| Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                                                     |
-| Scripts/Behaviours | Policy (Lua, sandboxed)       | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action                                                                           |
-| Commit             | Mechanism                     | Packages tick state into Authoritative State for Networking, and records the posed Joints in the Hitbox history (ADR-0044)                                               |
+| Phase              | Category                      | Responsibility                                                                                                                                                                                                |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CommandIngestion   | Mechanism                     | Applies validated client commands to this tick's entities                                                                                                                                                     |
+| Movement           | Mechanism                     | PhysX integration, stamina, collision resolution (US-04, US-05)                                                                                                                                               |
+| Dynamics           | Mechanism                     | One fixed-step PhysX `simulate()`: Props, grenades, explosion impulses; reports Prop contacts for Damage (ADR-0045). Added with the first Prop                                                                |
+| WeaponHandling     | Mechanism                     | Aim/ADS, fire, reload, recoil (US-06–US-09)                                                                                                                                                                   |
+| Posing             | Mechanism                     | Evaluates every living player's Hitbox pose from its Clips (ADR-0061, ADR-0066); fires each round WeaponHandling fired from the rifle's Muzzle, zeroed (ADR-0064), or into a wall the barrel is in (ADR-0044) |
+| Ballistics         | Mechanism                     | Advances in-flight bullet trajectories (US-10)                                                                                                                                                                |
+| HitDetection       | Mechanism                     | Impact point + body part against hitboxes as they were the Shooter's delay ago (US-11, ADR-0044); its test runs inside Ballistics's step, so it has no system of its own                                      |
+| Damage             | Mechanism (reads Data/Config) | Applies damage, marks death/spectator (US-12, US-13)                                                                                                                                                          |
+| Scripts/Behaviours | Policy (Lua, sandboxed)       | Win condition, Match end, spawn logic (US-14, US-03); a hook's answer leaves as a typed action                                                                                                                |
+| Commit             | Mechanism                     | Packages tick state into Authoritative State for Networking, and records the posed Joints in the Hitbox history (ADR-0044)                                                                                    |
 
 **Tooling** (offline, not shipped)
 

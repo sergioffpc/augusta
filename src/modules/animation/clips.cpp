@@ -200,6 +200,13 @@ std::expected<void, ClipLoadError> LoadStance(const assets::Pack& pack, std::str
       .and_then([&] { return required("ads", clips.ads); });
 }
 
+// Whether hand, a Joint of skeleton, has an arm: a parent, the elbow, and a
+// grandparent, the shoulder.
+bool HasAnArm(const assets::Skeleton& skeleton, std::uint32_t hand) {
+  const std::uint32_t elbow = skeleton.joints[hand].parent;
+  return elbow != assets::kJointNoParent && skeleton.joints[elbow].parent != assets::kJointNoParent;
+}
+
 // The Weapon socket of character, its Joints found by name in skeleton.
 std::expected<WeaponSocket, ClipLoadError> LoadWeaponSocket(const assets::Pack& pack, std::string_view character,
                                                             const assets::Skeleton& skeleton) {
@@ -215,9 +222,11 @@ std::expected<WeaponSocket, ClipLoadError> LoadWeaponSocket(const assets::Pack& 
   if (!left_hand) {
     return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kUnknownLeftHand, data->left_hand));
   }
-  const std::uint32_t elbow = skeleton.joints[*left_hand].parent;
-  if (elbow == assets::kJointNoParent || skeleton.joints[elbow].parent == assets::kJointNoParent) {
+  if (!HasAnArm(skeleton, *left_hand)) {
     return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kLeftHandHasNoArm, data->left_hand));
+  }
+  if (!HasAnArm(skeleton, *right_hand)) {
+    return std::unexpected(Naming(ClipPart::kWeaponSocket, ClipLoadCause::kRightHandHasNoArm, data->right_hand));
   }
   return WeaponSocket{.right_hand = *right_hand,
                       .frame = math::ToMat4(data->translation, data->rotation, math::Vec3(1.0F)),
@@ -268,6 +277,8 @@ std::string CauseOf(const ClipLoadError& error) {
       return std::format("names a left hand {} the character's skeleton lacks", error.joint);
     case ClipLoadCause::kLeftHandHasNoArm:
       return std::format("left hand {} has no arm: a parent and a grandparent", error.joint);
+    case ClipLoadCause::kRightHandHasNoArm:
+      return std::format("right hand {} has no arm: a parent and a grandparent", error.joint);
   }
   return "does not load";
 }

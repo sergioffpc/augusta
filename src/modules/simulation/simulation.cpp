@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -179,6 +180,24 @@ struct PlayerHit {
 float MaxShootersDelayTicks(std::uint8_t tick_rate_hz) {
   return std::chrono::duration<float>(kMaxShootersDelay).count() * static_cast<float>(tick_rate_hz);
 }
+
+// The shoulder of the arm that holds the rifle on socket: its right hand's
+// grandparent in skeleton, which LoadClips makes sure it has.
+std::uint32_t ShoulderOf(const assets::Skeleton& skeleton, const animation::WeaponSocket& socket) {
+  return skeleton.joints.at(skeleton.joints.at(socket.right_hand).parent).parent;
+}
+
+// direction as a view's yaw and pitch (command::ViewDirection's inverse).
+weapon::Heading HeadingOf(const math::Vec3& direction) {
+  const math::Vec3 along = math::Normalize(direction);
+  return weapon::Heading{.yaw = std::atan2(-along.x, -along.z), .pitch = std::asin(std::clamp(along.y, -1.0F, 1.0F))};
+}
+
+// A round's Shot whose barrel is in the Map, and where the barrel enters it.
+struct BarrelInTheMap {
+  Shot shot;
+  math::Vec3 entry{};
+};
 
 // The Shooter's delay (ADR-0044), in ticks, of a round fired on tick by
 // command: from the Seen time command reports to tick, and no more than
@@ -406,7 +425,7 @@ struct World::Impl {
   // Poses one player: its body where Movement has just put it, then its rifle
   // held in its hands, then the rifle's markers where its hand holds them,
   // turned by the Recoil offset WeaponHandling has just left it with; then fires
-  // the round WeaponHandling fired, if it fired one.
+  // the round WeaponHandling fired, if it fired one, from the arm that holds it.
   void OnPosing(float delta_time, const Player& player, const Body& body, const Facing& facing, const Eye& eye,
                 const Rifle& rifle, const CharacterSkeleton& skeleton, const Clips& clips, PosedJoints& posed,
                 Held& held) {
@@ -415,9 +434,10 @@ struct World::Impl {
         animation::HoldRifle(skeleton.skeleton, clips.clips->weapon_socket, rifle_markers, posed.posed);
     held.rifle = PlaceRifle(weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.state.recoil));
     if (rifle.fired) {
-      FireFromTheMuzzle(delta_time, player, *rifle.fired,
-                        weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.fired->recoil),
-                        body.state.position + physics::LowerToStance(eye.standing, body.state.stance));
+      FireFromTheMuzzle(
+          delta_time, player, *rifle.fired, weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.fired->recoil),
+          body.state.position + physics::LowerToStance(eye.standing, body.state.stance),
+          math::TranslationOf(posed.posed.world.at(ShoulderOf(skeleton.skeleton, clips.clips->weapon_socket))));
     }
   }
 
@@ -427,10 +447,15 @@ struct World::Impl {
   // sight from eye along that view at the rifle's zero range (ADR-0064). It
   // leaves from the Muzzle on the grid a Shot's origin travels on, a millimetre
   // at most from where it was aimed from, so the round fired is the one its
-  // clients are told of.
+  // clients are told of. A barrel in the Map, from shoulder to the Muzzle, fires
+  // the round into the Map instead (ADR-0044).
   void FireFromTheMuzzle(float delta_time, const Player& player, const FiredRound& round, const math::Mat4& hand,
-                         const math::Vec3& eye) {
+                         const math::Vec3& eye, const math::Vec3& shoulder) {
     const math::Vec3 muzzle = math::TranslationOf(weapon::PlaceMuzzle(hand, rifle_markers));
+    if (const std::optional<BarrelInTheMap> blocked = InTheMap(player.entity, shoulder, muzzle)) {
+      FireIntoTheMap(*blocked, round.shooters_delay);
+      return;
+    }
     const weapon::Heading heading = weapon::Zeroed(parameters.rifle, parameters.ammo.flight, delta_time, muzzle, eye,
                                                    weapon::Heading{.yaw = round.yaw, .pitch = round.pitch});
     const Shot shot{
@@ -440,6 +465,49 @@ struct World::Impl {
         .pitch = math::SnapAngle(heading.pitch),
     };
     Fire(shot, round.shooters_delay);
+  }
+
+  // The Shot of shooter's round when the barrel, from shoulder to muzzle, is in
+  // the Map, with where it enters it; nullopt when the barrel is clear
+  // (ADR-0044). Props are no part of it. The Shot leaves the shoulder toward the
+  // Muzzle, and the barrel is tested along it, on the grids it travels on, so a
+  // client's own Map raycast along the Shot stops where the round is put.
+  [[nodiscard]] std::optional<BarrelInTheMap> InTheMap(EntityId shooter, const math::Vec3& shoulder,
+                                                       const math::Vec3& muzzle) const {
+    // A Muzzle on the shoulder leaves no barrel to test, and no way to aim along it.
+    if (muzzle == shoulder) {
+      return std::nullopt;
+    }
+    const weapon::Heading heading = HeadingOf(muzzle - shoulder);
+    const Shot shot{
+        .shooter = shooter,
+        .origin = math::SnapPosition(shoulder),
+        .yaw = math::SnapAngle(heading.yaw),
+        .pitch = math::SnapAngle(heading.pitch),
+    };
+    const physics::MapRaycastHit hit = physics.RaycastMap(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
+                                                          math::Length(muzzle - shot.origin));
+    if (!hit.has_hit) {
+      return std::nullopt;
+    }
+    return BarrelInTheMap{.shot = shot, .entry = hit.point};
+  }
+
+  // Announces blocked's Shot in the tick's state, and its round on the Map where
+  // its barrel enters it, with no bullet to fly.
+  void FireIntoTheMap(const BarrelInTheMap& blocked, float delay) {
+    Announce(blocked.shot, delay);
+    committed.map_impacts.push_back(blocked.entry);
+#if AUGUSTA_DEBUG_TOOLS
+    if (judge_shots) {
+      shot_judgements.push_back(ShotJudgement{.shooter = blocked.shot.shooter,
+                                              .shot_tick = tick,
+                                              .shooters_delay = delay,
+                                              .struck = Struck::kMap,
+                                              .point = blocked.entry,
+                                              .entries = {}});
+    }
+#endif
   }
 
   // Poses skeleton by clips, the body's Clips, at its body's state and where it
@@ -457,12 +525,17 @@ struct World::Impl {
                      .sight = weapon::PlaceSight(hand, rifle_markers)};
   }
 
-  // Announces shot in the tick's state and puts its bullet in flight, to be
-  // judged against the players as they were delay ticks before each tick of it.
-  void Fire(const Shot& shot, float delay) {
+  // Announces shot in the tick's state, and its round's Shooter's delay of delay ticks.
+  void Announce(const Shot& shot, float delay) {
     committed.shots.push_back(shot);
     // As a fraction of the cap, so a delay held at it is the cap exactly.
     shooters_delays.push_back(delay / max_shooters_delay * std::chrono::duration<float>(kMaxShootersDelay).count());
+  }
+
+  // Announces shot in the tick's state and puts its bullet in flight, to be
+  // judged against the players as they were delay ticks before each tick of it.
+  void Fire(const Shot& shot, float delay) {
+    Announce(shot, delay);
     const ballistics::BulletHandle bullet = ballistics.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch),
                                                             parameters.rifle.muzzle_velocity, parameters.ammo.flight);
     [[maybe_unused]] const flecs::entity entity = ecs.entity().set<Bullet>(

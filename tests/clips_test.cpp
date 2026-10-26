@@ -79,12 +79,14 @@ const std::map<std::string, float, std::less<>> kRequiredRoles = {
 };
 
 // The Character's Skeleton, parents before children: its foot listed after its
-// spine, where ozz-animation keeps the foot (depth first) before it.
+// spine, where ozz-animation keeps the foot (depth first) before it, and a hand
+// on its spine, whose arm is the spine and the root.
 augusta::assets::Skeleton Soldier() {
   return {.joints = {{.name = "Root"},
                      {.name = "Root/LeftLeg", .parent = 0},
                      {.name = "Root/Spine", .parent = 0},
-                     {.name = "Root/LeftLeg/Foot", .parent = 1}},
+                     {.name = "Root/LeftLeg/Foot", .parent = 1},
+                     {.name = "Root/Spine/Hand", .parent = 2}},
           .rest_transforms = {}};
 }
 
@@ -145,10 +147,11 @@ AssetEntry ClipEntry(std::string_view role, float stride_length, std::vector<std
           .data = blob.value_or(std::vector<std::byte>{})};
 }
 
-// The Character's Weapon socket: on its spine, 10 cm ahead of it, its left hand
+// The Character's Weapon socket: on its hand, 10 cm ahead of it, its left hand
 // at its foot, whose leg is the arm.
-AssetEntry WeaponSocketEntry(std::string_view left_hand = "Root/LeftLeg/Foot") {
-  const auto blob = augusta::assets::EncodeWeaponSocketBlob({.right_hand = "Root/Spine",
+AssetEntry WeaponSocketEntry(std::string_view left_hand = "Root/LeftLeg/Foot",
+                             std::string_view right_hand = "Root/Spine/Hand") {
+  const auto blob = augusta::assets::EncodeWeaponSocketBlob({.right_hand = std::string(right_hand),
                                                              .translation = augusta::math::Vec3(0.0F, 0.0F, -0.1F),
                                                              .rotation = augusta::math::Quat(1.0F, 0.0F, 0.0F, 0.0F),
                                                              .left_hand = std::string(left_hand)});
@@ -225,7 +228,7 @@ TEST_F(ClipsTest, ACharactersClipsLoadByRoleWithTheirStrideLengths) {
   ASSERT_EQ(clips->Of(Stance::kStanding).forward.foot_contacts.size(), 2U);
   EXPECT_EQ(clips->Of(Stance::kStanding).forward.foot_contacts[1].foot, Foot::kRight);
   EXPECT_FLOAT_EQ(clips->Of(Stance::kProne).aim_up.animation.duration(), 1.0F);
-  EXPECT_EQ(clips->air.animation.num_tracks(), 4);
+  EXPECT_EQ(clips->air.animation.num_tracks(), 5);
 }
 
 TEST_F(ClipsTest, AnOptionalClipACharacterLacksIsNone) {
@@ -256,12 +259,12 @@ TEST_F(ClipsTest, EachJointOfTheAnimationSkeletonIsFoundInTheCharactersSkeleton)
   const auto clips = Load();
 
   ASSERT_TRUE(clips.has_value()) << augusta::animation::DescribeClipLoadError(clips.error());
-  ASSERT_EQ(clips->joints.size(), 4U);
+  ASSERT_EQ(clips->joints.size(), 5U);
   const auto names = clips->skeleton.joint_names();
   for (std::size_t joint = 0; joint < clips->joints.size(); ++joint) {
     EXPECT_EQ(Soldier().joints[clips->joints[joint]].name, names[joint]);
   }
-  EXPECT_EQ(clips->joints, (std::vector<std::uint32_t>{0, 1, 3, 2}));
+  EXPECT_EQ(clips->joints, (std::vector<std::uint32_t>{0, 1, 3, 2, 4}));
 }
 
 TEST_F(ClipsTest, AMissingRequiredClipIsRefusedNamingIt) {
@@ -295,9 +298,9 @@ TEST_F(ClipsTest, AClipOfAnotherSkeletonIsRefusedNamingIt) {
   EXPECT_EQ(clips.error().role, "prone/idle");
   EXPECT_EQ(clips.error().cause, ClipLoadCause::kTrackCountMismatch);
   EXPECT_EQ(clips.error().count, 3U);
-  EXPECT_EQ(clips.error().expected, 4U);
+  EXPECT_EQ(clips.error().expected, 5U);
   EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
-            "clip prone/idle: has 3 tracks for a skeleton of 4 joints");
+            "clip prone/idle: has 3 tracks for a skeleton of 5 joints");
 }
 
 TEST_F(ClipsTest, ACharacterWithoutAnAnimationSkeletonIsRefused) {
@@ -329,13 +332,13 @@ TEST_F(ClipsTest, AnAnimationSkeletonWhoseJointsAreNotTheCharactersIsRefused) {
             "animation skeleton: has a joint Root/Neck the character's skeleton lacks");
 }
 
-// The socket's Joints by their index in the Character's Skeleton: the spine
-// third, the foot fourth.
+// The socket's Joints by their index in the Character's Skeleton: the hand
+// fifth, the foot fourth.
 TEST_F(ClipsTest, TheWeaponSocketLoadsOnItsJointWithTheLeftHand) {
   const auto clips = Load();
 
   ASSERT_TRUE(clips.has_value());
-  EXPECT_EQ(clips->weapon_socket.right_hand, 2U);
+  EXPECT_EQ(clips->weapon_socket.right_hand, 4U);
   EXPECT_EQ(clips->weapon_socket.left_hand, 3U);
   EXPECT_EQ(augusta::math::TranslationOf(clips->weapon_socket.frame), augusta::math::Vec3(0.0F, 0.0F, -0.1F));
 }
@@ -363,6 +366,22 @@ TEST_F(ClipsTest, ALeftHandWithoutAnArmIsRefused) {
   EXPECT_EQ(clips.error().joint, "Root/LeftLeg");
   EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
             "weapon socket: left hand Root/LeftLeg has no arm: a parent and a grandparent");
+}
+
+// The spine's parent is the root, which has none: no shoulder for the segment
+// to the Muzzle a Muzzle in a wall is found by (ADR-0044).
+TEST_F(ClipsTest, ARightHandWithoutAnArmIsRefused) {
+  Remove(augusta::assets::CharacterWeaponSocketPath(kCharacter));
+  entries_.push_back(WeaponSocketEntry("Root/LeftLeg/Foot", "Root/Spine"));
+
+  const auto clips = Load();
+
+  ASSERT_FALSE(clips.has_value());
+  EXPECT_EQ(clips.error().part, ClipPart::kWeaponSocket);
+  EXPECT_EQ(clips.error().cause, ClipLoadCause::kRightHandHasNoArm);
+  EXPECT_EQ(clips.error().joint, "Root/Spine");
+  EXPECT_EQ(augusta::animation::DescribeClipLoadError(clips.error()),
+            "weapon socket: right hand Root/Spine has no arm: a parent and a grandparent");
 }
 
 TEST_F(ClipsTest, ACharacterWithoutStanceTransitionsIsRefused) {

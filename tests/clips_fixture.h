@@ -6,7 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -33,8 +35,9 @@
 // pose, each locomotion Clip with the stride length and duration the test gives
 // it, and Rig, which arms a Skeleton for them; the Walker, whose Clips move its
 // Joints, for a test of a pose; and the Holder, whose Aim offset and ADS grip
-// bend and raise it while it holds the rifle. Every one has a weapon socket and
-// the left arm it reaches the rifle with, as every Character does.
+// bend and raise it while it holds the rifle. Every one has a weapon socket on a
+// right hand with an arm, and the left arm it reaches the rifle with, as every
+// Character does.
 namespace augusta::clips_fixture {
 
 // Standing locomotion strides, one second each, so each Clip moves as fast as
@@ -150,35 +153,55 @@ inline constexpr float kRigBone = 0.5F;
 // skeleton's root space at rest: 0.3 m ahead of its root, so the left hand
 // reaches across to it.
 inline constexpr float kRigGripAhead = 0.3F;
+// The step Rig's right shoulder is placed on, near the Grip: one a 16-bit
+// float holds exactly, at any height a shoulder is.
+inline constexpr float kRigFold = 1.0F / 64.0F;
+
+// Appends to skeleton an arm under its first Joint, its Joints named side (Left
+// or Right) Arm, Forearm and Hand, each at its translation from the one above;
+// returns its hand's Joint.
+inline std::uint32_t RigArm(assets::Skeleton& skeleton, const std::string& side,
+                            const std::array<math::Vec3, 3>& translations) {
+  const math::Quat none(1.0F, 0.0F, 0.0F, 0.0F);
+  std::string name = skeleton.joints.front().name;
+  std::uint32_t parent = 0;
+  for (std::size_t bone = 0; bone < translations.size(); ++bone) {
+    name += "/" + side + std::array<const char*, 3>{"Arm", "Forearm", "Hand"}.at(bone);
+    const math::Mat4 local = math::ToMat4(translations.at(bone), none, math::Vec3(1.0F));
+    skeleton.rest_transforms.push_back(skeleton.rest_transforms.at(parent) * local);
+    skeleton.joints.push_back({.name = name, .parent = parent, .translation = translations.at(bone)});
+    parent = static_cast<std::uint32_t>(skeleton.joints.size() - 1);
+  }
+  return parent;
+}
 
 // Rigs skeleton, a test Character's that has no Clips of its own, to hold a
 // rifle: appends a left arm (LeftArm, LeftForearm, LeftHand) under its first
 // Joint, and returns RestClips of it with the weapon socket on right_hand,
 // holding the rifle's Grip at grip, in root space at rest, unturned: the rifle
-// points ahead, along a level view, wherever the view looks.
-inline std::shared_ptr<const animation::CharacterClips> Rig(assets::Skeleton& skeleton, std::uint32_t right_hand = 0,
+// points ahead, along a level view, wherever the view looks. Without a
+// right_hand, it appends a right arm too (RightArm, RightForearm, RightHand),
+// folded up within kRigFold of grip, and the socket is on its hand: the
+// shoulder a Muzzle in a wall is found from (ADR-0044) is all but on the Grip.
+// Folded there since ozz-animation keeps a Clip's translations to 16 bits and
+// its rotations near enough, turning each Joint by some 4e-5 rad: a bone
+// between the shoulder and the Grip would move the Grip off grip by its length
+// times that, and the shoulder anywhere but on a multiple of kRigFold would.
+inline std::shared_ptr<const animation::CharacterClips> Rig(assets::Skeleton& skeleton,
+                                                            std::optional<std::uint32_t> right_hand = std::nullopt,
                                                             const math::Vec3& grip = math::Vec3(0.0F, 0.0F,
                                                                                                 -kRigGripAhead)) {
-  const std::string& root = skeleton.joints.front().name;
-  const math::Quat none(1.0F, 0.0F, 0.0F, 0.0F);
-  const std::array<assets::JointData, 3> arm{{
-      {.name = root + "/LeftArm", .parent = 0, .translation = math::Vec3(-kRigShoulderSide, kRigShoulderHeight, 0.0F)},
-      {.name = root + "/LeftArm/LeftForearm", .parent = 0, .translation = math::Vec3(0.0F, -kRigBone, 0.0F)},
-      {.name = root + "/LeftArm/LeftForearm/LeftHand", .parent = 0, .translation = math::Vec3(0.0F, -kRigBone, 0.0F)},
-  }};
-  for (std::size_t bone = 0; bone < arm.size(); ++bone) {
-    assets::JointData joint = arm.at(bone);
-    if (bone > 0) {
-      joint.parent = static_cast<std::uint32_t>(skeleton.joints.size() - 1);
-    }
-    const math::Mat4 local = math::ToMat4(joint.translation, none, math::Vec3(1.0F));
-    skeleton.rest_transforms.push_back(skeleton.rest_transforms.at(joint.parent) * local);
-    skeleton.joints.push_back(std::move(joint));
-  }
+  const std::uint32_t left_hand = RigArm(skeleton, "Left",
+                                         {math::Vec3(-kRigShoulderSide, kRigShoulderHeight, 0.0F),
+                                          math::Vec3(0.0F, -kRigBone, 0.0F), math::Vec3(0.0F, -kRigBone, 0.0F)});
+  const math::Vec3 shoulder = glm::round(grip / kRigFold) * kRigFold;
+  const std::uint32_t holding =
+      right_hand ? *right_hand : RigArm(skeleton, "Right", {shoulder, math::Vec3(0.0F), math::Vec3(0.0F)});
   const animation::WeaponSocket socket{
-      .right_hand = right_hand,
-      .frame = math::Inverse(skeleton.rest_transforms.at(right_hand)) * math::ToMat4(grip, none, math::Vec3(1.0F)),
-      .left_hand = static_cast<std::uint32_t>(skeleton.joints.size() - 1)};
+      .right_hand = holding,
+      .frame = math::Inverse(skeleton.rest_transforms.at(holding)) *
+               math::ToMat4(grip, math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)),
+      .left_hand = left_hand};
   return RestClips(skeleton, socket);
 }
 
@@ -190,11 +213,11 @@ inline std::shared_ptr<const animation::CharacterClips> TestClips() {
 }
 
 // The Walker: a Character whose Clips move its Joints. Its Skeleton is a Pelvis
-// above its Root, a Head above the Pelvis, two legs hanging from it and a left
-// arm, as Rig hangs one, from a shoulder to its left; its Clips hold the Pelvis
-// at its stance's height and swing the legs about the Pelvis's X axis as it
-// walks, so a test can say where a Shot finds its head or a leg. Its weapon
-// socket is on its Pelvis, the Grip kRigGripAhead ahead of its right hip.
+// above its Root, a Head above the Pelvis, two legs hanging from it and two
+// arms, as Rig hangs them, from a shoulder to each side; its Clips hold the
+// Pelvis at its stance's height and swing the legs about the Pelvis's X axis as
+// it walks, so a test can say where a Shot finds its head or a leg. Its weapon
+// socket is on its right hand, the Grip kRigGripAhead ahead of its right hip.
 inline constexpr float kPelvisStanding = 1.0F;
 inline constexpr float kPelvisCrouching = 0.6F;
 inline constexpr float kPelvisProne = 0.25F;
@@ -202,7 +225,7 @@ inline constexpr float kPelvisProne = 0.25F;
 // the Walker's left is -X, as it faces -Z.
 inline constexpr float kHeadAbovePelvis = 0.6F;
 inline constexpr float kHipSide = 0.15F;
-// Where the Walker's left shoulder is above its Pelvis.
+// Where the Walker's shoulders are above its Pelvis.
 inline constexpr float kWalkerShoulderAbovePelvis = 0.45F;
 // How far a leg swings ahead (+) or behind (-) at a Foot contact, in radians:
 // the landing foot's leg ahead, the other behind. 30 degrees.
@@ -210,7 +233,7 @@ inline constexpr float kLegSwing = 0.5235988F;
 
 // The Walker's Joints, in its assets::Skeleton's order: parents before
 // children, its legs before its Head, where ozz-animation keeps them (depth
-// first) after it, then its left arm.
+// first) after it, then its left arm and its right.
 inline constexpr std::uint32_t kWalkerRoot = 0;
 inline constexpr std::uint32_t kWalkerPelvis = 1;
 inline constexpr std::uint32_t kWalkerLeftLeg = 2;
@@ -219,10 +242,14 @@ inline constexpr std::uint32_t kWalkerHead = 4;
 inline constexpr std::uint32_t kWalkerLeftArm = 5;
 inline constexpr std::uint32_t kWalkerLeftForearm = 6;
 inline constexpr std::uint32_t kWalkerLeftHand = 7;
+inline constexpr std::uint32_t kWalkerRightArm = 8;
+inline constexpr std::uint32_t kWalkerRightForearm = 9;
+inline constexpr std::uint32_t kWalkerRightHand = 10;
 
-// Where the Walker's left shoulder is from its Pelvis, and each bone of the arm
-// from the Joint above it.
+// Where the Walker's left shoulder is from its Pelvis, its right one, and each
+// bone of an arm from the Joint above it.
 inline math::Vec3 WalkerShoulder() { return {-kRigShoulderSide, kWalkerShoulderAbovePelvis, 0.0F}; }
+inline math::Vec3 WalkerRightShoulder() { return {kRigShoulderSide, kWalkerShoulderAbovePelvis, 0.0F}; }
 inline math::Vec3 WalkerBone() { return {0.0F, -kRigBone, 0.0F}; }
 
 // The Walker's Skeleton, standing in its Rest pose.
@@ -232,6 +259,8 @@ inline assets::Skeleton WalkerSkeleton() {
   const math::Mat4 pelvis = math::ToMat4(math::Vec3(0.0F, kPelvisStanding, 0.0F), none, unit);
   const math::Mat4 shoulder = pelvis * math::ToMat4(WalkerShoulder(), none, unit);
   const math::Mat4 elbow = shoulder * math::ToMat4(WalkerBone(), none, unit);
+  const math::Mat4 right_shoulder = pelvis * math::ToMat4(WalkerRightShoulder(), none, unit);
+  const math::Mat4 right_elbow = right_shoulder * math::ToMat4(WalkerBone(), none, unit);
   return {
       .joints = {{.name = "Root"},
                  {.name = "Root/Pelvis", .parent = kWalkerRoot, .translation = {0.0F, kPelvisStanding, 0.0F}},
@@ -242,24 +271,38 @@ inline assets::Skeleton WalkerSkeleton() {
                  {.name = "Root/Pelvis/LeftArm/LeftForearm", .parent = kWalkerLeftArm, .translation = WalkerBone()},
                  {.name = "Root/Pelvis/LeftArm/LeftForearm/LeftHand",
                   .parent = kWalkerLeftForearm,
+                  .translation = WalkerBone()},
+                 {.name = "Root/Pelvis/RightArm", .parent = kWalkerPelvis, .translation = WalkerRightShoulder()},
+                 {.name = "Root/Pelvis/RightArm/RightForearm", .parent = kWalkerRightArm, .translation = WalkerBone()},
+                 {.name = "Root/Pelvis/RightArm/RightForearm/RightHand",
+                  .parent = kWalkerRightForearm,
                   .translation = WalkerBone()}},
       .rest_transforms = {math::Mat4(1.0F), pelvis,
                           pelvis * math::ToMat4(math::Vec3(-kHipSide, 0.0F, 0.0F), none, unit),
                           pelvis * math::ToMat4(math::Vec3(kHipSide, 0.0F, 0.0F), none, unit),
                           pelvis * math::ToMat4(math::Vec3(0.0F, kHeadAbovePelvis, 0.0F), none, unit), shoulder, elbow,
-                          elbow * math::ToMat4(WalkerBone(), none, unit)}};
+                          elbow * math::ToMat4(WalkerBone(), none, unit), right_shoulder, right_elbow,
+                          right_elbow * math::ToMat4(WalkerBone(), none, unit)}};
 }
 
 // The tracks of a Walker Clip, its Pelvis pelvis high, in ozz-animation's order
-// (Root, Pelvis, Head, LeftLeg, RightLeg, LeftArm, LeftForearm, LeftHand), each
+// (Root, Pelvis, Head, LeftLeg, RightLeg, LeftArm, LeftForearm, LeftHand,
+// RightArm, RightForearm, RightHand), each
 // Joint where the Rest pose has it from its parent; its legs straight down.
 inline decltype(ozz::animation::offline::RawAnimation::tracks) WalkerTracks(float pelvis) {
   using ozz::math::Float3;
   const math::Vec3 shoulder = WalkerShoulder();
-  const std::array<Float3, 7> at{
-      Float3(0.0F, pelvis, 0.0F),   Float3(0.0F, kHeadAbovePelvis, 0.0F),       Float3(-kHipSide, 0.0F, 0.0F),
-      Float3(kHipSide, 0.0F, 0.0F), Float3(shoulder.x, shoulder.y, shoulder.z), Float3(0.0F, -kRigBone, 0.0F),
-      Float3(0.0F, -kRigBone, 0.0F)};
+  const math::Vec3 right_shoulder = WalkerRightShoulder();
+  const std::array<Float3, 10> at{Float3(0.0F, pelvis, 0.0F),
+                                  Float3(0.0F, kHeadAbovePelvis, 0.0F),
+                                  Float3(-kHipSide, 0.0F, 0.0F),
+                                  Float3(kHipSide, 0.0F, 0.0F),
+                                  Float3(shoulder.x, shoulder.y, shoulder.z),
+                                  Float3(0.0F, -kRigBone, 0.0F),
+                                  Float3(0.0F, -kRigBone, 0.0F),
+                                  Float3(right_shoulder.x, right_shoulder.y, right_shoulder.z),
+                                  Float3(0.0F, -kRigBone, 0.0F),
+                                  Float3(0.0F, -kRigBone, 0.0F)};
   decltype(ozz::animation::offline::RawAnimation::tracks) tracks(at.size() + 1);
   for (std::size_t joint = 0; joint < at.size(); ++joint) {
     tracks.at(joint + 1).translations.push_back({.time = 0.0F, .value = at.at(joint)});
@@ -381,11 +424,13 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
   pelvis.transform = ozz::math::Transform::identity();
   pelvis.transform.translation = ozz::math::Float3(0.0F, kPelvisStanding, 0.0F);
   const math::Vec3 shoulder = WalkerShoulder();
-  const std::array<std::pair<const char*, ozz::math::Float3>, 4> children{{
+  const math::Vec3 right_shoulder = WalkerRightShoulder();
+  const std::array<std::pair<const char*, ozz::math::Float3>, 5> children{{
       {"Root/Pelvis/Head", ozz::math::Float3(0.0F, kHeadAbovePelvis, 0.0F)},
       {"Root/Pelvis/LeftLeg", ozz::math::Float3(-kHipSide, 0.0F, 0.0F)},
       {"Root/Pelvis/RightLeg", ozz::math::Float3(kHipSide, 0.0F, 0.0F)},
       {"Root/Pelvis/LeftArm", ozz::math::Float3(shoulder.x, shoulder.y, shoulder.z)},
+      {"Root/Pelvis/RightArm", ozz::math::Float3(right_shoulder.x, right_shoulder.y, right_shoulder.z)},
   }};
   pelvis.children.resize(children.size());
   for (std::size_t child = 0; child < children.size(); ++child) {
@@ -393,21 +438,26 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
     pelvis.children[child].transform = ozz::math::Transform::identity();
     pelvis.children[child].transform.translation = children.at(child).second;
   }
-  ozz::animation::offline::RawSkeleton::Joint* bone = &pelvis.children.back();
-  for (const char* const name : {"Root/Pelvis/LeftArm/LeftForearm", "Root/Pelvis/LeftArm/LeftForearm/LeftHand"}) {
-    bone->children.resize(1);
-    bone = &bone->children.front();
-    bone->name = name;
-    bone->transform = ozz::math::Transform::identity();
-    bone->transform.translation = ozz::math::Float3(0.0F, -kRigBone, 0.0F);
-  }
+  // Hangs the forearm and the hand named names down the arm bone.
+  const auto hang = [](ozz::animation::offline::RawSkeleton::Joint* bone, std::initializer_list<const char*> names) {
+    for (const char* const name : names) {
+      bone->children.resize(1);
+      bone = &bone->children.front();
+      bone->name = name;
+      bone->transform = ozz::math::Transform::identity();
+      bone->transform.translation = ozz::math::Float3(0.0F, -kRigBone, 0.0F);
+    }
+  };
+  hang(&pelvis.children[3], {"Root/Pelvis/LeftArm/LeftForearm", "Root/Pelvis/LeftArm/LeftForearm/LeftHand"});
+  hang(&pelvis.children[4], {"Root/Pelvis/RightArm/RightForearm", "Root/Pelvis/RightArm/RightForearm/RightHand"});
   auto skeleton = ozz::animation::offline::SkeletonBuilder()(raw);
   EXPECT_TRUE(skeleton);
 
   auto clips = std::make_shared<animation::CharacterClips>();
   clips->skeleton = std::move(*skeleton);
-  clips->joints = {kWalkerRoot,     kWalkerPelvis,  kWalkerHead,        kWalkerLeftLeg,
-                   kWalkerRightLeg, kWalkerLeftArm, kWalkerLeftForearm, kWalkerLeftHand};
+  clips->joints = {kWalkerRoot,     kWalkerPelvis,       kWalkerHead,        kWalkerLeftLeg,
+                   kWalkerRightLeg, kWalkerLeftArm,      kWalkerLeftForearm, kWalkerLeftHand,
+                   kWalkerRightArm, kWalkerRightForearm, kWalkerRightHand};
   animation::StanceClips standing =
       WalkerStanceOf(kPelvisStanding, kStandingForward, kStandingBackward, kStandingLeft, kStandingRight);
   standing.right = WalkerClip(kPelvisStanding, 1.0F, kStandingRight, kRightWalkLeft, kRightWalkRight);
@@ -419,10 +469,12 @@ inline std::shared_ptr<const animation::CharacterClips> WalkerClips() {
       WalkerStanceOf(kPelvisProne, kProneForward, kProneBackward, 0.0F, 0.0F, false);
   clips->air = WalkerAirClip();
   clips->transitions = {.standing_crouching = 0.25F, .standing_prone = 0.8F, .crouching_prone = 0.6F};
+  // The hand hangs straight down its arm in every Clip: the Grip, kRigGripAhead
+  // ahead of the right hip, is this far from it.
+  const math::Vec3 grip = math::Vec3(kHipSide, 0.0F, -kRigGripAhead) - WalkerRightShoulder() - (2.0F * WalkerBone());
   clips->weapon_socket =
-      animation::WeaponSocket{.right_hand = kWalkerPelvis,
-                              .frame = math::ToMat4(math::Vec3(kHipSide, 0.0F, -kRigGripAhead),
-                                                    math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)),
+      animation::WeaponSocket{.right_hand = kWalkerRightHand,
+                              .frame = math::ToMat4(grip, math::Quat(1.0F, 0.0F, 0.0F, 0.0F), math::Vec3(1.0F)),
                               .left_hand = kWalkerLeftHand};
   return clips;
 }

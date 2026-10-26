@@ -1964,6 +1964,135 @@ TEST_F(RecoiledHitTest, ARecoilKickTurnsNothingOfTheBodyThatHoldsTheRifle) {
   EXPECT_EQ(hits[0].part, BodyPart::kLimb);
 }
 
+// HitTest with Alice playing the Holder (clips_fixture.h) and holding its rifle
+// (clips_fixture::HolderRifle) in ADS, looking level at Bob: her Sight on her
+// Eye and her Muzzle kHolderMuzzle ahead of it. Her right hand's grandparent,
+// the shoulder a Muzzle in a wall is found from (ADR-0044), is her Pelvis,
+// below her Eye. A test puts up a thin wall across her view: kThroughTheBarrel
+// ahead of her feet, between her Pelvis and her Muzzle, the barrel pokes
+// through it toward Bob behind it.
+class MuzzleInAWallTest : public HitTest {
+ protected:
+  static constexpr float kThroughTheBarrel = 0.5F;
+  // How near a point is to where the test works it out to be: a little more
+  // than the grids a Shot's numbers travel on round off over the barrel.
+  static constexpr float kTolerance = 0.01F;
+
+  MuzzleInAWallTest() : HitTest(augusta::clips_fixture::HolderRifle()) {}
+
+  void SetUp() override {
+    world_.AddPlayer(kAlice, Vec3(0.0F, 0.5F, 0.0F), Holder());
+    world_.AddPlayer(kBob, Vec3(0.0F, 0.5F, -10.0F), Target());
+    bob_ = Command{};
+    Wait(kSettleTicks);
+  }
+
+  // A one-tick press of fire by Alice, in ADS, looking level down -Z at Bob's head.
+  static Command FiringInAds() {
+    Command command = Firing();
+    command.ads = true;
+    return command;
+  }
+
+  // Puts up a wall across Alice's view, ahead ahead of her feet; returns its Z.
+  float WallAhead(float ahead) {
+    const float wall_z = Feet().z - ahead;
+    EXPECT_TRUE(world_
+                    .AddCollisionMesh(CollisionMesh{.points = {Vec3(-2.0F, 0.0F, wall_z), Vec3(-2.0F, 3.0F, wall_z),
+                                                               Vec3(2.0F, 3.0F, wall_z), Vec3(2.0F, 0.0F, wall_z)},
+                                                    .indices = {0, 1, 2, 0, 2, 3}})
+                    .has_value());
+    return wall_z;
+  }
+
+  // Where Alice's feet are.
+  Vec3 Feet() { return Entity(Tick(Command{}), kAlice).body.position; }
+
+  // Her Pelvis, standing, from her feet.
+  static Vec3 Shoulder() { return {0.0F, augusta::clips_fixture::kPelvisStanding, 0.0F}; }
+
+  // Her Muzzle in ADS, from her feet as she faces -Z: kHolderMuzzle ahead of her Eye.
+  static Vec3 Muzzle() {
+    namespace fixture = augusta::clips_fixture;
+    return fixture::kHolderEye + Vec3(0.0F, 0.0F, -fixture::kHolderMuzzle);
+  }
+
+  static void ExpectNear(const Vec3& actual, const Vec3& expected) {
+    EXPECT_NEAR(actual.x, expected.x, kTolerance);
+    EXPECT_NEAR(actual.y, expected.y, kTolerance);
+    EXPECT_NEAR(actual.z, expected.z, kTolerance);
+  }
+};
+
+// The barrel enters the wall kThroughTheBarrel along the kHolderMuzzle from her
+// Pelvis's Z to her Muzzle's: there the round strikes it, on the tick it is
+// fired, and flies no further.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, ARoundFromAMuzzleThroughAWallStrikesTheWallWhereTheBarrelEntersIt) {
+  const Vec3 feet = Feet();
+  WallAhead(kThroughTheBarrel);
+  const Vec3 entry =
+      feet + Shoulder() + ((kThroughTheBarrel / augusta::clips_fixture::kHolderMuzzle) * (Muzzle() - Shoulder()));
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  ExpectNear(state.map_impacts[0], entry);
+  EXPECT_EQ(state.bullets_in_flight, 0U);
+  EXPECT_TRUE(state.hits.empty());
+}
+
+// The same round, aimed at Bob from a Muzzle in the clear, hits him; with the
+// wall up round the barrel, it does not.
+// Requirements: US-10, US-11
+TEST_F(MuzzleInAWallTest, APlayerBehindAWallTheBarrelPokesThroughIsNotHit) {
+  const std::vector<Hit> in_the_clear = Shoot(FiringInAds());
+  ASSERT_EQ(in_the_clear.size(), 1U);
+  ASSERT_EQ(in_the_clear[0].target, kBob);
+  WallAhead(kThroughTheBarrel);
+
+  const std::vector<Hit> through_the_wall = Shoot(FiringInAds());
+
+  EXPECT_TRUE(through_the_wall.empty());
+}
+
+// A client draws a round from its Shot until its own Map raycast stops it
+// (ADR-0044): the Shot of a round stopped by the wall leaves from her Pelvis
+// toward her Muzzle, so that the line it gives meets the wall where the server
+// put the round.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, TheShotOfARoundStoppedByAWallMeetsTheWallWhereTheRoundStruckIt) {
+  const Vec3 feet = Feet();
+  const float wall_z = WallAhead(kThroughTheBarrel);
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.shots.size(), 1U);
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  const augusta::simulation::Shot& shot = state.shots[0];
+  const Vec3 along = augusta::command::ViewDirection(shot.yaw, shot.pitch);
+  ExpectNear(shot.origin, feet + Shoulder());
+  ExpectNear(along, augusta::math::Normalize(Muzzle() - Shoulder()));
+  ExpectNear(shot.origin + (((wall_z - shot.origin.z) / along.z) * along), state.map_impacts[0]);
+}
+
+// A wall a little ahead of her Muzzle leaves the barrel clear: the round leaves
+// the Muzzle, as any other does, and strikes the wall along its flight.
+// Requirements: US-10
+TEST_F(MuzzleInAWallTest, ARoundWhoseBarrelIsClearOfAWallLeavesTheMuzzleAndStrikesTheWallInFlight) {
+  const Vec3 feet = Feet();
+  const float wall_z = WallAhead(1.0F);
+
+  const State state = Tick(FiringInAds());
+
+  ASSERT_EQ(state.shots.size(), 1U);
+  ExpectNear(state.shots[0].origin, feet + Muzzle());
+  ASSERT_EQ(state.map_impacts.size(), 1U);
+  EXPECT_NEAR(state.map_impacts[0].x, feet.x, kTolerance);
+  EXPECT_NEAR(state.map_impacts[0].z, wall_z, kTolerance);
+  EXPECT_GT(state.map_impacts[0].y, feet.y + Shoulder().y);
+}
+
 TEST_F(SimulationTest, AStateNamesItsTickFromOne) {
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 1U);
   EXPECT_EQ(world_.Tick({}, kTick).state.tick, 2U);

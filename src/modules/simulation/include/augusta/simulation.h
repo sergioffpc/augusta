@@ -108,7 +108,11 @@ enum class Phase {
   /// turned by the Recoil offset from before that round's own kick, which also
   /// turns the view it is aimed along, zeroed to cross the line of sight from
   /// the Eye, as Movement just left it, along that view at the rifle's zero
-  /// range (weapon::Zeroed, ADR-0064).
+  /// range (weapon::Zeroed, ADR-0064). A rifle whose barrel, from the shoulder
+  /// of the arm that holds it (its right hand's grandparent Joint) to that
+  /// Muzzle, is in the Map fires into the Map instead, one raycast telling:
+  /// the round strikes it where the barrel enters it, a Map impact of this
+  /// tick, and no bullet flies (ADR-0044).
   kPosing,
   /// Mechanism. Advances in-flight bullet trajectories (US-10) -
   /// augusta::ballistics::World::Step, one call per in-flight bullet.
@@ -277,11 +281,14 @@ struct Shot {
   /// The body of the player who fired it.
   EntityId shooter{};
   /// Where the round left from: the shooter's Muzzle, as Posing placed it
-  /// (ADR-0064).
+  /// (ADR-0064); for a round fired into the Map, the shoulder of the arm that
+  /// holds the rifle (ADR-0044).
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw and pitch in radians
-  /// (command::ViewDirection gives the direction): the view of the shooter's
-  /// Command, turned by its rifle's Recoil offset (weapon::Step).
+  /// (command::ViewDirection gives the direction): the barrel's, zeroed onto the
+  /// line of sight along the view of the shooter's Command turned by its rifle's
+  /// Recoil offset (weapon::Zeroed); for a round fired into the Map, the way
+  /// from that shoulder to the Muzzle.
   float yaw = 0.0F;
   float pitch = 0.0F;
 
@@ -405,7 +412,8 @@ struct State {
   std::vector<Death> deaths;
   /// Every round fired this tick, ordered by shooter: at most one a player.
   std::vector<Shot> shots;
-  /// Where each bullet that struck the Map this tick struck it.
+  /// Where each bullet that struck the Map this tick struck it, and each round
+  /// fired into it where its barrel enters it (ADR-0044).
   std::vector<math::Vec3> map_impacts;
   /// Every bullet that struck a player this tick, ordered by target; those on
   /// one target in the order they took its health.

@@ -142,7 +142,8 @@ which gives what `Decode` would give back.
 shooter's Muzzle, and its direction, the barrel's zeroed onto the line of sight
 (ADR-0064), to these grids before it fires the bullet, so the round the server
 flies and judges is exactly the one every client is told of and draws
-(ADR-0044).
+(ADR-0044). A round fired into a wall is rounded the same way, from its shoulder
+toward its Muzzle, before the server tests that line against the Map.
 
 **Recoil lives on the grid, and off the Command.** The rifle's rules
 (`weapon::Step`) round a rifle's Recoil offset to the angle grid on every tick,
