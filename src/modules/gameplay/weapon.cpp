@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 
 #include "augusta/command.h"
 #include "augusta/grid.h"
@@ -113,6 +114,35 @@ math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const Recoil
   const math::Mat4 kicked =
       math::ToMat4(grip, command::ViewRotation(yaw + recoil.yaw, pitch + recoil.pitch), math::Vec3(1.0F));
   return kicked * math::Inverse(view) * hand;
+}
+
+Heading Zeroed(const Rifle& rifle, const ballistics::BulletConfig& flight, float step_seconds, const math::Vec3& muzzle,
+               const math::Vec3& eye, const Heading& sight) {
+  // After t seconds in steps of step_seconds, semi-implicit Euler has dropped a
+  // round g(t^2 + t*step)/2 below the line it left along (ballistics::World), so
+  // a round that reaches the zero point at t leaves along the way to it raised
+  // by that drop, and t is how long that way takes at the muzzle velocity. A
+  // fixed number of rounds of that settles it far below the angle grid's step,
+  // the drop being small beside the range, and keeps it deterministic.
+  constexpr int kSettlingRounds = 4;
+  const math::Vec3 view = command::ViewDirection(sight.yaw, sight.pitch);
+  const math::Vec3 toward = eye + (view * rifle.zero_range) - muzzle;
+  math::Vec3 along = toward;
+  for (int round = 0; round < kSettlingRounds; ++round) {
+    const float seconds = math::Length(along) / rifle.muzzle_velocity;
+    const float drop = flight.gravity * ((seconds * seconds) + (seconds * step_seconds)) / 2.0F;
+    along = toward + math::Vec3(0.0F, drop, 0.0F);
+  }
+  // The turn from sight to along, added to sight's own angles rather than
+  // taking along's afresh: most of what atan2 and asin round off cancels out,
+  // and a round with little to turn leaves along sight's own angles.
+  constexpr float kTurn = 2.0F * std::numbers::pi_v<float>;
+  const auto yaw_of = [](const math::Vec3& direction) { return std::atan2(-direction.x, -direction.z); };
+  const auto pitch_of = [](const math::Vec3& direction) {
+    return std::asin(std::clamp(math::Normalize(direction).y, -1.0F, 1.0F));
+  };
+  return Heading{.yaw = sight.yaw + std::remainder(yaw_of(along) - yaw_of(view), kTurn),
+                 .pitch = sight.pitch + (pitch_of(along) - pitch_of(view))};
 }
 
 }  // namespace augusta::weapon

@@ -62,20 +62,22 @@ feedback (muzzle flash, sound, recoil, ammo), never a bullet's outcome
 (ADR-0024).
 
 **The server announces every Shot to everyone, reliably.** A Shot message (the
-shooter, by its Entity ID; the server tick; the origin and the direction) goes
-reliably to every client, the shooter's included: a gunshot's sound is gameplay
-information and must not be lost. With GameNetworkingSockets (ADR-0003), a lost
-reliable message does not delay unreliable ones, so the Authoritative State
-updates are not held back behind it.
+shooter, by its Entity ID; the server tick; the origin, the shooter's Muzzle as
+the server placed it, never its Eye; and the direction, the barrel's zeroed onto
+the line of sight, ADR-0064) goes reliably to every client, the shooter's
+included: a gunshot's sound is gameplay information and must not be lost. With
+GameNetworkingSockets (ADR-0003), a lost reliable message does not delay
+unreliable ones, so the Authoritative State updates are not held back behind it.
 
 **Clients draw a Shot's trajectory as a visual only.** Each client's
 PresentationWorld computes the announced bullet's trajectory with the same
 ballistics math the server uses and the ballistics values of the Parameters
-(ADR-0039), to draw the tracer and the impact on the Map. Hits on players
-(blood, hit reactions) are drawn only from the server's hit messages, never from
-that local trajectory, so a client's drawing can differ from the server's
-outcome without ever showing a hit that did not happen. Ballistics' trajectory
-math is therefore shared by client and server; deciding a bullet's outcome
+(ADR-0039), to draw the tracer and the impact on the Map, from the Shot's
+origin; another player's muzzle flash shows there too. Hits on players (blood,
+hit reactions) are drawn only from the server's hit messages, never from that
+local trajectory, so a client's drawing can differ from the server's outcome
+without ever showing a hit that did not happen. Ballistics' trajectory math is
+therefore shared by client and server; deciding a bullet's outcome
 (HitDetection, Damage) stays the server's alone.
 
 **On the wire.** The Shot, the Hit confirmation and the Command's Seen time (its

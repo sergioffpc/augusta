@@ -26,12 +26,17 @@ Grip toward it, as a rifle held in two hands does; with it elsewhere, along the
 holding hand. A Desktop player holds the rifle where its pose holds it: its Grip
 on the weapon socket of its posed right hand (ADR-0066), so the Muzzle follows
 its stance, its Aim offset and its ADS grip, which shoulders the rifle with its
-Sight at the Eye. The Posing phase places it, after posing the body.
+Sight at the Eye. The Posing phase places it, after posing the body, and fires
+each round of the tick from it there.
 
-**Zeroing.** The barrel is pitched so that a round crosses the line of sight at
-the rifle's zero range, a Parameter (ADR-0039): above or below it a round lands
-above or below the sight, as with a real rifle. A desktop's line of sight is
-from the Eye along the view; a VR player brings the sight to its eye itself.
+**Zeroing.** The barrel is pitched and turned so that a round crosses the line
+of sight at the rifle's zero range, a Parameter (ADR-0039): above or below it a
+round lands above or below the sight, as with a real rifle, and from the hip to
+the side of it too. A desktop's line of sight is from the Eye along the view,
+turned by the Recoil offset the round is fired with: the one before its own
+kick, as the rifle the round leaves is turned by. It is solved on the
+gravity-only ballistics, with no raycast. A VR player brings the sight to its
+eye itself.
 
 **Recoil turns the rifle about its Grip.** A desktop's Recoil offset turns the
 view a Shot leaves along, and the rifle its pose holds turns with it: the Posing

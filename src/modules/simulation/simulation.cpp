@@ -113,9 +113,21 @@ struct HitboxHistory {
   PoseHistory poses;
 };
 
-// A player's rifle, as WeaponHandling left it.
+// A round WeaponHandling fired this tick, for Posing to fire from the Muzzle it
+// places: the view it is aimed along, the Command's turned by the Recoil offset
+// from before its own kick, that offset, and its Shooter's delay.
+struct FiredRound {
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+  weapon::RecoilOffset recoil{};
+  float shooters_delay = 0.0F;
+};
+
+// A player's rifle, as WeaponHandling left it, and the round it fired this
+// tick, if it fired one.
 struct Rifle {
   weapon::State state{};
+  std::optional<FiredRound> fired;
 };
 
 // A player's character's Clips (Character::clips).
@@ -307,19 +319,24 @@ struct World::Impl {
         .kind(phases[kMovement])
         .each([this](flecs::iter& it, std::size_t /*row*/, Body& body, const Intent& intent, const Facing& facing,
                      const Clips& clips) { OnMovement(it.delta_time(), body, intent, facing, clips); });
+    // A living player's: one with a Body.
+    ecs.system<const Player, Rifle>("WeaponHandlingSystem")
+        .kind(phases[kWeaponHandling])
+        .with<Body>()
+        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, Rifle& rifle) {
+          OnWeaponHandling(it.delta_time(), player, rifle);
+        });
     // Writes Bullet, so the bullets it fires exist by the time Ballistics runs
     // and fly their first tick on the tick they are fired.
-    ecs.system<const Player, const Body, const Eye, Rifle>("WeaponHandlingSystem")
-        .kind(phases[kWeaponHandling])
-        .write<Bullet>()
-        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Eye& eye,
-                     Rifle& rifle) { OnWeaponHandling(it.delta_time(), player, body, eye, rifle); });
-    ecs.system<const Body, const Facing, const Rifle, const CharacterSkeleton, const Clips, PosedJoints, Held>(
-           "PosingSystem")
+    ecs.system<const Player, const Body, const Facing, const Eye, const Rifle, const CharacterSkeleton, const Clips,
+               PosedJoints, Held>("PosingSystem")
         .kind(phases[kPosing])
-        .each([this](const Body& body, const Facing& facing, const Rifle& rifle, const CharacterSkeleton& skeleton,
-                     const Clips& clips, PosedJoints& posed,
-                     Held& held) { OnPosing(body, facing, rifle, skeleton, clips, posed, held); });
+        .write<Bullet>()
+        .each([this](flecs::iter& it, std::size_t /*row*/, const Player& player, const Body& body, const Facing& facing,
+                     const Eye& eye, const Rifle& rifle, const CharacterSkeleton& skeleton, const Clips& clips,
+                     PosedJoints& posed, Held& held) {
+          OnPosing(it.delta_time(), player, body, facing, eye, rifle, skeleton, clips, posed, held);
+        });
     ecs.system<const Bullet>("BallisticsSystem")
         .kind(phases[kBallistics])
         .each([this](flecs::iter& it, std::size_t row, const Bullet& bullet) {
@@ -371,34 +388,58 @@ struct World::Impl {
   }
 
   // A player with no command this tick holds nothing: its rifle only waits.
-  // A round leaves from where Movement just put the shooter's eye, for where
-  // its rifle points.
-  void OnWeaponHandling(float delta_time, const Player& player, const Body& body, const Eye& eye, Rifle& rifle) {
+  // A round it fires is Posing's to fire, from the Muzzle it places this tick.
+  void OnWeaponHandling(float delta_time, const Player& player, Rifle& rifle) {
     const auto found = tick_commands.find(player.entity);
     const command::Command command = found == tick_commands.end() ? command::Command{} : found->second;
     const weapon::Result result = weapon::Step(parameters.rifle, rifle.state, command, delta_time);
-    rifle.state = result.state;
-    if (!result.fired) {
-      return;
+    rifle.fired = std::nullopt;
+    if (result.fired) {
+      rifle.fired = FiredRound{.yaw = result.yaw,
+                               .pitch = result.pitch,
+                               .recoil = rifle.state.recoil,
+                               .shooters_delay = ShootersDelay(tick, command, max_shooters_delay)};
     }
-    const Shot shot{
-        .shooter = player.entity,
-        .origin = math::SnapPosition(body.state.position + physics::LowerToStance(eye.standing, body.state.stance)),
-        .yaw = math::SnapAngle(result.yaw),
-        .pitch = math::SnapAngle(result.pitch),
-    };
-    Fire(shot, ShootersDelay(tick, command, max_shooters_delay));
+    rifle.state = result.state;
   }
 
   // Poses one player: its body where Movement has just put it, then its rifle
   // held in its hands, then the rifle's markers where its hand holds them,
-  // turned by the Recoil offset WeaponHandling has just left it with.
-  void OnPosing(const Body& body, const Facing& facing, const Rifle& rifle, const CharacterSkeleton& skeleton,
-                const Clips& clips, PosedJoints& posed, Held& held) {
+  // turned by the Recoil offset WeaponHandling has just left it with; then fires
+  // the round WeaponHandling fired, if it fired one.
+  void OnPosing(float delta_time, const Player& player, const Body& body, const Facing& facing, const Eye& eye,
+                const Rifle& rifle, const CharacterSkeleton& skeleton, const Clips& clips, PosedJoints& posed,
+                Held& held) {
     PoseBody(body, facing, skeleton.skeleton, *clips.clips, posed.posed);
     const math::Mat4 hand =
         animation::HoldRifle(skeleton.skeleton, clips.clips->weapon_socket, rifle_markers, posed.posed);
     held.rifle = PlaceRifle(weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.state.recoil));
+    if (rifle.fired) {
+      FireFromTheMuzzle(delta_time, player, *rifle.fired,
+                        weapon::Recoiled(hand, facing.yaw, facing.pitch, rifle.fired->recoil),
+                        body.state.position + physics::LowerToStance(eye.standing, body.state.stance));
+    }
+  }
+
+  // Fires round, which player's rifle fired this tick, from the Muzzle of the
+  // rifle hand holds, turned by the Recoil offset from before the round's own
+  // kick, as the view the round is aimed along is: zeroed to cross the line of
+  // sight from eye along that view at the rifle's zero range (ADR-0064). It
+  // leaves from the Muzzle on the grid a Shot's origin travels on, a millimetre
+  // at most from where it was aimed from, so the round fired is the one its
+  // clients are told of.
+  void FireFromTheMuzzle(float delta_time, const Player& player, const FiredRound& round, const math::Mat4& hand,
+                         const math::Vec3& eye) {
+    const math::Vec3 muzzle = math::TranslationOf(weapon::PlaceMuzzle(hand, rifle_markers));
+    const weapon::Heading heading = weapon::Zeroed(parameters.rifle, parameters.ammo.flight, delta_time, muzzle, eye,
+                                                   weapon::Heading{.yaw = round.yaw, .pitch = round.pitch});
+    const Shot shot{
+        .shooter = player.entity,
+        .origin = math::SnapPosition(muzzle),
+        .yaw = math::SnapAngle(heading.yaw),
+        .pitch = math::SnapAngle(heading.pitch),
+    };
+    Fire(shot, round.shooters_delay);
   }
 
   // Poses skeleton by clips, the body's Clips, at its body's state and where it
@@ -676,7 +717,7 @@ void World::AddPlayer(EntityId entity, const math::Vec3& spawn, const Character&
           .set<CharacterSkeleton>({.skeleton = character.skeleton})
           .set<PosedJoints>({})
           .set<HitboxHistory>({.poses = PoseHistory(impl.history_ticks, character.skeleton, character.hitboxes)})
-          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle)})
+          .set<Rifle>({.state = weapon::Loaded(impl.parameters.rifle), .fired = std::nullopt})
           .set<Held>({});
   impl.players.emplace(entity, Impl::Slot{.entity = ecs_entity, .body = body, .identity = identity});
 }

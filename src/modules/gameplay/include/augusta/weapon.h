@@ -118,6 +118,24 @@ struct Markers {
 /// (ADR-0064). Only the rifle turns; the body that holds it does not.
 [[nodiscard]] math::Mat4 Recoiled(const math::Mat4& hand, float yaw, float pitch, const RecoilOffset& recoil);
 
+/// A direction as a view's yaw and pitch, in radians (command::ViewDirection
+/// gives it as a vector).
+struct Heading {
+  float yaw = 0.0F;
+  float pitch = 0.0F;
+
+  bool operator==(const Heading&) const = default;
+};
+
+/// Where a round of rifle leaves muzzle for, zeroed (ADR-0064): so that, flying
+/// as flight makes it in ballistics::World steps of step_seconds, it crosses
+/// the line of sight from eye along sight at the rifle's zero range. Computed
+/// from how far ballistics::World drops a round, with no raycast. Nearer or
+/// further, the round passes off the line of sight, by the Muzzle's offset from
+/// it and by the drop. Unwrapped as sight is: sight's yaw, turned.
+[[nodiscard]] Heading Zeroed(const Rifle& rifle, const ballistics::BulletConfig& flight, float step_seconds,
+                             const math::Vec3& muzzle, const math::Vec3& eye, const Heading& sight);
+
 /// One player's rifle between two ticks.
 struct State {
   /// How long, in seconds, until the next round may fire; 0 or less when one
@@ -144,9 +162,10 @@ struct State {
 struct Result {
   /// The rifle after the tick.
   State state{};
-  /// Where the round fired left for, as a view's yaw and pitch in radians
+  /// Where the round fired is aimed, as a view's yaw and pitch in radians
   /// (command::ViewDirection gives the direction): the Command's view turned by
-  /// the Recoil offset the rifle had. Only of a tick that fired.
+  /// the Recoil offset the rifle had, the line of sight its round is zeroed
+  /// onto (Zeroed). Only of a tick that fired.
   float yaw = 0.0F;
   float pitch = 0.0F;
   /// Whether a round was fired on it. At most one fires a tick.

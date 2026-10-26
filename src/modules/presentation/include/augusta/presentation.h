@@ -154,7 +154,7 @@ struct Shot {
   EntityId shooter{};
   /// The server tick it was fired on.
   tick::Tick tick = 0;
-  /// Where the round left from: the shooter's eye.
+  /// Where the round left from: the shooter's Muzzle (ADR-0064).
   math::Vec3 origin{};
   /// Where it left for, as a view's yaw in radians (command::Command).
   float yaw = 0.0F;

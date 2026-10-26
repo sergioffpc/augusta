@@ -14,11 +14,14 @@ namespace augusta::scenario_fixture {
 // character rigged to hold the rifle (clips_fixture::Rig): its Skeleton, a root
 // Joint alone if it has none, gains a left arm, and its Clips hold it still in
 // its Rest pose, so each of its Hitboxes is where its Joint holds it at rest.
+// Its weapon socket holds the rifle's Grip at its standing Eye, the rifle level
+// along its facing: a rifle whose Muzzle is on its Grip, as the default
+// weapon::Markers' is, fires from its standing Eye along its view (ADR-0064).
 inline scenario::Character Rigged(scenario::Character character) {
   if (character.skeleton.joints.empty()) {
     character.skeleton = {.joints = {assets::JointData{.name = "Root"}}, .rest_transforms = {math::Mat4(1.0F)}};
   }
-  character.clips = clips_fixture::Rig(character.skeleton);
+  character.clips = clips_fixture::Rig(character.skeleton, 0, character.eye);
   return character;
 }
 

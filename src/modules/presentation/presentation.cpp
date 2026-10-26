@@ -217,18 +217,18 @@ struct World::Impl {
 
   // Moves every tracer and muzzle flash on by delta_time, then starts a tracer
   // for each of the frame's Shots and shows the muzzle flash of each fired by
-  // another player: the local player's own come from its predicted fire
-  // (OnCamera), which is sooner.
+  // another player, both at the shooter's Muzzle the Shot left from: the local
+  // player's own flashes come from its predicted fire (OnCamera), which is
+  // sooner.
   void ShowShots(float delta_time) {
     tracers.Advance(delta_time);
     Age(muzzle_flashes, delta_time, kMuzzleFlashSeconds);
     for (const Shot& shot : input->shots) {
-      const math::Vec3 direction = command::ViewDirection(shot.yaw, shot.pitch);
       if (tracer_rules.has_value()) {
-        tracers.Fire(shot.origin, direction, *tracer_rules);
+        tracers.Fire(shot.origin, command::ViewDirection(shot.yaw, shot.pitch), *tracer_rules);
       }
       if (shot.shooter != input->local_entity) {
-        muzzle_flashes.push_back(Effect{.position = MuzzleOf(shot.origin, direction)});
+        muzzle_flashes.push_back(Effect{.position = shot.origin});
       }
     }
   }

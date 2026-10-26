@@ -27,8 +27,8 @@ namespace augusta::scenario {
 
 /// A character a player may join as (ADR-0042), with the hitboxes a bullet
 /// that reaches a body of that character is judged against (US-11, ADR-0040),
-/// the Skeleton they hang from (ADR-0061), the eye its Shots leave from and the
-/// Clips it is posed by (ADR-0066).
+/// the Skeleton they hang from (ADR-0061), the eye it sees and its Shots are
+/// zeroed from (ADR-0064) and the Clips it is posed by (ADR-0066).
 struct Character {
   /// Its path in the pack, as the scenario's character list names it.
   std::string path;
@@ -81,8 +81,9 @@ struct Content {
 /// with the pack's path and the part of it that failed as context, for the
 /// application boundary to report.
 /// Every character must have a hitbox for each body part, an eye and Clips that
-/// load: every hit on a player resolves to a body part (US-11), every Shot
-/// leaves from its shooter's eye (US-07) and every player is posed by its Clips
+/// load: every hit on a player resolves to a body part (US-11), every Shot is
+/// zeroed onto its shooter's line of sight from its eye (US-07, ADR-0064) and
+/// every player is posed by its Clips
 /// (ADR-0066), so the server runs only on characters it can judge, fire for and
 /// pose. A character whose Clips do not load fails with the character as
 /// context, and the Clip's role as `clip` when a Clip is what failed. The

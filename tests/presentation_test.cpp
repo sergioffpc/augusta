@@ -29,6 +29,7 @@ using augusta::presentation::EntityId;
 using augusta::presentation::FrameInput;
 using augusta::presentation::PlayerCharacter;
 using augusta::presentation::RemotePlayer;
+using augusta::presentation::Shot;
 using augusta::presentation::State;
 using augusta::presentation::WorldSnapshot;
 
@@ -111,6 +112,24 @@ TEST_F(PresentationWorldTest, ASpectatorWatchesTheLivingPlayersInSessionOrder) {
   fire.fire = true;
   const State next = world.RunFrame(fire);
   EXPECT_NEAR(next.camera.position.x, -100.0F, kTolerance);
+}
+
+// Another player's muzzle flash shows where its Shot left: the Muzzle of its
+// rifle, which the server fires from (ADR-0064), not a point estimated from it.
+// Requirements: US-19
+TEST_F(PresentationWorldTest, AnotherPlayersMuzzleFlashShowsWhereItsShotLeft) {
+  const WorldSnapshot snapshot = ThreePlayersAt(5);
+  const std::vector<PlayerCharacter> characters = SessionOrder();
+  FrameInput input = InMatch(snapshot, characters);
+  const Vec3 muzzle(100.25F, 0.85F, -0.7F);
+  input.shots = {Shot{.shooter = kSniper, .tick = 5, .origin = muzzle, .yaw = 0.5F, .pitch = 0.125F}};
+
+  const State state = world.RunFrame(input);
+
+  ASSERT_EQ(state.muzzle_flashes.size(), 1U);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.x, muzzle.x, kTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.y, muzzle.y, kTolerance);
+  EXPECT_NEAR(state.muzzle_flashes.front().position.z, muzzle.z, kTolerance);
 }
 
 // The three players as a Replay viewer, which plays none of them, is shown them.

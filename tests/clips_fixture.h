@@ -146,14 +146,19 @@ inline std::shared_ptr<const animation::CharacterClips> RestClips(const assets::
 inline constexpr float kRigShoulderSide = 0.25F;
 inline constexpr float kRigShoulderHeight = 1.45F;
 inline constexpr float kRigBone = 0.5F;
-// Where Rig's weapon socket holds the rifle's Grip on its right hand: 0.3 m
-// ahead of it, so the left hand reaches across to it.
+// Where Rig's weapon socket holds the rifle's Grip by default, in the
+// skeleton's root space at rest: 0.3 m ahead of its root, so the left hand
+// reaches across to it.
 inline constexpr float kRigGripAhead = 0.3F;
 
 // Rigs skeleton, a test Character's that has no Clips of its own, to hold a
 // rifle: appends a left arm (LeftArm, LeftForearm, LeftHand) under its first
-// Joint, and returns RestClips of it with the weapon socket on right_hand.
-inline std::shared_ptr<const animation::CharacterClips> Rig(assets::Skeleton& skeleton, std::uint32_t right_hand = 0) {
+// Joint, and returns RestClips of it with the weapon socket on right_hand,
+// holding the rifle's Grip at grip, in root space at rest, unturned: the rifle
+// points ahead, along a level view, wherever the view looks.
+inline std::shared_ptr<const animation::CharacterClips> Rig(assets::Skeleton& skeleton, std::uint32_t right_hand = 0,
+                                                            const math::Vec3& grip = math::Vec3(0.0F, 0.0F,
+                                                                                                -kRigGripAhead)) {
   const std::string& root = skeleton.joints.front().name;
   const math::Quat none(1.0F, 0.0F, 0.0F, 0.0F);
   const std::array<assets::JointData, 3> arm{{
@@ -172,7 +177,7 @@ inline std::shared_ptr<const animation::CharacterClips> Rig(assets::Skeleton& sk
   }
   const animation::WeaponSocket socket{
       .right_hand = right_hand,
-      .frame = math::ToMat4(math::Vec3(0.0F, 0.0F, -kRigGripAhead), none, math::Vec3(1.0F)),
+      .frame = math::Inverse(skeleton.rest_transforms.at(right_hand)) * math::ToMat4(grip, none, math::Vec3(1.0F)),
       .left_hand = static_cast<std::uint32_t>(skeleton.joints.size() - 1)};
   return RestClips(skeleton, socket);
 }
