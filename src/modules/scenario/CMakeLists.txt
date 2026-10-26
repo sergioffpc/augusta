@@ -5,9 +5,9 @@
 # drive it through.
 
 # Reads the Parameters script through Lua (ADR-0022, ADR-0039) into the shared
-# Parameters; pure, so tested with scripts as strings (see
-# augusta/parameters_loader.h). Server-only: a client never reads the script, it
-# is sent the result, so it never links the interpreter.
+# Parameters; pure, so tested with scripts as strings (see parameters_loader.h).
+# Server-only: a client never reads the script, it is sent the result, so it
+# never links the interpreter.
 add_library(augusta_scenario_parameters_loader STATIC parameters_loader.cpp)
 target_include_directories(augusta_scenario_parameters_loader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(augusta_scenario_parameters_loader PUBLIC augusta_gameplay PRIVATE augusta_lua_sandbox)

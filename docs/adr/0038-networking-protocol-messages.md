@@ -27,7 +27,7 @@ the engine's terms (`augusta/link_types.h`: a join, an Authoritative State, a
 Shot, a tick's Commands, ...): `host::Host` and `harness::Session` hand it those
 right before Encode and take them back right after Decode. The Harness's message
 types are the Link's; the Host maps its own types and Replication's into them at
-its edge (`augusta/link_mapping.h`), naming no protocol type. The Link owns the
+its edge (`link_mapping.h`), naming no protocol type. The Link owns the
 transport end to end, too: the client's connection, the server's listening
 socket and one channel per peer, and the replay server's endpoint of its own
 (ADR-0051), so the Host and the Harness never link `augusta_networking`.

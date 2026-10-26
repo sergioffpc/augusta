@@ -1,4 +1,4 @@
-#include "augusta/tick_messages.h"
+#include "tick_messages.h"
 
 #include <algorithm>
 #include <cstddef>

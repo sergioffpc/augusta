@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_TICK_MESSAGES_H_
-#define AUGUSTA_TICK_MESSAGES_H_
+#ifndef AUGUSTA_HOST_TICK_MESSAGES_H_
+#define AUGUSTA_HOST_TICK_MESSAGES_H_
 
 #include <expected>
 #include <functional>
@@ -17,7 +17,7 @@
 #if AUGUSTA_DEBUG_TOOLS
 #include <unordered_set>
 
-#include "augusta/debug_subscriptions.h"
+#include "debug_subscriptions.h"
 #endif
 
 /// \file
@@ -90,4 +90,4 @@ using TickMessageSink = std::function<bool(link::PeerId, const link::Outgoing&)>
 
 }  // namespace augusta::host
 
-#endif  // AUGUSTA_TICK_MESSAGES_H_
+#endif  // AUGUSTA_HOST_TICK_MESSAGES_H_

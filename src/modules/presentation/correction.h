@@ -1,5 +1,5 @@
-#ifndef AUGUSTA_CORRECTION_H_
-#define AUGUSTA_CORRECTION_H_
+#ifndef AUGUSTA_PRESENTATION_CORRECTION_H_
+#define AUGUSTA_PRESENTATION_CORRECTION_H_
 
 #include "augusta/math.h"
 
@@ -39,4 +39,4 @@ class Correction {
 
 }  // namespace augusta::presentation
 
-#endif  // AUGUSTA_CORRECTION_H_
+#endif  // AUGUSTA_PRESENTATION_CORRECTION_H_

@@ -24,9 +24,9 @@
 #include "augusta/math.h"
 #include "augusta/parameters.h"
 #include "augusta/physics.h"
-#include "augusta/reconciliation.h"
 #include "augusta/tick.h"
 #include "augusta/weapon.h"
+#include "reconciliation.h"
 
 namespace augusta::prediction {
 

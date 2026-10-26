@@ -15,10 +15,10 @@
 #include "augusta/math.h"
 #include "augusta/networking.h"
 #include "augusta/protocol.h"
-#include "augusta/raw_link.h"
 #include "augusta/tick.h"
 #include "connection_stats.h"
 #include "peer_message.h"
+#include "raw_link.h"
 #include "reliability.h"
 
 // What the Link decides about the transport beneath it, apart from a live
