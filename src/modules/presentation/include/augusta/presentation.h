@@ -88,9 +88,9 @@ enum class Phase {
   /// living player instead (Spectator and WatchedCamera, local_view.h; fire
   /// moves it on), looks where that player looks and zooms with its ADS, as its
   /// interpolated state has them, never with the local player's aim, and holds
-  /// where it was while no one is left alive. No crosshair or hit marker shows. View bob is still future work. Not yet
-  /// a
-  /// module of its own - see the header comment above.
+  /// where it was while no one is left alive. No crosshair or hit marker
+  /// shows. View bob is still future work. Not yet a module of its own - see
+  /// the header comment above.
   kCamera,
   /// Mechanism. Will drive skeletal/procedural animation from interpolated
   /// movement and weapon state, once per visible player character (local and

@@ -514,8 +514,7 @@ class World {
   TickResult Tick(const std::vector<PlayerCommand>& commands, float delta_time);
 
   /// Where entity's rifle is, as the last tick's Posing placed it; nullopt for
-  /// a player not in the world, dead, not yet posed by a tick, or whose
-  /// Character has no weapon socket.
+  /// a player not in the world, dead, or not yet posed by a tick.
   [[nodiscard]] std::optional<HeldRifle> HeldRifleOf(EntityId entity) const;
 
 #if AUGUSTA_DEBUG_TOOLS

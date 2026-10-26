@@ -99,24 +99,21 @@ format; ADR-0019, ADR-0023, ADR-0040 and ADR-0044 are amended to match.
   where the body's position puts it, turned about the vertical by its yaw
   (ADR-0040); the stance does not scale it. How low a body is in a stance is
   that stance's Clips' (ADR-0066), which every character has.
-- **No replicated state is added.** In the rest pose there is nothing to
-  remember: position, yaw and stance are already in the Authoritative State. The
-  protocol, the Authoritative State update and the Match capture are untouched
-  until Clips bring memory of their own (ADR-0066).
-- **No pose on the client at first.** The module is `SHARED` so that it cannot
-  depend on anything client-only, but in the first change SimulationWorld is the
-  one consumer that poses players. The other is a Development build's client
-  (ADR-0074), which places a character's Hitboxes in its root space by the rest
-  pose once, when the character loads, for the Hitboxes Debug overlay to place
-  by each player's pose as the root: a loader, not a World, posing no player.
-  PresentationWorld's Animation phase stays as it is until Clips and skinning
-  arrive, because without skinning nothing the client draws moves with a pose.
-- **Skinning comes with the Clips.** Drawing a posed character is ADR-0066's,
-  not part of the first change. The renderer rebuilds every remote player's
-  vertices on the CPU each frame, rotated by yaw and translated, with no
-  per-instance transform, which GPU skinning needs first. Until then the server
-  judges hits against a posed body while the client draws an unposed one — which
-  is what happens today, and the server is authoritative either way.
+- **A client can pose a player; it draws none posed before skinning.** The
+  module is `SHARED` so that it cannot depend on anything client-only, and a
+  client poses a player from its interpolated state as the server does (below).
+  SimulationWorld is the one World that poses players, until skinning gives
+  PresentationWorld's Animation phase a posed body to draw (ADR-0066). A
+  Development build's client (ADR-0074) places a character's Hitboxes in its
+  root space by the rest pose once, when the character loads, for the Hitboxes
+  Debug overlay to place by each player's pose as the root: a loader, not a
+  World, posing no player.
+- **Skinning is ADR-0066's.** Drawing a posed character is decided there, apart
+  from the Hitbox pose. The renderer rebuilds every remote player's vertices on
+  the CPU each frame, rotated by yaw and translated, with no per-instance
+  transform, which GPU skinning needs first. Until then the server judges hits
+  against a posed body while the client draws an unposed one, and the server is
+  authoritative either way.
 - **Where skinning data will live.** Skin bindings — the joints and weights of
   each vertex (ADR-0066) — are an optional section of the mesh blob, written
   into the client's pack alone (ADR-0019); the server judges Shots against
