@@ -139,7 +139,7 @@ TIDY_CHECKS := $(addprefix tidy/,$(TIDY_SOURCES))
 INCLUDE_CHECKS := $(addprefix include-cleaner/,$(INCLUDE_SOURCES))
 
 .DEFAULT_GOAL := all
-.PHONY: all help configure build test check coverage pack-native install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
+.PHONY: all help configure build test check coverage tools install uninstall clean distclean format format-check tidy tidy-prepare lint prepush docs toolchain toolchain-check
 
 all: build
 
@@ -147,15 +147,15 @@ all: build
 # cmd.exe nor /bin/sh, which would read them as syntax.
 help:
 	$(info Usage: make [target] [PRESET=...] [FILES="a b ..."])
-	$(info $()  PRESET is $(PRESET); override with windows-debug, linux-san, ...)
-	$(info $()  windows-shipping and linux-shipping make a Shipping build, without the debug tools;)
-	$(info $()  every other preset a Development build, with them (ADR-0074).)
+	$(info $()  PRESET is $(PRESET) unless set, one of this host's presets listed below:)
+	$(info $()  the shipping ones make a Shipping build, without the debug tools,)
+	$(info $()  every other one a Development build, with them (ADR-0074).)
 	$(info )
 	$(info Build:)
 	$(info $()  all              the default: build)
 	$(info $()  configure        cmake --preset)
 	$(info $()  build            configure, then compile the binaries (no tests), or TARGETS=augustad ... alone)
-	$(info $()  pack-native      the asset cooker's native module alone, into tools/pack (PYTHON_EXECUTABLE=...))
+	$(info $()  tools            the tools alone, the Agents' and the asset cooker's modules among them (PYTHON_EXECUTABLE=...))
 	$(info $()  docs             the documentation site, MkDocs and Doxygen, into build/docs-site)
 	$(info )
 	$(info Test:)
@@ -179,7 +179,8 @@ help:
 	$(info Toolchain:)
 	$(info $()  toolchain        install the pinned tools missing from the shared store, then link .toolchain/bin to them)
 	$(info $()  toolchain-check  fail on each .toolchain/bin tool that isn't its pinned version, and each editor path to none)
-	@:
+	$(info )
+	@cmake --list-presets
 
 configure:
 	$(RUN) cmake --preset $(PRESET)
@@ -209,15 +210,15 @@ coverage:
 	$(MAKE) --no-print-directory test PRESET=linux-coverage
 	bash scripts/coverage-report.sh
 
-# The asset cooker's native module alone (tools/pack/native, ADR-0030), which
-# its bootstrap builds (tools/pack/scripts/bootstrap.sh): the preset's build
-# without the client, in a build directory of its own, so the preset's own
-# keeps its configuration. PYTHON_EXECUTABLE names the Python 3.12 it is built
+# The tools alone (tools/, augusta_tools), as the asset cooker's bootstrap
+# builds them (tools/pack/scripts/bootstrap.sh): the preset's build without the
+# client, in a build directory of its own, so the preset's own keeps its
+# configuration. PYTHON_EXECUTABLE names the Python 3.12 their modules are built
 # against, the tools environment's by default (cmake/AugustaToolsPython.cmake).
-PACK_BUILD_DIR := $(BUILD_DIR)-pack
-pack-native:
-	$(RUN) cmake --preset $(PRESET) -B $(PACK_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
-	$(RUN) cmake --build $(PACK_BUILD_DIR) --target augusta_pack_py
+TOOLS_BUILD_DIR := $(BUILD_DIR)-tools
+tools:
+	$(RUN) cmake --preset $(PRESET) -B $(TOOLS_BUILD_DIR) -DAUGUSTA_CLIENT=OFF $(if $(PYTHON_EXECUTABLE),"-DPYTHON_EXECUTABLE=$(PYTHON_EXECUTABLE)")
+	$(RUN) cmake --build $(TOOLS_BUILD_DIR) --target augusta_tools
 
 # DESTDIR reaches cmake --install through the environment: make exports a
 # variable set on its command line. PREFIX is taken for the GNU prefix too.

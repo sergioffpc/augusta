@@ -636,8 +636,8 @@ no self-hosted GitHub Actions runner in this pipeline).
   `_native` wraps, builds for) builds the pack environment under a caller-chosen
   assets root (ADR-0030): a uv-managed Python environment with `tools/pack`
   installed editable, its native module (built by the root project through
-  `make pack-native`: the platform's preset without the client, in a build
-  directory of its own), signing keys and sample authoring content.
+  `make tools`: the platform's preset without the client, in a build directory
+  of its own), signing keys and sample authoring content.
 - **USD Composer setup (authoring-only, opt-in):**
   `tools/composer/scripts/bootstrap.sh` (Windows in Git Bash, or Linux) builds
   NVIDIA Omniverse USD Composer via kit-app-template and fetches Adobe's

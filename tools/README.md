@@ -460,16 +460,16 @@ protocol's schema, re-run the bootstrap, or build it directly from the
 repository's root, as the bootstrap does:
 
 ```bash
-make pack-native PYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python
+make tools PYTHON_EXECUTABLE=<assets-root>/python/augusta-pack/bin/python
 ```
 
 On Windows the interpreter is
-`<assets-root>/python/augusta-pack/Scripts/python.exe`. `make pack-native`
-configures the platform's preset without the client, in a build directory of its
-own (`build/x64-<preset>-pack`), and builds the module's target alone.
-`PYTHON_EXECUTABLE` must point at the venv so the extension's ABI matches the
-interpreter that imports it; without it, the module is built against
-`tools/.venv`'s.
+`<assets-root>/python/augusta-pack/Scripts/python.exe`. `make tools` configures
+the platform's preset without the client, in a build directory of its own
+(`build/x64-<preset>-tools`), and builds the tools alone, the Agents' module
+beside this one. `PYTHON_EXECUTABLE` must point at the venv so the extension's
+ABI matches the interpreter that imports it; without it, the modules are built
+against `tools/.venv`'s.
 
 ### Running the tests
 
@@ -477,7 +477,7 @@ The tests live in [pack/tests/](pack/tests/) and run with pytest in the tools'
 shared environment, `tools/.venv` (see Python environment above), not the assets
 root's venv. They need the native module built into `src/augusta_pack/` against
 that environment's interpreter, which the root build does once `uv sync` has
-made it (`make build` and `make test` build it with the rest, `make pack-native`
+made it (`make build` and `make test` build it with the rest, `make tools`
 alone):
 
 ```bash
