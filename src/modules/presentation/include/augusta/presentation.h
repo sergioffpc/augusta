@@ -304,7 +304,7 @@ class World {
   /// cue_sounds, loaded into audio_engine here. local is the local player's
   /// character: its eye is where Phase::kCamera puts the camera relative to the
   /// predicted body, lowered for the body's stance (LocalCamera, local_view.h),
-  /// and its Skeleton, Clips and rifle are how Phase::kCamera poses the
+  /// and its Skeleton, Clips and rifle are how Phase::kAnimation poses the
   /// predicted body to show its muzzle flash at its Muzzle. Also registers
   /// Phase's five phases and their systems on the owned Flecs world (see header
   /// comment). Tracers meet no Map until AddCollisionMesh adds it.

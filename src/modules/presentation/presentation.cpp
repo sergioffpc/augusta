@@ -339,8 +339,12 @@ struct World::Impl {
   // the Muzzle a round leaves from (ADR-0064): its predicted body, where it is
   // shown, posed where it aims and holding the rifle, the rifle turned about its
   // Grip by the Recoil offset the round left with. That is the one from before
-  // the round's own kick: the previous tick's, as the newest tick fired it, the
-  // predicted rifle's own being the kicked one.
+  // the round's own kick: the previous tick's, when the newest tick fired it,
+  // the predicted rifle's own being the kicked one. A frame spanning several
+  // ticks, an earlier one of them firing, sees only its two newest, which hold
+  // no offset from before that round's kick: the flash then takes the previous
+  // tick's, its kick already in it, an approximation of one kick for one frame,
+  // left as it is since the flash is drawn, not where any round leaves from.
   [[nodiscard]] math::Vec3 LocalMuzzle() {
     physics::BodyState body = shown.local_body;
     body.position += local_offset;
